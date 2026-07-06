@@ -1,0 +1,11 @@
+// =============================================================================
+// src/js/main/gsap/components/GsapScreenTransition.scss
+// -----------------------------------------------------------------------------
+// Styles for GSAP-powered screen transition
+// =============================================================================
+
+.gsap-screen-transition {
+    will-change: opacity, transform;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+}

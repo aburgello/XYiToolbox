@@ -1,0 +1,59 @@
+// =============================================================================
+// src/js/main/gsap/components/GsapProgressBar.scss
+// -----------------------------------------------------------------------------
+// Styles for GSAP-powered progress bar
+// =============================================================================
+
+.gsap-progress-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 0;
+    opacity: 1;
+}
+
+.gsap-progress-label {
+    font-size: 11px;
+    color: #999;
+    white-space: nowrap;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 1;
+}
+
+.gsap-progress-track {
+    flex: 1;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 2px;
+    overflow: hidden;
+    position: relative;
+}
+
+.gsap-progress-bar {
+    height: 100%;
+    border-radius: 2px;
+    transition: none; // GSAP handles animation
+}
+
+.gsap-progress-shimmer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 30%;
+    border-radius: 2px;
+    opacity: 0.6;
+    animation: gsap-shimmer 1.5s ease-in-out infinite;
+    transform: translateX(-100%);
+}
+
+@keyframes gsap-shimmer {
+    0% {
+        transform: translateX(-100%);
+    }
+    100% {
+        transform: translateX(250%);
+    }
+}

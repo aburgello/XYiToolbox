@@ -1,0 +1,30 @@
+// =============================================================================
+// src/js/main/CheckboxToggle.scss
+// -----------------------------------------------------------------------------
+// Styling for CheckboxToggle.tsx. Falls back to a plain accent blue
+// (--ov-accent) when a tool isn't sitting in a category-tinted context --
+// in practice every tool page already gets --cat-icon/--cat-border from
+// categoryStyleVars() (CategoryScreen.tsx / ToolScreen.tsx both set it),
+// so the fallback rarely if ever actually triggers.
+// =============================================================================
+.checkbox-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    padding: 0;
+    color: #888;
+    font-size: 12px;
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.15s ease;
+
+    &:hover {
+        color: #ccc;
+    }
+
+    &.active {
+        color: var(--cat-icon, var(--ov-accent, #8ab4f8));
+    }
+}

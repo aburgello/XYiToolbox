@@ -1,0 +1,55 @@
+// =============================================================================
+// src/js/main/tools/toolHeader.scss
+// -----------------------------------------------------------------------------
+// Shared tool-header styling — a polished header card inspired by the GSAP
+// Demo's header. Use in any tool that wants a consistent top-of-page banner
+// with icon, title, and description.
+//
+// Usage in TSX:
+//   <div className="tool-header">
+//     <div className="tool-header-title-row">
+//       <Icon size={20} className="tool-header-icon" />
+//       <h2>Title</h2>
+//     </div>
+//     <p className="tool-header-desc">Description text.</p>
+//   </div>
+//
+// Category-color inheritance: --cat-grad, --cat-border, --cat-glow,
+// --cat-icon are set inline in main.tsx via categoryStyleVars() and
+// cascade down to every tool mounted inside that category's content area.
+// Falls back to the generic --ov-accent when no category context is set.
+// =============================================================================
+
+.tool-header {
+    padding: 12px 14px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    margin-bottom: 12px;
+
+    .tool-header-title-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 6px;
+    }
+
+    .tool-header-icon {
+        color: var(--cat-icon, var(--ov-accent, #42b3bd));
+        flex-shrink: 0;
+    }
+
+    .tool-header-title-row h2 {
+        font-size: 16px;
+        font-weight: 600;
+        color: #ddd;
+        margin: 0;
+    }
+
+    .tool-header-desc {
+        font-size: 11px;
+        color: #888;
+        margin: 0;
+        line-height: 1.5;
+    }
+}

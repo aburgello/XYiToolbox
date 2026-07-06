@@ -1,0 +1,969 @@
+// =============================================================================
+// src/js/main/main.scss
+// -----------------------------------------------------------------------------
+// Styling for the XYi Toolbox shell: a home screen (logo, version, the
+// always-visible Toolset grid, category cards) and "drill" screens for a
+// selected category or tool (back button + content). Each tool under
+// tools/ owns its own stylesheet -- this file is only the shell chrome
+// around them. --ov-bg/--ov-accent are set at runtime by each tool's
+// useHostTheme() from AE's actual panel skin, so the fallback values here
+// are only what's used in browser preview before any tool has mounted.
+// =============================================================================
+@use "./shared.scss";
+
+// Shared width cap for all main content columns (home screen's Toolset grid
+// and category row, plus every drill screen's master-detail body) so a
+// wide/floating panel doesn't let content sprawl edge-to-edge. File-scoped
+// (not nested inside .home-screen) so .category-master-detail below can
+// reference it too.
+$content-max-width: 900px;
+
+.app-shell {
+    height: 100vh;
+    color: #ddd;
+    background: var(--ov-bg, #1e1e1e);
+    font-family: -apple-system, "Segoe UI", sans-serif;
+    font-size: 12px;
+    box-sizing: border-box;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.screen-fade {
+    flex: 1;
+    min-height: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+// Logo easter egg: full-panel overlay with a gif centered in the middle.
+// `position: fixed` covers the whole panel viewport regardless of which
+// screen is showing or how far it's scrolled, since the overlay is a
+// sibling of .screen-fade rather than nested inside it (see main.tsx).
+.logo-easter-egg-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+    cursor: pointer;
+}
+
+.logo-easter-egg-gif {
+    max-width: 80%;
+    max-height: 80%;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    pointer-events: none;
+}
+
+// --- Home screen -------------------------------------------------------
+.home-screen {
+    height: 100%;
+    overflow-y: auto;
+    padding: 12px 20px 16px;
+    box-sizing: border-box;
+
+    // position: fixed so the ambient background stays pinned to the panel
+    // itself (clipped to it via .app-shell's own overflow: hidden) instead
+    // of scrolling away with .home-screen's content -- it's meant to read
+    // as the room's own backdrop, not something that lives inside the
+    // scrollable list. Sits behind everything else purely via DOM order +
+    // .home-content's own z-index (see below) -- CSS stacks *positioned*
+    // elements above *non-positioned* ones regardless of z-index:0, so the
+    // real content needs to be explicitly positioned+layered too, not just
+    // "placed after it in the markup."
+    .home-ambient-bg {
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+        overflow: hidden;
+        pointer-events: none;
+    }
+
+    .ambient-blob {
+        position: absolute;
+        width: 420px;
+        height: 420px;
+        border-radius: 50%;
+        // Bigger blur radius than the blob's own size increase alone
+        // would need -- a 2-stop gradient (color -> transparent) still
+        // reads as a soft-edged disc once blurred, because the alpha
+        // ramp between those two stops is fairly steep. A wider blur
+        // spreads that ramp over more pixels so there's no perceptible
+        // edge left, just a wash.
+        filter: blur(110px);
+    }
+
+    // Same four hues as CATEGORY_COLORS in main.tsx (kept in sync by hand --
+    // there's no shared source of truth between the SCSS and TS color
+    // tables elsewhere in this app either), at low alpha so this reads as
+    // ambient tint, not a spotlight. One blob per corner. Three gradient
+    // stops, not two -- 0% -> 100% straight to transparent still leaves a
+    // visible-ish rim where the ramp is steepest; a mid-stop at 45% with
+    // roughly half the peak alpha makes the falloff read as continuous
+    // rather than "a circle that fades."
+    //
+    // Localise's alpha is deliberately the LOWEST of the four, not just
+    // matched to the others -- teal/cyan reads as perceptibly brighter
+    // than purple/orange/pink at the same alpha value against a dark
+    // background (real color-perception effect, not specific to this
+    // app), and it also sits top-left, closest to the panel's own title
+    // bar / logo / search -- the area the eye lands on first when the
+    // panel opens. Both effects compound in the same direction, so it
+    // needs to start further down to land visually even with the rest.
+    .ambient-blob-localise {
+        top: -80px;
+        left: -60px;
+        background: radial-gradient(circle, rgba(45, 212, 191, 0.1) 0%, rgba(45, 212, 191, 0.045) 45%, rgba(45, 212, 191, 0) 100%);
+    }
+    .ambient-blob-review {
+        top: -60px;
+        right: -80px;
+        background: radial-gradient(circle, rgba(167, 139, 250, 0.16) 0%, rgba(167, 139, 250, 0.07) 45%, rgba(167, 139, 250, 0) 100%);
+    }
+    .ambient-blob-deliver {
+        bottom: -100px;
+        left: -60px;
+        background: radial-gradient(circle, rgba(251, 146, 60, 0.15) 0%, rgba(251, 146, 60, 0.06) 45%, rgba(251, 146, 60, 0) 100%);
+    }
+    .ambient-blob-tools {
+        bottom: -80px;
+        right: -60px;
+        background: radial-gradient(circle, rgba(244, 114, 182, 0.16) 0%, rgba(244, 114, 182, 0.07) 45%, rgba(244, 114, 182, 0) 100%);
+    }
+
+    // Wraps everything except .home-ambient-bg -- position: relative +
+    // z-index: 1 is what actually puts real content above the fixed
+    // ambient layer (see .home-ambient-bg's comment above for why DOM
+    // order alone isn't enough).
+    .home-content {
+        position: relative;
+        z-index: 1;
+    }
+
+    // Caps how wide the toolset grid and category row are allowed to get and
+    // centers them, matching .home-search's own max-width discipline just
+    // above them. Without this, a wide/floating panel lets the button grid
+    // sprawl edge-to-edge while the header/search stay narrow and centered,
+    // so the two halves of the home screen visually fight each other.
+    .toolset-grid,
+    .category-row {
+        max-width: $content-max-width;
+        margin-left: auto;
+        margin-right: auto;
+    }
+
+    .home-header {
+        position: relative;
+        text-align: center;
+        margin-bottom: 8px;
+
+        // Centered via fixed-size negative margins, NOT a CSS transform --
+        // this element is pulse-animated with Framer Motion's `scale`,
+        // which drives `transform` as an inline style and would clobber a
+        // transform-based translate(-50%, -50%) centering rule the same
+        // way the search placeholder's y-animation did (see CLAUDE.md).
+        .logo-glow {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 160px;
+            height: 100px;
+            margin-left: -80px;
+            margin-top: -50px;
+            background: radial-gradient(ellipse at center, rgba(66, 179, 189, 0.28) 0%, rgba(66, 179, 189, 0) 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .logo {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 92px;
+            height: auto;
+            cursor: pointer;
+            // The logo PNG is navy/teal, which reads as very faint on this
+            // dark panel background -- brightness(0) flattens it to solid
+            // black (preserving its alpha/shape), then invert(1) flips
+            // that to solid white.
+            filter: brightness(0) invert(1);
+        }
+
+        // Out of flow (position: absolute) so it never reserves vertical
+        // space in the header -- only ever visible on logo hover, so
+        // letting it hold a permanent line's worth of height regardless of
+        // visibility would defeat the point of hiding it. Positioned via
+        // its own centering math (not the .logo-glow pattern above) since
+        // this element isn't Framer Motion-animated, so a transform-based
+        // translateY(-50%) is safe here.
+        //
+        // Sits to the RIGHT of the logo, vertically centered on it --
+        // originally placed directly below (top: 100%), but that put it
+        // right where .home-search starts, close enough that the two
+        // visually collided the moment it faded in. 54px = half the
+        // logo's own max-width (46px) + an 8px gap, so it starts just
+        // clear of the logo's right edge regardless of header height.
+        .version {
+            position: absolute;
+            z-index: 2;
+            top: 50%;
+            left: 50%;
+            transform: translateY(-50%);
+            margin-left: 54px;
+            color: #888;
+            font-size: 10px;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.15s ease;
+        }
+
+        // Sibling combinator, not a parent :hover -- deliberately scoped to
+        // hovering the logo itself, not the whole header (which also
+        // includes the glow blob's hit area and empty margin around it).
+        .logo:hover ~ .version {
+            opacity: 1;
+        }
+    }
+
+    .home-search {
+        max-width: 360px;
+        margin: 0 auto 14px;
+    }
+}
+
+.search-box-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+// Icon-only, star-shaped toggle for the favorites chip row -- sits right
+// next to the search box rather than taking a permanent row of its own, so
+// zero favorites costs nothing beyond this one small button (see
+// .favorites-row below for the actual slide-open chip row).
+.favorites-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+    background: #262626;
+    border: 1px solid #444;
+    border-radius: 3px;
+    color: #888;
+    cursor: pointer;
+    transition: color 0.2s ease, border-color 0.2s ease;
+
+    &:hover {
+        color: #ddd;
+        border-color: #666;
+    }
+
+    // Applies both while the row is open AND whenever there's at least one
+    // favorite (even closed) -- a filled star at rest is the "you have
+    // favorites pinned" indicator, not just an open/closed state. Kept
+    // deliberately muted rather than a full bright yellow -- this sits
+    // right next to the search box and is visible on every home-screen
+    // visit once you have any favorites at all, so a loud color here reads
+    // as a permanent visual alarm rather than a calm status indicator.
+    // Brightens on hover instead, as the interactive-feedback moment.
+    &.active {
+        color: #b8a15c;
+        border-color: #8a7a45;
+
+        &:hover {
+            color: #facc15;
+            border-color: #facc15;
+        }
+    }
+}
+
+// Slides open below the search box when .favorites-toggle is clicked.
+// Chips show icon + label text (not icon-only) -- readability was chosen
+// over the original icon-only/tooltip-to-identify design, at the accepted
+// cost that a wider favorites list will wrap onto a second row, eating
+// back some of the vertical space this feature otherwise protects.
+.favorites-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    overflow: hidden; // needed for the slide-open height:0->auto animation
+    // Top keeps the original 8px gap below the search box; all four sides
+    // add extra room on top of that for a hovered chip's box-shadow glow
+    // to render into before hitting this row's own clip boundary --
+    // overflow:hidden clips flush against the box edge regardless of
+    // internal padding, so without this the glow reads as a hard
+    // rectangular cutoff instead of a soft glow. Same padding+matching-
+    // negative-margin fix already used for .creatives-grid's identical
+    // hover-lift clipping bug (OV Library) -- the negative margin cancels
+    // just the ADDED room (not the original 8px top gap), so nothing
+    // shifts for anyone not hovering a chip.
+    padding: 14px 6px 8px 6px;
+    margin: -6px -6px -8px -6px;
+
+    .hint {
+        margin: 0;
+        font-size: 11px;
+    }
+}
+
+.favorite-chip {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    height: 26px;
+    flex-shrink: 0;
+    max-width: 100%;
+    padding: 0 10px;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 13px;
+    color: #ddd;
+    font-size: 11px;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+
+    span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    // Same per-category tint as .tool-card/.category-card -- a favorited
+    // tool's chip reads as belonging to its category, not one flat blue.
+    &:hover {
+        background: var(--cat-grad, var(--ov-accent, #3a5a8a));
+        border-color: var(--cat-border, transparent);
+        box-shadow: 0 4px 14px var(--cat-glow, rgba(0, 0, 0, 0.35));
+    }
+}
+
+.search-box {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex: 1;
+    min-width: 0;
+    background: #262626;
+    border: 1px solid #444;
+    border-radius: 3px;
+    padding: 4px 8px;
+    color: #888;
+
+    .search-input-wrap {
+        position: relative;
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+    }
+
+    input {
+        width: 100%;
+        background: transparent;
+        border: none;
+        outline: none;
+        color: #ddd;
+        font-size: 12px;
+        min-width: 0;
+        box-sizing: border-box;
+    }
+
+    // Centered via flexbox (align-items on the wrap + height:100% here),
+    // NOT a CSS transform -- Framer Motion drives this element's own
+    // `transform` for its slide-in animation (the `y` prop), and an inline
+    // style always wins over a stylesheet rule, so a transform-based
+    // translateY(-50%) here would just get clobbered the moment the
+    // animation settles.
+    .search-placeholder {
+        position: absolute;
+        left: 0;
+        top: 0;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        color: #777;
+        font-size: 12px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 100%;
+        pointer-events: none;
+    }
+
+    .clear-search {
+        display: flex;
+        background: none;
+        border: none;
+        color: #888;
+        cursor: pointer;
+        padding: 0;
+
+        &:hover {
+            color: #ddd;
+        }
+    }
+}
+
+.category-row {
+    display: flex;
+    gap: 10px;
+    // Matches .home-search's own margin-bottom (the gap above the Toolset
+    // panel) so the Toolset panel sits with equal breathing room above and
+    // below it, instead of a visibly bigger gap on this side.
+    margin-top: 14px;
+
+    .category-card {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        background: linear-gradient(180deg, #292929 0%, #232323 100%);
+        border: 1px solid #3d3d3d;
+        border-radius: 8px;
+        padding: 16px 8px;
+        color: #ddd;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+
+        // Each card carries its own --cat-* custom properties (set inline
+        // in main.tsx via categoryStyleVars) so every category gets a
+        // distinct hover identity instead of the same generic accent blue.
+        &:hover {
+            background: var(--cat-grad);
+            border-color: var(--cat-border);
+            box-shadow: 0 6px 18px var(--cat-glow), 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+
+            .category-card-icon {
+                color: var(--cat-icon);
+            }
+        }
+    }
+
+    .category-card-icon {
+        display: inline-flex;
+        transition: color 0.3s ease;
+    }
+}
+
+// --- Category / tool drill-down screens --------------------------------
+.drill-screen {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    // Containing block for .category-ambient-bg below. Shared with
+    // ToolScreen.tsx (same class) -- harmless there, since only
+    // CategoryScreen.tsx ever actually renders ambient-bg/page-content.
+    position: relative;
+
+    // ── Category ambient background (Localise/Review/Tools only) ──────────
+    // Same pattern as DeliveryHub.scss's .dh-ambient-bg / HomeScreen's own
+    // ambient blobs: position:absolute + z-index:0, .drill-page-content
+    // carries z-index:1 -- positioned elements stack above non-positioned
+    // ones regardless of z-index value, so the real content has to be
+    // explicitly promoted too, not just placed after this in the markup.
+    .category-ambient-bg {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        overflow: hidden;
+        pointer-events: none;
+    }
+
+    // Same blur-vs-gradient-stop reasoning as every other ambient blob in
+    // this app: blurred enough that a 2-3 stop radial gradient still reads
+    // as a soft wash, not a visible-edged circle. Per-category color comes
+    // from a modifier class below, REUSING the exact same low-alpha values
+    // HomeScreen.scss's own ambient blobs already use for each category --
+    // deliberate, so a category's page reads as a continuation of its home-
+    // screen identity rather than a new, separately-tuned color.
+    .category-ambient-blob {
+        position: absolute;
+        width: 320px;
+        height: 320px;
+        border-radius: 50%;
+        filter: blur(90px);
+
+        &.category-ambient-blob--tl { top: -110px; left: -90px; }
+        &.category-ambient-blob--br { bottom: -130px; right: -100px; }
+
+        &.category-ambient-blob--localise {
+            background: radial-gradient(circle, rgba(45, 212, 191, 0.1) 0%, rgba(45, 212, 191, 0.045) 45%, rgba(45, 212, 191, 0) 100%);
+        }
+        &.category-ambient-blob--review {
+            background: radial-gradient(circle, rgba(167, 139, 250, 0.16) 0%, rgba(167, 139, 250, 0.07) 45%, rgba(167, 139, 250, 0) 100%);
+        }
+        &.category-ambient-blob--tools {
+            background: radial-gradient(circle, rgba(244, 114, 182, 0.16) 0%, rgba(244, 114, 182, 0.07) 45%, rgba(244, 114, 182, 0) 100%);
+        }
+    }
+
+    // Caps the whole column -- back button, title, AND the body below -- as
+    // one unit so they share the same left/right edges instead of the back
+    // button/title staying flush to the panel edge while only the content
+    // below gets centered. Shared by CategoryScreen.tsx (with a title/
+    // master-detail) and ToolScreen.tsx (back button + drill-body only,
+    // used for tools like DeliveryHub/ReviewHub that bypass CategoryScreen).
+    .drill-page-content {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+        width: 100%;
+        max-width: $content-max-width;
+        margin-left: auto;
+        margin-right: auto;
+    }
+
+    .drill-header-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px 0;
+        flex-shrink: 0;
+
+        .back-button {
+            padding: 0;
+        }
+    }
+
+    .back-button {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        align-self: flex-start;
+        background: none;
+        border: none;
+        color: #aac4ff;
+        cursor: pointer;
+        font-size: 12px;
+        padding: 12px 16px 0;
+        flex-shrink: 0;
+
+        &:hover {
+            color: #fff;
+        }
+    }
+
+    h2 {
+        font-size: 14px;
+        margin: 10px 16px 4px;
+        flex-shrink: 0;
+    }
+
+    .hint {
+        color: #999;
+        margin: 0 16px;
+    }
+
+    .drill-body {
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+}
+
+// --- Category screen: tool list on the left, selected tool's content on
+// the right -- no full-page navigation per tool within a category.
+// Sidebar width is controlled by an inline style set from CategoryScreen's
+// sidebarWidth state (drag-resizable between SIDEBAR_MIN and SIDEBAR_MAX).
+// Below 380px panel width the layout flips to stacked (list on top, content
+// below) so a narrow docked panel stays usable. -------
+.category-master-detail {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    // Full border + radius (not just border-top) -- now that this box is a
+    // centered island rather than edge-to-edge with the panel, a top-only
+    // rule reads as an unanchored/floating strip. Matches the home screen's
+    // own .toolset-panel framing (border #3a3a3a, radius 8px).
+    border: 1px solid #3a3a3a;
+    border-radius: 8px;
+    overflow: hidden;
+    margin-top: 8px;
+}
+
+.category-tool-list {
+    // width comes from inline style (sidebarWidth state) -- no width here.
+    flex-shrink: 0;
+    overflow-y: auto;
+    border-right: 1px solid #333;
+    padding: 8px;
+    box-sizing: border-box;
+}
+
+// 4px-wide invisible hit area that sits between the sidebar and content.
+// The visible 1px rule is .category-tool-list's own border-right -- we
+// don't duplicate it here, this div is purely for pointer events.
+// cursor: col-resize signals draggability; the 4px width gives a
+// comfortable grab target without eating visible space.
+.category-resize-handle {
+    width: 4px;
+    flex-shrink: 0;
+    cursor: col-resize;
+    background: transparent;
+    transition: background 0.15s ease;
+    margin-left: -4px; // overlaps the sidebar's border-right so drag starts
+                        // exactly where the visible line is, not 4px past it
+    z-index: 2;
+
+    &:hover,
+    &:active {
+        background: rgba(255, 255, 255, 0.08);
+    }
+}
+
+// Stacked layout for narrow panels (≤380px). The sidebar becomes a fixed-
+// height horizontal scroll strip across the top; the tool content fills the
+// remaining vertical space. Drag-resize is implicitly disabled (the handle
+// still exists in the DOM but col-resize cursor on a row-direction flex
+// child is a no-op -- no explicit hide needed).
+@media (max-width: 380px) {
+    .category-master-detail {
+        flex-direction: column;
+    }
+
+    .category-tool-list {
+        width: 100% !important; // override inline sidebarWidth
+        height: 88px;
+        flex-shrink: 0;
+        overflow-x: auto;
+        overflow-y: hidden;
+        border-right: none;
+        border-bottom: 1px solid #333;
+        display: flex;
+        flex-direction: row;
+        padding: 4px 8px;
+        // Let items be as wide as their content in the horizontal strip.
+        .tool-list-entry {
+            flex-shrink: 0;
+            width: auto;
+        }
+    }
+
+    .category-resize-handle {
+        display: none;
+    }
+}
+
+// Now a plain <div> (Reorder.Item as="div"), not a <button> -- the click
+// target moved down to .tool-list-entry-content specifically, since this
+// row also has a drag handle now and the two need separate, unambiguous
+// hit areas (see ToolListEntry's comment in main.tsx for why).
+.tool-list-entry {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    color: #ccc;
+    border-radius: 4px;
+    padding: 0;
+    font-size: 12px;
+    box-sizing: border-box;
+    overflow: hidden;
+
+    &:hover:not(.selected) {
+        background: var(--cat-grad, #2a2a2a);
+    }
+    &.selected {
+        color: #fff;
+    }
+}
+
+// Drag-to-reorder handle -- invisible at rest (opacity, not
+// display/conditional-render, so it still reserves its own layout space
+// and the label never shifts left/right when it fades in), only appears
+// on hovering the row. Was permanently visible at first pass and read as
+// visual clutter on a list you're not actively reordering most of the
+// time -- same "reveal on hover, not always-on" instinct as OV Library's
+// thumbnail-override icon and play-hint overlay, just without that one's
+// extra 1s hold (this is a narrower, more deliberate list to hover than
+// a grid you sweep across while scanning, so an instant reveal reads
+// fine here). touch-action: none is required by Framer Motion's drag
+// controls (same as their own docs) -- without it, the browser's own
+// touch-scroll gesture can intercept the pointer before drag tracking
+// sees it.
+.tool-list-drag-handle {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    padding: 7px 0 7px 6px;
+    color: #666;
+    cursor: grab;
+    flex-shrink: 0;
+    touch-action: none;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+
+    &:active {
+        cursor: grabbing;
+    }
+}
+
+.tool-list-entry:hover .tool-list-drag-handle {
+    opacity: 1;
+    color: #999;
+}
+
+// Sliding pill highlight -- shares a layoutId across renders, so when the
+// selected tool changes, Framer Motion animates this smoothly moving from
+// the old entry's position to the new one instead of just popping. Tinted
+// per-category via the same --cat-grad custom property as the home screen's
+// category cards, so a tool's list stays visually tied to the category you
+// drilled in from.
+.tool-list-highlight {
+    position: absolute;
+    inset: 0;
+    background: var(--cat-grad, var(--ov-accent, #3a5a8a));
+    border-radius: 4px;
+    z-index: 0;
+    box-shadow: 0 2px 8px var(--cat-glow, transparent);
+}
+
+.tool-list-entry-content {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 8px 7px 4px;
+    flex: 1;
+    min-width: 0;
+    cursor: pointer;
+}
+
+.category-tool-content {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+// --- Tool content header (inside the right panel, above each tool) --------
+// Icon + title + subtitle banner, same visual language as the Review/Deliver
+// hub pages. This is now the ONLY title/description on a tool page (the
+// per-tool internal <h2> + hint were removed as duplicates) -- rendered by
+// RailScreen/CategoryScreen/ToolScreen from the tool's registry entry.
+.tool-content-header {
+    padding: 12px 16px 8px;
+    background: rgba(255, 255, 255, 0.03);
+    border-bottom: 1px solid #2a2a2a;
+    flex-shrink: 0;
+}
+
+.tool-content-header-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 4px;
+}
+
+.tool-content-header-icon {
+    color: var(--cat-icon, #c4b5fd);
+    flex-shrink: 0;
+}
+
+.tool-content-header-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #ddd;
+    margin: 0;
+}
+
+.tool-content-header-desc {
+    font-size: 11px;
+    color: #888;
+    margin: 0;
+    line-height: 1.5;
+    white-space: pre-line;
+}
+
+.tool-content-body {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.tool-card-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 0 16px 16px;
+    align-content: flex-start;
+    overflow-y: auto;
+}
+
+.tool-card {
+    position: relative; // anchors .tool-card-favorite's absolute placement
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    color: #ddd;
+    border-radius: 4px;
+    padding: 10px 14px;
+    cursor: pointer;
+    font-size: 12px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+
+    // Tinted per-category (see categoryStyleVars() in main.tsx) so search
+    // results and category grids read as belonging to their category, not
+    // one flat generic blue everywhere.
+    &:hover {
+        background: var(--cat-grad, var(--ov-accent, #3a5a8a));
+        border-color: var(--cat-border, transparent);
+        box-shadow: 0 4px 14px var(--cat-glow, rgba(0, 0, 0, 0.35));
+
+        .tool-card-icon {
+            color: var(--cat-icon);
+        }
+    }
+
+    .tool-card-icon {
+        display: inline-flex;
+        transition: color 0.3s ease;
+    }
+
+    // Search-result-only: stars the tool into the home screen's favorites
+    // row. Hidden until hover -- same "hidden until you hover" language as
+    // the category tool list's drag handle -- EXCEPT once a card is
+    // actually favorited it stays visible permanently, so there's always a
+    // way to see/unfavorite it without hunting for the hover state again.
+    .tool-card-favorite {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        background: rgba(0, 0, 0, 0.35);
+        border: none;
+        border-radius: 50%;
+        color: #ccc;
+        cursor: pointer;
+        opacity: 0;
+        transition: opacity 0.15s ease, color 0.15s ease;
+
+        &:hover {
+            color: #facc15;
+        }
+
+        // Muted at rest (see .favorites-toggle.active above for the same
+        // reasoning) -- a search-results grid can show several favorited
+        // cards at once, so a full bright yellow on every one of them reads
+        // as much louder/busier than a single toggle button does. Full
+        // brightness is reserved for the hover moment above.
+        &.favorited {
+            opacity: 1;
+            color: #b8a15c;
+
+            &:hover {
+                color: #facc15;
+            }
+        }
+    }
+
+    &:hover .tool-card-favorite {
+        opacity: 1;
+    }
+
+    // Two-line variant for search hits matched via one of a tool's own
+    // inner actions (e.g. "Trott 2.0") rather than the tool's own name --
+    // see renderToolCard()'s matchedAction param in main.tsx.
+    .tool-card-text {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1px;
+        min-width: 0;
+
+        small {
+            color: #999;
+            font-size: 10px;
+            font-weight: 400;
+        }
+    }
+
+    &:hover .tool-card-text small {
+        color: rgba(255, 255, 255, 0.75);
+    }
+}
+
+.search-results {
+    margin-top: 10px;
+    padding: 0;
+}
+
+// --- ToolErrorBoundary ------------------------------------------------
+// Contained error card shown when a tool component throws during render.
+// Keeps the rest of the panel usable.
+.tool-error-boundary {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 16px;
+    margin: 12px;
+    background: rgba(180, 30, 30, 0.15);
+    border: 1px solid rgba(220, 60, 60, 0.4);
+    border-radius: 6px;
+    color: #ddd;
+    font-size: 11px;
+
+    .tool-error-title {
+        font-weight: 600;
+        color: #f87171;
+        margin: 0;
+    }
+
+    .tool-error-message {
+        margin: 0;
+        font-size: 10px;
+        color: #aaa;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .tool-error-reset {
+        background: rgba(255, 255, 255, 0.07);
+        border: 1px solid #555;
+        border-radius: 4px;
+        color: #ccc;
+        font-size: 11px;
+        padding: 4px 10px;
+        cursor: pointer;
+
+        &:hover {
+            background: rgba(255, 255, 255, 0.12);
+            color: #fff;
+        }
+    }
+}

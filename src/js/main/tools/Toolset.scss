@@ -1,0 +1,341 @@
+.toolset-grid {
+    display: flex;
+    flex-direction: column;
+    color: #ddd;
+    font-family: -apple-system, "Segoe UI", sans-serif;
+    font-size: 12px;
+    box-sizing: border-box;
+    // Containing block for .toast-stack below, now that it's
+    // position:absolute (previously a normal-flow flex sibling, so its
+    // own margin-top:14px silently added 14px of empty space here EVEN
+    // WITH ZERO TOASTS, stacking with .category-row's own margin-top on
+    // the home screen and making the gap under the Toolset panel visibly
+    // bigger than the gap above it).
+    position: relative;
+
+    .toolset-panel {
+        position: relative;
+        border: 1px solid #3a3a3a;
+        border-radius: 8px;
+        padding: 4px 16px 16px;
+    }
+
+    // Sits ON the border line, like a <fieldset><legend> -- the background
+    // color masks the border directly behind it to create the "gap" the
+    // text sits in.
+    h2 {
+        position: absolute;
+        top: -6px;
+        left: 90%;
+        transform: translateX(-50%);
+        background: var(--ov-bg, #1e1e1e);
+        padding: 0 8px;
+        white-space: nowrap;
+        font-size: 9px;
+        font-weight: 400;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #777;
+        margin: 0;
+    }
+
+    .action-group {
+        &:not(:first-child) {
+            margin-top: 18px;
+        }
+    }
+
+    // Same "legend sitting on the border line" trick as .toolset-panel's own
+    // h2 (TOOLSET) -- a full-width rule via ::before, with the label's own
+    // background masking the segment of line directly behind it. Unlike the
+    // panel's h2, this one is left-anchored rather than centered, so the
+    // rule only shows through *after* the label, not on both sides.
+    .action-group-divider {
+        position: relative;
+        margin: 0 0 8px;
+
+        &::before {
+            content: "";
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            border-top: 1px solid #2f2f2f;
+        }
+    }
+
+    // First group sits directly under the panel's own TOOLSET legend --
+    // a second rule immediately below it would just be visual noise.
+    .action-group:first-child .action-group-divider::before {
+        display: none;
+    }
+
+    .action-group-label {
+        position: relative;
+        display: inline-block;
+        background: var(--ov-bg, #1e1e1e);
+        padding-right: 8px;
+        margin: 0 0 0 2px;
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #777;
+    }
+
+    .action-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-content: flex-start;
+
+        button {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            color: #ddd;
+            border-radius: 18px;
+            padding: 8px 14px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+
+            // --btn-border/--btn-bg/--btn-glow are set inline per-button in
+            // Toolset.tsx (pre-blended in JS, not color-mix() -- unsupported
+            // on this project's chrome74 build target), cycling through a
+            // small palette so the grid doesn't read as one flat wall of
+            // identical grey buttons.
+            &:hover {
+                background: var(--btn-bg, #2a2a2a);
+                border-color: var(--btn-border, #444);
+                box-shadow: 0 3px 10px var(--btn-glow, rgba(0, 0, 0, 0.35));
+
+                .action-icon {
+                    color: var(--btn-border);
+                }
+            }
+
+            .action-icon {
+                display: inline-flex;
+                transition: color 0.2s ease;
+            }
+        }
+    }
+
+    // position:absolute so an empty toast stack (the common case) takes
+    // up zero layout space, and a visible one floats over the grid
+    // instead of pushing whatever's below (the category cards, on the
+    // home screen) down the page -- matches the pattern every other
+    // tool's own toast stack in this app already uses (e.g.
+    // LocalisedLibrary.scss/DeliveryHub.scss's own position:absolute
+    // toast stacks), this one just hadn't been converted.
+    .toast-stack {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: -8px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        max-width: 420px;
+        pointer-events: none;
+        z-index: 20;
+    }
+
+    .toast {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: #2a2a2a;
+        border: 1px solid #444;
+        border-radius: 4px;
+        padding: 6px 8px;
+        font-size: 11px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+        pointer-events: auto;
+
+        span {
+            flex: 1;
+        }
+
+        button {
+            display: flex;
+            background: none;
+            border: none;
+            color: #999;
+            cursor: pointer;
+            padding: 0;
+
+            &:hover {
+                color: #ddd;
+            }
+        }
+
+        &.toast-success {
+            border-color: #2e6b3e;
+            svg:first-child {
+                color: #6bcf7f;
+            }
+        }
+        &.toast-error {
+            border-color: #7a2e2e;
+            svg:first-child {
+                color: #e07a7a;
+            }
+        }
+    }
+}
+
+// --- Droplet content for Toggle By Label / Comp Duration ------------------
+// Panel chrome itself (background/border/shadow/position) lives in
+// Droplet.scss -- these rules are only the CONTENT inside it, specific to
+// these two tools.
+
+.droplet-swatches {
+    width: 216px;
+}
+
+.swatch-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    max-width: 196px;
+}
+
+.swatch-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: var(--swatch, transparent);
+    cursor: pointer;
+    transition: transform 0.12s ease, border-color 0.12s ease;
+    color: #888; // Ban icon color for "None"
+
+    &:hover {
+        transform: scale(1.14);
+        border-color: rgba(255, 255, 255, 0.5);
+    }
+
+    // "None" (index 0) has no --swatch value -- a Ban icon on a plain dark
+    // chip instead of an empty/invisible circle, so it still reads as a
+    // deliberate, clickable option rather than a rendering gap. Plain
+    // class, not :has(svg) -- :has() isn't supported on this project's
+    // chrome74 build target (same class of gotcha as color-mix(), see
+    // CLAUDE.md), and would silently just not apply in the real CEP panel
+    // despite working fine in a normal modern-Chrome preview.
+    &.swatch-none {
+        background: #333;
+    }
+}
+
+.swatch-dot {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+}
+
+.droplet-duration {
+    width: 168px;
+}
+
+.duration-presets {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+
+    button {
+        flex: 1;
+        background: #2a2a2a;
+        border: 1px solid #444;
+        color: #ddd;
+        border-radius: 5px;
+        padding: 6px 0;
+        font-size: 11px;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease;
+
+        &:hover {
+            background: var(--ov-accent, #3a5a8a);
+            border-color: var(--ov-accent, #3a5a8a);
+        }
+    }
+}
+
+.duration-custom-toggle {
+    display: block;
+    width: 100%;
+    background: none;
+    border: 1px dashed #444;
+    color: #999;
+    border-radius: 5px;
+    padding: 5px 0;
+    font-size: 11px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease;
+
+    &:hover {
+        border-color: #666;
+        color: #ddd;
+    }
+}
+
+.duration-custom-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    input {
+        flex: 1;
+        min-width: 0;
+        background: #1e1e1e;
+        border: 1px solid #444;
+        border-radius: 4px;
+        padding: 5px 6px;
+        color: #ddd;
+        font-size: 11px;
+        box-sizing: border-box;
+        // Hides the native up/down step arrows -- this field's own preset
+        // chips already cover the common values, so the spinner buttons
+        // are just visual clutter on a field this small.
+        -moz-appearance: textfield;
+
+        &::-webkit-inner-spin-button,
+        &::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        &:focus {
+            outline: none;
+            border-color: var(--ov-accent, #3a5a8a);
+        }
+    }
+
+    span {
+        color: #888;
+        flex-shrink: 0;
+    }
+
+    .duration-apply {
+        flex-shrink: 0;
+        background: var(--ov-accent, #3a5a8a);
+        border: 1px solid var(--ov-accent, #3a5a8a);
+        color: #fff;
+        border-radius: 4px;
+        padding: 5px 10px;
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+
+        &:hover {
+            filter: brightness(1.12);
+        }
+    }
+}

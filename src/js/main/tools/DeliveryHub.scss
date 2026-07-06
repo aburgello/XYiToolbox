@@ -1,0 +1,712 @@
+.delivery-hub {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    box-sizing: border-box;
+    color: #ddd;
+    font-size: 12px;
+    background: var(--ov-bg, #1e1e1e);
+    position: relative;
+
+    // ── Content card ─────────────────────────────────────────────────────
+    // Border + radius so the content column reads as a framed card now that
+    // it's a centered island rather than edge-to-edge with the panel --
+    // matches .category-master-detail's identical treatment in main.scss
+    // and the home screen's own .toolset-panel framing. The ambient blobs
+    // live INSIDE this card (not as a sibling spanning the whole
+    // .delivery-hub box) specifically so overflow:hidden + border-radius
+    // clip them to the card's own rounded corners -- previously they lived
+    // in a sibling that wasn't clipped by the card's radius, so the glow
+    // visibly spilled out above the card's top edge.
+    .dh-content {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+        margin-top: 8px;
+        border: 1px solid #3a3a3a;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .dh-ambient-bg {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        overflow: hidden;
+        pointer-events: none;
+    }
+
+    // Wraps the actual bars/rows/toasts -- a sibling of .dh-ambient-bg
+    // rather than relying on normal document flow to stay "after" it,
+    // because a *positioned* element (the ambient bg) stacks above
+    // *non-positioned* ones regardless of DOM order, so the real content
+    // needs to be explicitly positioned + promoted too (same gotcha as
+    // .dh-content itself, one level deeper now that the blobs moved inside it).
+    .dh-content-inner {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+    }
+
+    // Blurred enough that a 2-3 stop gradient still reads as a soft wash,
+    // not a visible-edged circle -- same blur-vs-gradient-stop reasoning as
+    // HomeScreen's ambient blobs. Peak alpha bumped up from the original
+    // 0.16/0.06 (was reading as too faint once the card gained a border) --
+    // Framer's opacity animation below only ever multiplies it further
+    // down, never up, so legibility of the rows/toolbars sitting on top is
+    // never at risk.
+    .dh-ambient-blob {
+        position: absolute;
+        width: 320px;
+        height: 320px;
+        border-radius: 50%;
+        filter: blur(90px);
+        background: radial-gradient(circle, rgba(251, 146, 60, 0.28) 0%, rgba(251, 146, 60, 0.12) 45%, rgba(251, 146, 60, 0) 100%);
+
+        &.dh-ambient-blob--tl {
+            top: -110px;
+            left: -90px;
+        }
+        &.dh-ambient-blob--br {
+            bottom: -130px;
+            right: -100px;
+        }
+    }
+
+    // ── Action bar ──────────────────────────────────────────────────────────
+    // Delivery button + fps + Audio, grouped as the top row of controls.
+    .dh-action-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        padding: 7px 14px;
+        border-bottom: 1px solid #272727;
+        background: rgba(0,0,0,0.18);
+        flex-shrink: 0;
+    }
+
+    // ── Bulk edit bar ─────────────────────────────────────────────────────
+    // MB cap, Mbps cap, fps, Apply — below Load.
+    .dh-bulk-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 14px;
+        border-bottom: 1px solid #272727;
+        background: rgba(0,0,0,0.06);
+        flex-shrink: 0;
+    }
+
+    .dh-specs-label {
+        color: #666;
+        font-size: 11px;
+        flex-shrink: 0;
+    }
+
+    .dh-specs-sep {
+        color: #555;
+        font-size: 11px;
+        flex-shrink: 0;
+    }
+
+    // ── Primary CTA ───────────────────────────────────────────────────────
+    // The Delivery button is the hero action — larger, tinted, prominent.
+    // Pulsing glow while the operation is in-flight
+    @keyframes dh-pulse-glow {
+        0%, 100% { box-shadow: 0 2px 10px var(--cat-glow, rgba(251,146,60,0.3)); }
+        50%       { box-shadow: 0 2px 22px var(--cat-glow, rgba(251,146,60,0.65)); }
+    }
+
+    .dh-primary-btn {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        background: var(--cat-grad, linear-gradient(135deg, #b3661f, #5c2f0e));
+        border: 1px solid var(--cat-border, #fb923c);
+        border-radius: 5px;
+        color: #fff;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 7px 14px;
+        cursor: pointer;
+        box-shadow: 0 2px 10px var(--cat-glow, rgba(251,146,60,0.3));
+        transition: box-shadow 0.2s ease, opacity 0.15s ease;
+        white-space: nowrap;
+        flex-shrink: 0;
+        overflow: hidden; // keeps the truck from sliding outside the button bounds
+
+        &:disabled {
+            opacity: 0.5;
+            cursor: default;
+        }
+
+        &.dh-primary-btn--busy {
+            animation: dh-pulse-glow 1.2s ease-in-out infinite;
+        }
+
+        svg { flex-shrink: 0; }
+    }
+
+    .dh-btn-icon {
+        display: flex;
+        align-items: center;
+    }
+
+    // ── Queue button ──────────────────────────────────────────────────────
+    // Secondary CTA — same treatment, slightly smaller.
+    .dh-queue-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--cat-grad, linear-gradient(135deg, #b3661f, #5c2f0e));
+        border: 1px solid var(--cat-border, #fb923c);
+        border-radius: 4px;
+        color: #fff;
+        font-size: 11px;
+        font-weight: 600;
+        padding: 5px 10px;
+        cursor: pointer;
+        box-shadow: 0 2px 8px var(--cat-glow, rgba(251,146,60,0.25));
+        white-space: nowrap;
+        flex-shrink: 0;
+        transition: opacity 0.15s ease;
+        overflow: hidden;
+
+        &:disabled {
+            opacity: 0.35;
+            cursor: default;
+        }
+
+        &.dh-queue-btn--busy {
+            animation: dh-pulse-glow 1.2s ease-in-out infinite;
+        }
+    }
+
+    // ── Load button ───────────────────────────────────────────────────────
+    // Same visual weight as Delivery — sits right-aligned in the action bar
+    // so it reads as the secondary primary CTA next to Delivery itself.
+    .dh-load-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--cat-grad, linear-gradient(135deg, #b3661f, #5c2f0e));
+        border: 1px solid var(--cat-border, #fb923c);
+        border-radius: 4px;
+        color: #fff;
+        font-size: 11px;
+        font-weight: 600;
+        padding: 7px 12px;
+        cursor: pointer;
+        box-shadow: 0 2px 8px var(--cat-glow, rgba(251,146,60,0.25));
+        white-space: nowrap;
+        flex-shrink: 0;
+        transition: opacity 0.15s ease;
+
+        &:disabled {
+            opacity: 0.5;
+            cursor: default;
+        }
+
+        &.dh-load-btn--busy {
+            animation: dh-pulse-glow 1.2s ease-in-out infinite;
+        }
+    }
+
+    // ── Icon-only buttons ─────────────────────────────────────────────────
+    // Load, Clear, Apply, Set fps — small, neutral, icon only.
+    .dh-icon-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        flex-shrink: 0;
+        background: #262626;
+        border: 1px solid #3a3a3a;
+        border-radius: 4px;
+        color: #aaa;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+
+        &:hover:not(:disabled) {
+            background: #303030;
+            border-color: var(--cat-border, #555);
+            color: #fff;
+        }
+
+        &:disabled {
+            opacity: 0.35;
+            cursor: default;
+        }
+
+    }
+
+    // ── Thin vertical divider ─────────────────────────────────────────────
+    .dh-bar-divider {
+        width: 1px;
+        height: 20px;
+        background: #333;
+        flex-shrink: 0;
+    }
+
+    .dh-bar-spacer {
+        flex: 1;
+    }
+
+    // ── Spec inputs (MB / Mbps / fps) ─────────────────────────────────────
+    .dh-spec-input {
+        width: 40px;
+        height: 28px;
+        box-sizing: border-box;
+        background: #222;
+        border: 1px solid #383838;
+        border-radius: 4px;
+        color: #ddd;
+        font-size: 11px;
+        padding: 4px 6px;
+        text-align: right;
+
+        &::placeholder { color: #555; }
+
+        &:focus {
+            outline: none;
+            border-color: var(--cat-border, #555);
+            box-shadow: 0 0 0 2px var(--cat-glow, rgba(251,146,60,0.15));
+        }
+    }
+
+    // ── fps trigger button (inline in specs bar) ─────────────────────────
+    .dh-fps-trigger {
+        width: 36px;
+        height: 28px;
+        box-sizing: border-box;
+        background: #222;
+        border: 1px solid #2e2e2e;
+        border-radius: 4px;
+        color: #888;
+        font-size: 11px;
+        padding: 4px 2px;
+        text-align: center;
+        cursor: pointer;
+        transition: border-color 0.15s ease, color 0.15s ease;
+
+        &:hover { border-color: var(--cat-border, #fb923c); color: #ddd; }
+
+        &.dh-fps-trigger--set {
+            color: var(--cat-icon, #fdba74);
+            border-color: #3a3a3a;
+        }
+    }
+
+    // Mbps cap is optional — dimmer placeholder, lighter border
+    .dh-spec-input--secondary {
+        border-color: #2e2e2e;
+        color: #aaa;
+
+        &::placeholder { color: #444; }
+    }
+
+    // ── Row list ──────────────────────────────────────────────────────────
+    .dh-rows-area {
+        flex: 0 1 auto;
+        max-height: 256px;
+        overflow-y: auto;
+        padding: 8px 14px;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .dh-empty {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        color: #3a3a3a;
+        font-size: 11px;
+        pointer-events: none;
+        padding-bottom: 40px; // optical center, not true center
+    }
+
+    .dh-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 8px;
+        border-radius: 4px;
+        background: #232323;
+        border: 1px solid #2c2c2c;
+        transition: border-color 0.15s ease;
+        margin-bottom: 6px;
+
+        &:hover {
+            border-color: var(--cat-border, #fb923c);
+            background: rgba(251, 146, 60, 0.04);
+        }
+
+        &:last-child { margin-bottom: 0; }
+
+        // .dh-row-name is wrapped in <Tooltip> (its long name can overflow),
+        // so the Tooltip wrapper -- always the row's first child -- is the
+        // actual flex item now, not .dh-row-name itself. Re-apply the grow/
+        // truncate intent one level up so the name still eats the row's
+        // remaining space instead of the wrapper defaulting to hug-content.
+        > span:first-child {
+            flex: 1;
+            min-width: 0;
+        }
+    }
+
+    .dh-row-name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 11px;
+    }
+
+    .dh-row-queued-badge {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        font-size: 10px;
+        color: #6bcf7f;
+        flex-shrink: 0;
+    }
+
+    .dh-row--queued {
+        opacity: 0.55;
+        border-color: #2a3a2a;
+
+        .dh-row-name { color: #888; }
+    }
+
+    // Per-row number input: MB or Mbps cap
+    .dh-row-field {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        flex-shrink: 0;
+        font-size: 10px;
+        color: #777;
+        white-space: nowrap;
+
+        input {
+            width: 40px;
+            background: #1a1a1a;
+            border: 1px solid #363636;
+            border-radius: 3px;
+            color: #ddd;
+            font-size: 11px;
+            padding: 3px 4px;
+            text-align: right;
+
+            &:focus {
+                outline: none;
+                border-color: var(--cat-border, #555);
+            }
+
+            &::placeholder { color: #444; }
+        }
+    }
+
+    // Cap field: dimmer, signals optional
+    .dh-row-field--cap {
+        color: #444;
+
+        input {
+            border-color: #2c2c2c;
+            color: #888;
+        }
+    }
+
+    // Per-row audio toggle — small icon button, same style as .dh-audio-toggle was
+    .dh-row-audio {
+        display: flex;
+        align-items: center;
+        background: none;
+        border: none;
+        padding: 0;
+        color: #555;
+        cursor: pointer;
+        flex-shrink: 0;
+        transition: color 0.15s ease;
+
+        &:hover { color: #bbb; }
+
+        &.active {
+            color: var(--cat-icon, #fdba74);
+        }
+    }
+
+    // Missing row: name dimmed
+    .dh-row--missing {
+        border-color: rgba(224,122,122,0.15);
+
+        .dh-row-name { color: #777; }
+    }
+
+    // ── Delivery preview (below list, above queue) ────────────────────────
+    // Mirrors the Finder hierarchy: one shared _Delivery folder with all
+    // comps nested beneath it as child items. Replaces the old per-row
+    // folder/status column on individual rows.
+    .dh-preview {
+        display: flex;
+        flex-direction: column;
+        padding: 6px 14px 2px;
+        border-top: 1px solid #272727;
+        flex-shrink: 0;
+        max-height: 160px;
+        overflow-y: auto;
+    }
+
+    .dh-preview-header {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 8px;
+        font-size: 10px;
+        color: var(--cat-icon, #fdba74);
+        font-weight: 600;
+        flex-shrink: 0;
+    }
+
+    .dh-preview-items {
+        display: flex;
+        flex-direction: column;
+        padding-left: 22px;
+    }
+
+    .dh-preview-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 10px;
+
+        &:hover { background: rgba(255,255,255,0.03); }
+    }
+
+    .dh-preview-file {
+        color: #bbb;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+    }
+
+    .dh-preview-tags {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        margin-left: auto;
+        flex-shrink: 0;
+    }
+
+    .dh-preview-tag {
+        font-size: 9px;
+        color: #666;
+        background: rgba(255,255,255,0.04);
+        border: 1px solid #2c2c2c;
+        border-radius: 3px;
+        padding: 0 5px;
+    }
+
+    .dh-preview-tag--native {
+        color: #555;
+        border-color: #262626;
+        background: transparent;
+    }
+
+    // ── Queue bar (below rows list) ───────────────────────────────────────
+    .dh-queue-bar {
+        display: flex;
+        justify-content: flex-end;
+        padding: 8px 14px 12px;
+        flex-shrink: 0;
+    }
+
+    // ── Error banner ──────────────────────────────────────────────────────
+    .dh-error {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 0 14px 6px;
+        padding: 6px 8px;
+        background: rgba(180,30,30,0.12);
+        border: 1px solid rgba(220,60,60,0.3);
+        border-radius: 4px;
+        font-size: 11px;
+        color: #e07a7a;
+        flex-shrink: 0;
+
+        span { flex: 1; }
+
+        button {
+            display: flex;
+            background: none;
+            border: none;
+            color: #e07a7a;
+            cursor: pointer;
+            padding: 0;
+            opacity: 0.7;
+            &:hover { opacity: 1; }
+        }
+    }
+
+    // ── Log output ────────────────────────────────────────────────────────
+    .dh-log {
+        margin: 0 14px 8px;
+        max-height: 120px;
+        overflow-y: auto;
+        background: #191919;
+        border: 1px solid #2c2c2c;
+        border-radius: 4px;
+        padding: 7px 9px;
+        font-size: 10px;
+        line-height: 1.55;
+        white-space: pre-wrap;
+        color: #888;
+        flex-shrink: 0;
+    }
+
+    // ── Toast stack ───────────────────────────────────────────────────────
+    .dh-toast-stack {
+        position: absolute;
+        left: 14px;
+        right: 14px;
+        bottom: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        pointer-events: none;
+        z-index: 10;
+    }
+
+    .toast {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: #2a2a2a;
+        border: 1px solid #444;
+        border-radius: 4px;
+        padding: 6px 8px;
+        font-size: 11px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+        pointer-events: auto;
+
+        span { flex: 1; }
+
+        button {
+            display: flex;
+            background: none;
+            border: none;
+            color: #888;
+            cursor: pointer;
+            padding: 0;
+            &:hover { color: #ddd; }
+        }
+
+        &.toast-success { border-color: #2e6b3e; svg:first-child { color: #6bcf7f; } }
+        &.toast-error   { border-color: #7a2e2e; svg:first-child { color: #e07a7a; } }
+    }
+}
+
+// ── fps droplet (global — portaled to body, can't nest under .delivery-hub) ──
+.dh-fps-droplet {
+    width: 125px;
+    padding: 8px;
+
+    .dh-fps-title {
+        margin: 0 0 6px;
+        font-size: 10px;
+        color: #888;
+    }
+
+    .dh-fps-presets {
+        display: flex;
+        gap: 5px;
+        margin-bottom: 6px;
+
+        button {
+            flex: 1;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            color: #ddd;
+            border-radius: 4px;
+            padding: 5px 0;
+            font-size: 11px;
+            cursor: pointer;
+            transition: background 0.15s ease, border-color 0.15s ease;
+
+            &:hover {
+                background: linear-gradient(135deg, #b3661f, #5c2f0e);
+                border-color: #fb923c;
+            }
+        }
+    }
+
+    .dh-fps-custom-toggle {
+        display: block;
+        width: 100%;
+        background: none;
+        border: 1px dashed #444;
+        color: #999;
+        border-radius: 4px;
+        padding: 4px 0;
+        font-size: 10px;
+        cursor: pointer;
+        transition: border-color 0.15s ease, color 0.15s ease;
+
+        &:hover {
+            border-color: #fb923c;
+            color: #fdba74;
+        }
+    }
+
+    .dh-fps-custom-row {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+
+        input {
+            flex: 1;
+            background: #1e1e1e;
+            border: 1px solid #444;
+            border-radius: 4px;
+            color: #ddd;
+            font-size: 11px;
+            padding: 4px 5px;
+            text-align: center;
+
+            &::-webkit-inner-spin-button,
+            &::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+            &:focus {
+                outline: none;
+                border-color: #fb923c;
+            }
+        }
+
+        button {
+            background: linear-gradient(135deg, #b3661f, #5c2f0e);
+            border: 1px solid #fb923c;
+            color: #fff;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 10px;
+            cursor: pointer;
+        }
+    }
+}

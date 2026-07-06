@@ -1,0 +1,136 @@
+// =============================================================================
+// src/js/main/Dialog.scss
+// -----------------------------------------------------------------------------
+// Styling for Dialog.tsx's alert/confirm/prompt replacement modals. Visually
+// modeled on OVLibrary.scss's .video-player-overlay (same fixed, full-panel,
+// dark-backdrop pattern already established elsewhere in this app) rather
+// than inventing a new modal language.
+//
+// Color identity: DialogHost is mounted once at the app-shell root (main.tsx),
+// outside every category-tinted wrapper -- --cat-grad/--cat-border/--cat-glow
+// literally can't reach it (those vars are set on .category-tool-content/
+// .drill-body/.rail-hub etc, not the shell root), and a dialog can be
+// triggered from any of the four categories anyway (New Campaign from
+// Localise, Mask Separator from Tools, ...), so tying it to one category's
+// color would be arbitrary. Deliberately given its own fixed indigo-blue
+// glow/gradient instead (--dlg-*) -- distinct from all four category colors
+// (closest is Localise's pure teal #2dd4bf; this is shifted toward indigo so
+// it never reads as "accidentally Localise-tinted") -- so it's still using
+// the same "gradient + glow" visual language as everything else in the app,
+// just as its own consistent "system-level" identity rather than inheriting
+// a category's.
+// =============================================================================
+.dialog-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000; // above the toast stack (1000) and video player (1000) -- a dialog should always win
+    padding: 24px;
+    box-sizing: border-box;
+}
+
+.dialog-card {
+    --dlg-grad: linear-gradient(135deg, #4c6ef5 0%, #363a94 100%);
+    --dlg-border: #6478f7;
+    --dlg-glow: rgba(76, 110, 245, 0.35);
+
+    position: relative;
+    background: #262626;
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 18px 18px 16px;
+    width: 100%;
+    max-width: 320px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+    color: #ddd;
+    font-size: 12px;
+    overflow: hidden;
+
+    // Thin gradient accent along the top edge -- same "a gradient line marks
+    // this surface as important" language as ReviewHub's tab highlight and
+    // LocaliseScreen's tool-header underline, just inverted (top, not bottom)
+    // since a dialog has no header row of its own to anchor it under.
+    &::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: var(--dlg-grad);
+    }
+}
+
+.dialog-message {
+    margin: 0 0 12px;
+    line-height: 1.5;
+    white-space: pre-wrap; // native confirm()/alert() honored \n -- keep that, several call sites rely on it for a blank line between paragraphs
+}
+
+.dialog-input {
+    display: block;
+    width: 100%;
+    background: #1e1e1e;
+    border: 1px solid #444;
+    border-radius: 5px;
+    padding: 6px 8px;
+    color: #ddd;
+    font-size: 12px;
+    box-sizing: border-box;
+    margin-bottom: 14px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+
+    &:focus {
+        outline: none;
+        border-color: var(--dlg-border);
+        box-shadow: 0 0 0 2px var(--dlg-glow);
+    }
+}
+
+.dialog-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.dialog-btn-primary,
+.dialog-btn-secondary {
+    border-radius: 5px;
+    padding: 6px 14px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+
+    &:active {
+        transform: translateY(0);
+    }
+}
+
+.dialog-btn-secondary {
+    background: #2a2a2a;
+    border: 1px solid #444;
+    color: #ccc;
+
+    &:hover {
+        background: #333;
+        border-color: #555;
+        transform: translateY(-1px);
+    }
+}
+
+.dialog-btn-primary {
+    background: var(--dlg-grad);
+    border: 1px solid var(--dlg-border);
+    color: #fff;
+    font-weight: 600;
+    box-shadow: 0 2px 10px var(--dlg-glow);
+
+    &:hover {
+        filter: brightness(1.12);
+        box-shadow: 0 3px 14px var(--dlg-glow);
+        transform: translateY(-1px);
+    }
+}

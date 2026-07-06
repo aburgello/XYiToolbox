@@ -1,0 +1,82 @@
+.ov-tooltip-wrapper {
+    position: relative;
+    display: inline-flex;
+}
+
+// Hugs its own content regardless of how the outer wrapper is stretched by
+// an ancestor's flex rules (see Tooltip.tsx's contentRef comment) -- this is
+// what placement math measures, not .ov-tooltip-wrapper itself. !important
+// is deliberate: callers' own generic `.some-row span { flex: 1 }` rules
+// (e.g. OVLibrary's `.ov-library .action-row span`, nested several levels
+// under a page-scoped class) are more specific than any two-class selector
+// here could be, and would otherwise stretch this span right back out.
+// Tooltip.tsx is a shared component -- it can't predict or match every
+// caller's nesting depth, so this has to unconditionally win.
+.ov-tooltip-wrapper > .ov-tooltip-content {
+    display: inline-flex !important;
+    flex: 0 0 auto !important;
+}
+
+// Portaled to document.body (see Tooltip.tsx) -- position: fixed with
+// explicit top/left computed in JS, NOT position: absolute relative to the
+// wrapper. That's what lets it escape any scrolling ancestor's overflow
+// clipping; a percentage/calc-based position here would put it right back
+// into the same clipping bug this replaced.
+.ov-tooltip-bubble {
+    position: fixed;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    color: #ddd;
+    border-radius: 5px;
+    padding: 6px 9px;
+    font-size: 11px;
+    line-height: 1.4;
+    white-space: normal;
+    // File paths (this component's most common use, e.g. OV Library's
+    // master/render tooltips) are long unbroken strings with no spaces --
+    // `white-space: normal` alone only wraps at spaces, so a path longer
+    // than max-width just overflows straight past the box's border instead
+    // of wrapping. overflow-wrap breaks mid-token as a last resort once a
+    // line has no other place to break, which is exactly this case.
+    overflow-wrap: anywhere;
+    width: max-content;
+    max-width: 280px;
+    text-align: left;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 1000;
+    transition: opacity 0.12s ease;
+
+    // Visibility is JS-driven (Tooltip.tsx's `visible` state), not a CSS
+    // :hover selector -- once portaled, the bubble is no longer a DOM
+    // descendant of .ov-tooltip-wrapper, so `.ov-tooltip-wrapper:hover
+    // .ov-tooltip-bubble` would never match even though it's still inside
+    // the same React component.
+    &.ov-tooltip-ready {
+        opacity: 1;
+    }
+
+    // Arrow's horizontal position is set per-instance via --tooltip-arrow-left
+    // (a pixel offset from the bubble's own left edge, computed in
+    // Tooltip.tsx to point at the trigger's center) rather than a fixed 50%,
+    // since the bubble itself may have been shifted to stay on-screen near
+    // the panel's edges.
+    &::after {
+        content: "";
+        position: absolute;
+        left: var(--tooltip-arrow-left, 50%);
+        transform: translateX(-50%);
+        border: 5px solid transparent;
+    }
+
+    &.ov-tooltip-top::after {
+        top: 100%;
+        border-top-color: #2a2a2a;
+    }
+
+    &.ov-tooltip-bottom::after {
+        bottom: 100%;
+        border-bottom-color: #2a2a2a;
+    }
+}

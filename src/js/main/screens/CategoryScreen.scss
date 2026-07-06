@@ -1,0 +1,243 @@
+// =============================================================================
+// src/js/main/screens/CategoryScreen.scss
+// -----------------------------------------------------------------------------
+// Hub-style layout for the Localise and Tools category pages.
+// Replaces the old sidebar+content (`.category-master-detail`) with:
+//   1. Ambient background blobs (same as Review/Deliver hubs)
+//   2. Header: icon + title + subtitle
+//   3. Pill-style tool navigation
+//   4. Content area (the selected tool's full-page view)
+//
+// Category-specific colors come from --cat-grad, --cat-border, --cat-glow,
+// --cat-icon via categoryStyleVars() in toolRegistry.tsx.
+// =============================================================================
+
+.category-hub {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    box-sizing: border-box;
+    color: #ddd;
+    font-size: 12px;
+    position: relative;
+    overflow: hidden;
+}
+
+// ── Ambient background ──────────────────────────────────────────────────────
+.category-hub-ambient-bg {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.category-hub-ambient-blob {
+    position: absolute;
+    width: 300px;
+    height: 300px;
+    border-radius: 50%;
+    filter: blur(90px);
+    background: radial-gradient(
+        circle,
+        rgba(167, 139, 250, 0.26) 0%,
+        rgba(167, 139, 250, 0.11) 45%,
+        rgba(167, 139, 250, 0) 100%
+    );
+
+    &.category-hub-ambient-blob--tl { top: -100px;  left: -80px;  }
+    &.category-hub-ambient-blob--br { bottom: -120px; right: -90px; }
+
+    // Per-category overrides match the existing .category-ambient-blob
+    // modifiers in main.scss so the page color stays consistent with
+    // the home screen's category cards.
+    &.category-hub-ambient-blob--localise {
+        background: radial-gradient(
+            circle,
+            rgba(45, 212, 191, 0.26) 0%,
+            rgba(45, 212, 191, 0.11) 45%,
+            rgba(45, 212, 191, 0) 100%
+        );
+    }
+
+    &.category-hub-ambient-blob--tools {
+        background: radial-gradient(
+            circle,
+            rgba(244, 114, 182, 0.26) 0%,
+            rgba(244, 114, 182, 0.11) 45%,
+            rgba(244, 114, 182, 0) 100%
+        );
+    }
+}
+
+// ── Content card ────────────────────────────────────────────────────────────
+.category-hub-content {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    margin-top: 8px;
+    border: 1px solid #3a3a3a;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.category-hub-content-inner {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
+// ── Header ──────────────────────────────────────────────────────────────────
+.category-hub-header {
+    padding: 12px 16px 8px;
+    background: rgba(255, 255, 255, 0.03);
+    border-bottom: 1px solid #2a2a2a;
+    flex-shrink: 0;
+}
+
+.category-hub-title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 4px;
+}
+
+.category-hub-icon {
+    color: var(--cat-icon, #c4b5fd);
+    flex-shrink: 0;
+}
+
+.category-hub-title-row h2 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #ddd;
+    margin: 0;
+}
+
+.category-hub-subtitle {
+    font-size: 11px;
+    color: #888;
+    margin: 0;
+    line-height: 1.5;
+}
+
+// ── Pill navigation ─────────────────────────────────────────────────────────
+.category-hub-nav {
+    position: relative;
+    display: flex;
+    background: #212121;
+    border-bottom: 1px solid #272727;
+    flex-shrink: 0;
+    padding: 4px 8px;
+    gap: 4px;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.category-hub-nav-highlight {
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    width: var(--pill-width, 80px);
+    left: var(--pill-left, 0px);
+    background: var(--cat-grad, linear-gradient(135deg, #6d5bc9, #3a2f6e));
+    border-radius: 4px;
+    z-index: 0;
+    box-shadow: inset 0 -2px 0 var(--cat-border, #a78bfa);
+    transition: left 0.25s ease, width 0.25s ease;
+}
+
+.category-hub-nav-btn {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: none;
+    border: none;
+    border-radius: 4px;
+    color: #888;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color 0.15s ease;
+    white-space: nowrap;
+    flex-shrink: 0;
+
+    &:hover {
+        color: #ccc;
+    }
+
+    &.category-hub-nav-btn--active {
+        color: #fff;
+    }
+
+    svg {
+        flex-shrink: 0;
+    }
+}
+
+// ── Content area ────────────────────────────────────────────────────────────
+.category-hub-body {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    position: relative;
+}
+
+.category-hub-pane {
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+}
+
+// ── Back button (used in hub mode) ──────────────────────────────────────────
+.category-hub-back {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    align-self: flex-start;
+    background: none;
+    border: none;
+    color: #aac4ff;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 12px 16px 0;
+    flex-shrink: 0;
+    z-index: 1;
+    position: relative;
+
+    &:hover {
+        color: #fff;
+    }
+}
+
+// ── Hint text ───────────────────────────────────────────────────────────────
+.category-hub-hint {
+    color: #999;
+    margin: 0 16px 12px;
+    font-size: 11px;
+    line-height: 1.5;
+    max-width: 420px;
+}
+
+// ── Empty state ─────────────────────────────────────────────────────────────
+.category-hub-empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: #333;
+    font-size: 11px;
+    padding-bottom: 40px;
+}

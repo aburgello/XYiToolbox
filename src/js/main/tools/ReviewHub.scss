@@ -1,0 +1,629 @@
+// ReviewHub.scss
+// Purple-tinted, mirrors DeliveryHub's structural patterns so the two hubs
+// feel like siblings. --cat-* vars are set by categoryStyleVars("review")
+// via the drill-body wrapper in ToolScreen.tsx (ReviewHub bypasses
+// CategoryScreen the same way DeliveryHub does).
+
+.review-hub {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    box-sizing: border-box;
+    color: #ddd;
+    font-size: 12px;
+    background: var(--ov-bg, #1e1e1e);
+    position: relative;
+    overflow: hidden;
+
+    // ── Content card ────────────────────────────────────────────────────
+    // Border + radius matches DeliveryHub's .dh-content and main.scss's
+    // .category-master-detail -- same framed-card treatment on all 4 pages
+    // now that each is a centered island rather than edge-to-edge. Ambient
+    // blobs live inside this card (see .rh-ambient-bg below) so overflow:
+    // hidden + the radius clip the glow to the card's own rounded corners.
+    .rh-content {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+        margin-top: 8px;
+        border: 1px solid #3a3a3a;
+        // Uniform radius on all four corners -- safe now that the tab bar
+        // has no per-button fill/seam (see .rh-tab-highlight below), so the
+        // two rounded top corners read as one continuous card edge instead
+        // of two separate pills meeting awkwardly in the middle.
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    // ── Ambient blobs ─────────────────────────────────────────────────────
+    .rh-ambient-bg {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        overflow: hidden;
+        pointer-events: none;
+    }
+
+    // Peak alpha bumped up from the original 0.14/0.05 (was reading as too
+    // faint once the card gained a border, same tuning DeliveryHub's blobs
+    // got). Also see .rh-tab-pane .ov-library below -- OVLibraryTool has its
+    // own opaque background for its normal standalone use, which otherwise
+    // blots this glow out entirely whenever the OV Library tab is active.
+    .rh-ambient-blob {
+        position: absolute;
+        width: 300px;
+        height: 300px;
+        border-radius: 50%;
+        filter: blur(90px);
+        background: radial-gradient(
+            circle,
+            rgba(167, 139, 250, 0.26) 0%,
+            rgba(167, 139, 250, 0.11) 45%,
+            rgba(167, 139, 250, 0) 100%
+        );
+
+        &.rh-ambient-blob--tl { top: -100px;  left: -80px;  }
+        &.rh-ambient-blob--br { bottom: -120px; right: -90px; }
+    }
+
+    // Wraps the tab bar + tab body -- a sibling of .rh-ambient-bg rather
+    // than relying on normal flow to stay "after" it, because a *positioned*
+    // element (the ambient bg) stacks above *non-positioned* ones regardless
+    // of DOM order, so the real content needs to be explicitly positioned +
+    // promoted too (same gotcha as .rh-content itself, one level deeper now
+    // that the blobs moved inside it).
+    .rh-content-inner {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+    }
+
+    // ── Tab bar ───────────────────────────────────────────────────────────
+    // Two macro buttons, each taking half the header. No per-button fill,
+    // divider, or rounding -- .rh-tab-highlight below is the ONE gradient
+    // surface, sliding from one half to the other, so the bar always reads
+    // as one continuous seamless strip rather than two separate boxes
+    // meeting in the middle.
+    .rh-tab-bar {
+        position: relative;
+        display: flex;
+        background: #212121;
+        border-bottom: 1px solid #2a2a2a;
+        flex-shrink: 0;
+    }
+
+    .rh-tab-highlight {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 50%;
+        background: var(--cat-grad, linear-gradient(135deg, #6d5bc9, #3a2f6e));
+        box-shadow: inset 0 -2px 0 var(--cat-border, #a78bfa);
+        z-index: 0;
+    }
+
+    .rh-tab {
+        position: relative;
+        z-index: 1;
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 14px 14px;
+        background: none;
+        border: none;
+        // Windows' native Fluent button theming rounds <button> corners by
+        // default unless appearance is reset -- that native rounding (not
+        // any border-radius rule in this file) was the actual source of the
+        // "hugging pills" look, not the card-level radius.
+        appearance: none;
+        -webkit-appearance: none;
+        border-radius: 0;
+        color: #888;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: color 0.15s ease;
+        white-space: nowrap;
+
+        &:hover { color: #ccc; }
+
+        &.rh-tab--active {
+            color: #fff;
+        }
+    }
+
+    // ── Tab body ──────────────────────────────────────────────────────────
+    .rh-tab-body {
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+        position: relative;
+    }
+
+    .rh-tab-pane {
+        position: absolute;
+        inset: 0;
+        overflow-y: auto;
+
+        // OVLibraryTool sets its own opaque background for its normal
+        // standalone use (as the Localise category's own tool). Nested here
+        // it would otherwise fully cover the ambient blob the moment the OV
+        // Library tab is active -- transparent only in this nested context.
+        .ov-library {
+            background: transparent;
+        }
+    }
+
+    .rh-loading {
+        padding: 24px;
+        color: #555;
+        font-size: 12px;
+    }
+
+    // ── Review Session ────────────────────────────────────────────────────
+
+    .rv-session {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        position: relative;
+    }
+
+    .rv-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 14px;
+        border-bottom: 1px solid #272727;
+        background: rgba(0, 0, 0, 0.15);
+        flex-shrink: 0;
+    }
+
+    .rv-bar-spacer { flex: 1; }
+
+    // Import button — primary CTA, purple-tinted
+    @keyframes rv-pulse-glow {
+        0%, 100% { box-shadow: 0 2px 10px var(--cat-glow, rgba(167,139,250,0.3)); }
+        50%       { box-shadow: 0 2px 22px var(--cat-glow, rgba(167,139,250,0.65)); }
+    }
+
+    .rv-load-btn {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        background: var(--cat-grad, linear-gradient(135deg, #6842b0, #2e1a52));
+        border: 1px solid var(--cat-border, #a78bfa);
+        border-radius: 5px;
+        color: #fff;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 6px 14px;
+        cursor: pointer;
+        box-shadow: 0 2px 10px var(--cat-glow, rgba(167,139,250,0.3));
+        transition: opacity 0.15s ease;
+        white-space: nowrap;
+        flex-shrink: 0;
+
+        &:disabled { opacity: 0.5; cursor: default; }
+    }
+
+    .rv-icon-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        flex-shrink: 0;
+        background: #262626;
+        border: 1px solid #3a3a3a;
+        border-radius: 4px;
+        color: #aaa;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+
+        &:hover:not(:disabled) {
+            background: #303030;
+            border-color: var(--cat-border, #a78bfa);
+            color: #fff;
+        }
+        &:disabled { opacity: 0.3; cursor: default; }
+    }
+
+    // Status summary chips in the toolbar
+    .rv-summary {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .rv-count {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        font-size: 10px;
+        padding: 2px 6px;
+        border-radius: 10px;
+
+        &.rv-count--approved { background: rgba(74,222,128,0.1); color: #4ade80; }
+        &.rv-count--amend    { background: rgba(251,191,36,0.1);  color: #fbbf24; }
+        &.rv-count--pending  { background: rgba(255,255,255,0.05); color: #666; }
+    }
+
+    // ── Error banner ──────────────────────────────────────────────────────
+    .rv-error {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 6px 14px;
+        padding: 6px 8px;
+        background: rgba(180,30,30,0.12);
+        border: 1px solid rgba(220,60,60,0.3);
+        border-radius: 4px;
+        font-size: 11px;
+        color: #e07a7a;
+        flex-shrink: 0;
+
+        span { flex: 1; }
+        button { display: flex; background: none; border: none; color: #e07a7a; cursor: pointer; padding: 0; opacity: 0.7; &:hover { opacity: 1; } }
+    }
+
+    // ── Row list ──────────────────────────────────────────────────────────
+    .rv-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    // ── Wrike-format export ────────────────────────────────────────────────
+    // Read-only preformatted block, same dark-inset-box language as
+    // DeliveryHub's .dh-log -- only rendered once there's at least one
+    // amend item with a note (see amendWithNotes in ReviewHub.tsx).
+    .rv-wrike-box {
+        margin: 0 14px 10px;
+        flex-shrink: 0;
+        border: 1px solid #2a2a2a;
+        border-radius: 5px;
+        background: #1a1a1a;
+        overflow: hidden;
+    }
+
+    .rv-wrike-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 6px 10px;
+        background: rgba(0, 0, 0, 0.2);
+        border-bottom: 1px solid #272727;
+        color: #999;
+        font-size: 11px;
+        font-weight: 600;
+    }
+
+    .rv-wrike-copy {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        background: #262626;
+        border: 1px solid #3a3a3a;
+        color: #ccc;
+        border-radius: 4px;
+        padding: 3px 8px;
+        font-size: 11px;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+
+        &:hover {
+            background: #303030;
+            border-color: var(--cat-border, #a78bfa);
+            color: #fff;
+        }
+    }
+
+    .rv-wrike-text {
+        margin: 0;
+        max-height: 140px;
+        overflow-y: auto;
+        padding: 8px 10px;
+        font-size: 10px;
+        line-height: 1.6;
+        white-space: pre-wrap;
+        word-break: break-all;
+        color: #bbb;
+        font-family: -apple-system, "Segoe UI", sans-serif;
+    }
+
+    .rv-empty {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        color: #333;
+        font-size: 11px;
+        pointer-events: none;
+        padding-bottom: 40px;
+    }
+
+    // Review row card
+    .rv-row {
+        border-radius: 5px;
+        border: 1px solid #2a2a2a;
+        background: #1f1f1f;
+        overflow: hidden;
+        transition: border-color 0.15s ease;
+
+        &:hover { border-color: #363636; }
+
+        // Left accent stripe by status
+        border-left: 3px solid #333;
+
+        &.rv-row--approved { border-left-color: #4ade80; }
+        &.rv-row--amend    { border-left-color: #fbbf24; }
+        &.rv-row--pending  { border-left-color: #3a3a3a; }
+    }
+
+    .rv-row-main {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px;
+
+        // .rv-row-name and the status toggle are both wrapped in <Tooltip>
+        // now (a portaled <span>, not the labeled element itself, as the
+        // actual flex item) -- re-apply the grow/truncate-vs-fixed-width
+        // intent one level up so the name still eats the row's remaining
+        // space and the status pill still holds its own width.
+        > span:first-child {
+            flex: 1;
+            min-width: 0;
+        }
+        > span:not(:first-child) {
+            flex-shrink: 0;
+        }
+    }
+
+    .rv-row-name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 11px;
+    }
+
+    // Status pill toggle
+    .rv-status {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 10px;
+        font-weight: 600;
+        padding: 3px 8px;
+        border-radius: 10px;
+        border: 1px solid transparent;
+        cursor: pointer;
+        white-space: nowrap;
+        flex-shrink: 0;
+        min-width: 80px;
+        justify-content: center;
+        transition: opacity 0.15s ease;
+
+        &.rv-status--approved {
+            background: rgba(74,222,128,0.12);
+            border-color: rgba(74,222,128,0.35);
+            color: #4ade80;
+        }
+        &.rv-status--amend {
+            background: rgba(251,191,36,0.12);
+            border-color: rgba(251,191,36,0.35);
+            color: #fbbf24;
+        }
+        &.rv-status--pending {
+            background: rgba(255,255,255,0.04);
+            border-color: #333;
+            color: #555;
+        }
+    }
+
+    // Note toggle button
+    .rv-note-btn {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        background: none;
+        border: none;
+        color: #555;
+        cursor: pointer;
+        padding: 3px 4px;
+        border-radius: 3px;
+        transition: color 0.15s ease, background 0.15s ease;
+        flex-shrink: 0;
+
+        &:hover { color: #aaa; background: rgba(255,255,255,0.05); }
+
+        &.rv-note-btn--active {
+            color: var(--cat-icon, #c4b5fd);
+        }
+    }
+
+    .rv-remove-btn {
+        display: flex;
+        align-items: center;
+        background: none;
+        border: none;
+        color: #444;
+        cursor: pointer;
+        padding: 3px;
+        border-radius: 3px;
+        flex-shrink: 0;
+        transition: color 0.15s ease;
+
+        &:hover { color: #e07a7a; }
+    }
+
+    // Note textarea
+    .rv-note-area {
+        padding: 0 10px 8px 12px;
+    }
+
+    .rv-note-input {
+        width: 100%;
+        box-sizing: border-box;
+        background: #181818;
+        border: 1px solid #333;
+        border-radius: 4px;
+        color: #ddd;
+        font-size: 11px;
+        line-height: 1.5;
+        padding: 6px 8px;
+        resize: vertical;
+        font-family: inherit;
+
+        &::placeholder { color: #444; }
+
+        &:focus {
+            outline: none;
+            border-color: var(--cat-border, #a78bfa);
+            box-shadow: 0 0 0 2px var(--cat-glow, rgba(167,139,250,0.15));
+        }
+    }
+
+    // ── Toasts ────────────────────────────────────────────────────────────
+    .rv-toast-stack {
+        position: absolute;
+        left: 14px;
+        right: 14px;
+        bottom: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        pointer-events: none;
+        z-index: 10;
+    }
+
+    .toast {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: #2a2a2a;
+        border: 1px solid #444;
+        border-radius: 4px;
+        padding: 6px 8px;
+        font-size: 11px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+        pointer-events: auto;
+
+        span { flex: 1; }
+        button { display: flex; background: none; border: none; color: #888; cursor: pointer; padding: 0; &:hover { color: #ddd; } }
+
+        &.toast-success { border-color: #2e6b3e; svg:first-child { color: #6bcf7f; } }
+        &.toast-error   { border-color: #7a2e2e; svg:first-child { color: #e07a7a; } }
+    }
+}
+
+// ── Useful Folders flyout (HomeScreen) ────────────────────────────────────────
+// Sits below the search-box-row, same slide-open pattern as .favorites-row.
+.folders-flyout {
+    overflow: hidden; // AnimatePresence manages height
+}
+
+.folders-flyout-inner {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 0 4px;
+}
+
+.folder-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+
+    // Direct children are Tooltip wrappers now (see HomeScreen.tsx --
+    // .folder-row-open/-icon were converted from native title="..." to the
+    // shared <Tooltip>), not the buttons themselves as direct flex items,
+    // so the flex intent has to be re-applied one level up: the open
+    // button (always first) should grow and truncate its long path text,
+    // the icon buttons after it should stay fixed-size.
+    > span:first-child {
+        flex: 1;
+        min-width: 0;
+    }
+    > span:not(:first-child) {
+        flex-shrink: 0;
+    }
+}
+
+.folder-row-open {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+    background: none;
+    border: none;
+    color: #bbb;
+    font-size: 11px;
+    padding: 4px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.12s ease, color 0.12s ease;
+
+    span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    &:hover {
+        background: rgba(255,255,255,0.06);
+        color: #fff;
+    }
+}
+
+.folder-row-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: #555;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: color 0.12s ease, background 0.12s ease;
+
+    &:hover { color: #bbb; background: rgba(255,255,255,0.06); }
+}
+
+.folder-row-add {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: none;
+    border: none;
+    color: #555;
+    font-size: 11px;
+    padding: 5px 6px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: color 0.12s ease, background 0.12s ease;
+    margin-top: 2px;
+
+    &:hover { color: #aaa; background: rgba(255,255,255,0.05); }
+}

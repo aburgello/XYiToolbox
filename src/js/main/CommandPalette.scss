@@ -1,0 +1,228 @@
+// =============================================================================
+// src/js/main/CommandPalette.scss
+// -----------------------------------------------------------------------------
+// Styling for CommandPalette.tsx. Visual language matches Dialog.scss's
+// overlay/card pattern (dark backdrop + spring-in card, same z-index
+// ordering logic) and main.scss's .tool-card/.favorite-chip category
+// tinting -- deliberately not a third modal language.
+// =============================================================================
+
+// Small always-visible affordance, rendered inline inside each screen's
+// header row (drill-header-row or home-header). No position:fixed -- flows
+// naturally next to the Back button (or at home-header's right edge via
+// position:absolute). Faint/subtle by design: it's a discoverability cue
+// for the Ctrl/Cmd+K shortcut, not something that should compete with
+// real content.
+.palette-trigger {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(38, 38, 38, 0.55);
+    backdrop-filter: blur(4px);
+    border: 1px solid #555;
+    border-radius: 10px;
+    padding: 3px 8px;
+    color: #777;
+    cursor: pointer;
+    font-size: 10px;
+    transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+
+    &:hover {
+        color: #bbb;
+        border-color: #777;
+        background: rgba(46, 46, 46, 0.7);
+    }
+
+    .palette-trigger-kbd {
+        letter-spacing: 0.02em;
+    }
+}
+
+// Fixed-position variant for screens where the trigger sits outside the
+// main flow (currently unused -- kept for any future floating context).
+.palette-trigger--floating {
+    position: fixed;
+    right: 12px;
+    top: 12px;
+    z-index: 950;
+}
+
+.palette-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    // Above toasts/video player (1000), below Dialog (2000) on purpose --
+    // running an action from here can pop a real confirm/prompt dialog on
+    // top of this overlay (e.g. Comp Duration's custom-value prompt), which
+    // should always win rather than being trapped behind the palette.
+    z-index: 1900;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 64px 20px 20px;
+    box-sizing: border-box;
+}
+
+.palette-card {
+    width: 100%;
+    max-width: 400px;
+    max-height: 70vh;
+    display: flex;
+    flex-direction: column;
+    background: #262626;
+    border: 1px solid #444;
+    border-radius: 10px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+    overflow: hidden;
+    color: #ddd;
+}
+
+.palette-input-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+    border-bottom: 1px solid #383838;
+    color: #888;
+    flex-shrink: 0;
+
+    input {
+        flex: 1;
+        min-width: 0;
+        background: transparent;
+        border: none;
+        outline: none;
+        color: #ddd;
+        font-size: 13px;
+    }
+
+    .palette-kbd {
+        flex-shrink: 0;
+        background: #1e1e1e;
+        border: 1px solid #444;
+        border-radius: 4px;
+        padding: 1px 6px;
+        font-size: 10px;
+        color: #888;
+    }
+}
+
+.palette-list {
+    overflow-y: auto;
+    padding: 6px;
+}
+
+.palette-hint,
+.palette-section-label {
+    margin: 0;
+    padding: 8px 10px 6px;
+    color: #888;
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.palette-section-label {
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 10px;
+    color: #777;
+}
+
+.palette-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 10px;
+    border-radius: 5px;
+    cursor: pointer;
+    color: #ccc;
+
+    svg:first-child {
+        flex-shrink: 0;
+        color: #999;
+    }
+
+    .palette-row-label {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1px;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+
+        small {
+            color: #999;
+            font-size: 10px;
+            font-weight: 400;
+        }
+    }
+
+    .palette-row-enter {
+        flex-shrink: 0;
+        opacity: 0.8;
+    }
+
+    // Tool hits get their own category tint (categoryStyleVars(), same as
+    // .tool-card/.favorite-chip elsewhere) when selected via keyboard/hover.
+    &.selected {
+        background: var(--cat-grad, var(--ov-accent, #3a5a8a));
+        color: #fff;
+
+        svg:first-child {
+            color: var(--cat-icon, #fff);
+        }
+        .palette-row-label small {
+            color: rgba(255, 255, 255, 0.75);
+        }
+    }
+
+    // Toolset one-click actions aren't tied to a category -- flat accent
+    // instead of a --cat-* tint that would just fall back to blue anyway.
+    &.action.selected {
+        background: var(--ov-accent, #3a5a8a);
+    }
+}
+
+.palette-footer {
+    display: flex;
+    gap: 14px;
+    padding: 8px 14px;
+    border-top: 1px solid #383838;
+    color: #777;
+    font-size: 10px;
+    flex-shrink: 0;
+
+    span {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+}
+
+// Replaces the input+list entirely while an action runs / just finished --
+// same idea as ToolsetTool's own toast, but inline in the palette itself
+// so this feature doesn't need a second, app-wide toast system.
+.palette-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 22px 16px;
+    font-size: 12px;
+    justify-content: center;
+}
+
+.palette-status-spinner {
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    border: 2px solid #444;
+    border-top-color: var(--ov-accent, #3a5a8a);
+    animation: palette-spin 0.7s linear infinite;
+}
+
+@keyframes palette-spin {
+    to { transform: rotate(360deg); }
+}

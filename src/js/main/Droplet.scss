@@ -1,0 +1,44 @@
+// =============================================================================
+// src/js/main/Droplet.scss
+// -----------------------------------------------------------------------------
+// Styling for Droplet.tsx. Card chrome matches Dialog.scss's .dialog-card
+// (same #262626/#444/8px language) -- this is a smaller, anchored sibling
+// of that modal, not a third visual style.
+// =============================================================================
+.droplet-anchor {
+    display: inline-flex;
+}
+
+.droplet-panel {
+    position: fixed;
+    background: #262626;
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 10px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    color: #ddd;
+    font-size: 11px;
+    max-height: calc(100vh - 16px);
+    overflow-y: auto;
+    box-sizing: border-box;
+    // Above normal content and the palette trigger (900), below the
+    // command palette overlay (1900) and Dialog (2000) -- a droplet is a
+    // small in-place pick, it shouldn't try to outrank an actual modal if
+    // one somehow opens while it's up.
+    z-index: 1500;
+}
+
+.droplet-title {
+    margin: 0 0 8px;
+    color: #999;
+    font-size: 10px;
+    white-space: nowrap;
+}
+
+// Small highlight on the trigger button itself while its droplet is open,
+// so it stays visually anchored even after the panel gets edge-clamped
+// away from directly under it near the panel's own left/right edge.
+.action-grid button.active {
+    border-color: var(--btn-border, #666);
+    box-shadow: 0 0 0 1px var(--btn-border, #666) inset;
+}

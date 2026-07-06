@@ -1,0 +1,93 @@
+.delivery-checklist {
+    .dc-rows {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        max-width: 460px;
+        border: 1px solid #333;
+        border-radius: 4px;
+        padding: 6px;
+    }
+
+    .dc-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 2px;
+        border-bottom: 1px solid #2c2c2c;
+
+        &:last-child {
+            border-bottom: none;
+        }
+    }
+
+    .dc-row-name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .dc-row-status {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        color: #999;
+        font-size: 11px;
+        flex-shrink: 0;
+        width: 130px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    // Rows where no .MOV source was found — name dimmed, status in warning
+    // red so problems are visible at a glance before queuing the batch.
+    .dc-row--missing {
+        .dc-row-name {
+            color: #888;
+        }
+        .dc-row-status {
+            color: #e07a7a;
+        }
+        .dc-missing-icon {
+            flex-shrink: 0;
+            color: #e07a7a;
+        }
+    }
+
+    .dc-row-size {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        flex-shrink: 0;
+        color: #999;
+        font-size: 11px;
+
+        input {
+            width: 52px;
+            background: #262626;
+            border: 1px solid #444;
+            color: #ddd;
+            border-radius: 3px;
+            padding: 4px 6px;
+            font-size: 12px;
+        }
+    }
+
+    .dc-log {
+        margin-top: 12px;
+        max-width: 460px;
+        max-height: 220px;
+        overflow: auto;
+        background: #222;
+        border: 1px solid #333;
+        border-radius: 4px;
+        padding: 8px;
+        font-size: 11px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        color: #bbb;
+    }
+}

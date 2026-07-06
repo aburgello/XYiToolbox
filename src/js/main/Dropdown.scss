@@ -1,0 +1,131 @@
+// =============================================================================
+// src/js/main/Dropdown.scss
+// -----------------------------------------------------------------------------
+// Trigger box mirrors whatever native-<select>-look it's replacing (dark box,
+// icon, chevron) -- callers still supply their own surrounding layout via
+// `className`. The panel is the actual payoff: an ordinary themed DOM list,
+// not an OS-native popup, so the selected/hovered row can use --cat-* accents
+// like every other selected-state row in this app (rail tool rows, territory
+// rows, etc.) instead of the unstylable OS grey a real <select> is stuck with.
+// =============================================================================
+.dropdown-trigger {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    min-width: 0;
+    background: #262626;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    padding: 6px 8px;
+    color: #ddd;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+
+    &:hover:not(.disabled) {
+        border-color: var(--cat-border, #2dd4bf);
+    }
+
+    &.open {
+        border-color: var(--cat-border, #2dd4bf);
+        box-shadow: 0 0 0 2px var(--cat-glow, rgba(45, 212, 191, 0.25));
+    }
+
+    &.disabled {
+        opacity: 0.5;
+        cursor: default;
+    }
+}
+
+.dropdown-trigger-icon {
+    display: flex;
+    flex-shrink: 0;
+    color: var(--cat-icon, #5eead4);
+}
+
+.dropdown-trigger-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    &.placeholder {
+        color: #888;
+    }
+}
+
+.dropdown-trigger-chevron {
+    flex-shrink: 0;
+    color: #888;
+    transition: transform 0.15s ease;
+
+    .dropdown-trigger.open & {
+        transform: rotate(180deg);
+        color: var(--cat-icon, #5eead4);
+    }
+}
+
+.dropdown-panel {
+    padding: 4px;
+    min-width: 200px;
+    max-width: 320px;
+}
+
+.dropdown-list {
+    max-height: 260px;
+    overflow-y: auto;
+    outline: none;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.dropdown-empty {
+    padding: 10px 8px;
+    color: #888;
+    font-size: 12px;
+    text-align: center;
+}
+
+.dropdown-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    padding: 7px 8px;
+    color: #ddd;
+    font-size: 12px;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+
+    &.focused {
+        background: #333;
+    }
+
+    &.selected {
+        background: var(--cat-grad, linear-gradient(135deg, #2dd4bf22, #2dd4bf11));
+        border-color: var(--cat-border, #2dd4bf);
+        color: #fff;
+    }
+}
+
+.dropdown-option-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dropdown-option-check {
+    flex-shrink: 0;
+    color: var(--cat-icon, #5eead4);
+}

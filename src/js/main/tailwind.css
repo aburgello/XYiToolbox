@@ -1,0 +1,4 @@
+/* Utilities only -- no @tailwind base (Preflight), since the existing
+   tools' SCSS already assumes normal element defaults. See
+   tailwind.config.js for why. */
+@tailwind utilities;

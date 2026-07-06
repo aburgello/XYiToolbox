@@ -1,0 +1,232 @@
+// =============================================================================
+// src/js/main/tools/GsapDemo.scss
+// -----------------------------------------------------------------------------
+// Styles for the GSAP Demo tool
+// =============================================================================
+
+.gsap-demo {
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.gsap-demo-header {
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.gsap-demo-title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+
+.gsap-demo-icon {
+    color: #facc15;
+    flex-shrink: 0;
+}
+
+.gsap-demo-title-row h2 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #ddd;
+    margin: 0;
+}
+
+.gsap-demo-subtitle {
+    font-size: 11px;
+    color: #888;
+    margin: 0;
+    line-height: 1.5;
+}
+
+// Navigation
+.gsap-demo-nav {
+    display: flex;
+    gap: 6px;
+    padding: 4px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 6px;
+}
+
+.gsap-demo-nav-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: #888;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+
+    &:hover {
+        background: rgba(255, 255, 255, 0.06);
+        color: #bbb;
+    }
+
+    &.active {
+        background: rgba(67, 97, 238, 0.2);
+        color: #60a5fa;
+    }
+}
+
+// Demo sections
+.gsap-demo-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.gsap-demo-section h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: #ddd;
+    margin: 0;
+}
+
+.gsap-demo-desc {
+    font-size: 11px;
+    color: #888;
+    margin: 0;
+    line-height: 1.5;
+}
+
+// Demo cards
+.gsap-demo-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+}
+
+.gsap-demo-card {
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+
+    h4 {
+        font-size: 12px;
+        font-weight: 600;
+        color: #ddd;
+        margin: 0;
+    }
+
+    .gsap-demo-card-desc {
+        font-size: 10px;
+        color: #777;
+        margin: 0;
+        line-height: 1.4;
+    }
+}
+
+// Button row
+.gsap-demo-btn-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.gsap-demo-btn-row button {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: 500;
+    color: #ddd;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+
+    &:hover {
+        background: rgba(255, 255, 255, 0.12);
+        border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+}
+
+// Visual demo for transitions
+.gsap-demo-cta {
+    padding: 12px;
+    background: rgba(67, 97, 238, 0.1);
+    border-radius: 6px;
+    border: 1px solid rgba(67, 97, 238, 0.2);
+    text-align: center;
+
+    p {
+        font-size: 11px;
+        color: #60a5fa;
+        margin: 0;
+    }
+}
+
+.gsap-demo-visual {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.gsap-demo-visual-row {
+    display: flex;
+    gap: 6px;
+}
+
+.gsap-demo-visual-box {
+    flex: 1;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: #ddd;
+    border-radius: 6px;
+
+    span {
+        pointer-events: none;
+    }
+
+    &.box-1 {
+        background: linear-gradient(135deg, rgba(45, 212, 191, 0.3), rgba(45, 212, 191, 0.1));
+        border: 1px solid rgba(45, 212, 191, 0.3);
+    }
+
+    &.box-2 {
+        background: linear-gradient(135deg, rgba(167, 139, 250, 0.3), rgba(167, 139, 250, 0.1));
+        border: 1px solid rgba(167, 139, 250, 0.3);
+    }
+
+    &.box-3 {
+        background: linear-gradient(135deg, rgba(251, 146, 60, 0.3), rgba(251, 146, 60, 0.1));
+        border: 1px solid rgba(251, 146, 60, 0.3);
+    }
+
+    &.box-4 {
+        background: linear-gradient(135deg, rgba(244, 114, 182, 0.3), rgba(244, 114, 182, 0.1));
+        border: 1px solid rgba(244, 114, 182, 0.3);
+    }
+
+    &.box-5 {
+        background: linear-gradient(135deg, rgba(96, 165, 250, 0.3), rgba(96, 165, 250, 0.1));
+        border: 1px solid rgba(96, 165, 250, 0.3);
+    }
+}

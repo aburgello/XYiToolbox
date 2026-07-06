@@ -1,0 +1,104 @@
+// Shared across the shell and every tool view -- keep this file tiny.
+@keyframes ov-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.spin {
+    animation: ov-spin 0.9s linear infinite;
+}
+
+// Icon micro-interaction on button hover -- used by formTool.scss and every
+// tool's own bespoke button styles (OV Library, Localised Library, Campaign
+// Localiser, Random Layers) so the hover feel is consistent everywhere, not
+// just on the newer form-tool pages. Defined once here since it's genuinely
+// shared, not duplicated per-file.
+@keyframes ov-icon-wiggle {
+    0% {
+        transform: rotate(0) scale(1);
+    }
+    30% {
+        transform: rotate(-12deg) scale(1.12);
+    }
+    60% {
+        transform: rotate(10deg) scale(1.12);
+    }
+    100% {
+        transform: rotate(0) scale(1);
+    }
+}
+
+// Used by StatusIcon.tsx's success ring -- a single soft pulse that expands
+// and fades once on mount, not a loop. Shared here (not per-tool) since
+// every tool's status/toast success indicator uses the same component now.
+@keyframes ov-success-ring {
+    0% {
+        box-shadow: 0 0 0 0 rgba(107, 207, 127, 0.4);
+    }
+    100% {
+        box-shadow: 0 0 0 6px rgba(107, 207, 127, 0);
+    }
+}
+
+.status-success-icon {
+    display: inline-flex;
+    border-radius: 50%;
+    animation: ov-success-ring 0.5s ease-out;
+    // Every tool's own .toast class has a blanket `span { flex: 1 }` rule
+    // meant for the actual message text -- StatusIcon renders its success
+    // state as a <motion.span> itself, so it matches too, stretching this
+    // wrapper across the whole toast and squashing the ring-pulse
+    // box-shadow into a stretched oval instead of a tight circle around
+    // the checkmark. Same fix pattern as Tooltip.scss's own
+    // .ov-tooltip-content -- this shared component (used by ~20 different
+    // tool files, each with its own .toast row rules) can't predict every
+    // caller's flex setup, so !important is deliberate here too.
+    flex: 0 0 auto !important;
+}
+
+// --- Skeleton loading placeholders ----------------------------------
+// Sweeping gradient shimmer, not a static gray block -- reads as "in
+// progress" rather than "empty/broken" at a glance. Originally scoped to
+// OV Library only; moved here once Localised Library wanted the same
+// treatment for its own territory scan. Generic primitives, not tied to
+// any one tool's layout -- compose them into whatever placeholder shape
+// a given list/card needs (see OVLibrary.tsx's SkeletonCard/
+// SkeletonVariantBlock and LocalisedLibrary.tsx's SkeletonTerritoryRow).
+@keyframes ov-shimmer-sweep {
+    0% {
+        background-position: -120% 0;
+    }
+    100% {
+        background-position: 120% 0;
+    }
+}
+
+.shimmer,
+.shimmer-bar {
+    background: linear-gradient(90deg, #2a2a2a 25%, #383838 50%, #2a2a2a 75%);
+    background-size: 200% 100%;
+    animation: ov-shimmer-sweep 1.4s ease-in-out infinite;
+}
+
+.shimmer-bar {
+    display: block;
+    height: 9px;
+    border-radius: 3px;
+}
+
+// --- Native <select> dropdown list -------------------------------------
+// The closed <select> box itself is always styled dark per-tool (Localised
+// Library's campaign picker, Timesheet Tracker's category picker, OV
+// Library's orientation filter), but the OPEN dropdown list is a separate
+// browser-native popup that only respects `background`/`color` set directly
+// on <option> -- everything else on the closed box (border, padding, focus
+// ring) has zero effect on it. Without this, the list renders in the OS's
+// default light theme (white background, black text) even though the
+// select it belongs to looks fully themed, which reads as broken/inconsistent
+// the moment it's opened. Generic, not scoped to one tool's select, since
+// every <select> in the app hits this the same way.
+select option {
+    background: #262626;
+    color: #ddd;
+}

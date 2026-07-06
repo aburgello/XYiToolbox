@@ -1,0 +1,538 @@
+// =============================================================================
+// LocalisedLibrary.scss
+// -----------------------------------------------------------------------------
+// Two-view flow (Territories list -> a territory's Components), each using
+// the FULL width of the (already narrow) tool pane rather than the old
+// cramped side-by-side columns. Category accents via --cat-* vars (teal for
+// Localise) with a neutral fallback.
+// =============================================================================
+.localised-library {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 12px 16px;
+    color: #ddd;
+    background: var(--ov-bg, #1e1e1e);
+    font-family: -apple-system, "Segoe UI", sans-serif;
+    font-size: 12px;
+    box-sizing: border-box;
+    position: relative;
+
+    // "Find the Motion"'s <Tooltip> renders its own wrapper <span> (no
+    // className passthrough -- see Tooltip.tsx) which, via the JSX
+    // Fragment around it, ends up a DIRECT child of this flex COLUMN --
+    // flex columns default new children to align-items: stretch, so that
+    // wrapper silently stretched to the container's full width even
+    // though the visible dashed button inside it looks normal-sized.
+    // Result: hovering the empty space beside the button still triggered
+    // the tooltip, since the (invisible) hoverable wrapper extended there
+    // too. Only the ll-auto-populate button's Tooltip is a direct child
+    // here -- every other Tooltip in this file is nested inside its own
+    // flex row (.ll-campaign-bar, .ll-search, component rows), so this
+    // selector can't affect those.
+    > .ov-tooltip-wrapper {
+        align-self: flex-start;
+    }
+
+    // ── Campaign context bar ───────────────────────────────────────────────
+    .ll-campaign-bar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-shrink: 0;
+        margin-bottom: 10px;
+    }
+
+    // The box styling itself (background/border/icon/chevron/open-state glow)
+    // now lives in Dropdown.scss -- this replaced a native <select> specifically
+    // so the OPEN list's selected/hovered row could be teal-tinted instead of
+    // the OS-drawn grey a real <select> popup is stuck with (see Dropdown.tsx's
+    // header comment). Only layout (how it sits in .ll-campaign-bar) stays here.
+    .ll-campaign-select {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .ll-icon-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        flex-shrink: 0;
+        background: #262626;
+        border: 1px solid #3a3a3a;
+        color: #bbb;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+
+        &:hover:not(:disabled) {
+            background: #303030;
+            border-color: var(--cat-border, #2dd4bf);
+            color: #fff;
+        }
+        &:disabled {
+            opacity: 0.4;
+            cursor: default;
+        }
+    }
+
+    // ── No-campaign empty state ─────────────────────────────────────────────
+    .ll-empty-state {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        text-align: center;
+        color: #666;
+        padding: 20px 30px;
+
+        svg { color: var(--cat-icon, #5eead4); opacity: 0.6; }
+        p { margin: 0; line-height: 1.5; max-width: 260px; }
+    }
+
+    // ── Auto-populate (secondary full-width action) ─────────────────────────
+    .ll-auto-populate {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        flex-shrink: 0;
+        width: 100%;
+        box-sizing: border-box;
+        background: #232323;
+        border: 1px dashed #3f3f3f;
+        color: #cfcfcf;
+        border-radius: 6px;
+        padding: 8px 10px;
+        cursor: pointer;
+        font-size: 12px;
+        margin-bottom: 10px;
+        transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+
+        &:hover:not(:disabled) {
+            background: #2a2a2a;
+            border-color: var(--cat-border, #2dd4bf);
+            color: #fff;
+            svg { color: var(--cat-icon, #5eead4); }
+        }
+        &:disabled { opacity: 0.6; cursor: default; }
+    }
+
+    // ── View swap area ──────────────────────────────────────────────────────
+    .ll-view-wrap {
+        flex: 1;
+        min-height: 0;
+        position: relative;
+        display: flex;
+    }
+
+    .ll-view {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+    }
+
+    // ── Section head (Territories title + count) ────────────────────────────
+    .ll-section-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0;
+        margin-bottom: 8px;
+    }
+
+    .ll-section-title {
+        font-size: 12px;
+        font-weight: 700;
+        color: #eee;
+    }
+
+    .ll-section-count,
+    .ll-count {
+        min-width: 18px;
+        text-align: center;
+        background: rgba(255, 255, 255, 0.06);
+        border-radius: 9px;
+        padding: 1px 6px;
+        font-size: 10px;
+        color: #999;
+    }
+
+    // A count > 0 gets the category tint so a filled territory reads at a
+    // glance without needing the pip.
+    .ll-count.has {
+        background: var(--cat-glow, rgba(45, 212, 191, 0.2));
+        color: var(--cat-icon, #7fe9db);
+    }
+
+    // ── Search ──────────────────────────────────────────────────────────────
+    .ll-search {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-shrink: 0;
+        background: #1f1f1f;
+        border: 1px solid #3a3a3a;
+        border-radius: 6px;
+        padding: 5px 8px;
+        margin-bottom: 8px;
+        color: #777;
+
+        &:focus-within { border-color: var(--cat-border, #2dd4bf); }
+
+        input {
+            flex: 1;
+            min-width: 0;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: #ddd;
+            font-size: 11px;
+        }
+
+        .ll-search-clear {
+            display: flex;
+            background: none;
+            border: none;
+            color: #777;
+            cursor: pointer;
+            padding: 0;
+            &:hover { color: #ddd; }
+        }
+    }
+
+    // ── Territory list ──────────────────────────────────────────────────────
+    .ll-terr-list {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding-right: 2px;
+    }
+
+    .ll-terr-row {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        width: 100%;
+        box-sizing: border-box;
+        text-align: left;
+        background: #1f1f1f;
+        border: 1px solid #2c2c2c;
+        border-radius: 6px;
+        padding: 8px 10px;
+        color: #ccc;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+
+        &:hover {
+            background: #262626;
+            border-color: var(--cat-border, #2dd4bf);
+            transform: translateX(2px);
+
+            .ll-chevron { color: var(--cat-icon, #5eead4); transform: translateX(1px); }
+        }
+    }
+
+    // Status pip: hollow ring when empty, filled category dot when the
+    // territory has at least one component.
+    .ll-pip {
+        width: 8px;
+        height: 8px;
+        flex-shrink: 0;
+        border-radius: 50%;
+        border: 1.5px solid #555;
+        box-sizing: border-box;
+
+        &.filled {
+            border-color: var(--cat-border, #2dd4bf);
+            background: var(--cat-border, #2dd4bf);
+            box-shadow: 0 0 6px var(--cat-glow, rgba(45, 212, 191, 0.5));
+        }
+    }
+
+    .ll-terr-name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+
+        em {
+            font-style: normal;
+            color: #777;
+            font-size: 10px;
+        }
+    }
+
+    .ll-chevron {
+        flex-shrink: 0;
+        color: #555;
+        transition: color 0.15s ease, transform 0.15s ease;
+    }
+
+    // ── Components view ─────────────────────────────────────────────────────
+    .ll-back {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        align-self: flex-start;
+        flex-shrink: 0;
+        background: none;
+        border: none;
+        color: var(--cat-icon, #5eead4);
+        cursor: pointer;
+        padding: 0 0 8px;
+        font-size: 11px;
+
+        &:hover { color: #fff; }
+    }
+
+    .ll-comp-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0;
+        margin-bottom: 8px;
+    }
+
+    .ll-comp-title {
+        flex: 1;
+        min-width: 0;
+        font-size: 13px;
+        font-weight: 700;
+        color: #eee;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+
+        em {
+            font-style: normal;
+            color: #777;
+            font-size: 11px;
+            font-weight: 400;
+        }
+    }
+
+    .ll-select-all {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-shrink: 0;
+        color: #999;
+        cursor: pointer;
+        padding: 2px 0 6px;
+        user-select: none;
+        font-size: 11px;
+
+        &:hover { color: var(--cat-icon, #7fe9db); }
+    }
+
+    .ll-comp-list {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        padding-right: 2px;
+    }
+
+    .ll-empty {
+        color: #777;
+        font-style: italic;
+        line-height: 1.5;
+        padding: 6px 2px;
+    }
+
+    .ll-comp-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: #1f1f1f;
+        border: 1px solid #2c2c2c;
+        border-radius: 6px;
+        padding: 5px 7px;
+        transition: border-color 0.15s ease, background 0.15s ease;
+
+        &:hover { border-color: #3a3a3a; }
+
+        &.selected {
+            background: var(--cat-glow, rgba(45, 212, 191, 0.12));
+            border-color: var(--cat-border, #2dd4bf);
+        }
+
+        .ll-comp-name {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        // Dense per-row buttons: tint only, no lift/wiggle (same reasoning
+        // as OV Library's render-row buttons).
+        .ll-row-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 26px;
+            height: 24px;
+            flex-shrink: 0;
+            background: #262626;
+            border: 1px solid #3a3a3a;
+            color: #bbb;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+
+            &:hover {
+                background: #303030;
+                border-color: var(--cat-border, #2dd4bf);
+                color: #fff;
+            }
+        }
+
+        .ll-check {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            background: none;
+            border: none;
+            color: #888;
+            cursor: pointer;
+            padding: 2px;
+
+            &:hover { color: var(--cat-icon, #7fe9db); }
+        }
+    }
+
+    // ── Batch actions ───────────────────────────────────────────────────────
+    .ll-batch {
+        display: flex;
+        gap: 6px;
+        flex-shrink: 0;
+        overflow: hidden;
+
+        // Both buttons are Tooltip-wrapped -- the wrapper span is the flex
+        // item, so it (not just the button) has to share the row.
+        > .ov-tooltip-wrapper { flex: 1; }
+
+        button {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            width: 100%;
+            box-sizing: border-box;
+            background: #262626;
+            border: 1px solid #3a3a3a;
+            color: #ddd;
+            border-radius: 6px;
+            padding: 7px 8px;
+            cursor: pointer;
+            font-size: 11px;
+            white-space: nowrap;
+            transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+
+            &:hover:not(:disabled) {
+                background: var(--cat-grad, #2dd4bf);
+                border-color: var(--cat-border, transparent);
+                box-shadow: 0 3px 10px var(--cat-glow, rgba(0, 0, 0, 0.35));
+                transform: translateY(-1px);
+            }
+            &:active:not(:disabled) { transform: translateY(0); }
+            &:disabled { opacity: 0.5; cursor: default; }
+
+            // Marks the one action that writes to disk (opens/updates/saves
+            // every .aep in the picked folder) as distinct from the safe
+            // read-only import beside it.
+            &.danger {
+                border-color: #7a3e2e;
+                &:hover:not(:disabled) {
+                    background: #6b3226;
+                    border-color: #a04a35;
+                    box-shadow: 0 3px 10px rgba(160, 74, 53, 0.35);
+                }
+            }
+        }
+    }
+
+    // ── Add component ───────────────────────────────────────────────────────
+    .ll-add {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        flex-shrink: 0;
+        width: 100%;
+        box-sizing: border-box;
+        background: #232323;
+        border: 1px dashed #3f3f3f;
+        color: #cfcfcf;
+        border-radius: 6px;
+        padding: 8px 10px;
+        cursor: pointer;
+        font-size: 12px;
+        margin-top: 8px;
+        transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+
+        &:hover:not(:disabled) {
+            background: #2a2a2a;
+            border-color: var(--cat-border, #2dd4bf);
+            color: #fff;
+            svg { color: var(--cat-icon, #5eead4); }
+        }
+        &:disabled { opacity: 0.5; cursor: default; }
+    }
+
+    // ── Toasts (unchanged behaviour) ────────────────────────────────────────
+    .toast-stack {
+        position: absolute;
+        left: 16px;
+        right: 16px;
+        bottom: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        pointer-events: none;
+        z-index: 10;
+    }
+
+    .toast {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: #2a2a2a;
+        border: 1px solid #444;
+        border-radius: 5px;
+        padding: 6px 8px;
+        font-size: 11px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+        pointer-events: auto;
+
+        span { flex: 1; }
+
+        button {
+            display: flex;
+            background: none;
+            border: none;
+            color: #999;
+            cursor: pointer;
+            padding: 0;
+            &:hover { color: #ddd; }
+        }
+
+        &.toast-success { border-color: #2e6b3e; svg:first-child { color: #6bcf7f; } }
+        &.toast-error   { border-color: #7a2e2e; svg:first-child { color: #e07a7a; } }
+    }
+}

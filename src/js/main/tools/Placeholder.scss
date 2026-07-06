@@ -1,0 +1,42 @@
+.placeholder-tool {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 12px 16px;
+    color: #ddd;
+    background: var(--ov-bg, #1e1e1e);
+    font-family: -apple-system, "Segoe UI", sans-serif;
+    font-size: 12px;
+    box-sizing: border-box;
+
+    h2 {
+        font-size: 14px;
+        margin: 0 0 10px;
+    }
+
+    .placeholder-notice {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: #2a2a2a;
+        border: 1px solid #444;
+        border-radius: 4px;
+        padding: 6px 10px;
+        color: #d8b866;
+        font-size: 11px;
+        max-width: 320px;
+        margin-bottom: 10px;
+
+        svg {
+            flex-shrink: 0;
+            color: #d8b866;
+        }
+    }
+
+    .hint {
+        color: #999;
+        line-height: 1.5;
+        max-width: 420px;
+        margin: 0;
+    }
+}

@@ -1,0 +1,157 @@
+// =============================================================================
+// TimeTrackerDroplet.scss — home-screen quick-launch widget.
+// Panel chrome inherited from Droplet.scss's .droplet-panel; this file only
+// styles what's INSIDE the panel plus the trigger button's live-running dot.
+// =============================================================================
+
+// Trigger reuses .favorites-toggle's exact box (26px, #262626/#444) --
+// this small addition is just the pulsing dot that appears while a batch
+// is actively running, so the home screen shows "something's tracking"
+// at a glance without opening the panel.
+.ts-droplet-trigger {
+    position: relative;
+    outline: none;
+}
+
+.ts-droplet-live-dot {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #2dd4bf;
+    box-shadow: 0 0 5px rgba(45, 212, 191, 0.8);
+    animation: ts-droplet-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes ts-droplet-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: 0.4; transform: scale(0.85); }
+}
+
+.ts-droplet-panel {
+    width: 220px;
+    box-sizing: border-box;
+    // Trigger is right-aligned on the home screen toolbar — left-aligning
+    // the panel to it overflows the viewport. Override the JS inline left
+    // and anchor from the right edge instead.
+    left: auto !important;
+    right: 8px !important;
+}
+
+.ts-droplet-body {
+    display: flex;
+    flex-direction: column;
+}
+
+.ts-droplet-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #eee;
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 8px;
+
+    svg { color: var(--ov-accent, #5eead4); }
+}
+
+.ts-droplet-hint {
+    margin: 0 0 10px;
+    color: #999;
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.ts-droplet-start-new {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--ov-accent, #2a6f68);
+    border: 1px solid #2dd4bf;
+    color: #fff;
+    border-radius: 6px;
+    padding: 7px 8px;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: filter 0.15s ease;
+
+    &:hover { filter: brightness(1.12); }
+}
+
+.ts-droplet-batch-name {
+    font-size: 12px;
+    font-weight: 700;
+    color: #eee;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-bottom: 2px;
+}
+
+.ts-droplet-timer {
+    font-size: 24px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.03em;
+    color: #fff;
+    margin-bottom: 8px;
+}
+
+.ts-droplet-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    box-sizing: border-box;
+    background: #262626;
+    border: 1px solid #444;
+    color: #ddd;
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+
+    &:hover { background: #2e2e2e; border-color: #2dd4bf; color: #fff; }
+}
+
+.ts-droplet-status {
+    margin: 6px 0 0;
+    color: #888;
+    font-size: 10px;
+    line-height: 1.4;
+}
+
+.ts-droplet-more {
+    margin: 6px 0 0;
+    color: #777;
+    font-size: 10px;
+    line-height: 1.4;
+}
+
+.ts-droplet-open-full {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    width: 100%;
+    box-sizing: border-box;
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 10.5px;
+    cursor: pointer;
+    padding: 8px 8px 4px;
+    margin-top: 8px;
+    border-top: 1px solid #333;
+
+    &:hover { color: #ddd; }
+}

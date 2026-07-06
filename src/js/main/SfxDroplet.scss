@@ -1,0 +1,72 @@
+// =============================================================================
+// SfxDroplet.scss — home-screen sound-effects control.
+// Panel chrome inherited from Droplet.scss's .droplet-panel; this file only
+// styles what's INSIDE the panel. Trigger reuses .favorites-toggle's exact
+// box (26px, #262626/#444), same as TimeTrackerDroplet's own trigger.
+// =============================================================================
+
+.sfx-droplet-panel {
+    width: 200px;
+    box-sizing: border-box;
+    // Trigger is right-aligned on the home screen toolbar — left-aligning
+    // the panel to it overflows the viewport. Override the JS inline left
+    // and anchor from the right edge instead (same fix TimeTrackerDroplet's
+    // own panel already needed for the same reason).
+    left: auto !important;
+    right: 8px !important;
+}
+
+.sfx-droplet-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.sfx-volume-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #777;
+
+    &.disabled {
+        opacity: 0.4;
+    }
+
+    input[type="range"] {
+        flex: 1;
+        min-width: 0;
+        // Native range styling reset -- same reasoning as this app's other
+        // native-control replacements (CheckboxToggle's own header comment):
+        // an unstyled OS slider looks out of place in this fully custom UI.
+        -webkit-appearance: none;
+        appearance: none;
+        height: 3px;
+        border-radius: 2px;
+        background: #3a3a3a;
+        cursor: pointer;
+
+        &:disabled {
+            cursor: default;
+        }
+
+        &::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--ov-accent, #5eead4);
+            cursor: pointer;
+            transition: transform 0.15s ease;
+        }
+
+        &:hover::-webkit-slider-thumb {
+            transform: scale(1.15);
+        }
+
+        &:disabled::-webkit-slider-thumb {
+            background: #555;
+            transform: none;
+        }
+    }
+}

@@ -1,0 +1,48 @@
+.useful-folders {
+    .uf-list {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        max-width: 420px;
+        padding-top: 12px;
+    }
+
+    .uf-row {
+        display: flex;
+        align-items: stretch;
+        gap: 4px;
+
+        // .uf-open/.uf-icon-btn are wrapped in <Tooltip> now -- the
+        // Tooltip wrapper (always first for .uf-open, a <span>) is the
+        // actual flex item, not the button itself, so the grow/truncate
+        // intent has to be re-applied one level up.
+        > span:first-child {
+            flex: 1;
+            min-width: 0;
+        }
+        > span:not(:first-child) {
+            flex-shrink: 0;
+        }
+    }
+
+    .uf-open {
+        flex: 1;
+        justify-content: flex-start;
+        text-align: left;
+        min-width: 0;
+
+        span,
+        > * {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+    }
+
+    .uf-icon-btn {
+        flex-shrink: 0;
+        width: 28px;
+        padding: 8px 0;
+        justify-content: center;
+    }
+}

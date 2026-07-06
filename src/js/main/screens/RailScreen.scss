@@ -1,0 +1,233 @@
+// =============================================================================
+// RailScreen.scss — shared grouped-rail category screen (Localise + Tools).
+// Category identity flows entirely from --cat-* vars set inline on .rail-hub
+// via categoryStyleVars(categoryId); every accent below references those, so
+// the SAME markup renders teal for Localise and pink for Tools with no
+// per-category rule here. Framed-card language matches ReviewHub's
+// .rh-content / DeliveryHub's .dh-content (border #3a3a3a, radius 8px).
+// =============================================================================
+
+.rail-hub {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    margin-top: 8px;
+    border: 1px solid #3a3a3a;
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--ov-bg, #1e1e1e);
+}
+
+// ── Rail ──────────────────────────────────────────────────────────────────
+.rail-nav {
+    width: 182px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border-right: 1px solid #2c2c2c;
+    background: rgba(0, 0, 0, 0.18);
+    padding: 12px 10px 14px;
+    box-sizing: border-box;
+}
+
+.rail-header {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 2px 4px 10px;
+    border-bottom: 1px solid #262626;
+    flex-shrink: 0;
+}
+
+.rail-header-text {
+    min-width: 0;
+}
+
+.rail-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    flex-shrink: 0;
+    border-radius: 8px;
+    background: var(--cat-grad, linear-gradient(135deg, #2a2a2a, #1a1a1a));
+    border: 1px solid var(--cat-border, #555);
+    color: #fff;
+    box-shadow: 0 2px 10px var(--cat-glow, rgba(0, 0, 0, 0.3));
+}
+
+.rail-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #eee;
+    line-height: 1.2;
+}
+
+.rail-sub {
+    font-size: 9.5px;
+    color: #777;
+    margin-top: 1px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+// ── Groups ────────────────────────────────────────────────────────────────
+.rail-stage {
+    margin-top: 12px;
+}
+
+.rail-stage-label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.3px;
+    text-transform: uppercase;
+    color: var(--cat-icon, #999);
+    opacity: 0.75;
+    padding: 0 2px 5px;
+}
+
+.rail-stage-dot {
+    width: 6px;
+    height: 6px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: var(--cat-border, #666);
+    box-shadow: 0 0 6px var(--cat-glow, transparent);
+}
+
+// The group spine: a thin category-tinted line dropping from each dot,
+// connecting that group's tools. Alpha-tinted so it stays subtle.
+.rail-stage-tools {
+    margin-left: 4px;
+    border-left: 1px solid var(--cat-glow, rgba(255, 255, 255, 0.08));
+    padding-left: 7px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+// ── Tool rows ─────────────────────────────────────────────────────────────
+.rail-tool-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 7px;
+    border-radius: 5px;
+    font-size: 11.5px;
+    color: #b9b9b9;
+    cursor: pointer;
+    overflow: hidden;
+
+    &:hover:not(.selected) {
+        background: rgba(255, 255, 255, 0.05);
+        color: #e5e5e5;
+    }
+
+    &.selected {
+        color: #fff;
+    }
+}
+
+.rail-highlight {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    border-radius: 5px;
+    background: var(--cat-grad, #3a3a3a);
+    box-shadow: 0 2px 10px var(--cat-glow, rgba(0, 0, 0, 0.3));
+}
+
+.rail-tool-icon,
+.rail-tool-label {
+    position: relative;
+    z-index: 1;
+}
+
+.rail-tool-icon {
+    display: flex;
+    flex-shrink: 0;
+    color: var(--cat-icon, #aaa);
+}
+
+.rail-tool-row.selected .rail-tool-icon {
+    color: #fff;
+}
+
+.rail-tool-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+// ── Content pane ──────────────────────────────────────────────────────────
+.rail-content {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+}
+
+// ── Narrow-panel fallback (docked thin) ──────────────────────────────────
+// The rail flips to a horizontal chip strip across the top; the spine and
+// header drop out — the grouped metaphor needs vertical room to read, and a
+// scrolling chip row is still faster to scan than a wrapping tile grid.
+@media (max-width: 400px) {
+    .rail-hub {
+        flex-direction: column;
+    }
+
+    .rail-nav {
+        width: 100%;
+        height: auto;
+        flex-direction: row;
+        align-items: center;
+        overflow-x: auto;
+        overflow-y: hidden;
+        border-right: none;
+        border-bottom: 1px solid #2c2c2c;
+        padding: 8px;
+        gap: 4px;
+    }
+
+    .rail-header {
+        display: none;
+    }
+
+    .rail-stage {
+        margin-top: 0;
+        display: flex;
+        align-items: center;
+        flex-shrink: 0;
+    }
+
+    .rail-stage-label {
+        padding: 0 4px;
+    }
+
+    .rail-stage-tools {
+        border-left: none;
+        padding-left: 0;
+        margin-left: 0;
+        flex-direction: row;
+    }
+
+    .rail-tool-row {
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    .rail-tool-label {
+        max-width: 110px;
+    }
+}

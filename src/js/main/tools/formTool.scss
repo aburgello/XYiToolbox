@@ -1,0 +1,780 @@
+// Shared layout for the simple "field(s) + button" tool pages (Name
+// Generator, Scale Composition, Adjust, Safe Generator) -- factored out of
+// CampaignLocaliser.scss's original one-off styles since four more tools
+// needed the exact same shape (label, text input, action button, status
+// line). Tool-specific quirks still get their own scss file alongside this.
+//
+// Category-color inheritance: main.tsx sets --cat-grad/--cat-border/
+// --cat-glow/--cat-icon as inline custom properties on the wrapping
+// .category-tool-content / .drill-body element for whichever category the
+// user drilled into (or the tool's own first category, for the standalone
+// search-result screen) -- these vars cascade down via normal CSS
+// inheritance to every .form-tool page mounted inside, without each tool
+// component needing to know its own category. Falls back to the generic
+// --ov-accent when a var isn't set (e.g. no category context).
+//
+// Hover/focus polish here is deliberately CSS-only (transform + box-shadow
+// transitions, a small keyframe on icon SVGs), not Framer Motion -- matches
+// the shell's own category-card pattern (CSS handles color/shadow, motion
+// is reserved for layout-affecting animation) and means every button in
+// every tool page gets the same lift/glow/icon-wiggle treatment for free,
+// without converting ~20 files to motion.button. The wiggle keyframe itself
+// (ov-icon-wiggle) lives in shared.scss, not here -- every tool that uses
+// this file also imports "../shared.scss", so the keyframe is always
+// present in the bundled CSS; kept in one place so bespoke tool
+// stylesheets (OV Library, Campaign Localiser, etc.) can reuse it too.
+.form-tool {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 12px 16px;
+    color: #ddd;
+    font-family: -apple-system, "Segoe UI", sans-serif;
+    font-size: 12px;
+    box-sizing: border-box;
+    overflow-y: auto;
+
+    h2 {
+        font-size: 14px;
+        margin: 0 0 4px;
+    }
+
+    // Section headings restyled to match the hub screens' stage labels
+    // (LocaliseScreen's .loc-stage-label): uppercase micro-label with a
+    // glowing category-tinted dot. Page-level titles/descriptions no longer
+    // live inside tool components at all -- the shell's .tool-content-header
+    // carries them (see ToolScreen/LocaliseScreen/ToolsScreen) -- so every
+    // h3 left in a form tool is a genuine section heading.
+    h3 {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 1.3px;
+        text-transform: uppercase;
+        color: var(--cat-icon, var(--ov-accent, #42b3bd));
+        opacity: 0.85;
+        margin: 14px 0 6px;
+
+        &::before {
+            content: "";
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: var(--cat-border, var(--ov-accent, #42b3bd));
+            box-shadow: 0 0 6px var(--cat-glow, transparent);
+            flex-shrink: 0;
+        }
+    }
+
+    .hint {
+        color: #999;
+        margin: 0 0 12px;
+        line-height: 1.5;
+        max-width: 420px;
+    }
+
+    .field-row {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin-bottom: 10px;
+        max-width: 260px;
+
+        label {
+            color: #999;
+            font-size: 11px;
+        }
+
+        input[type="text"],
+        input[type="number"] {
+            background: #1f1f1f;
+            border: 1px solid #3a3a3a;
+            color: #ddd;
+            border-radius: 5px;
+            padding: 6px 8px;
+            font-size: 12px;
+            box-sizing: border-box;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+
+            &:focus {
+                outline: none;
+                border-color: var(--cat-border, var(--ov-accent, #3a5a8a));
+                box-shadow: 0 0 0 2px var(--cat-glow, rgba(58, 90, 138, 0.35));
+            }
+        }
+    }
+
+    // 2-column responsive field layout for pages with many stacked fields
+    // (Extreme Tools 01/02, Wall Tools) -- avoids a long single column of
+    // full-width rows when the panel has ~550px of content width to use.
+    // Falls back to one column on a narrow panel/viewport. Deliberately a
+    // plain @media query, NOT a @container query -- container queries
+    // aren't supported on this project's chrome74 build target (see
+    // CLAUDE.md's build-target rule; @media works fine there).
+    .field-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(150px, 1fr));
+        gap: 4px 12px;
+        max-width: 460px;
+
+        .field-row {
+            max-width: none;
+            margin-bottom: 6px;
+        }
+    }
+
+    @media (max-width: 420px) {
+        .field-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    .field-with-button {
+        display: flex;
+        align-items: flex-end;
+        gap: 8px;
+        max-width: 480px;
+        // Space before whatever follows the row (e.g. CSV Localiser's
+        // "Skip existing files" toggle, which used to butt right up against
+        // the input above it).
+        margin-bottom: 10px;
+
+        .field-row {
+            flex: 1;
+            // Let the input shrink inside the flex row so the button can
+            // never be pushed off the right edge of a narrow docked panel
+            // (an <input>'s intrinsic min-width otherwise refuses to shrink).
+            min-width: 0;
+            max-width: none;
+            margin-bottom: 0;
+
+            // Pin the input to an explicit height so the icon-only button
+            // beside it (also 32px) lines up exactly — without this the
+            // input's font-metric-derived height (~29px) is shorter than the
+            // button, and align-items: flex-end makes the taller button poke
+            // up past the input's top edge.
+            input { min-width: 0; height: 32px; }
+        }
+
+        // The trailing action button is ICON-ONLY here — the full label
+        // lives in a <Tooltip> instead, so it stays a compact square that
+        // never overflows regardless of panel width. Square, sized to match
+        // the 32px input it sits beside (border-box so height is exact).
+        > .ov-tooltip-wrapper { flex-shrink: 0; }
+
+        button.icon-btn {
+            flex-shrink: 0;
+            box-sizing: border-box;
+            width: 34px;
+            height: 32px;
+            padding: 0;
+            justify-content: center;
+            gap: 0;
+        }
+    }
+
+    // Shared textarea styling so paste-in tools (CSV Localiser, etc.) match
+    // the inputs above instead of carrying one-off inline colors.
+    textarea {
+        width: 100%;
+        max-width: 520px;
+        box-sizing: border-box;
+        background: #1f1f1f;
+        border: 1px solid #3a3a3a;
+        color: #ddd;
+        border-radius: 5px;
+        padding: 6px 8px;
+        font-size: 12px;
+        font-family: inherit;
+        line-height: 1.5;
+        resize: vertical;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+
+        &::placeholder { color: #555; }
+
+        &:focus {
+            outline: none;
+            border-color: var(--cat-border, var(--ov-accent, #3a5a8a));
+            box-shadow: 0 0 0 2px var(--cat-glow, rgba(58, 90, 138, 0.35));
+        }
+    }
+
+    .radio-row {
+        display: flex;
+        gap: 14px;
+        margin-bottom: 10px;
+
+        label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
+        }
+    }
+
+    .button-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 10px;
+    }
+
+    button {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: #262626;
+        border: 1px solid #3a3a3a;
+        color: #ddd;
+        border-radius: 5px;
+        padding: 8px 12px;
+        cursor: pointer;
+        font-size: 12px;
+        white-space: nowrap;
+        transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+
+        &:hover:not(:disabled) {
+            background: var(--cat-grad, var(--ov-accent, #3a5a8a));
+            border-color: var(--cat-border, transparent);
+            box-shadow: 0 3px 10px var(--cat-glow, rgba(0, 0, 0, 0.35));
+            transform: translateY(-1px);
+
+            svg {
+                animation: ov-icon-wiggle 0.45s ease;
+            }
+        }
+        &:active:not(:disabled) {
+            transform: translateY(0);
+        }
+        &:disabled {
+            opacity: 0.6;
+            cursor: default;
+        }
+    }
+
+    .tool-status {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 16px;
+        padding: 6px 8px;
+        border-radius: 5px;
+        background: #232323;
+        border: 1px solid #3a3a3a;
+        font-size: 11px;
+        max-width: 420px;
+
+        &.tool-status-success {
+            border-color: #2e6b3e;
+            svg {
+                color: #6bcf7f;
+            }
+        }
+        &.tool-status-error {
+            border-color: #7a2e2e;
+            svg {
+                color: #e07a7a;
+            }
+        }
+    }
+
+    // Alias of .tool-status above -- Script Playground/Expressions Bank/
+    // Comp Inspector/Render Queue Manager all use this name instead (chosen
+    // independently, same intent), kept as its own rule rather than
+    // renaming those call sites to match.
+    .loc-status {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 16px;
+        padding: 6px 8px;
+        border-radius: 5px;
+        background: #232323;
+        border: 1px solid #3a3a3a;
+        font-size: 11px;
+        max-width: 420px;
+
+        &.loc-status-success {
+            border-color: #2e6b3e;
+            svg { color: #6bcf7f; }
+        }
+        &.loc-status-error {
+            border-color: #7a2e2e;
+            svg { color: #e07a7a; }
+        }
+    }
+
+    .divider {
+        border: none;
+        border-top: 1px solid #2c2c2c;
+        margin: 10px 0 12px;
+    }
+}
+
+// =============================================================================
+// Script Playground
+// =============================================================================
+.sp {
+    .sp-editor {
+        margin-bottom: 8px;
+    }
+
+    .sp-textarea {
+        width: 100%;
+        box-sizing: border-box;
+        background: #1a1a1a;
+        border: 1px solid #383838;
+        border-radius: 6px;
+        padding: 10px 12px;
+        color: #ddd;
+        font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+        font-size: 11.5px;
+        line-height: 1.5;
+        resize: vertical;
+        min-height: 100px;
+        tab-size: 2;
+        transition: border-color 0.2s ease;
+
+        &:focus {
+            outline: none;
+            border-color: var(--cat-border, var(--ov-accent, #3a5a8a));
+            box-shadow: 0 0 0 2px var(--cat-glow, rgba(58, 90, 138, 0.2));
+        }
+
+        &:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+    }
+
+    .sp-buttons {
+        display: flex;
+        gap: 8px;
+
+        .sp-clear-btn {
+            background: #2a2a2a;
+            border-color: #444;
+        }
+    }
+
+    .sp-output-wrap {
+        margin-top: 12px;
+    }
+
+    .sp-output-label {
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: #777;
+        margin-bottom: 4px;
+    }
+
+    .sp-output {
+        background: #1a1a1a;
+        border: 1px solid #333;
+        border-radius: 6px;
+        padding: 10px 12px;
+        color: #b0e8b0;
+        font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+        font-size: 11px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-word;
+        margin: 0;
+        max-height: 200px;
+        overflow-y: auto;
+    }
+}
+
+// =============================================================================
+// Expressions Bank
+// =============================================================================
+.eb {
+    .eb-search-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 10px;
+    }
+
+    .eb-search-box {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: #1a1a1a;
+        border: 1px solid #383838;
+        border-radius: 6px;
+        padding: 4px 8px;
+        flex: 1;
+
+        svg { color: #777; flex-shrink: 0; }
+
+        input {
+            flex: 1;
+            background: none;
+            border: none;
+            outline: none;
+            color: #ddd;
+            font-size: 11px;
+        }
+    }
+
+    .eb-add-btn {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        background: var(--cat-grad);
+        border: 1px solid var(--cat-border);
+        color: #fff;
+        border-radius: 6px;
+        padding: 5px 12px;
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .eb-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .eb-entry {
+        background: #1e1e1e;
+        border: 1px solid #333;
+        border-radius: 6px;
+        padding: 8px 10px;
+        transition: border-color 0.2s ease;
+
+        &:hover { border-color: #555; }
+    }
+
+    .eb-entry-header {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 4px;
+
+        // The name is now Tooltip-wrapped (a <span class="ov-tooltip-wrapper">
+        // with no className passthrough of its own -- see Tooltip.tsx), so
+        // .eb-entry-name one level in no longer sits directly in this flex
+        // row. :nth-child(2) singles out that one wrapper (1st child is the
+        // collapse button's own Tooltip wrapper, 3rd is .eb-entry-actions)
+        // to carry the flex:1/truncation .eb-entry-name used to have --
+        // same technique already used for OV Library's/Localised Library's
+        // row wrappers elsewhere in this app.
+        > span:nth-child(2) {
+            flex: 1;
+            min-width: 0;
+        }
+    }
+
+    .eb-collapse-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        background: none;
+        border: none;
+        color: #777;
+        padding: 2px;
+        cursor: pointer;
+        border-radius: 3px;
+
+        &:hover { color: #ddd; background: rgba(255, 255, 255, 0.06); }
+    }
+
+    .eb-entry-name {
+        display: block;
+        font-size: 12px;
+        font-weight: 600;
+        color: #ddd;
+        cursor: pointer;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+
+        &:hover { color: #fff; }
+    }
+
+    .eb-entry-actions {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .eb-entry-tag {
+        background: rgba(255,255,255,0.08);
+        border-radius: 3px;
+        padding: 1px 6px;
+        font-size: 9px;
+        color: var(--cat-icon, #5eead4);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .eb-entry-uses {
+        font-size: 10px;
+        color: #777;
+        min-width: 18px;
+        text-align: right;
+    }
+
+    .eb-icon-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: none;
+        border: none;
+        color: #888;
+        padding: 2px;
+        cursor: pointer;
+        border-radius: 3px;
+
+        &:hover { color: #ddd; background: rgba(255,255,255,0.08); }
+    }
+
+    .eb-entry-code {
+        font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+        font-size: 11px;
+        color: #b0e8b0;
+        background: #161616;
+        border-radius: 4px;
+        padding: 6px 8px;
+        margin: 0;
+        cursor: pointer;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .eb-editor {
+        textarea {
+            font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+            font-size: 11.5px;
+        }
+    }
+
+    .eb-editor-buttons {
+        display: flex;
+        gap: 8px;
+
+        .eb-cancel-btn {
+            background: #2a2a2a;
+            border-color: #444;
+        }
+    }
+}
+
+// =============================================================================
+// Comp Inspector
+// =============================================================================
+.ci {
+    .ci-report {
+        margin-top: 10px;
+    }
+
+    .ci-summary {
+        margin-bottom: 10px;
+    }
+
+    .ci-summary-name {
+        font-size: 13px;
+        font-weight: 700;
+        color: #eee;
+    }
+
+    .ci-summary-meta {
+        font-size: 10px;
+        color: #888;
+        margin-top: 2px;
+    }
+
+    .ci-filter-row {
+        margin-bottom: 8px;
+    }
+
+    .ci-filter-box {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: #1a1a1a;
+        border: 1px solid #383838;
+        border-radius: 6px;
+        padding: 4px 8px;
+
+        svg { color: #777; }
+
+        input {
+            flex: 1;
+            background: none;
+            border: none;
+            outline: none;
+            color: #ddd;
+            font-size: 11px;
+        }
+    }
+
+    .ci-layers {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .ci-layer {
+        background: #1c1c1c;
+        border: 1px solid #2a2a2a;
+        border-radius: 5px;
+        padding: 6px 8px;
+
+        &--disabled { opacity: 0.5; }
+    }
+
+    .ci-layer-header {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .ci-layer-index {
+        font-size: 9px;
+        color: #555;
+        min-width: 14px;
+        text-align: right;
+    }
+
+    .ci-layer-name {
+        font-size: 11px;
+        font-weight: 600;
+        color: #ddd;
+        flex: 1;
+    }
+
+    .ci-layer-type {
+        font-size: 9px;
+        color: #777;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .ci-layer-flags {
+        display: flex;
+        gap: 3px;
+        font-size: 10px;
+    }
+
+    .ci-layer-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 2px;
+        padding-left: 20px;
+        font-size: 9px;
+        color: #777;
+    }
+
+    .ci-layer-effects {
+        color: var(--cat-icon, #5eead4);
+    }
+}
+
+// =============================================================================
+// Render Queue Manager
+// =============================================================================
+.rqm {
+    .rqm-buttons {
+        display: flex;
+        gap: 8px;
+
+        .rqm-clear-btn {
+            background: #2a2a2a;
+            border-color: #5a2e2e;
+            color: #e07a7a;
+        }
+    }
+
+    .rqm-list {
+        margin-top: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .rqm-row {
+        background: #1c1c1c;
+        border: 1px solid #2a2a2a;
+        border-radius: 6px;
+        padding: 8px 10px;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 4px 12px;
+        align-items: center;
+
+        &--skip { opacity: 0.5; }
+    }
+
+    .rqm-row-main {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .rqm-row-name {
+        font-size: 12px;
+        font-weight: 600;
+        color: #ddd;
+    }
+
+    .rqm-row-status {
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        padding: 1px 5px;
+        border-radius: 3px;
+
+        &--1 { background: #2a4a2a; color: #6bcf7f; }
+        &--6 { background: #2a3a4a; color: #6ba0cf; }
+        &--7 { background: #4a2a2a; color: #cf6b6b; }
+    }
+
+    .rqm-row-meta {
+        grid-column: 1;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        font-size: 10px;
+        color: #777;
+    }
+
+    .rqm-row-path {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 200px;
+    }
+
+    .rqm-row-actions {
+        grid-column: 2;
+        grid-row: 1 / 3;
+        display: flex;
+        gap: 4px;
+        align-items: center;
+
+        button {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: none;
+            border: 1px solid #333;
+            color: #888;
+            padding: 4px;
+            border-radius: 4px;
+            cursor: pointer;
+
+            &:hover { color: #ddd; border-color: #555; }
+            &:disabled { opacity: 0.5; cursor: default; }
+        }
+    }
+}

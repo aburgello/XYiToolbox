@@ -1,0 +1,355 @@
+.timesheet-tracker {
+    .ts-status {
+        color: #999;
+        margin: 0 0 10px;
+        font-size: 11px;
+    }
+
+    // ── Job / territory info row ────────────────────────────────────────────
+    .ts-info-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 10px;
+    }
+
+    .ts-job-chip {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        max-width: 260px;
+        background: #1f1f1f;
+        border: 1px solid #333;
+        border-radius: 14px;
+        padding: 4px 10px 4px 8px;
+        color: #ccc;
+        font-size: 11px;
+        font-weight: 600;
+
+        svg { flex-shrink: 0; color: var(--cat-icon, #999); }
+        span {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+    }
+
+    // Auto-detected territory -- a pill, never an editable list, per the
+    // "territory is auto-fetched, not hand-picked" design: the only user
+    // action available is re-detecting (the refresh icon), never overriding.
+    .ts-territory-badge {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--cat-glow, rgba(45, 212, 191, 0.12));
+        border: 1px solid var(--cat-border, #2dd4bf);
+        border-radius: 14px;
+        padding: 4px 8px 4px 9px;
+        color: #eee;
+        font-size: 11px;
+        font-weight: 600;
+        max-width: 260px;
+    }
+
+    .ts-territory-icon { flex-shrink: 0; color: var(--cat-icon, #5eead4); }
+
+    .ts-territory-text {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+
+        &.muted { color: #888; font-weight: 400; }
+    }
+
+    .ts-flag { font-size: 12px; line-height: 1; }
+
+    .ts-territory-refresh {
+        flex-shrink: 0;
+        display: flex;
+        background: none;
+        border: none;
+        color: var(--cat-icon, #5eead4);
+        opacity: 0.7;
+        cursor: pointer;
+        padding: 1px;
+        margin-left: 1px;
+        border-radius: 4px;
+        transition: opacity 0.15s ease, transform 0.3s ease;
+
+        &:hover { opacity: 1; }
+        &:active { transform: rotate(90deg); }
+    }
+
+    // ── Category select -- boxed icon + <select>, same language as
+    // Localised Library's .ll-campaign-select ─────────────────────────────
+    .ts-field-label {
+        display: block;
+        color: #888;
+        font-size: 11px;
+        margin: 0 0 5px;
+    }
+
+    .ts-category-select {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        max-width: 280px;
+        background: #1f1f1f;
+        border: 1px solid #3a3a3a;
+        border-radius: 6px;
+        padding-left: 9px;
+        margin-bottom: 12px;
+
+        &:focus-within { border-color: var(--cat-border, #2dd4bf); }
+
+        select {
+            flex: 1;
+            min-width: 0;
+            background: transparent;
+            color: #ddd;
+            border: none;
+            outline: none;
+            padding: 7px 8px 7px 0;
+            font-size: 12px;
+            cursor: pointer;
+        }
+    }
+
+    .ts-category-icon { flex-shrink: 0; color: var(--cat-icon, #5eead4); }
+
+    .ts-timer {
+        font-size: 42px;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.04em;
+        margin: 10px 0 12px;
+        // A quiet category-tinted glow -- the timer is the headline of this
+        // page, this is what ties it visually to the rest of the app's
+        // per-category accent language instead of sitting flat white.
+        text-shadow: 0 0 24px var(--cat-glow, transparent);
+    }
+
+    .ts-output {
+        width: 100%;
+        max-width: 420px;
+        height: 80px;
+        background: #222;
+        border: 1px solid #333;
+        border-radius: 4px;
+        color: #bbb;
+        font-size: 11px;
+        padding: 8px;
+        box-sizing: border-box;
+        resize: vertical;
+        margin-bottom: 10px;
+    }
+
+    // ── Batch: list of batches ──────────────────────────────────────────────
+    .ts-batch-list-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+        font-size: 12px;
+        font-weight: 700;
+        color: #eee;
+    }
+
+    .ts-new-batch {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        background: var(--cat-grad, #2a2a2a);
+        border: 1px solid var(--cat-border, #444);
+        color: #fff;
+        border-radius: 6px;
+        padding: 5px 10px;
+        font-size: 11px;
+        cursor: pointer;
+        box-shadow: 0 2px 8px var(--cat-glow, transparent);
+    }
+
+    .ts-batch-empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        text-align: center;
+        color: #666;
+        padding: 24px 20px;
+
+        svg { color: var(--cat-icon, #888); opacity: 0.6; }
+        span { line-height: 1.5; max-width: 260px; font-size: 11px; }
+    }
+
+    .ts-batch-card {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        background: #1f1f1f;
+        border: 1px solid #2c2c2c;
+        border-radius: 6px;
+        padding: 8px 10px;
+        margin-bottom: 4px;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+
+        &:hover {
+            background: #262626;
+            border-color: var(--cat-border, #555);
+            transform: translateX(2px);
+        }
+    }
+
+    .ts-batch-card-icon { flex-shrink: 0; color: var(--cat-icon, #aaa); }
+
+    .ts-batch-card-main {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+    }
+    .ts-batch-card-name {
+        font-size: 12px;
+        color: #eee;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .ts-batch-card-meta { font-size: 10px; color: #777; }
+
+    .ts-batch-card-del {
+        flex-shrink: 0;
+        display: flex;
+        background: none;
+        border: none;
+        color: #555;
+        cursor: pointer;
+        padding: 3px;
+        border-radius: 4px;
+        &:hover { color: #e07a7a; background: rgba(255,255,255,0.05); }
+    }
+
+    // ── Batch: active batch ─────────────────────────────────────────────────
+    .ts-batch-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+    }
+    .ts-batch-back {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        background: none;
+        border: none;
+        color: var(--cat-icon, #5eead4);
+        cursor: pointer;
+        padding: 0;
+        font-size: 11px;
+        &:hover { color: #fff; }
+    }
+    .ts-batch-title {
+        font-size: 13px;
+        font-weight: 700;
+        color: #eee;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+    }
+
+    .ts-batch-hint {
+        color: #777;
+        font-size: 10.5px;
+        line-height: 1.4;
+        margin: 0 0 10px;
+    }
+
+    .ts-file-list {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        max-height: 240px;
+        overflow-y: auto;
+        margin-bottom: 4px;
+    }
+    .ts-file-empty {
+        color: #777;
+        font-style: italic;
+        font-size: 11px;
+        padding: 6px 2px;
+    }
+
+    .ts-file-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: #1f1f1f;
+        border: 1px solid #2c2c2c;
+        border-radius: 6px;
+        padding: 6px 8px;
+
+        &.active {
+            border-color: var(--cat-border, #2dd4bf);
+            background: var(--cat-glow, rgba(45, 212, 191, 0.1));
+        }
+    }
+
+    .ts-file-dot {
+        flex-shrink: 0;
+        color: #444;
+        fill: currentColor;
+
+        &.live {
+            color: var(--cat-border, #2dd4bf);
+            // Gentle pulse so the currently-clocked file reads as "live".
+            animation: ts-pulse 1.6s ease-in-out infinite;
+        }
+    }
+
+    @keyframes ts-pulse {
+        0%, 100% { opacity: 1; }
+        50%      { opacity: 0.35; }
+    }
+
+    .ts-file-name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 11px;
+    }
+
+    .ts-file-time {
+        flex-shrink: 0;
+        background: none;
+        border: none;
+        color: #cfcfcf;
+        cursor: pointer;
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+        padding: 2px 4px;
+        border-radius: 4px;
+        &:hover { color: #fff; background: rgba(255,255,255,0.06); }
+    }
+
+    .ts-file-del {
+        flex-shrink: 0;
+        display: flex;
+        background: none;
+        border: none;
+        color: #555;
+        cursor: pointer;
+        padding: 2px;
+        border-radius: 4px;
+        &:hover { color: #e07a7a; }
+    }
+}
