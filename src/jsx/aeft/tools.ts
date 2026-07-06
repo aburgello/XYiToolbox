@@ -232,19 +232,29 @@ export const organiseFolders = (): Result => {
     solids!.parentFolder = assets!;
     png!.parentFolder = assets!;
 
-    // Single pass, NOT the original's 10x repeat. Reassigning an item's
-    // parentFolder never changes any item's index or app.project.numItems
-    // (only .remove() does -- see the deletion pass below), and no item's
-    // classification here (instanceof / label / mainSource / isStill) can
-    // change as a side effect of a DIFFERENT item being moved, so one scan
-    // already sees and sorts every item exactly once. Verified against AE's
-    // documented indexing model, not assumed: indices are creation-order
-    // based and stable under reparenting. The original's 10x had no
-    // technical basis -- note the Composition/Footage-to-root block below
-    // already reparents in a single un-looped pass, so even the original
-    // author didn't treat reparenting itself as needing repetition.
+    // CORRECTED: an earlier version of this optimization assumed
+    // reassigning parentFolder never changes any item's index in
+    // app.project.items, based on general AE scripting documentation, and
+    // iterated 1..numItems by index while reparenting in place. That
+    // assumption was WRONG for real projects -- confirmed empirically
+    // (not just re-argued from memory) via a controlled test: generating a
+    // batch of comps and running this function once left roughly every
+    // OTHER comp in a consecutive run unsorted, the textbook signature of
+    // mutating a collection while iterating it forward by index (identical
+    // bug class to FolderItem.remove() shifting indices below -- it turns
+    // out reparenting does too). Fixed the same way as the deletion pass
+    // already was: snapshot every item as a stable object reference FIRST,
+    // then iterate that plain array instead of the live, index-shifting
+    // collection. No item gets added or removed between here and the
+    // deletion pass below (only reparented), so this one snapshot stays
+    // complete and accurate through all three reparenting passes.
+    const allItems: Item[] = [];
     for (let i = 1; i <= app.project.numItems; i++) {
-      const item = app.project.item(i);
+      allItems.push(app.project.item(i));
+    }
+
+    for (let idx = 0; idx < allItems.length; idx++) {
+      const item = allItems[idx];
       if (item instanceof CompItem) {
         item.parentFolder = item.label === 1 ? main! : preComp!;
       }
@@ -261,9 +271,10 @@ export const organiseFolders = (): Result => {
     // PNG stills get their own pass -- either explicitly labelled (11) or
     // named with a .png extension. Runs AFTER the classification pass above
     // (which put every still in Artwork) to refine PNG stills out into
-    // their own folder. Same single-pass reasoning as above.
-    for (let i = 1; i <= app.project.numItems; i++) {
-      const item = app.project.item(i);
+    // their own folder. Same stable-snapshot iteration as above (reusing
+    // the same snapshot -- nothing was added/removed by the pass above).
+    for (let idx = 0; idx < allItems.length; idx++) {
+      const item = allItems[idx];
       const source = item instanceof FootageItem ? item.mainSource : null;
       const isPngByExt = item.name.slice(-3).toLowerCase() === "png";
       if (source instanceof FileSource && source.isStill && (item.label === 11 || isPngByExt)) {
@@ -271,14 +282,14 @@ export const organiseFolders = (): Result => {
       }
     }
 
-    for (let i = 1; i <= app.project.numItems; i++) {
-      const item = app.project.item(i);
+    for (let idx = 0; idx < allItems.length; idx++) {
+      const item = allItems[idx];
       if (item instanceof FolderItem && (item.name === "Composition" || item.name === "Footage")) {
         item.parentFolder = app.project.rootFolder;
       }
     }
 
-    // Remove whatever folders ended up empty. Deletion is the ONE place
+    // Remove whatever folders ended up empty. Deletion is the other place
     // reindexing is real: FolderItem.remove() shifts every later item's
     // index down by one, which is exactly what breaks a naive forward
     // for-loop that removes in place (the item that slides into the
@@ -288,21 +299,22 @@ export const organiseFolders = (): Result => {
     // regardless, because a wrapper folder (e.g. "Composition") only becomes
     // empty AFTER its children (PreComp/Main) are removed.
     //
-    // Fixed deterministically instead of re-scanned around: snapshot every
-    // FolderItem as a direct object reference (stable regardless of index
-    // shifts), compute each one's nesting depth by walking .parentFolder up
-    // to rootFolder, then remove deepest-first. A child always has strictly
-    // greater depth than its parent, so children are always checked -- and
-    // removed if empty -- before their parent, letting nested empties
-    // cascade correctly in a single pass with no dependency on index order.
-    // Kept unscoped (every FolderItem, not just this tool's own 8) to match
-    // the original, which removed ANY empty folder in the project. Only ever
+    // Fixed deterministically instead of re-scanned around: reuse the same
+    // stable item snapshot (object references stay valid regardless of how
+    // reparenting shuffled their indices), filter to FolderItems, compute
+    // each one's nesting depth by walking .parentFolder up to rootFolder,
+    // then remove deepest-first. A child always has strictly greater depth
+    // than its parent, so children are always checked -- and removed if
+    // empty -- before their parent, letting nested empties cascade
+    // correctly in a single pass with no dependency on index order. Kept
+    // unscoped (every FolderItem, not just this tool's own 8) to match the
+    // original, which removed ANY empty folder in the project. Only ever
     // calls .remove() on a folder whose numItems is already 0, so no folder
     // holding real content -- or another snapshot entry -- is ever removed
     // as a side effect.
     const allFolders: FolderItem[] = [];
-    for (let i = 1; i <= app.project.numItems; i++) {
-      const item = app.project.item(i);
+    for (let idx = 0; idx < allItems.length; idx++) {
+      const item = allItems[idx];
       if (item instanceof FolderItem) allFolders.push(item);
     }
 
