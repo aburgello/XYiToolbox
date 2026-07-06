@@ -7,7 +7,7 @@
 // etc.). Split out of aeft.ts, which is now a thin barrel -- see its header
 // comment for context.
 // =============================================================================
-import { Result, SETTINGS_SECTION } from "./shared";
+import { Result, SETTINGS_SECTION, findBestComponentFile } from "./shared";
 import { drqrProcessLayers, makeParentLayerOfAllUnparented, scaleAllCameraZooms, scaleCompToFit } from "./deliver";
 
 
@@ -232,35 +232,42 @@ export const organiseFolders = (): Result => {
     solids!.parentFolder = assets!;
     png!.parentFolder = assets!;
 
-    // Repeated 10x, matching the original -- a single pass can miss items
-    // whose folder just got created/moved this same pass.
-    for (let pass = 1; pass <= 10; pass++) {
-      for (let i = 1; i <= app.project.numItems; i++) {
-        const item = app.project.item(i);
-        if (item instanceof CompItem) {
-          item.parentFolder = item.label === 1 ? main! : preComp!;
-        }
-        if (item instanceof FootageItem) {
-          const source = item.mainSource;
-          if (source instanceof SolidSource) {
-            item.parentFolder = solids!;
-          } else if (source instanceof FileSource) {
-            item.parentFolder = source.isStill ? artwork! : footage!;
-          }
+    // Single pass, NOT the original's 10x repeat. Reassigning an item's
+    // parentFolder never changes any item's index or app.project.numItems
+    // (only .remove() does -- see the deletion pass below), and no item's
+    // classification here (instanceof / label / mainSource / isStill) can
+    // change as a side effect of a DIFFERENT item being moved, so one scan
+    // already sees and sorts every item exactly once. Verified against AE's
+    // documented indexing model, not assumed: indices are creation-order
+    // based and stable under reparenting. The original's 10x had no
+    // technical basis -- note the Composition/Footage-to-root block below
+    // already reparents in a single un-looped pass, so even the original
+    // author didn't treat reparenting itself as needing repetition.
+    for (let i = 1; i <= app.project.numItems; i++) {
+      const item = app.project.item(i);
+      if (item instanceof CompItem) {
+        item.parentFolder = item.label === 1 ? main! : preComp!;
+      }
+      if (item instanceof FootageItem) {
+        const source = item.mainSource;
+        if (source instanceof SolidSource) {
+          item.parentFolder = solids!;
+        } else if (source instanceof FileSource) {
+          item.parentFolder = source.isStill ? artwork! : footage!;
         }
       }
     }
 
     // PNG stills get their own pass -- either explicitly labelled (11) or
-    // named with a .png extension.
-    for (let pass = 1; pass <= 5; pass++) {
-      for (let i = 1; i <= app.project.numItems; i++) {
-        const item = app.project.item(i);
-        const source = item instanceof FootageItem ? item.mainSource : null;
-        const isPngByExt = item.name.slice(-3).toLowerCase() === "png";
-        if (source instanceof FileSource && source.isStill && (item.label === 11 || isPngByExt)) {
-          item.parentFolder = png!;
-        }
+    // named with a .png extension. Runs AFTER the classification pass above
+    // (which put every still in Artwork) to refine PNG stills out into
+    // their own folder. Same single-pass reasoning as above.
+    for (let i = 1; i <= app.project.numItems; i++) {
+      const item = app.project.item(i);
+      const source = item instanceof FootageItem ? item.mainSource : null;
+      const isPngByExt = item.name.slice(-3).toLowerCase() === "png";
+      if (source instanceof FileSource && source.isStill && (item.label === 11 || isPngByExt)) {
+        item.parentFolder = png!;
       }
     }
 
@@ -271,15 +278,53 @@ export const organiseFolders = (): Result => {
       }
     }
 
-    // Remove whatever folders ended up empty, repeated 10x for the same
-    // reason as above.
-    for (let pass = 1; pass <= 10; pass++) {
-      for (let i = 1; i <= app.project.numItems; i++) {
-        const item = app.project.item(i);
-        if (item instanceof FolderItem && item.numItems === 0) {
-          item.remove();
-        }
+    // Remove whatever folders ended up empty. Deletion is the ONE place
+    // reindexing is real: FolderItem.remove() shifts every later item's
+    // index down by one, which is exactly what breaks a naive forward
+    // for-loop that removes in place (the item that slides into the
+    // just-vacated index gets skipped, since the loop counter already moved
+    // past it -- the original masked this by re-scanning 10x, which usually
+    // but not provably recovers). It also can't be done in one forward pass
+    // regardless, because a wrapper folder (e.g. "Composition") only becomes
+    // empty AFTER its children (PreComp/Main) are removed.
+    //
+    // Fixed deterministically instead of re-scanned around: snapshot every
+    // FolderItem as a direct object reference (stable regardless of index
+    // shifts), compute each one's nesting depth by walking .parentFolder up
+    // to rootFolder, then remove deepest-first. A child always has strictly
+    // greater depth than its parent, so children are always checked -- and
+    // removed if empty -- before their parent, letting nested empties
+    // cascade correctly in a single pass with no dependency on index order.
+    // Kept unscoped (every FolderItem, not just this tool's own 8) to match
+    // the original, which removed ANY empty folder in the project. Only ever
+    // calls .remove() on a folder whose numItems is already 0, so no folder
+    // holding real content -- or another snapshot entry -- is ever removed
+    // as a side effect.
+    const allFolders: FolderItem[] = [];
+    for (let i = 1; i <= app.project.numItems; i++) {
+      const item = app.project.item(i);
+      if (item instanceof FolderItem) allFolders.push(item);
+    }
+
+    const rootFolder = app.project.rootFolder;
+    const depthOf = (folder: FolderItem): number => {
+      let depth = 0;
+      let current: FolderItem = folder;
+      // Safety bound guards against any unexpected self-referential parent
+      // chain -- a real AE project's folder nesting is never anywhere near
+      // this deep, so it can only ever trip on a malformed cycle.
+      while (current !== rootFolder && depth < 1000) {
+        current = current.parentFolder;
+        depth++;
       }
+      return depth;
+    };
+
+    const withDepth = allFolders.map((folder) => ({ folder, depth: depthOf(folder) }));
+    withDepth.sort((a, b) => b.depth - a.depth);
+    for (let i = 0; i < withDepth.length; i++) {
+      const folder = withDepth[i].folder;
+      if (folder.numItems === 0) folder.remove();
     }
 
     app.endUndoGroup();
@@ -453,7 +498,8 @@ export const TC_COUNTRIES: { name: string; code: string }[] = [
   { name: "Aruba", code: "AW" }, { name: "Australia", code: "AU" }, { name: "Austria", code: "AT" },
   { name: "Azerbaijan", code: "AZ" }, { name: "Bahamas", code: "BS" }, { name: "Bahrain", code: "BH" },
   { name: "Bangladesh", code: "BD" }, { name: "Barbados", code: "BB" }, { name: "Belarus", code: "BY" },
-  { name: "Belgium", code: "BE" }, { name: "Belize", code: "BZ" }, { name: "Benin", code: "BJ" },
+  { name: "Belgium", code: "BE" }, { name: "Belgium French", code: "BE_FR" }, { name: "Belgium German", code: "BE_DE" },
+  { name: "Belize", code: "BZ" }, { name: "Benin", code: "BJ" },
   { name: "Bermuda", code: "BM" }, { name: "Bhutan", code: "BT" }, { name: "Bolivia (Plurinational State of)", code: "BO" },
   { name: "Bonaire, Sint Eustatius and Saba", code: "BQ" }, { name: "Bosnia and Herzegovina", code: "BA" }, { name: "Botswana", code: "BW" },
   { name: "Bouvet Island", code: "BV" }, { name: "Brazil", code: "BR" }, { name: "British Indian Ocean Territory", code: "IO" },
@@ -486,13 +532,14 @@ export const TC_COUNTRIES: { name: string; code: string }[] = [
   { name: "Jamaica", code: "JM" }, { name: "Japan", code: "JP" }, { name: "Jersey", code: "JE" },
   { name: "Jordan", code: "JO" }, { name: "Kazakhstan", code: "KZ" }, { name: "Kenya", code: "KE" },
   { name: "Kiribati", code: "KI" }, { name: "Korea (Democratic People's Republic of)", code: "KP" }, { name: "Korea (Republic of)", code: "KR" },
+  { name: "South Korea", code: "KR" },
   { name: "Kuwait", code: "KW" }, { name: "Kyrgyzstan", code: "KG" }, { name: "Lao People's Democratic Republic", code: "LA" },
   { name: "Latvia", code: "LV" }, { name: "Lebanon", code: "LB" }, { name: "Lesotho", code: "LS" },
   { name: "Liberia", code: "LR" }, { name: "Libya", code: "LY" }, { name: "Liechtenstein", code: "LI" },
   { name: "Lithuania", code: "LT" }, { name: "Luxembourg", code: "LU" }, { name: "Macao", code: "MO" },
   { name: "Madagascar", code: "MG" }, { name: "Malawi", code: "MW" }, { name: "Malaysia", code: "MY" },
   { name: "Maldives", code: "MV" }, { name: "Mali", code: "ML" }, { name: "Malta", code: "MT" },
-  { name: "Marshall Islands", code: "MH" }, { name: "Master OV", code: "OV" }, { name: "Martinique", code: "MQ" },
+  { name: "Marshall Islands", code: "MH" }, { name: "Master OV", code: "OV" }, { name: "OV", code: "OV" }, { name: "Martinique", code: "MQ" },
   { name: "Mauritania", code: "MR" }, { name: "Mauritius", code: "MU" }, { name: "Mayotte", code: "YT" },
   { name: "Mexico", code: "MX" }, { name: "Micronesia (Federated States of)", code: "FM" }, { name: "Moldova (Republic of)", code: "MD" },
   { name: "Monaco", code: "MC" }, { name: "Mongolia", code: "MN" }, { name: "Montenegro", code: "ME" },
@@ -518,13 +565,16 @@ export const TC_COUNTRIES: { name: string; code: string }[] = [
   { name: "South Africa", code: "ZA" }, { name: "South Georgia and the South Sandwich Islands", code: "GS" }, { name: "South Sudan", code: "SS" },
   { name: "Spain", code: "ES" }, { name: "Sri Lanka", code: "LK" }, { name: "Sudan", code: "SD" },
   { name: "Suriname", code: "SR" }, { name: "Svalbard and Jan Mayen", code: "SJ" }, { name: "Sweden", code: "SE" },
-  { name: "Switzerland", code: "CH" }, { name: "Syrian Arab Republic", code: "SY" }, { name: "Taiwan", code: "TW" },
+  { name: "Switzerland", code: "CH" }, { name: "Switzerland Italy", code: "CH_IT" }, { name: "Switzerland French", code: "CH_FR" },
+  { name: "Switzerland German", code: "CH_DE" }, { name: "Syrian Arab Republic", code: "SY" }, { name: "Taiwan", code: "TW" },
   { name: "Tajikistan", code: "TJ" }, { name: "Tanzania, United Republic of", code: "TZ" }, { name: "Thailand", code: "TH" },
   { name: "Timor-Leste", code: "TL" }, { name: "Togo", code: "TG" }, { name: "Tokelau", code: "TK" },
   { name: "Tonga", code: "TO" }, { name: "Trinidad and Tobago", code: "TT" }, { name: "Tunisia", code: "TN" },
   { name: "Turkey", code: "TR" }, { name: "Turkmenistan", code: "TM" }, { name: "Turks and Caicos Islands", code: "TC" },
   { name: "Tuvalu", code: "TV" }, { name: "Uganda", code: "UG" }, { name: "Ukraine", code: "UA" },
-  { name: "United Arab Emirates", code: "AE" }, { name: "United Kingdom", code: "GB/UK" }, { name: "United States of America", code: "US" },
+  { name: "United Arab Emirates", code: "AE" },
+  { name: "United Kingdom of Great Britain and Northern Ireland", code: "UK" }, { name: "Britain", code: "UK" }, { name: "UK", code: "UK" },
+  { name: "USA", code: "DOM" }, { name: "United States of America", code: "DOM" },
   { name: "United States Minor Outlying Islands", code: "UM" }, { name: "Uruguay", code: "UY" }, { name: "Uzbekistan", code: "UZ" },
   { name: "Vanuatu", code: "VU" }, { name: "Venezuela (Bolivarian Republic of)", code: "VE" }, { name: "Vietnam", code: "VN" },
   { name: "Virgin Islands (British)", code: "VG" }, { name: "Virgin Islands (U.S.)", code: "VI" }, { name: "Wallis and Futuna", code: "WF" },
@@ -1521,11 +1571,23 @@ export const campaignRename = (): CampaignRenameResult => {
 // XYi_MCIt.jsx alert file the button's name suggests; that file is loaded
 // by a same-named but entirely unused MCIt() function nothing calls).
 //
-// Batch-replaces PNG footage across a folder of .aep files: for each AEP,
-// finds its Footage/PNG folder and replaces each PNG footage item with the
-// best-scoring match (resolution + PNG-number token match, then Jaccard/
-// Levenshtein-hybrid filename similarity) from a second folder of PNGs,
-// then saves each project IN PLACE.
+// Batch-replaces image footage across a folder of .aep files: for each
+// AEP, finds its Footage/{PNG,JPG,JPEG,Images} folder(s) and replaces each
+// image footage item with the best-scoring match (resolution + trailing-
+// number token match, filtered to the SAME extension type, then the
+// shared findBestComponentFile() hybrid scorer) from a second folder of
+// images, then saves each project IN PLACE.
+//
+// **Re-ported to widen scope from PNG-only to PNG+JPG/JPEG**, matching
+// the studio's current XYi_pingLoc.jsx -- the old port only ever looked
+// inside a single hardcoded "PNG" subfolder and only matched .png files.
+// The upgraded source scans multiple candidate folder names (PNG/JPG/
+// JPEG/Images) and both extensions, with an explicit same-extension-type
+// guard (mcItGetExt()) so a .png footage item can never get replaced by a
+// .jpg candidate or vice versa -- that guard wasn't needed before since
+// PNG was the only type in play, but is now that both coexist. Also adds
+// the source's own $.sleep() pacing between replace()/save() calls (AE UI
+// stability on larger batches), which the PNG-only port never had.
 //
 // Deliberately NOT copy-first, unlike other tools that touch a scanned
 // .aep -- confirmed with the studio that this is always run against a
@@ -1577,81 +1639,27 @@ function mcItParseFilename(filename: string): McItParsed {
   return { firstOne, secondOne, thirdOne, pngNumber };
 }
 
-function mcItJaccard(inputA: string, inputB: string): number {
-  const JACCARD_WEIGHT = 0.7;
-  const LEVENSHTEIN_WEIGHT = 0.3;
-
-  const tokenize = (filename: string): string[] => {
-    let cleanName = String(filename).replace(/\.png|_V\d+/gi, "");
-    cleanName = cleanName.replace(/([a-z])([A-Z])/g, "$1 $2");
-    const tokens = cleanName.toLowerCase().split(/[_\-\s]+/);
-    const stopWords = ["dgtl", "digital", "master", "ov", "en", "the", "dooh", "dinth", "dfoh"];
-    const out: string[] = [];
-    for (let i = 0; i < tokens.length; i++) {
-      const token = tokens[i];
-      if (token && stopWords.indexOf(token) === -1 && !/^\d+x\d+$/.test(token) && !/^\d+$/.test(token)) {
-        out.push(token);
-      }
-    }
-    return out;
-  };
-
-  const levenshteinDistance = (s: string, t: string): number => {
-    if (!s.length) return t.length;
-    if (!t.length) return s.length;
-    const arr: number[][] = [];
-    for (let i = 0; i <= t.length; i++) {
-      arr[i] = [i];
-      for (let j = 1; j <= s.length; j++) {
-        arr[i][j] = i === 0 ? j : Math.min(arr[i - 1][j] + 1, arr[i][j - 1] + 1, arr[i - 1][j - 1] + (s[j - 1] === t[i - 1] ? 0 : 1));
-      }
-    }
-    return arr[t.length][s.length];
-  };
-
-  const tokensA = tokenize(String(inputA || ""));
-  const tokensB = tokenize(String(inputB || ""));
-  if (!tokensA.length && !tokensB.length) return 0;
-
-  const setA: Record<string, boolean> = {};
-  for (let i = 0; i < tokensA.length; i++) setA[tokensA[i]] = true;
-  const setB: Record<string, boolean> = {};
-  for (let j = 0; j < tokensB.length; j++) setB[tokensB[j]] = true;
-
-  let intersection = 0;
-  let union = 0;
-  for (const k in setA) {
-    if (setA.hasOwnProperty(k)) {
-      union++;
-      if (setB[k]) intersection++;
-    }
-  }
-  for (const k in setB) {
-    if (setB.hasOwnProperty(k) && !setA[k]) union++;
-  }
-
-  const jaccardScore = union === 0 ? 0 : intersection / union;
-  const cleanStrA = tokensA.join(" ");
-  const cleanStrB = tokensB.join(" ");
-  const maxLen = Math.max(cleanStrA.length, cleanStrB.length);
-  if (maxLen === 0) return jaccardScore;
-
-  const levenshteinScore = 1 - levenshteinDistance(cleanStrA, cleanStrB) / maxLen;
-  return jaccardScore * JACCARD_WEIGHT + levenshteinScore * LEVENSHTEIN_WEIGHT;
-}
-
-function mcItGetAllPngFiles(folder: Folder): File[] {
+function mcItGetAllImageFiles(folder: Folder): File[] {
   const out: File[] = [];
   const items = folder.getFiles();
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     if (item instanceof Folder) {
-      out.push(...mcItGetAllPngFiles(item));
-    } else if (item instanceof File && /\.png$/i.test(item.name)) {
+      out.push(...mcItGetAllImageFiles(item));
+    } else if (item instanceof File && /\.(png|jpe?g)$/i.test(item.name)) {
       out.push(item);
     }
   }
   return out;
+}
+
+// Strict extension check (not just "is this an image") so a .png footage
+// item is never replaced with a .jpg candidate or vice versa -- .jpg/.jpeg
+// count as the same type as each other, matching the source's own
+// isSameType check.
+function mcItGetExt(filename: string): string {
+  const match = filename.match(/\.([^.]+)$/);
+  return match ? match[1].toLowerCase() : "";
 }
 
 interface McItResult {
@@ -1667,10 +1675,10 @@ export const mcIt = (): McItResult => {
     const aepFiles = (projectFolder.getFiles() as (File | Folder)[]).filter((f): f is File => f instanceof File && /\.aep$/i.test(f.name));
     if (aepFiles.length === 0) return { success: false, error: "No AEP files found in that folder." };
 
-    const pngRootFolder = Folder.selectDialog("Select a folder containing PNG files (search includes subfolders)");
-    if (!pngRootFolder) return { success: false, error: "No PNG folder selected." };
-    const pngFiles = mcItGetAllPngFiles(pngRootFolder);
-    if (pngFiles.length === 0) return { success: false, error: "No PNG files found in that folder." };
+    const imageRootFolder = Folder.selectDialog("Select a folder containing Image files (PNG/JPG) (search includes subfolders)");
+    if (!imageRootFolder) return { success: false, error: "No Image folder selected." };
+    const imageFiles = mcItGetAllImageFiles(imageRootFolder);
+    if (imageFiles.length === 0) return { success: false, error: "No Image files found in that folder." };
 
     let processedCount = 0;
     let replacedCount = 0;
@@ -1692,51 +1700,53 @@ export const mcIt = (): McItResult => {
       }
       if (!footageFolder) continue;
 
-      let pngFolderInProject: FolderItem | null = null;
+      const targetFolders: FolderItem[] = [];
       for (let i = 1; i <= footageFolder.numItems; i++) {
         const item = footageFolder.item(i);
-        if (item instanceof FolderItem && item.name === "PNG") {
-          pngFolderInProject = item;
-          break;
+        if (item instanceof FolderItem && (item.name === "PNG" || item.name === "JPG" || item.name === "JPEG" || item.name === "Images")) {
+          targetFolders.push(item);
         }
       }
-      if (!pngFolderInProject) continue;
+      if (targetFolders.length === 0) continue;
 
-      for (let j = 1; j <= pngFolderInProject.numItems; j++) {
-        const footageItem = pngFolderInProject.item(j) as FootageItem;
-        if (footageItem.file && /\.png$/i.test(footageItem.file.name)) {
-          const originalName = footageItem.file.name;
-          const parsedOriginal = mcItParseFilename(originalName);
+      for (let tf = 0; tf < targetFolders.length; tf++) {
+        const targetFolder = targetFolders[tf];
+        for (let j = 1; j <= targetFolder.numItems; j++) {
+          const footageItem = targetFolder.item(j) as FootageItem;
+          if (footageItem.file && /\.(png|jpe?g)$/i.test(footageItem.file.name)) {
+            const originalName = footageItem.file.name;
+            const originalExt = mcItGetExt(originalName);
+            const parsedOriginal = mcItParseFilename(originalName);
 
-          let bestFile: File | null = null;
-          let bestScore = -1;
-
-          for (let k = 0; k < pngFiles.length; k++) {
-            const candidate = pngFiles[k];
-            const parsedCandidate = mcItParseFilename(candidate.name);
-            if (parsedAEP.thirdOne === parsedCandidate.thirdOne && parsedOriginal.pngNumber === parsedCandidate.pngNumber) {
-              const score = mcItJaccard(originalName, candidate.name);
-              if (score > bestScore) {
-                bestScore = score;
-                bestFile = candidate;
+            const validCandidates: File[] = [];
+            for (let k = 0; k < imageFiles.length; k++) {
+              const candidate = imageFiles[k];
+              const candidateExt = mcItGetExt(candidate.name);
+              const parsedCandidate = mcItParseFilename(candidate.name);
+              const isSameType = originalExt === candidateExt || ((originalExt === "jpg" || originalExt === "jpeg") && (candidateExt === "jpg" || candidateExt === "jpeg"));
+              if (isSameType && parsedAEP.thirdOne === parsedCandidate.thirdOne && parsedOriginal.pngNumber === parsedCandidate.pngNumber) {
+                validCandidates.push(candidate);
               }
             }
-          }
 
-          if (bestFile) {
-            footageItem.replace(bestFile);
-            replacedCount++;
+            const bestFile = findBestComponentFile(originalName, validCandidates);
+            if (bestFile) {
+              footageItem.replace(bestFile);
+              replacedCount++;
+              $.sleep(500);
+            }
           }
         }
       }
 
       proj.save();
       processedCount++;
+      $.sleep(1500);
     }
 
     return {
       success: true,
-      message: `Processed ${processedCount} project(s), replaced ${replacedCount} PNG(s). Files were updated and saved in place.`,
+      message: `Processed ${processedCount} project(s), replaced ${replacedCount} image(s) (PNG/JPG). Files were updated and saved in place.`,
     };
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -3494,211 +3504,6 @@ export function losOpenForEdit(file: File): Project | null {
   return app.open(file);
 }
 
-function losFindBestComponentFile(targetName: string, candidates: File[]): File | null {
-  const ACCEPT_THRESHOLD = 0.01;
-  const NUMERIC_BOOST = 0.25;
-  const SUBSTRING_BOOST = 0.15;
-
-  function norm(s: string): string {
-    if (!s) return "";
-    s = (s + "").toLowerCase();
-    s = s.replace(/\.[a-z0-9]{1,5}$/i, "");
-    s = s.replace(/[^a-z0-9]+/g, " ");
-    s = s.replace(/\s+/g, " ");
-    return s.replace(/^\s+|\s+$/g, "");
-  }
-  function splitDigitsAlpha(tok: string): string[] {
-    const out = [tok];
-    let m = tok.match(/^([0-9]+)([a-z]+)$/i);
-    if (m) return [tok, m[1], m[2]];
-    m = tok.match(/^([a-z]+)([0-9]+)$/i);
-    if (m) return [tok, m[1], m[2]];
-    return out;
-  }
-  function tokenizeSimple(s: string): string[] {
-    const base = norm(s);
-    const raw = base ? base.split(" ") : [];
-    const enriched: string[] = [];
-    for (let i = 0; i < raw.length; i++) {
-      const parts = splitDigitsAlpha(raw[i]);
-      for (let j = 0; j < parts.length; j++) if (parts[j]) enriched.push(parts[j]);
-    }
-    const seen: Record<string, boolean> = {};
-    const tokens: string[] = [];
-    for (let k = 0; k < enriched.length; k++) {
-      if (!seen[enriched[k]]) {
-        seen[enriched[k]] = true;
-        tokens.push(enriched[k]);
-      }
-    }
-    return tokens;
-  }
-  function numbersIn(s: string): string[] {
-    const m = (s + "").match(/\d+/g);
-    if (!m) return [];
-    const seen: Record<string, boolean> = {};
-    const arr: string[] = [];
-    for (let i = 0; i < m.length; i++) {
-      if (!seen[m[i]]) {
-        seen[m[i]] = true;
-        arr.push(m[i]);
-      }
-    }
-    return arr;
-  }
-
-  function jaccardHybrid(inputA: string, inputB: string): number {
-    const JACCARD_WEIGHT = 0.7;
-    const LEVENSHTEIN_WEIGHT = 0.3;
-    function tokenize(filename: string): string[] {
-      const cleanName = String(filename || "")
-        .replace(/\.aep|_V\d+/gi, "")
-        .replace(/([a-z])([A-Z])/g, "$1 $2");
-      const tokens = cleanName.toLowerCase().split(/[_\-\s]+/);
-      const stopWords = ["dgtl", "digital", "master", "ov", "en", "the"];
-      const finalTokens: string[] = [];
-      for (let i = 0; i < tokens.length; i++) {
-        const token = tokens[i];
-        if (token && stopWords.indexOf(token) === -1 && !/^\d+x\d+$/.test(token)) finalTokens.push(token);
-      }
-      return finalTokens;
-    }
-    function levenshteinDistance(s: string, t: string): number {
-      s = String(s || "");
-      t = String(t || "");
-      if (!s.length) return t.length;
-      if (!t.length) return s.length;
-      const arr: number[][] = [];
-      for (let i = 0; i <= t.length; i++) {
-        arr[i] = [];
-        arr[i][0] = i;
-      }
-      for (let j = 0; j <= s.length; j++) arr[0][j] = j;
-      for (let i = 1; i <= t.length; i++) {
-        for (let j = 1; j <= s.length; j++) {
-          const cost = s.charAt(j - 1) === t.charAt(i - 1) ? 0 : 1;
-          let min = arr[i - 1][j] + 1;
-          if (arr[i][j - 1] + 1 < min) min = arr[i][j - 1] + 1;
-          if (arr[i - 1][j - 1] + cost < min) min = arr[i - 1][j - 1] + cost;
-          arr[i][j] = min;
-        }
-      }
-      return arr[t.length][s.length];
-    }
-    const tokensA = tokenize(inputA);
-    const tokensB = tokenize(inputB);
-    if (!tokensA.length && !tokensB.length) return 0;
-    const setA: Record<string, boolean> = {};
-    const setB: Record<string, boolean> = {};
-    for (let i = 0; i < tokensA.length; i++) setA[tokensA[i]] = true;
-    for (let j = 0; j < tokensB.length; j++) setB[tokensB[j]] = true;
-    let intersection = 0;
-    let union = 0;
-    for (const k in setA) {
-      union++;
-      if (setB[k]) intersection++;
-    }
-    for (const k in setB) {
-      if (!setA[k]) union++;
-    }
-    const jaccardScore = union === 0 ? 0 : intersection / union;
-    let finalScore = jaccardScore;
-    const cleanStrA = tokensA.join(" ");
-    const cleanStrB = tokensB.join(" ");
-    const maxLen = Math.max(cleanStrA.length, cleanStrB.length);
-    if (maxLen > 0) finalScore = jaccardScore * JACCARD_WEIGHT + (1 - levenshteinDistance(cleanStrA, cleanStrB) / maxLen) * LEVENSHTEIN_WEIGHT;
-    return finalScore;
-  }
-
-  function jaroWinkler(s1: string, s2: string): number {
-    s1 = String(s1 || "");
-    s2 = String(s2 || "");
-    if (s1 === s2) return 1;
-    const len1 = s1.length;
-    const len2 = s2.length;
-    if (len1 === 0 || len2 === 0) return 0;
-    const matchWindow = Math.floor(Math.max(len1, len2) / 2) - 1;
-    const matches1: boolean[] = new Array(len1);
-    const matches2: boolean[] = new Array(len2);
-    let m = 0;
-    for (let i = 0; i < len1; i++) {
-      const start = Math.max(0, i - matchWindow);
-      const end = Math.min(i + matchWindow + 1, len2);
-      for (let j = start; j < end; j++) {
-        if (!matches2[j] && s1.charAt(i) === s2.charAt(j)) {
-          matches1[i] = true;
-          matches2[j] = true;
-          m++;
-          break;
-        }
-      }
-    }
-    if (m === 0) return 0;
-    let t = 0;
-    let k = 0;
-    for (let i = 0; i < len1; i++) {
-      if (matches1[i]) {
-        while (!matches2[k]) k++;
-        if (s1.charAt(i) !== s2.charAt(k)) t++;
-        k++;
-      }
-    }
-    t = t / 2.0;
-    let jaro = (m / len1 + m / len2 + (m - t) / m) / 3.0;
-    if (jaro > 0.7) {
-      let prefix = 0;
-      for (let i = 0; i < Math.min(4, Math.min(len1, len2)); i++) {
-        if (s1.charAt(i) === s2.charAt(i)) prefix++;
-        else break;
-      }
-      jaro += prefix * 0.1 * (1 - jaro);
-    }
-    return jaro;
-  }
-
-  const targetNorm = norm(targetName);
-  if (!targetNorm) return null;
-  const targetNums = numbersIn(targetName);
-
-  for (let e = 0; e < candidates.length; e++) {
-    if (norm(candidates[e].name) === targetNorm) return candidates[e];
-  }
-
-  let best: File | null = null;
-  let bestScore = -1;
-  for (let c = 0; c < candidates.length; c++) {
-    const cname = candidates[c].name;
-    const cbase = norm(cname);
-    const jaccardLevScore = jaccardHybrid(targetName, cname);
-    const jwScore = jaroWinkler(targetNorm, cbase);
-    const blendedBaseScore = jwScore * 0.6 + jaccardLevScore * 0.4;
-
-    let substringBonus = 0;
-    if (cbase.indexOf(targetNorm) !== -1 || targetNorm.indexOf(cbase) !== -1) substringBonus = SUBSTRING_BOOST;
-
-    const cNums = numbersIn(cname);
-    let numInter = 0;
-    if (targetNums.length && cNums.length) {
-      for (let a = 0; a < targetNums.length; a++) {
-        for (let b = 0; b < cNums.length; b++) {
-          if (targetNums[a] === cNums[b]) {
-            numInter++;
-            break;
-          }
-        }
-      }
-    }
-    const numRatio = targetNums.length ? numInter / targetNums.length : 0;
-    const score = blendedBaseScore + NUMERIC_BOOST * numRatio + substringBonus;
-    if (score > bestScore) {
-      bestScore = score;
-      best = candidates[c];
-    }
-  }
-  if (best && bestScore >= ACCEPT_THRESHOLD) return best;
-  return best;
-}
-
 function losCollectFilesRecursive(folder: Folder, list: File[], fileFilter: (f: File) => boolean) {
   const files = folder.getFiles();
   for (let i = 0; i < files.length; i++) {
@@ -3918,7 +3723,7 @@ export const losApplyCsvToProjects = (targetLayerName: string, csvFolderPath: st
           if (!layer || layer.name !== targetLayerName) continue;
 
           const row = targetRow;
-          const compMatch = losFindBestComponentFile(row.name, componentsFiles);
+          const compMatch = findBestComponentFile(row.name, componentsFiles);
           let footFile: File | null = compMatch instanceof File ? compMatch : row.filePath ? new File(row.filePath) : null;
 
           if (!footFile || !footFile.exists) {

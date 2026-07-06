@@ -7,7 +7,7 @@
 // =============================================================================
 import { CampaignLocaliserResult, TC_COUNTRIES, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, scanMastersForBestMatch } from "./tools";
 import { makeParentLayerOfAllUnparented, scaleAllCameraZooms } from "./deliver";
-import { Result, SETTINGS_SECTION, decode } from "./shared";
+import { Result, SETTINGS_SECTION, decode, findBestComponentFile } from "./shared";
 import { loadCampaignsRaw } from "./review";
 
 
@@ -366,10 +366,10 @@ export const campaignLocaliserTrott = (troDur: string, troArt: string, troArtOn:
   return { success: true };
 };
 
-// Ported 1:1 from XYi_Campaign_Trotting2.jsx's campLoc()/gimme()/jaccard().
+// Ported from XYi_Campaign_Trotting2.jsx's campLoc()/gimme()/Detective().
 // **TroDur/TroArt/TroArtOn/TroCamp/TroCampOn are accepted but never used**
 // -- confirmed dead in the original body; Trotting Along 2.0 auto-detects
-// campaign/artwork/duration entirely from Jaccard-matching the PDF's own
+// campaign/artwork/duration entirely from hybrid-matching the PDF's own
 // filename against every master .aep under the masters path (via
 // nameGeneratorParse(), reusing the same parser Name Generator/PDF to CSV
 // use, rather than duplicating TC_nameBox() a third/fourth time), instead
@@ -377,55 +377,10 @@ export const campaignLocaliserTrott = (troDur: string, troArt: string, troArtOn:
 // for the same reason as Build From CSV's page/art/tt -- the toolbox tab
 // shares one set of Duration/Art/TT fields across both Trott!/Trott 2.0
 // buttons, so the signature needs to match even though this version
-// ignores them.
-function trotJaccardHybrid(inputA: string, inputB: string): number {
-  const JACCARD_WEIGHT = 0.7;
-  const LEVENSHTEIN_WEIGHT = 0.3;
-  const stopWords = ["dgtl", "digital", "master", "ov", "en", "the", "6sheet", "30sheet", "48sheet", "96sheet", "extreme", "horizontal", "square", "quad", "tall", "portrait"];
-
-  function tokenize(filename: string): string[] {
-    const cleanName = String(filename || "")
-      .replace(/\.aep|_V\d+/gi, "")
-      .replace(/([a-z])([A-Z])/g, "$1 $2");
-    const tokens = cleanName.toLowerCase().split(/[_\-\s]+/);
-    return tokens.filter((t) => t && stopWords.indexOf(t) === -1 && !/^\d+x\d+$/.test(t));
-  }
-  function levenshteinDistance(s: string, t: string): number {
-    if (!s.length) return t.length;
-    if (!t.length) return s.length;
-    const arr: number[][] = [];
-    for (let i = 0; i <= t.length; i++) {
-      arr[i] = [i];
-      for (let j = 1; j <= s.length; j++) {
-        arr[i][j] = i === 0 ? j : Math.min(arr[i - 1][j] + 1, arr[i][j - 1] + 1, arr[i - 1][j - 1] + (s.charAt(j - 1) === t.charAt(i - 1) ? 0 : 1));
-      }
-    }
-    return arr[t.length][s.length];
-  }
-
-  const tokensA = tokenize(inputA);
-  const tokensB = tokenize(inputB);
-  if (!tokensA.length && !tokensB.length) return 0;
-  const setA: Record<string, boolean> = {};
-  const setB: Record<string, boolean> = {};
-  for (let i = 0; i < tokensA.length; i++) setA[tokensA[i]] = true;
-  for (let j = 0; j < tokensB.length; j++) setB[tokensB[j]] = true;
-  let intersection = 0;
-  let union = 0;
-  for (const k in setA) {
-    union++;
-    if (setB[k]) intersection++;
-  }
-  for (const k in setB) {
-    if (!setA[k]) union++;
-  }
-  const jaccardScore = union === 0 ? 0 : intersection / union;
-  const cleanStrA = tokensA.join(" ");
-  const cleanStrB = tokensB.join(" ");
-  const maxLen = Math.max(cleanStrA.length, cleanStrB.length);
-  if (maxLen === 0) return jaccardScore;
-  return jaccardScore * JACCARD_WEIGHT + (1 - levenshteinDistance(cleanStrA, cleanStrB) / maxLen) * LEVENSHTEIN_WEIGHT;
-}
+// ignores them. Matching itself is the shared findBestComponentFile()
+// hybrid matcher (see trotGimmeV2() below), not a local Jaccard-only
+// scorer -- there used to be one here (trotJaccardHybrid()), removed once
+// nothing called it anymore.
 
 function trotRemoveStopwords(inputString: string): string {
   const stopwords = ["6SHEET", "30SHEET", "48SHEET", "96SHEET", "HORIZONTAL", "SQUARE", "EXTREME", "TALL", "PORTRAIT", "QUAD"];
@@ -484,6 +439,13 @@ function trotPreprocessMasters(rootPath: string): TrotMasterInfo[] {
   return processed;
 }
 
+// Re-ported to use the shared findBestComponentFile() hybrid matcher
+// (Jaccard+Levenshtein+Jaro-Winkler+numeric+substring) instead of the
+// plain Jaccard-only trotJaccardHybrid() scan below -- matches the
+// studio's current XYi_Campaign_Trotting2.jsx, whose gimme() calls the
+// same shared Detective() every other name-matching tool here now uses.
+// Also matches its exact "No match found" fallback string rather than an
+// empty campaign name when nothing scores at all.
 function trotGimmeV2(filename: string, masterAeFiles: TrotMasterInfo[]): [string, string, string] {
   const fileInfo = nameGeneratorParse(filename);
   if (!fileInfo.success) return ["Parsing Error", "Parsing Error", "Parsing Error"];
@@ -492,15 +454,8 @@ function trotGimmeV2(filename: string, masterAeFiles: TrotMasterInfo[]): [string
   const secondOne = fileInfo.artworkType || "";
   const thirdOne = fileInfo.duration || " ";
 
-  let bestScore = -1;
-  let campName = "";
-  for (let i = 0; i < masterAeFiles.length; i++) {
-    const score = trotJaccardHybrid(fileTokens, masterAeFiles[i].tokens);
-    if (score > bestScore) {
-      bestScore = score;
-      campName = masterAeFiles[i].tokens;
-    }
-  }
+  const bestMatch = findBestComponentFile(fileTokens, masterAeFiles);
+  const campName = bestMatch ? bestMatch.tokens : "No match found";
   return [campName, secondOne, thirdOne];
 };
 
@@ -599,11 +554,14 @@ export const campaignLocaliserTrott2 = (_troDur: string, _troArt: string, _troAr
 // Ported 1:1 from XYi_PDF_to_CSV.jsx's generateCSV() -- no project is ever
 // opened, just scans filenames and writes a CSV, so this carries none of
 // the master-file risk the two Trotting Along tools above do. Reuses the
-// same Jaccard matching / master pre-processing as Trotting Along 2.0
-// (trotJaccardHybrid()/trotPreprocessMasters()/trotFindAllAeps()) since
-// it's the same "match PDFs to masters by filename" logic the original's
-// own Trotting Along 2.0-derived comment block says it's "Based on
-// Campaign Localiser Logic" -- not duplicated a third time.
+// same hybrid matching / master pre-processing as Trotting Along 2.0
+// (trotGimmeV2()/trotPreprocessMasters()/trotFindAllAeps()) since it's the
+// same "match PDFs to masters by filename" logic the original's own
+// Trotting Along 2.0-derived comment block says it's "Based on Campaign
+// Localiser Logic" -- not duplicated a third time. Upgrading trotGimmeV2()
+// to the shared findBestComponentFile() matcher (see its own comment)
+// upgrades this tool's matching too, automatically, since it calls the
+// exact same function.
 interface PdfToCsvResult extends Result {
   filePath?: string;
   matched?: number;
@@ -1359,25 +1317,24 @@ export const importComponentsIntoBatchFolder = (componentPaths: string[], batchF
 // TC_COUNTRIES table Cheeky T Check's territoryCheck() already has,
 // just the reverse lookup direction -- name to code instead of code to
 // name). Ported from XYi_Cheeky_InvT_Check.jsx's getCountryCode().
+//
+// Re-ported to use the shared findBestComponentFile() hybrid matcher
+// instead of a plain substring scan -- matches the studio's current
+// XYi_Cheeky_InvT_Check.jsx, which calls the same shared Detective()
+// matcher every other filename/name-matching tool in this codebase now
+// uses. The old plain-indexOf version required territoryName to be an
+// exact substring of a TC_COUNTRIES entry, so a real folder name with a
+// typo, abbreviation, or extra descriptive text and no clean substring
+// match returned null outright; the hybrid matcher tolerates that.
+// Still no .match(dynamicString) anywhere in this path (findBestComponentFile
+// only ever uses fixed hardcoded regexes internally, never the caller's own
+// string as a pattern), so the earlier regex-injection fix this function
+// needed (a real folder name like "APAC (ex. China)" used to throw a
+// SyntaxError against .match()) stays intact.
 export const getTerritoryCountryCode = (territoryName: string): string | null => {
   const userInput = territoryName.toLowerCase().replace("_", " ");
-  for (let i = 0; i < TC_COUNTRIES.length; i++) {
-    // Plain substring check, not .match() -- unlike territoryCheck() above,
-    // territoryName here is a REAL FOLDER NAME straight off disk (Localised
-    // Library calls this once per territory in a campaign's Markets folder,
-    // and Trotting Along calls it via trotFindTerrFolder()), not a fixed
-    // set of clean country codes. .match() treats its argument as a regex
-    // pattern, so a folder named e.g. "APAC (ex. China)" throws a
-    // SyntaxError (unbalanced parens) instead of just not matching --
-    // that's a real bug that was surfacing as spurious "CEP not connected"
-    // toasts in the UI (the generic evalTS catch-all can't tell a genuine
-    // missing bridge apart from a thrown ExtendScript exception). indexOf
-    // has no such risk and is exactly what a substring check needs.
-    if (TC_COUNTRIES[i].name.toLowerCase().indexOf(userInput) !== -1) {
-      return TC_COUNTRIES[i].code;
-    }
-  }
-  return null;
+  const bestMatch = findBestComponentFile(userInput, TC_COUNTRIES);
+  return bestMatch ? bestMatch.code : null;
 };
 
 // =============================================================================
@@ -1425,65 +1382,128 @@ interface NameDetectResult extends Result {
   territory?: string;
   isInternational?: boolean;
   duration?: string;
+  version?: string;
 }
 
-// Ported 1:1 from TC_nameBox() in XYi_Cheeky_N_Check.jsx -- reverse-parses a
+// Ported from TC_nameBox() in XYi_Cheeky_N_Check.jsx -- reverse-parses a
 // standard name back into its component fields. Pure string parsing, reads
-// nothing from disk. `duration` was added to the returned object (the
-// original's index-4 return value, TC_Duration) when Trotting Along 2.0
-// and PDF to CSV were ported -- both need it and both call this same
+// nothing from disk. Re-ported to a more robust upstream revision of
+// TC_nameBox() (the studio's file had since moved on from the version this
+// was first ported against), fixing three real gaps the old port had:
+//  1. Never stripped the file extension first, so a territory landing as
+//     the very last real token (e.g. "..._10sec_BR.aep") failed its own
+//     "underscore-or-end-of-string" match, since ".aep" followed it
+//     instead of either.
+//  2. Assumed the DGTL-prefixed convention unconditionally (no fallback
+//     for a "...[Campaign]_[Artwork]_..." ordering without "_DGTL_").
+//  3. Duration/territory regexes scanned the WHOLE name unscoped, risking
+//     a false match against a coincidental digit/letter run earlier in
+//     the campaign name itself -- now scoped to only the tokens after the
+//     size match, same as the studio's own current source.
+// Also adds `version` (TC_Version in the original), which the old port
+// never exposed at all. `duration` was added earlier when Trotting Along
+// 2.0/PDF to CSV were ported -- both need it and both call this same
 // parser (as `FilNameChe()`/`gimme()` did in the original) rather than
-// duplicating TC_nameBox() a third time. Existing callers (Name Generator)
-// simply don't read the new field, so this is purely additive.
+// duplicating TC_nameBox() a third time. Existing callers that don't
+// care about `version` simply don't read it, so this stays additive.
 function nameGeneratorParse(name: string): NameDetectResult {
   const artworkTypes = ["DOOH", "DFOH", "DINTH", "FOH"];
-  const regSize = /(\d+x\d+)(?:px)?/;
-  const regDur = /(\d+)s(?:ec)?/;
-  const durMatch = name.match(regDur);
-  const duration = durMatch ? durMatch[1] + "sec" : "";
-  const regionMatch = name.match(/_(INTL|DOM)_/);
 
-  let filmTitle = "";
+  let cleanName = name;
+  const extIndex = cleanName.lastIndexOf(".");
+  if (extIndex > 0) cleanName = cleanName.substring(0, extIndex);
+
+  const parts = cleanName.split("_");
+
+  // 1. Region (INTL/DOM) and film title -- everything before it.
+  let regionIndex = -1;
   let indom = "";
-  if (regionMatch) {
-    indom = regionMatch[1];
-    filmTitle = name.substring(0, regionMatch.index);
+  for (let i = 0; i < parts.length; i++) {
+    const currentPart = parts[i].toUpperCase();
+    if (currentPart === "INTL" || currentPart === "DOM") {
+      indom = currentPart;
+      regionIndex = i;
+      break;
+    }
+  }
+  const filmTitle = regionIndex > 0 ? parts.slice(0, regionIndex).join("_") : "";
+
+  // 2. Size token, scoped to AFTER the region so a digit run in the film
+  // title itself can't be mistaken for it.
+  let sizeIndex = -1;
+  const regSize = /^(\d+x\d+)(?:px)?$/i;
+  for (let j = regionIndex + 1; j < parts.length; j++) {
+    if (regSize.test(parts[j])) {
+      sizeIndex = j;
+      break;
+    }
   }
 
-  const sizeMatch = name.match(regSize);
-
+  // 3. Campaign & artwork type from the tokens between region and size --
+  // handles both "..._DGTL_[Artwork]_[Campaign]_..." (the documented
+  // studio convention) AND a non-DGTL "..._[Campaign]_[Artwork]_..."
+  // ordering, rather than assuming DGTL is always present.
   let artworkType = "";
   let campaign = "";
-  if (regionMatch && sizeMatch) {
-    let startOfDesc = regionMatch.index! + regionMatch[0].length;
-    const dgtlMarker = "_DGTL_";
-    const dgtlIndex = name.indexOf(dgtlMarker, regionMatch.index);
-    if (dgtlIndex !== -1) startOfDesc = dgtlIndex + dgtlMarker.length;
-
-    const endOfDesc = name.indexOf("_" + sizeMatch[0]);
-    if (endOfDesc > startOfDesc) {
-      const middlePart = name.substring(startOfDesc, endOfDesc);
-      const middleParts = middlePart.split("_").filter((p) => p !== "");
-
-      let artworkIndex = -1;
-      for (let j = 0; j < middleParts.length; j++) {
-        if (artworkTypes.indexOf(middleParts[j].toUpperCase()) !== -1) {
-          artworkIndex = j;
-          break;
+  if (regionIndex !== -1 && sizeIndex !== -1) {
+    const middleParts = parts.slice(regionIndex + 1, sizeIndex);
+    let dgtlIndex = -1;
+    let awIndex = -1;
+    for (let k = 0; k < middleParts.length; k++) {
+      const partUpper = middleParts[k].toUpperCase();
+      if (partUpper === "DGTL") {
+        dgtlIndex = k;
+      } else if (awIndex === -1) {
+        for (let n = 0; n < artworkTypes.length; n++) {
+          if (partUpper === artworkTypes[n]) {
+            awIndex = k;
+            artworkType = partUpper;
+            break;
+          }
         }
       }
-      if (artworkIndex !== -1) {
-        artworkType = middleParts.splice(artworkIndex, 1)[0];
-      }
+    }
+    if (dgtlIndex !== -1) {
+      const startIndex = awIndex !== -1 && awIndex > dgtlIndex ? awIndex + 1 : dgtlIndex + 1;
+      campaign = middleParts.slice(startIndex).join("_");
+    } else if (awIndex !== -1) {
+      campaign = middleParts.slice(0, awIndex).join("_");
+    } else {
       campaign = middleParts.join("_");
     }
   }
 
-  // Territory: 2-letter token surrounded by underscores (or trailing).
-  const terMatch = name.match(/_([A-Z]{2})(?:_|$)/);
-  const territory = terMatch ? terMatch[1] : "";
+  // 4. Duration/territory/version, scoped to AFTER the size token (or
+  // after region if no size was found) -- same false-match protection as
+  // the size scoping above.
+  let duration = "";
+  let territory = "";
+  let version = "";
+  const regDur = /^(\d+)s(?:ec)?$/i;
+  const regTer = /^[A-Z]{2}$/i;
+  const regVer = /^[Vv](\d+)$/;
+  const startIndexForSpecs = sizeIndex !== -1 ? sizeIndex + 1 : regionIndex + 1;
+  for (let p = startIndexForSpecs; p < parts.length; p++) {
+    const part = parts[p];
+    const dMatch = part.match(regDur);
+    if (dMatch && !duration) {
+      duration = dMatch[1] + "sec";
+      continue;
+    }
+    const tMatch = part.match(regTer);
+    if (tMatch && !territory) {
+      territory = tMatch[0].toUpperCase();
+      continue;
+    }
+    const vMatch = part.match(regVer);
+    if (vMatch && !version) {
+      const vNum = parseInt(vMatch[1], 10);
+      version = "V" + (vNum < 10 ? "0" + vNum : String(vNum));
+      continue;
+    }
+  }
 
-  return { success: true, filmTitle, artworkType, campaign, territory, isInternational: indom === "INTL", duration };
+  return { success: true, filmTitle, artworkType, campaign, territory, isInternational: indom === "INTL", duration, version };
 }
 
 export const nameGeneratorDetect = (): NameDetectResult => {
