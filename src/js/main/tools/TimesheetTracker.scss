@@ -122,6 +122,37 @@
 
     .ts-category-icon { flex-shrink: 0; color: var(--cat-icon, #5eead4); }
 
+    // ── Wrike User ID -- a one-time-per-artist setting, same boxed-icon
+    // language as .ts-category-select ────────────────────────────────────
+    .ts-wrike-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        max-width: 280px;
+        background: #1f1f1f;
+        border: 1px solid #3a3a3a;
+        border-radius: 6px;
+        padding-left: 9px;
+        margin-bottom: 12px;
+
+        &:focus-within { border-color: var(--cat-border, #2dd4bf); }
+    }
+
+    .ts-wrike-icon { flex-shrink: 0; color: var(--cat-icon, #5eead4); }
+
+    .ts-wrike-input {
+        flex: 1;
+        min-width: 0;
+        background: transparent;
+        color: #ddd;
+        border: none;
+        outline: none;
+        padding: 7px 8px 7px 0;
+        font-size: 11px;
+
+        &::placeholder { color: #666; }
+    }
+
     .ts-timer {
         font-size: 42px;
         font-weight: 700;

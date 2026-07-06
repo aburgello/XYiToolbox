@@ -1,0 +1,292 @@
+// =============================================================================
+// src/jsx/aeft/shell.ts -- app-shell prefs: Useful Folders, custom tool
+// order, home-screen favorites, SFX settings. Split out of aeft.ts, which
+// is now a thin barrel -- see its header comment for context.
+// =============================================================================
+import { Result } from "./shared";
+
+
+
+// =============================================================================
+// Useful Folders -- ported from XYi_Toolbox.jsx's "Useful Folders" tab
+// (UF_loadFolders()/UF_saveFolders()/etc). A user-curatable list of folder
+// shortcuts, persisted via the SAME app.settings section/key
+// (`"XYiToolbox"` / `"UsefulFolders"`) the still-live ScriptUI tab uses --
+// shortcuts added in either show up in both. Click reveals the folder in
+// Explorer/Finder (reuses the same OS-native reveal command as
+// revealFile()); nothing here reads or writes inside the folder itself.
+// =============================================================================
+interface UsefulFolder {
+  label: string;
+  path: string;
+}
+
+const UF_SETTINGS_SECTION = "XYiToolbox";
+const UF_SETTINGS_KEY = "UsefulFolders";
+
+function loadUsefulFoldersRaw(): UsefulFolder[] {
+  const out: UsefulFolder[] = [];
+  if (app.settings.haveSetting(UF_SETTINGS_SECTION, UF_SETTINGS_KEY)) {
+    const raw = app.settings.getSetting(UF_SETTINGS_SECTION, UF_SETTINGS_KEY);
+    const lines = raw.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i] === "") continue;
+      const parts = lines[i].split("\t");
+      if (parts.length >= 2) out.push({ label: parts[0], path: parts[1] });
+    }
+  }
+  return out;
+}
+
+function saveUsefulFoldersRaw(arr: UsefulFolder[]): void {
+  const lines: string[] = [];
+  for (let i = 0; i < arr.length; i++) {
+    const label = String(arr[i].label).replace(/[\t\n\r]/g, " ");
+    const path = String(arr[i].path).replace(/[\t\n\r]/g, " ");
+    lines.push(label + "\t" + path);
+  }
+  app.settings.saveSetting(UF_SETTINGS_SECTION, UF_SETTINGS_KEY, lines.join("\n"));
+}
+
+export const loadUsefulFolders = (): UsefulFolder[] => loadUsefulFoldersRaw();
+
+export const selectUsefulFolder = (): string | null => {
+  const folder = Folder.selectDialog("Select a folder to add:");
+  if (!folder) return null;
+  return folder.fsName;
+};
+
+export const addUsefulFolder = (label: string, path: string): Result => {
+  try {
+    const arr = loadUsefulFoldersRaw();
+    arr.push({ label, path });
+    saveUsefulFoldersRaw(arr);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+export const renameUsefulFolder = (index: number, newLabel: string): Result => {
+  try {
+    const arr = loadUsefulFoldersRaw();
+    if (index < 0 || index >= arr.length) return { success: false, error: "Folder not found." };
+    arr[index].label = newLabel;
+    saveUsefulFoldersRaw(arr);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+export const removeUsefulFolder = (index: number): Result => {
+  try {
+    const arr = loadUsefulFoldersRaw();
+    if (index < 0 || index >= arr.length) return { success: false, error: "Folder not found." };
+    arr.splice(index, 1);
+    saveUsefulFoldersRaw(arr);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+export const revealUsefulFolder = (path: string): Result => {
+  const fol = new Folder(path);
+  if (!fol.exists) return { success: false, error: "This folder no longer exists:\n" + path };
+  const p = fol.fsName;
+  if ($.os.indexOf("Windows") !== -1) {
+    system.callSystem('explorer "' + p + '"');
+  } else {
+    system.callSystem('open "' + p + '"');
+  }
+  return { success: true };
+};
+
+// =============================================================================
+// Custom tool order -- lets the user drag-and-drop reorder each category's
+// vertical tool list (main.tsx's Reorder.Group) instead of being stuck with
+// whatever order TOOLS is declared in there. Shell-level preference, not
+// tied to OV Library specifically (unlike campaigns/thumbnail overrides
+// above) -- grouped with Useful Folders since both are general app-shell
+// features rather than one tool's own data. No ScriptUI equivalent exists
+// to stay compatible with (the original toolbox's tabs weren't
+// reorderable), so this is CEP-only, but still persisted via the same
+// app.settings section as everything else for consistency.
+// =============================================================================
+const TOOL_ORDER_SETTINGS_SECTION = "XYiToolbox";
+const TOOL_ORDER_KEY = "OVToolOrder";
+
+interface ToolOrderEntry {
+  categoryId: string;
+  toolIds: string[];
+}
+
+function loadToolOrderRaw(): ToolOrderEntry[] {
+  const out: ToolOrderEntry[] = [];
+  if (app.settings.haveSetting(TOOL_ORDER_SETTINGS_SECTION, TOOL_ORDER_KEY)) {
+    const raw = app.settings.getSetting(TOOL_ORDER_SETTINGS_SECTION, TOOL_ORDER_KEY);
+    const lines = raw.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i] === "") continue;
+      const parts = lines[i].split("\t");
+      if (parts.length >= 2) out.push({ categoryId: parts[0], toolIds: parts[1].split(",") });
+    }
+  }
+  return out;
+}
+
+function saveToolOrderRaw(arr: ToolOrderEntry[]): void {
+  const lines: string[] = [];
+  for (let i = 0; i < arr.length; i++) {
+    const categoryId = String(arr[i].categoryId).replace(/[\t\n\r]/g, " ");
+    lines.push(categoryId + "\t" + arr[i].toolIds.join(","));
+  }
+  app.settings.saveSetting(TOOL_ORDER_SETTINGS_SECTION, TOOL_ORDER_KEY, lines.join("\n"));
+}
+
+// One round-trip for every category's order at once (there are only 4),
+// rather than a separate call per category -- main.tsx loads this once at
+// app mount, before any category screen is even visible.
+export const loadAllToolOrders = (): Record<string, string[]> => {
+  const all = loadToolOrderRaw();
+  const out: Record<string, string[]> = {};
+  for (let i = 0; i < all.length; i++) {
+    out[all[i].categoryId] = all[i].toolIds;
+  }
+  return out;
+};
+
+export const saveToolOrder = (categoryId: string, toolIds: string[]): Result => {
+  try {
+    const all = loadToolOrderRaw();
+    let found = false;
+    for (let i = 0; i < all.length; i++) {
+      if (all[i].categoryId === categoryId) {
+        all[i].toolIds = toolIds;
+        found = true;
+        break;
+      }
+    }
+    if (!found) all.push({ categoryId: categoryId, toolIds: toolIds });
+    saveToolOrderRaw(all);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// =============================================================================
+// Home-screen favorites (pinned tools) -- same bucket as tool order above:
+// a general app-shell preference, not tied to one specific tool's own data.
+// No ScriptUI equivalent -- the original toolbox had no favorites/pinning
+// concept at all -- so this is CEP-only, but still persisted via the same
+// app.settings section as everything else for consistency. Key keeps the
+// "OV" prefix for the same historical reason TOOL_ORDER_KEY does (see its
+// own comment above) -- this toolbox's settings all started life under OV
+// Library specifically, before it became one tool among many.
+// =============================================================================
+const FAVORITES_SETTINGS_SECTION = "XYiToolbox";
+const FAVORITES_KEY = "OVFavoriteTools";
+
+function loadFavoriteToolsRaw(): string[] {
+  if (app.settings.haveSetting(FAVORITES_SETTINGS_SECTION, FAVORITES_KEY)) {
+    const raw = app.settings.getSetting(FAVORITES_SETTINGS_SECTION, FAVORITES_KEY);
+    if (raw === "") return [];
+    return raw.split("\t");
+  }
+  return [];
+}
+
+// Plain array, no Result wrapper -- same reasoning as loadAllToolOrders
+// above: main.tsx just no-ops on a thrown/missing value (an empty
+// favorites list is a perfectly fine default), so there's nothing a
+// {success, error} shape would add here.
+export const loadFavoriteTools = (): string[] => {
+  return loadFavoriteToolsRaw();
+};
+
+export const saveFavoriteTools = (toolIds: string[]): Result => {
+  try {
+    const cleaned: string[] = [];
+    for (let i = 0; i < toolIds.length; i++) {
+      cleaned.push(String(toolIds[i]).replace(/[\t\n\r]/g, " "));
+    }
+    app.settings.saveSetting(FAVORITES_SETTINGS_SECTION, FAVORITES_KEY, cleaned.join("\t"));
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// =============================================================================
+// UI sound effects (sfx.ts) -- persisted on/off toggle, same section as
+// every other app-shell preference. Defaults to OFF (loadSfxEnabled returns
+// false when the setting has never been saved) -- a shared studio-floor tool
+// making noise by default is presumptuous; this is opt-in.
+// =============================================================================
+const SFX_SETTINGS_SECTION = "XYiToolbox";
+const SFX_ENABLED_KEY = "SfxEnabled";
+
+export const loadSfxEnabled = (): boolean => {
+  if (app.settings.haveSetting(SFX_SETTINGS_SECTION, SFX_ENABLED_KEY)) {
+    return app.settings.getSetting(SFX_SETTINGS_SECTION, SFX_ENABLED_KEY) === "1";
+  }
+  return false;
+};
+
+export const saveSfxEnabled = (enabled: boolean): Result => {
+  try {
+    app.settings.saveSetting(SFX_SETTINGS_SECTION, SFX_ENABLED_KEY, enabled ? "1" : "0");
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// Master volume, 0-1. Defaults to 1 (each preset's own gain in sfx.ts was
+// already tuned quiet -- 1 here means "use those tuned values as-is", not
+// "full blast") when never saved.
+const SFX_VOLUME_KEY = "SfxVolume";
+
+export const loadSfxVolume = (): number => {
+  if (app.settings.haveSetting(SFX_SETTINGS_SECTION, SFX_VOLUME_KEY)) {
+    const raw = parseFloat(app.settings.getSetting(SFX_SETTINGS_SECTION, SFX_VOLUME_KEY));
+    if (!isNaN(raw)) return Math.max(0, Math.min(1, raw));
+  }
+  return 1;
+};
+
+export const saveSfxVolume = (volume: number): Result => {
+  try {
+    const clamped = Math.max(0, Math.min(1, volume));
+    app.settings.saveSetting(SFX_SETTINGS_SECTION, SFX_VOLUME_KEY, String(clamped));
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// A one-time-per-artist preference (their own Wrike user ID), not tied to
+// any one campaign/batch -- set once in Timesheet Tracker's own field,
+// persisted here the same way, then embedded into every JSON export from
+// then on so the Supabase import path can attribute the row to a real
+// Wrike user instead of leaving it null.
+const WRIKE_USER_SETTINGS_SECTION = "XYiToolbox";
+const WRIKE_USER_ID_KEY = "WrikeUserId";
+
+export const loadWrikeUserId = (): string => {
+  if (app.settings.haveSetting(WRIKE_USER_SETTINGS_SECTION, WRIKE_USER_ID_KEY)) {
+    return app.settings.getSetting(WRIKE_USER_SETTINGS_SECTION, WRIKE_USER_ID_KEY);
+  }
+  return "";
+};
+
+export const saveWrikeUserId = (id: string): Result => {
+  try {
+    app.settings.saveSetting(WRIKE_USER_SETTINGS_SECTION, WRIKE_USER_ID_KEY, id);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};

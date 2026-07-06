@@ -1,0 +1,379 @@
+// =============================================================================
+// src/jsx/aeft/deliver.ts -- backend for the Deliver-category tool
+// (DeliveryHub: Delivery, Delivery Checklist). Split out of aeft.ts, which
+// is now a thin barrel -- see its header comment for context.
+// =============================================================================
+import { Result, decode } from "./shared";
+import { TS_TERRITORIES, parseFilenameMeta } from "./tools";
+import { getTerritoryCountryCode } from "./localise";
+
+
+
+// =============================================================================
+// Delivery -- ported from XYi_Toolbox.jsx's DelPre(), wired to the
+// "Delivery" button. For each selected item, strips its "_VNN" version
+// suffix from the name, parses the target size from that name (via
+// parseFilenameMeta, same helper Cheeky T Check uses), and wraps it in a
+// new comp scaled to that target size, trimmed to its work area.
+// =============================================================================
+export const delivery = (): Result => {
+  try {
+    if (app.project.selection.length === 0) return { success: false, error: "Please select compositions first." };
+    app.beginUndoGroup("XYi Prep for Delivery");
+
+    for (let i = 0; i < app.project.selection.length; i++) {
+      const activeItem = app.project.selection[i] as AVItem;
+      const stem = activeItem.name.slice(0, -4);
+      const versionMatch = stem.match(/_V\d\d/);
+      const newName = versionMatch ? stem.split(versionMatch[0])[0] : stem;
+
+      const meta = parseFilenameMeta(newName);
+      const targetSize = meta.size.split("x");
+      const targetWidth = Number(targetSize[0]);
+      const targetHeight = Number(targetSize[1]);
+
+      const scaler = (targetWidth / activeItem.width) * 100;
+      const frameRate = activeItem.frameRate;
+      const pixcor = Math.round(targetHeight * activeItem.pixelAspect);
+
+      const myComp = app.project.items.addComp(newName, targetWidth, pixcor, 1, activeItem.duration, frameRate);
+      const mySolid = myComp.layers.add(activeItem);
+      (mySolid.property("Transform")!.property("Scale") as Property).setValue([scaler, scaler, scaler]);
+
+      mySolid.inPoint = 5;
+      myComp.workAreaStart = 5;
+      myComp.openInViewer();
+      app.executeCommand(app.findMenuCommandId("Trim Comp to Work Area"));
+      myComp.displayStartTime = 0;
+    }
+
+    app.endUndoGroup();
+    return { success: true };
+  } catch (e) {
+    app.endUndoGroup();
+    return { success: false, error: e.toString() };
+  }
+};
+
+// =============================================================================
+// Shared scale-to-fit helper, ported from XYi_Scaler.jsx's onScaleClick()
+// (the "whole comp" branch only -- n!=1, i.e. resize the active comp
+// itself, not a single layer's source). Uses a temporary null-parent layer
+// so every layer -- including cameras, via their zoom -- scales together,
+// then removes the null. Shared by DRQR; Scale Fit/Scale Composition can
+// reuse this too once ported.
+// =============================================================================
+export function makeParentLayerOfAllUnparented(comp: CompItem, newParent: Layer) {
+  for (let i = 1; i <= comp.numLayers; i++) {
+    const cur = comp.layer(i);
+    if (cur !== newParent && cur.parent === null) {
+      cur.parent = newParent;
+    }
+  }
+}
+
+export function scaleAllCameraZooms(comp: CompItem, scaleBy: number) {
+  for (let i = 1; i <= comp.numLayers; i++) {
+    const cur = comp.layer(i);
+    if (cur.matchName === "ADBE Camera Layer") {
+      const curZoom = (cur as CameraLayer).zoom;
+      if (curZoom.numKeys === 0) {
+        curZoom.setValue(curZoom.value * scaleBy);
+      } else {
+        for (let j = 1; j <= curZoom.numKeys; j++) {
+          curZoom.setValueAtKey(j, curZoom.keyValue(j) * scaleBy);
+        }
+      }
+    }
+  }
+}
+
+export function scaleCompToFit(comp: CompItem, newWidth: number, newHeight: number) {
+  const oldWidth = comp.width;
+  const oldHeight = comp.height;
+  const newRatio = newWidth / newHeight;
+  const oldRatio = oldWidth / oldHeight;
+  const scaleFactor = newRatio > oldRatio ? newWidth / oldWidth : newHeight / oldHeight;
+
+  const null3DLayer = comp.layers.addNull();
+  null3DLayer.threeDLayer = true;
+  null3DLayer.position.setValue([0, 0, 0]);
+  makeParentLayerOfAllUnparented(comp, null3DLayer);
+
+  comp.width = Math.floor(newWidth);
+  comp.height = Math.floor(newHeight);
+  scaleAllCameraZooms(comp, scaleFactor);
+
+  const superParentScale = null3DLayer.scale.value as number[];
+  const superParentPosition = null3DLayer.position.value as number[];
+  superParentScale[0] *= scaleFactor;
+  superParentScale[1] *= scaleFactor;
+  superParentScale[2] *= scaleFactor;
+  null3DLayer.scale.setValue(superParentScale);
+
+  if (newRatio > oldRatio) {
+    const posHeight = (newWidth / oldWidth) * oldHeight;
+    superParentPosition[1] = -0.5 * (posHeight - newHeight);
+  } else {
+    const posWidth = (newHeight / oldHeight) * oldWidth;
+    superParentPosition[0] = -0.5 * (posWidth - newWidth);
+  }
+  null3DLayer.position.setValue(superParentPosition);
+
+  null3DLayer.remove();
+}
+
+// Ported from XYi_DRQR.jsx's processLayers(), reusing onScaleClick's n=1
+// ("single layer's source") branch via scaleCompToFit() above -- that
+// helper is generic over any CompItem, not just the active one, so it
+// works unchanged for a layer's source comp too. Selects every layer in
+// the comp cumulatively (nothing is ever deselected, exactly like the
+// original), and for every layer whose name doesn't contain "Frontcard",
+// resizes a layer's SOURCE comp to the new dimensions and resets that
+// loop iteration's layer's own Scale property back to 100/100.
+//
+// FAITHFULLY REPRODUCES A REAL BUG in the original, deliberately not
+// fixed here -- the studio asked for exact behavioral parity with
+// XYi_DRQR.jsx, not a corrected version. `onScaleClick(1, newWidth,
+// newHeight, 1)` is called with a fixed m=1 every iteration, i.e. it
+// always targets `comp.selectedLayers[1]` -- the SECOND layer added to
+// the selection, since selection accumulates layer-by-layer across this
+// same loop -- never the layer actually being iterated. In practice this
+// means only one layer's source (whichever ends up at selection index 1)
+// ever actually gets resized, repeatedly, while every OTHER non-Frontcard
+// layer still gets its own Scale reset to 100/100 regardless. If fewer
+// than 2 layers end up selected at the point this runs (e.g. a comp with
+// only one non-Frontcard layer), or that second layer's source isn't a
+// CompItem (plain footage has no .layers to add a null to), this throws
+// -- same as the original, caught by drqr()'s own try/catch below like
+// any other failure, not specially guarded around.
+export function drqrProcessLayers(comp: CompItem, newWidth: number, newHeight: number) {
+  for (let i = 1; i <= comp.numLayers; i++) {
+    const layer = comp.layer(i);
+    layer.selected = true;
+    if (layer.name.indexOf("Frontcard") === -1) {
+      const targetSource = comp.selectedLayers[1].source as CompItem;
+      scaleCompToFit(targetSource, newWidth, newHeight);
+      layer.scale.setValue([100, 100]);
+    }
+  }
+}
+
+// =============================================================================
+// Delivery Checklist -- ported from toolset/XYi_Delivery_Checklist.jsx
+// ("Bitrate Delivery Panel"). Loads selected comps, takes a target file
+// size (MB) per comp, calculates the required bitrate, queues each comp in
+// the render queue with the matching H264_*MBPS_MOS Output Module template
+// applied, and points the output at a "_Delivery" subfolder next to the
+// comp's .mov source footage. Render-queue only -- no project file is ever
+// opened or saved. The ScriptUI original's row UI lives in React
+// (tools/DeliveryChecklist.tsx); the constants and per-comp math below are
+// ported 1:1.
+// =============================================================================
+const DELIVERY_TEMPLATE_BITRATES_MBPS = [2.8, 5, 7, 8, 10, 12, 14, 16, 18, 20, 25, 26, 30, 36, 50];
+const DELIVERY_AUDIO_RESERVE_KBPS = 192;
+
+function deliveryFormatTemplateName(mbpsVal: number): string {
+  // Most templates use "MBPS" except 50 which uses "Mbps" -- handle both.
+  if (mbpsVal === 50) return "H264_" + String(mbpsVal) + "Mbps_MOS";
+  return "H264_" + String(mbpsVal) + "MBPS_MOS";
+}
+
+function deliveryFindTemplateName(targetMbps: number): string {
+  // Round DOWN to nearest available template (never exceed target size).
+  let best: number | null = null;
+  for (let i = 0; i < DELIVERY_TEMPLATE_BITRATES_MBPS.length; i++) {
+    const val = DELIVERY_TEMPLATE_BITRATES_MBPS[i];
+    if (val <= targetMbps && (best === null || val > best)) best = val;
+  }
+  if (best === null) best = DELIVERY_TEMPLATE_BITRATES_MBPS[0];
+  return deliveryFormatTemplateName(best);
+}
+
+function deliveryCalcRequiredBitrateMbps(fileSizeMB: number, durationSec: number, includeAudio: boolean): number {
+  const totalBits = fileSizeMB * 8 * 1000 * 1000; // MB -> bits (decimal convention)
+  let totalKbps = totalBits / durationSec / 1000;
+  if (includeAudio) totalKbps -= DELIVERY_AUDIO_RESERVE_KBPS;
+  let videoMbps = totalKbps / 1000;
+  if (videoMbps < 0) videoMbps = 0.1; // safety floor
+  return videoMbps;
+}
+
+// Find the first layer in a comp whose source is a .mov footage file, and
+// return that file. Null if none. Shared by deliveryFindMovSourceFolder()
+// below (unchanged callers just want the parent "Batch_XX" folder) and
+// deliveryChecklistLoadComps() (which also wants the full path, for
+// Review Session's Wrike-format export -- see ReviewHub.tsx).
+function deliveryFindMovSourceFile(comp: CompItem): File | null {
+  for (let i = 1; i <= comp.numLayers; i++) {
+    const layer = comp.layer(i);
+    if (layer instanceof AVLayer && layer.source && layer.source instanceof FootageItem) {
+      const srcFile = layer.source.file;
+      if (srcFile && srcFile.fsName) {
+        const lower = srcFile.fsName.toLowerCase();
+        if (lower.indexOf(".mov") === lower.length - 4) {
+          return srcFile;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function deliveryFindMovSourceFolder(comp: CompItem): Folder | null {
+  const file = deliveryFindMovSourceFile(comp);
+  return file ? file.parent : null;
+}
+
+function deliveryEnsureDeliveryFolder(baseFolder: Folder): Folder | null {
+  const deliveryFolder = new Folder(baseFolder.fsName + "/_Delivery");
+  if (!deliveryFolder.exists) {
+    if (!deliveryFolder.create()) return null;
+  }
+  return deliveryFolder;
+}
+
+interface DeliveryCompEntry {
+  id: number;
+  name: string;
+  folderName: string | null; // the .mov source folder's name, or null if none found
+  batchFolder: string | null; // the .mov source folder's parent folder name (e.g. "Batch_01"), or null
+  sourcePath: string | null; // the .mov source file's full path, or null if none found
+  duration: number; // comp duration in seconds
+  frameRate: number; // comp frame rate
+  territoryCode: string | null; // 2-letter country code from project file's folder tree, or null
+}
+
+interface DeliveryLoadResult extends Result {
+  comps?: DeliveryCompEntry[];
+}
+
+export const deliveryChecklistLoadComps = (): DeliveryLoadResult => {
+  const sel = app.project.selection;
+  const comps: DeliveryCompEntry[] = [];
+
+  // Detect territory from the project file's folder tree (same approach as tsExtractInfoFromPath)
+  let territoryCode: string | null = null;
+  const projFile = app.project.file;
+  if (projFile) {
+    let folder: Folder | null = projFile.parent;
+    while (folder) {
+      const folderName = decode(folder.name);
+      const lowerFolder = folderName.toLowerCase();
+      for (let t = 0; t < TS_TERRITORIES.length; t++) {
+        if (TS_TERRITORIES[t].toLowerCase() === lowerFolder) {
+          const code = getTerritoryCountryCode(TS_TERRITORIES[t]);
+          if (code) territoryCode = code;
+          break;
+        }
+      }
+      if (territoryCode) break;
+      if (folder.parent && folder.parent.absoluteURI !== folder.absoluteURI) {
+        folder = folder.parent;
+      } else {
+        break;
+      }
+    }
+  }
+
+  for (let i = 0; i < sel.length; i++) {
+    const item = sel[i];
+    if (item instanceof CompItem) {
+      const srcFile = deliveryFindMovSourceFile(item);
+      const srcParent = srcFile ? srcFile.parent : null;
+      comps.push({
+        id: item.id,
+        name: item.name,
+        folderName: srcFile ? decode(srcFile.parent.name) : null,
+        batchFolder: srcParent && srcParent.parent ? decode(srcParent.parent.name) : null,
+        sourcePath: srcFile ? srcFile.fsName : null,
+        duration: item.duration,
+        frameRate: item.frameRate,
+        territoryCode,
+      });
+    }
+  }
+  if (comps.length === 0) return { success: false, error: "Select one or more comps in the Project panel first." };
+  return { success: true, comps };
+};
+
+interface DeliveryQueueResult extends Result {
+  log?: string;
+}
+
+export const deliveryChecklistQueue = (
+  rows: { id: number; sizeMB: number; maxMbps?: number | null; fps?: number | null; includeAudio?: boolean }[]
+): DeliveryQueueResult => {
+  try {
+    app.beginUndoGroup("Bitrate Delivery Queue");
+    const proj = app.project;
+    let log = "";
+
+    for (let c = 0; c < rows.length; c++) {
+      const comp = proj.itemByID(rows[c].id);
+      if (!comp || !(comp instanceof CompItem)) {
+        log += "*** Comp no longer exists (reload the list) ***\n\n";
+        continue;
+      }
+      const targetMB = rows[c].sizeMB;
+      const maxMbps = rows[c].maxMbps;
+      const fps = rows[c].fps;
+      const includeAudio = rows[c].includeAudio !== false; // default true
+      if (fps != null && fps > 0) {
+        comp.frameRate = fps;
+      }
+      const duration = comp.duration;
+
+      const requiredMbps = deliveryCalcRequiredBitrateMbps(targetMB, duration, includeAudio);
+      // A max-bitrate cap is a hard spec constraint (e.g. an ad network's
+      // "must stay under 30 Mbps") -- it always wins over the file-size
+      // target if the two conflict. Capping means the resulting file will
+      // likely land BELOW the requested target size, which is the correct
+      // tradeoff (never breaking the cap) rather than hiding it -- the log
+      // line below says so explicitly when that happens.
+      const capped = maxMbps != null && maxMbps > 0 && requiredMbps > maxMbps;
+      const effectiveMbps = capped ? maxMbps! : requiredMbps;
+      const templateName = deliveryFindTemplateName(effectiveMbps);
+
+      const rqItem = proj.renderQueue.items.add(comp);
+      const om = rqItem.outputModule(1);
+
+      let appliedOK = true;
+      try {
+        om.applyTemplate(templateName);
+      } catch (e) {
+        appliedOK = false;
+      }
+
+      const srcFolder = deliveryFindMovSourceFolder(comp);
+      let pathLine: string;
+      if (srcFolder) {
+        const deliveryFolder = deliveryEnsureDeliveryFolder(srcFolder);
+        if (deliveryFolder) {
+          const outFile = new File(deliveryFolder.fsName + "/" + comp.name + ".mp4");
+          om.file = outFile;
+          pathLine = "  Output: " + outFile.fsName + "\n";
+        } else {
+          pathLine = "  *** Could not create _Delivery folder — output path NOT set, check manually ***\n";
+        }
+      } else {
+        pathLine = "  *** No .MOV source found in this comp — output path NOT set, check manually ***\n";
+      }
+
+      log += comp.name + "\n";
+      log += "  Target size: " + targetMB + "MB" + (includeAudio ? " (incl. audio)" : "") + "\n";
+      log += "  Required bitrate: " + requiredMbps.toFixed(2) + " Mbps" + (maxMbps != null ? " (cap: " + maxMbps + " Mbps)" : "") + "\n";
+      if (capped) {
+        log += "  *** Capped to " + maxMbps + " Mbps -- resulting file will likely be SMALLER than the " + targetMB + "MB target ***\n";
+      }
+      log += "  Applied template: " + templateName + (appliedOK ? "" : "  *** TEMPLATE NOT FOUND - apply manually ***") + "\n";
+      log += pathLine + "\n";
+    }
+
+    app.endUndoGroup();
+    return { success: true, log };
+  } catch (e) {
+    app.endUndoGroup();
+    return { success: false, error: e.toString() };
+  }
+};

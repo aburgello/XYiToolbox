@@ -24,7 +24,7 @@
 // TS_CATEGORIES also contains, so showing all ~47 was pure noise.
 // =============================================================================
 import React, { useEffect, useRef, useState } from "react";
-import { Play, Pause, FileJson, ClipboardCopy, AlertCircle, Plus, Trash2, X, Boxes, ChevronLeft, Circle, Briefcase, MapPin, RefreshCw, LayoutList } from "lucide-react";
+import { Play, Pause, FileJson, ClipboardCopy, AlertCircle, Plus, Trash2, X, Boxes, ChevronLeft, Circle, Briefcase, MapPin, RefreshCw, LayoutList, User } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import Tooltip from "../Tooltip";
 import SegmentedToggle from "../SegmentedToggle";
@@ -45,13 +45,39 @@ function formatTime(totalSeconds: number): string {
 
 // 1:1 with the original's getISODate(): LOCAL time components with a
 // hardcoded ".000Z" suffix. Not real UTC -- but the downstream React app
-// expects exactly this format, so it's kept, quirk and all.
+// expects exactly this format, so it's kept, quirk and all. Used ONLY for
+// the payload's top-level exportDate -- NOT the per-task date field below,
+// which the Supabase import path needs as a plain YYYY-MM-DD (see
+// getTaskDate()) -- M/D/YYYY matched neither format it recognized and
+// silently vanished from view after refresh even though it was saved.
 function getISODate(d: Date): string {
     const pad = (n: number) => (n < 10 ? "0" + n : String(n));
     return (
         d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + "T" +
         pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds()) + ".000Z"
     );
+}
+
+function getTaskDate(d: Date): string {
+    const pad = (n: number) => (n < 10 ? "0" + n : String(n));
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+}
+
+// TS_DEFAULT_JOBS entries (and tsExtractInfoFromPath's "Unknown Job (Code:
+// ...)" fallback) are one combined string, "<FilmTitle> : <JobNumber>,
+// <ProjectDescription>" -- the Supabase import path does no parsing of its
+// own, so these need to land as separate top-level fields. Client isn't
+// present anywhere in that source string, so it's returned empty rather
+// than guessed. Falls back to putting the whole string in filmTitle if the
+// " : " separator isn't found (the "Unknown Job" case).
+function parseJobString(jobString: string): { jobNumber: string; filmTitle: string; projectDescription: string } {
+    const sepIdx = jobString.indexOf(" : ");
+    if (sepIdx === -1) return { jobNumber: "", filmTitle: jobString, projectDescription: "" };
+    const filmTitle = jobString.slice(0, sepIdx);
+    const rest = jobString.slice(sepIdx + 3);
+    const commaIdx = rest.indexOf(", ");
+    if (commaIdx === -1) return { jobNumber: rest, filmTitle, projectDescription: "" };
+    return { jobNumber: rest.slice(0, commaIdx), filmTitle, projectDescription: rest.slice(commaIdx + 2) };
 }
 
 // Same tiny helper as DeliveryHub.tsx's codeToFlag -- duplicated rather than
@@ -62,10 +88,26 @@ function codeToFlag(code: string): string {
     return String.fromCodePoint(0x1F1E6 + a.charCodeAt(0) - 65, 0x1F1E6 + b.charCodeAt(0) - 65);
 }
 
-// Shared version-5 task builder -- one task per (jobNumber, seconds) entry,
-// so both Quick (one file) and Batch (many files) emit the identical shape
-// the website already ingests.
-function buildTask(d: Date, id: number, jobNumber: string, territory: string, category: string, notes: string, rawSeconds: number) {
+// Shared task builder -- one task per (jobNumber, seconds) entry, so both
+// Quick (one file) and Batch (many files) emit the identical shape the
+// Supabase import path expects (worked out with the xyi-timesheeter team --
+// see the fields below, each here for a specific reason, not just "more
+// data"). `id` is generated here rather than passed in: a plain Postgres
+// primary key with no server-side generation, needs to be a structurally
+// different magnitude than the receiving app's own id scheme (Date.now() +
+// a 3-digit random) so collisions are impossible, hence the extra *1000.
+function buildTask(
+    d: Date,
+    jobNumber: string,
+    filmTitle: string,
+    client: string,
+    projectDescription: string,
+    territory: string,
+    category: string,
+    notes: string,
+    rawSeconds: number,
+    wrikeUserId: string,
+) {
     const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     const m = d.getMinutes();
     const ampm = d.getHours() >= 12 ? " PM" : " AM";
@@ -73,11 +115,18 @@ function buildTask(d: Date, id: number, jobNumber: string, territory: string, ca
     h = h ? h : 12;
     const timeString = h + ":" + (m < 10 ? "0" + m : m) + ampm;
     return {
-        id, jobNumber, territory, category, notes,
+        id: Date.now() * 1000 + Math.floor(Math.random() * 1000),
+        source: "ae_panel",
+        wrikeUserId,
+        taskId: null,
+        wrikeTimelogId: null,
+        jobNumber, filmTitle, client, projectDescription, territory, category, notes,
         dayOfWeek: days[d.getDay()],
+        date: getTaskDate(d),
         rawSeconds,
         additionalSeconds: 0,
-        date: d.getMonth() + 1 + "/" + d.getDate() + "/" + d.getFullYear(),
+        // No destination column on import, but harmless to keep -- the
+        // receiving app derives its own display time from rawSeconds.
         timeLogged: timeString,
     };
 }
@@ -111,6 +160,24 @@ const CategorySelect: React.FC<{ value: string; options: string[]; onChange: (v:
     </div>
 );
 
+// A one-time-per-artist preference, not a per-batch/per-file field -- set
+// once, persisted via app.settings (same convention as Useful Folders/tool
+// order/favorites), then embedded into every export from here on so the
+// Supabase import path can attribute the row to a real Wrike user instead
+// of leaving it null.
+const WrikeIdField: React.FC<{ value: string; onChange: (v: string) => void }> = ({ value, onChange }) => (
+    <div className="ts-wrike-row">
+        <User size={13} className="ts-wrike-icon" />
+        <input
+            className="ts-wrike-input"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="Your Wrike User ID (e.g. IEAAKBTJ)"
+            aria-label="Wrike User ID"
+        />
+    </div>
+);
+
 const TimesheetTrackerTool = () => {
     const [mode, setMode] = useState<"quick" | "batch">("quick");
     const tracker = useTimeTracker();
@@ -123,12 +190,29 @@ const TimesheetTrackerTool = () => {
     const [displaySeconds, setDisplaySeconds] = useState(0);
     const [output, setOutput] = useState("");
     const [error, setError] = useState<string | null>(null);
+    const [wrikeUserId, setWrikeUserId] = useState("");
 
     // Default the quick-mode category once the real list arrives.
     useEffect(() => {
         if (!quickCategory && categoryOptions.length) setQuickCategory(defaultCategoryFor(categoryOptions));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tracker.categories]);
+
+    // Load the artist's saved Wrike User ID once on mount; save on every
+    // change (cheap text setting, no need to debounce/require a blur).
+    useEffect(() => {
+        (async () => {
+            try {
+                const id = await evalTS("loadWrikeUserId");
+                if (typeof id === "string") setWrikeUserId(id);
+            } catch { /* preview -- no bridge */ }
+        })();
+    }, []);
+
+    const updateWrikeUserId = (value: string) => {
+        setWrikeUserId(value);
+        evalTS("saveWrikeUserId", value).catch(() => { /* preview -- no bridge */ });
+    };
 
     // --- Quick-mode timing (unchanged behaviour) ----------------------------
     const startTimeRef = useRef(0);
@@ -186,12 +270,14 @@ const TimesheetTrackerTool = () => {
         try { projFileName = await evalTS("timesheetProjectFileName"); } catch (e) { /* preview */ }
 
         const d = new Date();
+        const { jobNumber, filmTitle, projectDescription } = parseJobString(jobDataRef.current.jobString);
         const task = buildTask(
-            d, d.getTime(), jobDataRef.current.jobString,
+            d, jobNumber, filmTitle, "", projectDescription,
             quickTerritory.name || "INTL - UNI",
             quickCategory || defaultCategoryFor(categoryOptions),
             "Auto-logged from AE file: " + (projFileName || "Unsaved Project") + " | Comp: " + jobDataRef.current.compName,
-            accumulatedRef.current
+            accumulatedRef.current,
+            wrikeUserId
         );
         const payload = { version: 5, exportDate: getISODate(d), rawTasks: [task], jobOptions: [jobDataRef.current.jobString] };
 
@@ -259,19 +345,22 @@ const TimesheetTrackerTool = () => {
         if (timed.length === 0) { setError("No time tracked in this batch yet."); return; }
 
         const d = new Date();
-        const base = d.getTime();
-        const rawTasks = timed.map((f, i) =>
-            buildTask(
-                d, base + i,
-                f.jobString || "Unknown Job",
+        const rawTasks = timed.map((f) => {
+            const { jobNumber, filmTitle, projectDescription } = parseJobString(f.jobString || "Unknown Job");
+            return buildTask(
+                d, jobNumber, filmTitle, "", projectDescription,
                 b.territoryName || "INTL - UNI",
                 b.categoryName || defaultCategoryFor(categoryOptions),
                 "Batch: " + b.name + " | File: " + f.name,
-                Math.round(f.seconds)
-            )
-        );
+                Math.round(f.seconds),
+                wrikeUserId
+            );
+        });
+        // jobOptions keeps the ORIGINAL combined job strings (not the now-split
+        // jobNumber field above) -- an unrelated top-level payload field this
+        // change didn't touch, so its existing consumer contract stays intact.
         const jobOptions: string[] = [];
-        for (const t of rawTasks) if (jobOptions.indexOf(t.jobNumber) === -1) jobOptions.push(t.jobNumber);
+        for (const f of timed) if (jobOptions.indexOf(f.jobString || "Unknown Job") === -1) jobOptions.push(f.jobString || "Unknown Job");
 
         const payload = { version: 5, exportDate: getISODate(d), rawTasks, jobOptions };
         setOutput(JSON.stringify(payload));
@@ -288,6 +377,8 @@ const TimesheetTrackerTool = () => {
                 onChange={(v) => setMode(v as "quick" | "batch")}
                 options={[{ value: "quick", label: "Quick" }, { value: "batch", label: "Batch" }]}
             />
+
+            <WrikeIdField value={wrikeUserId} onChange={updateWrikeUserId} />
 
             {mode === "quick" ? (
                 <>
