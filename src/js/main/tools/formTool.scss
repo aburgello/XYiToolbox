@@ -357,6 +357,23 @@
             background: #2a2a2a;
             border-color: #444;
         }
+        .sp-save-btn {
+            background: var(--cat-grad, #2a3a4a);
+            border-color: var(--cat-border, #3a5a8a);
+        }
+    }
+
+    // Inline form (not a Droplet) -- this page already has the room, and
+    // save-as-tool is a deliberate act with two required-to-notice fields
+    // (name, kind), not a quick one-tap pick like Toolset's droplets.
+    .sp-save-form {
+        background: #1c1c1c;
+        border: 1px solid #333;
+        border-radius: 6px;
+        padding: 10px 12px 4px;
+        margin-bottom: 10px;
+
+        .field-row { max-width: 320px; }
     }
 
     .sp-output-wrap {
@@ -386,6 +403,83 @@
         margin: 0;
         max-height: 200px;
         overflow-y: auto;
+    }
+
+    .sp-tool-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .sp-tool-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: #1e1e1e;
+        border: 1px solid #333;
+        border-radius: 6px;
+        padding: 7px 9px;
+        transition: border-color 0.2s ease;
+
+        &:hover { border-color: #555; }
+    }
+
+    .sp-tool-icon {
+        display: inline-flex;
+        flex-shrink: 0;
+        color: var(--cat-icon, #5eead4);
+    }
+
+    .sp-tool-info {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .sp-tool-name {
+        font-size: 12px;
+        font-weight: 600;
+        color: #ddd;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .sp-tool-desc {
+        font-size: 10px;
+        color: #888;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .sp-tool-kind {
+        flex-shrink: 0;
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 3px;
+        padding: 1px 6px;
+        font-size: 9px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: #999;
+
+        &.sp-tool-kind-button { color: var(--cat-icon, #5eead4); }
+    }
+
+    .sp-tool-icon-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        background: none;
+        border: none;
+        color: #888;
+        padding: 3px;
+        cursor: pointer;
+        border-radius: 3px;
+
+        &:hover { color: #ddd; background: rgba(255, 255, 255, 0.08); }
     }
 }
 

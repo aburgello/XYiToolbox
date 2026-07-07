@@ -61,6 +61,7 @@ import {
     Plus,
     Check,
     Search,
+    Terminal,
 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
@@ -71,6 +72,7 @@ import Droplet from "../Droplet";
 import { promptDialog, selectDialog } from "../Dialog";
 import { iconWiggle, buttonLift } from "../animations";
 import { TOOLS } from "../toolRegistry";
+import { useCustomTools } from "../hooks/useCustomTools";
 import type { Screen } from "../main";
 import "../shared.scss";
 import "./Toolset.scss";
@@ -103,12 +105,13 @@ export interface ActionEntry {
 // few scannable clusters instead of one flat wall -- deliberately just a
 // labelled flex-wrap per group (no masonry/reflow logic) so short groups
 // don't leave awkward gaps the way one giant grid did.
-type GroupId = "organise" | "qc" | "transform" | "naming";
+type GroupId = "organise" | "qc" | "transform" | "naming" | "custom";
 const GROUPS: { id: GroupId; label: string }[] = [
     { id: "qc", label: "QC & Versioning" },
     { id: "organise", label: "Organise & Output" },
     { id: "naming", label: "Naming & Localise" },
     { id: "transform", label: "Layer & Transform" },
+    { id: "custom", label: "Custom Tools" },
 ];
 
 // A "pinned link" is a full-page tool (from toolRegistry.TOOLS) the user has
@@ -121,6 +124,17 @@ const LINK_PREFIX = "link:";
 const linkId = (toolId: string): string => LINK_PREFIX + toolId;
 const isLinkId = (id: string): boolean => id.indexOf(LINK_PREFIX) === 0;
 const toolIdFromLink = (id: string): string => id.slice(LINK_PREFIX.length);
+
+// A "custom button" is a script saved from Script Playground with kind
+// "button" -- unlike a pinned link (an opt-in reference to an existing
+// page), this IS user data with no default elsewhere, so it auto-appears
+// (defaulting into the "custom" group) the moment it's saved, no separate
+// pin step. Its minus badge still only hides/restores it here -- deleting
+// the underlying script is only done from Script Playground's own list.
+const CUSTOM_PREFIX = "custom:";
+const customId = (toolId: string): string => CUSTOM_PREFIX + toolId;
+const isCustomId = (id: string): boolean => id.indexOf(CUSTOM_PREFIX) === 0;
+const toolIdFromCustom = (id: string): string => id.slice(CUSTOM_PREFIX.length);
 
 // Placeholder for a toolset button whose logic hasn't been ported yet --
 // shows up and behaves exactly like a real one (hover tooltip, click, toast)
@@ -739,6 +753,10 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
     // pinned into the grid via edit mode's "Add tool" search -- see
     // resolveEntry() below for how these become clickable, navigable tiles.
     const [pinned, setPinned] = useState<string[]>([]);
+    // Scripts saved from Script Playground -- only "button"-kind ones are
+    // relevant to this grid (see resolveEntry() below); "page"-kind ones
+    // live exclusively in Script Playground's own "My Tools" list.
+    const { customTools } = useCustomTools();
 
     useEffect(() => {
         (async () => {
@@ -778,6 +796,7 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
     const hiddenSet = new Set(hidden);
     const pinnedToolIds = new Set(pinned);
     const linkIds = new Set(pinned.map(linkId));
+    const customButtonTools = customTools.filter((t) => t.kind === "button");
 
     const persistHidden = (next: string[]) => {
         setHidden(next);
@@ -793,13 +812,15 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
         persistHidden(hiddenSet.has(id) ? hidden.filter((x) => x !== id) : [...hidden, id]);
     };
 
-    // Effective group of an action/link: user override, else its ACTIONS
-    // default. A link has no ACTIONS default -- pinTool() always sets its
-    // groupOverride at pin time, so the "organise" fallback below is only
-    // ever hit for a link whose override somehow got dropped.
+    // Effective group of an action/link/custom button: user override, else
+    // its ACTIONS default, else "custom" for a custom button (its natural
+    // home group), else "organise". A link has no ACTIONS default -- pinTool()
+    // always sets its groupOverride at pin time, so it only ever falls
+    // through to "organise" if that override somehow got dropped.
     const groupOf = (id: string): GroupId => {
         const o = groupOverride[id];
         if (o) return o;
+        if (isCustomId(id)) return "custom";
         const a = ACTIONS.find((x) => x.id === id);
         return a ? a.group : "organise";
     };
@@ -810,10 +831,12 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
         return g ? g.label : gid;
     };
 
-    // Resolves any grid id -- a real ACTIONS entry OR a pinned link -- to an
-    // ActionEntry-shaped object. A link's "run" just navigates to the
-    // tool's own page and returns null (no toast to report, same as a
-    // cancelled picker) rather than calling into aeft.ts at all.
+    // Resolves any grid id -- a real ACTIONS entry, a pinned link, or a
+    // custom button -- to an ActionEntry-shaped object. A link's "run" just
+    // navigates to the tool's own page and returns null (no toast, same as
+    // a cancelled picker); a custom button's "run" replays its saved script
+    // through the same generic runScript bridge Script Playground itself
+    // uses, reporting its output/error exactly like any other action.
     const resolveEntry = (id: string): ActionEntry | null => {
         if (isLinkId(id)) {
             const toolId = toolIdFromLink(id);
@@ -832,15 +855,30 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
                 successText: () => "",
             };
         }
+        if (isCustomId(id)) {
+            const toolId = toolIdFromCustom(id);
+            const tool = customButtonTools.find((t) => t.id === toolId);
+            if (!tool) return null;
+            return {
+                id,
+                label: tool.name,
+                description: tool.description || `Custom script: ${tool.name}`,
+                icon: Terminal,
+                group: groupOf(id),
+                run: () => evalTSSafe("runScript", tool.code),
+                successText: (r) => r.message ? `${tool.name}: ${r.message}` : `${tool.name} ran.`,
+            };
+        }
         return ACTIONS.find((x) => x.id === id) || null;
     };
 
-    // The full flat id order (ACTIONS ids + pinned link ids): the saved
-    // order, with any id not in it (a newly added grid button, or a link
-    // pinned just now) appended at the end, so nothing silently vanishes --
-    // same merge-over-default rule as the category tool-order feature.
+    // The full flat id order (ACTIONS ids + pinned link ids + custom button
+    // ids): the saved order, with any id not in it (a newly added grid
+    // button, a link pinned just now, or a script just saved as a button)
+    // appended at the end, so nothing silently vanishes -- same
+    // merge-over-default rule as the category tool-order feature.
     const fullOrder = (): string[] => {
-        const allIds = ACTIONS.map((a) => a.id).concat(pinned.map(linkId));
+        const allIds = ACTIONS.map((a) => a.id).concat(pinned.map(linkId), customButtonTools.map((t) => customId(t.id)));
         const known = order.filter((id) => allIds.indexOf(id) !== -1);
         const missing = allIds.filter((id) => order.indexOf(id) === -1);
         return known.concat(missing);

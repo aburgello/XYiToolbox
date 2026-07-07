@@ -4650,6 +4650,41 @@ export const runScript = (code: string): Result => {
 };
 
 // =============================================================================
+// Custom Tools — scripts saved from Script Playground as a permanent
+// one-click Toolset button ("button") or a listed, run-on-demand entry in
+// Script Playground's own "My Tools" panel ("page"). Persisted as ONE JSON
+// blob (unlike the tab/pipe flat-list convention most other Toolset
+// personalisation keys use) because a script's own code can freely contain
+// literal tabs and "|" (e.g. bitwise OR, or just the text "a | b") -- either
+// would silently corrupt a field-split format. React does the
+// JSON.parse/stringify on its side; this is just a pass-through string
+// store, so there's nothing here that can be corrupted by the script's own
+// content.
+// =============================================================================
+const CUSTOM_TOOLS_SECTION = "XYiToolbox";
+const CUSTOM_TOOLS_KEY = "OVCustomTools";
+
+export const loadCustomTools = (): Result => {
+  try {
+    const raw = app.settings.haveSetting(CUSTOM_TOOLS_SECTION, CUSTOM_TOOLS_KEY)
+      ? app.settings.getSetting(CUSTOM_TOOLS_SECTION, CUSTOM_TOOLS_KEY)
+      : "";
+    return { success: true, message: raw && raw.length > 0 ? raw : "[]" };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+};
+
+export const saveCustomTools = (entriesJson: string): Result => {
+  try {
+    app.settings.saveSetting(CUSTOM_TOOLS_SECTION, CUSTOM_TOOLS_KEY, entriesJson);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+};
+
+// =============================================================================
 // Expressions Bank — team-shared expression snippets, persisted via
 // app.settings (section "XYiToolbox", key "ExpressionsBank").
 // =============================================================================
