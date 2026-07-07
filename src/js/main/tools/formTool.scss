@@ -388,6 +388,11 @@
 
     .kind-option {
         flex: 1;
+        // Flex items default to min-width: auto, which refuses to shrink
+        // below the text content's own intrinsic width -- without this, a
+        // narrower panel doesn't wrap the label text, it overflows the
+        // card (and the card overflows .kind-picker/the panel itself).
+        min-width: 0;
         display: flex;
         align-items: center;
         gap: 8px;
@@ -441,6 +446,20 @@
         min-width: 0;
         gap: 1px;
 
+        // strong/small are themselves flex items of this column container,
+        // so each ALSO defaults to min-width: auto independently of the
+        // parent's own min-width: 0 above -- without this they refuse to
+        // wrap and just overflow past the card's edge at a narrow width.
+        // white-space: normal overrides the base .form-tool button rule's
+        // white-space: nowrap (meant for a plain single-line button label),
+        // which otherwise inherits down and blocks wrapping outright
+        // regardless of the min-width/overflow-wrap fixes above.
+        strong, small {
+            min-width: 0;
+            white-space: normal;
+            overflow-wrap: break-word;
+        }
+
         strong {
             font-size: 11.5px;
             font-weight: 600;
@@ -479,6 +498,27 @@
         margin: 0;
         max-height: 200px;
         overflow-y: auto;
+    }
+
+    // Share bar above the My Tools list: Select-all on the left, Export/
+    // Import pushed to the right. Buttons inherit the base .form-tool button
+    // look; this rule is only the row layout.
+    .mytools-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+
+        button { margin-bottom: 0; }
+    }
+    .mytools-actions-spacer { flex: 1; }
+
+    // The per-row select checkbox sits flush at the row's left edge; nudge
+    // its own internal padding down so it lines up with the tool icon.
+    .mytools-check {
+        flex-shrink: 0;
+        padding: 2px;
     }
 
     .sp-tool-list {

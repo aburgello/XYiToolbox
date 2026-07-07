@@ -4691,6 +4691,49 @@ export const saveCustomTools = (entriesJson: string): Result => {
   }
 };
 
+// Export/import a subset of custom tools to/from a .json file so they can
+// be shared with colleagues (whose app.settings this can't reach directly).
+// Both just move an opaque JSON string the React side builds/parses -- the
+// selection of WHICH tools, the file-format wrapper, id-stripping on export
+// and merge-by-name on import all live in React (MyTools.tsx); these two
+// only do the AE-side file dialog + read/write that a browser context
+// can't. A message of "" from either means the user cancelled the dialog
+// (distinct from a real failure, which sets success:false).
+export const exportCustomToolsToFile = (json: string): Result => {
+  try {
+    let file = File.saveDialog("Export tools to a shareable file", "JSON:*.json");
+    if (!file) return { success: true, message: "" }; // cancelled
+    // AE's save dialog doesn't force an extension -- add .json if missing so
+    // the colleague's Import dialog (filtered to *.json) can see it.
+    if (file.name.toLowerCase().indexOf(".json") === -1) {
+      file = new File(file.fsName + ".json");
+    }
+    file.encoding = "UTF-8";
+    if (!file.open("w")) return { success: false, error: "Could not open the file for writing." };
+    file.write(json);
+    file.close();
+    return { success: true, message: file.fsName };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+};
+
+export const importCustomToolsFromFile = (): Result => {
+  try {
+    const file = File.openDialog("Import tools from a shared file", "JSON:*.json");
+    if (!file) return { success: true, message: "" }; // cancelled
+    file.encoding = "UTF-8";
+    if (!file.open("r")) return { success: false, error: "Could not open the file for reading." };
+    const content = file.read();
+    file.close();
+    // A genuinely empty file reads as "" -- treat it the same as cancel
+    // (nothing to import) rather than erroring on it.
+    return { success: true, message: content || "" };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+};
+
 // =============================================================================
 // Expressions Bank — team-shared expression snippets, persisted via
 // app.settings (section "XYiToolbox", key "ExpressionsBank").
