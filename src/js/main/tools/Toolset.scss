@@ -137,40 +137,64 @@
     // Header row holds only the Edit/Done toggle in normal flow -- the
     // "TOOLSET" h2 above is position:absolute (a legend on the panel border),
     // so it isn't part of this row.
-    .toolset-header {
+    // Edit-mode bar: hint on the left, Done on the right. Only rendered
+    // while editing, so normal mode has zero extra chrome (no Edit button).
+    .toolset-editbar {
         display: flex;
         align-items: center;
-        min-height: 20px;
-        margin-bottom: 2px;
+        justify-content: space-between;
+        gap: 10px;
+        margin: 2px 0 10px;
     }
 
-    .toolset-edit-toggle {
+    .toolset-edit-hint {
+        margin: 0;
+        font-size: 10px;
+        color: #777;
+        line-height: 1.4;
+        flex: 1;
+    }
+
+    .toolset-done-btn {
         display: inline-flex;
         align-items: center;
         gap: 4px;
+        flex-shrink: 0;
         background: transparent;
-        border: 1px solid #3a3a3a;
-        color: #999;
+        border: 1px solid var(--ov-accent, #4a9eff);
+        color: var(--ov-accent, #4a9eff);
         border-radius: 12px;
-        padding: 2px 9px;
-        font-size: 10px;
+        padding: 3px 11px;
+        font-size: 11px;
         cursor: pointer;
         transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
 
         svg { flex-shrink: 0; }
-        &:hover { color: #eee; border-color: #555; background: #2a2a2a; }
+        &:hover { color: #fff; background: var(--ov-accent, #4a9eff); }
     }
 
-    &.editing .toolset-edit-toggle {
-        color: var(--ov-accent, #4a9eff);
-        border-color: var(--ov-accent, #4a9eff);
-    }
+    // Group name is an editable input while editing (rename in place). Styled
+    // to sit on the divider line like the static .action-group-label legend
+    // it replaces -- same bg mask over the rule, just now typable.
+    .action-group-label-input {
+        position: relative;
+        display: inline-block;
+        max-width: 200px;
+        background: var(--ov-bg, #1e1e1e);
+        border: 1px solid transparent;
+        border-radius: 4px;
+        padding: 1px 6px 1px 2px;
+        margin: 0 0 0 2px;
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #aaa;
+        outline: none;
+        cursor: text;
 
-    .toolset-edit-hint {
-        margin: 0 0 10px;
-        font-size: 10px;
-        color: #777;
-        line-height: 1.4;
+        &:hover { border-color: #3a3a3a; }
+        &:focus { border-color: var(--ov-accent, #4a9eff); color: #eee; }
     }
 
     // Edit tiles mirror .action-grid button's pill look, but as a div (no
@@ -183,6 +207,7 @@
     }
 
     .action-edit-face {
+        position: relative;
         display: flex;
         align-items: center;
         gap: 6px;
@@ -196,9 +221,9 @@
         .action-icon { display: inline-flex; color: var(--btn-border); }
     }
 
-    .action-edit-item.is-hidden {
-        opacity: 0.4;
-        .action-edit-face { border-style: dashed; }
+    .action-edit-item.is-hidden .action-edit-face {
+        opacity: 0.35;
+        border-style: dashed;
     }
 
     // Jiggle lives on the FACE, not the Reorder.Item -- Framer Motion drives
@@ -212,26 +237,82 @@
     .action-edit-item.jiggle:nth-child(2n) .action-edit-face { animation-delay: -0.11s; }
     .action-edit-item.jiggle:nth-child(3n) .action-edit-face { animation-delay: -0.22s; }
 
-    .action-hide-badge {
+    // iOS jiggle-mode remove badge: a light circle with a bold RED minus
+    // (hide). The symbol itself is red -- not a red disc -- so it reads as
+    // the "remove" affordance at a glance. The minus is a CSS-drawn bar (an
+    // ::after), not just the lucide icon, so it's always a crisp, thick,
+    // unmistakable dash regardless of icon stroke rendering.
+    .action-hide-btn {
         position: absolute;
         top: -6px;
         left: -6px;
-        z-index: 2;
-        width: 18px;
-        height: 18px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
+        width: 20px;
+        height: 20px;
         padding: 0;
         border-radius: 50%;
         border: 1px solid #1e1e1e;
-        background: #e0574f; // red minus = hide
-        color: #fff;
+        background: #f4f4f4;
+        color: #e0574f; // red minus
         cursor: pointer;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+        transition: background 0.15s ease, transform 0.1s ease;
+        z-index: 2;
+
+        // The lucide <Minus/> already renders in currentColor (red). The
+        // ::after guarantees a bold red bar even if the icon SVG is ever
+        // hidden/mis-stroked -- belt and suspenders for the one control that
+        // has to be obvious.
+        &::after {
+            content: "";
+            position: absolute;
+            width: 9px;
+            height: 2.5px;
+            border-radius: 2px;
+            background: currentColor;
+        }
+        svg { display: none; } // rely on the crisp ::after bar, not the icon
+
+        &:hover { background: #fff; transform: scale(1.1); }
     }
-    .action-edit-item.is-hidden .action-hide-badge {
-        background: #4a9d5b; // green plus = restore
+    .action-edit-item.is-hidden .action-hide-btn {
+        color: #4a9d5b; // green when hidden = restore
+
+        // Add the vertical bar of a "+" so restore reads as a plus, not a
+        // minus, without re-enabling the icon.
+        &::before {
+            content: "";
+            position: absolute;
+            width: 2.5px;
+            height: 9px;
+            border-radius: 2px;
+            background: currentColor;
+        }
+    }
+
+    // A group grid highlighted while a tile is dragged over it (drop target),
+    // so cross-group moves read clearly. Min-height keeps an empty group a
+    // droppable target rather than collapsing to nothing.
+    .action-grid.editing {
+        min-height: 40px;
+        border-radius: 8px;
+        transition: background 0.12s ease, box-shadow 0.12s ease;
+
+        &.drop-target {
+            background: rgba(255, 255, 255, 0.04);
+            box-shadow: inset 0 0 0 1px var(--btn-border, #4a9eff);
+        }
+    }
+
+    // The dragged tile's copy that follows the cursor (dnd-kit DragOverlay).
+    // Same pill look as a resting tile, lifted with a shadow so it reads as
+    // picked up. No jiggle -- it's the one thing actively under control.
+    .action-edit-overlay {
+        cursor: grabbing;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+        transform: scale(1.03);
     }
 
     // position:absolute so an empty toast stack (the common case) takes

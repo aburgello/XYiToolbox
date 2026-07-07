@@ -11,8 +11,27 @@
 // To add a new one-click tool here: add its aeft.ts function, then add one
 // entry to ACTIONS below.
 // =============================================================================
-import React, { useRef, useState, useEffect } from "react";
-import { motion, AnimatePresence, Reorder, useReducedMotion } from "motion/react";
+import React, { useRef, useState, useEffect, useCallback } from "react";
+import { motion, AnimatePresence, useReducedMotion } from "motion/react";
+import {
+    DndContext,
+    DragOverlay,
+    closestCorners,
+    KeyboardSensor,
+    PointerSensor,
+    useSensor,
+    useSensors,
+    useDroppable,
+    DragEndEvent,
+    DragStartEvent,
+} from "@dnd-kit/core";
+import {
+    SortableContext,
+    sortableKeyboardCoordinates,
+    useSortable,
+    rectSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
     RotateCw,
     RotateCcw,
@@ -465,6 +484,104 @@ const CompDurationDropletBody: React.FC<{ close: () => void; onResult: (result: 
     );
 };
 
+// =============================================================================
+// Edit-mode sortable pieces -- MODULE SCOPE ON PURPOSE, not defined inside
+// ToolsetTool. onDragStart sets `activeId` state (for the DragOverlay),
+// which re-renders ToolsetTool; a component defined inside ToolsetTool's
+// body gets a fresh function identity on every render, so React would
+// unmount/remount every tile mid-drag and the drag would break. Kept at
+// module scope so their identity is stable across those re-renders.
+// =============================================================================
+const SortableTile: React.FC<{
+    action: ActionEntry;
+    groupId: GroupId;
+    isHidden: boolean;
+    jiggle: boolean;
+    btnStyle: React.CSSProperties;
+    onToggleHidden: (id: string) => void;
+}> = ({ action, groupId, isHidden, jiggle, btnStyle, onToggleHidden }) => {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+        id: action.id,
+        data: { group: groupId },
+    });
+    const style: React.CSSProperties = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        // Dragged tile is hollowed out (its DragOverlay copy follows the
+        // cursor instead) so it reads clearly as "in flight".
+        opacity: isDragging ? 0.25 : 1,
+    };
+    const Icon = action.icon;
+    return (
+        <div
+            ref={setNodeRef}
+            style={style}
+            className={"action-edit-item" + (isHidden ? " is-hidden" : "") + (jiggle ? " jiggle" : "")}
+            {...attributes}
+            {...listeners}
+        >
+            <div className="action-edit-face" style={btnStyle}>
+                <span className="action-icon"><Icon size={16} /></span>
+                {action.label}
+                <button
+                    type="button"
+                    className={"action-hide-btn" + (isHidden ? " is-hidden" : "")}
+                    title={isHidden ? "Restore" : "Hide"}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); onToggleHidden(action.id); }}
+                >
+                    {isHidden ? <Plus size={14} /> : <Minus size={14} />}
+                </button>
+            </div>
+        </div>
+    );
+};
+
+const SortableGroup: React.FC<{
+    groupId: GroupId;
+    label: string;
+    actions: ActionEntry[];
+    btnStyle: React.CSSProperties;
+    hiddenSet: Set<string>;
+    jiggle: boolean;
+    onToggleHidden: (id: string) => void;
+    onRename: (groupId: GroupId, label: string) => void;
+}> = ({ groupId, label, actions, btnStyle, hiddenSet, jiggle, onToggleHidden, onRename }) => {
+    // The whole group grid is a droppable, so a tile can be dropped onto a
+    // group's empty space (not only onto another tile) -- this is what lets
+    // an empty group still receive a drop.
+    const { setNodeRef, isOver } = useDroppable({ id: "container:" + groupId, data: { group: groupId, container: true } });
+    return (
+        <div className="action-group">
+            <div className="action-group-divider">
+                <input
+                    className="action-group-label-input"
+                    value={label}
+                    onChange={(e) => onRename(groupId, e.target.value)}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    spellCheck={false}
+                    aria-label="Group name"
+                />
+            </div>
+            <SortableContext items={actions.map((a) => a.id)} strategy={rectSortingStrategy}>
+                <div ref={setNodeRef} className={"action-grid editing justify-center mx-auto" + (isOver ? " drop-target" : "")}>
+                    {actions.map((action) => (
+                        <SortableTile
+                            key={action.id}
+                            action={action}
+                            groupId={groupId}
+                            isHidden={hiddenSet.has(action.id)}
+                            jiggle={jiggle}
+                            btnStyle={btnStyle}
+                            onToggleHidden={onToggleHidden}
+                        />
+                    ))}
+                </div>
+            </SortableContext>
+        </div>
+    );
+};
+
 interface Toast {
     id: number;
     text: string;
@@ -503,16 +620,25 @@ const ToolsetTool = () => {
         reportResult(result, action.successText, action.successSound);
     };
 
-    // --- Personalisation (edit mode): hide + reorder grid actions ----------
-    // Persisted per-machine via app.settings (shell.ts's
-    // load/saveHiddenToolsetActions + load/saveToolsetOrder), same convention
-    // as favorites/tool-order. Loads once on mount; silently no-ops on a
-    // missing bridge (browser preview) -- an un-customised grid is a fine
-    // default, nothing a toast would add.
+    // --- Personalisation (edit mode): hide, reorder, MOVE BETWEEN groups,
+    // and RENAME groups ------------------------------------------------------
+    // All per-machine via app.settings (shell.ts's load/save* for hidden /
+    // order / groups / labels), same convention as favorites/tool-order.
+    // Loads once on mount; silently no-ops on a missing bridge (browser
+    // preview) -- an un-customised grid is a fine default.
+    //   - hidden:        action ids the user hid.
+    //   - order:         flat action-id order (within-group ordering derives
+    //                    from filtering this by group, preserving position).
+    //   - groupOverride: actionId -> groupId, once a tool has been dragged
+    //                    into a different group than its ACTIONS default.
+    //   - labelOverride: groupId -> renamed label.
     const prefersReducedMotion = useReducedMotion();
     const [editMode, setEditMode] = useState(false);
     const [hidden, setHidden] = useState<string[]>([]);
     const [order, setOrder] = useState<string[]>([]);
+    const [groupOverride, setGroupOverride] = useState<Record<string, GroupId>>({});
+    const [labelOverride, setLabelOverride] = useState<Record<string, string>>({});
+    const [activeId, setActiveId] = useState<string | null>(null);
 
     useEffect(() => {
         (async () => {
@@ -521,6 +647,18 @@ const ToolsetTool = () => {
                 if (Array.isArray(h)) setHidden(h as string[]);
                 const o = await evalTS("loadToolsetOrder" as any);
                 if (Array.isArray(o)) setOrder(o as string[]);
+                const g = await evalTS("loadToolsetGroups" as any);
+                if (Array.isArray(g)) {
+                    const m: Record<string, GroupId> = {};
+                    for (let i = 0; i + 1 < g.length; i += 2) m[g[i]] = g[i + 1] as GroupId;
+                    setGroupOverride(m);
+                }
+                const l = await evalTS("loadToolsetLabels" as any);
+                if (Array.isArray(l)) {
+                    const m: Record<string, string> = {};
+                    for (let i = 0; i + 1 < l.length; i += 2) m[l[i]] = l[i + 1];
+                    setLabelOverride(m);
+                }
             } catch {
                 /* no bridge (preview) -- defaults are correct */
             }
@@ -545,33 +683,107 @@ const ToolsetTool = () => {
         persistHidden(hiddenSet.has(id) ? hidden.filter((x) => x !== id) : [...hidden, id]);
     };
 
-    // A group's actions, sorted by the saved flat order. Any action NOT in
-    // the saved order (e.g. a newly added grid button) keeps its default
-    // ACTIONS-relative position at the end, so it never silently vanishes --
-    // same merge-over-default rule as the category tool-order feature.
-    const orderedActionsForGroup = (groupId: GroupId): ActionEntry[] => {
-        const groupActions = ACTIONS.filter((a) => a.group === groupId);
-        const rank = (id: string): number => {
-            const i = order.indexOf(id);
-            if (i !== -1) return i;
-            return order.length + ACTIONS.findIndex((a) => a.id === id);
-        };
-        return groupActions.slice().sort((a, b) => rank(a.id) - rank(b.id));
+    // Effective group of an action: user override, else its ACTIONS default.
+    const groupOf = (id: string): GroupId => {
+        const o = groupOverride[id];
+        if (o) return o;
+        const a = ACTIONS.find((x) => x.id === id);
+        return a ? a.group : "organise";
+    };
+    // Effective label of a group: user override, else the GROUPS default.
+    const groupLabelOf = (gid: GroupId): string => {
+        if (Object.prototype.hasOwnProperty.call(labelOverride, gid)) return labelOverride[gid];
+        const g = GROUPS.find((x) => x.id === gid);
+        return g ? g.label : gid;
     };
 
-    // After a within-group drag, rebuild the full flat order (every group's
-    // current sequence, with the reordered group's new sequence swapped in)
-    // and persist it. Reorder is deliberately scoped WITHIN a group so a
-    // tool can't jump its semantic cluster (a Naming tool into QC, etc.).
-    const handleGroupReorder = (groupId: GroupId, newGroupActions: ActionEntry[]) => {
-        const merged: string[] = [];
-        for (let g = 0; g < GROUPS.length; g++) {
-            const gid = GROUPS[g].id;
-            const acts = gid === groupId ? newGroupActions : orderedActionsForGroup(gid);
-            for (let i = 0; i < acts.length; i++) merged.push(acts[i].id);
+    // The full flat action-id order: the saved order, with any action not in
+    // it (e.g. a newly added grid button) appended in ACTIONS order, so a new
+    // action never silently vanishes -- same merge-over-default rule as the
+    // category tool-order feature.
+    const fullOrder = (): string[] => {
+        const known = order.filter((id) => ACTIONS.some((a) => a.id === id));
+        const missing = ACTIONS.filter((a) => order.indexOf(a.id) === -1).map((a) => a.id);
+        return known.concat(missing);
+    };
+
+    // A group's actions = the flat order filtered to that (effective) group,
+    // preserving flat-order position for within-group sequence.
+    const orderedActionsForGroup = (groupId: GroupId): ActionEntry[] => {
+        const ids = fullOrder().filter((id) => groupOf(id) === groupId);
+        const out: ActionEntry[] = [];
+        for (let i = 0; i < ids.length; i++) {
+            const a = ACTIONS.find((x) => x.id === ids[i]);
+            if (a) out.push(a);
         }
-        setOrder(merged);
-        evalTS("saveToolsetOrder" as any, merged).catch(() => { /* preview */ });
+        return out;
+    };
+
+    const commitLayout = (newOrder: string[], newGroups: Record<string, GroupId>) => {
+        setOrder(newOrder);
+        setGroupOverride(newGroups);
+        evalTS("saveToolsetOrder" as any, newOrder).catch(() => { /* preview */ });
+        const flatPairs: string[] = [];
+        for (const id in newGroups) { if (Object.prototype.hasOwnProperty.call(newGroups, id)) flatPairs.push(id, newGroups[id]); }
+        evalTS("saveToolsetGroups" as any, flatPairs).catch(() => { /* preview */ });
+    };
+
+    const setGroupLabel = (gid: GroupId, label: string) => {
+        const next = { ...labelOverride, [gid]: label };
+        setLabelOverride(next);
+        const flatPairs: string[] = [];
+        for (const k in next) { if (Object.prototype.hasOwnProperty.call(next, k)) flatPairs.push(k, next[k]); }
+        evalTS("saveToolsetLabels" as any, flatPairs).catch(() => { /* preview */ });
+    };
+
+    // --- Sensors: pointer + keyboard drag -----------------------------------
+    const sensors = useSensors(
+        useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+        useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+    );
+
+    const handleDragStart = (event: DragStartEvent) => setActiveId(String(event.active.id));
+
+    // One DndContext spans every group, so a tile can be dropped either onto
+    // another tile (insert at its position) OR onto a group's empty space
+    // (append to that group) -- including a DIFFERENT group than it started
+    // in, which is what makes cross-group moves work. Deliberately no
+    // onDragOver live-preview: the dragged tile's DragOverlay copy follows
+    // the cursor, the source gap closes on drop -- simpler and far more
+    // robust than juggling cross-container state mid-gesture.
+    const handleDragEnd = (event: DragEndEvent) => {
+        setActiveId(null);
+        const { active, over } = event;
+        if (!over) return;
+        const draggedId = String(active.id);
+        const overId = String(over.id);
+        if (draggedId === overId) return;
+
+        const isContainer = overId.indexOf("container:") === 0;
+        const targetGroup: GroupId = isContainer ? (overId.slice("container:".length) as GroupId) : groupOf(overId);
+
+        const flat = fullOrder();
+        const without = flat.filter((id) => id !== draggedId);
+
+        let insertIndex: number;
+        if (isContainer) {
+            // Empty space of a group: place after that group's last member.
+            let lastIdx = -1;
+            for (let i = 0; i < without.length; i++) {
+                if (groupOf(without[i]) === targetGroup) lastIdx = i;
+            }
+            insertIndex = lastIdx === -1 ? without.length : lastIdx + 1;
+        } else {
+            insertIndex = without.indexOf(overId);
+            if (insertIndex === -1) insertIndex = without.length;
+        }
+
+        const newOrder = without.slice(0, insertIndex).concat(draggedId, without.slice(insertIndex));
+
+        const newGroups = { ...groupOverride };
+        if (groupOf(draggedId) !== targetGroup) newGroups[draggedId] = targetGroup;
+
+        commitLayout(newOrder, newGroups);
     };
 
     // Long-press (out of edit mode) enters edit mode -- the "keep pressing a
@@ -601,6 +813,17 @@ const ToolsetTool = () => {
     // instead of 4 (0.06s/card there would take over a second to finish).
     let staggerIndex = 0;
 
+    // The tile currently being dragged (for the DragOverlay copy that follows
+    // the cursor across groups). Styled with its CURRENT group's accent.
+    const activeAction = activeId ? ACTIONS.find((a) => a.id === activeId) || null : null;
+    const activeGroupIdx = activeAction ? GROUPS.findIndex((g) => g.id === groupOf(activeAction.id)) : -1;
+    const overlayAccent = PALETTE[(activeGroupIdx < 0 ? 0 : activeGroupIdx) % PALETTE.length];
+    const overlayStyle = {
+        "--btn-border": overlayAccent.border,
+        "--btn-bg": overlayAccent.bg,
+        "--btn-glow": overlayAccent.glow,
+    } as React.CSSProperties;
+
     return (
         <div className={editMode ? "toolset-grid editing" : "toolset-grid"}>
             <div className="toolset-panel">
@@ -617,12 +840,54 @@ const ToolsetTool = () => {
                     </div>
                 )}
 
-                {GROUPS.map((group, groupIndex) => {
+                {editMode ? (
+                    // Edit mode: ONE DndContext over every group, so a tile can
+                    // be dragged within its group OR into a different group.
+                    // rectSortingStrategy is grid-aware (handles wrapped rows);
+                    // each SortableGroup is also a droppable so empty-space drops
+                    // land in the right group. DragOverlay renders the in-flight
+                    // copy that follows the cursor.
+                    <DndContext
+                        sensors={sensors}
+                        collisionDetection={closestCorners}
+                        onDragStart={handleDragStart}
+                        onDragEnd={handleDragEnd}
+                    >
+                        {GROUPS.map((group, groupIndex) => {
+                            const accent = PALETTE[groupIndex % PALETTE.length];
+                            const btnStyle = {
+                                "--btn-border": accent.border,
+                                "--btn-bg": accent.bg,
+                                "--btn-glow": accent.glow,
+                            } as React.CSSProperties;
+                            return (
+                                <SortableGroup
+                                    key={group.id}
+                                    groupId={group.id}
+                                    label={groupLabelOf(group.id)}
+                                    actions={orderedActionsForGroup(group.id)}
+                                    btnStyle={btnStyle}
+                                    hiddenSet={hiddenSet}
+                                    jiggle={!prefersReducedMotion}
+                                    onToggleHidden={toggleHidden}
+                                    onRename={setGroupLabel}
+                                />
+                            );
+                        })}
+                        <DragOverlay>
+                            {activeAction ? (
+                                <div className="action-edit-face action-edit-overlay" style={overlayStyle}>
+                                    <span className="action-icon"><activeAction.icon size={16} /></span>
+                                    {activeAction.label}
+                                </div>
+                            ) : null}
+                        </DragOverlay>
+                    </DndContext>
+                ) : (
+                    GROUPS.map((group, groupIndex) => {
                     const groupActions = orderedActionsForGroup(group.id);
-                    // Normal mode hides hidden actions outright; edit mode keeps
-                    // them visible (dimmed, with a + to restore) so hiding is
-                    // reversible inline without a separate "hidden" panel.
-                    const visibleActions = editMode ? groupActions : groupActions.filter((a) => !hiddenSet.has(a.id));
+                    // Normal mode hides hidden actions outright.
+                    const visibleActions = groupActions.filter((a) => !hiddenSet.has(a.id));
                     if (visibleActions.length === 0) return null;
                     // One accent per group (not per button) -- reinforces which
                     // cluster a button belongs to at a glance, on top of the
@@ -634,65 +899,10 @@ const ToolsetTool = () => {
                         "--btn-glow": accent.glow,
                     } as React.CSSProperties;
 
-                    if (editMode) {
-                        // Edit mode: Framer Reorder within the group (drag),
-                        // plus a hide/restore badge per tile. No run-on-click,
-                        // no droplet, no tooltip -- this is the customise view.
-                        // NOTE (spike): Reorder.Group is single-axis; a group
-                        // that WRAPS to a second row won't reorder cleanly
-                        // across the wrap. Documented tradeoff -- escalate to a
-                        // grid-aware DnD lib only if this feels bad in real AE.
-                        return (
-                            <div className="action-group" key={group.id}>
-                                <div className="action-group-divider">
-                                    <h3 className="action-group-label">{group.label}</h3>
-                                </div>
-                                <Reorder.Group
-                                    as="div"
-                                    axis="x"
-                                    className="action-grid editing justify-center mx-auto"
-                                    values={groupActions}
-                                    onReorder={(next) => handleGroupReorder(group.id, next as ActionEntry[])}
-                                >
-                                    {groupActions.map((action) => {
-                                        const Icon = action.icon;
-                                        const isHidden = hiddenSet.has(action.id);
-                                        return (
-                                            <Reorder.Item
-                                                as="div"
-                                                key={action.id}
-                                                value={action}
-                                                className={
-                                                    "action-edit-item" +
-                                                    (isHidden ? " is-hidden" : "") +
-                                                    (prefersReducedMotion ? "" : " jiggle")
-                                                }
-                                            >
-                                                <button
-                                                    type="button"
-                                                    className="action-hide-badge"
-                                                    title={isHidden ? "Restore" : "Hide"}
-                                                    onPointerDown={(e) => e.stopPropagation()}
-                                                    onClick={(e) => { e.stopPropagation(); toggleHidden(action.id); }}
-                                                >
-                                                    {isHidden ? <Plus size={12} /> : <Minus size={12} />}
-                                                </button>
-                                                <div className="action-edit-face" style={btnStyle}>
-                                                    <span className="action-icon"><Icon size={16} /></span>
-                                                    {action.label}
-                                                </div>
-                                            </Reorder.Item>
-                                        );
-                                    })}
-                                </Reorder.Group>
-                            </div>
-                        );
-                    }
-
                     return (
                         <div className="action-group" key={group.id}>
                             <div className="action-group-divider">
-                                <h3 className="action-group-label">{group.label}</h3>
+                                <h3 className="action-group-label">{groupLabelOf(group.id)}</h3>
                             </div>
                             <div className="action-grid justify-center mx-auto">
                                 {visibleActions.map((action) => {
@@ -763,7 +973,8 @@ const ToolsetTool = () => {
                             </div>
                         </div>
                     );
-                })}
+                    })
+                )}
             </div>
 
             <div className="toast-stack">

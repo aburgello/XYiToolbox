@@ -237,6 +237,15 @@ export const saveFavoriteTools = (toolIds: string[]): Result => {
 const TOOLSET_SETTINGS_SECTION = "XYiToolbox";
 const TOOLSET_HIDDEN_KEY = "OVToolsetHidden";
 const TOOLSET_ORDER_KEY = "OVToolsetOrder";
+// Group membership + label overrides -- once a grid action can be dragged
+// into a DIFFERENT group and groups can be renamed in edit mode, both a
+// tool's group and a group's label become user data, not the fixed
+// group/label baked into Toolset.tsx's ACTIONS/GROUPS. Stored as a flat
+// [key, value, key, value, ...] list (tab-joined, same as every other key
+// here) -- the React side pairs them back into a map. Membership: actionId
+// -> groupId. Labels: groupId -> displayed label.
+const TOOLSET_GROUPS_KEY = "OVToolsetGroups";
+const TOOLSET_LABELS_KEY = "OVToolsetLabels";
 
 function loadTabList(key: string): string[] {
   if (app.settings.haveSetting(TOOLSET_SETTINGS_SECTION, key)) {
@@ -265,6 +274,14 @@ export const saveHiddenToolsetActions = (ids: string[]): Result => saveTabList(T
 
 export const loadToolsetOrder = (): string[] => loadTabList(TOOLSET_ORDER_KEY);
 export const saveToolsetOrder = (ids: string[]): Result => saveTabList(TOOLSET_ORDER_KEY, ids);
+
+// Flat [actionId, groupId, actionId, groupId, ...]; React pairs into a map.
+export const loadToolsetGroups = (): string[] => loadTabList(TOOLSET_GROUPS_KEY);
+export const saveToolsetGroups = (flatPairs: string[]): Result => saveTabList(TOOLSET_GROUPS_KEY, flatPairs);
+
+// Flat [groupId, label, groupId, label, ...]; React pairs into a map.
+export const loadToolsetLabels = (): string[] => loadTabList(TOOLSET_LABELS_KEY);
+export const saveToolsetLabels = (flatPairs: string[]): Result => saveTabList(TOOLSET_LABELS_KEY, flatPairs);
 
 // =============================================================================
 // UI sound effects (sfx.ts) -- persisted on/off toggle, same section as
