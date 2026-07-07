@@ -48,6 +48,7 @@ import {
     Monitor,
     ListVideo,
     Scissors,
+    LayoutList,
 } from "lucide-react";
 
 // --- Lazy tool imports --------------------------------------------------
@@ -80,6 +81,7 @@ const AEPThiefTool          = React.lazy(() => import("./tools/AEPThief"));
 const JPEGLocTool           = React.lazy(() => import("./tools/JPEGLoc"));
 const PDFToCSVTool          = React.lazy(() => import("./tools/PDFToCSV"));
 const ScriptPlaygroundTool  = React.lazy(() => import("./tools/ScriptPlayground"));
+const MyToolsTool           = React.lazy(() => import("./tools/MyTools"));
 const ExpressionsBankTool   = React.lazy(() => import("./tools/ExpressionsBank"));
 const CompInspectorTool     = React.lazy(() => import("./tools/CompInspector"));
 const RenderQueueManagerTool = React.lazy(() => import("./tools/RenderQueueManager"));
@@ -120,6 +122,7 @@ const PREFETCH_MAP: Record<string, () => Promise<any>> = {
     "jpeg-loc":           () => import("./tools/JPEGLoc"),
     "pdf-to-csv":         () => import("./tools/PDFToCSV"),
     "script-playground":  () => import("./tools/ScriptPlayground"),
+    "my-tools":           () => import("./tools/MyTools"),
     "expressions-bank":   () => import("./tools/ExpressionsBank"),
     "comp-inspector":     () => import("./tools/CompInspector"),
     "render-queue-manager": () => import("./tools/RenderQueueManager"),
@@ -437,6 +440,14 @@ export const TOOLS: ToolEntry[] = [
         Component: ScriptPlaygroundTool,
         actions: ["Run Script", "Clear Output"],
         description: "Run arbitrary ExtendScript directly in After Effects from a textarea.",
+    },
+    {
+        id: "my-tools",
+        label: "My Tools",
+        categories: ["tools"],
+        icon: LayoutList,
+        Component: MyToolsTool,
+        description: "Scripts you've saved from Script Playground as named tools -- run, edit, or delete them here.",
     },
     {
         id: "expressions-bank",

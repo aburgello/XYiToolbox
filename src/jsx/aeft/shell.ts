@@ -293,6 +293,34 @@ export const loadPinnedToolsetLinks = (): string[] => loadTabList(TOOLSET_PINNED
 export const savePinnedToolsetLinks = (ids: string[]): Result => saveTabList(TOOLSET_PINNED_KEY, ids);
 
 // =============================================================================
+// Hidden theme picker (triggered by typing "jacqui" into the home search box)
+// -- a single theme id, or "" for the default/host-matched look. Same
+// section as everything else here; deliberately its own single string key
+// rather than the tab-list convention, since there's only ever one value.
+// =============================================================================
+const THEME_KEY = "OVTheme";
+
+export const loadTheme = (): Result => {
+  try {
+    const raw = app.settings.haveSetting(TOOLSET_SETTINGS_SECTION, THEME_KEY)
+      ? app.settings.getSetting(TOOLSET_SETTINGS_SECTION, THEME_KEY)
+      : "";
+    return { success: true, message: raw };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+};
+
+export const saveTheme = (themeId: string): Result => {
+  try {
+    app.settings.saveSetting(TOOLSET_SETTINGS_SECTION, THEME_KEY, themeId);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+};
+
+// =============================================================================
 // UI sound effects (sfx.ts) -- persisted on/off toggle, same section as
 // every other app-shell preference. Defaults to OFF (loadSfxEnabled returns
 // false when the setting has never been saved) -- a shared studio-floor tool

@@ -28,10 +28,11 @@
 // =============================================================================
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Search, CornerDownLeft, ArrowUpDown } from "lucide-react";
+import { Search, CornerDownLeft, ArrowUpDown, Terminal } from "lucide-react";
 import { TOOLS, categoryStyleVars, type ToolEntry } from "./toolRegistry";
-import { ACTIONS, type ActionEntry } from "./tools/Toolset";
+import { ACTIONS, customButtonToAction, type ActionEntry } from "./tools/Toolset";
 import { useFavorites, favoriteKey } from "./hooks/useFavorites";
+import { useCustomTools, type CustomToolEntry } from "./hooks/useCustomTools";
 import StatusIcon from "./StatusIcon";
 import Tooltip from "./Tooltip";
 import type { Screen } from "./main";
@@ -45,7 +46,15 @@ export const triggerPalette = () => _openPalette?.();
 
 type Hit =
     | { kind: "tool"; key: string; tool: ToolEntry; matchedAction?: string }
-    | { kind: "action"; key: string; action: ActionEntry };
+    | { kind: "action"; key: string; action: ActionEntry }
+    // A "page"-kind custom tool (Script Playground's My Tools list) --
+    // deliberately its own Hit kind, not a "tool" hit pointing at the
+    // my-tools ToolEntry with matchedAction set to the script's name: a
+    // "tool" hit's matchedAction drives main.tsx's auto-click-that-button
+    // mechanism, and running an arbitrary saved script sight-unseen off a
+    // single search selection is a bigger leap than auto-clicking a known
+    // static button -- this always just navigates to My Tools, never runs.
+    | { kind: "custom-page"; key: string; entry: CustomToolEntry };
 
 interface Props {
     screen: Screen;
@@ -54,6 +63,7 @@ interface Props {
 
 const CommandPalette: React.FC<Props> = ({ screen, onNavigate }) => {
     const { favoriteEntries } = useFavorites(TOOLS);
+    const { customTools } = useCustomTools();
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState("");
     const [selectedIndex, setSelectedIndex] = useState(0);
@@ -153,8 +163,31 @@ const CommandPalette: React.FC<Props> = ({ screen, onNavigate }) => {
             (a) => !a.label.toLowerCase().includes(q) && a.description.toLowerCase().includes(q)
         ).map((a) => ({ kind: "action" as const, key: "toolset:" + a.id, action: a }));
 
-        return [...toolNameHits, ...actionLabelHits, ...innerActionHits, ...actionDescriptionHits];
-    }, [query, favoriteEntries]);
+        // Custom tools (Script Playground's "Save as Tool...") slot into the
+        // same two tiers their real counterparts use: a "button"-kind one
+        // reads and runs exactly like an ACTIONS entry, a "page"-kind one
+        // reads like a tool but always navigates to My Tools (see the Hit
+        // type's own comment for why it never auto-runs).
+        const customButtonTools = customTools.filter((t) => t.kind === "button");
+        const customPageTools = customTools.filter((t) => t.kind === "page");
+        const customButtonLabelHits: Hit[] = customButtonTools
+            .filter((t) => t.name.toLowerCase().includes(q))
+            .map((t) => ({ kind: "action" as const, key: "custom:" + t.id, action: customButtonToAction(t) }));
+        const customPageLabelHits: Hit[] = customPageTools
+            .filter((t) => t.name.toLowerCase().includes(q))
+            .map((t) => ({ kind: "custom-page" as const, key: "custompage:" + t.id, entry: t }));
+        const customButtonDescriptionHits: Hit[] = customButtonTools
+            .filter((t) => !t.name.toLowerCase().includes(q) && t.description.toLowerCase().includes(q))
+            .map((t) => ({ kind: "action" as const, key: "custom:" + t.id, action: customButtonToAction(t) }));
+        const customPageDescriptionHits: Hit[] = customPageTools
+            .filter((t) => !t.name.toLowerCase().includes(q) && t.description.toLowerCase().includes(q))
+            .map((t) => ({ kind: "custom-page" as const, key: "custompage:" + t.id, entry: t }));
+
+        return [
+            ...toolNameHits, ...actionLabelHits, ...customButtonLabelHits, ...customPageLabelHits,
+            ...innerActionHits, ...actionDescriptionHits, ...customButtonDescriptionHits, ...customPageDescriptionHits,
+        ];
+    }, [query, favoriteEntries, customTools]);
 
     // Keep the highlighted row in view when navigating by keyboard past the
     // edge of the scrollable list.
@@ -198,6 +231,9 @@ const CommandPalette: React.FC<Props> = ({ screen, onNavigate }) => {
     const selectHit = (hit: Hit) => {
         if (hit.kind === "tool") {
             onNavigate({ type: "tool", toolId: hit.tool.id, backTo: screen, autoAction: hit.matchedAction });
+            close();
+        } else if (hit.kind === "custom-page") {
+            onNavigate({ type: "tool", toolId: "my-tools", backTo: screen });
             close();
         } else {
             runAction(hit.action);
@@ -302,6 +338,24 @@ const CommandPalette: React.FC<Props> = ({ screen, onNavigate }) => {
                                                         <span className="palette-row-label">
                                                             {hit.matchedAction || hit.tool.label}
                                                             {hit.matchedAction && <small>in {hit.tool.label}</small>}
+                                                        </span>
+                                                        {isSelected && <CornerDownLeft size={12} className="palette-row-enter" />}
+                                                    </div>
+                                                );
+                                            }
+                                            if (hit.kind === "custom-page") {
+                                                return (
+                                                    <div
+                                                        key={hit.key}
+                                                        data-index={index}
+                                                        className={isSelected ? "palette-row selected" : "palette-row"}
+                                                        onMouseEnter={() => setSelectedIndex(index)}
+                                                        onClick={() => selectHit(hit)}
+                                                    >
+                                                        <Terminal size={14} />
+                                                        <span className="palette-row-label">
+                                                            {hit.entry.name}
+                                                            <small>in My Tools</small>
                                                         </span>
                                                         {isSelected && <CornerDownLeft size={12} className="palette-row-enter" />}
                                                     </div>

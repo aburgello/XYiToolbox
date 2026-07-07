@@ -34,6 +34,7 @@ import { ToolsScreen } from "./screens/ToolsScreen";
 import { ToolScreen } from "./screens/ToolScreen";
 import CommandPalette from "./CommandPalette";
 import { GsapScreenTransition } from "./gsap/components/GsapScreenTransition";
+import { useTheme } from "./hooks/useTheme";
 // ---------------------------------------------------------------------------
 // Screen type -- exported so screen components can reference it without a
 // circular import (they import Screen, Main imports them).
@@ -44,6 +45,12 @@ export type Screen =
     | { type: "tool"; toolId: string; backTo: Screen; autoAction?: string };
 
 const Main = () => {
+    // Applies the hidden theme picker's saved choice (if any) to the
+    // document root on cold start -- mounted here, not just inside
+    // HomeScreen's own picker UI, so it isn't tied to Home happening to be
+    // the current initial screen.
+    useTheme();
+
     const [screen, setScreen] = useState<Screen>({ type: "home" });
 
     // Track previous screen type to determine transition direction

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Play, Trash2, Save, Pencil, X, Terminal, LayoutList } from "lucide-react";
+import { Play, Trash2, Save, Pencil, X, Terminal, LayoutList, MousePointerClick, Check } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import StatusIcon from "../StatusIcon";
 import { confirmDialog } from "../Dialog";
@@ -176,15 +176,31 @@ const ScriptPlayground: React.FC = () => {
                             placeholder="What this does -- shown as a hint"
                         />
                     </div>
-                    <div className="radio-row">
-                        <label>
-                            <input type="radio" checked={saveKind === "button"} onChange={() => setSaveKind("button")} />
-                            One-click Toolset button
-                        </label>
-                        <label>
-                            <input type="radio" checked={saveKind === "page"} onChange={() => setSaveKind("page")} />
-                            My Tools entry only
-                        </label>
+                    <div className="kind-picker">
+                        <button
+                            type="button"
+                            className={saveKind === "button" ? "kind-option selected" : "kind-option"}
+                            onClick={() => setSaveKind("button")}
+                        >
+                            <span className="kind-option-check">{saveKind === "button" && <Check size={11} />}</span>
+                            <span className="kind-option-icon"><MousePointerClick size={16} /></span>
+                            <span className="kind-option-text">
+                                <strong>Toolset button</strong>
+                                <small>One-click, appears in the home grid</small>
+                            </span>
+                        </button>
+                        <button
+                            type="button"
+                            className={saveKind === "page" ? "kind-option selected" : "kind-option"}
+                            onClick={() => setSaveKind("page")}
+                        >
+                            <span className="kind-option-check">{saveKind === "page" && <Check size={11} />}</span>
+                            <span className="kind-option-icon"><LayoutList size={16} /></span>
+                            <span className="kind-option-text">
+                                <strong>My Tools entry</strong>
+                                <small>Listed under Tools → Scripting</small>
+                            </span>
+                        </button>
                     </div>
                     <div className="button-row">
                         <button onClick={confirmSave}><Save size={14} /> Save</button>

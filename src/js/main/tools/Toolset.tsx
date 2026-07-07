@@ -72,7 +72,7 @@ import Droplet from "../Droplet";
 import { promptDialog, selectDialog } from "../Dialog";
 import { iconWiggle, buttonLift } from "../animations";
 import { TOOLS } from "../toolRegistry";
-import { useCustomTools } from "../hooks/useCustomTools";
+import { useCustomTools, type CustomToolEntry } from "../hooks/useCustomTools";
 import type { Screen } from "../main";
 import "../shared.scss";
 import "./Toolset.scss";
@@ -135,6 +135,23 @@ const CUSTOM_PREFIX = "custom:";
 const customId = (toolId: string): string => CUSTOM_PREFIX + toolId;
 const isCustomId = (id: string): boolean => id.indexOf(CUSTOM_PREFIX) === 0;
 const toolIdFromCustom = (id: string): string => id.slice(CUSTOM_PREFIX.length);
+
+// Builds the ActionEntry a "button"-kind custom tool resolves to -- shared
+// with CommandPalette.tsx (which searches/runs custom button tools exactly
+// like a real ACTIONS entry, group value unused there) so the "run a saved
+// script through runScript and report its output" logic exists in one
+// place, not duplicated per call site.
+export function customButtonToAction(tool: CustomToolEntry, group: GroupId = "custom"): ActionEntry {
+    return {
+        id: customId(tool.id),
+        label: tool.name,
+        description: tool.description || `Custom script: ${tool.name}`,
+        icon: Terminal,
+        group,
+        run: () => evalTSSafe("runScript", tool.code),
+        successText: (r) => r.message ? `${tool.name}: ${r.message}` : `${tool.name} ran.`,
+    };
+}
 
 // Placeholder for a toolset button whose logic hasn't been ported yet --
 // shows up and behaves exactly like a real one (hover tooltip, click, toast)
@@ -858,16 +875,7 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
         if (isCustomId(id)) {
             const toolId = toolIdFromCustom(id);
             const tool = customButtonTools.find((t) => t.id === toolId);
-            if (!tool) return null;
-            return {
-                id,
-                label: tool.name,
-                description: tool.description || `Custom script: ${tool.name}`,
-                icon: Terminal,
-                group: groupOf(id),
-                run: () => evalTSSafe("runScript", tool.code),
-                successText: (r) => r.message ? `${tool.name}: ${r.message}` : `${tool.name} ran.`,
-            };
+            return tool ? customButtonToAction(tool, groupOf(id)) : null;
         }
         return ACTIONS.find((x) => x.id === id) || null;
     };

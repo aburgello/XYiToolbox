@@ -35,6 +35,7 @@ import Tooltip from "../Tooltip";
 import StatusIcon from "../StatusIcon";
 import Droplet from "../Droplet";
 import { alertDialog, confirmDialog, promptDialog } from "../Dialog";
+import { hasUserTheme } from "../themes";
 import "../shared.scss";
 import "./OVLibrary.scss";
 
@@ -595,6 +596,10 @@ function useHostTheme() {
 
         const applyTheme = () => {
             try {
+                // A user-picked theme (the hidden "jacqui" picker) takes
+                // precedence -- don't let host-skin matching silently
+                // overwrite it just because this tool happens to mount.
+                if (hasUserTheme()) return;
                 const skin = csi.hostEnvironment?.appSkinInfo;
                 if (!skin) return;
                 const root = document.documentElement.style;

@@ -1,0 +1,73 @@
+// =============================================================================
+// src/js/main/ThemePicker.scss
+// -----------------------------------------------------------------------------
+// Standalone class names (not scoped under a parent block) since this
+// mounts directly in HomeScreen's search-results slot -- same convention as
+// main.scss's own top-level rules for that area.
+// =============================================================================
+.theme-picker {
+    padding: 4px 2px 8px;
+}
+
+.theme-picker-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #eee;
+
+    svg { color: #f4c95d; flex-shrink: 0; }
+}
+
+.theme-swatch-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.theme-swatch {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    background: #1e1e1e;
+    border: 1px solid #383838;
+    border-radius: 18px;
+    padding: 7px 14px 7px 10px;
+    color: #ddd;
+    font-size: 12px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+
+    &:hover { border-color: #555; transform: translateY(-1px); }
+
+    &.selected {
+        border-color: var(--swatch-accent, #4a9eff);
+        background: rgba(255, 255, 255, 0.04);
+    }
+}
+
+.theme-swatch-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--swatch-accent, #888);
+    box-shadow: 0 0 6px 0 var(--swatch-accent, transparent);
+}
+
+// "Default" has no single accent hex to show (it's whatever the host
+// panel's own skin color happens to be) -- a plain ring instead of a
+// filled dot reads as "no override" rather than an unstyled/broken swatch.
+.theme-swatch-dot-default {
+    background: none;
+    border: 2px solid #777;
+    box-shadow: none;
+}
+
+.theme-swatch-check {
+    color: var(--swatch-accent, #4a9eff);
+}

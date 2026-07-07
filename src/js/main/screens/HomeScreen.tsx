@@ -21,6 +21,9 @@ import { confirmDialog, promptDialog } from "../Dialog";
 import { TOOLS, CATEGORIES, categoryStyleVars, prefetchTool } from "../toolRegistry";
 import { iconWiggle, cardLift, categoryLift } from "../animations";
 import { useFavorites, favoriteKey } from "../hooks/useFavorites";
+import { useCustomTools } from "../hooks/useCustomTools";
+import { useTheme } from "../hooks/useTheme";
+import ThemePicker from "../ThemePicker";
 import ToolsetTool from "../tools/Toolset";
 import Tooltip from "../Tooltip";
 import TimeTrackerDroplet from "../TimeTrackerDroplet";
@@ -122,23 +125,44 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
         });
     };
 
+    // Hidden theme picker -- typing the exact word "jacqui" into search
+    // swaps the results area for ThemePicker instead of running the normal
+    // tool-name/action search below. Exact match, not a substring match,
+    // so it can't accidentally trigger while typing toward some real tool
+    // name and won't collide with anything actually searchable.
+    const { themeId, setTheme } = useTheme();
+    const isThemeEasterEgg = search.trim().toLowerCase() === "jacqui";
+
     // Search: matches tool names AND individual action labels.
+    const { customTools } = useCustomTools();
+    const myToolsEntry = TOOLS.find((t) => t.id === "my-tools");
     const searchLower = search.trim().toLowerCase();
-    const searchHits: { tool: typeof TOOLS[number]; matchedAction?: string }[] = searchLower
-        ? TOOLS.flatMap((t) => {
-              const hits: { tool: typeof TOOLS[number]; matchedAction?: string }[] = [];
-              if (t.label.toLowerCase().includes(searchLower)) hits.push({ tool: t });
-              for (const action of t.actions || []) {
-                  if (action.toLowerCase().includes(searchLower)) hits.push({ tool: t, matchedAction: action });
-              }
-              return hits;
-          })
+    const searchHits: { tool: typeof TOOLS[number]; matchedAction?: string; suppressAutoAction?: boolean }[] = searchLower
+        ? [
+              ...TOOLS.flatMap((t) => {
+                  const hits: { tool: typeof TOOLS[number]; matchedAction?: string }[] = [];
+                  if (t.label.toLowerCase().includes(searchLower)) hits.push({ tool: t });
+                  for (const action of t.actions || []) {
+                      if (action.toLowerCase().includes(searchLower)) hits.push({ tool: t, matchedAction: action });
+                  }
+                  return hits;
+              }),
+              // Custom tools (Script Playground's "Save as Tool...") always
+              // point at My Tools and never auto-run -- unlike a real inner
+              // action, a matched label here isn't a known static button to
+              // safely auto-click, it's an arbitrary saved script.
+              ...(myToolsEntry
+                  ? customTools
+                        .filter((c) => c.name.toLowerCase().includes(searchLower) || c.description.toLowerCase().includes(searchLower))
+                        .map((c) => ({ tool: myToolsEntry, matchedAction: c.name, suppressAutoAction: true }))
+                  : []),
+          ]
         : [];
 
-    const renderToolCard = (tool: typeof TOOLS[number], backTo: Screen, matchedAction?: string) => {
+    const renderToolCard = (tool: typeof TOOLS[number], backTo: Screen, matchedAction?: string, suppressAutoAction?: boolean) => {
         const Icon = tool.icon;
         const isFavorite = favoriteIds.includes(favoriteKey(tool.id, matchedAction));
-        const navigate = () => onNavigate({ type: "tool", toolId: tool.id, backTo, autoAction: matchedAction });
+        const navigate = () => onNavigate({ type: "tool", toolId: tool.id, backTo, autoAction: suppressAutoAction ? undefined : matchedAction });
         return (
             <motion.div
                 key={tool.id + (matchedAction ? ":" + matchedAction : "")}
@@ -374,10 +398,12 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
                                     exit={{ opacity: 0, height: 0 }}
                                     transition={{ duration: 0.15 }}
                                 >
-                                    {searchHits.length === 0 ? (
+                                    {isThemeEasterEgg ? (
+                                        <ThemePicker themeId={themeId} onPick={setTheme} />
+                                    ) : searchHits.length === 0 ? (
                                         <p className="hint">No tools match "{search}".</p>
                                     ) : (
-                                        searchHits.map((hit) => renderToolCard(hit.tool, { type: "home" }, hit.matchedAction))
+                                        searchHits.map((hit) => renderToolCard(hit.tool, { type: "home" }, hit.matchedAction, hit.suppressAutoAction))
                                     )}
                                 </motion.div>
                             )}
