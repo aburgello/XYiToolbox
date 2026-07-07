@@ -74,8 +74,15 @@ import { iconWiggle, buttonLift } from "../animations";
 import { TOOLS } from "../toolRegistry";
 import { useCustomTools, type CustomToolEntry } from "../hooks/useCustomTools";
 import type { Screen } from "../main";
+import turkGif from "../../assets/happy_shock_2.gif";
 import "../shared.scss";
 import "./Toolset.scss";
+
+// Turk It celebrates crossing V03 -- reuses the exact overlay markup/CSS
+// classes (.logo-easter-egg-overlay/-gif, main.scss) the logo click
+// easter egg already established, rather than inventing a second
+// full-panel-gif pattern for what's visually the same thing.
+const TURK_IT_CELEBRATION_THRESHOLD = 3;
 
 export interface ActionResult {
     success: boolean;
@@ -718,6 +725,8 @@ interface Toast {
 const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNavigate }) => {
     const [toasts, setToasts] = useState<Toast[]>([]);
     const toastId = useRef(0);
+    const [showTurkGif, setShowTurkGif] = useState(false);
+    const turkGifTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const pushToast = (text: string, type: Toast["type"]) => {
         const id = ++toastId.current;
@@ -745,6 +754,18 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
     const runAction = async (action: ActionEntry) => {
         const result = await action.run();
         reportResult(result, action.successText, action.successSound);
+        // Turk It reports the highest resulting version as maxVersion (see
+        // aeft/tools.ts's turkIt) -- outside ActionResult's own strict
+        // shape, hence the cast, same as any other cross-bridge extra
+        // field this app reads opportunistically.
+        if (action.id === "turk-it" && result && result.success) {
+            const maxVersion = Number((result as { maxVersion?: number }).maxVersion);
+            if (!isNaN(maxVersion) && maxVersion > TURK_IT_CELEBRATION_THRESHOLD) {
+                if (turkGifTimer.current) clearTimeout(turkGifTimer.current);
+                setShowTurkGif(true);
+                turkGifTimer.current = setTimeout(() => setShowTurkGif(false), 3000);
+            }
+        }
     };
 
     // --- Personalisation (edit mode): hide, reorder, MOVE BETWEEN groups,
@@ -1007,6 +1028,11 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
     const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const longPressed = useRef(false);
     const beginPress = () => {
+        // Defensively clear any timer already running before arming a new
+        // one -- if a PREVIOUS press's up/leave event never fired (see
+        // below), its timer would otherwise still be ticking down
+        // underneath this new press and could fire on top of it.
+        if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; }
         longPressed.current = false;
         pressTimer.current = setTimeout(() => { longPressed.current = true; setEditMode(true); }, 500);
     };
@@ -1014,16 +1040,29 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
         if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; }
     };
     // Mouse handlers alongside the Pointer ones -- AE's CEP panel doesn't
-    // reliably fire pointer events for a press-and-hold (same root cause as
-    // the DndContext sensor swap above), so mouse events are the fallback
-    // that actually registers the long-press inside AE.
+    // reliably fire pointer/mouse UP or LEAVE events for a press-and-hold
+    // (same root cause as the DndContext sensor swap above). That's not
+    // just a redundancy concern: if endPress never runs, the 500ms timer
+    // keeps ticking in the background after a normal quick click, and
+    // fires on its own ~500ms later -- editing mode popping open with no
+    // further input, "as if already holding down" from the click that
+    // already completed. guardClick's own endPress() call below is the
+    // real fix (a completed click is proof the press is over, regardless
+    // of which up/leave events did or didn't fire); these handlers are
+    // just the best-effort fast path when they DO fire.
     const pressProps = {
         onPointerDown: beginPress, onPointerUp: endPress, onPointerLeave: endPress, onPointerCancel: endPress,
         onMouseDown: beginPress, onMouseUp: endPress, onMouseLeave: endPress,
     };
     // Swallows the click that fires right after a long-press so entering edit
-    // mode doesn't ALSO run the tool / open its droplet.
+    // mode doesn't ALSO run the tool / open its droplet. Also always cancels
+    // any pending long-press timer -- a click completing is the one signal
+    // AE's CEP webview reliably delivers, so this is what actually stops a
+    // stale timer from firing edit mode open after the fact (see pressProps'
+    // own comment above for why the dedicated up/leave handlers alone
+    // aren't enough here).
     const guardClick = (fn: () => void) => () => {
+        endPress();
         if (longPressed.current) { longPressed.current = false; return; }
         fn();
     };
@@ -1222,6 +1261,32 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
                     ))}
                 </AnimatePresence>
             </div>
+
+            {/* Turk It celebration -- same full-panel overlay pattern/CSS
+                classes as the logo click easter egg (main.scss). Click
+                dismisses early; otherwise auto-hides after 3s. */}
+            <AnimatePresence>
+                {showTurkGif && (
+                    <motion.div
+                        className="logo-easter-egg-overlay"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.25 }}
+                        onClick={() => setShowTurkGif(false)}
+                    >
+                        <motion.img
+                            src={turkGif}
+                            alt=""
+                            className="logo-easter-egg-gif"
+                            initial={{ scale: 0.8, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.8, opacity: 0 }}
+                            transition={{ type: "spring", stiffness: 300, damping: 22 }}
+                        />
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 };

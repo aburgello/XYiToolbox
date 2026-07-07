@@ -26,6 +26,12 @@ export const turkIt = (direction: "up" | "down"): Result => {
   try {
     app.beginUndoGroup(direction === "up" ? "Turk It" : "Un-Turk It");
     const proj = app.project;
+    // Tracks the highest resulting version across every renamed comp --
+    // returned as maxVersion (outside the strict Result shape, but this
+    // module isn't type-checked by the frontend's tsc pass, see CLAUDE.md)
+    // so the React side can decide whether to celebrate a milestone
+    // version without a second round-trip.
+    let maxVersion = -1;
     for (let i = 1; i <= proj.numItems; i++) {
       const item = proj.item(i);
       if (item instanceof CompItem) {
@@ -33,6 +39,7 @@ export const turkIt = (direction: "up" | "down"): Result => {
         if (m) {
           const current = parseInt(m[1], 10);
           const next = direction === "up" ? current + 1 : current - 1;
+          if (next > maxVersion) maxVersion = next;
           const padded = "_V" + (next < 10 ? "0" + next : String(next));
           item.name = item.name.replace(TURK_IT_VERSION_REGEX, padded);
 
@@ -62,7 +69,7 @@ export const turkIt = (direction: "up" | "down"): Result => {
       }
     }
     app.endUndoGroup();
-    return { success: true };
+    return maxVersion >= 0 ? { success: true, maxVersion: maxVersion } : { success: true };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
