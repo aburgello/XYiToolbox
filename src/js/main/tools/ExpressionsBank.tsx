@@ -61,6 +61,66 @@ const MOCK_ENTRIES: ExprEntry[] = [
         uses: 2,
         description: "Reads the pixel colour at the center of a reference layer -- handy for auto-tinting.",
     },
+    {
+        id: "11", name: "Comp Name to Text", tag: "text",
+        code: 'var finalText = "";\nfor (var i = 0; i < thisComp.name.length; i++) {\n  finalText += thisComp.name.charAt(i);\n}\nfinalText',
+        uses: 0,
+        description: "Rebuilds the comp name character-by-character into Source Text -- trim the loop bounds to slice out just a portion of the name (e.g. everything after a fixed prefix).",
+    },
+    {
+        id: "12", name: "Terminating Loop", tag: "loop",
+        code: 't = 2; // seconds -- when the loop should stop\nif (time < t) {\n  loopOut("cycle");\n} else {\n  valueAtTime(t);\n}',
+        uses: 0,
+        description: "Cycles normally up to a fixed time, then freezes on that frame -- for a loop that needs to visibly stop rather than run for the whole comp.",
+    },
+    {
+        id: "13", name: "World Position From Null", tag: "position",
+        code: 'layer = thisComp.layer("Null 1");\nlayer.toComp([0, 0, 0])',
+        uses: 0,
+        description: "Converts a null's local origin into comp (world) space -- swap in any layer to read its true on-screen position, independent of its own parenting chain.",
+    },
+    {
+        id: "14", name: "Custom Loop (Non-loopOut Properties)", tag: "loop",
+        code: 'if (numKeys > 1 && time > key(numKeys).time) {\n  t1 = key(1).time;\n  t2 = key(numKeys).time;\n  span = t2 - t1;\n  delta = time - t2;\n  t = delta % span;\n  valueAtTime(t1 + t);\n} else {\n  value;\n}',
+        uses: 0,
+        description: "Manual modulo loop for properties that don't support loopOut() -- Mask Path is the classic case. Keyframe one full cycle and this repeats it forever.",
+    },
+    {
+        id: "15", name: "Stop Motion (Hold Each Frame)", tag: "time",
+        code: 'm = 2; // hold each frame for m frames\n\nf = timeToFrames();\np = Math.floor((f - 1) / m);\nt = framesToTime(p * m);\nvalueAtTime(t)',
+        uses: 0,
+        description: "Chunky stop-motion hold -- steps the evaluated time in blocks of m frames instead of interpolating smoothly. Apply to Time Remap or any keyframed property.",
+    },
+    {
+        id: "16", name: "Layer-Enabled Opacity Switch", tag: "opacity",
+        code: 'layerSel = thisComp.layer("Target Layer"); // pick-whip a layer instead\nif (layerSel.enabled) {\n  100;\n} else {\n  0;\n}',
+        uses: 0,
+        description: "Mirrors another layer's Video (eye) toggle into this layer's Opacity -- 100 when the source layer is switched on, 0 when it's off. Handy for driving a group's visibility from one master switch.",
+    },
+    {
+        id: "17", name: "Auto-Fit Scale (Aspect-Preserving)", tag: "scale",
+        code: 'var compSize = [thisComp.width, thisComp.height];\nvar rect = sourceRectAtTime(time, false);\nvar layerSize = (rect.width > 0 && rect.height > 0) ? [rect.width, rect.height] : [width, height];\n\nvar scaleFactor = [compSize[0] / layerSize[0], compSize[1] / layerSize[1]];\nvar finalScale = Math.min(scaleFactor[0], scaleFactor[1]);\n\n[finalScale * 100, finalScale * 100]',
+        uses: 0,
+        description: "Fits a layer inside the comp on whichever axis is tighter, preserving aspect ratio -- unlike a straight width-fill (see Scale To Fit Comp), this never lets the layer overflow top/bottom or crop.",
+    },
+    {
+        id: "18", name: "Scale Relative To Camera Distance", tag: "3d",
+        code: 'cam = thisComp.activeCamera;\ndistance = length(sub(transform.position, cam.position));\ns = distance / cam.zoom;\n\nmul(transform.scale, s)',
+        uses: 0,
+        description: "Compensates a 3D layer's Scale for its distance from the active camera, using AE's built-in vector math (sub/mul). Apply directly to Scale on a 3D layer; requires an active camera in the comp.",
+    },
+    {
+        id: "19", name: "Marker-Reset Time", tag: "marker",
+        code: 'var t = time;\nvar marker = thisLayer.marker;\n\nif (marker.numKeys > 0) {\n  var mostRecent = 0;\n  for (var i = 1; i <= marker.numKeys; i++) {\n    var mt = marker.key(i).time;\n    if (mt <= t && mt > mostRecent) mostRecent = mt;\n  }\n  t -= mostRecent;\n}\n\nt',
+        uses: 0,
+        description: "Resets the effective time to 0 at the most recent layer marker -- feed this into Time Remap (or wrap loopOut around it) to restart a segment/loop each time a marker passes, without re-keying anything.",
+    },
+    {
+        id: "20", name: "Dateline (Today's Date)", tag: "text",
+        code: 'var D = new Date(Date(0));\nvar day = D.getDate();\nvar month = D.getMonth() + 1;\nvar year = String(D.getFullYear()).slice(2, 4);\n\nvar dPad = (day >= 10) ? "" : "0";\nvar mPad = (month >= 10) ? "" : "0";\n\ndPad + day + "." + mPad + month + "." + year',
+        uses: 0,
+        description: "Live DD.MM.YY dateline for an intro/outro card. The Date(Date(0)) double-wrap is deliberate -- it forces AE to re-read the real wall-clock date instead of caching the value from when the expression first evaluated.",
+    },
 ];
 
 const genId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -152,6 +212,24 @@ const ExpressionsBank: React.FC = () => {
     };
 
     const copyCode = async (code: string) => {
+        // CEP panels run inside CEF, which never grants navigator.clipboard
+        // to a panel webview (no permission-prompt UI exists in CEP's
+        // chrome) -- so the browser API always rejects here. Use the same
+        // ExtendScript temp-file + pbcopy/clip bridge TimesheetTracker and
+        // ReviewHub already rely on; fall back to the browser API only when
+        // there's no CEP bridge at all (browser-preview/mock mode).
+        try {
+            const result = await evalTS("timesheetCopyToClipboard", code);
+            if (result === undefined) throw new Error("no bridge");
+            if (result.success) {
+                setStatus({ type: "success", text: "Copied to clipboard." });
+            } else {
+                setStatus({ type: "error", text: "Copy failed: " + (result.error || "unknown error") });
+            }
+            return;
+        } catch {
+            // fall through to browser API below
+        }
         try {
             await navigator.clipboard.writeText(code);
             setStatus({ type: "success", text: "Copied to clipboard." });

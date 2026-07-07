@@ -18,7 +18,8 @@ import {
     DragOverlay,
     closestCorners,
     KeyboardSensor,
-    PointerSensor,
+    MouseSensor,
+    TouchSensor,
     useSensor,
     useSensors,
     useDroppable,
@@ -59,6 +60,7 @@ import {
     Minus,
     Plus,
     Check,
+    Search,
 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
@@ -68,6 +70,8 @@ import StatusIcon from "../StatusIcon";
 import Droplet from "../Droplet";
 import { promptDialog, selectDialog } from "../Dialog";
 import { iconWiggle, buttonLift } from "../animations";
+import { TOOLS } from "../toolRegistry";
+import type { Screen } from "../main";
 import "../shared.scss";
 import "./Toolset.scss";
 
@@ -100,12 +104,23 @@ export interface ActionEntry {
 // labelled flex-wrap per group (no masonry/reflow logic) so short groups
 // don't leave awkward gaps the way one giant grid did.
 type GroupId = "organise" | "qc" | "transform" | "naming";
-const GROUPS: { id: GroupId; label: string }[] = [ 
+const GROUPS: { id: GroupId; label: string }[] = [
     { id: "qc", label: "QC & Versioning" },
     { id: "organise", label: "Organise & Output" },
     { id: "naming", label: "Naming & Localise" },
     { id: "transform", label: "Layer & Transform" },
 ];
+
+// A "pinned link" is a full-page tool (from toolRegistry.TOOLS) the user has
+// added into the Toolset grid as a button via edit mode's "Add tool" search.
+// Its id in the grid's flat order/group state is namespaced with this prefix
+// so it can never collide with a real ACTIONS id, and so click/remove
+// handling can tell "run this" apart from "navigate to this page" by id
+// shape alone, with no extra lookup.
+const LINK_PREFIX = "link:";
+const linkId = (toolId: string): string => LINK_PREFIX + toolId;
+const isLinkId = (id: string): boolean => id.indexOf(LINK_PREFIX) === 0;
+const toolIdFromLink = (id: string): string => id.slice(LINK_PREFIX.length);
 
 // Placeholder for a toolset button whose logic hasn't been ported yet --
 // shows up and behaves exactly like a real one (hover tooltip, click, toast)
@@ -484,6 +499,55 @@ const CompDurationDropletBody: React.FC<{ close: () => void; onResult: (result: 
     );
 };
 
+// Droplet content for a group's "+ Add tool" tile -- search across every
+// full-page tool in toolRegistry.TOOLS (not just the fixed one-click
+// ACTIONS) and pin one into this group as a button that navigates to it.
+// Own local search-query state, so -- same Rules of Hooks reasoning as
+// CompDurationDropletBody above -- this has to be a real component.
+const AddToolDropletBody: React.FC<{
+    pinnedToolIds: Set<string>;
+    onPick: (toolId: string) => void;
+    close: () => void;
+}> = ({ pinnedToolIds, onPick, close }) => {
+    const [query, setQuery] = useState("");
+    const q = query.trim().toLowerCase();
+    const results = TOOLS.filter((t) => !pinnedToolIds.has(t.id) && (q === "" || t.label.toLowerCase().indexOf(q) !== -1)).slice(0, 8);
+
+    return (
+        <>
+            <p className="droplet-title">Add a tool to this group</p>
+            <div className="add-tool-search">
+                <Search size={12} />
+                <input
+                    type="text"
+                    autoFocus
+                    placeholder="Search tools…"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                />
+            </div>
+            <div className="add-tool-results">
+                {results.map((t) => {
+                    const Icon = t.icon;
+                    return (
+                        <button
+                            key={t.id}
+                            className="add-tool-result"
+                            onClick={() => { onPick(t.id); close(); }}
+                        >
+                            <Icon size={14} />
+                            {t.label}
+                        </button>
+                    );
+                })}
+                {results.length === 0 && (
+                    <p className="hint">{pinnedToolIds.size >= TOOLS.length ? "Every tool is already pinned somewhere." : "No tools match."}</p>
+                )}
+            </div>
+        </>
+    );
+};
+
 // =============================================================================
 // Edit-mode sortable pieces -- MODULE SCOPE ON PURPOSE, not defined inside
 // ToolsetTool. onDragStart sets `activeId` state (for the DragOverlay),
@@ -496,10 +560,11 @@ const SortableTile: React.FC<{
     action: ActionEntry;
     groupId: GroupId;
     isHidden: boolean;
+    isLink: boolean;
     jiggle: boolean;
     btnStyle: React.CSSProperties;
     onToggleHidden: (id: string) => void;
-}> = ({ action, groupId, isHidden, jiggle, btnStyle, onToggleHidden }) => {
+}> = ({ action, groupId, isHidden, isLink, jiggle, btnStyle, onToggleHidden }) => {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
         id: action.id,
         data: { group: groupId },
@@ -526,7 +591,7 @@ const SortableTile: React.FC<{
                 <button
                     type="button"
                     className={"action-hide-btn" + (isHidden ? " is-hidden" : "")}
-                    title={isHidden ? "Restore" : "Hide"}
+                    title={isLink ? "Remove" : (isHidden ? "Restore" : "Hide")}
                     onPointerDown={(e) => e.stopPropagation()}
                     onClick={(e) => { e.stopPropagation(); onToggleHidden(action.id); }}
                 >
@@ -543,10 +608,13 @@ const SortableGroup: React.FC<{
     actions: ActionEntry[];
     btnStyle: React.CSSProperties;
     hiddenSet: Set<string>;
+    linkIds: Set<string>;
     jiggle: boolean;
     onToggleHidden: (id: string) => void;
     onRename: (groupId: GroupId, label: string) => void;
-}> = ({ groupId, label, actions, btnStyle, hiddenSet, jiggle, onToggleHidden, onRename }) => {
+    pinnedToolIds: Set<string>;
+    onPinTool: (toolId: string, group: GroupId) => void;
+}> = ({ groupId, label, actions, btnStyle, hiddenSet, linkIds, jiggle, onToggleHidden, onRename, pinnedToolIds, onPinTool }) => {
     // The whole group grid is a droppable, so a tile can be dropped onto a
     // group's empty space (not only onto another tile) -- this is what lets
     // an empty group still receive a drop.
@@ -571,11 +639,39 @@ const SortableGroup: React.FC<{
                             action={action}
                             groupId={groupId}
                             isHidden={hiddenSet.has(action.id)}
+                            isLink={linkIds.has(action.id)}
                             jiggle={jiggle}
                             btnStyle={btnStyle}
                             onToggleHidden={onToggleHidden}
                         />
                     ))}
+                    {/* Outside the sortable item list on purpose -- this tile
+                        isn't draggable/reorderable, it's a fixed "add" affordance
+                        that always sits at the end of the group. */}
+                    <Droplet
+                        panelClassName="droplet-add-tool"
+                        trigger={({ toggle }) => (
+                            <Tooltip text="Add a tool to this group" delay={800}>
+                                <button
+                                    type="button"
+                                    className="add-tool-tile"
+                                    style={btnStyle}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onClick={(e) => { e.stopPropagation(); toggle(); }}
+                                >
+                                    <Plus size={16} /> Add
+                                </button>
+                            </Tooltip>
+                        )}
+                    >
+                        {(close) => (
+                            <AddToolDropletBody
+                                pinnedToolIds={pinnedToolIds}
+                                onPick={(toolId) => onPinTool(toolId, groupId)}
+                                close={close}
+                            />
+                        )}
+                    </Droplet>
                 </div>
             </SortableContext>
         </div>
@@ -588,7 +684,7 @@ interface Toast {
     type: "success" | "error";
 }
 
-const ToolsetTool = () => {
+const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNavigate }) => {
     const [toasts, setToasts] = useState<Toast[]>([]);
     const toastId = useRef(0);
 
@@ -639,6 +735,10 @@ const ToolsetTool = () => {
     const [groupOverride, setGroupOverride] = useState<Record<string, GroupId>>({});
     const [labelOverride, setLabelOverride] = useState<Record<string, string>>({});
     const [activeId, setActiveId] = useState<string | null>(null);
+    // Full-page tools (toolRegistry.TOOLS ids, unprefixed) the user has
+    // pinned into the grid via edit mode's "Add tool" search -- see
+    // resolveEntry() below for how these become clickable, navigable tiles.
+    const [pinned, setPinned] = useState<string[]>([]);
 
     useEffect(() => {
         (async () => {
@@ -659,6 +759,8 @@ const ToolsetTool = () => {
                     for (let i = 0; i + 1 < l.length; i += 2) m[l[i]] = l[i + 1];
                     setLabelOverride(m);
                 }
+                const p = await evalTS("loadPinnedToolsetLinks" as any);
+                if (Array.isArray(p)) setPinned(p as string[]);
             } catch {
                 /* no bridge (preview) -- defaults are correct */
             }
@@ -674,16 +776,27 @@ const ToolsetTool = () => {
     }, [editMode]);
 
     const hiddenSet = new Set(hidden);
+    const pinnedToolIds = new Set(pinned);
+    const linkIds = new Set(pinned.map(linkId));
 
     const persistHidden = (next: string[]) => {
         setHidden(next);
         evalTS("saveHiddenToolsetActions" as any, next).catch(() => { /* preview */ });
     };
+    // A pinned link's minus button removes it outright (unpin) rather than
+    // hiding/restoring -- unlike a fixed ACTIONS entry, a link is user-added
+    // data with no baked-in default to restore to, and re-adding it is one
+    // Add-tool search away, so there's no state worth keeping around for a
+    // "restore".
     const toggleHidden = (id: string) => {
+        if (isLinkId(id)) { unpinLink(id); return; }
         persistHidden(hiddenSet.has(id) ? hidden.filter((x) => x !== id) : [...hidden, id]);
     };
 
-    // Effective group of an action: user override, else its ACTIONS default.
+    // Effective group of an action/link: user override, else its ACTIONS
+    // default. A link has no ACTIONS default -- pinTool() always sets its
+    // groupOverride at pin time, so the "organise" fallback below is only
+    // ever hit for a link whose override somehow got dropped.
     const groupOf = (id: string): GroupId => {
         const o = groupOverride[id];
         if (o) return o;
@@ -697,13 +810,39 @@ const ToolsetTool = () => {
         return g ? g.label : gid;
     };
 
-    // The full flat action-id order: the saved order, with any action not in
-    // it (e.g. a newly added grid button) appended in ACTIONS order, so a new
-    // action never silently vanishes -- same merge-over-default rule as the
-    // category tool-order feature.
+    // Resolves any grid id -- a real ACTIONS entry OR a pinned link -- to an
+    // ActionEntry-shaped object. A link's "run" just navigates to the
+    // tool's own page and returns null (no toast to report, same as a
+    // cancelled picker) rather than calling into aeft.ts at all.
+    const resolveEntry = (id: string): ActionEntry | null => {
+        if (isLinkId(id)) {
+            const toolId = toolIdFromLink(id);
+            const tool = TOOLS.find((t) => t.id === toolId);
+            if (!tool) return null;
+            return {
+                id,
+                label: tool.label,
+                description: tool.description || `Open ${tool.label}.`,
+                icon: tool.icon,
+                group: groupOf(id),
+                run: async () => {
+                    onNavigate?.({ type: "tool", toolId: tool.id, backTo: { type: "home" } });
+                    return null;
+                },
+                successText: () => "",
+            };
+        }
+        return ACTIONS.find((x) => x.id === id) || null;
+    };
+
+    // The full flat id order (ACTIONS ids + pinned link ids): the saved
+    // order, with any id not in it (a newly added grid button, or a link
+    // pinned just now) appended at the end, so nothing silently vanishes --
+    // same merge-over-default rule as the category tool-order feature.
     const fullOrder = (): string[] => {
-        const known = order.filter((id) => ACTIONS.some((a) => a.id === id));
-        const missing = ACTIONS.filter((a) => order.indexOf(a.id) === -1).map((a) => a.id);
+        const allIds = ACTIONS.map((a) => a.id).concat(pinned.map(linkId));
+        const known = order.filter((id) => allIds.indexOf(id) !== -1);
+        const missing = allIds.filter((id) => order.indexOf(id) === -1);
         return known.concat(missing);
     };
 
@@ -713,7 +852,7 @@ const ToolsetTool = () => {
         const ids = fullOrder().filter((id) => groupOf(id) === groupId);
         const out: ActionEntry[] = [];
         for (let i = 0; i < ids.length; i++) {
-            const a = ACTIONS.find((x) => x.id === ids[i]);
+            const a = resolveEntry(ids[i]);
             if (a) out.push(a);
         }
         return out;
@@ -728,6 +867,31 @@ const ToolsetTool = () => {
         evalTS("saveToolsetGroups" as any, flatPairs).catch(() => { /* preview */ });
     };
 
+    // Pin a full-page tool into a specific group as a new button, appended
+    // at the end of the flat order (so it lands after that group's existing
+    // tiles) -- called from the Add-tool droplet.
+    const pinTool = (toolId: string, group: GroupId) => {
+        if (pinnedToolIds.has(toolId)) return;
+        const nextPinned = [...pinned, toolId];
+        setPinned(nextPinned);
+        evalTS("savePinnedToolsetLinks" as any, nextPinned).catch(() => { /* preview */ });
+        const id = linkId(toolId);
+        commitLayout(fullOrder().concat(id), { ...groupOverride, [id]: group });
+    };
+
+    // Fully remove a pinned link -- from the pinned list itself, and cleans
+    // its now-meaningless order/group entries so they don't linger as dead
+    // state (unlike hiding an ACTIONS entry, there's nothing to restore).
+    const unpinLink = (id: string) => {
+        const toolId = toolIdFromLink(id);
+        const nextPinned = pinned.filter((t) => t !== toolId);
+        setPinned(nextPinned);
+        evalTS("savePinnedToolsetLinks" as any, nextPinned).catch(() => { /* preview */ });
+        const nextGroups = { ...groupOverride };
+        delete nextGroups[id];
+        commitLayout(order.filter((x) => x !== id), nextGroups);
+    };
+
     const setGroupLabel = (gid: GroupId, label: string) => {
         const next = { ...labelOverride, [gid]: label };
         setLabelOverride(next);
@@ -736,9 +900,14 @@ const ToolsetTool = () => {
         evalTS("saveToolsetLabels" as any, flatPairs).catch(() => { /* preview */ });
     };
 
-    // --- Sensors: pointer + keyboard drag -----------------------------------
+    // --- Sensors: mouse + touch + keyboard drag -----------------------------
+    // PointerSensor doesn't reliably register press-and-hold inside AE's CEP
+    // panel (pointer events there don't behave like a real browser tab) --
+    // MouseSensor + TouchSensor cover the same mouse/touch input via the
+    // older, more broadly-supported event types instead.
     const sensors = useSensors(
-        useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+        useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+        useSensor(TouchSensor, { activationConstraint: { distance: 8 } }),
         useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
     );
 
@@ -798,7 +967,14 @@ const ToolsetTool = () => {
     const endPress = () => {
         if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; }
     };
-    const pressProps = { onPointerDown: beginPress, onPointerUp: endPress, onPointerLeave: endPress, onPointerCancel: endPress };
+    // Mouse handlers alongside the Pointer ones -- AE's CEP panel doesn't
+    // reliably fire pointer events for a press-and-hold (same root cause as
+    // the DndContext sensor swap above), so mouse events are the fallback
+    // that actually registers the long-press inside AE.
+    const pressProps = {
+        onPointerDown: beginPress, onPointerUp: endPress, onPointerLeave: endPress, onPointerCancel: endPress,
+        onMouseDown: beginPress, onMouseUp: endPress, onMouseLeave: endPress,
+    };
     // Swallows the click that fires right after a long-press so entering edit
     // mode doesn't ALSO run the tool / open its droplet.
     const guardClick = (fn: () => void) => () => {
@@ -815,7 +991,7 @@ const ToolsetTool = () => {
 
     // The tile currently being dragged (for the DragOverlay copy that follows
     // the cursor across groups). Styled with its CURRENT group's accent.
-    const activeAction = activeId ? ACTIONS.find((a) => a.id === activeId) || null : null;
+    const activeAction = activeId ? resolveEntry(activeId) : null;
     const activeGroupIdx = activeAction ? GROUPS.findIndex((g) => g.id === groupOf(activeAction.id)) : -1;
     const overlayAccent = PALETTE[(activeGroupIdx < 0 ? 0 : activeGroupIdx) % PALETTE.length];
     const overlayStyle = {
@@ -868,9 +1044,12 @@ const ToolsetTool = () => {
                                     actions={orderedActionsForGroup(group.id)}
                                     btnStyle={btnStyle}
                                     hiddenSet={hiddenSet}
+                                    linkIds={linkIds}
                                     jiggle={!prefersReducedMotion}
                                     onToggleHidden={toggleHidden}
                                     onRename={setGroupLabel}
+                                    pinnedToolIds={pinnedToolIds}
+                                    onPinTool={pinTool}
                                 />
                             );
                         })}

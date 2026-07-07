@@ -246,6 +246,12 @@ const TOOLSET_ORDER_KEY = "OVToolsetOrder";
 // -> groupId. Labels: groupId -> displayed label.
 const TOOLSET_GROUPS_KEY = "OVToolsetGroups";
 const TOOLSET_LABELS_KEY = "OVToolsetLabels";
+// Full-page tools the user has pinned into the Toolset grid as a button
+// (via edit mode's "Add tool" search), beyond the fixed one-click ACTIONS.
+// Stores raw tool ids from toolRegistry.tsx's TOOLS list -- Toolset.tsx
+// namespaces them (a "link:" prefix) only in its own in-memory order/group
+// keys, not here.
+const TOOLSET_PINNED_KEY = "OVToolsetPinned";
 
 function loadTabList(key: string): string[] {
   if (app.settings.haveSetting(TOOLSET_SETTINGS_SECTION, key)) {
@@ -282,6 +288,9 @@ export const saveToolsetGroups = (flatPairs: string[]): Result => saveTabList(TO
 // Flat [groupId, label, groupId, label, ...]; React pairs into a map.
 export const loadToolsetLabels = (): string[] => loadTabList(TOOLSET_LABELS_KEY);
 export const saveToolsetLabels = (flatPairs: string[]): Result => saveTabList(TOOLSET_LABELS_KEY, flatPairs);
+
+export const loadPinnedToolsetLinks = (): string[] => loadTabList(TOOLSET_PINNED_KEY);
+export const savePinnedToolsetLinks = (ids: string[]): Result => saveTabList(TOOLSET_PINNED_KEY, ids);
 
 // =============================================================================
 // UI sound effects (sfx.ts) -- persisted on/off toggle, same section as

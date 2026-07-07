@@ -384,7 +384,7 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
                         </AnimatePresence>
                     </div>
 
-                    <ToolsetTool />
+                    <ToolsetTool onNavigate={onNavigate} />
 
                     <div className="category-row">
                         {CATEGORIES.map((category, index) => {

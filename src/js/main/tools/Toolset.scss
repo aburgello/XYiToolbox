@@ -203,6 +203,10 @@
         position: relative;
         cursor: grab;
         user-select: none;
+        // Without this, a touch/pen drag on the tile can be hijacked by the
+        // browser's own scroll/pan gesture before dnd-kit's TouchSensor sees
+        // it move.
+        touch-action: none;
         &:active { cursor: grabbing; }
     }
 
@@ -315,6 +319,30 @@
         transform: scale(1.03);
     }
 
+    // Fixed "add" tile at the end of each group's grid -- same pill
+    // silhouette as a resting tile so it reads as part of the same row, but
+    // dashed/muted (not another real action) and no jiggle (it isn't
+    // draggable -- see the comment where it's rendered in SortableGroup).
+    .add-tool-tile {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: transparent;
+        border: 1px dashed #4a4a4a;
+        color: #888;
+        border-radius: 18px;
+        padding: 8px 14px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+
+        &:hover {
+            color: #ddd;
+            border-color: var(--btn-border, #666);
+            background: var(--btn-bg, rgba(255, 255, 255, 0.03));
+        }
+    }
+
     // position:absolute so an empty toast stack (the common case) takes
     // up zero layout space, and a visible one floats over the grid
     // instead of pushing whatever's below (the category cards, on the
@@ -386,6 +414,70 @@
 
 .droplet-swatches {
     width: 216px;
+}
+
+.droplet-add-tool {
+    width: 200px;
+}
+
+.add-tool-search {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: #1e1e1e;
+    border: 1px solid #444;
+    border-radius: 5px;
+    padding: 5px 8px;
+    margin-bottom: 6px;
+    color: #888;
+
+    input {
+        flex: 1;
+        min-width: 0;
+        background: none;
+        border: none;
+        color: #ddd;
+        font-size: 11px;
+        outline: none;
+
+        &::placeholder { color: #777; }
+    }
+}
+
+.add-tool-results {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 176px;
+    overflow-y: auto;
+
+    .hint {
+        margin: 4px 2px;
+        font-size: 11px;
+        color: #777;
+    }
+}
+
+.add-tool-result {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    background: none;
+    border: none;
+    color: #ddd;
+    text-align: left;
+    padding: 6px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.12s ease;
+
+    svg { flex-shrink: 0; color: #888; }
+
+    &:hover {
+        background: rgba(255, 255, 255, 0.06);
+    }
 }
 
 .swatch-grid {
