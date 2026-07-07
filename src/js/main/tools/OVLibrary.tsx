@@ -183,6 +183,47 @@ function toFileUrl(p: string): string {
     return "file://" + encodeURI(normalized);
 }
 
+// A thumbnail source (auto-detected render OR a manual override -- the
+// override file picker has no type filter, so it can be a still image) can
+// be either a video or an image file. The two card/hero renderers below
+// need to know which, since a <video> tag simply shows nothing for an
+// image src (no error, no fallback -- confirmed the actual failure mode
+// when a PNG/JPG override didn't display anything).
+const IMAGE_EXTS = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff"];
+function isImageFile(path: string): boolean {
+    const dot = path.lastIndexOf(".");
+    if (dot === -1) return false;
+    return IMAGE_EXTS.indexOf(path.substring(dot + 1).toLowerCase()) !== -1;
+}
+
+// Auto-detected preview picker: prefers a web-playable extension over
+// scanRendersForCreative()'s raw "first found in an arbitrary recursive
+// scan" order. Real studio Renders folders commonly mix MOV (often a
+// professional/ProRes intermediate codec Chromium's <video> tag can't
+// decode at all) alongside MP4 (near-always H.264, reliably playable) --
+// letting the scan's arbitrary order land on an undecodable MOV produced
+// exactly the "wrong/blank thumbnail" symptom this was written to fix.
+// Doesn't guarantee correctness (still not "the OV master specifically"),
+// just meaningfully reduces how often the pick is something that can't
+// even render at all.
+const RENDER_EXT_PREFERENCE = ["mp4", "m4v", "mov", "mxf", "avi", "mts"];
+function pickPreviewRender(renders: RenderEntry[]): RenderEntry | undefined {
+    if (!renders || renders.length === 0) return undefined;
+    let best = renders[0];
+    let bestRank = RENDER_EXT_PREFERENCE.length;
+    for (const r of renders) {
+        const dot = r.path.lastIndexOf(".");
+        const ext = dot === -1 ? "" : r.path.substring(dot + 1).toLowerCase();
+        const rank = RENDER_EXT_PREFERENCE.indexOf(ext);
+        const effectiveRank = rank === -1 ? RENDER_EXT_PREFERENCE.length : rank;
+        if (effectiveRank < bestRank) {
+            best = r;
+            bestRank = effectiveRank;
+        }
+    }
+    return best;
+}
+
 // Samples an approximate dominant color off a loaded <video>'s current
 // frame via a tiny offscreen canvas, for the dynamic per-thumbnail accent
 // (see CreativeCard/VariantBlock below) -- lets each creative/render tint
@@ -344,7 +385,14 @@ const CreativeCard: React.FC<{
             onMouseLeave={handleMouseLeave}
         >
             <div className="creative-card-preview">
-                {previewSrc && !videoError ? (
+                {previewSrc && !videoError && isImageFile(previewSrc) ? (
+                    // A manual override (no type filter on its file picker) or,
+                    // in principle, an auto-detected "render" can be a still
+                    // image -- a <video> tag silently shows nothing for one
+                    // (no error event either), which is exactly what broke a
+                    // PNG/JPG override before this branch existed.
+                    <img src={toFileUrl(previewSrc)} alt="" onError={() => setVideoError(true)} />
+                ) : previewSrc && !videoError ? (
                     <>
                         <video
                             ref={videoRef}
@@ -683,7 +731,8 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false }) => {
                 const recs = await safeEvalTS("scanMastersForCreative", camp.mastersRoot, name);
                 counts[name] = (recs || []).length;
                 const renders: RenderEntry[] = await safeEvalTS("scanRendersForCreative", camp.mastersRoot, name);
-                if (renders && renders.length > 0) previews[name] = renders[0].path;
+                const bestRender = pickPreviewRender(renders || []);
+                if (bestRender) previews[name] = bestRender.path;
             }
             setCreativeCounts(counts);
             setCreativePreviews(previews);
@@ -857,9 +906,11 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false }) => {
             {hero ? (
                 <div className="ov-hero">
                     <div className="ov-hero-banner">
-                        {heroBannerSrc && (
+                        {heroBannerSrc && isImageFile(heroBannerSrc) ? (
+                            <img src={toFileUrl(heroBannerSrc)} alt="" />
+                        ) : heroBannerSrc ? (
                             <video src={toFileUrl(heroBannerSrc)} muted loop autoPlay playsInline preload="metadata" />
-                        )}
+                        ) : null}
                         <div className="ov-hero-overlay" />
                     </div>
                     <div className="ov-hero-bar">

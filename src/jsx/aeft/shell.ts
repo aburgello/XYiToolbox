@@ -220,6 +220,53 @@ export const saveFavoriteTools = (toolIds: string[]): Result => {
 };
 
 // =============================================================================
+// Toolset grid personalisation -- the one-click grid on the home screen
+// (tools/Toolset.tsx's ACTIONS) can be per-machine customised via a
+// long-press "edit mode": HIDE actions you never use, and REORDER them
+// within their group. Both are stored the same tab-separated app.settings
+// way as everything else in this file. Two independent keys:
+//   - OVToolsetHidden: action ids the user has hidden.
+//   - OVToolsetOrder:  a flat ordered list of action ids; Toolset.tsx sorts
+//     each group by this and appends any not-yet-seen action at the end
+//     (same merge-over-default rule as loadAllToolOrders), so a newly
+//     added grid action never vanishes just because it isn't in a saved
+//     order yet.
+// Same "OV" key prefix and no-Result-wrapper-on-load reasoning as
+// favorites/tool-order above.
+// =============================================================================
+const TOOLSET_SETTINGS_SECTION = "XYiToolbox";
+const TOOLSET_HIDDEN_KEY = "OVToolsetHidden";
+const TOOLSET_ORDER_KEY = "OVToolsetOrder";
+
+function loadTabList(key: string): string[] {
+  if (app.settings.haveSetting(TOOLSET_SETTINGS_SECTION, key)) {
+    const raw = app.settings.getSetting(TOOLSET_SETTINGS_SECTION, key);
+    if (raw === "") return [];
+    return raw.split("\t");
+  }
+  return [];
+}
+
+function saveTabList(key: string, ids: string[]): Result {
+  try {
+    const cleaned: string[] = [];
+    for (let i = 0; i < ids.length; i++) {
+      cleaned.push(String(ids[i]).replace(/[\t\n\r]/g, " "));
+    }
+    app.settings.saveSetting(TOOLSET_SETTINGS_SECTION, key, cleaned.join("\t"));
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+export const loadHiddenToolsetActions = (): string[] => loadTabList(TOOLSET_HIDDEN_KEY);
+export const saveHiddenToolsetActions = (ids: string[]): Result => saveTabList(TOOLSET_HIDDEN_KEY, ids);
+
+export const loadToolsetOrder = (): string[] => loadTabList(TOOLSET_ORDER_KEY);
+export const saveToolsetOrder = (ids: string[]): Result => saveTabList(TOOLSET_ORDER_KEY, ids);
+
+// =============================================================================
 // UI sound effects (sfx.ts) -- persisted on/off toggle, same section as
 // every other app-shell preference. Defaults to OFF (loadSfxEnabled returns
 // false when the setting has never been saved) -- a shared studio-floor tool

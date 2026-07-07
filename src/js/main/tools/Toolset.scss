@@ -1,3 +1,12 @@
+// iOS-style "jiggle mode" shake for edit-mode tiles. Applied to each tile's
+// inner face (not the draggable Reorder.Item wrapper) -- see Toolset.scss's
+// .action-edit-item.jiggle rule for why. transform-only, chrome74-safe.
+@keyframes toolset-jiggle {
+    0%   { transform: rotate(-1.1deg); }
+    50%  { transform: rotate(1.1deg); }
+    100% { transform: rotate(-1.1deg); }
+}
+
 .toolset-grid {
     display: flex;
     flex-direction: column;
@@ -122,6 +131,107 @@
                 transition: color 0.2s ease;
             }
         }
+    }
+
+    // --- Personalisation edit mode (long-press / Edit button) -------------
+    // Header row holds only the Edit/Done toggle in normal flow -- the
+    // "TOOLSET" h2 above is position:absolute (a legend on the panel border),
+    // so it isn't part of this row.
+    .toolset-header {
+        display: flex;
+        align-items: center;
+        min-height: 20px;
+        margin-bottom: 2px;
+    }
+
+    .toolset-edit-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: transparent;
+        border: 1px solid #3a3a3a;
+        color: #999;
+        border-radius: 12px;
+        padding: 2px 9px;
+        font-size: 10px;
+        cursor: pointer;
+        transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+
+        svg { flex-shrink: 0; }
+        &:hover { color: #eee; border-color: #555; background: #2a2a2a; }
+    }
+
+    &.editing .toolset-edit-toggle {
+        color: var(--ov-accent, #4a9eff);
+        border-color: var(--ov-accent, #4a9eff);
+    }
+
+    .toolset-edit-hint {
+        margin: 0 0 10px;
+        font-size: 10px;
+        color: #777;
+        line-height: 1.4;
+    }
+
+    // Edit tiles mirror .action-grid button's pill look, but as a div (no
+    // run-on-click) wrapped in a Reorder.Item that owns the drag.
+    .action-edit-item {
+        position: relative;
+        cursor: grab;
+        user-select: none;
+        &:active { cursor: grabbing; }
+    }
+
+    .action-edit-face {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--btn-bg, #2a2a2a);
+        border: 1px solid var(--btn-border, #444);
+        color: #ddd;
+        border-radius: 18px;
+        padding: 8px 14px;
+        font-size: 12px;
+
+        .action-icon { display: inline-flex; color: var(--btn-border); }
+    }
+
+    .action-edit-item.is-hidden {
+        opacity: 0.4;
+        .action-edit-face { border-style: dashed; }
+    }
+
+    // Jiggle lives on the FACE, not the Reorder.Item -- Framer Motion drives
+    // the item's own transform for drag, and an inline transform always wins
+    // over a CSS one (documented gotcha in CLAUDE.md), so animating the item
+    // would fight the drag. Staggered start times so tiles don't shake in
+    // lockstep (the iOS look).
+    .action-edit-item.jiggle .action-edit-face {
+        animation: toolset-jiggle 0.34s ease-in-out infinite;
+    }
+    .action-edit-item.jiggle:nth-child(2n) .action-edit-face { animation-delay: -0.11s; }
+    .action-edit-item.jiggle:nth-child(3n) .action-edit-face { animation-delay: -0.22s; }
+
+    .action-hide-badge {
+        position: absolute;
+        top: -6px;
+        left: -6px;
+        z-index: 2;
+        width: 18px;
+        height: 18px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        border-radius: 50%;
+        border: 1px solid #1e1e1e;
+        background: #e0574f; // red minus = hide
+        color: #fff;
+        cursor: pointer;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    }
+    .action-edit-item.is-hidden .action-hide-badge {
+        background: #4a9d5b; // green plus = restore
     }
 
     // position:absolute so an empty toast stack (the common case) takes

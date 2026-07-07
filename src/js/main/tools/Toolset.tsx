@@ -11,8 +11,8 @@
 // To add a new one-click tool here: add its aeft.ts function, then add one
 // entry to ACTIONS below.
 // =============================================================================
-import React, { useRef, useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import React, { useRef, useState, useEffect } from "react";
+import { motion, AnimatePresence, Reorder, useReducedMotion } from "motion/react";
 import {
     RotateCw,
     RotateCcw,
@@ -24,6 +24,7 @@ import {
     PanelTop,
     ZoomIn,
     Copy,
+    CopyPlus,
     Maximize2,
     Truck,
     ArrowLeftRight,
@@ -36,7 +37,11 @@ import {
     ToggleLeft,
     Timer,
     Ban,
+    Minus,
+    Plus,
+    Check,
 } from "lucide-react";
+import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import { sfx } from "../../lib/utils/sfx";
 import Tooltip from "../Tooltip";
@@ -152,6 +157,24 @@ export const ACTIONS: ActionEntry[] = [
         successText: () => "Frontcard added.",
     },
     {
+        id: "multi-comp-scale",
+        label: "Multi Comp Scale",
+        description: "Scales every selected layer's source pre-comp to match the active comp's current size, then resets that layer's own Scale to 100%.",
+        icon: Copy,
+        group: "organise",
+        run: () => evalTSSafe("scaleCompositionMulti"),
+        successText: () => "Selected pre-comps scaled to fit.",
+    },
+    {
+        id: "true-comp-duplicator",
+        label: "True Comp Duplicator",
+        description: "Duplicates the selected composition(s) while keeping all layer references, effects, and expressions intact, recursing into nested pre-comps. Runs with defaults (suffix _DUP, include nested + update expressions on).",
+        icon: CopyPlus,
+        group: "organise",
+        run: () => evalTSSafe("trueCompDuplicator", { suffix: "_DUP", includeNested: true, updateExpressions: true }),
+        successText: (result) => result.message || "Comps duplicated.",
+    },
+    {
         id: "turk-it",
         label: "Turk It",
         description: "Bumps every comp's trailing \"_VNN\" version tag up by one, in the currently open project.",
@@ -179,15 +202,6 @@ export const ACTIONS: ActionEntry[] = [
         group: "qc",
         run: () => evalTSSafe("drqr"),
         successText: () => "Comp scaled up for preview.",
-    },
-    {
-        id: "replicator",
-        label: "Replicator",
-        description: "Recursively copies a source folder's contents into a destination folder, skipping files that already exist there.",
-        icon: Copy,
-        group: "organise",
-        run: () => evalTSSafe("replicator"),
-        successText: (result) => result.message || "Copy complete.",
     },
     {
         id: "scale-fit",
@@ -489,6 +503,97 @@ const ToolsetTool = () => {
         reportResult(result, action.successText, action.successSound);
     };
 
+    // --- Personalisation (edit mode): hide + reorder grid actions ----------
+    // Persisted per-machine via app.settings (shell.ts's
+    // load/saveHiddenToolsetActions + load/saveToolsetOrder), same convention
+    // as favorites/tool-order. Loads once on mount; silently no-ops on a
+    // missing bridge (browser preview) -- an un-customised grid is a fine
+    // default, nothing a toast would add.
+    const prefersReducedMotion = useReducedMotion();
+    const [editMode, setEditMode] = useState(false);
+    const [hidden, setHidden] = useState<string[]>([]);
+    const [order, setOrder] = useState<string[]>([]);
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const h = await evalTS("loadHiddenToolsetActions" as any);
+                if (Array.isArray(h)) setHidden(h as string[]);
+                const o = await evalTS("loadToolsetOrder" as any);
+                if (Array.isArray(o)) setOrder(o as string[]);
+            } catch {
+                /* no bridge (preview) -- defaults are correct */
+            }
+        })();
+    }, []);
+
+    // Escape leaves edit mode -- only wired while actually editing.
+    useEffect(() => {
+        if (!editMode) return;
+        const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setEditMode(false); };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [editMode]);
+
+    const hiddenSet = new Set(hidden);
+
+    const persistHidden = (next: string[]) => {
+        setHidden(next);
+        evalTS("saveHiddenToolsetActions" as any, next).catch(() => { /* preview */ });
+    };
+    const toggleHidden = (id: string) => {
+        persistHidden(hiddenSet.has(id) ? hidden.filter((x) => x !== id) : [...hidden, id]);
+    };
+
+    // A group's actions, sorted by the saved flat order. Any action NOT in
+    // the saved order (e.g. a newly added grid button) keeps its default
+    // ACTIONS-relative position at the end, so it never silently vanishes --
+    // same merge-over-default rule as the category tool-order feature.
+    const orderedActionsForGroup = (groupId: GroupId): ActionEntry[] => {
+        const groupActions = ACTIONS.filter((a) => a.group === groupId);
+        const rank = (id: string): number => {
+            const i = order.indexOf(id);
+            if (i !== -1) return i;
+            return order.length + ACTIONS.findIndex((a) => a.id === id);
+        };
+        return groupActions.slice().sort((a, b) => rank(a.id) - rank(b.id));
+    };
+
+    // After a within-group drag, rebuild the full flat order (every group's
+    // current sequence, with the reordered group's new sequence swapped in)
+    // and persist it. Reorder is deliberately scoped WITHIN a group so a
+    // tool can't jump its semantic cluster (a Naming tool into QC, etc.).
+    const handleGroupReorder = (groupId: GroupId, newGroupActions: ActionEntry[]) => {
+        const merged: string[] = [];
+        for (let g = 0; g < GROUPS.length; g++) {
+            const gid = GROUPS[g].id;
+            const acts = gid === groupId ? newGroupActions : orderedActionsForGroup(gid);
+            for (let i = 0; i < acts.length; i++) merged.push(acts[i].id);
+        }
+        setOrder(merged);
+        evalTS("saveToolsetOrder" as any, merged).catch(() => { /* preview */ });
+    };
+
+    // Long-press (out of edit mode) enters edit mode -- the "keep pressing a
+    // button until it shakes" gesture. The Edit/Done button in the header is
+    // the discoverable equivalent for anyone who doesn't know the gesture.
+    const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const longPressed = useRef(false);
+    const beginPress = () => {
+        longPressed.current = false;
+        pressTimer.current = setTimeout(() => { longPressed.current = true; setEditMode(true); }, 500);
+    };
+    const endPress = () => {
+        if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; }
+    };
+    const pressProps = { onPointerDown: beginPress, onPointerUp: endPress, onPointerLeave: endPress, onPointerCancel: endPress };
+    // Swallows the click that fires right after a long-press so entering edit
+    // mode doesn't ALSO run the tool / open its droplet.
+    const guardClick = (fn: () => void) => () => {
+        if (longPressed.current) { longPressed.current = false; return; }
+        fn();
+    };
+
     // Flat running counter (not reset per group) so the cascade reads as
     // one continuous top-to-bottom/left-to-right wave across every group,
     // the same idea as the 4 category cards' index * delay stagger in
@@ -497,37 +602,110 @@ const ToolsetTool = () => {
     let staggerIndex = 0;
 
     return (
-        <div className="toolset-grid">
+        <div className={editMode ? "toolset-grid editing" : "toolset-grid"}>
             <div className="toolset-panel">
                 <h2>Toolset</h2>
+                {/* No Edit affordance in normal mode -- long-press a tile to
+                    enter edit mode. Done bar only exists WHILE editing, so the
+                    resting grid has zero extra chrome. */}
+                {editMode && (
+                    <div className="toolset-editbar">
+                        <p className="toolset-edit-hint">Drag to reorder within a group · tap − to hide, + to restore.</p>
+                        <button className="toolset-done-btn" onClick={() => setEditMode(false)}>
+                            <Check size={13} /> Done
+                        </button>
+                    </div>
+                )}
 
                 {GROUPS.map((group, groupIndex) => {
-                    const groupActions = ACTIONS.filter((a) => a.group === group.id);
-                    if (groupActions.length === 0) return null;
+                    const groupActions = orderedActionsForGroup(group.id);
+                    // Normal mode hides hidden actions outright; edit mode keeps
+                    // them visible (dimmed, with a + to restore) so hiding is
+                    // reversible inline without a separate "hidden" panel.
+                    const visibleActions = editMode ? groupActions : groupActions.filter((a) => !hiddenSet.has(a.id));
+                    if (visibleActions.length === 0) return null;
                     // One accent per group (not per button) -- reinforces which
                     // cluster a button belongs to at a glance, on top of the
                     // section label itself.
                     const accent = PALETTE[groupIndex % PALETTE.length];
+                    const btnStyle = {
+                        "--btn-border": accent.border,
+                        "--btn-bg": accent.bg,
+                        "--btn-glow": accent.glow,
+                    } as React.CSSProperties;
+
+                    if (editMode) {
+                        // Edit mode: Framer Reorder within the group (drag),
+                        // plus a hide/restore badge per tile. No run-on-click,
+                        // no droplet, no tooltip -- this is the customise view.
+                        // NOTE (spike): Reorder.Group is single-axis; a group
+                        // that WRAPS to a second row won't reorder cleanly
+                        // across the wrap. Documented tradeoff -- escalate to a
+                        // grid-aware DnD lib only if this feels bad in real AE.
+                        return (
+                            <div className="action-group" key={group.id}>
+                                <div className="action-group-divider">
+                                    <h3 className="action-group-label">{group.label}</h3>
+                                </div>
+                                <Reorder.Group
+                                    as="div"
+                                    axis="x"
+                                    className="action-grid editing justify-center mx-auto"
+                                    values={groupActions}
+                                    onReorder={(next) => handleGroupReorder(group.id, next as ActionEntry[])}
+                                >
+                                    {groupActions.map((action) => {
+                                        const Icon = action.icon;
+                                        const isHidden = hiddenSet.has(action.id);
+                                        return (
+                                            <Reorder.Item
+                                                as="div"
+                                                key={action.id}
+                                                value={action}
+                                                className={
+                                                    "action-edit-item" +
+                                                    (isHidden ? " is-hidden" : "") +
+                                                    (prefersReducedMotion ? "" : " jiggle")
+                                                }
+                                            >
+                                                <button
+                                                    type="button"
+                                                    className="action-hide-badge"
+                                                    title={isHidden ? "Restore" : "Hide"}
+                                                    onPointerDown={(e) => e.stopPropagation()}
+                                                    onClick={(e) => { e.stopPropagation(); toggleHidden(action.id); }}
+                                                >
+                                                    {isHidden ? <Plus size={12} /> : <Minus size={12} />}
+                                                </button>
+                                                <div className="action-edit-face" style={btnStyle}>
+                                                    <span className="action-icon"><Icon size={16} /></span>
+                                                    {action.label}
+                                                </div>
+                                            </Reorder.Item>
+                                        );
+                                    })}
+                                </Reorder.Group>
+                            </div>
+                        );
+                    }
+
                     return (
                         <div className="action-group" key={group.id}>
                             <div className="action-group-divider">
                                 <h3 className="action-group-label">{group.label}</h3>
                             </div>
                             <div className="action-grid justify-center mx-auto">
-                                {groupActions.map((action) => {
+                                {visibleActions.map((action) => {
                                     const Icon = action.icon;
                                     const delay = staggerIndex * 0.025;
                                     staggerIndex++;
-                                    const btnStyle = {
-                                        "--btn-border": accent.border,
-                                        "--btn-bg": accent.bg,
-                                        "--btn-glow": accent.glow,
-                                    } as React.CSSProperties;
 
                                     // Reused for both the plain click-runs-action path AND the two
                                     // droplet-triggering buttons below -- same look/animation either
                                     // way, only what onClick does (and an "active" class while a
-                                    // droplet is open) differs.
+                                    // droplet is open) differs. pressProps/guardClick add the
+                                    // long-press-to-enter-edit-mode gesture without changing a
+                                    // normal tap.
                                     const renderButton = (onClick: () => void, active?: boolean) => (
                                         <motion.button
                                             style={btnStyle}
@@ -538,7 +716,8 @@ const ToolsetTool = () => {
                                             transition={{ type: "spring", stiffness: 300, damping: 24, delay }}
                                             whileHover="hover"
                                             whileTap={{ scale: 0.95 }}
-                                            onClick={onClick}
+                                            {...pressProps}
+                                            onClick={guardClick(onClick)}
                                         >
                                             <motion.span variants={iconWiggle} className="action-icon">
                                                 <Icon size={16} />

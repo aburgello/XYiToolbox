@@ -27,7 +27,7 @@ interface Props {
 const TOOLS_STAGES: RailStage[] = [
     { id: "size",      label: "Size & Format",    toolIds: ["scale-composition", "adjust", "wall-tools", "extreme-tools-01", "extreme-tools-02"] },
     { id: "layers",    label: "Layers & Rigging", toolIds: ["random-layers", "master-of-nulls", "master-tools", "edit-tools", "mask-separator"] },
-    { id: "utility",   label: "Utility",          toolIds: ["safe-generator", "find-and-replace", "project-buttons", "los-tools", "timesheet-tracker"] },
+    { id: "utility",   label: "Utility",          toolIds: ["safe-generator", "find-and-replace", "project-buttons", "los-tools", "timesheet-tracker", "replicator"] },
     { id: "scripting", label: "Scripting",        toolIds: ["script-playground", "expressions-bank", "comp-inspector", "render-queue-manager"] },
 ];
 

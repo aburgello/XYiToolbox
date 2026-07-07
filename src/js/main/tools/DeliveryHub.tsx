@@ -84,6 +84,7 @@ const DeliveryButton: React.FC<{ busy: boolean; onClick: () => void }> = ({ busy
 
     const handleClick = async () => {
         if (busy) return;
+        onClick();
         if (!reduced) {
             // truck slides right and fades out
             await animateTruck(truckScope.current, { x: 28, opacity: 0 }, { duration: 0.28, ease: "easeIn" });
@@ -95,7 +96,6 @@ const DeliveryButton: React.FC<{ busy: boolean; onClick: () => void }> = ({ busy
             animateTruck(truckScope.current, { x: 0, opacity: 1 }, { duration: 0.2 });
             setDone(false);
         }
-        onClick();
     };
 
     return (
@@ -318,7 +318,7 @@ const DeliveryHubTool = () => {
                     maxMbps: "",
                     fps: bulkFps,
                     batchOffset: i,
-                    includeAudio: true,
+                    includeAudio: false,
                     queued: false,
                 }))
             );
@@ -508,7 +508,19 @@ const DeliveryHubTool = () => {
                                         </span>
                                     </Tooltip>
                                     {row.queued && (
-                                        <span className="dh-row-queued-badge"><Check size={10} /> Queued</span>
+                                        <Tooltip text="Un-queue (removes from render queue)">
+                                            <button
+                                                className="dh-row-queued-badge dh-row-unqueue-btn"
+                                                onClick={async () => {
+                                                    try {
+                                                        await evalTS("renderQueueRemoveByCompId", row.id);
+                                                    } catch { /* bridge may be down */ }
+                                                    setRows((r) => r.map((x, xi) => xi === i ? { ...x, queued: false } : x));
+                                                }}
+                                            >
+                                                <Check size={10} /> Queued
+                                            </button>
+                                        </Tooltip>
                                     )}
                                     {!row.queued && (
                                         <>
@@ -560,35 +572,51 @@ const DeliveryHubTool = () => {
             {rows.length > 0 && !rows.every((r) => r.queued) && (
                 <div className="dh-preview">
                     {(() => {
-                        const previewFolder = rows.find((r) => r.folderName)?.folderName || "?";
-                        const previewCode = rows.find((r) => r.territoryCode)?.territoryCode || null;
+                        // Group unqueued rows by source folder so each group
+                        // shows its own _Delivery path (different batches
+                        // may land in different _Delivery folders).
+                        const groups = new Map<string, RowData[]>();
+                        rows.forEach((r) => {
+                            if (!r.folderName || r.queued) return;
+                            if (!groups.has(r.folderName)) groups.set(r.folderName, []);
+                            groups.get(r.folderName)!.push(r);
+                        });
+                        if (groups.size === 0) return null;
                         return (
-                            <div className="dh-preview-header">
-                                <Folder size={11} />
-                                {previewCode && <span className="dh-preview-flag">{codeToFlag(previewCode)}</span>}
-                                <span className="dh-preview-folder">{previewFolder}</span>
-                                <span className="dh-preview-sep">/</span>
-                                <span className="dh-preview-folder">_Delivery</span>
-                            </div>
+                            <>
+                                {Array.from(groups.entries()).map(([folder, group]) => {
+                                    const previewCode = group.find((r) => r.territoryCode)?.territoryCode || null;
+                                    return (
+                                        <div key={folder} className="dh-preview-group">
+                                            <div className="dh-preview-header">
+                                                <Folder size={11} />
+                                                {previewCode && <span className="dh-preview-flag">{codeToFlag(previewCode)}</span>}
+                                                <span className="dh-preview-folder">{folder}</span>
+                                                <span className="dh-preview-sep">/</span>
+                                                <span className="dh-preview-folder">_Delivery</span>
+                                            </div>
+                                            <div className="dh-preview-items">
+                                                {group.map((row) => {
+                                                    const ext = row.name.match(/\.\w+$/) ? "" : ".mp4";
+                                                    const outName = row.name + ext;
+                                                    return (
+                                                        <div key={row.id} className="dh-preview-item">
+                                                            <span className="dh-preview-file">{outName}</span>
+                                                            <span className="dh-preview-tags">
+                                                                {row.sizeMB && <span className="dh-preview-tag">{row.sizeMB} MB</span>}
+                                                                {row.duration > 0 && <span className="dh-preview-tag">{row.duration} sec</span>}
+                                                                <span className={"dh-preview-tag" + (row.fps ? "" : " dh-preview-tag--native")}>{row.fps || row.frameRate} fps</span>
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </>
                         );
                     })()}
-                    <div className="dh-preview-items">
-                    {rows.map((row) => {
-                        if (!row.folderName || row.queued) return null;
-                        const ext = row.name.match(/\.\w+$/) ? "" : ".mp4";
-                        const outName = row.name + ext;
-                        return (
-                            <div key={row.id} className="dh-preview-item">
-                                <span className="dh-preview-file">{outName}</span>
-                                <span className="dh-preview-tags">
-                                    {row.sizeMB && <span className="dh-preview-tag">{row.sizeMB} MB</span>}
-                                    {row.duration > 0 && <span className="dh-preview-tag">{row.duration} sec</span>}
-                                    <span className={"dh-preview-tag" + (row.fps ? "" : " dh-preview-tag--native")}>{row.fps || row.frameRate} fps</span>
-                                </span>
-                            </div>
-                        );
-                    })}
-                    </div>
                 </div>
             )}
 

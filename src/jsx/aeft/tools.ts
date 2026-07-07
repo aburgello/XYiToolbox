@@ -3020,7 +3020,15 @@ export const autoAspectRatio = (): Result => {
       const effects = layer.property("Effects") as Property;
       if (!effects) continue;
 
-      const layerAnchor = (layer.property("Anchor Point") as Property).value as number[];
+      // layer.property("Anchor Point").value is [x,y,z] (3 elements) for a
+      // 3D layer, but both places this feeds into below -- the Point
+      // Control effect's "Point" and the Transform effect's own "Anchor
+      // Point" -- are fixed 2D properties regardless of the layer's 3D
+      // status, so passing the raw 3-element value throws "Value array
+      // does not have 2 elements". Truncate to X/Y explicitly; Z isn't
+      // part of what this rig interpolates anyway.
+      const rawAnchor = (layer.property("Anchor Point") as Property).value as number[];
+      const layerAnchor: [number, number] = [rawAnchor[0], rawAnchor[1]];
 
       for (let k = 0; k < AUTO_AR_LANDSCAPE.labels.length; k++) {
         const lab = AUTO_AR_LANDSCAPE.labels[k];
@@ -4818,5 +4826,218 @@ export const renderQueueRemoveItem = (index: number): Result => {
     return { success: true };
   } catch (e) {
     return { success: false, error: String(e) };
+  }
+};
+
+// Remove a render queue item by its comp's unique ID (stable), not by
+// positional index (which shifts when items are removed). Iterates the
+// queue, finds the item whose comp.id matches, removes it.
+export const renderQueueRemoveByCompId = (compId: number): Result => {
+  try {
+    const rq = app.project.renderQueue;
+    for (let i = rq.numItems; i >= 1; i--) {
+      const item = rq.item(i);
+      if (item.comp && item.comp.id === compId) {
+        item.remove();
+        return { success: true };
+      }
+    }
+    return { success: false, error: "Comp not found in render queue." };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+};
+
+// =============================================================================
+// True Comp Duplicator -- duplicates selected compositions while maintaining
+// all layer references, effects, and expressions. Handles nested pre-comps
+// recursively and updates expressions to reference the new duplicated comps.
+// =============================================================================
+export const trueCompDuplicator = (options: {
+  suffix: string;
+  includeNested: boolean;
+  updateExpressions: boolean;
+}): Result => {
+  try {
+    const { suffix = "_DUP", includeNested = true, updateExpressions = true } = options;
+
+    // Get selected items from the project panel
+    const selectedItems = app.project.selection;
+    if (selectedItems.length === 0) {
+      return { success: false, error: "Please select one or more compositions in the Project panel." };
+    }
+
+    // Filter to only compositions
+    const selectedComps: CompItem[] = [];
+    for (let i = 0; i < selectedItems.length; i++) {
+      if (selectedItems[i] instanceof CompItem) {
+        selectedComps.push(selectedItems[i] as CompItem);
+      }
+    }
+
+    if (selectedComps.length === 0) {
+      return { success: false, error: "No compositions selected. Please select at least one comp." };
+    }
+
+    app.beginUndoGroup("True Comp Duplicator");
+
+    const duplicatedComps: string[] = [];
+    const compMapping: Record<number, CompItem> = {}; // Maps original comp ID to duplicated comp
+
+    // Helper function to duplicate a comp and its nested pre-comps
+    const duplicateComp = (originalComp: CompItem): CompItem => {
+      // Check if we already duplicated this comp
+      if (compMapping[originalComp.id]) {
+        return compMapping[originalComp.id];
+      }
+
+      // Duplicate the comp
+      const duplicatedComp = originalComp.duplicate();
+      duplicatedComp.name = originalComp.name + suffix;
+      compMapping[originalComp.id] = duplicatedComp;
+
+      // Process layers if we need to handle nested pre-comps or update expressions
+      if (includeNested || updateExpressions) {
+        for (let i = 1; i <= duplicatedComp.layers.length; i++) {
+          const layer = duplicatedComp.layer(i);
+
+          // Handle nested pre-comps
+          if (includeNested && layer.source instanceof CompItem) {
+            const originalSource = originalComp.layer(i).source as CompItem;
+            const duplicatedSource = duplicateComp(originalSource);
+            layer.replaceSource(duplicatedSource, false);
+          }
+
+          // Update expressions
+          if (updateExpressions) {
+            updateLayerExpressions(layer, originalComp, duplicatedComp, compMapping);
+          }
+        }
+      }
+
+      return duplicatedComp;
+    };
+
+    // Helper function to update expressions in a layer
+    const updateLayerExpressions = (
+      layer: Layer,
+      originalComp: CompItem,
+      duplicatedComp: CompItem,
+      compMapping: Record<number, CompItem>
+    ): void => {
+      try {
+        // Get all properties that might have expressions
+        const properties = getAllProperties(layer);
+
+        for (let i = 0; i < properties.length; i++) {
+          const prop = properties[i];
+          if (prop.canSetExpression && prop.expression) {
+            const originalExpr = prop.expression;
+            const updatedExpr = updateExpressionString(
+              originalExpr,
+              originalComp,
+              duplicatedComp,
+              compMapping
+            );
+
+            if (updatedExpr !== originalExpr) {
+              try {
+                prop.expression = updatedExpr;
+              } catch (e) {
+                // If expression update fails, leave the original expression
+                // This can happen if the expression references something that
+                // doesn't exist in the duplicated comp
+              }
+            }
+          }
+        }
+      } catch (e) {
+        // Silently continue if we can't update expressions for this layer
+      }
+    };
+
+    // Helper to get all properties from a layer (including nested properties)
+    const getAllProperties = (layer: Layer): Property[] => {
+      const properties: Property[] = [];
+
+      const collectProperties = (obj: any): void => {
+        if (obj instanceof Property) {
+          properties.push(obj);
+        }
+
+        // Check for indexed properties (like mask group, effect group, etc.)
+        if (obj.numProperties !== undefined) {
+          for (let i = 1; i <= obj.numProperties; i++) {
+            try {
+              collectProperties(obj.property(i));
+            } catch (e) {
+              // Skip inaccessible properties
+            }
+          }
+        }
+
+        // Check for named property groups
+        if (obj.propertyGroup) {
+          try {
+            collectProperties(obj.propertyGroup(1));
+          } catch (e) {
+            // Not a property group
+          }
+        }
+      };
+
+      collectProperties(layer);
+      return properties;
+    };
+
+    // Helper to update expression string with new comp references
+    const updateExpressionString = (
+      expression: string,
+      originalComp: CompItem,
+      duplicatedComp: CompItem,
+      compMapping: Record<number, CompItem>
+    ): string => {
+      let updatedExpr = expression;
+
+      // Replace comp() references
+      // Pattern: comp("Original Comp Name") -> comp("Duplicated Comp Name")
+      const compRegex = /comp\(["']([^"']+)["']\)/g;
+      updatedExpr = updatedExpr.replace(compRegex, (match, compName) => {
+        // Find the original comp by name
+        for (let i = 1; i <= app.project.numItems; i++) {
+          const item = app.project.item(i);
+          if (item instanceof CompItem && item.name === compName) {
+            const duplicated = compMapping[item.id];
+            if (duplicated) {
+              return `comp("${duplicated.name}")`;
+            }
+          }
+        }
+        return match;
+      });
+
+      // Replace thisComp references if needed
+      // thisComp in the original should become the duplicated comp in the duplicate
+      // However, thisComp is a special keyword that refers to the comp containing the layer,
+      // so it will automatically refer to the duplicated comp. No replacement needed.
+
+      return updatedExpr;
+    };
+
+    // Duplicate all selected comps
+    for (let i = 0; i < selectedComps.length; i++) {
+      const duplicatedComp = duplicateComp(selectedComps[i]);
+      duplicatedComps.push(duplicatedComp.name);
+    }
+
+    app.endUndoGroup();
+
+    return {
+      success: true,
+      duplicatedComps,
+      message: `Successfully duplicated ${duplicatedComps.length} composition(s).`,
+    };
+  } catch (e) {
+    return { success: false, error: e.toString() };
   }
 };

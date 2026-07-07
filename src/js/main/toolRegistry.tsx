@@ -84,6 +84,7 @@ const ExpressionsBankTool   = React.lazy(() => import("./tools/ExpressionsBank")
 const CompInspectorTool     = React.lazy(() => import("./tools/CompInspector"));
 const RenderQueueManagerTool = React.lazy(() => import("./tools/RenderQueueManager"));
 const MaskSeparatorTool      = React.lazy(() => import("./tools/MaskSeparator"));
+const ReplicatorTool         = React.lazy(() => import("./tools/Replicator"));
 
 // --- Prefetch ---------------------------------------------------------
 // Maps tool id → the same dynamic import function React.lazy uses. Calling
@@ -123,6 +124,7 @@ const PREFETCH_MAP: Record<string, () => Promise<any>> = {
     "comp-inspector":     () => import("./tools/CompInspector"),
     "render-queue-manager": () => import("./tools/RenderQueueManager"),
     "mask-separator":       () => import("./tools/MaskSeparator"),
+    "replicator":           () => import("./tools/Replicator"),
 };
 
 export const prefetchTool = (toolId: string) => {
@@ -471,5 +473,14 @@ export const TOOLS: ToolEntry[] = [
         Component: MaskSeparatorTool,
         actions: ["Separate Masks"],
         description: "Splits a layer with 2+ masks into one duplicate layer per mask (by Christopher R. Green, via aenhancers.com).",
+    },
+    {
+        id: "replicator",
+        label: "Replicator",
+        categories: ["tools"],
+        icon: Copy,
+        Component: ReplicatorTool,
+        actions: ["Copy"],
+        description: "Recursively copies a source folder's contents into a destination folder, skipping files that already exist there.",
     },
 ];
