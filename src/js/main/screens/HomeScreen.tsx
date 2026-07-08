@@ -25,6 +25,7 @@ import { useCustomTools } from "../hooks/useCustomTools";
 import { useTheme } from "../hooks/useTheme";
 import ThemePicker from "../ThemePicker";
 import ToolsetTool from "../tools/Toolset";
+import MotionToolsDroplet from "../MotionToolsDroplet";
 import Tooltip from "../Tooltip";
 import TimeTrackerDroplet from "../TimeTrackerDroplet";
 import SfxDroplet from "../SfxDroplet";
@@ -255,6 +256,7 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
 
                     <div className="home-search">
                         <div className="search-box-row">
+                            <MotionToolsDroplet />
                             <div className="search-box">
                                 <Search size={12} />
                                 <div className="search-input-wrap">
@@ -458,6 +460,7 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
                             );
                         })}
                     </div>
+
                 </div>
             </div>
 

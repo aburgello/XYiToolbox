@@ -835,10 +835,24 @@ interface LocLibComponent {
   territory: string;
   label: string;
   path: string;
+  // Explicit folder assignment (LocalisedLibrary.tsx's "mini directories"
+  // split, e.g. PNG/AEP/AI) -- "" or absent means the frontend auto-buckets
+  // it by file extension instead. Never derived here; the actual files on
+  // disk aren't necessarily organised this way, this is a library-only
+  // grouping, same spirit as everything else in this file being a virtual
+  // catalogue over real files rather than a mirror of their real layout.
+  folder?: string;
+}
+
+interface LocLibFolder {
+  campaign: string;
+  territory: string;
+  name: string;
 }
 
 const LL_CAMPAIGNS_KEY = "LocLibCampaigns";
 const LL_COMPONENTS_KEY = "LocLibComponents";
+const LL_FOLDERS_KEY = "LocLibFolders";
 
 function loadLocLibCampaignsRaw(): LocLibCampaign[] {
   const out: LocLibCampaign[] = [];
@@ -872,7 +886,14 @@ function loadLocLibComponentsRaw(): LocLibComponent[] {
     for (let i = 0; i < lines.length; i++) {
       if (lines[i] === "") continue;
       const parts = lines[i].split("\t");
-      if (parts.length >= 4) out.push({ campaign: parts[0], territory: decode(parts[1]), label: parts[2], path: parts[3] });
+      // parts.length >= 4 (not 5) on purpose -- a component saved before
+      // the folder field existed still loads fine, just with folder
+      // undefined (auto-bucket by extension on the frontend).
+      if (parts.length >= 4) {
+        const entry: LocLibComponent = { campaign: parts[0], territory: decode(parts[1]), label: parts[2], path: parts[3] };
+        if (parts.length >= 5 && parts[4]) entry.folder = decode(parts[4]);
+        out.push(entry);
+      }
     }
   }
   return out;
@@ -885,10 +906,106 @@ function saveLocLibComponentsRaw(arr: LocLibComponent[]): void {
     const t = String(arr[i].territory).replace(/[\t\n\r]/g, " ");
     const l = String(arr[i].label).replace(/[\t\n\r]/g, " ");
     const p = String(arr[i].path).replace(/[\t\n\r]/g, " ");
-    lines.push(c + "\t" + t + "\t" + l + "\t" + p);
+    const f = String(arr[i].folder || "").replace(/[\t\n\r]/g, " ");
+    lines.push(c + "\t" + t + "\t" + l + "\t" + p + "\t" + f);
   }
   app.settings.saveSetting(SETTINGS_SECTION, LL_COMPONENTS_KEY, lines.join("\n"));
 }
+
+// Custom folders (LocalisedLibrary.tsx's "New Folder…") -- scoped per
+// campaign+territory, separate from the auto extension-derived buckets
+// (PNG/AEP/AI/etc.), which aren't persisted at all since they're purely
+// computed from each component's path on the frontend. A folder record
+// here exists so a just-created, still-empty folder has somewhere to be
+// remembered -- once it has a component in it, that component's own
+// `folder` field is really what makes it show up either way.
+function loadLocLibFoldersRaw(): LocLibFolder[] {
+  const out: LocLibFolder[] = [];
+  if (app.settings.haveSetting(SETTINGS_SECTION, LL_FOLDERS_KEY)) {
+    const raw = app.settings.getSetting(SETTINGS_SECTION, LL_FOLDERS_KEY);
+    const lines = raw.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i] === "") continue;
+      const parts = lines[i].split("\t");
+      if (parts.length >= 3) out.push({ campaign: parts[0], territory: decode(parts[1]), name: decode(parts[2]) });
+    }
+  }
+  return out;
+}
+
+function saveLocLibFoldersRaw(arr: LocLibFolder[]): void {
+  const lines: string[] = [];
+  for (let i = 0; i < arr.length; i++) {
+    const c = String(arr[i].campaign).replace(/[\t\n\r]/g, " ");
+    const t = String(arr[i].territory).replace(/[\t\n\r]/g, " ");
+    const n = String(arr[i].name).replace(/[\t\n\r]/g, " ");
+    lines.push(c + "\t" + t + "\t" + n);
+  }
+  app.settings.saveSetting(SETTINGS_SECTION, LL_FOLDERS_KEY, lines.join("\n"));
+}
+
+export const loadLocLibFolders = (): LocLibFolder[] => loadLocLibFoldersRaw();
+
+export const createLocLibFolder = (campaign: string, territory: string, name: string): Result => {
+  try {
+    const trimmed = name.replace(/^\s+|\s+$/g, "");
+    if (!trimmed) return { success: false, error: "Folder name can't be empty." };
+    const folders = loadLocLibFoldersRaw();
+    for (let i = 0; i < folders.length; i++) {
+      if (folders[i].campaign === campaign && folders[i].territory === territory && folders[i].name.toLowerCase() === trimmed.toLowerCase()) {
+        return { success: false, error: 'A folder named "' + trimmed + '" already exists here.' };
+      }
+    }
+    folders.push({ campaign, territory, name: trimmed });
+    saveLocLibFoldersRaw(folders);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// Deletes the folder record and clears its assignment off every component
+// currently filed under it -- those components aren't deleted, they just
+// fall back to auto-bucketing by extension, same as any component that
+// never had an explicit folder to begin with.
+export const removeLocLibFolder = (campaign: string, territory: string, name: string): Result => {
+  try {
+    const folders = loadLocLibFoldersRaw().filter((f) => !(f.campaign === campaign && f.territory === territory && f.name === name));
+    saveLocLibFoldersRaw(folders);
+
+    const components = loadLocLibComponentsRaw();
+    for (let i = 0; i < components.length; i++) {
+      const c = components[i];
+      if (c.campaign === campaign && c.territory === territory && c.folder === name) {
+        delete c.folder;
+      }
+    }
+    saveLocLibComponentsRaw(components);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// Reassigns one component's folder -- folder === "" clears the explicit
+// assignment (reverts to auto-bucketing by extension). Matches the same
+// (campaign, territory, label, path) identity removeLocLibComponent uses.
+export const setLocLibComponentFolder = (campaign: string, territory: string, label: string, path: string, folder: string): Result => {
+  try {
+    const all = loadLocLibComponentsRaw();
+    for (let i = 0; i < all.length; i++) {
+      if (all[i].campaign === campaign && all[i].territory === territory && all[i].label === label && all[i].path === path) {
+        if (folder) all[i].folder = folder;
+        else delete all[i].folder;
+        break;
+      }
+    }
+    saveLocLibComponentsRaw(all);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
 
 export const loadLocLibCampaigns = (): LocLibCampaign[] => loadLocLibCampaignsRaw();
 
@@ -921,6 +1038,9 @@ export const removeLocLibCampaign = (name: string): Result => {
 
     const remaining = loadLocLibComponentsRaw().filter((c) => c.campaign !== name);
     saveLocLibComponentsRaw(remaining);
+
+    const remainingFolders = loadLocLibFoldersRaw().filter((f) => f.campaign !== name);
+    saveLocLibFoldersRaw(remainingFolders);
     return { success: true };
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -946,12 +1066,49 @@ export const scanTerritories = (marketsRoot: string): string[] => {
   return out;
 };
 
+// "You may be in..." suggestion (LocalisedLibrary.tsx) -- detects which of
+// the CURRENT campaign's own scanned territories the open project's saved
+// file path is sitting inside, by walking up the folder tree from the
+// file and matching each ancestor folder's name (case-insensitive)
+// against the passed-in territory list. Same "walk up from the saved
+// file, match a folder name" technique Timesheet Tracker's own
+// tsExtractInfoFromPath() (tools.ts) already uses for job/territory
+// detection -- but matched against THIS campaign's real, scanned
+// territory folder names (from scanTerritories above) rather than a
+// fixed global vocabulary, since Loc Lib's territory list is already
+// derived live from disk per campaign and is more accurate than a
+// hardcoded list for this purpose. Deliberately scoped to the currently
+// selected campaign's territories only -- doesn't try to also detect
+// *which campaign* the project belongs to; if the wrong campaign is
+// selected, this just returns null (no suggestion), which is a safe,
+// unsurprising fallback, not a bug.
+export const detectCurrentTerritory = (territories: string[]): string | null => {
+  const projFile = app.project.file;
+  if (!projFile) return null;
+
+  let currentFolder: Folder | null = projFile.parent;
+  while (currentFolder !== null) {
+    const folderName = decode(currentFolder.name).toLowerCase();
+    for (let t = 0; t < territories.length; t++) {
+      if (territories[t].toLowerCase() === folderName) return territories[t];
+    }
+    if (currentFolder.parent && currentFolder.parent.absoluteURI !== currentFolder.absoluteURI) {
+      currentFolder = currentFolder.parent;
+    } else {
+      break;
+    }
+  }
+  return null;
+};
+
 export const loadLocLibComponents = (): LocLibComponent[] => loadLocLibComponentsRaw();
 
-export const addLocLibComponent = (campaign: string, territory: string, label: string, path: string): Result => {
+export const addLocLibComponent = (campaign: string, territory: string, label: string, path: string, folder?: string): Result => {
   try {
     const all = loadLocLibComponentsRaw();
-    all.push({ campaign, territory, label, path });
+    const entry: LocLibComponent = { campaign, territory, label, path };
+    if (folder) entry.folder = folder;
+    all.push(entry);
     saveLocLibComponentsRaw(all);
     return { success: true };
   } catch (e) {
@@ -1027,9 +1184,9 @@ interface AutoPopulateResult {
   territoriesWithNoMatch?: string[];
 }
 
-export const autoPopulateLocLib = (campaignName: string, marketsRoot: string): AutoPopulateResult => {
+export const autoPopulateLocLib = (campaignName: string, marketsRoot: string, onlyTerritory?: string): AutoPopulateResult => {
   try {
-    const territories = scanTerritories(marketsRoot);
+    const territories = onlyTerritory ? [onlyTerritory] : scanTerritories(marketsRoot);
     const existing = loadLocLibComponentsRaw();
     let added = 0;
     let skippedExisting = 0;

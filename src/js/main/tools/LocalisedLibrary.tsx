@@ -24,12 +24,15 @@ import {
     ChevronRight,
     ArrowLeft,
     Library,
+    MapPin,
+    Folder,
+    FolderSymlink,
 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import Tooltip from "../Tooltip";
 import StatusIcon from "../StatusIcon";
 import Dropdown from "../Dropdown";
-import { alertDialog, confirmDialog, promptDialog } from "../Dialog";
+import { alertDialog, confirmDialog, promptDialog, selectDialog } from "../Dialog";
 import "../shared.scss";
 import "./LocalisedLibrary.scss";
 
@@ -43,12 +46,48 @@ interface Component {
     territory: string;
     label: string;
     path: string;
+    // Explicit folder assignment ("mini directories" split by file type,
+    // e.g. PNG/AEP/AI) -- undefined means folderForComponent() below
+    // auto-buckets it by extension instead. This is a library-only
+    // grouping, not a mirror of how the files actually sit on disk.
+    folder?: string;
+}
+
+interface CustomFolder {
+    campaign: string;
+    territory: string;
+    name: string;
 }
 
 interface Toast {
     id: number;
     text: string;
     type: "success" | "error";
+}
+
+// Extension -> display folder name. Anything not listed falls back to the
+// extension itself uppercased (e.g. ".xml" -> "XML"); no extension at all
+// (a rare extensionless file) falls back to "Other".
+const EXTENSION_FOLDER_MAP: Record<string, string> = {
+    aep: "AEP", aet: "AEP",
+    ai: "AI", eps: "AI",
+    png: "PNG",
+    jpg: "JPG", jpeg: "JPG",
+    psd: "PSD",
+    mov: "MOV", mp4: "MOV",
+    pdf: "PDF",
+};
+
+// A component's own explicit `folder` always wins; otherwise derived from
+// its file extension. Never persisted for the auto-bucketed case -- this
+// stays purely a display-time computation so it can't drift out of sync
+// with a component's real path.
+function folderForComponent(c: Component): string {
+    if (c.folder) return c.folder;
+    const m = c.path.match(/\.([A-Za-z0-9]+)$/);
+    const ext = m ? m[1].toLowerCase() : "";
+    if (!ext) return "Other";
+    return EXTENSION_FOLDER_MAP[ext] || ext.toUpperCase();
 }
 
 // Browser-preview mock data (no CEP bridge outside AE) -- same intent as OV
@@ -66,10 +105,25 @@ const MOCK_TERRITORIES: Record<string, string[]> = {
 const MOCK_COMPONENTS: Component[] = [
     { campaign: "ODY_INTL_DGTL_DOOH_HORSE", territory: "France", label: "Logo_Endcard_FR", path: "/mock/HORSE/Markets/France/Support_Motion/Logo_Endcard_FR.aep" },
     { campaign: "ODY_INTL_DGTL_DOOH_HORSE", territory: "France", label: "Legal_Line_FR", path: "/mock/HORSE/Markets/France/Support_Motion/Legal_Line_FR.aep" },
+    { campaign: "ODY_INTL_DGTL_DOOH_HORSE", territory: "France", label: "Logo_Mark_FR", path: "/mock/HORSE/Markets/France/Support_Motion/Logo_Mark_FR.png" },
+    { campaign: "ODY_INTL_DGTL_DOOH_HORSE", territory: "France", label: "Brand_Vector_FR", path: "/mock/HORSE/Markets/France/Support_Motion/Brand_Vector_FR.ai" },
+    // Filed under a custom folder ("Legal Approved") rather than
+    // auto-bucketed by extension -- demonstrates a manually-moved entry.
+    { campaign: "ODY_INTL_DGTL_DOOH_HORSE", territory: "France", label: "Legal_Signoff_FR", path: "/mock/HORSE/Markets/France/Support_Motion/Legal_Signoff_FR.pdf", folder: "Legal Approved" },
     { campaign: "ODY_INTL_DGTL_DOOH_HORSE", territory: "Germany", label: "Logo_Endcard_DE", path: "/mock/HORSE/Markets/Germany/Support_Motion/Logo_Endcard_DE.aep" },
     { campaign: "ODY_INTL_DGTL_DOOH_HORSE", territory: "Japan", label: "Logo_Endcard_JP", path: "/mock/HORSE/Markets/Japan/Support_Motion/Logo_Endcard_JP.aep" },
 ];
+// A still-empty custom folder -- demonstrates that a just-created folder
+// with zero components in it yet still shows in the folder list.
+const MOCK_FOLDERS: CustomFolder[] = [
+    { campaign: "ODY_INTL_DGTL_DOOH_HORSE", territory: "France", name: "Legal Approved" },
+    { campaign: "ODY_INTL_DGTL_DOOH_HORSE", territory: "France", name: "WIP" },
+];
 const MOCK_CODES: Record<string, string> = { France: "FR", Germany: "DE", Spain: "ES", Italy: "IT", Japan: "JP", Brazil: "BR", Mexico: "MX", Australia: "AU" };
+// Demonstrates the "You may be in…" suggestion in browser preview, same as
+// every other MOCK_* constant here -- real detection needs a real saved
+// project file, which preview mode never has.
+const MOCK_DETECTED_TERRITORY: Record<string, string | null> = { ODY_INTL_DGTL_DOOH_HORSE: "France", GLADIATOR_II_DOOH: null };
 
 // Shimmer placeholder matching a real territory row's layout (pip + name +
 // count badge), shown while the territory scan is in flight -- same
@@ -88,9 +142,23 @@ const LocalisedLibraryTool = () => {
 
     const [territories, setTerritories] = useState<string[]>([]);
     const [components, setComponents] = useState<Component[]>([]);
+    const [customFolders, setCustomFolders] = useState<CustomFolder[]>([]);
     const [selectedTerritory, setSelectedTerritory] = useState<string | null>(null);
+    // Third nav level, within a territory: null shows the folder list
+    // (auto extension buckets + any custom folders), set shows that
+    // folder's own component list -- see the "mini directories" split in
+    // this file's header comment.
+    const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
     const [territorySearch, setTerritorySearch] = useState("");
     const [countryCodes, setCountryCodes] = useState<Record<string, string>>({});
+
+    // "You may be in..." -- the territory (if any) whose folder the
+    // currently open AE project's saved file path sits inside, detected
+    // against this campaign's own scanned territory list. Purely a quick-
+    // access suggestion pinned above the list -- null just means no match
+    // (unsaved project, project outside this campaign's Markets tree, or
+    // browser preview), never an error state.
+    const [detectedTerritory, setDetectedTerritory] = useState<string | null>(null);
 
     const [loadingTerritories, setLoadingTerritories] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -185,6 +253,7 @@ const LocalisedLibraryTool = () => {
         if (!selectedCampaign) {
             setTerritories([]);
             setComponents([]);
+            setCustomFolders([]);
             setSelectedTerritory(null);
             return;
         }
@@ -192,24 +261,35 @@ const LocalisedLibraryTool = () => {
     }, [selectedCampaign]);
 
     useEffect(() => {
-        setSelectedPaths(new Set());
+        setSelectedFolder(null);
     }, [selectedTerritory]);
+
+    useEffect(() => {
+        setSelectedPaths(new Set());
+    }, [selectedTerritory, selectedFolder]);
 
     const refreshTerritories = async (camp: Campaign) => {
         setLoadingTerritories(true);
         setSelectedTerritory(null);
+        setDetectedTerritory(null);
         if (mockMode) {
             setTerritories(MOCK_TERRITORIES[camp.name] || []);
             setComponents(MOCK_COMPONENTS);
+            setCustomFolders(MOCK_FOLDERS);
             setCountryCodes(MOCK_CODES);
+            setDetectedTerritory(MOCK_DETECTED_TERRITORY[camp.name] ?? null);
             setLoadingTerritories(false);
             return;
         }
         try {
             const terrs: string[] = (await safeEvalTS("scanTerritories", camp.marketsRoot)) || [];
-            const allComponents: Component[] = (await safeEvalTS("loadLocLibComponents")) || [];
+            const [allComponents, allFolders] = await Promise.all([
+                (safeEvalTS("loadLocLibComponents") as Promise<Component[]>).then((v) => v || []),
+                (quietEvalTS("loadLocLibFolders") as Promise<CustomFolder[]>).then((v) => v || []),
+            ]);
             setTerritories(terrs);
             setComponents(allComponents);
+            setCustomFolders(allFolders);
 
             // Parallel, not a sequential for-loop -- these are independent
             // lookups, and a real campaign's full territory list (tens of
@@ -218,15 +298,20 @@ const LocalisedLibraryTool = () => {
             // delay for something purely decorative. Parallelizing also
             // shrinks the total time window any individual call could
             // hiccup in. quietEvalTS (not safeEvalTS) on purpose -- see its
-            // own comment above.
-            const codeEntries = await Promise.all(
-                terrs.map(async (t) => [t, await quietEvalTS("getTerritoryCountryCode", t)] as const)
-            );
+            // own comment above. detectCurrentTerritory joins the same
+            // Promise.all for the same reason -- one more decorative,
+            // best-effort lookup that shouldn't add its own sequential
+            // round-trip on top of the country-code batch.
+            const [codeEntries, detected] = await Promise.all([
+                Promise.all(terrs.map(async (t) => [t, await quietEvalTS("getTerritoryCountryCode", t)] as const)),
+                quietEvalTS("detectCurrentTerritory", terrs) as Promise<string | null>,
+            ]);
             const codes: Record<string, string> = {};
             for (const [t, code] of codeEntries) {
                 if (code) codes[t] = code;
             }
             setCountryCodes(codes);
+            setDetectedTerritory(detected);
         } finally {
             setLoadingTerritories(false);
         }
@@ -274,7 +359,17 @@ const LocalisedLibraryTool = () => {
         const label = await promptDialog("Label this component:", defaultLabel);
         if (label === null) return;
 
-        const result = await safeEvalTS("addLocLibComponent", selectedCampaign.name, selectedTerritory, label || defaultLabel, path);
+        // Filed straight into whichever folder we're currently viewing --
+        // Add Component only ever shows from inside a folder now, so
+        // selectedFolder is always set here in practice.
+        const result = await safeEvalTS(
+            "addLocLibComponent",
+            selectedCampaign.name,
+            selectedTerritory,
+            label || defaultLabel,
+            path,
+            selectedFolder || undefined
+        );
         if (result && result.success) {
             const all: Component[] = (await safeEvalTS("loadLocLibComponents")) || [];
             setComponents(all);
@@ -288,16 +383,89 @@ const LocalisedLibraryTool = () => {
         setComponents(all);
     };
 
+    const handleNewFolder = async () => {
+        if (!selectedCampaign || !selectedTerritory) return;
+        const name = await promptDialog("New folder name:", "");
+        if (!name) return;
+        const result = await safeEvalTS("createLocLibFolder", selectedCampaign.name, selectedTerritory, name);
+        if (result && result.success) {
+            const all: CustomFolder[] = (await safeEvalTS("loadLocLibFolders")) || [];
+            setCustomFolders(all);
+        } else if (result) {
+            pushToast(result.error || "Could not create folder.", "error");
+        }
+    };
+
+    const handleRemoveFolder = async (folderName: string) => {
+        if (!selectedCampaign || !selectedTerritory) return;
+        if (
+            !(await confirmDialog(
+                `Remove the "${folderName}" folder?\n\nComponents inside it aren't deleted -- they'll fall back to being grouped by file type.`
+            ))
+        )
+            return;
+        await safeEvalTS("removeLocLibFolder", selectedCampaign.name, selectedTerritory, folderName);
+        const [all, allFolders] = await Promise.all([
+            (safeEvalTS("loadLocLibComponents") as Promise<Component[]>).then((v) => v || []),
+            (safeEvalTS("loadLocLibFolders") as Promise<CustomFolder[]>).then((v) => v || []),
+        ]);
+        setComponents(all);
+        setCustomFolders(allFolders);
+        // The folder we were just looking at no longer exists -- drop back
+        // to the folder list rather than showing an empty, gone folder.
+        if (selectedFolder === folderName) setSelectedFolder(null);
+    };
+
+    // Reassigns one component to a different folder, offering every folder
+    // name currently in use in this territory (auto buckets + custom) plus
+    // the option to create a brand new one on the spot.
+    const handleMoveComponent = async (component: Component) => {
+        if (!selectedCampaign || !selectedTerritory) return;
+        const inThisTerritory = components.filter((c) => c.campaign === selectedCampaign.name && c.territory === selectedTerritory);
+        const autoNames = inThisTerritory.map(folderForComponent);
+        const customNames = customFolders
+            .filter((f) => f.campaign === selectedCampaign.name && f.territory === selectedTerritory)
+            .map((f) => f.name);
+        const allNames = Array.from(new Set([...autoNames, ...customNames])).sort();
+        const options = [...allNames, "New folder…"];
+        const currentName = folderForComponent(component);
+        const defaultIndex = Math.max(0, options.indexOf(currentName));
+
+        const choice = await selectDialog(`Move "${component.label}" to:`, options, defaultIndex);
+        if (choice === null) return;
+
+        let targetFolder = options[choice];
+        if (targetFolder === "New folder…") {
+            const name = await promptDialog("New folder name:", "");
+            if (!name) return;
+            const createResult = await safeEvalTS("createLocLibFolder", selectedCampaign.name, selectedTerritory, name);
+            if (!createResult || !createResult.success) {
+                if (createResult) pushToast(createResult.error || "Could not create folder.", "error");
+                return;
+            }
+            targetFolder = name;
+        } else if (targetFolder === currentName) {
+            return; // no-op, already there
+        }
+
+        await safeEvalTS("setLocLibComponentFolder", component.campaign, component.territory, component.label, component.path, targetFolder);
+        const [all, allFolders] = await Promise.all([
+            (safeEvalTS("loadLocLibComponents") as Promise<Component[]>).then((v) => v || []),
+            (safeEvalTS("loadLocLibFolders") as Promise<CustomFolder[]>).then((v) => v || []),
+        ]);
+        setComponents(all);
+        setCustomFolders(allFolders);
+    };
+
     const handleAutoPopulate = async () => {
         if (!selectedCampaign) {
             await alertDialog("Select or create a campaign first.");
             return;
         }
+        const scopeLabel = selectedTerritory ? `the "${selectedTerritory}" territory` : `every territory under "${selectedCampaign.name}"`;
         if (
             !(await confirmDialog(
-                'Scan every territory under "' +
-                    selectedCampaign.name +
-                    '" for a "Support_Motion" or "Motion_Components" folder, and auto-add every file found inside as a component?\n\n' +
+                `Scan ${scopeLabel} for a "Support_Motion" or "Motion_Components" folder, and auto-add every file found inside as a component?\n\n` +
                     "Files already in the library are skipped, so this is safe to re-run later as new territories come online."
             ))
         )
@@ -305,7 +473,12 @@ const LocalisedLibraryTool = () => {
 
         setBusy(true);
         try {
-            const result = await safeEvalTS("autoPopulateLocLib", selectedCampaign.name, selectedCampaign.marketsRoot);
+            const result = await safeEvalTS(
+                "autoPopulateLocLib",
+                selectedCampaign.name,
+                selectedCampaign.marketsRoot,
+                selectedTerritory || undefined
+            );
             if (result && result.success) {
                 const all: Component[] = (await safeEvalTS("loadLocLibComponents")) || [];
                 setComponents(all);
@@ -343,7 +516,7 @@ const LocalisedLibraryTool = () => {
 
     const toggleSelectAll = () => {
         setSelectedPaths((prev) =>
-            prev.size === componentsForTerritory.length ? new Set() : new Set(componentsForTerritory.map((c) => c.path))
+            prev.size === componentsForFolder.length ? new Set() : new Set(componentsForFolder.map((c) => c.path))
         );
     };
 
@@ -433,7 +606,18 @@ const LocalisedLibraryTool = () => {
 
     const countFor = (territory: string) => components.filter((c) => c.campaign === selectedCampaign?.name && c.territory === territory).length;
 
-    const allSelected = componentsForTerritory.length > 0 && selectedPaths.size === componentsForTerritory.length;
+    // Folder list for the currently selected territory -- every distinct
+    // folder name in actual use (auto extension bucket or explicit) UNION
+    // any custom folder that's been created but has nothing filed in it
+    // yet, so a just-created empty folder doesn't disappear.
+    const customFoldersForTerritory = customFolders.filter((f) => f.campaign === selectedCampaign?.name && f.territory === selectedTerritory);
+    const folderNamesInUse = new Set(componentsForTerritory.map(folderForComponent));
+    const allFolderNames = Array.from(new Set([...folderNamesInUse, ...customFoldersForTerritory.map((f) => f.name)])).sort();
+    const customFolderNameSet = new Set(customFoldersForTerritory.map((f) => f.name));
+
+    const componentsForFolder = componentsForTerritory.filter((c) => folderForComponent(c) === selectedFolder);
+
+    const allSelected = componentsForFolder.length > 0 && selectedPaths.size === componentsForFolder.length;
 
     return (
         <div className="localised-library">
@@ -468,15 +652,28 @@ const LocalisedLibraryTool = () => {
                 </div>
             ) : (
                 <>
-                    <Tooltip text="Scans every territory for a Support_Motion or Motion_Components folder and auto-adds every file found inside. Read-only.">
+                    <Tooltip
+                        text={
+                            selectedTerritory
+                                ? `Scans only the "${selectedTerritory}" territory for a Support_Motion or Motion_Components folder and auto-adds every file found inside. Read-only.`
+                                : "Scans every territory for a Support_Motion or Motion_Components folder and auto-adds every file found inside. Read-only."
+                        }
+                    >
                         <button className="ll-auto-populate" disabled={busy} onClick={handleAutoPopulate}>
-                            <Wand2 size={14} className={busy ? "spin" : ""} /> Find the Motion
+                            <Wand2 size={14} className={busy ? "spin" : ""} />{" "}
+                            {selectedTerritory ? (
+                                <>
+                                    Find the <span className="ll-auto-populate-territory">{selectedTerritory}</span> Motion
+                                </>
+                            ) : (
+                                "Find the Motion"
+                            )}
                         </button>
                     </Tooltip>
 
                     <div className="ll-view-wrap">
                         <motion.div
-                            key={selectedTerritory ? "components" : "territories"}
+                            key={selectedFolder ? "components" : selectedTerritory ? "folders" : "territories"}
                             className="ll-view"
                             initial={{ opacity: 0, x: selectedTerritory ? 16 : -16 }}
                             animate={{ opacity: 1, x: 0 }}
@@ -489,6 +686,17 @@ const LocalisedLibraryTool = () => {
                                         <span className="ll-section-title">Territories</span>
                                         {!loadingTerritories && <span className="ll-section-count">{territories.length}</span>}
                                     </div>
+
+                                    {!loadingTerritories && detectedTerritory && territories.includes(detectedTerritory) && (
+                                        <button className="ll-suggestion" onClick={() => setSelectedTerritory(detectedTerritory)}>
+                                            <MapPin size={13} />
+                                            <span className="ll-suggestion-text">
+                                                You may be in <strong>{detectedTerritory}</strong>
+                                                {countryCodes[detectedTerritory] ? <em> {countryCodes[detectedTerritory]}</em> : null}
+                                            </span>
+                                            <ChevronRight size={14} className="ll-chevron" />
+                                        </button>
+                                    )}
 
                                     <div className="ll-search">
                                         <Search size={12} />
@@ -532,8 +740,8 @@ const LocalisedLibraryTool = () => {
                                             })}
                                     </div>
                                 </>
-                            ) : (
-                                /* ── Components view ──────────────────────── */
+                            ) : !selectedFolder ? (
+                                /* ── Folders view (the "mini directories" split) ── */
                                 <>
                                     <button className="ll-back" onClick={() => setSelectedTerritory(null)}>
                                         <ArrowLeft size={13} /> All territories
@@ -549,7 +757,60 @@ const LocalisedLibraryTool = () => {
                                         </span>
                                     </div>
 
-                                    {componentsForTerritory.length > 0 && (
+                                    <button className="ll-new-folder" onClick={handleNewFolder}>
+                                        <FolderPlus size={14} /> New Folder…
+                                    </button>
+
+                                    <div className="ll-folder-list">
+                                        {allFolderNames.length === 0 && (
+                                            <p className="ll-empty">
+                                                No folders yet. Create one, then Add Component once inside it -- or run Auto-Populate to pull files
+                                                from this territory's Motion Components folder (each lands in a folder named after its file type).
+                                            </p>
+                                        )}
+                                        {allFolderNames.map((name) => {
+                                            const count = componentsForTerritory.filter((c) => folderForComponent(c) === name).length;
+                                            const isCustom = customFolderNameSet.has(name);
+                                            return (
+                                                <div key={name} className="ll-folder-row-wrap">
+                                                    <button className="ll-folder-row" onClick={() => setSelectedFolder(name)}>
+                                                        <Folder size={14} className="ll-folder-icon" />
+                                                        <span className="ll-folder-name">{name}</span>
+                                                        <span className={count > 0 ? "ll-count has" : "ll-count"}>{count}</span>
+                                                        <ChevronRight size={14} className="ll-chevron" />
+                                                    </button>
+                                                    {isCustom && (
+                                                        <Tooltip text="Remove this folder (components move back to their file-type folder)">
+                                                            <button
+                                                                className="ll-row-btn ll-folder-delete"
+                                                                onClick={() => handleRemoveFolder(name)}
+                                                            >
+                                                                <Trash2 size={13} />
+                                                            </button>
+                                                        </Tooltip>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </>
+                            ) : (
+                                /* ── Components-in-a-folder view ──────────────── */
+                                <>
+                                    <button className="ll-back" onClick={() => setSelectedFolder(null)}>
+                                        <ArrowLeft size={13} /> {selectedTerritory}
+                                    </button>
+
+                                    <div className="ll-comp-head">
+                                        <div className="ll-comp-title">
+                                            <Folder size={13} className="ll-folder-icon" /> {selectedFolder}
+                                        </div>
+                                        <span className={componentsForFolder.length > 0 ? "ll-count has" : "ll-count"}>
+                                            {componentsForFolder.length}
+                                        </span>
+                                    </div>
+
+                                    {componentsForFolder.length > 0 && (
                                         <div className="ll-select-all" onClick={toggleSelectAll}>
                                             {allSelected ? <CheckSquare size={13} /> : <Square size={13} />}
                                             <span>{allSelected ? "Deselect all" : "Select all"}</span>
@@ -557,12 +818,10 @@ const LocalisedLibraryTool = () => {
                                     )}
 
                                     <div className="ll-comp-list">
-                                        {componentsForTerritory.length === 0 && (
-                                            <p className="ll-empty">
-                                                No components here yet. Add one below, or run Auto-Populate to pull them from this territory's Motion Components folder.
-                                            </p>
+                                        {componentsForFolder.length === 0 && (
+                                            <p className="ll-empty">No components in this folder yet. Add one below.</p>
                                         )}
-                                        {componentsForTerritory.map((c) => (
+                                        {componentsForFolder.map((c) => (
                                             <div key={c.label + c.path} className={`ll-comp-row ${selectedPaths.has(c.path) ? "selected" : ""}`}>
                                                 <Tooltip text="Select for batch import">
                                                     <button className="ll-check" onClick={() => toggleSelected(c.path)}>
@@ -585,6 +844,14 @@ const LocalisedLibraryTool = () => {
                                                 <Tooltip text="Remove from library">
                                                     <button className="ll-row-btn" onClick={() => handleRemoveComponent(c)}>
                                                         <X size={14} />
+                                                    </button>
+                                                </Tooltip>
+                                                {/* Deliberately at the far end, set apart from
+                                                    Import/Reveal/Remove -- it used to sit right next
+                                                    to Import, easy to fat-finger by mistake. */}
+                                                <Tooltip text="Move to another folder">
+                                                    <button className="ll-row-btn ll-row-btn-move" onClick={() => handleMoveComponent(c)}>
+                                                        <FolderSymlink size={14} />
                                                     </button>
                                                 </Tooltip>
                                             </div>

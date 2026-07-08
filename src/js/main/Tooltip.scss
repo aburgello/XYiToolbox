@@ -17,6 +17,28 @@
     flex: 0 0 auto !important;
 }
 
+// Opt-in "grow" variant (Tooltip.tsx's `grow` prop): stretches the whole
+// wrapper -> content -> wrapped-element chain together so the wrapped
+// element ends up exactly the size/position it would have been unwrapped,
+// instead of shrinking to its own content size (the default above, right
+// for the vast majority of callers). Only WIDTH is forced through to the
+// wrapped element -- height is deliberately left alone so an element with
+// its own fixed height (e.g. a 34px icon button) keeps it; flexbox's
+// default `align-items: stretch` handles the common "fill the row's
+// height too" case for anything that doesn't set one.
+.ov-tooltip-wrapper.ov-tooltip-grow {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+}
+.ov-tooltip-wrapper.ov-tooltip-grow > .ov-tooltip-content {
+    flex: 1 !important;
+    min-width: 0;
+}
+.ov-tooltip-wrapper.ov-tooltip-grow > .ov-tooltip-content > * {
+    width: 100%;
+}
+
 // Portaled to document.body (see Tooltip.tsx) -- position: fixed with
 // explicit top/left computed in JS, NOT position: absolute relative to the
 // wrapper. That's what lets it escape any scrolling ancestor's overflow
@@ -45,7 +67,14 @@
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
     opacity: 0;
     pointer-events: none;
-    z-index: 1000;
+    // Above every other overlay in the app (Droplet 1500, CommandPalette
+    // 1900, Dialog 2000) -- a tooltip can be triggered from a trigger
+    // living inside ANY of those (e.g. Motion Tools' Droplet popover), and
+    // since it's portaled to document.body it needs to out-rank all of
+    // them unconditionally rather than just the one it happened to be
+    // written for, or it silently renders underneath whichever container
+    // has a higher z-index than this did.
+    z-index: 2100;
     transition: opacity 0.12s ease;
 
     // Visibility is JS-driven (Tooltip.tsx's `visible` state), not a CSS

@@ -391,3 +391,32 @@ export const saveWrikeUserId = (id: string): Result => {
     return { success: false, error: e.toString() };
   }
 };
+
+// =============================================================================
+// Wrike API permanent token (Wrike Tasks tool) -- distinct from
+// WRIKE_USER_ID_KEY above, which is a free-typed ID used only to label
+// Timesheet Tracker exports. This key holds a real Wrike API credential
+// (Bearer token, calls go out over Node's https module from
+// wrikeApi.ts -- see that file's header for why this doesn't go through
+// ExtendScript/evalTS the way every other Wrike-adjacent feature does),
+// so it's stored under its own key rather than reusing WrikeUserId.
+// Same app.settings section/persistence convention as everything else in
+// this file -- this is a per-machine credential, not campaign data.
+// =============================================================================
+const WRIKE_API_TOKEN_KEY = "WrikeApiToken";
+
+export const loadWrikeApiToken = (): string => {
+  if (app.settings.haveSetting(WRIKE_USER_SETTINGS_SECTION, WRIKE_API_TOKEN_KEY)) {
+    return app.settings.getSetting(WRIKE_USER_SETTINGS_SECTION, WRIKE_API_TOKEN_KEY);
+  }
+  return "";
+};
+
+export const saveWrikeApiToken = (token: string): Result => {
+  try {
+    app.settings.saveSetting(WRIKE_USER_SETTINGS_SECTION, WRIKE_API_TOKEN_KEY, token);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};

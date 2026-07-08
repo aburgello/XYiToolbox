@@ -87,6 +87,8 @@ const CompInspectorTool     = React.lazy(() => import("./tools/CompInspector"));
 const RenderQueueManagerTool = React.lazy(() => import("./tools/RenderQueueManager"));
 const MaskSeparatorTool      = React.lazy(() => import("./tools/MaskSeparator"));
 const ReplicatorTool         = React.lazy(() => import("./tools/Replicator"));
+// WrikeTasksTool intentionally NOT imported here -- see the "Wrike Tasks
+// (unhooked)" note near the end of CLAUDE.md before re-adding it.
 
 // --- Prefetch ---------------------------------------------------------
 // Maps tool id → the same dynamic import function React.lazy uses. Calling
@@ -494,4 +496,6 @@ export const TOOLS: ToolEntry[] = [
         actions: ["Copy"],
         description: "Recursively copies a source folder's contents into a destination folder, skipping files that already exist there.",
     },
+    // wrike-tasks entry intentionally removed -- unhooked, not deleted, see
+    // CLAUDE.md's "Wrike Tasks (unhooked)" note.
 ];

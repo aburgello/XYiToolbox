@@ -120,6 +120,11 @@
             svg { color: var(--cat-icon, #5eead4); }
         }
         &:disabled { opacity: 0.6; cursor: default; }
+
+        .ll-auto-populate-territory {
+            color: var(--cat-icon, #5eead4);
+            font-weight: 600;
+        }
     }
 
     // ── View swap area ──────────────────────────────────────────────────────
@@ -168,6 +173,50 @@
     .ll-count.has {
         background: var(--cat-glow, rgba(45, 212, 191, 0.2));
         color: var(--cat-icon, #7fe9db);
+    }
+
+    // ── "You may be in…" suggestion (detectCurrentTerritory) ────────────────
+    // A distinct, accent-bordered call-to-action pinned above the search box
+    // -- deliberately NOT styled like a plain .ll-terr-row (dashed border +
+    // tinted fill) so it reads as "a suggestion about you," not just another
+    // list item that happens to be first.
+    .ll-suggestion {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        box-sizing: border-box;
+        text-align: left;
+        background: var(--cat-glow, rgba(45, 212, 191, 0.12));
+        border: 1px dashed var(--cat-border, #2dd4bf);
+        border-radius: 6px;
+        padding: 8px 10px;
+        margin-bottom: 8px;
+        color: #eee;
+        cursor: pointer;
+        flex-shrink: 0;
+        transition: background 0.15s ease, transform 0.12s ease;
+
+        svg:first-child { color: var(--cat-icon, #5eead4); flex-shrink: 0; }
+
+        &:hover {
+            background: var(--cat-glow, rgba(45, 212, 191, 0.2));
+            transform: translateX(2px);
+
+            .ll-chevron { color: var(--cat-icon, #5eead4); transform: translateX(1px); }
+        }
+    }
+
+    .ll-suggestion-text {
+        flex: 1;
+        min-width: 0;
+        font-size: 11.5px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+
+        strong { color: var(--cat-icon, #7fe9db); }
+        em { font-style: normal; color: #999; margin-left: 2px; }
     }
 
     // ── Search ──────────────────────────────────────────────────────────────
@@ -278,6 +327,115 @@
         transition: color 0.15s ease, transform 0.15s ease;
     }
 
+    // ── Folder list (the "mini directories" split within a territory) ───────
+    // Same visual language as .ll-add ("New Folder…" here reads as the same
+    // kind of add-affordance) and .ll-terr-row/.ll-terr-list (a folder row
+    // is the same shape as a territory row, one level deeper).
+    .ll-new-folder {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        flex-shrink: 0;
+        width: 100%;
+        box-sizing: border-box;
+        background: #232323;
+        border: 1px dashed #3f3f3f;
+        color: #cfcfcf;
+        border-radius: 6px;
+        padding: 8px 10px;
+        cursor: pointer;
+        font-size: 12px;
+        margin-bottom: 8px;
+        transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+
+        &:hover {
+            background: #2a2a2a;
+            border-color: var(--cat-border, #2dd4bf);
+            color: #fff;
+            svg { color: var(--cat-icon, #5eead4); }
+        }
+    }
+
+    .ll-folder-list {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding-right: 2px;
+    }
+
+    .ll-folder-row-wrap {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .ll-folder-row {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        flex: 1;
+        min-width: 0;
+        box-sizing: border-box;
+        text-align: left;
+        background: #1f1f1f;
+        border: 1px solid #2c2c2c;
+        border-radius: 6px;
+        padding: 8px 10px;
+        color: #ccc;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+
+        &:hover {
+            background: #262626;
+            border-color: var(--cat-border, #2dd4bf);
+            transform: translateX(2px);
+
+            .ll-chevron { color: var(--cat-icon, #5eead4); transform: translateX(1px); }
+        }
+    }
+
+    .ll-folder-icon {
+        flex-shrink: 0;
+        color: var(--cat-icon, #5eead4);
+    }
+
+    .ll-folder-name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    // Sits OUTSIDE .ll-folder-row as a sibling (see .ll-folder-row-wrap),
+    // not nested inside it -- a button inside a button isn't valid HTML,
+    // and Trash2 needs its own independent click target that doesn't also
+    // fire the row's own "open this folder" navigation.
+    .ll-folder-delete {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        flex-shrink: 0;
+        background: #262626;
+        border: 1px solid #3a3a3a;
+        color: #888;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+
+        &:hover {
+            background: #3a2424;
+            border-color: #7a3e2e;
+            color: #e0a090;
+        }
+    }
+
     // ── Components view ─────────────────────────────────────────────────────
     .ll-back {
         display: inline-flex;
@@ -304,6 +462,9 @@
     }
 
     .ll-comp-title {
+        display: flex;
+        align-items: center;
+        gap: 6px;
         flex: 1;
         min-width: 0;
         font-size: 13px;
@@ -398,6 +559,15 @@
                 border-color: var(--cat-border, #2dd4bf);
                 color: #fff;
             }
+        }
+
+        // Set apart from the Import/Reveal/Remove cluster with extra gap --
+        // it used to sit right next to Import, easy to fat-finger by
+        // mistake. Plain margin, not a divider/padding tweak, so the icon
+        // stays centered in its own fixed-size box like every other row
+        // button.
+        .ll-row-btn-move {
+            margin-left: 8px;
         }
 
         .ll-check {

@@ -62,6 +62,7 @@ const Tooltip = ({
     text,
     children,
     delay = 0,
+    grow = false,
 }: {
     text: string;
     children: React.ReactNode;
@@ -73,6 +74,17 @@ const Tooltip = ({
     // pops up under the cursor for every button passed over on the way to
     // the one actually wanted, which reads as spammy rather than helpful.
     delay?: number;
+    // Opt-in: stretches wrapper -> content -> the wrapped element together
+    // to fill whatever flex:1/grid-stretch slot the wrapped element used to
+    // occupy on its own, instead of the default (wrapper hugs the wrapped
+    // element's own natural size). Needed for triggers that rely on being a
+    // flex-grow or grid-auto-stretch item themselves -- icon-button rows,
+    // a CSS grid of cells, a tab bar -- since .ov-tooltip-content's forced
+    // `flex: 0 0 auto` (below) otherwise shrinks them to content size and
+    // leaves an invisible unhoverable gap where the fill used to be. See
+    // MotionToolsDroplet.tsx's header comment for the two ways this has
+    // already bitten this app without this escape hatch.
+    grow?: boolean;
 }) => {
     const wrapperRef = useRef<HTMLSpanElement>(null);
     // Measured separately from wrapperRef: the wrapper is a plain <span>, and
@@ -181,7 +193,12 @@ const Tooltip = ({
     }, [visible]);
 
     return (
-        <span ref={wrapperRef} className="ov-tooltip-wrapper" onMouseEnter={show} onMouseLeave={hide}>
+        <span
+            ref={wrapperRef}
+            className={"ov-tooltip-wrapper" + (grow ? " ov-tooltip-grow" : "")}
+            onMouseEnter={show}
+            onMouseLeave={hide}
+        >
             <span ref={contentRef} className="ov-tooltip-content">
                 {children}
             </span>

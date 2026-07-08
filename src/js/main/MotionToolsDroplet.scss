@@ -1,0 +1,445 @@
+// =============================================================================
+// MotionToolsDroplet.scss -- panel chrome inherited from Droplet.scss's
+// .droplet-panel; this file styles the tabbed content inside it.
+// Fixed teal accent ($mt-accent), not tied to a category (--cat-*) -- this
+// lives on the home screen, outside any category context. The component also
+// pushes this same colour into the --cat-* vars inline so SegmentedToggle/
+// CheckboxToggle adopt it; the literals here and there must stay in sync.
+// =============================================================================
+$mt-accent: #4fd1c5;
+$mt-accent-soft: rgba(79, 209, 197, 0.14);
+$mt-accent-glow: rgba(79, 209, 197, 0.35);
+$mt-surface: #202020;
+
+.motion-tools-panel {
+    width: 344px;
+    padding: 14px;
+    box-sizing: border-box;
+    // Slightly richer than the plain droplet grey -- a hair of depth so the
+    // tool reads as its own surface, not a generic menu.
+    background: linear-gradient(180deg, #242424 0%, #1c1c1c 100%);
+    border-color: #3a3a3a;
+}
+
+.mt-droplet-body {
+    display: flex;
+    flex-direction: column;
+}
+
+.mt-droplet-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #f0f0f0;
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    margin-bottom: 12px;
+}
+
+.mt-droplet-head-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    background: $mt-accent-soft;
+    color: $mt-accent;
+}
+
+// --- Tab bar ----------------------------------------------------------------
+// Tabs are direct flex children (never Tooltip-wrapped -- see the tsx header
+// comment) so flex:1 actually distributes them across the full bar width.
+// The active pill is a Framer `layoutId` motion.span (.mt-tab-ind) that
+// slides between tabs; the icon+label (.mt-tab-inner) sit above it.
+.mt-tabs {
+    display: flex;
+    gap: 2px;
+    padding: 3px;
+    background: #161616;
+    border: 1px solid #303030;
+    border-radius: 9px;
+    margin-bottom: 14px;
+}
+
+.mt-tab {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    color: #8a8a8a;
+    padding: 0;
+    cursor: pointer;
+    transition: color 0.15s ease;
+
+    &:hover:not(.active) { color: #ccc; }
+
+    &.active { color: #08201d; }
+}
+
+.mt-tab-ind {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    border-radius: 6px;
+    background: linear-gradient(180deg, #5fdccf 0%, #3fbcae 100%);
+    box-shadow: 0 2px 8px $mt-accent-glow, inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.mt-tab-inner {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 7px 0 6px;
+}
+
+.mt-tab-label {
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.mt-tab-content {
+    // Reserve a stable minimum height so switching tabs doesn't make the
+    // popover jump size between the short (transform) and taller (anchor/
+    // ease) tabs. Also the positioning context for the animated pane.
+    position: relative;
+    min-height: 196px;
+}
+
+.mt-tab-pane {
+    width: 100%;
+}
+
+.mt-section {
+    display: flex;
+    flex-direction: column;
+}
+
+.mt-section-label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.7px;
+    text-transform: uppercase;
+    color: #8a8a8a;
+    margin-bottom: 9px;
+
+    // Teal dot, matching the app's own form-tool section headings.
+    &::before {
+        content: "";
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: $mt-accent;
+        box-shadow: 0 0 6px $mt-accent-glow;
+        flex-shrink: 0;
+    }
+
+    &--sub { margin-top: 15px; }
+}
+
+.mt-shift-hint {
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    text-transform: none;
+    color: #666;
+    font-size: 9.5px;
+}
+
+.mt-hint {
+    margin: 12px 0 0;
+    color: #7a7a7a;
+    font-size: 10px;
+    line-height: 1.45;
+
+    &--copied {
+        margin-top: 6px;
+        color: $mt-accent;
+    }
+
+    em { color: $mt-accent; font-style: normal; font-weight: 600; }
+}
+
+// --- Anchor 3x3 grid --------------------------------------------------------
+// Fills the panel's full content width (three equal 1fr tracks) rather than
+// floating small and centered. Cells are direct grid children (no Tooltip
+// wrapper -- see the tsx) so they stretch to their track by grid's default
+// align/justify: stretch.
+.mt-anchor-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 58px);
+    width: 100%;
+    border: 1px solid #3d3d3d;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.mt-anchor-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    background: #1c1c1c;
+    border: none;
+    border-right: 1px solid #333;
+    border-bottom: 1px solid #333;
+    cursor: pointer;
+    transition: background 0.12s ease;
+
+    &:nth-child(3n) { border-right: none; }
+    &:nth-child(n+7) { border-bottom: none; }
+
+    &:hover {
+        background: $mt-accent-soft;
+        .mt-anchor-dot { background: $mt-accent; transform: scale(1.5); box-shadow: 0 0 8px $mt-accent-glow; }
+    }
+
+    &--center {
+        background: #1f1f1f;
+        .mt-anchor-dot { width: 8px; height: 8px; }
+    }
+}
+
+.mt-anchor-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #9a9a9a;
+    transition: background 0.12s ease, transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+// --- Rows of icon buttons ---------------------------------------------------
+.mt-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+
+    // Buttons stretch to share the row's full width instead of huddling
+    // left at their fixed size -- used by the align/distribute rows and both
+    // nudge rows.
+    &--fill .mt-icon-btn {
+        flex: 1;
+        width: auto;
+        min-width: 34px;
+    }
+}
+
+.mt-icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    background: $mt-surface;
+    border: 1px solid #383838;
+    border-radius: 7px;
+    color: #cfcfcf;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.08s ease;
+
+    &:hover {
+        background: $mt-accent-soft;
+        border-color: $mt-accent;
+        color: $mt-accent;
+    }
+    &:active { transform: translateY(1px); }
+}
+
+.mt-divider {
+    width: 1px;
+    height: 20px;
+    background: #383838;
+    margin: 0 3px;
+    flex-shrink: 0;
+}
+
+// --- Text buttons (Group, primary Sequence) ---------------------------------
+.mt-text-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    background: $mt-surface;
+    border: 1px solid #383838;
+    border-radius: 7px;
+    color: #cfcfcf;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 0 12px;
+    height: 34px;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+
+    &--grow { flex: 1; }
+
+    &:hover:not(:disabled) { background: $mt-accent-soft; border-color: $mt-accent; color: $mt-accent; }
+    &:disabled { opacity: 0.4; cursor: default; }
+}
+
+.mt-primary-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 12px;
+    background: linear-gradient(180deg, #5fdccf 0%, #3fbcae 100%);
+    border: 1px solid $mt-accent;
+    color: #08201d;
+    border-radius: 7px;
+    padding: 9px;
+    font-size: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 2px 8px $mt-accent-glow;
+    transition: filter 0.15s ease, transform 0.08s ease;
+
+    &:hover { filter: brightness(1.08); }
+    &:active { transform: translateY(1px); }
+}
+
+// --- Ease buttons -----------------------------------------------------------
+.mt-row-ease {
+    margin-top: 8px;
+    gap: 6px;
+}
+
+.mt-ease-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: $mt-surface;
+    border: 1px solid #383838;
+    border-radius: 7px;
+    color: #cfcfcf;
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 8px 4px;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+
+    &:hover { background: $mt-accent-soft; border-color: $mt-accent; color: $mt-accent; }
+
+    // The eraser (remove-expression) button: icon-only, doesn't compete
+    // with Overshoot/Bounce for width, and hovers red (it removes things)
+    // instead of the accent teal.
+    &--remove {
+        flex: 0 0 34px;
+
+        &:hover { background: rgba(224, 122, 122, 0.12); border-color: #e07a7a; color: #e07a7a; }
+    }
+}
+
+// --- Transform tab toolbar (step field + hint) --------------------------------
+.mt-transform-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 2px;
+}
+
+.mt-field--step {
+    span:first-child { min-width: auto; }
+
+    input { width: 54px; }
+}
+
+// --- Sequence fields --------------------------------------------------------
+.mt-seq-row {
+    margin-bottom: 11px;
+}
+
+.mt-field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: #aaa;
+
+    span:first-child { min-width: 42px; }
+
+    input {
+        width: 62px;
+        background: #191919;
+        border: 1px solid #383838;
+        color: #eee;
+        border-radius: 6px;
+        padding: 6px 8px;
+        font-size: 12px;
+        box-sizing: border-box;
+
+        &:focus { outline: none; border-color: $mt-accent; box-shadow: 0 0 0 2px $mt-accent-glow; }
+    }
+}
+
+.mt-field-unit { color: #777; }
+
+// --- Excite strength slider -------------------------------------------------
+.mt-slider-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 10.5px;
+    color: #999;
+
+    span:first-child { min-width: 48px; }
+}
+
+.mt-slider-value {
+    min-width: 16px;
+    text-align: right;
+    color: $mt-accent;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.mt-slider {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 5px;
+    border-radius: 3px;
+    background: #333;
+    cursor: pointer;
+
+    &::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 15px;
+        height: 15px;
+        border-radius: 50%;
+        background: $mt-accent;
+        border: 2px solid #08201d;
+        box-shadow: 0 0 6px $mt-accent-glow;
+        cursor: pointer;
+    }
+}
+
+.mt-error {
+    margin: 13px 0 0;
+    padding: 8px 10px;
+    background: rgba(224, 122, 122, 0.08);
+    border: 1px solid rgba(224, 122, 122, 0.3);
+    border-radius: 6px;
+    color: #e79a9a;
+    font-size: 10.5px;
+    line-height: 1.45;
+}

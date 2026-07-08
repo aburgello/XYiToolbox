@@ -1,0 +1,275 @@
+// =============================================================================
+// src/js/main/tools/WrikeTasks.scss
+// -----------------------------------------------------------------------------
+// Bespoke styling for the Wrike Tasks feature -- task cards, status pills,
+// description/links. The "Connect" form still borrows formTool.scss's
+// field-row/button/loc-status/h3 primitives (imported alongside this file
+// in WrikeTasks.tsx) rather than reinventing them -- only what's genuinely
+// new to this tool (task cards, pills, description block) lives here, same
+// split OVLibrary.scss/LocalisedLibrary.scss use for their own bespoke bits.
+//
+// Not tied to a category color (--cat-*) -- this tool isn't campaign-phase
+// specific, same reasoning DeliveryHub's fixed orange uses -- so it gets its
+// own fixed accent instead of inheriting whatever category it happens to be
+// viewed under. The home-screen launch button that leads here
+// (.wrike-launch-button) uses this same accent -- see main.scss.
+// =============================================================================
+$wrike-accent: #3fb774;
+
+@mixin status-pill($bg, $fg) {
+    background: $bg;
+    color: $fg;
+}
+
+.wrike-status-pill {
+    flex-shrink: 0;
+    display: inline-block;
+    border-radius: 3px;
+    padding: 1px 6px;
+    font-size: 8.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+
+    &--active    { @include status-pill(rgba(63, 183, 116, 0.18), #6bcf7f); }
+    &--completed { @include status-pill(rgba(255, 255, 255, 0.08), #999); }
+    &--deferred  { @include status-pill(rgba(251, 191, 36, 0.16), #fbbf24); }
+    &--cancelled { @include status-pill(rgba(224, 122, 122, 0.16), #e07a7a); }
+}
+
+.wrike-user-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    font-size: 11px;
+    color: #aaa;
+}
+
+.wrike-user-avatar {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, $wrike-accent, #1c6b40);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    font-weight: 700;
+}
+
+.wrike-inline-error {
+    margin-top: 8px;
+    font-size: 11px;
+    color: #e07a7a;
+}
+
+// --- Task list ---------------------------------------------------------------
+.wrike-task-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.wrike-empty {
+    font-size: 11px;
+    color: #777;
+    padding: 6px 0;
+}
+
+.wrike-task-card {
+    background: #1e1e1e;
+    border: 1px solid #2c2c2c;
+    border-left: 3px solid #3a3a3a;
+    border-radius: 6px;
+    overflow: hidden;
+    transition: border-color 0.15s ease;
+
+    &--active { border-left-color: $wrike-accent; }
+}
+
+.wrike-task-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    width: 100%;
+    background: none;
+    border: none;
+    color: #ddd;
+    padding: 7px 9px;
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover { background: rgba(255, 255, 255, 0.04); }
+
+    > svg:first-child { flex-shrink: 0; color: #777; }
+}
+
+.wrike-task-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+}
+
+.wrike-task-meta {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.wrike-count-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 9.5px;
+    color: #888;
+
+    svg { flex-shrink: 0; }
+}
+
+.wrike-due-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    border-radius: 3px;
+    padding: 1px 6px;
+    font-size: 8.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #aaa;
+
+    svg { flex-shrink: 0; }
+
+    // "Due today" is the one that actually needs to grab the eye --
+    // "Tomorrow" stays neutral so it doesn't compete with it.
+    &--today {
+        background: rgba(63, 183, 116, 0.18);
+        color: $wrike-accent;
+    }
+}
+
+// This tool has no --cat-icon context of its own (not tied to a category,
+// and the home-screen mount has no category wrapper at all), so
+// CheckboxToggle.scss's default fallback would use the generic blue
+// --ov-accent -- override to the same green as everything else here.
+.wrike-due-toggle.active {
+    color: $wrike-accent;
+}
+
+.wrike-task-link {
+    flex-shrink: 0;
+    display: inline-flex;
+    color: #777;
+
+    &:hover { color: $wrike-accent; }
+}
+
+.wrike-task-body {
+    padding: 2px 12px 10px 30px;
+    border-top: 1px solid #2a2a2a;
+}
+
+.wrike-detail-section {
+    margin-top: 8px;
+}
+
+.wrike-detail-label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 4px;
+
+    svg { color: $wrike-accent; }
+}
+
+.wrike-description-text {
+    margin: 0;
+    font-size: 11px;
+    line-height: 1.5;
+    color: #ccc;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.wrike-links-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 6px;
+}
+
+.wrike-link-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: $wrike-accent;
+    text-decoration: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    svg { flex-shrink: 0; }
+    &:hover { text-decoration: underline; }
+}
+
+.wrike-attachment-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: #ccc;
+    padding: 2px 0;
+
+    svg { flex-shrink: 0; color: #888; }
+}
+
+.wrike-subtask-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: #ccc;
+    padding: 2px 0;
+
+    span:first-of-type {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+}
+
+.wrike-show-more {
+    background: none;
+    border: none;
+    color: $wrike-accent;
+    font-size: 10.5px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 3px 0 0;
+
+    &:hover { text-decoration: underline; }
+}
+
+.wrike-detail-loading,
+.wrike-detail-empty {
+    font-size: 10.5px;
+    color: #666;
+}

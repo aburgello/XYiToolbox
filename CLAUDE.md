@@ -2276,3 +2276,176 @@ All fixed, `tsc -p tsconfig-build.json --noEmit` is clean again:
   new code broke it -- check whether it's this same rAF-throttling
   artifact first**, especially if the same page renders correctly after
   simply waiting or in a real foregrounded browser tab.
+
+## Wrike Tasks (unhooked, code kept)
+A real feature (not a stub) -- sign in with a Wrike permanent API token,
+see your assigned Active tasks, filter to due today/tomorrow, expand one
+for its description (+ any links found in it), PDF attachments, and
+subtasks. Talks to Wrike directly over Node's `https` module (NOT
+`fetch()` -- Wrike's API isn't CORS-friendly for arbitrary browser calls;
+this panel's `--enable-nodejs` CEP param sidesteps that entirely). Was
+tested against a real account and worked, including a real bug fix
+(`fields=["description"]` turned out to be an invalid request -- Wrike
+rejects it with a 400 because `description` is already a default field on
+the single-task endpoint, not opt-in like `subTaskIds` -- fixed by
+dropping the `fields` param for that one call).
+
+**As of this note, deliberately DISCONNECTED from the UI** -- the user
+asked to "unhook" it while they decide whether to keep building on it, not
+because anything was broken. Explicitly NOT deleted, same
+"orphaned-but-kept, don't delete" treatment this file already gives
+`XYi_OpenComp.jsx`/`XYi_MCIt.jsx` -- don't clean this up as dead code
+without asking first.
+- **What was actually removed**: `toolRegistry.tsx`'s `WrikeTasksTool`
+  lazy import, its `PREFETCH_MAP` entry, and its `TOOLS` array entry (so
+  it's gone from every category list, search, and ⌘K) -- and
+  `HomeScreen.tsx`'s full-width "Your Wrike" launch button (+ its now-
+  unused `KeyRound`/`ArrowRight` imports) that used to sit below the four
+  category cards.
+- **What was deliberately left in place, fully intact**:
+  `tools/WrikeTasks.tsx` + `WrikeTasks.scss`, `hooks/useWrikeTasks.ts`,
+  `lib/utils/wrikeApi.ts` (the Node-based Wrike API client), and
+  `aeft/shell.ts`'s `loadWrikeApiToken`/`saveWrikeApiToken`
+  (`app.settings` key `"WrikeApiToken"`) -- all still there, still
+  type-check clean, just nothing imports/renders them anymore. A
+  previously-saved token (if the user connected before this) is still
+  sitting in `app.settings` untouched.
+  - Note: `loadWrikeUserId`/`saveWrikeUserId` (key `"WrikeUserId"`,
+    `shell.ts`) is a SEPARATE, unrelated feature (a free-typed ID field
+    used by Timesheet Tracker's JSON export) that predates this feature
+    and was never part of it -- don't touch it if re-wiring/removing
+    Wrike Tasks later, and don't confuse the two keys.
+  - `main.scss`'s `.wrike-launch-button` rule was also left in place
+    (harmless dead CSS with no button referencing it right now) rather
+    than hunted down and deleted -- same reasoning the CheckboxToggle
+    rollout note above gives for its own leftover dead selectors.
+- **To re-enable**: re-add the `WrikeTasksTool` lazy import + its
+  `PREFETCH_MAP` line + its `TOOLS` entry in `toolRegistry.tsx` (the
+  removed block's comment there points back to this note), and re-add
+  the "Your Wrike" button in `HomeScreen.tsx` below `.category-row` (the
+  `.wrike-launch-button` CSS is still there waiting for it). Nothing
+  else needs to change -- the feature itself was never touched.
+
+## Motion Tools (new, home-screen tabbed droplet)
+A quick-access popover for the layer actions motion designers reach for
+constantly, triggered by a button to the LEFT of the home screen's search
+box (`HomeScreen.tsx`'s `.search-box-row`, `MotionToolsDroplet.tsx` -- a
+`Move`-icon trigger reusing `.favorites-toggle`, opening via the existing
+`Droplet.tsx` anchored-popover primitive). Built fresh for this app (not a
+port of anything in `toolset/`) -- asked for with "complete freedom" but
+one hard requirement (anchor point tools), then explicitly asked to be
+"way cooler, like Motion Tools Pro / the best Motion 2 stuff", so it was
+expanded from a flat bar into a **5-tab panel** modeled on Mister Horse's
+Motion 2 / aescripts' Motion Tools Pro feature set. Backend:
+`src/jsx/aeft/motionTools.ts` (barrel-exported from `aeft.ts`). Everything
+operates on the active comp's `selectedLayers` (or `selectedProperties`,
+for Excite) -- no file dialogs, no master files, pure in-comp edits, each
+in its own `beginUndoGroup`.
+
+The panel pushes Motion Tools' teal into the shared `--cat-*` CSS vars
+inline (`MT_ACCENT_VARS` in the tsx, mirrored by `$mt-accent` in the scss
+-- keep the two literals in sync) so `SegmentedToggle`/`CheckboxToggle`,
+which key off `--cat-*`, adopt the tool's colour instead of the fallback
+blue.
+
+**Layout trap that shipped TWICE here before being written down: never
+wrap this panel's stretch-sized elements (tabs, anchor grid cells, nudge
+buttons) in `<Tooltip>`.** Tooltip's inner span carries `flex: 0 0 auto
+!important` (needed for its own positioning fix -- see Tooltip.tsx's
+header), which silently defeats any `flex: 1`/grid-stretch sizing on the
+wrapped element: first the anchor cells rendered tiny and centered, then
+the tab bar's five `flex: 1` tabs collapsed to intrinsic width and smashed
+to one side. Both fixed by dropping the Tooltip wrapper and using a native
+`title` attribute for the hover label instead (`.mt-row--fill` +
+un-wrapped children is the working pattern). If some future element in
+this panel refuses to fill its row, check for a Tooltip wrapper first.
+
+**Visual layer is Framer Motion** (`motion/react`): the active tab is a
+sliding `layoutId="mt-tab-ind"` pill (same technique as `SegmentedToggle`),
+and each tab pane is a `motion.div` keyed on the active tab that fades/
+slides in. Deliberately **no `AnimatePresence mode="wait"`** for the panes
+-- that pattern wedges under the preview harness's rAF throttling (the
+sliding pill's position also stalls mid-animation in preview and only
+settles once; both animate normally in real AE). A plain key-remount fade
+avoids depending on exit animations firing. `useReducedMotion()` collapses
+both to instant. Tabs:
+
+- **Anchor** -- `motionToolsSnapAnchor(relX, relY)`. The required part. A
+  3x3 reference grid (Photoshop/Figma anchor-selector language) that snaps
+  each selected AVLayer's anchor to a corner/edge/center of its own
+  content box (`sourceRectAtTime`, independent of current anchor/position)
+  and auto-compensates Position so the layer never jumps. Compensation
+  accounts for current Scale and Z Rotation. **Known approximation,
+  flagged in code**: a 3D layer also rotated on X/Y or with a non-default
+  Orientation is only Z-compensated, so slightly off for that one case;
+  exact for every 2D layer and any 3D layer rotated only on Z.
+- **Align** -- `motionToolsAlign(edge, relativeTo)` +
+  `motionToolsDistribute(axis)` + `motionToolsGroup()`. Align 6
+  edges/centers to either the **Composition** or the **Selection**'s
+  own union bounds (a `SegmentedToggle` picks which); distribute 3+
+  layers evenly by center on H/V; Group parents the selection to a new
+  null placed at their collective-bounds center. **The Group no-jump
+  trick**: the null is given `anchorPoint == position ==` that center,
+  which makes it an identity transform, so parenting children to it keeps
+  them exactly in place while still giving one pivot handle -- don't
+  "simplify" this by leaving the null at its default anchor, that
+  reintroduces the jump. Align/distribute use `getLayerBounds()` (a
+  comp-space AABB from `sourceRectAtTime` + anchor/position/scale,
+  rotation deliberately ignored like every align tool). **Parenting
+  caveat, flagged in code**: a parented layer's Position is in parent
+  space, so aligning one to the comp mixes coordinate spaces and will be
+  off -- same limitation Motion 2 has.
+- **Transform** -- the nudge bar. Position (arrows), Scale/Rotation/
+  Opacity (±/rotate). **Hold-to-repeat** (`RepeatButton` in the tsx: fires
+  once on pointerdown, then repeats every 100ms after a 350ms hold --
+  added after direct feedback that click-per-step was "a million clicks";
+  repeat ticks are gated on the previous evalTS call settling via a
+  `busyRef` so a slow bridge can't queue stale nudges that keep landing
+  after release). A **Step field** sets the per-tick amount; **Shift =
+  10x** that step (`e.shiftKey` captured at pointerdown, matching AE's own
+  arrow-key convention). Adds a keyframe at the current time only if the
+  property is already animated, else sets the static value.
+- **Sequence** -- `motionToolsSequence(frames, reverse)`. Staggers the
+  selected layers in time (Motion 2's "Shifter" in miniature), ordered
+  top-to-bottom by layer index (not selection order), `reverse` flips it.
+  Anchored to the earliest current `startTime` in the selection so the
+  cascade stays put rather than snapping to 0. Whole-frame snapped via
+  `frameDuration`.
+- **Ease** -- two halves. **Easy Ease** (`motionToolsApplyEase`): a
+  `SegmentedToggle` picks the property, In/Out/Both apply AE's Easy Ease
+  (`KeyframeEase(0, 33)`) to `Property.selectedKeys`, falling back to
+  `nearestKeyIndex(comp.time)` if no keys are box-selected -- a small
+  improvement over native F9's "does nothing if nothing's selected".
+  **Excite** (`motionToolsExcite(type, strength)`): the Motion 2 headline
+  -- adds an **overshoot (signed elastic) or bounce (abs) expression** to
+  whatever properties are selected in the timeline (`selectedProperties`,
+  filtered to `PropertyType.PROPERTY` + `canSetExpression` +
+  **`numKeys>=2`**). The expression rings out AFTER the last keyframe
+  (keyframed motion itself untouched -- you have to scrub PAST the last
+  key to see anything, now stated in the UI hint); a 1-10 strength slider
+  tunes freq/decay (`exciteExpression()`), and an eraser button
+  (`motionToolsExciteRemove`) clears expressions off the selected
+  properties. **Real bug found by the user's first AE test ("did nothing
+  on 2 keyframes"), fixed**: v1 sampled `velocityAtTime()` a tenth of a
+  frame before the last key -- with easy-eased keys (the default state of
+  most real keys, and exactly what our own Ease buttons produce) velocity
+  is ~0 there, so the ring-out amplitude was ~0 and invisible. Now uses
+  the AVERAGE velocity across the final keyframe segment
+  (`(key(n).value - key(n-1).value) / segment duration`), which captures
+  the size/speed of the move into the last key regardless of easing --
+  and is why >= 2 keys are required (need a segment to average).
+- **Error surface**: a local inline error line at the bottom of the
+  droplet (`evalTSSafe`'s `.error`), not the app-wide toast stack -- the
+  one home-screen feature with no toast stack to plug into.
+- **Untestable in browser preview beyond "calls evalTSSafe and shows an
+  error"** -- like every ExtendScript-only feature here, the actual
+  transform/expression math needs a real AE session with real layers to
+  verify. Confirmed in preview that all 5 tabs render/switch correctly and
+  that the no-bridge failure surfaces the same raw `"Cannot read
+  properties of undefined (reading 'evalScript')"` every other
+  `evalTSSafe` button already shows there (checked against the pre-existing
+  "Turk It" button) -- a pre-existing no-bridge quirk, not a Motion Tools
+  bug. **Still needs a real-AE pass** on: the anchor no-jump math across
+  layer types, align/distribute against real multi-layer selections, the
+  Group identity-null trick, and the two Excite expressions actually
+  ringing out as intended.
