@@ -187,7 +187,12 @@
         width: 100%;
         box-sizing: border-box;
         text-align: left;
-        background: var(--cat-glow, rgba(45, 212, 191, 0.12));
+        // Fixed low alpha, not var(--cat-glow) -- same fix as
+        // .ll-jpgpng-toggle below: --cat-glow resolves to a real 0.35-alpha
+        // value via category inheritance (tuned for hover-shadow strength
+        // elsewhere), which made this render as a near-solid block instead
+        // of a subtle highlight.
+        background: rgba(45, 212, 191, 0.08);
         border: 1px dashed var(--cat-border, #2dd4bf);
         border-radius: 6px;
         padding: 8px 10px;
@@ -445,13 +450,29 @@
     }
 
     // ── JPG_PNG lazy browse section (below the regular folder list) ─────────
-    // Deliberately visually distinct from .ll-folder-row -- a dashed border
-    // (echoing .ll-new-folder's "this is an action, not existing data" look)
-    // and a small margin-top separating it from the folder list above, so
-    // it reads as its own zone, not one more entry in the same list.
+    // First pass just swapped a solid border for a dashed one, which read as
+    // "basically the same row" at a glance -- fixed on direct feedback with
+    // a heavier hand: a tinted background WASH at rest (not just on hover,
+    // like the plain folder rows), an accent-colored border already visible
+    // before hovering, an icon in its own small badge instead of a bare
+    // glyph, a bold label, and a tiny "LIVE FOLDER BROWSE" caption above the
+    // whole thing -- same micro-label treatment .ll-section-title's
+    // siblings use elsewhere, so the eye gets a "this is a different KIND
+    // of thing" signal before it even reaches the row itself. Still keeps
+    // the dashed border everyone liked -- only what surrounds it changed.
     .ll-jpgpng-section {
         flex-shrink: 0;
-        margin-top: 10px;
+        margin-top: 14px;
+    }
+
+    .ll-jpgpng-caption {
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.6px;
+        text-transform: uppercase;
+        color: var(--cat-icon, #5eead4);
+        opacity: 0.8;
+        margin-bottom: 5px;
     }
 
     .ll-jpgpng-toggle {
@@ -461,26 +482,50 @@
         width: 100%;
         box-sizing: border-box;
         text-align: left;
-        background: #1f1f1f;
-        border: 1px dashed #3f3f3f;
+        // Deliberately NOT var(--cat-glow) for the resting background --
+        // that var is tuned for hover-shadow strength elsewhere in this
+        // app (0.35 alpha for the "localise" category) and made this row
+        // look like a solid teal block sitting permanently in the folder
+        // list, the opposite of "easier to scan" -- confirmed via a real
+        // screenshot, not assumed. A fixed, genuinely low alpha instead;
+        // --cat-glow is still used for the (stronger, correct) hover state.
+        background: rgba(45, 212, 191, 0.07);
+        border: 1px dashed var(--cat-border, #2dd4bf);
         border-radius: 6px;
         padding: 8px 10px;
-        color: #ccc;
+        color: #eee;
         cursor: pointer;
-        transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+        transition: background 0.15s ease, transform 0.12s ease;
 
         &:hover {
-            background: #262626;
-            border-color: var(--cat-border, #2dd4bf);
+            background: var(--cat-glow, rgba(45, 212, 191, 0.18));
+            transform: translateX(2px);
 
-            .ll-chevron { color: var(--cat-icon, #5eead4); }
+            .ll-chevron { color: var(--cat-icon, #5eead4); transform: translateX(1px); }
         }
+    }
+
+    .ll-jpgpng-icon-badge {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        flex-shrink: 0;
+        border-radius: 5px;
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--cat-icon, #5eead4);
+    }
+
+    .ll-jpgpng-toggle .ll-folder-name {
+        font-weight: 700;
     }
 
     .ll-jpgpng-hint {
         flex-shrink: 0;
         font-size: 10px;
-        color: #777;
+        color: var(--cat-icon, #7fe9db);
+        opacity: 0.75;
     }
 
     .ll-jpgpng-batches {
@@ -493,6 +538,40 @@
         // JPG_PNG toggle they belong to -- same "this is a sub-list, not a
         // sibling" cue a nested tree view uses.
         border-left: 2px solid #333;
+    }
+
+    // ── JPG_PNG level-view breadcrumbs (batch -> subfolder -> ...) ───────────
+    .ll-jpgpng-crumbs {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 3px;
+        flex-shrink: 0;
+        margin-bottom: 8px;
+        font-size: 11px;
+    }
+
+    .ll-jpgpng-crumb {
+        background: none;
+        border: none;
+        padding: 0;
+        color: var(--cat-icon, #5eead4);
+        cursor: pointer;
+
+        &:hover { text-decoration: underline; }
+
+        &-current {
+            color: #eee;
+            font-weight: 600;
+            cursor: default;
+
+            &:hover { text-decoration: none; }
+        }
+    }
+
+    .ll-jpgpng-crumb-sep {
+        color: #555;
+        flex-shrink: 0;
     }
 
     // ── Components view ─────────────────────────────────────────────────────
@@ -563,6 +642,19 @@
         flex-direction: column;
         gap: 3px;
         padding-right: 2px;
+
+        // The JPG_PNG level view renders .ll-folder-row (subfolders)
+        // directly inside this flex COLUMN, mixed in with .ll-comp-row
+        // (files) -- but .ll-folder-row's own `flex: 1` was written for
+        // its ORIGINAL context, a flex ROW (.ll-folder-row-wrap, sitting
+        // beside a delete button) where flex:1 means "fill available
+        // WIDTH". In a flex column that same rule means "fill available
+        // HEIGHT" instead, which stretched one subfolder row to consume
+        // almost the entire list (confirmed via inspect: a 663px tall
+        // button). Reset it back to its own content size here.
+        > .ll-folder-row {
+            flex: 0 0 auto;
+        }
     }
 
     .ll-empty {

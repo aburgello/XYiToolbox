@@ -126,28 +126,43 @@ const MOCK_CODES: Record<string, string> = { France: "FR", Germany: "DE", Spain:
 // every other MOCK_* constant here -- real detection needs a real saved
 // project file, which preview mode never has.
 const MOCK_DETECTED_TERRITORY: Record<string, string | null> = { ODY_INTL_DGTL_DOOH_HORSE: "France", GLADIATOR_II_DOOH: null };
-// Demonstrates the lazy JPG_PNG batch browse in preview -- keyed by
-// territory, since a real scan is also territory-scoped. Germany
-// deliberately has no entry (falls back to []) to demonstrate the "no
-// JPG_PNG folder found" empty state.
-const MOCK_JPG_PNG_BATCHES: Record<string, string[]> = {
-    France: ["Batch_1", "Batch_1_Post", "Batch_2", "Batch_2_Post", "Bespoke"],
+// Stand-in for "the AE project currently open" in preview (real detection
+// reads app.project.file, which doesn't exist there) -- "poster" matches
+// Poster_Creative_FR/Poster_1Sheet_FR.jpg so the suggestion has something
+// real to point at once you're a level deep.
+const MOCK_OPEN_PROJECT_HINT = "poster";
+// Demonstrates the lazy, one-level-at-a-time JPG_PNG browse in preview --
+// keyed by territory for the root level, and by "territory/breadcrumb
+// path" for anything drilled into, matching how the real handlers below
+// build a level key. Germany deliberately has no entry (falls back to
+// the "no JPG_PNG folder found" empty state). Batch_1 has its own nested
+// subfolder (Poster_Creative_FR) to demonstrate drilling more than one
+// level deep -- the exact case that used to get silently flattened.
+interface JpgPngLevel { folders: string[]; files: { name: string; path: string }[]; }
+const MOCK_JPG_PNG_ROOT: Record<string, JpgPngLevel> = {
+    France: { folders: ["Batch_1", "Batch_1_Post", "Batch_2", "Bespoke"], files: [] },
 };
-const MOCK_JPG_PNG_FILES: Record<string, { name: string; path: string }[]> = {
-    Batch_1: [
-        { name: "Poster_1Sheet_FR.jpg", path: "/mock/HORSE/Markets/France/JPG_PNG/Batch_1/Poster_1Sheet_FR.jpg" },
-        { name: "Logo_Transparent_FR.png", path: "/mock/HORSE/Markets/France/JPG_PNG/Batch_1/Logo_Transparent_FR.png" },
-    ],
-    Batch_1_Post: [
-        { name: "Poster_1Sheet_FR_v2.jpg", path: "/mock/HORSE/Markets/France/JPG_PNG/Batch_1_Post/Poster_1Sheet_FR_v2.jpg" },
-    ],
-    Batch_2: [
-        { name: "Billboard_FR.jpg", path: "/mock/HORSE/Markets/France/JPG_PNG/Batch_2/Billboard_FR.jpg" },
-    ],
-    Batch_2_Post: [],
-    Bespoke: [
-        { name: "Metro_Panel_FR.png", path: "/mock/HORSE/Markets/France/JPG_PNG/Bespoke/Metro_Panel_FR.png" },
-    ],
+const MOCK_JPG_PNG_LEVELS: Record<string, JpgPngLevel> = {
+    "France/Batch_1": {
+        folders: ["Poster_Creative_FR"],
+        files: [{ name: "Logo_Transparent_FR.png", path: "/mock/HORSE/Markets/France/JPG_PNG/Batch_1/Logo_Transparent_FR.png" }],
+    },
+    "France/Batch_1/Poster_Creative_FR": {
+        folders: [],
+        files: [{ name: "Poster_1Sheet_FR.jpg", path: "/mock/HORSE/Markets/France/JPG_PNG/Batch_1/Poster_Creative_FR/Poster_1Sheet_FR.jpg" }],
+    },
+    "France/Batch_1_Post": {
+        folders: [],
+        files: [{ name: "Poster_1Sheet_FR_v2.jpg", path: "/mock/HORSE/Markets/France/JPG_PNG/Batch_1_Post/Poster_1Sheet_FR_v2.jpg" }],
+    },
+    "France/Batch_2": {
+        folders: [],
+        files: [{ name: "Billboard_FR.jpg", path: "/mock/HORSE/Markets/France/JPG_PNG/Batch_2/Billboard_FR.jpg" }],
+    },
+    "France/Bespoke": {
+        folders: [],
+        files: [{ name: "Metro_Panel_FR.png", path: "/mock/HORSE/Markets/France/JPG_PNG/Bespoke/Metro_Panel_FR.png" }],
+    },
 };
 
 // Shimmer placeholder matching a real territory row's layout (pip + name +
@@ -187,21 +202,34 @@ const LocalisedLibraryTool = () => {
 
     // JPG_PNG lazy browse -- deliberately NOT part of `components`/the
     // persisted library (see localise.ts's removal note above
-    // llIsComponentsContainerName): a live, on-demand filesystem scan, two
-    // steps deep. `jpgPngScanned` gates re-scanning on every collapse/
-    // re-expand of the same territory -- once loaded, toggling the section
-    // just shows/hides the already-fetched batch list.
+    // llIsComponentsContainerName): a live, on-demand filesystem scan.
+    // `jpgPngScanned` gates re-scanning the ROOT on every collapse/
+    // re-expand of the same territory -- once loaded, toggling the
+    // section just shows/hides the already-fetched top-level listing.
     const [jpgPngExpanded, setJpgPngExpanded] = useState(false);
     const [jpgPngLoading, setJpgPngLoading] = useState(false);
     const [jpgPngScanned, setJpgPngScanned] = useState(false);
     const [jpgPngFolderPath, setJpgPngFolderPath] = useState<string | null>(null);
-    const [jpgPngBatches, setJpgPngBatches] = useState<string[]>([]);
-    // Second drill level: files inside ONE selected batch, fetched fresh
-    // every time a batch is opened (bounded to a single folder, so unlike
-    // the batch list above there's no benefit to caching this).
-    const [selectedJpgPngBatch, setSelectedJpgPngBatch] = useState<string | null>(null);
-    const [jpgPngBatchLoading, setJpgPngBatchLoading] = useState(false);
-    const [jpgPngBatchFiles, setJpgPngBatchFiles] = useState<{ name: string; path: string }[]>([]);
+    const [jpgPngRootFolders, setJpgPngRootFolders] = useState<string[]>([]);
+    const [jpgPngRootFiles, setJpgPngRootFiles] = useState<{ name: string; path: string }[]>([]);
+
+    // Drilling below the root: one entry per level descended into (a
+    // batch, then any subfolder inside it, etc.) -- NOT capped at one
+    // level deep, since a real batch's own internal structure varies
+    // (some are flat, some nest a subfolder per creative). Each entry's
+    // `path` is the full on-disk folder path at that level; `label` is
+    // just its own folder name, kept separately so breadcrumbs don't
+    // have to re-derive a name from a full path. [] means "at the root
+    // listing" (jpgPngRootFolders/jpgPngRootFiles above).
+    const [jpgPngStack, setJpgPngStack] = useState<{ label: string; path: string }[]>([]);
+    const [jpgPngLevelLoading, setJpgPngLevelLoading] = useState(false);
+    const [jpgPngLevelFolders, setJpgPngLevelFolders] = useState<string[]>([]);
+    const [jpgPngLevelFiles, setJpgPngLevelFiles] = useState<{ name: string; path: string }[]>([]);
+    // "Current file" quick-access suggestion at whichever level is being
+    // viewed -- see localise.ts's suggestJpgPngMatch() for the matching
+    // logic and why it's deliberately conservative (null far more often
+    // than not, by design).
+    const [jpgPngSuggestion, setJpgPngSuggestion] = useState<string | null>(null);
 
     const [loadingTerritories, setLoadingTerritories] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -323,22 +351,25 @@ const LocalisedLibraryTool = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedTerritory]);
 
-    // Fresh territory, fresh JPG_PNG browse -- a batch list scanned for
+    // Fresh territory, fresh JPG_PNG browse -- a listing scanned for
     // France shouldn't linger when switching to Germany.
     useEffect(() => {
         setJpgPngExpanded(false);
         setJpgPngLoading(false);
         setJpgPngScanned(false);
         setJpgPngFolderPath(null);
-        setJpgPngBatches([]);
-        setSelectedJpgPngBatch(null);
-        setJpgPngBatchLoading(false);
-        setJpgPngBatchFiles([]);
+        setJpgPngRootFolders([]);
+        setJpgPngRootFiles([]);
+        setJpgPngStack([]);
+        setJpgPngLevelLoading(false);
+        setJpgPngLevelFolders([]);
+        setJpgPngLevelFiles([]);
+        setJpgPngSuggestion(null);
     }, [selectedTerritory]);
 
     useEffect(() => {
         setSelectedPaths(new Set());
-    }, [selectedTerritory, selectedFolder, selectedJpgPngBatch]);
+    }, [selectedTerritory, selectedFolder, jpgPngStack]);
 
     const refreshTerritories = async (camp: Campaign) => {
         setLoadingTerritories(true);
@@ -564,12 +595,13 @@ const LocalisedLibraryTool = () => {
         }
     };
 
-    // Expands the JPG_PNG section, scanning for its batch folders on first
-    // open only (jpgPngScanned gates re-fetching on every subsequent
-    // collapse/expand of the same territory). Not wrapped in safeEvalTS's
-    // usual toast-on-any-failure -- a genuinely empty/missing JPG_PNG
-    // folder is a normal, expected outcome for a territory that doesn't
-    // have print/OOH deliverables yet, not an error worth a red toast.
+    // Expands the JPG_PNG section, scanning its ROOT (immediate batch
+    // folders, same as before) on first open only (jpgPngScanned gates
+    // re-fetching on every subsequent collapse/expand of the same
+    // territory). Not wrapped in safeEvalTS's usual toast-on-any-failure
+    // -- a genuinely empty/missing JPG_PNG folder is a normal, expected
+    // outcome for a territory that doesn't have print/OOH deliverables
+    // yet, not an error worth a red toast.
     const handleToggleJpgPngSection = async () => {
         if (jpgPngScanned) {
             setJpgPngExpanded((v) => !v);
@@ -581,7 +613,9 @@ const LocalisedLibraryTool = () => {
         try {
             if (mockMode) {
                 setJpgPngFolderPath(`/mock/.../${selectedTerritory}/JPG_PNG`);
-                setJpgPngBatches(MOCK_JPG_PNG_BATCHES[selectedTerritory] || []);
+                const root = MOCK_JPG_PNG_ROOT[selectedTerritory];
+                setJpgPngRootFolders(root?.folders || []);
+                setJpgPngRootFiles(root?.files || []);
                 setJpgPngScanned(true);
                 return;
             }
@@ -589,7 +623,8 @@ const LocalisedLibraryTool = () => {
             const result = await safeEvalTS("scanJpgPngBatches", territoryPath);
             if (result) {
                 setJpgPngFolderPath(result.jpgPngPath ?? null);
-                setJpgPngBatches(result.batches || []);
+                setJpgPngRootFolders(result.batches || []);
+                setJpgPngRootFiles(result.files || []);
                 setJpgPngScanned(true);
             }
         } finally {
@@ -597,30 +632,91 @@ const LocalisedLibraryTool = () => {
         }
     };
 
-    // Opens one batch, scanning it fresh every time (unlike the batch list
-    // above, a single folder's contents are cheap enough that caching
-    // isn't worth the staleness risk -- someone could easily drop new
-    // exports into a batch folder between visits).
-    const handleOpenJpgPngBatch = async (batchName: string) => {
-        setSelectedJpgPngBatch(batchName);
-        setJpgPngBatchLoading(true);
-        setJpgPngBatchFiles([]);
+    // Scans ONE level (a batch, or any folder drilled into below it) and,
+    // if that level has anything in it, asks the backend whether the
+    // currently open AE project looks like it matches one of the names
+    // found there -- see suggestJpgPngMatch()'s own header for why this
+    // is deliberately conservative (comes back null far more often than
+    // not). Shared by both "open a batch from the root" and "open a
+    // subfolder while already inside one" -- the only difference is
+    // whether it's replacing the stack or appending to it, handled by
+    // the two callers below.
+    const loadJpgPngLevel = async (mockKey: string, path: string) => {
+        setJpgPngLevelLoading(true);
+        setJpgPngLevelFolders([]);
+        setJpgPngLevelFiles([]);
+        setJpgPngSuggestion(null);
         try {
             if (mockMode) {
-                setJpgPngBatchFiles(MOCK_JPG_PNG_FILES[batchName] || []);
+                const level = MOCK_JPG_PNG_LEVELS[mockKey];
+                setJpgPngLevelFolders(level?.folders || []);
+                setJpgPngLevelFiles(level?.files || []);
+                // Demonstrates the suggestion in preview too -- picks
+                // whichever mock name loosely matches the mock "open
+                // project" below, same real-vs-mock split every other
+                // decorative lookup in this file uses.
+                const names = [...(level?.folders || []), ...(level?.files || []).map((f) => f.name)];
+                setJpgPngSuggestion(names.find((n) => n.toLowerCase().includes(MOCK_OPEN_PROJECT_HINT)) || null);
                 return;
             }
-            if (!jpgPngFolderPath) return;
-            const batchPath = jpgPngFolderPath + "/" + batchName;
-            const result = await safeEvalTS("scanJpgPngBatchFiles", batchPath);
-            if (result && result.success) {
-                setJpgPngBatchFiles(result.files || []);
-            } else if (result) {
-                pushToast(result.error || "Could not read that batch folder.", "error");
+            const result = await safeEvalTS("scanJpgPngLevel", path);
+            if (!result || !result.success) {
+                if (result) pushToast(result.error || "Could not read that folder.", "error");
+                return;
+            }
+            const folders: string[] = result.folders || [];
+            const files: { name: string; path: string }[] = result.files || [];
+            setJpgPngLevelFolders(folders);
+            setJpgPngLevelFiles(files);
+            const names = [...folders, ...files.map((f) => f.name)];
+            if (names.length > 0) {
+                const suggestion = await quietEvalTS("suggestJpgPngMatch", names);
+                setJpgPngSuggestion(suggestion);
             }
         } finally {
-            setJpgPngBatchLoading(false);
+            setJpgPngLevelLoading(false);
         }
+    };
+
+    // From the root listing (a batch), or from one level down (a
+    // subfolder inside whatever's currently open) -- either way this
+    // pushes one new entry onto the stack and loads it. `parentPath` is
+    // the on-disk folder this name lives directly inside: jpgPngFolderPath
+    // from the root, or the current top of the stack otherwise.
+    const handleOpenJpgPngFolder = (name: string) => {
+        const parentPath = jpgPngStack.length > 0 ? jpgPngStack[jpgPngStack.length - 1].path : jpgPngFolderPath;
+        if (!parentPath && !mockMode) return;
+        const path = (parentPath || "") + "/" + name;
+        const mockKey = [selectedTerritory, ...jpgPngStack.map((s) => s.label), name].join("/");
+        setJpgPngStack((prev) => [...prev, { label: name, path }]);
+        loadJpgPngLevel(mockKey, path);
+    };
+
+    // Back out one level -- to the previous folder if there is one, or
+    // all the way back to the root batch listing if this was the first
+    // level drilled into.
+    const handleJpgPngBack = () => {
+        if (jpgPngStack.length <= 1) {
+            setJpgPngStack([]);
+            setJpgPngLevelFolders([]);
+            setJpgPngLevelFiles([]);
+            setJpgPngSuggestion(null);
+            return;
+        }
+        const newStack = jpgPngStack.slice(0, -1);
+        setJpgPngStack(newStack);
+        const mockKey = [selectedTerritory, ...newStack.map((s) => s.label)].join("/");
+        loadJpgPngLevel(mockKey, newStack[newStack.length - 1].path);
+    };
+
+    // Jump directly to a specific breadcrumb crumb (index into
+    // jpgPngStack) -- clicking anything other than the current (last)
+    // crumb.
+    const handleJpgPngBreadcrumb = (index: number) => {
+        const newStack = jpgPngStack.slice(0, index + 1);
+        setJpgPngStack(newStack);
+        const mockKey = [selectedTerritory, ...newStack.map((s) => s.label)].join("/");
+        loadJpgPngLevel(mockKey, newStack[newStack.length - 1].path);
     };
 
     const handleImport = async (path: string) => {
@@ -750,7 +846,7 @@ const LocalisedLibraryTool = () => {
     const componentsForFolder = componentsForTerritory.filter((c) => folderForComponent(c) === selectedFolder);
 
     const allSelected = componentsForFolder.length > 0 && selectedPaths.size === componentsForFolder.length;
-    const allJpgPngSelected = jpgPngBatchFiles.length > 0 && selectedPaths.size === jpgPngBatchFiles.length;
+    const allJpgPngSelected = jpgPngLevelFiles.length > 0 && selectedPaths.size === jpgPngLevelFiles.length;
 
     return (
         <div className="localised-library">
@@ -806,7 +902,7 @@ const LocalisedLibraryTool = () => {
 
                     <div className="ll-view-wrap">
                         <motion.div
-                            key={selectedFolder ? "components" : selectedJpgPngBatch ? "jpgpng-batch" : selectedTerritory ? "folders" : "territories"}
+                            key={selectedFolder ? "components" : jpgPngStack.length > 0 ? "jpgpng-batch" : selectedTerritory ? "folders" : "territories"}
                             className="ll-view"
                             initial={{ opacity: 0, x: selectedTerritory ? 16 : -16 }}
                             animate={{ opacity: 1, x: 0 }}
@@ -964,37 +1060,87 @@ const LocalisedLibraryTool = () => {
                                         <Plus size={14} /> Add Component…
                                     </button>
                                 </>
-                            ) : selectedJpgPngBatch ? (
-                                /* ── JPG_PNG batch files view ─────────────────── */
+                            ) : jpgPngStack.length > 0 ? (
+                                /* ── JPG_PNG level view (a batch, or any folder drilled
+                                     into below it) -- breadcrumb navigation since a
+                                     batch's own internal structure can nest more than
+                                     one level deep. ─────────────────────── */
                                 <>
-                                    <button className="ll-back" onClick={() => setSelectedJpgPngBatch(null)}>
-                                        <ArrowLeft size={13} /> JPG_PNG
+                                    <button className="ll-back" onClick={handleJpgPngBack}>
+                                        <ArrowLeft size={13} /> Back
                                     </button>
+
+                                    <div className="ll-jpgpng-crumbs">
+                                        <button className="ll-jpgpng-crumb" onClick={() => handleJpgPngBreadcrumb(-1)}>JPG_PNG</button>
+                                        {jpgPngStack.map((entry, i) => (
+                                            <React.Fragment key={entry.path}>
+                                                <ChevronRight size={11} className="ll-jpgpng-crumb-sep" />
+                                                {i === jpgPngStack.length - 1 ? (
+                                                    <span className="ll-jpgpng-crumb ll-jpgpng-crumb-current">{entry.label}</span>
+                                                ) : (
+                                                    <button className="ll-jpgpng-crumb" onClick={() => handleJpgPngBreadcrumb(i)}>{entry.label}</button>
+                                                )}
+                                            </React.Fragment>
+                                        ))}
+                                    </div>
 
                                     <div className="ll-comp-head">
                                         <div className="ll-comp-title">
-                                            <Image size={13} className="ll-folder-icon" /> {selectedJpgPngBatch}
+                                            <Image size={13} className="ll-folder-icon" /> {jpgPngStack[jpgPngStack.length - 1].label}
                                         </div>
-                                        <span className={jpgPngBatchFiles.length > 0 ? "ll-count has" : "ll-count"}>
-                                            {jpgPngBatchFiles.length}
+                                        <span className={jpgPngLevelFiles.length > 0 ? "ll-count has" : "ll-count"}>
+                                            {jpgPngLevelFiles.length}
                                         </span>
                                     </div>
 
-                                    {!jpgPngBatchLoading && jpgPngBatchFiles.length > 0 && (
-                                        <div className="ll-select-all" onClick={() => toggleSelectAllPaths(jpgPngBatchFiles.map((f) => f.path))}>
+                                    {!jpgPngLevelLoading && jpgPngSuggestion && (
+                                        <button
+                                            className="ll-suggestion"
+                                            onClick={() => {
+                                                if (jpgPngLevelFolders.includes(jpgPngSuggestion)) {
+                                                    handleOpenJpgPngFolder(jpgPngSuggestion);
+                                                } else {
+                                                    const match = jpgPngLevelFiles.find((f) => f.name === jpgPngSuggestion);
+                                                    if (match) toggleSelected(match.path);
+                                                }
+                                            }}
+                                        >
+                                            <MapPin size={13} />
+                                            <span className="ll-suggestion-text">
+                                                Current file: <strong>{jpgPngSuggestion}</strong>
+                                            </span>
+                                            <ChevronRight size={14} className="ll-chevron" />
+                                        </button>
+                                    )}
+
+                                    {!jpgPngLevelLoading && jpgPngLevelFiles.length > 0 && (
+                                        <div className="ll-select-all" onClick={() => toggleSelectAllPaths(jpgPngLevelFiles.map((f) => f.path))}>
                                             {allJpgPngSelected ? <CheckSquare size={13} /> : <Square size={13} />}
                                             <span>{allJpgPngSelected ? "Deselect all" : "Select all"}</span>
                                         </div>
                                     )}
 
                                     <div className="ll-comp-list">
-                                        {jpgPngBatchLoading &&
+                                        {jpgPngLevelLoading &&
                                             Array.from({ length: 4 }).map((_, i) => <SkeletonTerritoryRow key={i} />)}
-                                        {!jpgPngBatchLoading && jpgPngBatchFiles.length === 0 && (
-                                            <p className="ll-empty">No JPG/PNG files found in this batch.</p>
+                                        {!jpgPngLevelLoading && jpgPngLevelFolders.length === 0 && jpgPngLevelFiles.length === 0 && (
+                                            <p className="ll-empty">No subfolders or JPG/PNG files found here.</p>
                                         )}
-                                        {!jpgPngBatchLoading &&
-                                            jpgPngBatchFiles.map((f) => (
+                                        {/* Subfolders first, own row style (drill deeper, no
+                                            checkbox) -- this is what keeps files grouped in
+                                            their REAL folders instead of the old flattened
+                                            list that made same-named files from different
+                                            folders look like duplicates. */}
+                                        {!jpgPngLevelLoading &&
+                                            jpgPngLevelFolders.map((name) => (
+                                                <button key={name} className="ll-folder-row" onClick={() => handleOpenJpgPngFolder(name)}>
+                                                    <Folder size={14} className="ll-folder-icon" />
+                                                    <span className="ll-folder-name">{name}</span>
+                                                    <ChevronRight size={14} className="ll-chevron" />
+                                                </button>
+                                            ))}
+                                        {!jpgPngLevelLoading &&
+                                            jpgPngLevelFiles.map((f) => (
                                                 <div key={f.path} className={`ll-comp-row ${selectedPaths.has(f.path) ? "selected" : ""}`}>
                                                     <Tooltip text="Select for batch import">
                                                         <button className="ll-check" onClick={() => toggleSelected(f.path)}>
@@ -1110,14 +1256,15 @@ const LocalisedLibraryTool = () => {
                                             See localise.ts's scanJpgPngBatches() header comment
                                             for why this was split out of Auto-Populate. */}
                                         <div className="ll-jpgpng-section">
+                                            <div className="ll-jpgpng-caption">Live folder browse</div>
                                             <button className="ll-jpgpng-toggle" onClick={handleToggleJpgPngSection}>
-                                                <Image size={14} className="ll-folder-icon" />
+                                                <span className="ll-jpgpng-icon-badge"><Image size={13} /></span>
                                                 <span className="ll-folder-name">JPG_PNG</span>
                                                 <span className="ll-jpgpng-hint">
                                                     {jpgPngLoading
                                                         ? "Scanning…"
                                                         : jpgPngScanned
-                                                            ? `${jpgPngBatches.length} batch${jpgPngBatches.length === 1 ? "" : "es"}`
+                                                            ? `${jpgPngRootFolders.length} batch${jpgPngRootFolders.length === 1 ? "" : "es"}`
                                                             : "Click to load"}
                                                 </span>
                                                 {jpgPngExpanded ? <ChevronDown size={14} className="ll-chevron" /> : <ChevronRight size={14} className="ll-chevron" />}
@@ -1138,16 +1285,42 @@ const LocalisedLibraryTool = () => {
                                                         {!jpgPngLoading && jpgPngScanned && jpgPngFolderPath === null && (
                                                             <p className="ll-empty">No JPG_PNG folder found for this territory.</p>
                                                         )}
-                                                        {!jpgPngLoading && jpgPngScanned && jpgPngFolderPath !== null && jpgPngBatches.length === 0 && (
+                                                        {!jpgPngLoading && jpgPngScanned && jpgPngFolderPath !== null && jpgPngRootFolders.length === 0 && jpgPngRootFiles.length === 0 && (
                                                             <p className="ll-empty">No batch folders found inside JPG_PNG.</p>
                                                         )}
                                                         {!jpgPngLoading &&
-                                                            jpgPngBatches.map((b) => (
-                                                                <button key={b} className="ll-folder-row" onClick={() => handleOpenJpgPngBatch(b)}>
+                                                            jpgPngRootFolders.map((b) => (
+                                                                <button key={b} className="ll-folder-row" onClick={() => handleOpenJpgPngFolder(b)}>
                                                                     <Folder size={14} className="ll-folder-icon" />
                                                                     <span className="ll-folder-name">{b}</span>
                                                                     <ChevronRight size={14} className="ll-chevron" />
                                                                 </button>
+                                                            ))}
+                                                        {/* Stray images sitting directly in JPG_PNG,
+                                                            outside any batch folder -- uncommon but
+                                                            real, so surfaced rather than silently
+                                                            dropped. No batch-select checkboxes here
+                                                            (this is a collapsed accordion preview, not
+                                                            the full drill-down view) -- Import/Reveal
+                                                            only, same as any other quick row. */}
+                                                        {!jpgPngLoading &&
+                                                            jpgPngRootFiles.map((f) => (
+                                                                <div key={f.path} className="ll-comp-row">
+                                                                    <Image size={14} className="ll-folder-icon" />
+                                                                    <Tooltip text={f.path}>
+                                                                        <span className="ll-comp-name">{f.name}</span>
+                                                                    </Tooltip>
+                                                                    <Tooltip text="Import (read-only)">
+                                                                        <button className="ll-row-btn" onClick={() => handleImport(f.path)}>
+                                                                            <Download size={14} />
+                                                                        </button>
+                                                                    </Tooltip>
+                                                                    <Tooltip text="Reveal in Finder/Explorer">
+                                                                        <button className="ll-row-btn" onClick={() => handleReveal(f.path)}>
+                                                                            <Search size={14} />
+                                                                        </button>
+                                                                    </Tooltip>
+                                                                </div>
                                                             ))}
                                                     </motion.div>
                                                 )}

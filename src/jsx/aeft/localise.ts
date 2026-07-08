@@ -1243,23 +1243,33 @@ export const autoPopulateLocLib = (campaignName: string, marketsRoot: string, on
 };
 
 // =============================================================================
-// JPG_PNG lazy browse -- two-step, on-demand replacement for pulling JPG_PNG
+// JPG_PNG lazy browse -- click-to-fetch replacement for pulling JPG_PNG
 // into the eager Auto-Populate scan (see the removal note above
-// llIsComponentsContainerName). Neither function here writes anything to
-// the persisted component library -- this is a live, read-only filesystem
-// browse each time, not library data, since a delivery batch's own JPG/PNG
-// contents can change day to day and don't belong "saved" the way a
-// deliberately-curated component does.
-//   1. scanJpgPngBatches -- locates the territory's JPG_PNG folder (same
-//      name-matching + depth-limited search technique as
-//      llFindComponentFiles above) and lists its immediate batch
-//      subfolders ONLY -- does not look inside any of them. This is what
-//      keeps this step cheap regardless of how many images a batch holds.
-//   2. scanJpgPngBatchFiles -- given ONE batch folder's full path (the
-//      caller joins jpgPngPath + "/" + batchName, using scanJpgPngBatches'
-//      own returned root so this never has to re-search for JPG_PNG
-//      itself), recursively collects just that batch's own JPG/JPEG/PNG
-//      files. Bounded to a single batch, never the whole JPG_PNG tree.
+// llIsComponentsContainerName). Nothing here writes to the persisted
+// component library -- this is a live, read-only filesystem browse each
+// time, not library data, since a delivery batch's own JPG/PNG contents
+// can change day to day and don't belong "saved" the way a deliberately-
+// curated component does.
+//
+// **ONE-LEVEL-AT-A-TIME, not recursive -- this is the second real fix in
+// this section, found on a second real-AE test.** The first version's
+// scanJpgPngBatchFiles recursively collected every image anywhere inside
+// a batch, which caused two real, visible problems against a real batch
+// folder: (1) it silently descended into "_old" (an underscore-prefixed
+// archive folder that every OTHER scan in this toolset already excludes
+// -- this one just forgot to), pulling in stale/duplicate-looking
+// versions of the same creative; (2) flattening every nested creative
+// subfolder into one list meant two files that happen to share a name
+// (one live, one archived, or just two different creatives that reused a
+// filename) rendered as visually indistinguishable "duplicates" with no
+// way to tell them apart short of hovering for the full path. Replaced
+// with scanJpgPngLevel(folderPath), a plain single-level directory
+// listing (folders -- "_"-prefixed excluded, same convention as every
+// other scan here -- and JPG/JPEG/PNG files, both at that one level
+// only). The React side (LocalisedLibrary.tsx) calls this once per click
+// as the user drills batch -> subfolder -> subfolder..., keeping files
+// grouped in their REAL folders exactly as they sit on disk, instead of
+// this file trying to flatten/dedupe them after the fact.
 // =============================================================================
 function llIsJpgPngContainerName(name: string): boolean {
   const norm = String(name).toLowerCase().replace(/[_\s]+/g, "");
@@ -1306,9 +1316,58 @@ function llFindContainerFolder(territoryFolder: Folder, matcher: (name: string) 
   return null;
 }
 
+const JPG_PNG_EXTENSIONS = ["jpg", "jpeg", "png"];
+
+interface JpgPngLevelResult extends Result {
+  folders?: string[]; // immediate, non-"_"-prefixed subfolders
+  files?: { name: string; path: string }[]; // immediate JPG/JPEG/PNG files
+}
+
+// The one real listing primitive for the whole JPG_PNG browse -- called
+// fresh for every level the user drills into (the JPG_PNG root itself,
+// a batch, or any subfolder inside a batch), never recursive. A folder's
+// contents can change day to day, so there's no caching beyond what the
+// React side already does per level.
+function llScanJpgPngLevel(folder: Folder): { folders: string[]; files: { name: string; path: string }[] } {
+  const items = folder.getFiles();
+  const folders: string[] = [];
+  const files: { name: string; path: string }[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (item instanceof Folder) {
+      // Same "_-prefixed folders are excluded from every scan" convention
+      // as scanTerritories/scanJpgPngBatches -- this is what keeps a
+      // "_old" archive folder out of the listing at EVERY level, not just
+      // the top one (the bug the previous recursive version had).
+      if (item.name.charAt(0) !== "_") folders.push(decode(item.name));
+    } else if (item instanceof File) {
+      const m = item.name.match(/\.([A-Za-z0-9]+)$/);
+      const ext = m ? m[1].toLowerCase() : "";
+      if (JPG_PNG_EXTENSIONS.indexOf(ext) !== -1) files.push({ name: decode(item.name), path: item.fsName });
+    }
+  }
+  folders.sort();
+  files.sort(function (a, b) {
+    return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+  });
+  return { folders, files };
+}
+
+export const scanJpgPngLevel = (folderPath: string): JpgPngLevelResult => {
+  try {
+    const folder = new Folder(folderPath);
+    if (!folder.exists) return { success: false, error: "That folder no longer exists." };
+    const { folders, files } = llScanJpgPngLevel(folder);
+    return { success: true, folders, files };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
 interface JpgPngBatchesResult extends Result {
   jpgPngPath?: string | null; // null (with success:true) means genuinely not found, not an error
   batches?: string[];
+  files?: { name: string; path: string }[]; // stray images sitting directly in JPG_PNG, outside any batch
 }
 
 export const scanJpgPngBatches = (territoryPath: string): JpgPngBatchesResult => {
@@ -1317,55 +1376,78 @@ export const scanJpgPngBatches = (territoryPath: string): JpgPngBatchesResult =>
     const jpgPngFolder = llFindContainerFolder(terrFolder, llIsJpgPngContainerName, 4);
     if (!jpgPngFolder) return { success: true, jpgPngPath: null, batches: [] };
 
-    const items = jpgPngFolder.getFiles();
-    const batches: string[] = [];
-    for (let i = 0; i < items.length; i++) {
-      // Same "_-prefixed folders are excluded from every scan" convention
-      // as scanTerritories above -- keeps _Delivered/_Old out of the list.
-      if (items[i] instanceof Folder && items[i].name.charAt(0) !== "_") {
-        batches.push(decode(items[i].name));
-      }
-    }
-    batches.sort();
-    return { success: true, jpgPngPath: jpgPngFolder.fsName, batches };
+    const { folders, files } = llScanJpgPngLevel(jpgPngFolder);
+    return { success: true, jpgPngPath: jpgPngFolder.fsName, batches: folders, files };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
 };
 
-const JPG_PNG_EXTENSIONS = ["jpg", "jpeg", "png"];
+// "Current file" quick-access suggestion -- given the names visible at
+// whatever JPG_PNG level is currently being browsed (folders + files,
+// React passes both in one flat list), guesses which one corresponds to
+// the AE project that's actually open right now, matching this file's
+// established "You may be in..." reasoning (detectCurrentTerritory
+// above) but for a creative's JPG/PNG assets instead of a territory.
+//
+// **Deliberately NOT reusing shared.ts's findBestComponentFile.** That
+// scorer always returns ITS best guess among the candidates given, even
+// when none of them are genuinely related (its own accept-threshold
+// check returns the same `best` either way -- effectively dead code) --
+// fine for its existing callers (MC It!/LOS Tools), which are matching
+// against a curated candidate list where SOME match is always expected,
+// but wrong for a purely decorative, easy-to-get-wrong suggestion like
+// this one, where "no real match" needs to genuinely mean no suggestion.
+// This uses a plain, conservative check instead: a normalized substring
+// match either direction, or a majority of meaningful (3+ character)
+// tokens shared -- either one is a strong, simple, deliberately narrow
+// signal real studio filenames actually produce (the AE project and its
+// JPG_PNG counterpart usually share the exact creative name/phrase), not
+// a fuzzy "closest of a bad lot" guess.
+function llNormalizeForMatch(s: string): string {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/\.[a-z0-9]{1,5}$/i, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/^\s+|\s+$/g, "");
+}
 
-function llCollectImageFiles(folder: Folder, results: File[]) {
-  const items = folder.getFiles();
-  for (let i = 0; i < items.length; i++) {
-    if (items[i] instanceof Folder) {
-      llCollectImageFiles(items[i] as Folder, results);
-    } else if (items[i] instanceof File) {
-      const m = items[i].name.match(/\.([A-Za-z0-9]+)$/);
-      const ext = m ? m[1].toLowerCase() : "";
-      if (JPG_PNG_EXTENSIONS.indexOf(ext) !== -1) results.push(items[i] as File);
+export const suggestJpgPngMatch = (candidateNames: string[]): string | null => {
+  const projFile = app.project.file;
+  if (!projFile) return null;
+  const stem = llNormalizeForMatch(decode(projFile.name));
+  if (!stem) return null;
+  const stemTokens = stem.split(" ");
+
+  let best: string | null = null;
+  let bestScore = 0;
+  for (let i = 0; i < candidateNames.length; i++) {
+    const norm = llNormalizeForMatch(candidateNames[i]);
+    if (!norm) continue;
+
+    if (norm.indexOf(stem) !== -1 || stem.indexOf(norm) !== -1) {
+      const score = Math.min(norm.length, stem.length) + 1000; // always beats a token-overlap match
+      if (score > bestScore) {
+        bestScore = score;
+        best = candidateNames[i];
+      }
+      continue;
+    }
+
+    const normTokens = norm.split(" ");
+    let shared = 0;
+    for (let t = 0; t < stemTokens.length; t++) {
+      if (stemTokens[t].length < 3) continue; // skip tiny tokens ("sp"/"br"/etc.) that match almost anything
+      if (normTokens.indexOf(stemTokens[t]) !== -1) shared++;
+    }
+    const ratio = stemTokens.length > 0 ? shared / stemTokens.length : 0;
+    if (ratio >= 0.5 && shared > bestScore) {
+      bestScore = shared;
+      best = candidateNames[i];
     }
   }
-}
-
-interface JpgPngBatchFilesResult extends Result {
-  files?: { name: string; path: string }[];
-}
-
-export const scanJpgPngBatchFiles = (batchFolderPath: string): JpgPngBatchFilesResult => {
-  try {
-    const batchFolder = new Folder(batchFolderPath);
-    if (!batchFolder.exists) return { success: false, error: "That batch folder no longer exists." };
-    const files: File[] = [];
-    llCollectImageFiles(batchFolder, files);
-    const out = files.map((f) => ({ name: decode(f.name), path: f.fsName }));
-    out.sort(function (a, b) {
-      return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
-    });
-    return { success: true, files: out };
-  } catch (e) {
-    return { success: false, error: e.toString() };
-  }
+  return best;
 };
 
 // =============================================================================

@@ -2581,51 +2581,162 @@ instead, live filesystem browse only, never persisted as library data.
   Same class of bug to watch for if `llFindComponentFiles`'s own
   Support_Motion/Motion_Components search (a different, older function,
   NOT changed here) is ever reported to find the wrong folder too.
-- **`scanJpgPngBatchFiles(batchFolderPath)`** -- given ONE batch
-  folder's full path (the caller joins `jpgPngPath + "/" + batchName`
-  using the root `scanJpgPngBatches` already resolved, so this never
-  re-searches for JPG_PNG itself), recursively collects just that
-  batch's own `.jpg`/`.jpeg`/`.png` files. Bounded to a single batch,
-  never the whole JPG_PNG tree -- this is what actually fixes the
-  "way too heavy" problem, not just moving the same eager scan behind
-  an extra click.
+- **`scanJpgPngLevel(folderPath)` -- ONE level at a time, NOT recursive.
+  Second real bug, found on a second real-AE test, and the reason this
+  isn't still `scanJpgPngBatchFiles`.** The first version recursively
+  collected every image anywhere inside a batch, which against a real
+  batch folder caused two real, visible problems: (1) it silently
+  descended into `_old` (an underscore-prefixed archive folder every
+  OTHER scan in this toolset already excludes -- this one just forgot
+  to), pulling in stale versions of the same creative; (2) flattening
+  every nested creative subfolder into one list meant files that happen
+  to share a name rendered as visually indistinguishable "duplicates"
+  with no way to tell them apart short of hovering for the full path.
+  `scanJpgPngLevel` is a plain single-level directory listing (folders,
+  `_`-prefixed excluded same as every other scan here, and JPG/JPEG/PNG
+  files, both at that one level only) -- `LocalisedLibrary.tsx` calls it
+  once per click as the user drills batch → subfolder → subfolder...,
+  keeping files grouped in their REAL folders exactly as they sit on
+  disk instead of this file trying to flatten/dedupe them after the
+  fact. `scanJpgPngBatches(territoryPath)` still does the one-time FIND
+  step (locates the JPG_PNG root via `llFindContainerFolder`) and calls
+  this same primitive on the root it finds.
+- **`suggestJpgPngMatch(candidateNames)`** -- "current file" quick-access
+  suggestion at whatever JPG_PNG level is being browsed, same
+  "You may be in…"-style reasoning as `detectCurrentTerritory` but
+  matching a creative's JPG/PNG assets instead of a territory.
+  **Deliberately does NOT reuse `shared.ts`'s `findBestComponentFile`**
+  -- that scorer always returns ITS best guess among the candidates
+  given, even when none are genuinely related (its own accept-threshold
+  check returns the same `best` either way, effectively dead code);
+  fine for MC It!/LOS Tools, wrong for a decorative suggestion where "no
+  real match" needs to genuinely mean no suggestion. Uses a plain,
+  conservative check instead: a normalized substring match either
+  direction, or a majority of meaningful (3+ char) tokens shared.
 - **`LocalisedLibrary.tsx`**: a collapsed-by-default "JPG_PNG" accordion
   section (dashed border, matching `.ll-new-folder`'s "this is an
   action, not existing data" look) sits BELOW the regular folder list
   in the Folders view, visually and structurally separate from
   `allFolderNames` -- it's live/lazy, not part of the persisted
-  component library. First click scans batches (`jpgPngScanned` gates
-  re-scanning on subsequent expand/collapse of the same territory);
-  clicking a batch scans that ONE batch fresh every time (cheap enough
-  not to bother caching, and a batch folder's contents can change
-  day to day). Batch-files view reuses the exact same row/checkbox/
-  Import/Reveal UI as the regular components-in-folder view, generalized
-  via a new `toggleSelectAllPaths(paths)` (replaces the old folder-only
+  component library. First click scans the JPG_PNG root
+  (`jpgPngScanned` gates re-scanning on subsequent expand/collapse of
+  the same territory); drilling in from there is a **breadcrumb path
+  stack** (`jpgPngStack: {label, path}[]`, NOT a fixed one-level batch
+  selection) since a real batch's own internal structure varies (some
+  flat, some nesting a subfolder per creative) -- `handleOpenJpgPngFolder`
+  pushes a level, `handleJpgPngBack` pops one, `handleJpgPngBreadcrumb`
+  jumps to any crumb directly. Every level is scanned fresh (cheap
+  enough not to bother caching, and contents can change day to day),
+  and the "current file" suggestion is recomputed at each level too. The
+  level view reuses the exact same row/checkbox/Import/Reveal UI as the
+  regular components-in-folder view, generalized via
+  `toggleSelectAllPaths(paths)` (replaces the old folder-only
   `toggleSelectAll`) so both views share one `selectedPaths` set and one
   `handleImportSelected`. **Deliberately does NOT offer "Save Into
-  Batch…"** in the JPG_PNG batch view -- that action opens/saves `.aep`
-  project files, which doesn't apply to plain JPG/PNG images and would
-  be actively misleading to offer there.
-- **Layout gotcha, fixed before it shipped**: `.ll-folder-list` used to
-  carry `flex: 1; overflow-y: auto` itself (it was the only scrollable
-  thing in the Folders view). Simply appending the new JPG_PNG section
-  as its sibling AFTER it would have let the folder list's `flex: 1`
-  greedily consume all available height, pushing JPG_PNG out of view
-  entirely below the fold with no way to scroll to it. Fixed by moving
-  `flex: 1`/`overflow-y: auto` onto a new wrapping `.ll-folders-scroll`
-  div around BOTH children, leaving `.ll-folder-list` itself as plain
-  block flow. If a future addition to this view has the same "my new
-  section is invisible" symptom, check for exactly this pattern before
-  assuming it's a data/state bug.
-- `MOCK_JPG_PNG_BATCHES`/`MOCK_JPG_PNG_FILES` demonstrate the full flow
-  in browser preview, including the "no JPG_PNG folder found" empty
-  state (Germany has no entry, falls back to `[]`).
-- **Verified in browser preview**: France → Folders view → JPG_PNG
-  toggle → 5 mock batches load and render (`Batch_1`, `Batch_1_Post`,
-  `Batch_2`, `Batch_2_Post`, `Bespoke`) → clicking `Batch_1` shows its 2
-  mock files with working row selection and an "Import Selected (1)"
-  action bar (and confirmed "Save Into Batch…" is absent, as intended).
-  The actual filesystem scans (`scanJpgPngBatches`/
-  `scanJpgPngBatchFiles`) still need a real-AE pass against a real
-  JPG_PNG folder -- same "logic verified, real I/O unverified"
+  Batch…"** anywhere in the JPG_PNG browse -- that action opens/saves
+  `.aep` project files, which doesn't apply to plain JPG/PNG images and
+  would be actively misleading to offer there.
+- **Layout gotchas, both fixed before shipping (two separate bugs, same
+  "root: flex context mismatch" family)**:
+  1. `.ll-folder-list` used to carry `flex: 1; overflow-y: auto` itself
+     (it was the only scrollable thing in the Folders view). Simply
+     appending the JPG_PNG section as its sibling AFTER it would have
+     let the folder list's `flex: 1` greedily consume all available
+     height, pushing JPG_PNG out of view entirely below the fold with no
+     way to scroll to it. Fixed by moving `flex: 1`/`overflow-y: auto`
+     onto a new wrapping `.ll-folders-scroll` div around BOTH children,
+     leaving `.ll-folder-list` itself as plain block flow.
+  2. **Found via a real screenshot, not caught by build/typecheck**:
+     `.ll-folder-row` (subfolder rows in the JPG_PNG level view) rendered
+     ~660px tall -- one row eating almost the entire panel. Root cause:
+     `.ll-folder-row`'s own base rule has `flex: 1` baked in, correct for
+     its ORIGINAL context (`.ll-folder-row-wrap`, a flex ROW, where
+     flex:1 means "fill available WIDTH" next to a delete button) -- but
+     the JPG_PNG level view renders `.ll-folder-row` directly inside
+     `.ll-comp-list`, a flex COLUMN, where the exact same `flex: 1` means
+     "fill available HEIGHT" instead. Fixed with a scoped override,
+     `.ll-comp-list > .ll-folder-row { flex: 0 0 auto; }`, rather than
+     touching the shared base rule (which is still correct for its
+     original callers). **If a shared row/item class ever gets reused in
+     a new flex-column context and something renders way too big along
+     the column axis, check for exactly this "flex:1 meant for a row,
+     now sitting in a column" mismatch first** -- confirmed via
+     `preview_inspect`'s computed `flex-grow`/`height`, not guessable
+     from a screenshot alone.
+  Both fixed the same way: a scoped override on the NEW usage site, not
+  a change to the shared class everyone else still relies on correctly.
+- `MOCK_JPG_PNG_ROOT`/`MOCK_JPG_PNG_LEVELS`/`MOCK_OPEN_PROJECT_HINT`
+  demonstrate the full flow in browser preview, including a real nested
+  drill (`Batch_1` → `Poster_Creative_FR` → its one file) and the
+  "current file" suggestion re-evaluating correctly at each level (mock
+  hint `"poster"` matches `Poster_Creative_FR`, then once drilled in,
+  `Poster_1Sheet_FR.jpg`) -- the "no JPG_PNG folder found" empty state
+  (Germany, no entry) still applies too.
+- **Verified in browser preview, including a real bug caught this way**:
+  France → JPG_PNG → root batches load → `Batch_1` → breadcrumb
+  "JPG_PNG › Batch_1", subfolder and file correctly listed separately
+  (not flattened) → drilled into the subfolder → breadcrumb extends to
+  3 crumbs, suggestion re-targets the file inside → clicked the root
+  "JPG_PNG" crumb → correctly jumped all the way back to the batch list
+  in one step. The oversized-row layout bug above was FOUND during this
+  same verification pass (via screenshot, confirmed via
+  `preview_inspect`), not left for a real-AE session to discover.
+  What still can't be verified here: the actual filesystem scans
+  (`scanJpgPngBatches`/`scanJpgPngLevel`/`suggestJpgPngMatch`) against a
+  real JPG_PNG folder -- same "logic verified, real I/O unverified"
   caveat every ExtendScript-only feature in this file carries.
+
+**Follow-up round, from real-AE feedback with a Finder screenshot of a
+real `Batch_3` (showing a real `_old` subfolder sitting alongside real
+creative folders/files):**
+- **Underscore-exclusion re-confirmed, not a bug** -- the user's
+  screenshot was explaining WHERE the earlier duplicate-files problem
+  came from (a real `_old` folder), not reporting a new leak past the
+  fix. Re-verified the exclusion is genuinely unconditional: both
+  `scanJpgPngBatches` (the JPG_PNG root) and `scanJpgPngLevel` (every
+  level below it) funnel through the SAME `llScanJpgPngLevel` helper,
+  which checks `item.name.charAt(0) !== "_"` before ever adding a folder
+  to the list -- an excluded folder is never added to `folders`, so
+  there is no code path that can later "drill into" or scan its
+  contents; there's nothing to click. If `_old` (or `_Old`/`_Delivered`,
+  any case) ever appears in the app again, that's either a stale build
+  (extension needs reloading/reinstalling after this fix) or a genuinely
+  new bug -- not this same one recurring.
+- **JPG_PNG row visual redesign, on direct feedback that it looked "very
+  similar to the rest" despite the dashed border.** Kept the dashed
+  border (explicitly liked) but added: a tiny uppercase "LIVE FOLDER
+  BROWSE" caption above it (`.ll-jpgpng-caption`, same micro-label
+  language section headings use elsewhere in this app) so the eye gets a
+  "this is a different KIND of thing" signal before reaching the row
+  itself; a tinted background wash at REST, not just on hover (unlike
+  plain folder/territory rows, which are flat gray until hovered); the
+  icon in its own small badge (`.ll-jpgpng-icon-badge`) instead of a
+  bare glyph; and a bold label. Applied the identical treatment to
+  `.ll-suggestion` ("You may be in…" / "Current file…") for visual
+  consistency between this app's two "special affordance row" patterns.
+  - **Real bug caught while doing this, not cosmetic taste**: the first
+    pass used `background: var(--cat-glow, ...)` for the resting
+    background, copying the pattern `.ll-count.has` and others already
+    use. But `--cat-glow` is a REAL inherited CSS var here (Localised
+    Library's category context sets it to `rgba(45, 212, 191, 0.35)` --
+    see `categoryStyleVars()`/`CATEGORY_COLORS` in `toolRegistry.tsx`),
+    tuned for HOVER-shadow strength elsewhere in the app, not a resting
+    fill -- so both `.ll-jpgpng-toggle` and `.ll-suggestion` rendered as
+    a near-solid 35%-alpha block at rest instead of a subtle tint. The
+    `rgba(..., 0.1)`-style fallback value in the same declaration never
+    even applied, because the var WAS defined, just not to the value
+    the fallback assumed. Fixed by using a fixed, genuinely low alpha
+    (`rgba(45, 212, 191, 0.07-0.08)`) for the resting background instead,
+    reserving `--cat-glow` for what it's actually tuned for (the
+    stronger `:hover` state, unchanged). **If a future resting-state
+    background in this app looks unexpectedly saturated/solid, check
+    whether it's using `--cat-glow` (or another hover-tuned var) outside
+    a `:hover` block before assuming it's a color-value typo** -- the
+    fallback value in a `var(--x, fallback)` declaration is easy to
+    misread as "what this actually renders," when a real inherited value
+    silently wins instead. Confirmed the fix via `preview_inspect`'s
+    computed `background-color` (exactly `rgba(45, 212, 191, 0.07)`),
+    not just a screenshot -- a saturated hue at low alpha can still read
+    as "strong" in a compressed screenshot even when the underlying
+    value is correct, so computed-style inspection is the reliable check
+    here, not eyeballing the image.
