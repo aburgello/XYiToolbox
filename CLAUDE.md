@@ -2554,17 +2554,33 @@ instead, live filesystem browse only, never persisted as library data.
   If a future session is tempted to re-add it there "for consistency,"
   don't -- that's the exact regression this fix undoes.
 - **`scanJpgPngBatches(territoryPath)`** -- locates the territory's
-  JPG_PNG folder (same depth-limited name-matching search technique as
-  the Support_Motion/Motion_Components lookup, factored out into a
-  shared `llFindContainerFolder()` helper) and lists ONLY its immediate
-  batch subfolders -- does not look inside any of them, which is what
-  keeps this step cheap regardless of how many images a batch holds.
-  `_`-prefixed folders (`_Delivered`, `_Old` in the real folder that
-  prompted this) are excluded, same "underscore-prefixed folders are
-  excluded from every scan" convention used everywhere else in this
+  JPG_PNG folder via `llFindContainerFolder()` and lists ONLY its
+  immediate batch subfolders -- does not look inside any of them, which
+  is what keeps this step cheap regardless of how many images a batch
+  holds. `_`-prefixed folders (`_Delivered`, `_Old` in the real folder
+  that prompted this) are excluded, same "underscore-prefixed folders
+  are excluded from every scan" convention used everywhere else in this
   toolset. Returns `{jpgPngPath, batches}` -- `jpgPngPath: null` (with
   `success: true`) means genuinely not found, not an error; a
   territory with no print/OOH deliverables yet is a normal outcome.
+  **Real bug found on first real-AE test, fixed**: `llFindContainerFolder`
+  shipped depth-first (fully search each non-matching folder's whole
+  subtree before checking its next sibling), and against a real studio
+  tree that latched onto the WRONG folder -- a territory's real,
+  top-level JPG_PNG sits next to an "AE" folder, and AE project
+  structures commonly have their OWN nested "JPG_PNG" footage-source
+  folder buried inside a creative's asset tree. The depth-first search
+  recursed into AE (enumerated before JPG_PNG) and matched that
+  unrelated NESTED decoy first, stopping immediately -- so
+  `jpgPngPath` came back non-null (looked like success) but pointed at
+  an empty/wrong folder, and the real batches (`Batch_1` etc.) were
+  never seen. **Now breadth-first**: checks every folder at the current
+  depth before descending into any of them, guaranteeing the shallowest
+  match (the real, intended top-level JPG_PNG) wins over a
+  coincidentally-named folder buried deeper in an unrelated subtree.
+  Same class of bug to watch for if `llFindComponentFiles`'s own
+  Support_Motion/Motion_Components search (a different, older function,
+  NOT changed here) is ever reported to find the wrong folder too.
 - **`scanJpgPngBatchFiles(batchFolderPath)`** -- given ONE batch
   folder's full path (the caller joins `jpgPngPath + "/" + batchName`
   using the root `scanJpgPngBatches` already resolved, so this never

@@ -1266,29 +1266,44 @@ function llIsJpgPngContainerName(name: string): boolean {
   return norm === "jpgpng" || norm === "pngjpg";
 }
 
-// Generic depth-limited "find the first folder whose name matches" search,
-// stopping at the first hit -- same recursive shape as
-// llFindComponentFiles' own search closure, factored out since both this
-// file's container lookups (Support_Motion/Motion_Components here vs.
-// JPG_PNG for the lazy browse) now need it independently.
+// Generic depth-limited "find the shallowest folder whose name matches"
+// search. **BREADTH-first, not depth-first -- this is a deliberate fix,
+// not the original shape.** A depth-first version (checking each
+// non-matching folder's ENTIRE subtree before moving on to its next
+// sibling) shipped first and had a real bug found against a real studio
+// tree: a territory's own top-level JPG_PNG (a direct sibling of AE/
+// Masters/Mechs/PDFs/PSD/Renders) sits right next to an "AE" folder --
+// and AE project structures commonly have their OWN nested "JPG_PNG"
+// footage-source folder buried inside a creative's asset tree. Depth-
+// first search recursed fully into AE (which happened to be enumerated
+// before JPG_PNG) and latched onto that unrelated NESTED decoy the
+// moment it matched the same name pattern, stopping immediately --
+// so the real, intended top-level JPG_PNG (with all its real delivery
+// batches) was never even reached, and the batch list came back empty
+// even though `jpgPngPath` looked like a "successful" find. Breadth-
+// first checks every folder AT the current depth before descending into
+// ANY of them, which guarantees the shallowest match (the real,
+// intended top-level JPG_PNG) wins over a coincidentally-named folder
+// buried deeper inside an unrelated subtree. If a similar "found A
+// folder, but the wrong one" bug ever turns up for the Support_Motion/
+// Motion_Components lookup too, this is the class of fix to reach for.
 function llFindContainerFolder(territoryFolder: Folder, matcher: (name: string) => boolean, maxSearchDepth: number): Folder | null {
-  let found: Folder | null = null;
-  const search = (folder: Folder, depth: number) => {
-    if (found || depth > maxSearchDepth) return;
-    const items = folder.getFiles();
-    for (let i = 0; i < items.length; i++) {
-      if (found) return;
-      if (items[i] instanceof Folder) {
-        if (matcher(items[i].name)) {
-          found = items[i] as Folder;
-          return;
+  if (!territoryFolder.exists) return null;
+  let currentLevel: Folder[] = [territoryFolder];
+  for (let depth = 0; depth <= maxSearchDepth && currentLevel.length > 0; depth++) {
+    const nextLevel: Folder[] = [];
+    for (let f = 0; f < currentLevel.length; f++) {
+      const items = currentLevel[f].getFiles();
+      for (let i = 0; i < items.length; i++) {
+        if (items[i] instanceof Folder) {
+          if (matcher(items[i].name)) return items[i] as Folder;
+          nextLevel.push(items[i] as Folder);
         }
-        search(items[i] as Folder, depth + 1);
       }
     }
-  };
-  if (territoryFolder.exists) search(territoryFolder, 0);
-  return found;
+    currentLevel = nextLevel;
+  }
+  return null;
 }
 
 interface JpgPngBatchesResult extends Result {
