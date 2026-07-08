@@ -326,10 +326,19 @@ implementing each one lives.
   `XYi_Localised_Library.jsx`. A campaign → territory → component
   library: territories auto-detected from a campaign's Markets root
   folder, components added by hand (naming isn't consistent enough
-  across campaigns to auto-pair reliably) or via "Auto-Populate from
-  Motion Components" (scans every territory for a "Support_Motion"/
-  "Motion_Components" folder and adds every file found inside — read-
-  only, skips files already in the library). Categories: `["localise"]`
+  across campaigns to auto-pair reliably) or via "Find the Motion" (scans
+  every territory, or just the currently-open one, for a "Support_Motion"
+  or "Motion_Components" folder and adds every file found inside —
+  read-only, skips files already in the library). **JPG_PNG was
+  REMOVED from this eager scan** (previously included alongside the two
+  motion containers) and now has its own dedicated LAZY section instead
+  — see "Localised Library: JPG_PNG lazy browse + 'You may be in…'" further
+  down for both that change and the territory-detection suggestion added
+  alongside it. Scanned files from Find the Motion land pre-sorted into
+  their own PNG/JPG/etc. folders automatically via the existing
+  extension-bucketing (`folderForComponent()`, `LocalisedLibrary.tsx`)
+  the "mini directories" feature already does.
+  Categories: `["localise"]`
   only — **wasn't part of the vertical listbox tab system at all**; in
   the original toolbox it was launched next to the search bar, same as
   OV Library used to be, which is why it wasn't in the "22 listbox-tab
@@ -2490,3 +2499,117 @@ both to instant. Tabs:
   layer types, align/distribute against real multi-layer selections, the
   Group identity-null trick, and the two Excite expressions actually
   ringing out as intended.
+
+## Localised Library: "You may be in…" + JPG_PNG lazy browse
+Two separate additions to `tools/LocalisedLibrary.tsx`, both real, both
+touching the Territories/Folders views.
+
+**"You may be in…" territory suggestion** -- a pinned, accent-bordered
+row (`.ll-suggestion`, MapPin icon) above the search box on the
+Territories screen, shown when the currently open AE project's saved
+file path is detected to sit inside one of the CURRENT campaign's own
+scanned territory folders. Click it to jump straight to that territory,
+same as clicking its row in the list below.
+- **Backend**: `localise.ts`'s `detectCurrentTerritory(territories:
+  string[])` -- walks up from `app.project.file`'s parent folder,
+  matching each ancestor folder's name (case-insensitive) against the
+  PASSED-IN territory list. Same "walk up from the saved file, match a
+  folder name" technique Timesheet Tracker's `tsExtractInfoFromPath()`
+  (`tools.ts`) already uses for job/territory detection -- but matched
+  against THIS campaign's real, scanned territory folder names
+  (`scanTerritories`'s own output) rather than a fixed global vocabulary
+  like Timesheet Tracker's `TS_TERRITORIES`, since Loc Lib's territory
+  list is already derived live from disk per campaign and is strictly
+  more accurate for this purpose.
+- **Deliberately scoped to the CURRENTLY SELECTED campaign only** --
+  doesn't also try to detect which campaign the open project belongs to.
+  If the wrong campaign is selected, this just returns null (no
+  suggestion shown), a safe/unsurprising fallback, not a bug. Extending
+  this to auto-select the right campaign too would be a real, separate
+  scope decision (abruptly changing the user's campaign selection out
+  from under them) -- don't add that without asking first.
+- Called via `quietEvalTS` (no toast on failure -- unsaved project,
+  project outside this campaign's tree, or browser preview are all
+  normal, expected "no suggestion" outcomes, not errors) inside the same
+  `Promise.all` as the per-territory country-code lookups in
+  `refreshTerritories`, for the same "don't add a second sequential
+  round-trip on top of an already-parallelized decorative batch"
+  reasoning documented there.
+- `MOCK_DETECTED_TERRITORY` demonstrates this in browser preview (real
+  detection needs a real saved project file, which preview never has).
+
+**JPG_PNG lazy browse** -- real user-reported problem, not a
+speculative optimization: a real studio JPG_PNG folder turned out to
+contain many delivery-batch subfolders (`Batch_1`, `Batch_1_Post`,
+`Batch_2`, ... `Bespoke`, `Bespoke_Post`), each full of images, and the
+existing eager Auto-Populate scan (which used to treat JPG_PNG as a
+third components-container name alongside Support_Motion/
+Motion_Components) recursed into ALL of them at once -- "way too
+heavy," dumping potentially hundreds of flat components into the
+library from one territory. Fixed by removing JPG_PNG from that eager
+scan entirely and giving it its own two-step, click-to-fetch flow
+instead, live filesystem browse only, never persisted as library data.
+- **`llIsComponentsContainerName`** (`localise.ts`) now matches ONLY
+  "Support_Motion"/"Motion_Components" -- JPG_PNG intentionally removed.
+  If a future session is tempted to re-add it there "for consistency,"
+  don't -- that's the exact regression this fix undoes.
+- **`scanJpgPngBatches(territoryPath)`** -- locates the territory's
+  JPG_PNG folder (same depth-limited name-matching search technique as
+  the Support_Motion/Motion_Components lookup, factored out into a
+  shared `llFindContainerFolder()` helper) and lists ONLY its immediate
+  batch subfolders -- does not look inside any of them, which is what
+  keeps this step cheap regardless of how many images a batch holds.
+  `_`-prefixed folders (`_Delivered`, `_Old` in the real folder that
+  prompted this) are excluded, same "underscore-prefixed folders are
+  excluded from every scan" convention used everywhere else in this
+  toolset. Returns `{jpgPngPath, batches}` -- `jpgPngPath: null` (with
+  `success: true`) means genuinely not found, not an error; a
+  territory with no print/OOH deliverables yet is a normal outcome.
+- **`scanJpgPngBatchFiles(batchFolderPath)`** -- given ONE batch
+  folder's full path (the caller joins `jpgPngPath + "/" + batchName`
+  using the root `scanJpgPngBatches` already resolved, so this never
+  re-searches for JPG_PNG itself), recursively collects just that
+  batch's own `.jpg`/`.jpeg`/`.png` files. Bounded to a single batch,
+  never the whole JPG_PNG tree -- this is what actually fixes the
+  "way too heavy" problem, not just moving the same eager scan behind
+  an extra click.
+- **`LocalisedLibrary.tsx`**: a collapsed-by-default "JPG_PNG" accordion
+  section (dashed border, matching `.ll-new-folder`'s "this is an
+  action, not existing data" look) sits BELOW the regular folder list
+  in the Folders view, visually and structurally separate from
+  `allFolderNames` -- it's live/lazy, not part of the persisted
+  component library. First click scans batches (`jpgPngScanned` gates
+  re-scanning on subsequent expand/collapse of the same territory);
+  clicking a batch scans that ONE batch fresh every time (cheap enough
+  not to bother caching, and a batch folder's contents can change
+  day to day). Batch-files view reuses the exact same row/checkbox/
+  Import/Reveal UI as the regular components-in-folder view, generalized
+  via a new `toggleSelectAllPaths(paths)` (replaces the old folder-only
+  `toggleSelectAll`) so both views share one `selectedPaths` set and one
+  `handleImportSelected`. **Deliberately does NOT offer "Save Into
+  Batch…"** in the JPG_PNG batch view -- that action opens/saves `.aep`
+  project files, which doesn't apply to plain JPG/PNG images and would
+  be actively misleading to offer there.
+- **Layout gotcha, fixed before it shipped**: `.ll-folder-list` used to
+  carry `flex: 1; overflow-y: auto` itself (it was the only scrollable
+  thing in the Folders view). Simply appending the new JPG_PNG section
+  as its sibling AFTER it would have let the folder list's `flex: 1`
+  greedily consume all available height, pushing JPG_PNG out of view
+  entirely below the fold with no way to scroll to it. Fixed by moving
+  `flex: 1`/`overflow-y: auto` onto a new wrapping `.ll-folders-scroll`
+  div around BOTH children, leaving `.ll-folder-list` itself as plain
+  block flow. If a future addition to this view has the same "my new
+  section is invisible" symptom, check for exactly this pattern before
+  assuming it's a data/state bug.
+- `MOCK_JPG_PNG_BATCHES`/`MOCK_JPG_PNG_FILES` demonstrate the full flow
+  in browser preview, including the "no JPG_PNG folder found" empty
+  state (Germany has no entry, falls back to `[]`).
+- **Verified in browser preview**: France → Folders view → JPG_PNG
+  toggle → 5 mock batches load and render (`Batch_1`, `Batch_1_Post`,
+  `Batch_2`, `Batch_2_Post`, `Bespoke`) → clicking `Batch_1` shows its 2
+  mock files with working row selection and an "Import Selected (1)"
+  action bar (and confirmed "Save Into Batch…" is absent, as intended).
+  The actual filesystem scans (`scanJpgPngBatches`/
+  `scanJpgPngBatchFiles`) still need a real-AE pass against a real
+  JPG_PNG folder -- same "logic verified, real I/O unverified"
+  caveat every ExtendScript-only feature in this file carries.

@@ -819,7 +819,8 @@ export const jpegLoc = (): Result => {
 // standalone ScriptUI palette, launched next to the search bar in the
 // original toolbox, not part of the vertical listbox -- see CLAUDE.md).
 // A campaign -> territory -> component library, manually curated (or
-// auto-populated from a "Support_Motion"/"Motion_Components" folder).
+// auto-populated from a "Support_Motion"/"Motion_Components"/"JPG_PNG"
+// folder).
 // Territories are auto-detected by scanning the campaign's Markets root.
 // Read-only: importFile()/revealFile() (shared with OV Library, reused
 // directly below) are the only file actions -- nothing here ever opens a
@@ -1138,9 +1139,21 @@ export const selectComponentFile = (territoryName: string): string | null => {
 };
 
 // --- Auto-populate: find every file under a "Support_Motion" or
-// "Motion_Components" folder (either name, underscore or space,
-// case-insensitive) anywhere within a territory's tree. Read-only --
-// only ever lists folder contents.
+// "Motion_Components" folder (underscore or space, case-insensitive)
+// anywhere within a territory's tree. Read-only -- only ever lists folder
+// contents.
+//
+// **JPG_PNG deliberately EXCLUDED from this eager scan** (previously
+// included alongside the two motion containers) -- a real JPG_PNG folder
+// turned out to contain many delivery-batch subfolders (Batch_1,
+// Batch_1_Post, Batch_2, ... Bespoke, Bespoke_Post), each full of images,
+// so recursing into it here made Auto-Populate "way too heavy" (hundreds
+// of flat components dumped into the library from one territory). JPG_PNG
+// now has its own dedicated, LAZY flow instead -- see
+// scanJpgPngBatches()/scanJpgPngBatchFiles() below, wired to
+// LocalisedLibrary.tsx's collapsible "JPG_PNG" section (only scans when
+// clicked, and only one batch folder at a time, never the whole tree at
+// once).
 function llIsComponentsContainerName(name: string): boolean {
   const norm = String(name).toLowerCase().replace(/[_\s]+/g, "");
   return norm === "supportmotion" || norm === "motioncomponents";
@@ -1224,6 +1237,117 @@ export const autoPopulateLocLib = (campaignName: string, marketsRoot: string, on
 
     saveLocLibComponentsRaw(existing);
     return { success: true, added, skippedExisting, territoriesWithNoMatch };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// =============================================================================
+// JPG_PNG lazy browse -- two-step, on-demand replacement for pulling JPG_PNG
+// into the eager Auto-Populate scan (see the removal note above
+// llIsComponentsContainerName). Neither function here writes anything to
+// the persisted component library -- this is a live, read-only filesystem
+// browse each time, not library data, since a delivery batch's own JPG/PNG
+// contents can change day to day and don't belong "saved" the way a
+// deliberately-curated component does.
+//   1. scanJpgPngBatches -- locates the territory's JPG_PNG folder (same
+//      name-matching + depth-limited search technique as
+//      llFindComponentFiles above) and lists its immediate batch
+//      subfolders ONLY -- does not look inside any of them. This is what
+//      keeps this step cheap regardless of how many images a batch holds.
+//   2. scanJpgPngBatchFiles -- given ONE batch folder's full path (the
+//      caller joins jpgPngPath + "/" + batchName, using scanJpgPngBatches'
+//      own returned root so this never has to re-search for JPG_PNG
+//      itself), recursively collects just that batch's own JPG/JPEG/PNG
+//      files. Bounded to a single batch, never the whole JPG_PNG tree.
+// =============================================================================
+function llIsJpgPngContainerName(name: string): boolean {
+  const norm = String(name).toLowerCase().replace(/[_\s]+/g, "");
+  return norm === "jpgpng" || norm === "pngjpg";
+}
+
+// Generic depth-limited "find the first folder whose name matches" search,
+// stopping at the first hit -- same recursive shape as
+// llFindComponentFiles' own search closure, factored out since both this
+// file's container lookups (Support_Motion/Motion_Components here vs.
+// JPG_PNG for the lazy browse) now need it independently.
+function llFindContainerFolder(territoryFolder: Folder, matcher: (name: string) => boolean, maxSearchDepth: number): Folder | null {
+  let found: Folder | null = null;
+  const search = (folder: Folder, depth: number) => {
+    if (found || depth > maxSearchDepth) return;
+    const items = folder.getFiles();
+    for (let i = 0; i < items.length; i++) {
+      if (found) return;
+      if (items[i] instanceof Folder) {
+        if (matcher(items[i].name)) {
+          found = items[i] as Folder;
+          return;
+        }
+        search(items[i] as Folder, depth + 1);
+      }
+    }
+  };
+  if (territoryFolder.exists) search(territoryFolder, 0);
+  return found;
+}
+
+interface JpgPngBatchesResult extends Result {
+  jpgPngPath?: string | null; // null (with success:true) means genuinely not found, not an error
+  batches?: string[];
+}
+
+export const scanJpgPngBatches = (territoryPath: string): JpgPngBatchesResult => {
+  try {
+    const terrFolder = new Folder(territoryPath);
+    const jpgPngFolder = llFindContainerFolder(terrFolder, llIsJpgPngContainerName, 4);
+    if (!jpgPngFolder) return { success: true, jpgPngPath: null, batches: [] };
+
+    const items = jpgPngFolder.getFiles();
+    const batches: string[] = [];
+    for (let i = 0; i < items.length; i++) {
+      // Same "_-prefixed folders are excluded from every scan" convention
+      // as scanTerritories above -- keeps _Delivered/_Old out of the list.
+      if (items[i] instanceof Folder && items[i].name.charAt(0) !== "_") {
+        batches.push(decode(items[i].name));
+      }
+    }
+    batches.sort();
+    return { success: true, jpgPngPath: jpgPngFolder.fsName, batches };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+const JPG_PNG_EXTENSIONS = ["jpg", "jpeg", "png"];
+
+function llCollectImageFiles(folder: Folder, results: File[]) {
+  const items = folder.getFiles();
+  for (let i = 0; i < items.length; i++) {
+    if (items[i] instanceof Folder) {
+      llCollectImageFiles(items[i] as Folder, results);
+    } else if (items[i] instanceof File) {
+      const m = items[i].name.match(/\.([A-Za-z0-9]+)$/);
+      const ext = m ? m[1].toLowerCase() : "";
+      if (JPG_PNG_EXTENSIONS.indexOf(ext) !== -1) results.push(items[i] as File);
+    }
+  }
+}
+
+interface JpgPngBatchFilesResult extends Result {
+  files?: { name: string; path: string }[];
+}
+
+export const scanJpgPngBatchFiles = (batchFolderPath: string): JpgPngBatchFilesResult => {
+  try {
+    const batchFolder = new Folder(batchFolderPath);
+    if (!batchFolder.exists) return { success: false, error: "That batch folder no longer exists." };
+    const files: File[] = [];
+    llCollectImageFiles(batchFolder, files);
+    const out = files.map((f) => ({ name: decode(f.name), path: f.fsName }));
+    out.sort(function (a, b) {
+      return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+    });
+    return { success: true, files: out };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

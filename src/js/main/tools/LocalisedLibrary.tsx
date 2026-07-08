@@ -22,11 +22,13 @@ import {
     Square,
     FolderInput,
     ChevronRight,
+    ChevronDown,
     ArrowLeft,
     Library,
     MapPin,
     Folder,
     FolderSymlink,
+    Image,
 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import Tooltip from "../Tooltip";
@@ -124,6 +126,29 @@ const MOCK_CODES: Record<string, string> = { France: "FR", Germany: "DE", Spain:
 // every other MOCK_* constant here -- real detection needs a real saved
 // project file, which preview mode never has.
 const MOCK_DETECTED_TERRITORY: Record<string, string | null> = { ODY_INTL_DGTL_DOOH_HORSE: "France", GLADIATOR_II_DOOH: null };
+// Demonstrates the lazy JPG_PNG batch browse in preview -- keyed by
+// territory, since a real scan is also territory-scoped. Germany
+// deliberately has no entry (falls back to []) to demonstrate the "no
+// JPG_PNG folder found" empty state.
+const MOCK_JPG_PNG_BATCHES: Record<string, string[]> = {
+    France: ["Batch_1", "Batch_1_Post", "Batch_2", "Batch_2_Post", "Bespoke"],
+};
+const MOCK_JPG_PNG_FILES: Record<string, { name: string; path: string }[]> = {
+    Batch_1: [
+        { name: "Poster_1Sheet_FR.jpg", path: "/mock/HORSE/Markets/France/JPG_PNG/Batch_1/Poster_1Sheet_FR.jpg" },
+        { name: "Logo_Transparent_FR.png", path: "/mock/HORSE/Markets/France/JPG_PNG/Batch_1/Logo_Transparent_FR.png" },
+    ],
+    Batch_1_Post: [
+        { name: "Poster_1Sheet_FR_v2.jpg", path: "/mock/HORSE/Markets/France/JPG_PNG/Batch_1_Post/Poster_1Sheet_FR_v2.jpg" },
+    ],
+    Batch_2: [
+        { name: "Billboard_FR.jpg", path: "/mock/HORSE/Markets/France/JPG_PNG/Batch_2/Billboard_FR.jpg" },
+    ],
+    Batch_2_Post: [],
+    Bespoke: [
+        { name: "Metro_Panel_FR.png", path: "/mock/HORSE/Markets/France/JPG_PNG/Bespoke/Metro_Panel_FR.png" },
+    ],
+};
 
 // Shimmer placeholder matching a real territory row's layout (pip + name +
 // count badge), shown while the territory scan is in flight -- same
@@ -159,6 +184,24 @@ const LocalisedLibraryTool = () => {
     // (unsaved project, project outside this campaign's Markets tree, or
     // browser preview), never an error state.
     const [detectedTerritory, setDetectedTerritory] = useState<string | null>(null);
+
+    // JPG_PNG lazy browse -- deliberately NOT part of `components`/the
+    // persisted library (see localise.ts's removal note above
+    // llIsComponentsContainerName): a live, on-demand filesystem scan, two
+    // steps deep. `jpgPngScanned` gates re-scanning on every collapse/
+    // re-expand of the same territory -- once loaded, toggling the section
+    // just shows/hides the already-fetched batch list.
+    const [jpgPngExpanded, setJpgPngExpanded] = useState(false);
+    const [jpgPngLoading, setJpgPngLoading] = useState(false);
+    const [jpgPngScanned, setJpgPngScanned] = useState(false);
+    const [jpgPngFolderPath, setJpgPngFolderPath] = useState<string | null>(null);
+    const [jpgPngBatches, setJpgPngBatches] = useState<string[]>([]);
+    // Second drill level: files inside ONE selected batch, fetched fresh
+    // every time a batch is opened (bounded to a single folder, so unlike
+    // the batch list above there's no benefit to caching this).
+    const [selectedJpgPngBatch, setSelectedJpgPngBatch] = useState<string | null>(null);
+    const [jpgPngBatchLoading, setJpgPngBatchLoading] = useState(false);
+    const [jpgPngBatchFiles, setJpgPngBatchFiles] = useState<{ name: string; path: string }[]>([]);
 
     const [loadingTerritories, setLoadingTerritories] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -280,9 +323,22 @@ const LocalisedLibraryTool = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedTerritory]);
 
+    // Fresh territory, fresh JPG_PNG browse -- a batch list scanned for
+    // France shouldn't linger when switching to Germany.
+    useEffect(() => {
+        setJpgPngExpanded(false);
+        setJpgPngLoading(false);
+        setJpgPngScanned(false);
+        setJpgPngFolderPath(null);
+        setJpgPngBatches([]);
+        setSelectedJpgPngBatch(null);
+        setJpgPngBatchLoading(false);
+        setJpgPngBatchFiles([]);
+    }, [selectedTerritory]);
+
     useEffect(() => {
         setSelectedPaths(new Set());
-    }, [selectedTerritory, selectedFolder]);
+    }, [selectedTerritory, selectedFolder, selectedJpgPngBatch]);
 
     const refreshTerritories = async (camp: Campaign) => {
         setLoadingTerritories(true);
@@ -508,6 +564,65 @@ const LocalisedLibraryTool = () => {
         }
     };
 
+    // Expands the JPG_PNG section, scanning for its batch folders on first
+    // open only (jpgPngScanned gates re-fetching on every subsequent
+    // collapse/expand of the same territory). Not wrapped in safeEvalTS's
+    // usual toast-on-any-failure -- a genuinely empty/missing JPG_PNG
+    // folder is a normal, expected outcome for a territory that doesn't
+    // have print/OOH deliverables yet, not an error worth a red toast.
+    const handleToggleJpgPngSection = async () => {
+        if (jpgPngScanned) {
+            setJpgPngExpanded((v) => !v);
+            return;
+        }
+        if (!selectedCampaign || !selectedTerritory) return;
+        setJpgPngExpanded(true);
+        setJpgPngLoading(true);
+        try {
+            if (mockMode) {
+                setJpgPngFolderPath(`/mock/.../${selectedTerritory}/JPG_PNG`);
+                setJpgPngBatches(MOCK_JPG_PNG_BATCHES[selectedTerritory] || []);
+                setJpgPngScanned(true);
+                return;
+            }
+            const territoryPath = selectedCampaign.marketsRoot + "/" + selectedTerritory;
+            const result = await safeEvalTS("scanJpgPngBatches", territoryPath);
+            if (result) {
+                setJpgPngFolderPath(result.jpgPngPath ?? null);
+                setJpgPngBatches(result.batches || []);
+                setJpgPngScanned(true);
+            }
+        } finally {
+            setJpgPngLoading(false);
+        }
+    };
+
+    // Opens one batch, scanning it fresh every time (unlike the batch list
+    // above, a single folder's contents are cheap enough that caching
+    // isn't worth the staleness risk -- someone could easily drop new
+    // exports into a batch folder between visits).
+    const handleOpenJpgPngBatch = async (batchName: string) => {
+        setSelectedJpgPngBatch(batchName);
+        setJpgPngBatchLoading(true);
+        setJpgPngBatchFiles([]);
+        try {
+            if (mockMode) {
+                setJpgPngBatchFiles(MOCK_JPG_PNG_FILES[batchName] || []);
+                return;
+            }
+            if (!jpgPngFolderPath) return;
+            const batchPath = jpgPngFolderPath + "/" + batchName;
+            const result = await safeEvalTS("scanJpgPngBatchFiles", batchPath);
+            if (result && result.success) {
+                setJpgPngBatchFiles(result.files || []);
+            } else if (result) {
+                pushToast(result.error || "Could not read that batch folder.", "error");
+            }
+        } finally {
+            setJpgPngBatchLoading(false);
+        }
+    };
+
     const handleImport = async (path: string) => {
         const result = await safeEvalTS("importFile", path);
         if (result) {
@@ -530,10 +645,11 @@ const LocalisedLibraryTool = () => {
         });
     };
 
-    const toggleSelectAll = () => {
-        setSelectedPaths((prev) =>
-            prev.size === componentsForFolder.length ? new Set() : new Set(componentsForFolder.map((c) => c.path))
-        );
+    // Generic over whichever path list is currently on screen -- shared by
+    // the folder-components view and the JPG_PNG batch-files view, which
+    // are two different data sources feeding the same selectedPaths set.
+    const toggleSelectAllPaths = (paths: string[]) => {
+        setSelectedPaths((prev) => (prev.size === paths.length ? new Set() : new Set(paths)));
     };
 
     // Reports a summary toast rather than one per file -- a batch of 5+
@@ -634,6 +750,7 @@ const LocalisedLibraryTool = () => {
     const componentsForFolder = componentsForTerritory.filter((c) => folderForComponent(c) === selectedFolder);
 
     const allSelected = componentsForFolder.length > 0 && selectedPaths.size === componentsForFolder.length;
+    const allJpgPngSelected = jpgPngBatchFiles.length > 0 && selectedPaths.size === jpgPngBatchFiles.length;
 
     return (
         <div className="localised-library">
@@ -671,8 +788,8 @@ const LocalisedLibraryTool = () => {
                     <Tooltip
                         text={
                             selectedTerritory
-                                ? `Scans only the "${selectedTerritory}" territory for a Support_Motion or Motion_Components folder and auto-adds every file found inside. Read-only.`
-                                : "Scans every territory for a Support_Motion or Motion_Components folder and auto-adds every file found inside. Read-only."
+                                ? `Scans only the "${selectedTerritory}" territory for a Support_Motion or Motion_Components folder and auto-adds every file found inside. Read-only. JPG_PNG has its own section below, scanned separately on demand.`
+                                : "Scans every territory for a Support_Motion or Motion_Components folder and auto-adds every file found inside. Read-only. JPG_PNG has its own section below, scanned separately on demand."
                         }
                     >
                         <button className="ll-auto-populate" disabled={busy} onClick={handleAutoPopulate}>
@@ -689,7 +806,7 @@ const LocalisedLibraryTool = () => {
 
                     <div className="ll-view-wrap">
                         <motion.div
-                            key={selectedFolder ? "components" : selectedTerritory ? "folders" : "territories"}
+                            key={selectedFolder ? "components" : selectedJpgPngBatch ? "jpgpng-batch" : selectedTerritory ? "folders" : "territories"}
                             className="ll-view"
                             initial={{ opacity: 0, x: selectedTerritory ? 16 : -16 }}
                             animate={{ opacity: 1, x: 0 }}
@@ -756,61 +873,7 @@ const LocalisedLibraryTool = () => {
                                             })}
                                     </div>
                                 </>
-                            ) : !selectedFolder ? (
-                                /* ── Folders view (the "mini directories" split) ── */
-                                <>
-                                    <button className="ll-back" onClick={() => setSelectedTerritory(null)}>
-                                        <ArrowLeft size={13} /> All territories
-                                    </button>
-
-                                    <div className="ll-comp-head">
-                                        <div className="ll-comp-title">
-                                            {selectedTerritory}
-                                            {countryCodes[selectedTerritory] ? <em> {countryCodes[selectedTerritory]}</em> : null}
-                                        </div>
-                                        <span className={componentsForTerritory.length > 0 ? "ll-count has" : "ll-count"}>
-                                            {componentsForTerritory.length}
-                                        </span>
-                                    </div>
-
-                                    <button className="ll-new-folder" onClick={handleNewFolder}>
-                                        <FolderPlus size={14} /> New Folder…
-                                    </button>
-
-                                    <div className="ll-folder-list">
-                                        {allFolderNames.length === 0 && (
-                                            <p className="ll-empty">
-                                                No folders yet. Create one, then Add Component once inside it -- or run Auto-Populate to pull files
-                                                from this territory's Motion Components folder (each lands in a folder named after its file type).
-                                            </p>
-                                        )}
-                                        {allFolderNames.map((name) => {
-                                            const count = componentsForTerritory.filter((c) => folderForComponent(c) === name).length;
-                                            const isCustom = customFolderNameSet.has(name);
-                                            return (
-                                                <div key={name} className="ll-folder-row-wrap">
-                                                    <button className="ll-folder-row" onClick={() => setSelectedFolder(name)}>
-                                                        <Folder size={14} className="ll-folder-icon" />
-                                                        <span className="ll-folder-name">{name}</span>
-                                                        <span className={count > 0 ? "ll-count has" : "ll-count"}>{count}</span>
-                                                        <ChevronRight size={14} className="ll-chevron" />
-                                                    </button>
-                                                    {isCustom && (
-                                                        <Tooltip text="Remove this folder (components move back to their file-type folder)">
-                                                            <button
-                                                                className="ll-row-btn ll-folder-delete"
-                                                                onClick={() => handleRemoveFolder(name)}
-                                                            >
-                                                                <Trash2 size={13} />
-                                                            </button>
-                                                        </Tooltip>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </>
-                            ) : (
+                            ) : selectedFolder ? (
                                 /* ── Components-in-a-folder view ──────────────── */
                                 <>
                                     <button className="ll-back" onClick={() => setSelectedFolder(null)}>
@@ -827,7 +890,7 @@ const LocalisedLibraryTool = () => {
                                     </div>
 
                                     {componentsForFolder.length > 0 && (
-                                        <div className="ll-select-all" onClick={toggleSelectAll}>
+                                        <div className="ll-select-all" onClick={() => toggleSelectAllPaths(componentsForFolder.map((c) => c.path))}>
                                             {allSelected ? <CheckSquare size={13} /> : <Square size={13} />}
                                             <span>{allSelected ? "Deselect all" : "Select all"}</span>
                                         </div>
@@ -900,6 +963,197 @@ const LocalisedLibraryTool = () => {
                                     <button className="ll-add" onClick={handleAddComponent}>
                                         <Plus size={14} /> Add Component…
                                     </button>
+                                </>
+                            ) : selectedJpgPngBatch ? (
+                                /* ── JPG_PNG batch files view ─────────────────── */
+                                <>
+                                    <button className="ll-back" onClick={() => setSelectedJpgPngBatch(null)}>
+                                        <ArrowLeft size={13} /> JPG_PNG
+                                    </button>
+
+                                    <div className="ll-comp-head">
+                                        <div className="ll-comp-title">
+                                            <Image size={13} className="ll-folder-icon" /> {selectedJpgPngBatch}
+                                        </div>
+                                        <span className={jpgPngBatchFiles.length > 0 ? "ll-count has" : "ll-count"}>
+                                            {jpgPngBatchFiles.length}
+                                        </span>
+                                    </div>
+
+                                    {!jpgPngBatchLoading && jpgPngBatchFiles.length > 0 && (
+                                        <div className="ll-select-all" onClick={() => toggleSelectAllPaths(jpgPngBatchFiles.map((f) => f.path))}>
+                                            {allJpgPngSelected ? <CheckSquare size={13} /> : <Square size={13} />}
+                                            <span>{allJpgPngSelected ? "Deselect all" : "Select all"}</span>
+                                        </div>
+                                    )}
+
+                                    <div className="ll-comp-list">
+                                        {jpgPngBatchLoading &&
+                                            Array.from({ length: 4 }).map((_, i) => <SkeletonTerritoryRow key={i} />)}
+                                        {!jpgPngBatchLoading && jpgPngBatchFiles.length === 0 && (
+                                            <p className="ll-empty">No JPG/PNG files found in this batch.</p>
+                                        )}
+                                        {!jpgPngBatchLoading &&
+                                            jpgPngBatchFiles.map((f) => (
+                                                <div key={f.path} className={`ll-comp-row ${selectedPaths.has(f.path) ? "selected" : ""}`}>
+                                                    <Tooltip text="Select for batch import">
+                                                        <button className="ll-check" onClick={() => toggleSelected(f.path)}>
+                                                            {selectedPaths.has(f.path) ? <CheckSquare size={14} /> : <Square size={14} />}
+                                                        </button>
+                                                    </Tooltip>
+                                                    <Tooltip text={f.path}>
+                                                        <span className="ll-comp-name">{f.name}</span>
+                                                    </Tooltip>
+                                                    <Tooltip text="Import (read-only)">
+                                                        <button className="ll-row-btn" onClick={() => handleImport(f.path)}>
+                                                            <Download size={14} />
+                                                        </button>
+                                                    </Tooltip>
+                                                    <Tooltip text="Reveal in Finder/Explorer">
+                                                        <button className="ll-row-btn" onClick={() => handleReveal(f.path)}>
+                                                            <Search size={14} />
+                                                        </button>
+                                                    </Tooltip>
+                                                </div>
+                                            ))}
+                                    </div>
+
+                                    {/* Deliberately Import Selected ONLY -- no "Save Into
+                                        Batch…" here. That action opens/saves .aep project
+                                        files; these are plain JPG/PNG images, so it doesn't
+                                        apply and would be actively misleading to offer. */}
+                                    <AnimatePresence>
+                                        {selectedPaths.size > 0 && (
+                                            <motion.div
+                                                className="ll-batch"
+                                                initial={{ opacity: 0, height: 0 }}
+                                                animate={{ opacity: 1, height: "auto" }}
+                                                exit={{ opacity: 0, height: 0 }}
+                                                transition={{ duration: 0.18 }}
+                                            >
+                                                <Tooltip text="Import just the selected files into the current project, read-only">
+                                                    <button disabled={batchBusy} onClick={handleImportSelected}>
+                                                        <Download size={14} /> Import Selected ({selectedPaths.size})
+                                                    </button>
+                                                </Tooltip>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+                                </>
+                            ) : (
+                                /* ── Folders view (the "mini directories" split) ── */
+                                <>
+                                    <button className="ll-back" onClick={() => setSelectedTerritory(null)}>
+                                        <ArrowLeft size={13} /> All territories
+                                    </button>
+
+                                    <div className="ll-comp-head">
+                                        <div className="ll-comp-title">
+                                            {selectedTerritory}
+                                            {countryCodes[selectedTerritory] ? <em> {countryCodes[selectedTerritory]}</em> : null}
+                                        </div>
+                                        <span className={componentsForTerritory.length > 0 ? "ll-count has" : "ll-count"}>
+                                            {componentsForTerritory.length}
+                                        </span>
+                                    </div>
+
+                                    <button className="ll-new-folder" onClick={handleNewFolder}>
+                                        <FolderPlus size={14} /> New Folder…
+                                    </button>
+
+                                    {/* Shared scroll region for both the regular folder list
+                                        AND the JPG_PNG section below it -- .ll-folder-list
+                                        used to carry flex:1/overflow-y:auto itself, which
+                                        would have made it greedily fill all available height
+                                        and push JPG_PNG out of view entirely. Only THIS
+                                        wrapper scrolls now; both children are plain block
+                                        content inside it. */}
+                                    <div className="ll-folders-scroll">
+                                        <div className="ll-folder-list">
+                                            {allFolderNames.length === 0 && (
+                                                <p className="ll-empty">
+                                                    No folders yet. Create one, then Add Component once inside it -- or run Auto-Populate to pull files
+                                                    from this territory's Motion Components folder (each lands in a folder named after its file type).
+                                                </p>
+                                            )}
+                                            {allFolderNames.map((name) => {
+                                                const count = componentsForTerritory.filter((c) => folderForComponent(c) === name).length;
+                                                const isCustom = customFolderNameSet.has(name);
+                                                return (
+                                                    <div key={name} className="ll-folder-row-wrap">
+                                                        <button className="ll-folder-row" onClick={() => setSelectedFolder(name)}>
+                                                            <Folder size={14} className="ll-folder-icon" />
+                                                            <span className="ll-folder-name">{name}</span>
+                                                            <span className={count > 0 ? "ll-count has" : "ll-count"}>{count}</span>
+                                                            <ChevronRight size={14} className="ll-chevron" />
+                                                        </button>
+                                                        {isCustom && (
+                                                            <Tooltip text="Remove this folder (components move back to their file-type folder)">
+                                                                <button
+                                                                    className="ll-row-btn ll-folder-delete"
+                                                                    onClick={() => handleRemoveFolder(name)}
+                                                                >
+                                                                    <Trash2 size={13} />
+                                                                </button>
+                                                            </Tooltip>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {/* JPG_PNG: deliberately a separate, collapsed-by-default
+                                            section below the regular folder list, not another
+                                            entry in allFolderNames -- it's a LIVE filesystem
+                                            browse (scanned lazily on click, one batch at a time),
+                                            not persisted library data like everything above it.
+                                            See localise.ts's scanJpgPngBatches() header comment
+                                            for why this was split out of Auto-Populate. */}
+                                        <div className="ll-jpgpng-section">
+                                            <button className="ll-jpgpng-toggle" onClick={handleToggleJpgPngSection}>
+                                                <Image size={14} className="ll-folder-icon" />
+                                                <span className="ll-folder-name">JPG_PNG</span>
+                                                <span className="ll-jpgpng-hint">
+                                                    {jpgPngLoading
+                                                        ? "Scanning…"
+                                                        : jpgPngScanned
+                                                            ? `${jpgPngBatches.length} batch${jpgPngBatches.length === 1 ? "" : "es"}`
+                                                            : "Click to load"}
+                                                </span>
+                                                {jpgPngExpanded ? <ChevronDown size={14} className="ll-chevron" /> : <ChevronRight size={14} className="ll-chevron" />}
+                                            </button>
+
+                                            <AnimatePresence>
+                                                {jpgPngExpanded && (
+                                                    <motion.div
+                                                        className="ll-jpgpng-batches"
+                                                        initial={{ opacity: 0, height: 0 }}
+                                                        animate={{ opacity: 1, height: "auto" }}
+                                                        exit={{ opacity: 0, height: 0 }}
+                                                        transition={{ duration: 0.18 }}
+                                                        style={{ overflow: "hidden" }}
+                                                    >
+                                                        {jpgPngLoading &&
+                                                            Array.from({ length: 3 }).map((_, i) => <SkeletonTerritoryRow key={i} />)}
+                                                        {!jpgPngLoading && jpgPngScanned && jpgPngFolderPath === null && (
+                                                            <p className="ll-empty">No JPG_PNG folder found for this territory.</p>
+                                                        )}
+                                                        {!jpgPngLoading && jpgPngScanned && jpgPngFolderPath !== null && jpgPngBatches.length === 0 && (
+                                                            <p className="ll-empty">No batch folders found inside JPG_PNG.</p>
+                                                        )}
+                                                        {!jpgPngLoading &&
+                                                            jpgPngBatches.map((b) => (
+                                                                <button key={b} className="ll-folder-row" onClick={() => handleOpenJpgPngBatch(b)}>
+                                                                    <Folder size={14} className="ll-folder-icon" />
+                                                                    <span className="ll-folder-name">{b}</span>
+                                                                    <ChevronRight size={14} className="ll-chevron" />
+                                                                </button>
+                                                            ))}
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
+                                        </div>
+                                    </div>
                                 </>
                             )}
                         </motion.div>
