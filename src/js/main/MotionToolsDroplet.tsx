@@ -219,7 +219,7 @@ const MotionToolsDroplet: React.FC = () => {
         <Droplet
             panelClassName="motion-tools-panel"
             trigger={({ open, toggle }) => (
-                <Tooltip text="Motion Tools">
+                <Tooltip text="XYTools">
                     <button className={"favorites-toggle" + (open ? " active" : "")} onClick={toggle}>
                         <Move size={14} />
                     </button>

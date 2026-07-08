@@ -2416,14 +2416,36 @@ both to instant. Tabs:
   off -- same limitation Motion 2 has.
 - **Transform** -- the nudge bar. Position (arrows), Scale/Rotation/
   Opacity (±/rotate). **Hold-to-repeat** (`RepeatButton` in the tsx: fires
-  once on pointerdown, then repeats every 100ms after a 350ms hold --
-  added after direct feedback that click-per-step was "a million clicks";
+  once on press, then repeats every 100ms after a 350ms hold -- added
+  after direct feedback that click-per-step was "a million clicks";
   repeat ticks are gated on the previous evalTS call settling via a
   `busyRef` so a slow bridge can't queue stale nudges that keep landing
   after release). A **Step field** sets the per-tick amount; **Shift =
-  10x** that step (`e.shiftKey` captured at pointerdown, matching AE's own
+  10x** that step (`e.shiftKey` captured at press, matching AE's own
   arrow-key convention). Adds a keyframe at the current time only if the
   property is already animated, else sets the static value.
+  - **Real bug found on a real macOS AE install, fixed: nudge buttons did
+    nothing when clicked in the actual embedded CEP panel.** `RepeatButton`
+    originally used the Pointer Events API
+    (`onPointerDown`/`onPointerUp`/`onPointerLeave`/`onPointerCancel`) --
+    the ONLY place in this whole panel that did, every other button here
+    (Anchor, Align, Distribute, Group) uses plain `onClick` and worked
+    fine on the same machine. Confirmed via direct comparison: the exact
+    same panel, mirrored through a separate Chrome DevTools remote-debug
+    window (a full modern Chrome renderer, not the panel's own embedded
+    CEF host), DID respond to the pointer events -- isolating this to the
+    macOS AE CEP panel host itself not reliably dispatching Pointer
+    Events, not a logic bug in the nudge functions
+    (`motionToolsNudgePosition`/`Scale`/`Rotation`/`Opacity` in
+    `motionTools.ts` were all correct on inspection and confirmed working
+    once the click actually fired). **Fixed by switching `RepeatButton`
+    to Mouse Events** (`onMouseDown`/`onMouseUp`/`onMouseLeave`) -- the
+    same, known-working input path every other button in this panel
+    already relies on via `onClick`. **If a future addition to this app
+    needs press-and-hold or any handler beyond a plain click, use mouse
+    events, not pointer events** -- this app's actual macOS CEP panel
+    host can't be assumed to support the latter, even though it's the
+    more "correct" modern browser API and works fine in ordinary Chrome.
 - **Sequence** -- `motionToolsSequence(frames, reverse)`. Staggers the
   selected layers in time (Motion 2's "Shifter" in miniature), ordered
   top-to-bottom by layer index (not selection order), `reverse` flips it.
