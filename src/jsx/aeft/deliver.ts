@@ -342,12 +342,34 @@ export function drqrProcessLayers(comp: CompItem, newWidth: number, newHeight: n
 // (tools/DeliveryChecklist.tsx); the constants and per-comp math below are
 // ported 1:1.
 // =============================================================================
-const DELIVERY_TEMPLATE_BITRATES_MBPS = [2.8, 5, 7, 8, 10, 12, 14, 16, 18, 20, 25, 26, 30, 36, 50];
+// Curated list of 29 (replaces the earlier ad-hoc set), matching the REAL
+// Output Module Templates actually built in AE 1:1, taken directly from a
+// screenshot of that template list rather than a hand-guessed sequence --
+// notably NOT an even/round progression (2.4 and 3.4 exist but not 3 or
+// 4; there's a gap from 8 straight to 5... i.e. 5 and 7 exist but 4/6/9
+// don't; 40 jumps straight to 48, skipping 42-46). Every value here needs
+// a REAL, identically-named Output Module Template already saved in AE
+// (Edit > Templates > Output Module) on whatever machine runs this --
+// there's no scripting path to create or enumerate one (confirmed, see
+// CLAUDE.md), so this array is the only place that knows what "exists".
+// Adding a bitrate here without also building its template in AE just
+// means applyTemplate() silently falls through to AE's defaults for that
+// row (see appliedOK below) -- and building a template in AE without
+// adding its value here makes it invisible to this picker even though it
+// exists. If the studio's template set ever changes again, re-derive this
+// list from a fresh screenshot/export of the actual template names rather
+// than assuming a "nice" numeric progression continues to hold.
+const DELIVERY_TEMPLATE_BITRATES_MBPS = [
+  0.6, 0.8, 1, 1.4, 2, 2.4, 2.8, 3.4, 5, 7, 8, 10, 12, 14, 16, 18, 20, 22,
+  24, 25, 26, 28, 30, 32, 36, 40, 48, 50, 60,
+];
 const DELIVERY_AUDIO_RESERVE_KBPS = 192;
 
+// All templates in the curated list use consistent uppercase "MBPS" --
+// the previous list's one-off lowercase "Mbps" exception at 50 no longer
+// applies (that was tied to a specific already-existing template name;
+// the 50 in this curated list is a fresh, consistently-named one).
 function deliveryFormatTemplateName(mbpsVal: number): string {
-  // Most templates use "MBPS" except 50 which uses "Mbps" -- handle both.
-  if (mbpsVal === 50) return "H264_" + String(mbpsVal) + "Mbps_MOS";
   return "H264_" + String(mbpsVal) + "MBPS_MOS";
 }
 

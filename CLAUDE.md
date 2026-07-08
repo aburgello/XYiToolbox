@@ -1586,11 +1586,26 @@ between.
   (`"*** Capped to N Mbps -- resulting file will likely be SMALLER..."`)
   rather than silently applying the cap with no explanation. Template
   selection itself is unchanged: `deliveryFindTemplateName()` still rounds
-  DOWN to the nearest of a **fixed, prebuilt list of 15 bitrates**
-  (`DELIVERY_TEMPLATE_BITRATES_MBPS = [2.8, 5, 7, 8, 10, 12, 14, 16, 18,
-  20, 25, 26, 30, 36, 50]`), matched to Output Module Template names
-  ("H264_<N>MBPS_MOS", except 50 which is "H264_50Mbps_MOS" -- inconsistent
-  casing in the actual template names, ported as-is).
+  DOWN to the nearest of a fixed, prebuilt bitrate list, matched to
+  Output Module Template names via `deliveryFormatTemplateName()`
+  ("H264_<N>MBPS_MOS").
+  - **Re-curated to a bigger, evenly-spaced list, replacing the original
+    15-value set**: `DELIVERY_TEMPLATE_BITRATES_MBPS = [0.6, 0.8, 1, 1.4,
+    2, 2.8, 3, 4, 6, 8, 10, 12, ..., 60]` (0.6 up through 4 by hand-picked
+    steps, then every 2 Mbps up to 60) — every one of these values needs
+    a REAL, identically-named Output Module Template built by hand in AE
+    first; adding a value here with no matching template just makes that
+    row's `applyTemplate()` silently fall through to AE's defaults (see
+    `appliedOK`/`mp4Note` handling below), and building a template in AE
+    without adding its value here makes it invisible to this picker.
+  - **The old 50 → "H264_50Mbps_MOS" lowercase-casing exception is GONE.**
+    That inconsistency was tied to one specific pre-existing template
+    name; the re-curated list's 50 is a fresh, consistently-uppercase
+    `"H264_50MBPS_MOS"` template, confirmed explicitly with the studio
+    rather than assumed. `deliveryFormatTemplateName()` no longer has a
+    special case for any value — **if a future studio-provided template
+    ever needs non-standard casing again, re-add a special case there,
+    don't assume uppercase always holds.**
 - **Confirmed, not assumed: After Effects' ExtendScript API cannot create
   or edit H.264 Output Module Templates programmatically.** There's no
   scripting path to define a new named template with an arbitrary bitrate
