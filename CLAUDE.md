@@ -2373,12 +2373,31 @@ both to instant. Tabs:
 - **Anchor** -- `motionToolsSnapAnchor(relX, relY)`. The required part. A
   3x3 reference grid (Photoshop/Figma anchor-selector language) that snaps
   each selected AVLayer's anchor to a corner/edge/center of its own
-  content box (`sourceRectAtTime`, independent of current anchor/position)
-  and auto-compensates Position so the layer never jumps. Compensation
-  accounts for current Scale and Z Rotation. **Known approximation,
-  flagged in code**: a 3D layer also rotated on X/Y or with a non-default
-  Orientation is only Z-compensated, so slightly off for that one case;
-  exact for every 2D layer and any 3D layer rotated only on Z.
+  content box (`getContentFrameRect()`, independent of current anchor/
+  position) and auto-compensates Position so the layer never jumps.
+  Compensation accounts for current Scale and Z Rotation. **Known
+  approximation, flagged in code**: a 3D layer also rotated on X/Y or
+  with a non-default Orientation is only Z-compensated, so slightly off
+  for that one case; exact for every 2D layer and any 3D layer rotated
+  only on Z.
+  - **Real bug found by the user ("anchor extends past the precomp's
+    corner instead of landing on it"), fixed.** `sourceRectAtTime()` on
+    a precomp layer measures the bounding box of the actual rendered
+    PIXEL CONTENT inside the nested comp, not the nested comp's own
+    canvas -- a precomp built with full-bleed artwork (content
+    deliberately extending past its own comp edges, a common safety
+    margin in motion design) reports a box WIDER than the precomp
+    itself, so snapping to "Top Left" landed on the edge of that bleed,
+    outside the precomp's actual visible frame. **Fix**:
+    `getContentFrameRect()` (shared by both `motionToolsSnapAnchor` and
+    `getLayerBounds`, since Align/Distribute/Group have the exact same
+    root-cause exposure) now checks `layer.source instanceof CompItem`
+    first and uses that nested comp's own `{0, 0, width, height}`
+    instead of `sourceRectAtTime()` for any precomp layer; real footage/
+    solids/text/shapes are unaffected, still `sourceRectAtTime()` as
+    before. **Untestable in browser preview** (no real AE bridge, no
+    real precomp layers) -- needs a real-AE pass against an actual
+    full-bleed precomp to confirm fixed.
 - **Align** -- `motionToolsAlign(edge, relativeTo)` +
   `motionToolsDistribute(axis)` + `motionToolsGroup()`. Align 6
   edges/centers to either the **Composition** or the **Selection**'s

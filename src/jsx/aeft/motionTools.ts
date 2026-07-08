@@ -24,10 +24,31 @@ function applyValue(prop: Property, time: number, value: any): void {
   else prop.setValue(value);
 }
 
+// For a layer whose source is itself a composition ("precomp" in this
+// studio's own terminology), `sourceRectAtTime()` measures the bounding
+// box of the actual rendered PIXEL CONTENT inside that nested comp --
+// NOT the nested comp's own canvas/frame. A precomp built with full-bleed
+// artwork (content deliberately extending past the comp's own edges, a
+// common safety margin in motion design) reports a box WIDER than the
+// precomp itself, so anchor-snapping/aligning to "corner" lands on the
+// edge of the bleed, not the precomp's actual frame -- reads as the
+// anchor "extending" past where it should land. Use the nested comp's
+// own width/height instead for anything whose source is a CompItem;
+// real footage/solids/text/shapes still use sourceRectAtTime, which
+// already reports exactly what's on screen for those.
+function getContentFrameRect(layer: AVLayer, time: number): { left: number; top: number; width: number; height: number } {
+  if (layer.source && layer.source instanceof CompItem) {
+    return { left: 0, top: 0, width: layer.source.width, height: layer.source.height };
+  }
+  return layer.sourceRectAtTime(time, false);
+}
+
 // Axis-aligned bounding box of an AVLayer's rendered content in COMP space,
-// derived from its own content rect (sourceRectAtTime, independent of the
-// current anchor/position) transformed by the layer's current anchor,
-// position, and scale. Rotation is intentionally ignored -- align/distribute
+// derived from its own content rect (getContentFrameRect() above --
+// sourceRectAtTime for real footage, or the nested comp's own frame for a
+// precomp layer -- independent of the current anchor/position either way)
+// transformed by the layer's current anchor, position, and scale. Rotation
+// is intentionally ignored -- align/distribute
 // tools everywhere (AE's own included) work on axis-aligned bounds, and
 // factoring in rotation would give a looser, less predictable box. **Parenting
 // caveat**: `Position` for a parented layer is in its PARENT's space, so
@@ -37,7 +58,7 @@ function applyValue(prop: Property, time: number, value: any): void {
 interface LayerBounds { left: number; top: number; width: number; height: number; cx: number; cy: number; }
 
 function getLayerBounds(layer: AVLayer, time: number): LayerBounds | null {
-  const rect = layer.sourceRectAtTime(time, false);
+  const rect = getContentFrameRect(layer, time);
   const anchorProp = layer.property("Anchor Point") as Property;
   const posProp = layer.property("Position") as Property;
   const scaleProp = layer.property("Scale") as Property;
@@ -61,8 +82,13 @@ function getLayerBounds(layer: AVLayer, time: number): LayerBounds | null {
 // layer's actual content without the layer visually jumping, since moving
 // the anchor point alone shifts the rendered position too. This snaps the
 // anchor to one of 9 positions on the layer's own bounding box (from
-// sourceRectAtTime, which is independent of the current anchor/position)
-// and compensates Position in the same call so nothing visibly moves.
+// getContentFrameRect() above -- sourceRectAtTime for real footage/solids/
+// text/shapes, or the nested comp's own frame for a precomp layer, since
+// sourceRectAtTime on a precomp reports the bleed of its actual pixel
+// content rather than its frame, which used to land the anchor outside
+// the precomp's visible corners/edges instead of on them -- either way
+// independent of the current anchor/position) and compensates Position in
+// the same call so nothing visibly moves.
 //
 // relX/relY are 0 / 0.5 / 1 (left|top, center, right|bottom) -- the 3x3
 // grid the React side renders maps its 9 buttons directly to these pairs.
@@ -84,7 +110,7 @@ export const motionToolsSnapAnchor = (relX: number, relY: number): Result => {
       // are silently skipped rather than thrown on.
       if (!(layer instanceof AVLayer)) continue;
 
-      const rect = layer.sourceRectAtTime(time, false);
+      const rect = getContentFrameRect(layer, time);
       const newAnchorX = rect.left + rect.width * relX;
       const newAnchorY = rect.top + rect.height * relY;
 
