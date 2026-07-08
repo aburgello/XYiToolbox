@@ -104,6 +104,18 @@ const MT_ACCENT_VARS: React.CSSProperties = {
 // firing while held. Repeat ticks are gated on the previous evalTS call
 // having settled (`busyRef`) so a slow bridge doesn't pile up a queue of
 // stale nudges that keep applying after the pointer is released.
+//
+// Mouse events, not Pointer events -- deliberately. This used to be
+// onPointerDown/Up/Leave/Cancel, which silently did nothing at all when
+// clicked inside a real macOS AE CEP panel (confirmed: worked fine when
+// the exact same panel was mirrored through a separate Chrome DevTools
+// remote-debug window, which is a full modern Chrome renderer, not the
+// panel's own embedded CEF host) -- every OTHER button in this panel
+// uses plain onClick and worked on the same machine, and onClick is
+// itself built on mouse-event dispatch, so mouse events are the known-
+// working input path for this panel host. Pointer events are the more
+// "correct" modern API, but they're not the one this app can rely on --
+// don't switch back without confirming on a real macOS AE panel first.
 const REPEAT_DELAY_MS = 350;
 const REPEAT_INTERVAL_MS = 90;
 
@@ -133,16 +145,15 @@ const RepeatButton: React.FC<{
         <Tooltip text={title} grow>
             <button
                 className="mt-icon-btn"
-                onPointerDown={(e) => {
+                onMouseDown={(e) => {
                     const shiftKey = e.shiftKey; // captured at press; a hold keeps using it
                     fire(shiftKey);
                     timerRef.current = setTimeout(() => {
                         intervalRef.current = setInterval(() => fire(shiftKey), REPEAT_INTERVAL_MS);
                     }, REPEAT_DELAY_MS);
                 }}
-                onPointerUp={stop}
-                onPointerLeave={stop}
-                onPointerCancel={stop}
+                onMouseUp={stop}
+                onMouseLeave={stop}
             >
                 {children}
             </button>
