@@ -297,7 +297,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "render-me",
         label: "RenderMe!",
-        description: "Finds this project's Renders folder (a sibling of AE in the market/territory root), creates a matching batch folder inside it, and queues the active comp with AE's default render settings, output redirected there.",
+        description: "Finds this project's Renders folder (a sibling of AE in the market/territory root), creates a matching batch folder inside it, and queues the active comp with AE's default render settings, output redirected there -- plus a second queued row using the H264_16MBPS_MOS preset, output into a \"_mp4\" subfolder of that same batch folder.",
         icon: Film,
         group: "organise",
         run: () => evalTSSafe("renderMe"),

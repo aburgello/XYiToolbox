@@ -80,6 +80,16 @@ export const delivery = (): Result => {
 // redirects just the output FOLDER to that new Renders subfolder, keeping
 // AE's own default filename/extension exactly as it already proposed it.
 //
+// **Also queues a second row** (added later, not part of the original
+// single-row version): the same comp again, this time with the studio's
+// standard "H264_16MBPS_MOS" Output Module Template applied, output into
+// a "_mp4" subfolder created inside that same batch folder -- so one
+// click leaves both the default/master render AND a ready-to-share MP4
+// queued side by side. A missing/renamed template on the local machine
+// doesn't abort the click; that row still queues (with AE's default
+// settings) and the toast says so, same non-fatal handling
+// deliveryChecklistQueue() below already uses for its own applyTemplate().
+//
 // **Two assumptions, unverified against the real "AE" side of the folder
 // tree (only JPG_PNG's batch-folder structure has been confirmed from
 // real screenshots so far) -- flag and revisit if a real test trips
@@ -128,6 +138,21 @@ function llFindRendersFolder(fileObj: File): Folder | null {
   return null;
 }
 
+// Same underscore-prefixed "generated subfolder" convention
+// deliveryEnsureDeliveryFolder() already uses for "_Delivery" -- kept as
+// its own tiny helper rather than generalizing that one, since this one
+// nests inside a batch folder (RenderMe!'s own), not a .MOV source folder
+// (Delivery Checklist's).
+function renderMeEnsureMp4Folder(batchFolder: Folder): Folder | null {
+  const mp4Folder = new Folder(batchFolder.fsName + "/_mp4");
+  if (!mp4Folder.exists) {
+    if (!mp4Folder.create()) return null;
+  }
+  return mp4Folder;
+}
+
+const RENDER_ME_MP4_TEMPLATE = "H264_16MBPS_MOS";
+
 interface RenderMeResult extends Result {
   message?: string; // the Renders batch folder path, on success -- shown in the button's toast
 }
@@ -154,6 +179,9 @@ export const renderMe = (): RenderMeResult => {
     }
 
     app.beginUndoGroup("RenderMe!");
+
+    // Row 1: AE's own default output module, redirected into the batch
+    // folder -- unchanged from before.
     const rqItem = app.project.renderQueue.items.add(comp);
     const om = rqItem.outputModule(1);
     // Read AE's own just-assigned default filename (comp name + whatever
@@ -162,9 +190,37 @@ export const renderMe = (): RenderMeResult => {
     // extension stay exactly what "default" actually means.
     const defaultFileName = om.file ? om.file.name : comp.name + ".mov";
     om.file = new File(batchFolder.fsName + "/" + defaultFileName);
+
+    // Row 2: a duplicate of the same comp queued alongside it with the
+    // studio's standard H264_16MBPS_MOS delivery preset, output into a
+    // "_mp4" subfolder of that same batch folder. Same
+    // applyTemplate()-then-explicit-filename pattern as
+    // deliveryChecklistQueue() above -- applying a template doesn't
+    // reliably rename the output file's own extension on its own, so
+    // ".mp4" is set explicitly here rather than trusted to follow from
+    // the template. A missing template (not installed/renamed on this
+    // machine -- see CLAUDE.md's Output Module Template caveat) doesn't
+    // abort the whole action; the row still queues with AE's default
+    // settings and the toast says so, matching how a template miss is
+    // handled everywhere else in this file rather than failing the batch.
+    let mp4Note = "";
+    const mp4Folder = renderMeEnsureMp4Folder(batchFolder);
+    if (mp4Folder) {
+      const rqItemMp4 = app.project.renderQueue.items.add(comp);
+      const omMp4 = rqItemMp4.outputModule(1);
+      try {
+        omMp4.applyTemplate(RENDER_ME_MP4_TEMPLATE);
+      } catch (e) {
+        mp4Note = " (\"" + RENDER_ME_MP4_TEMPLATE + "\" template not found -- MP4 row queued with default settings, apply manually)";
+      }
+      omMp4.file = new File(mp4Folder.fsName + "/" + comp.name + ".mp4");
+    } else {
+      mp4Note = ' (could not create "_mp4" folder -- MP4 row not queued)';
+    }
+
     app.endUndoGroup();
 
-    return { success: true, message: batchFolder.fsName };
+    return { success: true, message: batchFolder.fsName + mp4Note };
   } catch (e) {
     app.endUndoGroup();
     return { success: false, error: e.toString() };
