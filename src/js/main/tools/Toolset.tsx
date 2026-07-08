@@ -47,6 +47,7 @@ import {
     CopyPlus,
     Maximize2,
     Truck,
+    Film,
     ArrowLeftRight,
     Tag,
     Type,
@@ -292,6 +293,15 @@ export const ACTIONS: ActionEntry[] = [
         group: "organise",
         run: () => evalTSSafe("delivery"),
         successText: () => "Delivery comp(s) created.",
+    },
+    {
+        id: "render-me",
+        label: "RenderMe!",
+        description: "Finds this project's Renders folder (a sibling of AE in the market/territory root), creates a matching batch folder inside it, and queues the active comp with AE's default render settings, output redirected there.",
+        icon: Film,
+        group: "organise",
+        run: () => evalTSSafe("renderMe"),
+        successText: (r) => "Queued for render → " + (r.message || "Renders folder"),
     },
     {
         id: "rotate-90cc",

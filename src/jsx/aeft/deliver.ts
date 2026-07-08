@@ -56,6 +56,122 @@ export const delivery = (): Result => {
 };
 
 // =============================================================================
+// RenderMe! -- new Toolset one-click action, NOT a port of anything in
+// toolset/. "Similar to how Deliver works" turned out to mean "a one-click
+// Toolset button that does its thing and reports a toast" (the UX shape),
+// not Delivery's own logic -- Delivery operates on `app.project.selection`
+// and never touches the filesystem or render queue at all (confirmed by
+// reading its actual body above); RenderMe! is filesystem/render-queue
+// work end to end, so it's its own function, not a variant of delivery().
+//
+// What it does: for the CURRENTLY OPEN, SAVED project, walks up from the
+// .aep file to find a "Renders" folder as a SIBLING of some ancestor
+// folder (the studio convention confirmed from real folder screenshots:
+// AE/JPG_PNG/Masters/Mechs/PDFs/PSD/Renders/Support_Motion all sit as
+// siblings under one territory/market root) -- same "walk up, check
+// siblings at each level" technique detectCurrentTerritory() (localise.ts)
+// already uses, not llFindContainerFolder's breadth-first DOWNWARD search
+// (there's nothing to search downward here; we already know exactly where
+// we're starting from, we just don't know how many levels up "Renders"
+// sits). Creates (if missing) a same-named subfolder inside Renders,
+// matching whatever folder the .aep itself is directly inside of, adds the
+// active comp to the render queue with AE's own DEFAULT output module
+// settings (no template applied -- "default" is taken literally), and
+// redirects just the output FOLDER to that new Renders subfolder, keeping
+// AE's own default filename/extension exactly as it already proposed it.
+//
+// **Two assumptions, unverified against the real "AE" side of the folder
+// tree (only JPG_PNG's batch-folder structure has been confirmed from
+// real screenshots so far) -- flag and revisit if a real test trips
+// either one**:
+//   1. The .aep's own immediate parent folder IS the batch folder (i.e.
+//      projects sit directly inside e.g. ".../AE/Batch_3/file.aep", not
+//      nested another level deeper). If real projects sit one level
+//      deeper than that, the created Renders subfolder will be named
+//      after the wrong (too-deep) folder.
+//   2. "The active comp" (app.project.activeItem) is the one meant to be
+//      queued -- there's no "Main" folder / selection-based picker here
+//      the way some other tools use, since this is a single-click action
+//      with no picker UI. If a project's real deliverable comp is never
+//      the active one when this gets clicked, this will queue the wrong
+//      comp.
+// =============================================================================
+function llIsRendersFolderName(name: string): boolean {
+  const norm = String(name).toLowerCase().replace(/[_\s]+/g, "");
+  return norm === "renders" || norm === "render";
+}
+
+// Walks up from the saved project file, and at EACH level checks whether
+// "Renders" exists as a SIBLING of the current folder (i.e. a child of
+// its parent) -- not a downward search into any subtree, so there's no
+// risk of the "found a same-named decoy buried somewhere else" bug class
+// scanJpgPngBatches had to fix (see localise.ts) -- we only ever look at
+// flat sibling lists while ascending from a known starting point.
+function llFindRendersFolder(fileObj: File): Folder | null {
+  let currentFolder: Folder | null = fileObj.parent;
+  while (currentFolder !== null) {
+    const parent: Folder | null = currentFolder.parent;
+    if (parent) {
+      const siblings = parent.getFiles();
+      for (let i = 0; i < siblings.length; i++) {
+        if (siblings[i] instanceof Folder && llIsRendersFolderName(siblings[i].name)) {
+          return siblings[i] as Folder;
+        }
+      }
+    }
+    if (parent && parent.absoluteURI !== currentFolder.absoluteURI) {
+      currentFolder = parent;
+    } else {
+      break;
+    }
+  }
+  return null;
+}
+
+interface RenderMeResult extends Result {
+  message?: string; // the Renders batch folder path, on success -- shown in the button's toast
+}
+
+export const renderMe = (): RenderMeResult => {
+  try {
+    const projFile = app.project.file;
+    if (!projFile) return { success: false, error: "Save your After Effects project first -- RenderMe! needs a saved file path to find the Renders folder." };
+
+    const comp = app.project.activeItem;
+    if (!(comp instanceof CompItem)) return { success: false, error: "Select or open a composition first." };
+
+    const rendersFolder = llFindRendersFolder(projFile);
+    if (!rendersFolder) {
+      return { success: false, error: 'Could not find a "Renders" folder near this project -- expected it as a sibling of the AE folder in the market/territory root.' };
+    }
+
+    const batchName = projFile.parent ? decode(projFile.parent.name) : "";
+    if (!batchName) return { success: false, error: "Could not determine which batch folder this project is in." };
+
+    const batchFolder = new Folder(rendersFolder.fsName + "/" + batchName);
+    if (!batchFolder.exists) {
+      if (!batchFolder.create()) return { success: false, error: 'Could not create "' + batchName + '" inside Renders.' };
+    }
+
+    app.beginUndoGroup("RenderMe!");
+    const rqItem = app.project.renderQueue.items.add(comp);
+    const om = rqItem.outputModule(1);
+    // Read AE's own just-assigned default filename (comp name + whatever
+    // extension the currently-default Output Module Template produces)
+    // BEFORE overwriting it, so only the FOLDER changes -- the filename/
+    // extension stay exactly what "default" actually means.
+    const defaultFileName = om.file ? om.file.name : comp.name + ".mov";
+    om.file = new File(batchFolder.fsName + "/" + defaultFileName);
+    app.endUndoGroup();
+
+    return { success: true, message: batchFolder.fsName };
+  } catch (e) {
+    app.endUndoGroup();
+    return { success: false, error: e.toString() };
+  }
+};
+
+// =============================================================================
 // Shared scale-to-fit helper, ported from XYi_Scaler.jsx's onScaleClick()
 // (the "whole comp" branch only -- n!=1, i.e. resize the active comp
 // itself, not a single layer's source). Uses a temporary null-parent layer

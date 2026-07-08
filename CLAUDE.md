@@ -427,6 +427,48 @@ implementing each one lives.
     `_VNN` suffix, parses its target size from the resulting filename
     (via `parseFilenameMeta`, shared with Cheeky T Check), and wraps it
     in a new comp scaled to that size, trimmed to its work area.
+  - **RenderMe!** (`renderMe`, `deliver.ts`) — new, NOT a port of
+    anything in `toolset/`. Asked for as working "similar to how Deliver
+    works" -- turned out, after actually reading `delivery()`'s real
+    body, that this meant the UX shape (a one-click Toolset button) only:
+    `delivery()` operates on `app.project.selection` and never touches
+    the filesystem or render queue at all, so RenderMe! is its own
+    function, not a variant. For the CURRENTLY OPEN, SAVED project: walks
+    UP from the `.aep` file, checking at EACH ancestor level whether
+    "Renders" exists as a SIBLING of that level (`llFindRendersFolder`,
+    same "walk up, check siblings" technique `detectCurrentTerritory`
+    already uses in `localise.ts` -- NOT `llFindContainerFolder`'s
+    breadth-first downward search, since there's nothing to search
+    downward into here, just an unknown number of levels to ascend from a
+    known starting point) -- matches the real studio convention confirmed
+    from folder screenshots (AE/JPG_PNG/Masters/Mechs/PDFs/PSD/Renders/
+    Support_Motion all sit as siblings under one territory/market root).
+    Creates (if missing) a same-named subfolder inside Renders matching
+    whatever folder the `.aep` is directly inside of, adds the ACTIVE comp
+    (`app.project.activeItem`) to the render queue with AE's own DEFAULT
+    output module settings (no `applyTemplate()` call at all -- "default"
+    taken literally, unlike `deliveryChecklistQueue`'s hardcoded
+    `H264_<N>MBPS_MOS` template list), and redirects only the output
+    FOLDER to that new Renders subfolder -- reads AE's own just-assigned
+    default filename (`om.file.name`, already comp-name + whatever
+    extension the current default template produces) before overwriting
+    `om.file`, so the filename/extension stay exactly what "default"
+    means rather than this function guessing an extension.
+    **Two assumptions, flagged in the code, unverified against the real
+    "AE" side of the folder tree** (only JPG_PNG's batch structure has
+    been confirmed from real screenshots so far):
+    1. The `.aep`'s own immediate parent folder IS the batch folder
+       (projects sit directly inside e.g. `.../AE/Batch_3/file.aep`, not
+       nested another level deeper) -- if wrong, the created Renders
+       subfolder gets named after the wrong (too-deep) folder.
+    2. "The active comp" is the one meant to be queued -- there's no
+       picker UI on a single-click action, so if a project's real
+       deliverable comp isn't the active one when this gets clicked, it
+       queues the wrong comp. No "Main" folder convention used here
+       (that's a real, separate pattern in this codebase -- see
+       `renameMainComp`/`makeTextless`/`campaignLocaliserGenerate` -- but
+       `delivery()` itself doesn't use it either, so this doesn't either,
+       to stay consistent with its own stated model).
   - **Rotate 90CC** — ported from `rotNinty()`. Wraps each selected item
     in a new width/height-swapped comp rotated -90°. Doesn't touch the
     original item.
