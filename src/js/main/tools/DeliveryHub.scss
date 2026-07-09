@@ -315,9 +315,16 @@
     }
 
     // ── Row list ──────────────────────────────────────────────────────────
+    // Bumped up from 256px -- a real delivery batch (7+ rows, per real
+    // studio use) was cramping into a tiny scrollable sliver while the
+    // panel had plenty of unused height below it. `.dh-content`'s own
+    // `overflow: hidden` (no outer scroll) is why this stays a fixed
+    // max-height rather than flex:1 -- growing unbounded here would eat
+    // into the queue bar/log's own space instead of just using slack
+    // that's actually free.
     .dh-rows-area {
         flex: 0 1 auto;
-        max-height: 256px;
+        max-height: 340px;
         overflow-y: auto;
         padding: 8px 14px;
         display: flex;
@@ -586,16 +593,22 @@
     }
 
     // ── Log output ────────────────────────────────────────────────────────
+    // Was sitting flush under the Queue button (no top margin at all) at a
+    // cramped 120px/10px -- real queue output (per-comp target size,
+    // required bitrate, applied template, full output path) reads as a
+    // dense wall of tiny text. Given real breathing room from the button
+    // above, a taller viewport, and a size bump big enough to actually
+    // read comfortably rather than a token increase.
     .dh-log {
-        margin: 0 14px 8px;
-        max-height: 120px;
+        margin: 14px 14px 8px;
+        max-height: 220px;
         overflow-y: auto;
         background: #191919;
         border: 1px solid #2c2c2c;
         border-radius: 4px;
-        padding: 7px 9px;
-        font-size: 10px;
-        line-height: 1.55;
+        padding: 9px 11px;
+        font-size: 11px;
+        line-height: 1.6;
         white-space: pre-wrap;
         color: #888;
         flex-shrink: 0;

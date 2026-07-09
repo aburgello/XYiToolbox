@@ -84,11 +84,12 @@ export const delivery = (): Result => {
 // single-row version): the studio's standard "H264_16MBPS_MOS" Output
 // Module Template, output into a "_mp4" subfolder created inside that
 // same batch folder -- so one click leaves both the default/master
-// render AND a ready-to-share MP4 queued together. Tries to STACK this
-// as a second Output Module on the SAME render-queue row first (matching
-// AE's own "Composition > Add Output Module" convention -- see the big
-// comment right above the `omMp4` block below for exactly why that's an
-// unreliable, best-effort scripting operation, not a documented one),
+// render AND a ready-to-share MP4 queued together. Stacks this as a
+// second Output Module on the SAME render-queue row (matching AE's own
+// "Composition > Add Output Module" convention -- see the big comment
+// right above the `omMp4` block below for how, since there's no
+// documented scripting API for it, and CONFIRMED working in a real AE
+// session: two Output Modules under one queued row, exactly as intended),
 // falling back to a second separate queued row if the stacking attempt
 // doesn't visibly succeed. Either way, a missing/renamed template on the
 // local machine doesn't abort the click; that output still queues (with
@@ -199,31 +200,35 @@ export const renderMe = (): RenderMeResult => {
     // Second output: the studio's standard H264_16MBPS_MOS delivery
     // preset, output into a "_mp4" subfolder of that same batch folder.
     //
-    // **EXPERIMENTAL, best-effort stacking onto the SAME render-queue
-    // row** (added at direct request, to match AE's own "Composition >
-    // Add Output Module" look -- one comp, two Output Module sub-rows --
-    // instead of a second separate queued item). This is NOT a
-    // documented/reliable scripting operation: `RenderQueueItem
+    // **Stacks onto the SAME render-queue row** (added at direct
+    // request, to match AE's own "Composition > Add Output Module" look
+    // -- one comp, two Output Module sub-rows -- instead of a second
+    // separate queued item). **CONFIRMED WORKING in a real AE session**
+    // (two Output Modules under one queued row, as intended), but it's
+    // still not a documented/officially-supported scripting operation,
+    // so the verify-then-fallback structure below stays: `RenderQueueItem
     // .outputModules` is READ-ONLY from script (its own doc comment says
     // it "does not provide any additional functionality" beyond index
     // lookup) -- there is no `.add()`. The only way to add a second
     // Output Module at all is the `Add Output Module` menu command
-    // (`_CommandID.AddOutputModule`), which operates on whatever's
-    // SELECTED in the Render Queue panel -- a state this script cannot
-    // directly set (no `RenderQueueItem.selected` property exists). This
-    // relies on AE's own unconfirmed tendency to leave a just-added
-    // render-queue item as the selected one, and is verified AFTER the
-    // fact (`rqItem.numOutputModules` actually grew) before trusting the
-    // result -- if it didn't, this silently falls back to the previous,
-    // always-reliable behavior (a second separate queued row for the
-    // same comp) rather than leaving the MP4 output half-configured.
-    // **Known accepted risk**: if some OTHER render-queue item happened
+    // (numeric id 2154, see the comment on the `executeCommand` call
+    // below for why it's a literal and not the typed const enum), which
+    // operates on whatever's SELECTED in the Render Queue panel -- a
+    // state this script cannot directly set (no `RenderQueueItem
+    // .selected` property exists). This relies on AE's own tendency to
+    // leave a just-added render-queue item as the selected one -- true
+    // in the confirmed real-world test, but still not a documented
+    // guarantee -- and is verified AFTER the fact
+    // (`rqItem.numOutputModules` actually grew) before trusting the
+    // result regardless, so a future AE version/edge case that breaks
+    // this assumption degrades gracefully to the always-reliable
+    // fallback (a second separate queued row) instead of leaving the MP4
+    // output half-configured. **Known accepted risk, unchanged by the
+    // real-world confirmation**: if some OTHER render-queue item happened
     // to be the selected one, the menu command still fires and adds a
     // stray, unconfigured Output Module to THAT item -- a harmless but
     // real side effect this fallback can't detect or undo, since there's
-    // no way to know which item the command actually targeted. If this
-    // proves unreliable in real studio use, drop the executeCommand
-    // attempt and always use the fallback path (the previous behavior).
+    // no way to know which item the command actually targeted.
     let mp4Note = "";
     const mp4Folder = renderMeEnsureMp4Folder(batchFolder);
     if (mp4Folder) {
@@ -619,7 +624,13 @@ export const deliveryChecklistQueue = (
 
       log += comp.name + "\n";
       log += "  Target size: " + targetMB + "MB" + (includeAudio ? " (incl. audio)" : "") + "\n";
-      log += "  Required bitrate: " + requiredMbps.toFixed(2) + " Mbps" + (maxMbps != null ? " (cap: " + maxMbps + " Mbps)" : "") + "\n";
+      // 3 decimals, not 2 -- deliveryFindTemplateName() compares against
+      // this exact unrounded value (never rounds UP, since that could push
+      // the render past the target size), so a 2-decimal display could
+      // show e.g. "0.80 Mbps" for an actual 0.798, making a genuinely
+      // correct "picked 0.6 not 0.8" choice look like a bug. 3 decimals is
+      // enough precision to make that visible without becoming unreadable.
+      log += "  Required bitrate: " + requiredMbps.toFixed(3) + " Mbps" + (maxMbps != null ? " (cap: " + maxMbps + " Mbps)" : "") + "\n";
       if (capped) {
         log += "  *** Capped to " + maxMbps + " Mbps -- resulting file will likely be SMALLER than the " + targetMB + "MB target ***\n";
       }

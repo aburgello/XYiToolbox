@@ -104,11 +104,18 @@ export const motionToolsSnapAnchor = (relX: number, relY: number): Result => {
     const time = comp.time;
     let touched = 0;
     for (let i = 0; i < layers.length; i++) {
-      const layer = layers[i];
-      // Only AVLayers (footage/comp/solid/text/shape) have sourceRectAtTime
-      // and a Scale/Rotation transform -- cameras/lights/audio-only layers
-      // are silently skipped rather than thrown on.
-      if (!(layer instanceof AVLayer)) continue;
+      const rawLayer = layers[i];
+      // Duck-typed instead of `instanceof AVLayer` -- confirmed on a real
+      // AE project that `instanceof AVLayer` does NOT reliably match a
+      // ShapeLayer at ExtendScript runtime (its DOM class hierarchy isn't a
+      // real JS prototype chain instanceof can always trust), even though
+      // shape layers conceptually are AVLayers and Types-for-Adobe models
+      // them that way. Checking for the actual method this code needs
+      // right after (sourceRectAtTime) works for every real content layer
+      // -- solid, footage, precomp, text, shape -- while still excluding
+      // cameras/lights/audio-only layers, which never have it.
+      if (typeof (rawLayer as any).sourceRectAtTime !== "function") continue;
+      const layer = rawLayer as AVLayer;
 
       const rect = getContentFrameRect(layer, time);
       const newAnchorX = rect.left + rect.width * relX;
@@ -302,8 +309,6 @@ export const motionToolsApplyEase = (propertyKey: string, mode: string): Result 
 
       for (let k = 0; k < keys.length; k++) {
         const keyIndex = keys[k];
-        const dims = prop.value instanceof Array ? prop.value.length : 1;
-        const ease = easyEaseTuple(dims, 33);
 
         const curInType = prop.keyInInterpolationType(keyIndex);
         const curOutType = prop.keyOutInterpolationType(keyIndex);
@@ -315,7 +320,15 @@ export const motionToolsApplyEase = (propertyKey: string, mode: string): Result 
 
         const curIn = prop.keyInTemporalEase(keyIndex);
         const curOut = prop.keyOutTemporalEase(keyIndex);
-        prop.setTemporalEaseAtKey(keyIndex, mode === "out" ? curIn : ease, mode === "in" ? curOut : ease);
+        // Dimension count MUST come from AE's own ease arrays for this exact
+        // key, not from prop.value.length -- they can diverge (e.g. Position
+        // with "Separate Dimensions" toggled reports a plain number from
+        // .value while setTemporalEaseAtKey still expects an array matching
+        // its real ease dimensionality). Building the tuple from prop.value
+        // caused "Value array does not have N elements" on real projects.
+        const newIn = mode === "out" ? curIn : easyEaseTuple(curIn.length, 33);
+        const newOut = mode === "in" ? curOut : easyEaseTuple(curOut.length, 33);
+        prop.setTemporalEaseAtKey(keyIndex, newIn, newOut);
         touched++;
       }
     }
@@ -351,13 +364,19 @@ export const motionToolsApplyEase = (propertyKey: string, mode: string): Result 
 // the whole point of an ease-copy tool.
 // =============================================================================
 interface SerializedKeyframeEase { speed: number; influence: number; }
-interface SerializedEase {
+// One keyframe's full temporal ease (interp type + per-dimension ease on
+// each side). Copy captures an ARRAY of these -- one per selected keyframe
+// -- so a multi-keyframe ease profile (e.g. an ease-in on the first key and
+// a different ease-out on the last) is reproduced key-for-key on paste,
+// not collapsed to a single key's ease slapped onto everything.
+interface SerializedKeyEase {
   inType: "linear" | "bezier" | "hold";
   outType: "linear" | "bezier" | "hold";
   inEase: SerializedKeyframeEase[];
   outEase: SerializedKeyframeEase[];
 }
-interface CopyEaseResult extends Result { ease?: SerializedEase; }
+interface CopyEaseResult extends Result { keys?: SerializedKeyEase[]; message?: string; usedPropertyKey?: string; }
+interface PasteEaseResult extends Result { message?: string; usedPropertyKey?: string; }
 
 function interpTypeToLabel(t: KeyframeInterpolationType): "linear" | "bezier" | "hold" {
   if (t === KeyframeInterpolationType.HOLD) return "hold";
@@ -371,96 +390,300 @@ function labelToInterpType(l: string): KeyframeInterpolationType {
   return KeyframeInterpolationType.BEZIER;
 }
 
+// Compact "in 33%/0 · out 75%/0" summary of an ease's first dimension --
+// influence (%) and speed (property-units/sec). Surfaced in the copy/paste
+// confirmation so the exact numbers read/written are visible in the panel;
+// this is what turns "the values are wrong" into a diagnosable difference
+// between what was copied and what landed. First dimension only: for a
+// spatial property (Position/Anchor) there is only one; for Scale etc. the
+// dimensions are near-identical in practice, and a full per-dim dump would
+// be noise in a one-line status.
+// ExtendScript (ES3) has no Number.isFinite; typeof + NaN/Infinity guard.
+function isFiniteNum(v: any): boolean {
+  return typeof v === "number" && !isNaN(v) && v !== Infinity && v !== -Infinity;
+}
+
+function easeNumSummary(inArr: SerializedKeyframeEase[], outArr: SerializedKeyframeEase[]): string {
+  const fmt = function (e: SerializedKeyframeEase): string {
+    return (Math.round(e.influence * 10) / 10) + "%/" + Math.round(e.speed);
+  };
+  const inS = inArr.length > 0 ? fmt(inArr[0]) : "-";
+  const outS = outArr.length > 0 ? fmt(outArr[0]) : "-";
+  return "in " + inS + " · out " + outS;
+}
+
 export const motionToolsCopyEase = (propertyKey: string): CopyEaseResult => {
   try {
     const comp = app.project.activeItem;
     if (!(comp instanceof CompItem)) return { success: false, error: "Select or open a composition first." };
     const layers = comp.selectedLayers;
     if (layers.length === 0) return { success: false, error: "Please select a layer with a keyframe first." };
-    const propName = EASE_PROPERTY_NAMES[propertyKey];
-    if (!propName) return { success: false, error: "Unknown property." };
+    if (!EASE_PROPERTY_NAMES[propertyKey]) return { success: false, error: "Unknown property." };
 
+    // AUTO-DETECT the property from what's actually selected in the
+    // timeline, using the Pos/Scale/Rot/Opac toggle only as a tie-breaker /
+    // fallback -- not a hard requirement the user has to keep in sync by
+    // hand. Round 6 made a mismatch a hard error ("you have Scale keys
+    // selected, but this tab is set to Position, switch the toggle
+    // first"), which was CORRECT (the toggle really was stale) but kept
+    // tripping people up across real-AE sessions: every time you select a
+    // different property's keyframes in the timeline, you'd also have to
+    // remember to click the matching toggle button before Copy would work.
+    // Auto-detecting removes that whole class of friction: if exactly one
+    // of the four ease properties has an explicit keyframe selection
+    // anywhere in the current layer selection, USE IT, regardless of the
+    // toggle -- that selection is a much stronger signal of intent than a
+    // segmented control the user may not have touched yet.
+    let usedPropertyKey = propertyKey;
+    const detected: string[] = [];
+    for (const key in EASE_PROPERTY_NAMES) {
+      const pn = EASE_PROPERTY_NAMES[key];
+      for (let i = 0; i < layers.length; i++) {
+        const p = layers[i].property(pn) as Property;
+        if (p && p.selectedKeys && p.selectedKeys.length > 0) { detected.push(key); break; }
+      }
+    }
+    if (detected.length === 1) {
+      usedPropertyKey = detected[0];
+    } else if (detected.length > 1 && detected.indexOf(propertyKey) === -1) {
+      // Ambiguous: multiple properties have selections and none of them is
+      // the toggle's own -- can't guess which one is intended, so ask
+      // explicitly rather than picking arbitrarily.
+      return {
+        success: false,
+        error: "Multiple properties have keyframes selected (" + detected.map((k) => EASE_PROPERTY_NAMES[k]).join(", ") + "). Select keyframes on just one property, or switch the toggle to match the one you want.",
+      };
+    }
+    const propName = EASE_PROPERTY_NAMES[usedPropertyKey];
+
+    // Prefer ALL explicitly-selected keyframes on the first selected layer
+    // that has any. Capturing every selected key (not just the first) is
+    // the whole point -- a two-key move with a custom ease-out on key 1 and
+    // ease-in on key 2 only reproduces if both are copied.
+    let chosenProp: Property | null = null;
+    let chosenLayerName = "";
+    let keyIndices: number[] = [];
+    let usedNearest = false;
     for (let i = 0; i < layers.length; i++) {
       const prop = layers[i].property(propName) as Property;
       if (!prop || prop.numKeys === 0) continue;
-
-      let keyIndex = 0;
       const selKeys = prop.selectedKeys;
-      if (selKeys && selKeys.length > 0) keyIndex = selKeys[0];
-      else {
+      if (selKeys && selKeys.length > 0) {
+        chosenProp = prop; chosenLayerName = layers[i].name; keyIndices = selKeys;
+        break;
+      }
+    }
+    // No explicit selection anywhere on any ease property -- fall back to
+    // the single nearest-to-playhead key on the toggle's own property.
+    if (!chosenProp) {
+      for (let i = 0; i < layers.length; i++) {
+        const prop = layers[i].property(propName) as Property;
+        if (!prop || prop.numKeys === 0) continue;
         const nearest = prop.nearestKeyIndex(comp.time);
         if (!nearest) continue;
-        keyIndex = nearest;
+        chosenProp = prop; chosenLayerName = layers[i].name; keyIndices = [nearest]; usedNearest = true;
+        break;
       }
+    }
+    if (!chosenProp || keyIndices.length === 0) {
+      return { success: false, error: "No keyframes found on " + propName + " -- select a keyframe, or move the playhead onto one, first." };
+    }
 
-      const inTemporal = prop.keyInTemporalEase(keyIndex);
-      const outTemporal = prop.keyOutTemporalEase(keyIndex);
+    // Sort ascending so paste maps copied keys onto target keys in the same
+    // timeline order regardless of the order AE handed back selectedKeys.
+    keyIndices = keyIndices.slice().sort(function (a, b) { return a - b; });
+
+    const keys: SerializedKeyEase[] = [];
+    for (let n = 0; n < keyIndices.length; n++) {
+      const ki = keyIndices[n];
+      const inTemporal = chosenProp.keyInTemporalEase(ki);
+      const outTemporal = chosenProp.keyOutTemporalEase(ki);
       const inEase: SerializedKeyframeEase[] = [];
       const outEase: SerializedKeyframeEase[] = [];
       for (let d = 0; d < inTemporal.length; d++) inEase.push({ speed: inTemporal[d].speed, influence: inTemporal[d].influence });
       for (let d = 0; d < outTemporal.length; d++) outEase.push({ speed: outTemporal[d].speed, influence: outTemporal[d].influence });
-
-      return {
-        success: true,
-        ease: {
-          inType: interpTypeToLabel(prop.keyInInterpolationType(keyIndex)),
-          outType: interpTypeToLabel(prop.keyOutInterpolationType(keyIndex)),
-          inEase: inEase,
-          outEase: outEase,
-        },
-      };
+      keys.push({
+        inType: interpTypeToLabel(chosenProp.keyInInterpolationType(ki)),
+        outType: interpTypeToLabel(chosenProp.keyOutInterpolationType(ki)),
+        inEase: inEase,
+        outEase: outEase,
+      });
     }
-    return { success: false, error: "No keyframes found on " + propName + " -- select a keyframe, or move the playhead onto one, first." };
+
+    const first = keys[0];
+    const autoSwitched = usedPropertyKey !== propertyKey;
+    return {
+      success: true,
+      message: "Copied " + propName + " ease from " + keys.length + " keyframe" + (keys.length === 1 ? "" : "s") + " on \"" + chosenLayerName + "\" [first key " + easeNumSummary(first.inEase, first.outEase) + "]" + (usedNearest ? " (nearest to playhead)" : "") + (autoSwitched ? " (auto-detected from your selection -- toggle switched to " + propName + ")" : ""),
+      keys: keys,
+      usedPropertyKey: usedPropertyKey,
+    };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
 };
 
-export const motionToolsPasteEase = (propertyKey: string, ease: SerializedEase): Result => {
+export const motionToolsPasteEase = (propertyKey: string, keysJson: string): PasteEaseResult => {
   try {
     const comp = app.project.activeItem;
     if (!(comp instanceof CompItem)) return { success: false, error: "Select or open a composition first." };
-    if (!ease || !ease.inEase || !ease.outEase) return { success: false, error: "Copy an ease first." };
+
+    // The copied eases cross the bridge as a JSON STRING that we parse here,
+    // NOT as a nested object/array argument. evalTS embeds each argument by
+    // splicing JSON.stringify(arg) straight into the eval'd ExtendScript
+    // SOURCE, so a nested array-of-objects like [{"inEase":[{"speed":0,
+    // "influence":75}]}] arrives as a source-code literal to be re-parsed by
+    // the ExtendScript engine -- and that path silently dropped the inner
+    // speed/influence values, so `new KeyframeEase(undefined, undefined)`
+    // produced AE's DEFAULT ease (bezier, influence 33.33, speed 0). That
+    // was the "pastes bezier but with default values, no real values passed"
+    // bug. A single JSON string survives the splice intact (it's just a
+    // quoted string literal), and JSON.parse below reconstructs it
+    // deterministically.
+    let keysSrc: SerializedKeyEase[];
+    try {
+      keysSrc = JSON.parse(keysJson) as SerializedKeyEase[];
+    } catch (parseErr) {
+      return { success: false, error: "Couldn't read the copied ease (bad payload). Copy an ease again." };
+    }
+    if (!keysSrc || keysSrc.length === 0) return { success: false, error: "Copy an ease first." };
+    // Validate the values actually survived -- guards against ever silently
+    // re-applying AE defaults if the payload is malformed. A finite-number
+    // check on the first copied key's first dimension catches the undefined
+    // case that produced the default-ease bug.
+    const probe = keysSrc[0];
+    const pIn = probe && probe.inEase && probe.inEase[0];
+    const pOut = probe && probe.outEase && probe.outEase[0];
+    if (!pIn || !pOut ||
+        !isFiniteNum(pIn.influence) || !isFiniteNum(pIn.speed) ||
+        !isFiniteNum(pOut.influence) || !isFiniteNum(pOut.speed)) {
+      return { success: false, error: "The copied ease has no usable speed/influence values -- copy the ease again." };
+    }
+
     const layers = comp.selectedLayers;
     if (layers.length === 0) return { success: false, error: "Please select layers first." };
-    const propName = EASE_PROPERTY_NAMES[propertyKey];
-    if (!propName) return { success: false, error: "Unknown property." };
+    if (!EASE_PROPERTY_NAMES[propertyKey]) return { success: false, error: "Unknown property." };
+
+    // AUTO-DETECT the target property the same way Copy does (see its
+    // comment) -- use the toggle only as a fallback when nothing is
+    // explicitly selected, rather than hard-requiring it to already match
+    // whatever the user selected in the timeline.
+    let usedPropertyKey = propertyKey;
+    const detected: string[] = [];
+    for (const key in EASE_PROPERTY_NAMES) {
+      const pn = EASE_PROPERTY_NAMES[key];
+      for (let i = 0; i < layers.length; i++) {
+        const p = layers[i].property(pn) as Property;
+        if (p && p.selectedKeys && p.selectedKeys.length > 0) { detected.push(key); break; }
+      }
+    }
+    if (detected.length === 1) {
+      usedPropertyKey = detected[0];
+    } else if (detected.length > 1 && detected.indexOf(propertyKey) === -1) {
+      return {
+        success: false,
+        error: "Multiple properties have keyframes selected (" + detected.map((k) => EASE_PROPERTY_NAMES[k]).join(", ") + "). Select keyframes on just one property, or switch the toggle to match the one you want.",
+      };
+    }
+    const propName = EASE_PROPERTY_NAMES[usedPropertyKey];
+    const autoSwitched = usedPropertyKey !== propertyKey;
 
     app.beginUndoGroup("Paste Ease");
     let touched = 0;
+    let usedNearest = false;      // did ANY layer fall back to nearest-key?
+    let hadSelection = false;     // did ANY layer have explicitly-selected keys?
+    const layerNames: string[] = [];
+    // Read-back of the first key we actually write, captured straight after
+    // setTemporalEaseAtKey. Comparing "asked" (the copied values) against
+    // "kept" (what AE stored) is the direct test for AE silently clamping a
+    // pasted speed to fit the target keyframe's value delta / neighbour
+    // velocity continuity -- another reason a paste "succeeds" but the curve
+    // looks different from the source.
+    let keptSummary = "";
     for (let i = 0; i < layers.length; i++) {
       const prop = layers[i].property(propName) as Property;
       if (!prop || prop.numKeys === 0) continue;
 
       let keys = prop.selectedKeys;
-      if (!keys || keys.length === 0) {
+      if (keys && keys.length > 0) {
+        hadSelection = true;
+      } else {
         const nearest = prop.nearestKeyIndex(comp.time);
         keys = nearest ? [nearest] : [];
+        if (nearest) usedNearest = true;
       }
+      if (keys.length === 0) continue;
+      // Sort target keys ascending so copied-key N maps onto target-key N in
+      // timeline order (matching copy's own ascending sort).
+      keys = keys.slice().sort(function (a, b) { return a - b; });
 
+      let layerTouched = 0;
       for (let k = 0; k < keys.length; k++) {
         const keyIndex = keys[k];
-        const dims = prop.value instanceof Array ? prop.value.length : 1;
+        // Map the k-th target key to the k-th copied key. When more target
+        // keys than copied, clamp to the last copied key; when only one ease
+        // was copied, it lands on every target key (the "apply this ease
+        // everywhere" case).
+        const src = keysSrc[k < keysSrc.length ? k : keysSrc.length - 1];
+        // Build EACH side to the exact length AE reports for THIS target key,
+        // independently -- setTemporalEaseAtKey requires inEase.length ==
+        // keyInTemporalEase().length and outEase.length ==
+        // keyOutTemporalEase().length, and for a MULTI-dimensional property
+        // (Scale is 2-D on a 2-D layer, 3-D on a 3-D layer) that count is >1.
+        // Using a single max() of both sides could over/under-fill one array
+        // and throw "Value array does not have N elements" on Scale --
+        // Position/Rotation/Opacity are 1-D so it never showed there. If the
+        // copied source has fewer dimensions than the target (e.g. a 1-D
+        // Rotation ease pasted onto 2-D Scale), the source's first dimension
+        // is reused for the extra ones.
+        const inLen = prop.keyInTemporalEase(keyIndex).length;
+        const outLen = prop.keyOutTemporalEase(keyIndex).length;
 
-        prop.setInterpolationTypeAtKey(keyIndex, labelToInterpType(ease.inType), labelToInterpType(ease.outType));
+        prop.setInterpolationTypeAtKey(keyIndex, labelToInterpType(src.inType), labelToInterpType(src.outType));
 
         const inEase: KeyframeEase[] = [];
         const outEase: KeyframeEase[] = [];
-        for (let d = 0; d < dims; d++) {
-          const srcIn = ease.inEase[d] || ease.inEase[0];
-          const srcOut = ease.outEase[d] || ease.outEase[0];
+        for (let d = 0; d < inLen; d++) {
+          const srcIn = src.inEase[d] || src.inEase[0];
           inEase.push(new KeyframeEase(srcIn.speed, srcIn.influence));
+        }
+        for (let d = 0; d < outLen; d++) {
+          const srcOut = src.outEase[d] || src.outEase[0];
           outEase.push(new KeyframeEase(srcOut.speed, srcOut.influence));
         }
         prop.setTemporalEaseAtKey(keyIndex, inEase, outEase);
+        if (keptSummary === "") {
+          const keptIn = prop.keyInTemporalEase(keyIndex);
+          const keptOut = prop.keyOutTemporalEase(keyIndex);
+          const keptInS: SerializedKeyframeEase[] = [];
+          const keptOutS: SerializedKeyframeEase[] = [];
+          for (let q = 0; q < keptIn.length; q++) keptInS.push({ speed: keptIn[q].speed, influence: keptIn[q].influence });
+          for (let q = 0; q < keptOut.length; q++) keptOutS.push({ speed: keptOut[q].speed, influence: keptOut[q].influence });
+          keptSummary = easeNumSummary(keptInS, keptOutS);
+        }
         touched++;
+        layerTouched++;
       }
+      if (layerTouched > 0) layerNames.push("\"" + layers[i].name + "\"");
     }
     app.endUndoGroup();
     if (touched === 0) {
       return { success: false, error: "No keyframes found on " + propName + " for the selected layers -- select a keyframe, or move the playhead onto one, first." };
     }
-    return { success: true };
+    // The confirmation is the actual fix for the "it pastes nothing" report:
+    // paste WAS succeeding, but with no feedback about WHERE it landed, a
+    // nearest-key fallback onto a key the user wasn't looking at read as
+    // "nothing happened". This says exactly how many keys on which layers
+    // got the ease, and flags when no key was explicitly selected (the case
+    // most likely to land somewhere unexpected -- select the target key(s)
+    // in the timeline first to control it).
+    const where = layerNames.length > 0 ? " on " + layerNames.join(", ") : "";
+    const kept = keptSummary !== "" ? " [AE kept: " + keptSummary + "]" : "";
+    return {
+      success: true,
+      message: "Pasted " + propName + " ease onto " + touched + " keyframe" + (touched === 1 ? "" : "s") + where + kept + (usedNearest && !hadSelection ? " (nearest to playhead -- select target keyframes to aim it)" : "") + (autoSwitched ? " (auto-detected from your selection -- toggle switched to " + propName + ")" : ""),
+      usedPropertyKey: usedPropertyKey,
+    };
   } catch (e) {
     app.endUndoGroup();
     return { success: false, error: e.toString() };
@@ -494,8 +717,10 @@ export const motionToolsAlign = (edge: string, relativeTo: string): Result => {
     const entries: { layer: Layer; bounds: LayerBounds }[] = [];
     for (let i = 0; i < layers.length; i++) {
       const layer = layers[i];
-      if (!(layer instanceof AVLayer)) continue;
-      const b = getLayerBounds(layer, time);
+      // See motionToolsSnapAnchor above for why this is duck-typed rather
+      // than `instanceof AVLayer` (doesn't reliably match shape layers).
+      if (typeof (layer as any).sourceRectAtTime !== "function") continue;
+      const b = getLayerBounds(layer as AVLayer, time);
       if (b) entries.push({ layer: layer, bounds: b });
     }
     if (entries.length === 0) return { success: false, error: "No eligible layers selected (need layers with visible bounds)." };
@@ -559,8 +784,10 @@ export const motionToolsDistribute = (axis: string): Result => {
     const entries: { layer: Layer; bounds: LayerBounds }[] = [];
     for (let i = 0; i < layers.length; i++) {
       const layer = layers[i];
-      if (!(layer instanceof AVLayer)) continue;
-      const b = getLayerBounds(layer, time);
+      // See motionToolsSnapAnchor above for why this is duck-typed rather
+      // than `instanceof AVLayer` (doesn't reliably match shape layers).
+      if (typeof (layer as any).sourceRectAtTime !== "function") continue;
+      const b = getLayerBounds(layer as AVLayer, time);
       if (b) entries.push({ layer: layer, bounds: b });
     }
     if (entries.length < 3) return { success: false, error: "Need at least 3 layers with visible bounds to distribute." };
@@ -771,8 +998,10 @@ export const motionToolsGroup = (): Result => {
         const pos = currentOrKeyframedValue(posProp, time) as number[];
         sumX += pos[0]; sumY += pos[1]; posCount++;
       }
-      if (layer instanceof AVLayer) {
-        const b = getLayerBounds(layer, time);
+      // See motionToolsSnapAnchor above for why this is duck-typed rather
+      // than `instanceof AVLayer` (doesn't reliably match shape layers).
+      if (typeof (layer as any).sourceRectAtTime === "function") {
+        const b = getLayerBounds(layer as AVLayer, time);
         if (b) {
           if (b.left < minX) minX = b.left;
           if (b.top < minY) minY = b.top;

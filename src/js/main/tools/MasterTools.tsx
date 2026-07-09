@@ -59,7 +59,16 @@ const MasterToolsTool = () => {
         try {
             const result = await fn();
             if (result === undefined) throw new Error("no bridge");
-            setStatus(result.success ? { text: `${label} complete.`, type: "success" } : { text: result.error || "Something went wrong.", type: "error" });
+            // TEMPORARY: surfaces result.message when present (currently
+            // only resizeCompositionCentered's diagnostic build sets one)
+            // instead of the generic "complete" text, so the centering-bug
+            // debug output is actually visible here -- revert to the plain
+            // `${label} complete.` text once that diagnostic is removed.
+            setStatus(
+                result.success
+                    ? { text: result.message ? `${label}: ${result.message}` : `${label} complete.`, type: "success" }
+                    : { text: result.error || "Something went wrong.", type: "error" }
+            );
         } catch (e) {
             setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
         } finally {

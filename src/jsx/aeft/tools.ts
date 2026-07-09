@@ -2838,6 +2838,19 @@ export const extremeToolsPortrait = (
 // explicit flags -- see its comment). All operate on the active
 // comp/selected layers only.
 // =============================================================================
+// TEMPORARY diagnostic build -- reports exactly what happened on each
+// click (old/new size, computed offset, and each layer's skip reason or
+// before/after Position) via the Result's `message`, surfaced by
+// MasterTools.tsx's status banner. Added to track down a real user-
+// reported bug (content not staying centered on resize, confirmed via
+// screenshots against a layer that WAS centered beforehand) that couldn't
+// be found by static code comparison against the original XYi_CompSize.jsx
+// (the offset math is textually identical) -- revert the diagnostic
+// message-building once the root cause is confirmed from real output.
+// Also fixes a real latent gap found while touching this: the catch block
+// never called app.endUndoGroup(), unlike every other function in this
+// file -- an exception mid-loop would leave the undo group open
+// indefinitely, silently merging unrelated later operations into it.
 export const resizeCompositionCentered = (newWidth: number, newHeight: number): Result => {
   try {
     const comp = app.project.activeItem;
@@ -2845,19 +2858,29 @@ export const resizeCompositionCentered = (newWidth: number, newHeight: number): 
     if (isNaN(newWidth) || isNaN(newHeight)) return { success: false, error: "Invalid dimensions. Please enter valid numbers." };
 
     app.beginUndoGroup("Resize Composition Centered");
-    const widthOffset = (newWidth - comp.width) / 2;
-    const heightOffset = (newHeight - comp.height) / 2;
+    const oldWidth = comp.width;
+    const oldHeight = comp.height;
+    const widthOffset = (newWidth - oldWidth) / 2;
+    const heightOffset = (newHeight - oldHeight) / 2;
+
+    let debugLog = "old=" + oldWidth + "x" + oldHeight + " new=" + newWidth + "x" + newHeight + " offset=(" + widthOffset + "," + heightOffset + ") layers=" + comp.numLayers + " | ";
 
     for (let i = 1; i <= comp.numLayers; i++) {
       const layer = comp.layer(i);
-      if (layer.parent !== null || layer.locked) continue;
+      if (layer.parent !== null || layer.locked) {
+        debugLog += layer.name + ":SKIP(parent=" + (layer.parent !== null) + ",locked=" + layer.locked + ") ";
+        continue;
+      }
 
       const posProp = layer.property("Position") as Property;
       if (posProp.dimensionsSeparated) {
         const xProp = layer.property("X Position") as Property;
         const yProp = layer.property("Y Position") as Property;
-        xProp.setValue((xProp.value as number) + widthOffset);
-        yProp.setValue((yProp.value as number) + heightOffset);
+        const beforeX = xProp.value as number;
+        const beforeY = yProp.value as number;
+        xProp.setValue(beforeX + widthOffset);
+        yProp.setValue(beforeY + heightOffset);
+        debugLog += layer.name + ":SEP before=(" + beforeX + "," + beforeY + ") after=(" + xProp.value + "," + yProp.value + ") ";
       } else {
         const curPos = posProp.value as number[];
         if (layer.threeDLayer) {
@@ -2865,6 +2888,8 @@ export const resizeCompositionCentered = (newWidth: number, newHeight: number): 
         } else {
           posProp.setValue([curPos[0] + widthOffset, curPos[1] + heightOffset]);
         }
+        const afterPos = posProp.value as number[];
+        debugLog += layer.name + ":before=(" + curPos[0] + "," + curPos[1] + ") after=(" + afterPos[0] + "," + afterPos[1] + ") numKeys=" + posProp.numKeys + " ";
       }
 
       const poiProp = layer.property("Point of Interest") as Property | null;
@@ -2877,8 +2902,9 @@ export const resizeCompositionCentered = (newWidth: number, newHeight: number): 
     comp.width = Math.floor(newWidth);
     comp.height = Math.floor(newHeight);
     app.endUndoGroup();
-    return { success: true };
+    return { success: true, message: debugLog };
   } catch (e) {
+    app.endUndoGroup();
     return { success: false, error: e.toString() };
   }
 };

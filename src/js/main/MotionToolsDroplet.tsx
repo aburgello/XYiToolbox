@@ -173,8 +173,16 @@ const MotionToolsDroplet: React.FC = () => {
     const [nudgeStep, setNudgeStep] = useState("1");
     // Held in React state, not app.settings -- a copied ease is meant to
     // live only as long as this session/panel is open, same lifetime as an
-    // OS clipboard copy, not a persisted preference.
-    const [copiedEase, setCopiedEase] = useState<Record<string, unknown> | null>(null);
+    // OS clipboard copy, not a persisted preference. This is an ARRAY of
+    // per-keyframe eases (one entry per selected source keyframe), so a
+    // multi-keyframe ease profile pastes key-for-key.
+    const [copiedKeys, setCopiedKeys] = useState<unknown[] | null>(null);
+    // Last copy/paste confirmation from the backend (which key(s) it read /
+    // wrote, and whether it used the timeline selection or the playhead-
+    // nearest fallback). This IS the fix for "paste does nothing": paste was
+    // silently succeeding onto a key the user wasn't looking at -- this makes
+    // what it did visible.
+    const [easeStatus, setEaseStatus] = useState<string | null>(null);
 
     // Centralised call + error surface for every action -- same "no bridge /
     // thrown exception -> inline message" reasoning as this app's other
@@ -187,16 +195,36 @@ const MotionToolsDroplet: React.FC = () => {
 
     const handleCopyEase = async () => {
         setError(null);
+        setEaseStatus(null);
         const result = await evalTSSafe("motionToolsCopyEase", easeProperty);
         if (!result.success) { setError(result.error || "Something went wrong."); return; }
-        setCopiedEase((result.ease as Record<string, unknown>) || null);
+        setCopiedKeys((result.keys as unknown[]) || null);
+        setEaseStatus((result.message as string) || "Ease copied.");
+        // Backend auto-detects the property from the actual timeline
+        // selection and only falls back to this toggle's own value when
+        // nothing's explicitly selected (see motionToolsCopyEase's comment).
+        // If it detected a DIFFERENT property than the toggle currently
+        // shows, sync the toggle so Paste (which also auto-detects, but
+        // this keeps the UI honest) reflects what was really copied.
+        const used = result.usedPropertyKey as string | undefined;
+        if (used && used !== easeProperty) setEaseProperty(used);
     };
 
     const handlePasteEase = async () => {
-        if (!copiedEase) return;
+        if (!copiedKeys) return;
         setError(null);
-        const result = await evalTSSafe("motionToolsPasteEase", easeProperty, copiedEase as any);
-        if (!result.success) setError(result.error || "Something went wrong.");
+        setEaseStatus(null);
+        // Pass the copied eases as a JSON STRING, not a nested array/object.
+        // evalTS splices JSON.stringify(arg) into the ExtendScript source, and
+        // a nested array-of-objects arrives there as a source-code literal
+        // whose inner speed/influence values were silently dropped -- which
+        // made paste apply AE's DEFAULT ease. A string survives the splice
+        // intact and motionToolsPasteEase JSON.parses it back. See that fn.
+        const result = await evalTSSafe("motionToolsPasteEase", easeProperty, JSON.stringify(copiedKeys));
+        if (!result.success) { setError(result.error || "Something went wrong."); return; }
+        setEaseStatus((result.message as string) || "Ease pasted.");
+        const used = result.usedPropertyKey as string | undefined;
+        if (used && used !== easeProperty) setEaseProperty(used);
     };
 
     // Per-tick nudge amount: the Step field's value, x10 with Shift held.
@@ -245,7 +273,7 @@ const MotionToolsDroplet: React.FC = () => {
                                 role="tab"
                                 aria-selected={tab === id}
                                 className={"mt-tab" + (tab === id ? " active" : "")}
-                                onClick={() => { setTab(id); setError(null); }}
+                                onClick={() => { setTab(id); setError(null); setEaseStatus(null); }}
                             >
                                 {tab === id && (
                                     <motion.span
@@ -382,7 +410,7 @@ const MotionToolsDroplet: React.FC = () => {
                             {tab === "ease" && (
                                 <div className="mt-section">
                                     <div className="mt-section-label">Easy Ease</div>
-                                    <SegmentedToggle name="mt-ease-prop" value={easeProperty} onChange={setEaseProperty} options={EASE_PROPERTIES} />
+                                    <SegmentedToggle name="mt-ease-prop" value={easeProperty} onChange={(v) => { setEaseProperty(v); setEaseStatus(null); }} options={EASE_PROPERTIES} />
                                     <div className="mt-row mt-row-ease">
                                         <button className="mt-ease-btn" onClick={() => run("motionToolsApplyEase", easeProperty, "in")}>In</button>
                                         <button className="mt-ease-btn" onClick={() => run("motionToolsApplyEase", easeProperty, "out")}>Out</button>
@@ -396,17 +424,18 @@ const MotionToolsDroplet: React.FC = () => {
                                                 <Copy size={13} /> Copy
                                             </button>
                                         </Tooltip>
-                                        <Tooltip text={copiedEase ? "Paste the copied ease onto the selected keyframe(s)" : "Copy an ease first"} grow>
+                                        <Tooltip text={copiedKeys ? "Paste the copied ease onto the selected keyframe(s)" : "Copy an ease first"} grow>
                                             <button
                                                 className="mt-text-btn mt-text-btn--grow"
-                                                disabled={!copiedEase}
+                                                disabled={!copiedKeys}
                                                 onClick={handlePasteEase}
                                             >
                                                 <ClipboardPaste size={13} /> Paste
                                             </button>
                                         </Tooltip>
                                     </div>
-                                    {copiedEase && <p className="mt-hint mt-hint--copied">Ease copied -- paste onto any other keyframe(s).</p>}
+                                    {easeStatus && <p className="mt-hint mt-hint--copied">{easeStatus}</p>}
+                                    {!easeStatus && copiedKeys && <p className="mt-hint mt-hint--copied">Ease copied -- select the target keyframe(s), then Paste.</p>}
 
                                     <div className="mt-section-label mt-section-label--sub">Excite</div>
                                     <label className="mt-slider-row">

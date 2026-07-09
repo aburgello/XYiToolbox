@@ -2557,6 +2557,277 @@ both to instant. Tabs:
   Group identity-null trick, and the two Excite expressions actually
   ringing out as intended.
 
+### Two real-AE bugs found after the panel got renamed "XYtools" in the UI
+
+Both reported from an actual studio project (not preview/mock data), both
+in `src/jsx/aeft/motionTools.ts`, both now fixed and verified via `tsc -p
+tsconfig-build.json` (clean) and `yarn build` (clean). Neither is
+verifiable in browser preview -- both are pure ExtendScript-engine
+behavior with no browser-visible surface -- so they still want a real-AE
+re-test on shape layers + a Position key with a copied ease, but the root
+cause and fix for both are well-understood, not guesses.
+
+- **Ease Copy/Paste threw `"Unable to call 'setTemporalEaseAtKey' because
+  of parameter 2. Value array does not have 1 elements."`** --
+  `motionToolsApplyEase` and `motionToolsPasteEase` both built the
+  `KeyframeEase[]` array's length from `prop.value instanceof Array ?
+  prop.value.length : 1`, assuming that always matches what
+  `setTemporalEaseAtKey` expects. It doesn't always: AE's own
+  `keyInTemporalEase`/`keyOutTemporalEase` calls are the actual ground
+  truth for a given key's ease dimensionality, and can diverge from
+  `prop.value`'s shape (e.g. a Position property with "Separate
+  Dimensions" enabled). Fix: derive the ease array length from
+  `prop.keyInTemporalEase(keyIndex).length` /
+  `...keyOutTemporalEase(keyIndex).length` for that exact key instead of
+  from `prop.value`, in both the Easy Ease buttons and Paste Ease. Applies
+  once per call site (`motionToolsApplyEase` around the `easyEaseTuple`
+  call, `motionToolsPasteEase`'s `dims` calculation).
+- **Anchor Point tools, Align, Distribute, and Group into Null all
+  silently skipped shape layers** ("No eligible layers selected
+  (cameras/lights/audio have no anchor point)" even with shape layers
+  selected). Root cause: all four used `if (!(layer instanceof AVLayer))
+  continue;` to exclude cameras/lights/audio-only layers (the only layer
+  types that genuinely lack `sourceRectAtTime`/a visual anchor) -- but on
+  a real AE session, `instanceof AVLayer` does NOT reliably match a
+  ShapeLayer object, even though shape layers are conceptually AVLayers
+  and Types-for-Adobe's TS defs model them that way. This matches this
+  file's other documented ExtendScript-DOM gotchas (`.match()` on
+  regex-special substrings, missing `Array.prototype` methods) -- the AE
+  DOM's exposed class hierarchy isn't always a real JS prototype chain
+  `instanceof` can trust. Fix: replaced every `instanceof AVLayer` gate in
+  this file with a duck-typed `typeof layer.sourceRectAtTime ===
+  "function"` check -- tests for the actual capability the code needs
+  right after (calling `sourceRectAtTime`), which is true for every real
+  content layer (solid, footage, precomp, text, shape) and false for
+  cameras/lights/audio, without depending on `instanceof` against an
+  ExtendScript host class. Fixed in `motionToolsSnapAnchor`,
+  `motionToolsAlign`, `motionToolsDistribute`, and `motionToolsGroup` (all
+  four had the identical pattern). If another `instanceof <AE host
+  class>` check ever misbehaves the same way, duck-typing on the specific
+  method/property actually used is the established fix here now, not a
+  one-off.
+
+### Follow-up: anchor confirmed fixed; "Paste Ease does nothing" round 2
+
+After the fixes above, the anchor-point tools were confirmed working on
+shape layers in real AE. Ease Copy/Paste still "wouldn't paste anything
+onto the other one" (two Position layers, both already eased -- copy from
+one, paste onto the other), this time with NO error thrown.
+
+Investigation ruled out the data path entirely: `evalTS` serialises each
+arg with `JSON.stringify`, so the copied ease object (nested
+`inEase`/`outEase` arrays of `{speed, influence}`) round-trips into
+ExtendScript as a valid object literal; `evalTSSafe` returns the whole
+result object unchanged, so `result.ease` survives back to React and into
+the Paste call. The `KeyframeEase(speed, influence)` construction order is
+correct, dims match (both 2D Position). In other words the paste was very
+likely *succeeding* -- `touched > 0`, no error -- but with **zero feedback
+about which keyframe it landed on**. The smoking gun: `motionToolsPasteEase`
+falls back to `prop.nearestKeyIndex(comp.time)` when no keyframe is
+explicitly selected, so if the timeline keyframe selection wasn't what the
+user assumed (easy to lose after clicking around the CEP panel), the ease
+gets applied to *a* key near the playhead -- not the one they were looking
+at -- and reads as "nothing happened."
+
+Fix is feedback-first, because the operation itself was mechanically fine:
+- `motionToolsCopyEase` now returns a `message` naming the exact key +
+  layer it read and whether that came from the timeline selection or the
+  playhead-nearest fallback.
+- `motionToolsPasteEase` now returns a `message` with the count of
+  keyframes written, the layer name(s), and -- crucially -- a flag when it
+  used the nearest-key fallback because nothing was explicitly selected
+  ("nearest to playhead -- select target keyframes to aim it"). Both new
+  result types (`CopyEaseResult.message`, `PasteEaseResult`) extend
+  `Result`.
+- `MotionToolsDroplet.tsx` shows that `message` in the Ease tab's status
+  line (`easeStatus` state, reusing `.mt-hint--copied`), replacing the old
+  static "Ease copied" text; the resting hint now reads "Ease copied --
+  select the target keyframe(s), then Paste." Status clears on tab switch
+  and on ease-property change so it never goes stale.
+- This is deliberately NOT a blind logic rewrite: the copy/paste mechanics
+  are correct for the standard case, so the change makes the behaviour
+  *observable* instead of guessing at a phantom bug. The next real-AE test
+  is now conclusive -- if paste reports "Pasted ease onto 1 keyframe on
+  <layer>" but the curve still looks unchanged, the problem is an
+  ease-value/targeting detail to chase from there; if it reports the
+  nearest-playhead fallback, the user simply needs a target key selected.
+  Verified `tsc -p tsconfig-build.json` + `yarn build` clean; the
+  happy-path copy/paste itself is ExtendScript-only and unreachable in
+  browser preview (no bridge -> only the error path renders there).
+
+### Follow-up round 3: "pastes bezier but with AE's DEFAULT ease values"
+
+Anchor confirmed fixed and paste now confirmed to fire, but the pasted
+ease came out with AE's DEFAULT values: the target keyframe turned bezier
+(interp type transferred) but its speed/influence stayed at the default
+(speed 0, influence 33.33), not the source's. The tell -- "copies that
+keyframes are bezier but no real values, speed stays default" -- is the
+exact signature of `new KeyframeEase(undefined, undefined)`, i.e. the
+per-dimension `{speed, influence}` values arriving **undefined** at paste
+time (a default-constructed KeyframeEase is bezier / influence 33.33 /
+speed 0).
+
+Root cause: **the transport of the ease payload back INTO ExtendScript.**
+`evalTS` builds its call by splicing `JSON.stringify(arg)` for each
+argument directly into the eval'd ExtendScript SOURCE STRING. A flat
+object argument survives that (proven -- `trueCompDuplicator` passes
+`{suffix, includeNested, updateExpressions}` this way), but our ease was a
+**nested array-of-objects** (`{inEase:[{speed,influence}], outEase:[...]}`)
+and its inner speed/influence values did not survive being re-parsed as a
+source-code object literal by the ExtendScript engine -- they came through
+undefined, so paste silently built default KeyframeEases. This is a new,
+documented instance of the general "ExtendScript engine ≠ a real JS
+engine" gotcha this file already tracks (`.match()`, missing Array protos,
+`instanceof` against host classes).
+
+Fix:
+- `motionToolsPasteEase` now takes the ease as a **JSON string**
+  (`easeJson: string`) and `JSON.parse`s it internally, instead of taking
+  a nested object. A single string survives the source-splice intact (it's
+  just a quoted string literal) and `JSON.parse` reconstructs the nested
+  structure deterministically. `MotionToolsDroplet.tsx`'s
+  `handlePasteEase` passes `JSON.stringify(copiedEase)` accordingly.
+- Added an `isFiniteNum` guard: after parsing, paste validates the first
+  in/out dimension has finite numeric speed AND influence, and returns a
+  clear error ("The copied ease has no usable speed/influence values --
+  copy the ease again") rather than EVER silently applying AE defaults
+  again. This is the belt-and-braces against any future transport
+  regression -- a values-lost payload now fails loudly instead of pasting
+  a wrong-but-plausible default ease.
+- Diagnostics from the earlier attempt are kept: copy's `message` shows
+  `[in 33%/0 · out 75%/0]` (values read off the source, computed in
+  ExtendScript before any transport), and paste's `message` shows `[AE
+  kept: ..]` (read straight back off the target after
+  `setTemporalEaseAtKey`). Together these localise any *remaining*
+  discrepancy to a single stage: if copy shows real values but paste's "AE
+  kept" shows defaults, the loss is post-copy (transport/serialisation,
+  now fixed); if "AE kept" matches copy but the curve still looks off,
+  that's genuine move-magnitude (same influence, different distance =
+  different peak speed, which is correct AE behaviour) or a wrong
+  source-key pick (also named in copy's message).
+- Verified `tsc -p tsconfig-build.json` + `yarn build` clean. Still
+  ExtendScript-only (no bridge in browser preview), so the real
+  copy/paste can only be confirmed inside AE.
+
+### Follow-up round 4: multi-keyframe copy + the 33.3% ambiguity
+
+The round-3 diagnostic paid off: a real-AE copy showed `Copied Position
+ease from key 1 on "Shape Layer 1" [in 33.3%/0 · out 33.3%/0]`, and paste
+"changed nothing". Two findings:
+1. **33.3%/speed-0 is a standard Easy Ease AND is exactly what a
+   default-constructed KeyframeEase is** -- so a 33.3% source is
+   indistinguishable between "value transferred correctly" and "defaulted".
+   Any conclusive test of the copy/paste MUST use a deliberately
+   non-default ease (e.g. Keyframe Velocity influence 80%). The two layers
+   in the repro had visually different velocity curves only because they
+   travel different distances (851 vs 782 px) at the same 33.3% ease --
+   copy/paste of ease neither can nor should equalise that.
+2. **Copy only captured ONE keyframe's ease** (the first selected) and
+   pasted it onto every target key. Real design limitation: a two-key move
+   with distinct eases on each key can't reproduce from one key's values.
+
+Fix -- copy/paste is now **multi-keyframe**:
+- `SerializedEase` became `SerializedKeyEase` (per-keyframe), and
+  `motionToolsCopyEase` returns `keys: SerializedKeyEase[]` -- one entry
+  per selected source keyframe, captured in ascending timeline order.
+- `motionToolsPasteEase` parses the array (still a JSON string over the
+  bridge, per round 3) and maps the k-th target key to the k-th copied key
+  (target keys also sorted ascending); clamps to the last copied key when
+  there are more targets than copied, and a single copied key still lands
+  on every target (the "apply this ease everywhere" case).
+- Frontend state `copiedEase` -> `copiedKeys` (an array); everything else
+  (JSON-string transport, `isFiniteNum` validation, `easeStatus` line)
+  unchanged. Copy's message now reads "Copied Position ease from N
+  keyframes on <layer> [first key in .. · out ..]".
+- Verified `tsc -p tsconfig-build.json` + `yarn build` clean. Reminder for
+  the next real-AE test: **copy from a keyframe with a clearly non-default
+  ease** (not a plain F9 Easy Ease) so a successful transfer is visible;
+  33.3% -> 33.3% is a no-op by definition.
+
+### Follow-up round 5: Position works, Scale (multi-dim) hardening
+
+Position copy/paste confirmed working. "Only Position" is usually just
+that the other properties aren't keyframed on the test layer (copy/paste
+needs keys on whichever property the Pos/Scale/Rot/Opac toggle selects) --
+but there was one genuine dimensional bug waiting for Scale:
+`setTemporalEaseAtKey` requires `inEase.length ==
+keyInTemporalEase().length` and `outEase.length ==
+keyOutTemporalEase().length`, and **Scale is multi-dimensional** (2 on a
+2-D layer, 3 on 3-D) whereas Position/Rotation/Opacity are 1-D temporally.
+Paste had built both arrays to a single `Math.max()` of the two lengths,
+which is fine for symmetric 1-D props but could over/under-fill an array
+on Scale and throw "Value array does not have N elements". Fixed by
+building the in and out arrays to their OWN native lengths independently
+(`keyInTemporalEase().length` / `keyOutTemporalEase().length`), reusing the
+source's first dimension when the copied ease has fewer dims than the
+target. `tsc`/`yarn build` clean. Scale itself still wants a real-AE
+confirm (multi-dim path is ExtendScript-only, unverifiable in preview).
+
+### Follow-up round 6: not a bug -- wrong-property confusion, now guarded
+
+The "Scale doesn't work" report turned out not to be a copy/paste bug at
+all: the user had Scale keyframes selected (a real, deliberately-shaped
+V-ease, `in 100%/0 · out 33.3%/0`), but the Ease tab's Pos/Scale/Rot/Opac
+toggle was still on "Position" -- and Copy read exactly that: "Copied
+**Position** ease from 1 keyframe... (nearest to playhead)". The toggle
+decides which property the tool acts on; it does NOT look at what's
+selected in the timeline to infer that, so a stale toggle silently
+substitutes the wrong property's nearest keyframe with no warning. This
+is a genuine, repeatable UX trap, not a one-off, so it's now guarded
+rather than just explained:
+
+- Both `motionToolsCopyEase` and `motionToolsPasteEase` now check, before
+  ever falling back to nearest-to-playhead: "is nothing selected on the
+  toggle's own property, but keyframes selected on ANY of the OTHER three
+  ease properties?" If so, return a clear error instead of proceeding --
+  `"You have Scale keyframes selected, but this tab is set to Position.
+  Switch the toggle above to Scale first."` This can't false-positive on
+  the legitimate no-selection case (playhead-nearest fallback) because it
+  only fires when a DIFFERENT property genuinely has a selection.
+- No frontend change needed -- `error` already renders via the existing
+  `run()`/`handleCopyEase`/`handlePasteEase` error surface.
+- `tsc -p tsconfig-build.json` + `yarn build` clean.
+- Once the toggle is switched to match the timeline selection, Scale
+  should behave identically to the already-confirmed Position path (the
+  round-5 multi-dimension fix already covers Scale's 2/3-D ease arrays).
+
+### Follow-up round 7: the toggle-match requirement itself was the problem
+
+Round 6's guard was technically correct -- the error text ("this tab is
+set to Position") was reporting the REAL toggle value the frontend sent,
+not a false positive from stale AE selection state -- but real-AE testing
+immediately hit it again on Scale keyframes that were genuinely,
+visibly selected in the Graph Editor, because the toggle just hadn't been
+clicked. Three consecutive rounds tripping on the same toggle/selection
+mismatch is a sign the design itself (a manual toggle the user must keep
+in sync with whatever they've selected in the Timeline) is the wrong
+interaction, not that the guard needed a smarter condition.
+
+Fix: **copy/paste now auto-detects the property from the real timeline
+selection**, and only falls back to the Pos/Scale/Rot/Opac toggle when
+nothing is explicitly selected on any of the four ease properties:
+- Both `motionToolsCopyEase` and `motionToolsPasteEase` scan all four
+  `EASE_PROPERTY_NAMES` across the selected layers for `selectedKeys`. If
+  exactly one property has a selection, that's used regardless of the
+  toggle. If the toggle's own property already has the selection, nothing
+  changes (matches the toggle, as before). If MULTIPLE different
+  properties have selections at once (genuinely ambiguous -- e.g. you
+  multi-selected keyframes across Position and Scale together), it errors
+  out asking to select just one, rather than guessing.
+- Both functions now return `usedPropertyKey`; the frontend
+  (`handleCopyEase`/`handlePasteEase` in `MotionToolsDroplet.tsx`) syncs
+  the toggle (`setEaseProperty`) whenever the backend used a different
+  property than what the toggle showed, so the UI reflects reality instead
+  of silently drifting from what was actually copied/pasted.
+- The status message now says so explicitly when it happens: "...( auto-
+  detected from your selection -- toggle switched to Scale)" -- visible
+  confirmation rather than a silent toggle jump.
+- This supersedes round 6's hard-block entirely; round 6's error path is
+  gone. `tsc -p tsconfig-build.json` + `yarn build` clean. Confirmed the
+  `.map`/`.indexOf` calls in the new ambiguous-selection error path are
+  safe -- both are polyfilled in `shared.ts`, which `motionTools.ts`
+  already imports (its module body/polyfills run before this file's code).
+
 ## Localised Library: "You may be in…" + JPG_PNG lazy browse
 Two separate additions to `tools/LocalisedLibrary.tsx`, both real, both
 touching the Territories/Folders views.
