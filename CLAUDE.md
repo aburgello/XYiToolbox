@@ -2828,6 +2828,39 @@ nothing is explicitly selected on any of the four ease properties:
   safe -- both are polyfilled in `shared.ts`, which `motionTools.ts`
   already imports (its module body/polyfills run before this file's code).
 
+### Follow-up round 8: Snap Anchor was corrupting animated Position
+
+User's question ("shouldn't this just move the anchor without touching
+pre-existing animation?") pointed at a real bug in
+`motionToolsSnapAnchor`, not user error. Both the anchor and position
+compensation were applied via the shared `applyValue()` helper, which for
+a KEYFRAMED property calls `prop.setValueAtTime(time, value)` -- that
+only creates/edits the ONE keyframe at the current playhead time. Every
+OTHER keyframe on Position (or Anchor Point, if ever animated) was left
+at its old value, visibly distorting the rest of the animation's shape --
+the layer would sit correctly at the current frame but jump/warp
+everywhere else, exactly the opposite of what an anchor-point tool should
+do (the whole point is the layer looks identical everywhere, not just at
+the playhead).
+
+Fix: when Position has keyframes, EVERY keyframe is now shifted by the
+same rotation-compensated delta (`rdx`, `rdy` -- already computed from the
+anchor's own delta, same math as before) via `posProp.keyValue(k)` /
+`setValueAtKey(k, ...)`, preserving the full animated path (spacing,
+easing, curve shape) just recentered around the new anchor. Anchor Point
+gets the analogous treatment for consistency (set every existing keyframe
+to the same new absolute anchor value, since a snap targets one location,
+not a per-keyframe delta) -- animated Anchor Point is rare in practice but
+was carrying the identical bug. Non-keyframed properties still use a
+plain `setValue()`, unaffected. `applyValue()`/`currentOrKeyframedValue()`
+remain used elsewhere in this file (Nudge, Align, Distribute, Group) where
+touching only the current-time keyframe IS the correct, expected
+behaviour for a one-shot nudge -- this fix is specific to
+`motionToolsSnapAnchor`, not a change to those helpers themselves.
+`tsc -p tsconfig-build.json` + `yarn build` clean; ExtendScript-only, no
+browser-observable surface, so real-AE confirmation is still the only way
+to verify (this file's usual caveat).
+
 ## Localised Library: "You may be in…" + JPG_PNG lazy browse
 Two separate additions to `tools/LocalisedLibrary.tsx`, both real, both
 touching the Territories/Folders views.
@@ -3068,3 +3101,36 @@ creative folders/files):**
     as "strong" in a compressed screenshot even when the underlying
     value is correct, so computed-style inspection is the reliable check
     here, not eyeballing the image.
+
+## True Comp Duplicator: froze AE solid on real projects
+
+Real-AE report: the tool would run, then AE would lock up completely,
+with an "error executing script at line N" dialog appearing only after
+force-exiting -- that dialog is AE's response to killing a runaway
+ExtendScript call, not a normal thrown error, which is the tell that this
+was a hang, not a logic bug that surfaces a clean message.
+
+Root cause, in `trueCompDuplicator`'s `getAllProperties` helper
+(`src/jsx/aeft/tools.ts`): its `collectProperties(obj)` walked `obj`'s
+children via `numProperties`/`property(i)` (correct, downward), but ALSO
+called `collectProperties(obj.propertyGroup(1))` on every object.
+`PropertyBase.propertyGroup(countUp)` returns the PARENT of `obj`, not a
+child -- so this recursed UPWARD. Every leaf property re-visited its
+parent group, which re-ran the numProperties loop over ALL of its
+children (including the leaf just visited), each of which recursed into
+the parent again, forever climbing back up and re-fanning-out down. For
+any layer with a normal property tree depth (Transform, Effects with
+their own parameters, Masks, Text, etc. -- i.e. every real layer) this is
+exponential blow-up, not a slow-but-finite traversal. It would eventually
+either genuinely infinite-loop or take so long AE reads as frozen --
+matches the report exactly.
+
+Fix: removed the upward `propertyGroup(1)` branch entirely. The existing
+downward `numProperties`/`property(i)` walk already reaches every
+descendant property on its own; the upward branch added no properties
+the downward walk didn't already find, only the exponential re-traversal.
+`tsc -p tsconfig-build.json` + `yarn build` clean. Pure ExtendScript
+logic with no browser-observable surface (no bridge in preview) -- the
+real fix can only be confirmed by running True Comp Duplicator on a
+comp with a normal effects/mask/expression-laden layer in actual AE and
+confirming it completes instead of hanging.

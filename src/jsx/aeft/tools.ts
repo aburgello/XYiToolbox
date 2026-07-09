@@ -5076,7 +5076,23 @@ export const trueCompDuplicator = (options: {
           properties.push(obj);
         }
 
-        // Check for indexed properties (like mask group, effect group, etc.)
+        // Recurse into CHILDREN only. `numProperties`/`property(i)` walks
+        // downward and already reaches every descendant on its own.
+        //
+        // This function used to ALSO call `obj.propertyGroup(1)` here --
+        // but PropertyBase.propertyGroup(countUp) returns the PARENT of
+        // obj, not a child. Calling it recursed UPWARD: every leaf
+        // property re-visited its parent group, which re-visited ALL of
+        // its children (including the leaf just visited) via the
+        // numProperties loop above, each of which recursed into the
+        // parent again -- exponential blow-up on any layer with a normal
+        // property tree depth (Transform/Effects/Masks, an effect's own
+        // parameters, etc.). This was the exact cause of a real-AE report:
+        // True Comp Duplicator would run, then hang AE solid, with an
+        // "error executing script at line N" dialog on force-exit (AE's
+        // response to killing a runaway ExtendScript call). Removed the
+        // upward branch entirely -- it added no reachable properties the
+        // downward walk didn't already cover.
         if (obj.numProperties !== undefined) {
           for (let i = 1; i <= obj.numProperties; i++) {
             try {
@@ -5084,15 +5100,6 @@ export const trueCompDuplicator = (options: {
             } catch (e) {
               // Skip inaccessible properties
             }
-          }
-        }
-
-        // Check for named property groups
-        if (obj.propertyGroup) {
-          try {
-            collectProperties(obj.propertyGroup(1));
-          } catch (e) {
-            // Not a property group
           }
         }
       };
