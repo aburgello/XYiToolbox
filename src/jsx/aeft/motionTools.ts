@@ -149,10 +149,38 @@ export const motionToolsSnapAnchor = (relX: number, relY: number): Result => {
       const rdy = dx * Math.sin(rad) + dy * Math.cos(rad);
 
       const newAnchor = oldAnchor.length > 2 ? [newAnchorX, newAnchorY, oldAnchor[2]] : [newAnchorX, newAnchorY];
-      const newPos = oldPos.length > 2 ? [oldPos[0] + rdx, oldPos[1] + rdy, oldPos[2]] : [oldPos[0] + rdx, oldPos[1] + rdy];
 
-      applyValue(anchorProp, time, newAnchor);
-      applyValue(posProp, time, newPos);
+      // Anchor Point: almost never animated in practice, but handled the
+      // same way as Position below for consistency -- set every existing
+      // keyframe to the same new anchor value (a snap targets one absolute
+      // location, not a per-keyframe delta) rather than touching only the
+      // current-time key.
+      if (anchorProp.numKeys > 0) {
+        for (let k = 1; k <= anchorProp.numKeys; k++) anchorProp.setValueAtKey(k, newAnchor);
+      } else {
+        anchorProp.setValue(newAnchor);
+      }
+
+      // Position: if animated, shift EVERY keyframe by the same rotation-
+      // compensated delta (rdx, rdy) instead of only the current-time one.
+      // The original code called applyValue() here, which for a keyframed
+      // property does setValueAtTime(time, newPos) -- that only creates/
+      // edits ONE keyframe at the playhead and leaves every OTHER Position
+      // keyframe at its old value, which visibly distorts the rest of the
+      // animation (the whole point of an anchor snap is to look identical
+      // everywhere, not just at the current frame). Shifting every
+      // keyframe by the same delta preserves the full animated path --
+      // spacing, easing, shape -- just recentered around the new anchor.
+      if (posProp.numKeys > 0) {
+        const has3rd = oldPos.length > 2;
+        for (let k = 1; k <= posProp.numKeys; k++) {
+          const kv = posProp.keyValue(k) as number[];
+          const nv = has3rd ? [kv[0] + rdx, kv[1] + rdy, kv[2]] : [kv[0] + rdx, kv[1] + rdy];
+          posProp.setValueAtKey(k, nv);
+        }
+      } else {
+        posProp.setValue([oldPos[0] + rdx, oldPos[1] + rdy].concat(oldPos.length > 2 ? [oldPos[2]] : []) as number[]);
+      }
       touched++;
     }
     app.endUndoGroup();
