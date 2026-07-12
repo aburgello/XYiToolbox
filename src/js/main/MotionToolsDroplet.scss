@@ -252,12 +252,13 @@ $mt-surface: #202020;
     cursor: pointer;
     transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.08s ease;
 
-    &:hover {
+    &:hover:not(:disabled) {
         background: $mt-accent-soft;
         border-color: $mt-accent;
         color: $mt-accent;
     }
-    &:active { transform: translateY(1px); }
+    &:active:not(:disabled) { transform: translateY(1px); }
+    &:disabled { opacity: 0.4; cursor: default; }
 }
 
 .mt-divider {
@@ -430,6 +431,82 @@ $mt-surface: #202020;
         border: 2px solid #08201d;
         box-shadow: 0 0 6px $mt-accent-glow;
         cursor: pointer;
+    }
+}
+
+// --- Ease presets ------------------------------------------------------
+// Chips wrap onto multiple rows as the (user-extensible) list grows
+// instead of a fixed-height scroller -- a popover this size has no room
+// for internal scroll affordances feeling native.
+.mt-preset-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.mt-preset-chip {
+    display: flex;
+    align-items: stretch;
+    background: $mt-surface;
+    border: 1px solid #383838;
+    border-radius: 999px;
+    overflow: hidden;
+    transition: border-color 0.15s ease;
+
+    &:hover { border-color: $mt-accent; }
+}
+
+.mt-preset-chip-btn {
+    background: none;
+    border: none;
+    color: #cfcfcf;
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 6px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color 0.15s ease;
+
+    &:hover { color: $mt-accent; }
+}
+
+// Only rendered for user-saved presets -- built-ins have no delete control
+// (see motionToolsDeleteEasePreset's no-op guard on a built-in id).
+.mt-preset-chip-del {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    border-left: 1px solid #333;
+    color: #777;
+    cursor: pointer;
+    transition: color 0.15s ease, background 0.15s ease;
+
+    &:hover { color: #e07a7a; background: rgba(224, 122, 122, 0.1); }
+}
+
+.mt-preset-save-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+
+    input {
+        flex: 1;
+        min-width: 0;
+        background: #191919;
+        border: 1px solid #383838;
+        color: #eee;
+        border-radius: 6px;
+        padding: 6px 8px;
+        font-size: 11px;
+        box-sizing: border-box;
+
+        &:focus { outline: none; border-color: $mt-accent; box-shadow: 0 0 0 2px $mt-accent-glow; }
     }
 }
 

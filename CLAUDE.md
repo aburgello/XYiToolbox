@@ -3134,3 +3134,178 @@ logic with no browser-observable surface (no bridge in preview) -- the
 real fix can only be confirmed by running True Comp Duplicator on a
 comp with a normal effects/mask/expression-laden layer in actual AE and
 confirming it completes instead of hanging.
+
+## Motion Tools Ease: generic copy/paste, Pos/Scale/Rot/Opac toggle removed
+
+User request after round 7 fully resolved the toggle friction: "would it
+be possible to make [ease copy] a global thing... not only on those 4
+values but on everything -- e.g. paste Position's easing onto a Mask
+Path." Follow-up: "I'd even remove those pos scale rot opac indicators
+and just allow for every copy paste." Implemented directly -- the toggle
+add nothing once the tool can read intent from the Timeline selection
+itself, and removing it eliminates an entire class of bug this session
+kept re-discovering (rounds 6-7: toggle drifting out of sync with what's
+actually selected).
+
+**Backend (`src/jsx/aeft/motionTools.ts`)** -- Easy Ease (In/Out/Both),
+Copy Ease, and Paste Ease no longer take a `propertyKey` argument or look
+anything up via the old `EASE_PROPERTY_NAMES` name-to-property map
+(removed entirely, along with all the toggle-vs-selection reconciliation
+logic from rounds 6-7 -- superseded, not layered on top of). All three now
+share one new resolver:
+
+- `getSelectedEaseTargets(comp)` reads `comp.selectedProperties` (the same
+  API `motionToolsExcite` already used), filters to leaf `Property`
+  objects (`propertyType === PropertyType.PROPERTY`) with `numKeys > 0`,
+  and for each resolves its owning layer (`ownerLayer()`, walks up via
+  `propertyGroup(1)` until it hits a `Layer`) and which keyframes to act
+  on (explicit `selectedKeys`, or the nearest-to-playhead key as a
+  fallback). This works on ANY animatable property -- Mask Path, an
+  effect's own parameter, a Text Animator property, anything with
+  keyframes -- not just the four Transform properties.
+- `propertyLabel(prop)` builds a short disambiguating label for messages
+  ("Mask 1 > Mask Path", bare "Position" since the ever-present
+  "Transform" parent group is skipped as redundant).
+- **Easy Ease** now applies to EVERY resolved target at once (was single-
+  property): select Position AND Scale keyframes together, Ease Both eases
+  both in one click. Properties that don't support temporal ease (Hold-
+  only, text documents, markers) are individually skipped with a per-
+  property try/catch around just the ease calls, reported as "(skipped:
+  X -- no ease support)" rather than aborting the whole batch.
+- **Copy** still requires exactly ONE property selected (a copied ease's
+  dimensionality is tied to one source) -- errors asking to narrow the
+  selection if more than one property has keyframes selected at once, same
+  reasoning as round 6/7's ambiguity handling, just simplified since there's
+  no toggle to fall back to anymore.
+- **Paste** is now BATCH across every resolved target -- paste the same
+  copied ease onto Position, Mask Path, and an effect slider simultaneously
+  if all three have keyframes selected together, each with its own correct
+  per-key dimension matching (the round-5 fix, unchanged). Also wrapped in
+  a per-target try/catch so an unsupported target is skipped and reported,
+  not a hard failure for the whole paste.
+- Kept intact from earlier rounds: JSON-string transport for the copied
+  payload (round 3's fix for the "pastes defaults" bug), the finite-number
+  validation guard, the `[in x%/y · out x%/y]` diagnostic summaries, and
+  the "AE kept: ..." read-back comparison in Paste's confirmation message.
+
+**Frontend (`src/js/main/MotionToolsDroplet.tsx`)** -- removed the
+Pos/Scale/Rot/Opac `SegmentedToggle` and its `easeProperty` state/
+`EASE_PROPERTIES` constant entirely from the Ease tab. `handleCopyEase`/
+`handlePasteEase` call `evalTSSafe("motionToolsCopyEase")` /
+`evalTSSafe("motionToolsPasteEase", JSON.stringify(copiedKeys))` with no
+property argument; the toggle-sync logic from round 7
+(`usedPropertyKey`/`setEaseProperty`) is gone since there's no toggle left
+to sync. Added a one-line hint under "Easy Ease" explaining it now acts on
+whatever's selected in the Timeline/Graph Editor.
+
+**A real ExtendScript pitfall caught before it shipped**: an early draft
+used `targets.some(...)` to check whether any paste target used the
+nearest-key fallback. `Array.prototype.some` is NOT polyfilled in this
+codebase (`shared.ts` only polyfills `indexOf`/`filter`/`map`) and isn't
+native in ExtendScript's ES3 engine -- a defensive `targets.some ? ... :
+false` guard would have silently and permanently evaluated to `false` in
+real AE (no crash, just a feature that quietly never worked), which is a
+worse failure mode than an outright error. Replaced with a plain `for`
+loop. `.map`/`.indexOf` elsewhere in this change ARE safe (both
+polyfilled).
+
+Verified `tsc -p tsconfig-build.json` (clean), `tsc -p tsconfig.json`
+(zero `MotionToolsDroplet`/new-code errors -- pre-existing "Cannot find
+name 'app'" etc. errors against `motionTools.ts` under the frontend
+config are expected and unrelated, same as every prior round), and
+`yarn build` (clean). Pure ExtendScript + no-bridge-dependent frontend
+logic -- the actual "copy Position, paste onto Mask Path" workflow can
+only be confirmed in real AE.
+
+## Motion Tools Ease: preset library
+
+Built on top of the generic copy/paste above, per user follow-up asking
+for "a library with presets." Scoped via two questions before building:
+(1) built-in-only vs. built-in + user-saveable -- chose **built-in +
+user-saveable**; (2) single ease shape vs. full multi-keyframe sequence
+per preset -- chose **single ease shape**, applied identically to every
+target key on apply (matches how presets work in Ease and
+Wizz/Keyframe Assistant).
+
+**Backend (`src/jsx/aeft/motionTools.ts`)**:
+- Refactored `motionToolsPasteEase`'s write loop out into
+  `writeEaseToTargets(targets, keysSrc)` -- takes already-resolved
+  `EaseTarget[]` (from `getSelectedEaseTargets`) and a `SerializedKeyEase[]`
+  source, writes it onto every target key with the existing per-key
+  dimension-matching and per-target try/catch, and returns
+  `{touched, landedOn, skipped, keptSummary}`. `motionToolsPasteEase` now
+  just parses/validates its JSON payload and calls this; preset
+  application reuses the SAME function rather than a second copy of the
+  write logic drifting out of sync.
+- `EasePreset` interface: `{id, name, isBuiltIn, inType, outType,
+  inInfluence, inSpeed, outInfluence, outSpeed}` -- a single ease shape,
+  not an array of per-keyframe eases like Copy/Paste's payload.
+- `BUILT_IN_EASE_PRESETS`: 6 hardcoded presets (Linear, Standard Ease
+  33/33, Ease In Only, Ease Out Only, Soft Ease 15/15, Strong Ease 75/75),
+  all `speed: 0` -- pure influence-based shapes, deliberately portable to
+  any property/value-range (see the speed-normalization bugfix below for
+  why this matters).
+- User presets persist via `app.settings` (section `"XYiToolbox"`, key
+  `"MotionToolsEasePresets"`, a JSON array) -- same section this studio's
+  toolbox already uses for Expressions Bank (`tools.ts`) and campaign
+  storage (`localise.ts`), so presets survive AE restarts on this machine.
+  `loadUserEasePresets()`/`saveUserEasePresets()` wrap the
+  `haveSetting`/`getSetting`/`saveSetting` read-modify-write, matching
+  `localise.ts`'s existing guard pattern.
+- `motionToolsListEasePresets()` returns built-ins concatenated with user
+  presets. `motionToolsSaveEasePreset(name, keysJson)` takes the FIRST
+  keyframe of a copied ease (Copy's `keys` payload) and stores it as a new
+  named preset. `motionToolsDeleteEasePreset(id)` removes a user preset by
+  id (silently no-ops if the id doesn't match anything -- there's no
+  delete control on built-ins in the UI, so this is a defensive guard, not
+  a reachable user path). `motionToolsApplyEasePreset(id)` looks up a
+  preset by id (built-in or user), builds a single-entry `keysSrc`, and
+  calls `writeEaseToTargets` -- a single source entry means
+  `writeEaseToTargets`'s existing "one ease copied -> lands on every
+  target key" behaviour applies the preset identically across however many
+  keyframes are selected.
+
+**Frontend (`MotionToolsDroplet.tsx`/`.scss`)**: a "Presets" section below
+Copy/Paste in the Ease tab -- pill-shaped chips (`.mt-preset-chip`), each
+clickable to apply; user presets (not built-ins) get a small trash-icon
+delete button. Presets load once on mount (`useEffect` ->
+`motionToolsListEasePresets`) rather than lazily on first Ease-tab visit.
+When something's currently copied (`copiedKeys` truthy), a save row
+appears (name input + `BookmarkPlus` icon button) to save it as a new
+preset, calling `motionToolsSaveEasePreset` and replacing the preset list
+with the server's authoritative post-save list. Added a `:disabled` state
+to the shared `.mt-icon-btn` class (previously undefined -- no existing
+usage disabled one) for the save button's empty-name state.
+
+### Bugfix: saved presets carried a copied keyframe's raw (non-portable) speed
+
+Real-AE report, with screenshots: copying a 2-3 keyframe Position
+animation with one very fast, spike-shaped move (~200,000 units/sec
+peak on the Speed graph) and saving it as a preset, then applying that
+preset elsewhere, produced a completely different, warped, asymmetric
+curve -- not just a smaller/larger version of the same shape.
+
+Root cause: `motionToolsSaveEasePreset` stored the copied keyframe's
+`speed` value VERBATIM into the preset (`inSpeed: fIn.speed`). Temporal
+ease has two components with very different portability:
+**influence** (a %, relative to the segment -- portable to any keyframe/
+property) and **speed** (an ABSOLUTE value/sec, tied to that one
+keyframe's own value delta -- meaningless outside that exact context).
+A preset saved from a keyframe with a huge, fast move carried that
+move's huge absolute speed number into the preset; applying it to an
+unrelated keyframe with a totally different value range made AE
+reinterpret a wildly out-of-scale absolute velocity, producing the
+warped curve in the report -- this is the SAME influence-vs-speed
+portability issue flagged much earlier in this session's Copy/Paste
+work (round 3-4 diagnostics), just newly relevant because a *preset*
+is explicitly meant to be reusable ANYWHERE, unlike a same-property
+Copy/Paste where the source and target at least share a value range.
+
+Fix: `motionToolsSaveEasePreset` now forces `inSpeed`/`outSpeed` to `0`
+when saving a user preset, keeping only `influence` (and interpolation
+type) from the copied keyframe -- exactly matching how every built-in
+preset was already defined. A preset is now always a pure, portable
+ease SHAPE, never an absolute velocity from wherever it happened to be
+copied. `tsc -p tsconfig-build.json` + `yarn build` clean. This only
+affects NEWLY saved presets going forward (nothing was in a shipped,
+in-use `app.settings` store yet to migrate).

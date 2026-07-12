@@ -53,7 +53,7 @@ import {
     AlignStartVertical, AlignCenterVertical, AlignEndVertical,
     AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
     AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter,
-    Eraser, Copy, ClipboardPaste,
+    Eraser, Copy, ClipboardPaste, BookmarkPlus, Trash2,
 } from "lucide-react";
 import Droplet from "./Droplet";
 import Tooltip from "./Tooltip";
@@ -63,6 +63,12 @@ import { evalTSSafe } from "../lib/utils/evalTSSafe";
 import "./MotionToolsDroplet.scss";
 
 type Tab = "anchor" | "align" | "transform" | "sequence" | "ease";
+
+interface EasePresetDTO {
+    id: string;
+    name: string;
+    isBuiltIn: boolean;
+}
 
 const TABS: { id: Tab; label: string; Icon: React.ComponentType<{ size?: number }> }[] = [
     { id: "anchor",    label: "Anchor",  Icon: Crosshair },
@@ -82,13 +88,6 @@ const ANCHOR_GRID: { relX: number; relY: number; label: string }[] = [
     { relX: 0,   relY: 1,   label: "Bottom Left" },
     { relX: 0.5, relY: 1,   label: "Bottom Center" },
     { relX: 1,   relY: 1,   label: "Bottom Right" },
-];
-
-const EASE_PROPERTIES = [
-    { value: "position", label: "Pos" },
-    { value: "scale", label: "Scale" },
-    { value: "rotation", label: "Rot" },
-    { value: "opacity", label: "Opac" },
 ];
 
 // Teal accent, fed into the shared --cat-* vars so SegmentedToggle /
@@ -165,7 +164,6 @@ const MotionToolsDroplet: React.FC = () => {
     const reduced = useReducedMotion();
     const [tab, setTab] = useState<Tab>("anchor");
     const [error, setError] = useState<string | null>(null);
-    const [easeProperty, setEaseProperty] = useState("position");
     const [alignTo, setAlignTo] = useState("comp");
     const [seqFrames, setSeqFrames] = useState("2");
     const [seqReverse, setSeqReverse] = useState(false);
@@ -183,6 +181,13 @@ const MotionToolsDroplet: React.FC = () => {
     // silently succeeding onto a key the user wasn't looking at -- this makes
     // what it did visible.
     const [easeStatus, setEaseStatus] = useState<string | null>(null);
+    // Built-in + user-saved ease presets (single ease shapes, applied to
+    // every selected target key at once -- see motionToolsApplyEasePreset).
+    // Loaded once on mount rather than lazily on first Ease-tab visit: it's
+    // one cheap evalTSSafe call reading app.settings, and having the list
+    // ready the instant the Ease tab is opened beats a load flicker there.
+    const [presets, setPresets] = useState<EasePresetDTO[]>([]);
+    const [presetName, setPresetName] = useState("");
 
     // Centralised call + error surface for every action -- same "no bridge /
     // thrown exception -> inline message" reasoning as this app's other
@@ -193,21 +198,24 @@ const MotionToolsDroplet: React.FC = () => {
         if (!result.success) setError(result.error || "Something went wrong.");
     };
 
+    useEffect(() => {
+        evalTSSafe("motionToolsListEasePresets").then((result) => {
+            if (result.success) setPresets((result.presets as EasePresetDTO[]) || []);
+        });
+    }, []);
+
     const handleCopyEase = async () => {
         setError(null);
         setEaseStatus(null);
-        const result = await evalTSSafe("motionToolsCopyEase", easeProperty);
+        // Fully generic now -- no property argument. The backend reads
+        // whatever's actually selected in the Timeline/Graph Editor
+        // (comp.selectedProperties), so this works on Position just as well
+        // as Mask Path, an effect's own parameter, a Text Animator property,
+        // anything with keyframes. See motionToolsCopyEase's comment.
+        const result = await evalTSSafe("motionToolsCopyEase");
         if (!result.success) { setError(result.error || "Something went wrong."); return; }
         setCopiedKeys((result.keys as unknown[]) || null);
         setEaseStatus((result.message as string) || "Ease copied.");
-        // Backend auto-detects the property from the actual timeline
-        // selection and only falls back to this toggle's own value when
-        // nothing's explicitly selected (see motionToolsCopyEase's comment).
-        // If it detected a DIFFERENT property than the toggle currently
-        // shows, sync the toggle so Paste (which also auto-detects, but
-        // this keeps the UI honest) reflects what was really copied.
-        const used = result.usedPropertyKey as string | undefined;
-        if (used && used !== easeProperty) setEaseProperty(used);
     };
 
     const handlePasteEase = async () => {
@@ -220,11 +228,37 @@ const MotionToolsDroplet: React.FC = () => {
         // whose inner speed/influence values were silently dropped -- which
         // made paste apply AE's DEFAULT ease. A string survives the splice
         // intact and motionToolsPasteEase JSON.parses it back. See that fn.
-        const result = await evalTSSafe("motionToolsPasteEase", easeProperty, JSON.stringify(copiedKeys));
+        // Also fully generic now -- pastes onto whatever property/properties
+        // are currently selected, batching across all of them at once.
+        const result = await evalTSSafe("motionToolsPasteEase", JSON.stringify(copiedKeys));
         if (!result.success) { setError(result.error || "Something went wrong."); return; }
         setEaseStatus((result.message as string) || "Ease pasted.");
-        const used = result.usedPropertyKey as string | undefined;
-        if (used && used !== easeProperty) setEaseProperty(used);
+    };
+
+    const handleApplyPreset = async (id: string) => {
+        setError(null);
+        setEaseStatus(null);
+        const result = await evalTSSafe("motionToolsApplyEasePreset", id);
+        if (!result.success) { setError(result.error || "Something went wrong."); return; }
+        setEaseStatus((result.message as string) || "Preset applied.");
+    };
+
+    const handleSavePreset = async () => {
+        const name = presetName.trim();
+        if (!name || !copiedKeys) return;
+        setError(null);
+        const result = await evalTSSafe("motionToolsSaveEasePreset", name, JSON.stringify(copiedKeys));
+        if (!result.success) { setError(result.error || "Something went wrong."); return; }
+        setPresets((result.presets as EasePresetDTO[]) || []);
+        setPresetName("");
+        setEaseStatus("Saved \"" + name + "\" as a preset.");
+    };
+
+    const handleDeletePreset = async (id: string) => {
+        setError(null);
+        const result = await evalTSSafe("motionToolsDeleteEasePreset", id);
+        if (!result.success) { setError(result.error || "Something went wrong."); return; }
+        setPresets((result.presets as EasePresetDTO[]) || []);
     };
 
     // Per-tick nudge amount: the Step field's value, x10 with Shift held.
@@ -410,21 +444,20 @@ const MotionToolsDroplet: React.FC = () => {
                             {tab === "ease" && (
                                 <div className="mt-section">
                                     <div className="mt-section-label">Easy Ease</div>
-                                    <SegmentedToggle name="mt-ease-prop" value={easeProperty} onChange={(v) => { setEaseProperty(v); setEaseStatus(null); }} options={EASE_PROPERTIES} />
                                     <div className="mt-row mt-row-ease">
-                                        <button className="mt-ease-btn" onClick={() => run("motionToolsApplyEase", easeProperty, "in")}>In</button>
-                                        <button className="mt-ease-btn" onClick={() => run("motionToolsApplyEase", easeProperty, "out")}>Out</button>
-                                        <button className="mt-ease-btn" onClick={() => run("motionToolsApplyEase", easeProperty, "both")}>Both</button>
+                                        <button className="mt-ease-btn" onClick={() => run("motionToolsApplyEase", "in")}>In</button>
+                                        <button className="mt-ease-btn" onClick={() => run("motionToolsApplyEase", "out")}>Out</button>
+                                        <button className="mt-ease-btn" onClick={() => run("motionToolsApplyEase", "both")}>Both</button>
                                     </div>
 
                                     <div className="mt-section-label mt-section-label--sub">Copy Ease</div>
                                     <div className="mt-row mt-row-ease">
-                                        <Tooltip text="Copy this keyframe's ease" grow>
+                                        <Tooltip text="Copy the selected property's keyframe ease" grow>
                                             <button className="mt-text-btn mt-text-btn--grow" onClick={handleCopyEase}>
                                                 <Copy size={13} /> Copy
                                             </button>
                                         </Tooltip>
-                                        <Tooltip text={copiedKeys ? "Paste the copied ease onto the selected keyframe(s)" : "Copy an ease first"} grow>
+                                        <Tooltip text={copiedKeys ? "Paste the copied ease onto the selected keyframe(s), any property" : "Copy an ease first"} grow>
                                             <button
                                                 className="mt-text-btn mt-text-btn--grow"
                                                 disabled={!copiedKeys}
@@ -435,7 +468,43 @@ const MotionToolsDroplet: React.FC = () => {
                                         </Tooltip>
                                     </div>
                                     {easeStatus && <p className="mt-hint mt-hint--copied">{easeStatus}</p>}
-                                    {!easeStatus && copiedKeys && <p className="mt-hint mt-hint--copied">Ease copied -- select the target keyframe(s), then Paste.</p>}
+                                    {!easeStatus && copiedKeys && <p className="mt-hint mt-hint--copied">Ease copied -- select the target keyframe(s) on any property, then Paste.</p>}
+
+                                    <div className="mt-section-label mt-section-label--sub">Presets</div>
+                                    <div className="mt-preset-list">
+                                        {presets.map((p) => (
+                                            <div key={p.id} className="mt-preset-chip">
+                                                <Tooltip text={"Apply \"" + p.name + "\" to the selected keyframe(s)"}>
+                                                    <button className="mt-preset-chip-btn" onClick={() => handleApplyPreset(p.id)}>
+                                                        {p.name}
+                                                    </button>
+                                                </Tooltip>
+                                                {!p.isBuiltIn && (
+                                                    <Tooltip text="Delete this preset">
+                                                        <button className="mt-preset-chip-del" onClick={() => handleDeletePreset(p.id)}>
+                                                            <Trash2 size={11} />
+                                                        </button>
+                                                    </Tooltip>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {copiedKeys && (
+                                        <div className="mt-preset-save-row">
+                                            <input
+                                                type="text"
+                                                placeholder="Save copied ease as..."
+                                                value={presetName}
+                                                onChange={(e) => setPresetName(e.target.value)}
+                                                onKeyDown={(e) => { if (e.key === "Enter") handleSavePreset(); }}
+                                            />
+                                            <Tooltip text="Save the copied ease as a new preset" grow>
+                                                <button className="mt-icon-btn" disabled={!presetName.trim()} onClick={handleSavePreset}>
+                                                    <BookmarkPlus size={14} />
+                                                </button>
+                                            </Tooltip>
+                                        </div>
+                                    )}
 
                                     <div className="mt-section-label mt-section-label--sub">Excite</div>
                                     <label className="mt-slider-row">
