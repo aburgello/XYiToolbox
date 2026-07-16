@@ -637,7 +637,7 @@ const DeliveryHubTool = () => {
                                                 {row.includeAudio ? <Volume2 size={11} /> : <VolumeX size={11} />}
                                             </button>
                                         </Tooltip>
-                                        <Tooltip text="Rotate 90° -- replaces this row with the rotated comp">
+                                        <Tooltip text="Rotate 90°CC - replaces this row with the rotated comp">
                                             <button
                                                 className="dh-row-rotate"
                                                 disabled={rotatingIds.has(row.id)}
