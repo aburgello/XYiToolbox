@@ -69,7 +69,7 @@
     pointer-events: none;
     // Above every other overlay in the app (Droplet 1500, CommandPalette
     // 1900, Dialog 2000) -- a tooltip can be triggered from a trigger
-    // living inside ANY of those (e.g. Motion Tools' Droplet popover), and
+    // living inside ANY of those (e.g. XYTools' Droplet popover), and
     // since it's portaled to document.body it needs to out-rank all of
     // them unconditionally rather than just the one it happened to be
     // written for, or it silently renders underneath whichever container

@@ -167,6 +167,175 @@
     white-space: nowrap;
 }
 
+// ── Edit mode (long-press a row to enter — see RailScreen.tsx's header
+// comment) ───────────────────────────────────────────────────────────────
+// Mirrors Toolset.scss's edit-mode language (editbar/Done button, hide
+// badge, jiggle) adapted to a single-column vertical rail instead of a
+// wrapping tile grid — same interaction model, narrower geometry.
+.rail-editbar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 8px 2px 10px;
+    border-bottom: 1px solid #262626;
+    margin-bottom: 4px;
+}
+
+.rail-edit-hint {
+    margin: 0;
+    font-size: 8.5px;
+    line-height: 1.4;
+    color: #777;
+    flex: 1;
+}
+
+.rail-done-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    flex-shrink: 0;
+    background: transparent;
+    border: 1px solid var(--cat-border, #4a9eff);
+    color: var(--cat-border, #4a9eff);
+    border-radius: 10px;
+    padding: 2px 8px;
+    font-size: 10px;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+
+    svg { flex-shrink: 0; }
+    &:hover { color: #fff; background: var(--cat-border, #4a9eff); }
+}
+
+// Stage label becomes a typable input while editing -- sits inline with the
+// dot exactly where the static label used to be, same "legend on the line"
+// feel as the rest of this app's rename-in-place inputs.
+.rail-stage-label-input {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 1px 4px 1px 2px;
+    margin: 0;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.3px;
+    text-transform: uppercase;
+    color: var(--cat-icon, #999);
+    outline: none;
+    cursor: text;
+
+    &:hover { border-color: #3a3a3a; }
+    &:focus { border-color: var(--cat-border, #4a9eff); color: #eee; }
+}
+
+// Draggable wrapper (dnd-kit owns its inline transform) -- the visible row
+// look/jiggle live on the INNER .rail-tool-row-editing face, never here,
+// same split Toolset.scss uses and for the same reason (see that file).
+.rail-edit-item {
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+    &:active { cursor: grabbing; }
+}
+
+.rail-tool-row-editing {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 22px 6px 7px;
+    border-radius: 5px;
+    font-size: 11.5px;
+    color: #ddd;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid #333;
+
+    .rail-tool-icon { color: var(--cat-icon, #aaa); }
+}
+
+.rail-tool-row-editing.is-hidden {
+    opacity: 0.4;
+    border-style: dashed;
+}
+
+.rail-tool-row-editing.jiggle {
+    animation: ov-jiggle 0.34s ease-in-out infinite;
+}
+.rail-edit-item:nth-child(2n) .rail-tool-row-editing.jiggle { animation-delay: -0.11s; }
+.rail-edit-item:nth-child(3n) .rail-tool-row-editing.jiggle { animation-delay: -0.22s; }
+
+// Same iOS jiggle-mode remove badge language as Toolset.scss's
+// .action-hide-btn, sized down and pinned to the row's right edge instead
+// of top-left -- a narrow 182px rail has no room to overhang the row's
+// left side without colliding with the stage's own connecting spine line.
+.rail-hide-btn {
+    position: absolute;
+    top: 50%;
+    right: 3px;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid #1e1e1e;
+    background: #f4f4f4;
+    color: #e0574f; // red minus
+    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+    transition: background 0.15s ease, transform 0.1s ease;
+    z-index: 2;
+
+    svg { pointer-events: none; }
+    &:hover { background: #fff; transform: translateY(-50%) scale(1.1); }
+}
+.rail-hide-btn.is-hidden {
+    color: #4a9d5b; // green when hidden = restore
+}
+
+.rail-stage-tools.editing {
+    min-height: 26px;
+    border-radius: 6px;
+    padding-bottom: 2px;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+
+    &.drop-target {
+        background: rgba(255, 255, 255, 0.04);
+        box-shadow: inset 0 0 0 1px var(--cat-border, #4a9eff);
+    }
+}
+
+.rail-stage-empty-hint {
+    margin: 2px 0 4px;
+    font-size: 9.5px;
+    color: #555;
+    font-style: italic;
+}
+
+// The dragged row's copy that follows the cursor (dnd-kit DragOverlay).
+// DragOverlay portals to document.body, OUTSIDE .rail-hub's own DOM
+// subtree, so the --cat-* custom properties set there don't cascade here
+// -- RailScreen.tsx passes categoryStyleVars(categoryId) directly as this
+// element's own inline style to compensate (same fix this app's other
+// portal-based pieces, e.g. Tooltip/Droplet, already need for the same
+// reason).
+.rail-edit-overlay {
+    cursor: grabbing;
+    background: var(--cat-grad, #2a2a2a);
+    border: 1px solid var(--cat-border, #555);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+    color: #fff;
+    width: 160px;
+
+    .rail-tool-icon { color: #fff; }
+}
+
 // ── Content pane ──────────────────────────────────────────────────────────
 .rail-content {
     flex: 1;

@@ -82,7 +82,7 @@ const Tooltip = ({
     // a CSS grid of cells, a tab bar -- since .ov-tooltip-content's forced
     // `flex: 0 0 auto` (below) otherwise shrinks them to content size and
     // leaves an invisible unhoverable gap where the fill used to be. See
-    // MotionToolsDroplet.tsx's header comment for the two ways this has
+    // XYToolsDroplet.tsx's header comment for the two ways this has
     // already bitten this app without this escape hatch.
     grow?: boolean;
 }) => {

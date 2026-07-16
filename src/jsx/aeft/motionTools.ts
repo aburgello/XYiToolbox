@@ -1,9 +1,15 @@
 // =============================================================================
-// src/jsx/aeft/motionTools.ts -- ExtendScript backend for the "Motion Tools"
-// droplet (src/js/main/MotionToolsDroplet.tsx), a quick-access popover
+// src/jsx/aeft/motionTools.ts -- ExtendScript backend for the "XYTools"
+// droplet (src/js/main/XYToolsDroplet.tsx), a quick-access popover
 // button to the LEFT of the home screen's search box. Split out of aeft.ts
 // per this project's usual per-feature file convention (see aeft.ts's own
 // header comment).
+//
+// The panel was called "Motion Tools" while it was being built; it's XYTools
+// in the UI now, but these bridge function names (and the app.settings key
+// "MotionToolsEasePresets" further down) deliberately kept their original
+// names -- renaming the settings key would orphan every ease preset artists
+// have already saved. See XYToolsDroplet.tsx's header.
 //
 // Built fresh for this app (not a port of anything in toolset/) -- modeled
 // on the anchor-point/nudge/ease toolbars in the motion-design tools that
@@ -1291,6 +1297,303 @@ export const motionToolsGroup = (): Result => {
       layers[i].parent = nullLayer;
     }
     app.endUndoGroup();
+    return { success: true };
+  } catch (e) {
+    app.endUndoGroup();
+    return { success: false, error: e.toString() };
+  }
+};
+
+// =============================================================================
+// Fit / Fill / Stretch to comp -- the retarget workhorse for this studio: the
+// same creative gets rebuilt at a dozen DOOH sizes, and "make this layer fill
+// the frame properly" is a thing you do all day, by hand, with a calculator.
+//   "contain" -- scale uniformly until the content fits INSIDE the comp
+//                (letterboxes; nothing is cropped)
+//   "cover"   -- scale uniformly until the content COVERS the comp
+//                (crops the overflowing axis; the usual choice for artwork)
+//   "stretch" -- scale each axis independently to exactly the comp size
+//                (distorts; matches Adjust's own deliberately non-proportional
+//                behavior, see CLAUDE.md)
+// Each layer is also centered in the comp -- fitting without centering leaves
+// the layer scaled but parked wherever it was, which is never what's wanted.
+//
+// Measures the layer's own content rect (getContentFrameRect -- the nested
+// comp's frame for a precomp, sourceRectAtTime otherwise, same as the anchor
+// tools) so the result is independent of the layer's current scale/anchor.
+// Rotation is ignored, same axis-aligned assumption align/distribute make.
+// =============================================================================
+export const motionToolsFit = (mode: string): Result => {
+  try {
+    const comp = app.project.activeItem;
+    if (!(comp instanceof CompItem)) return { success: false, error: "Select or open a composition first." };
+    const layers = comp.selectedLayers;
+    if (layers.length === 0) return { success: false, error: "Please select layers first." };
+
+    app.beginUndoGroup("Fit to Comp");
+    const time = comp.time;
+    let touched = 0;
+    for (let i = 0; i < layers.length; i++) {
+      const rawLayer = layers[i];
+      // Duck-typed, not `instanceof AVLayer` -- see motionToolsSnapAnchor.
+      if (typeof (rawLayer as any).sourceRectAtTime !== "function") continue;
+      const layer = rawLayer as AVLayer;
+
+      const rect = getContentFrameRect(layer, time);
+      if (rect.width <= 0 || rect.height <= 0) continue;
+
+      const scaleProp = layer.property("Scale") as Property;
+      const posProp = layer.property("Position") as Property;
+      const anchorProp = layer.property("Anchor Point") as Property;
+      if (!scaleProp || !posProp || !anchorProp) continue;
+
+      const fx = comp.width / rect.width;
+      const fy = comp.height / rect.height;
+      let sx: number;
+      let sy: number;
+      if (mode === "stretch") {
+        sx = fx;
+        sy = fy;
+      } else {
+        const f = mode === "cover" ? Math.max(fx, fy) : Math.min(fx, fy);
+        sx = f;
+        sy = f;
+      }
+
+      const curScale = currentOrKeyframedValue(scaleProp, time) as number[];
+      const newScale = curScale.length > 2
+        ? [sx * 100, sy * 100, curScale[2]]
+        : [sx * 100, sy * 100];
+      applyValue(scaleProp, time, newScale);
+
+      // Center: put the content rect's own center on the comp's center. The
+      // content center sits (rect center - anchor) away from the layer's
+      // position, scaled by the NEW scale -- so position has to absorb that
+      // offset rather than just being set to the comp center.
+      const anchor = currentOrKeyframedValue(anchorProp, time) as number[];
+      const curPos = currentOrKeyframedValue(posProp, time) as number[];
+      const px = comp.width / 2 - (rect.left + rect.width / 2 - anchor[0]) * sx;
+      const py = comp.height / 2 - (rect.top + rect.height / 2 - anchor[1]) * sy;
+      const newPos = curPos.length > 2 ? [px, py, curPos[2]] : [px, py];
+      applyValue(posProp, time, newPos);
+      touched++;
+    }
+    app.endUndoGroup();
+    if (touched === 0) return { success: false, error: "No eligible layers selected (cameras/lights/audio can't be fitted)." };
+    return { success: true };
+  } catch (e) {
+    app.endUndoGroup();
+    return { success: false, error: e.toString() };
+  }
+};
+
+// Flip horizontally/vertically by negating one Scale axis. Flips AROUND THE
+// LAYER'S ANCHOR POINT (AE's own behavior for a negative scale) -- pair with
+// the Anchor tab if the pivot isn't where you want it. Deliberately no
+// position compensation: "flip in place around the anchor" is the expected
+// behavior, and silently re-centering it would be surprising.
+export const motionToolsFlip = (axis: string): Result => {
+  try {
+    const comp = app.project.activeItem;
+    if (!(comp instanceof CompItem)) return { success: false, error: "Select or open a composition first." };
+    const layers = comp.selectedLayers;
+    if (layers.length === 0) return { success: false, error: "Please select layers first." };
+
+    app.beginUndoGroup("Flip Layers");
+    const time = comp.time;
+    let touched = 0;
+    for (let i = 0; i < layers.length; i++) {
+      const scaleProp = layers[i].property("Scale") as Property;
+      if (!scaleProp) continue;
+      const cur = currentOrKeyframedValue(scaleProp, time) as number[];
+      const next = cur.length > 2 ? [cur[0], cur[1], cur[2]] : [cur[0], cur[1]];
+      if (axis === "vertical") next[1] = -next[1];
+      else next[0] = -next[0];
+      applyValue(scaleProp, time, next);
+      touched++;
+    }
+    app.endUndoGroup();
+    if (touched === 0) return { success: false, error: "No eligible layers selected (cameras/lights have no scale)." };
+    return { success: true };
+  } catch (e) {
+    app.endUndoGroup();
+    return { success: false, error: e.toString() };
+  }
+};
+
+// =============================================================================
+// Trim In/Out to the playhead -- AE's own Alt+[ / Alt+], but reachable from
+// the panel (and, unlike the shortcut, it reports what it couldn't do rather
+// than silently no-op'ing). Skips any layer where the playhead is outside the
+// layer's own span, since AE throws on an inPoint past its outPoint.
+// =============================================================================
+export const motionToolsTrim = (edge: string): Result => {
+  try {
+    const comp = app.project.activeItem;
+    if (!(comp instanceof CompItem)) return { success: false, error: "Select or open a composition first." };
+    const layers = comp.selectedLayers;
+    if (layers.length === 0) return { success: false, error: "Please select layers first." };
+
+    app.beginUndoGroup(edge === "out" ? "Trim Out to Playhead" : "Trim In to Playhead");
+    const time = comp.time;
+    let touched = 0;
+    let skipped = 0;
+    for (let i = 0; i < layers.length; i++) {
+      const layer = layers[i];
+      try {
+        if (edge === "out") {
+          if (time <= layer.inPoint) { skipped++; continue; }
+          layer.outPoint = time;
+        } else {
+          if (time >= layer.outPoint) { skipped++; continue; }
+          layer.inPoint = time;
+        }
+        touched++;
+      } catch (e) {
+        skipped++;
+      }
+    }
+    app.endUndoGroup();
+    if (touched === 0) {
+      return { success: false, error: "The playhead isn't inside any selected layer's span." };
+    }
+    if (skipped > 0) {
+      return { success: false, error: "Trimmed " + touched + " layer(s); skipped " + skipped + " the playhead sits outside of." };
+    }
+    return { success: true };
+  } catch (e) {
+    app.endUndoGroup();
+    return { success: false, error: e.toString() };
+  }
+};
+
+// =============================================================================
+// Reverse Keyframes -- mirrors each property's keys in time about the span
+// they already occupy (first key stays put, last key stays put, everything
+// between flips), so an animation plays backwards without moving in the
+// timeline.
+//
+// Acts on whatever's selected in the Timeline/Graph Editor
+// (comp.selectedProperties -- same resolution model the generic ease
+// copy/paste uses); if no property is selected, falls back to every animated
+// property on the selected LAYERS, found by walking each layer's property
+// tree DOWNWARD only. That direction matters: True Comp Duplicator froze AE
+// solid by also calling propertyGroup(1) (which returns the PARENT, not a
+// child) during a tree walk, turning it into an exponential up-and-down
+// re-traversal (see CLAUDE.md) -- never reintroduce an upward step here.
+//
+// Easing and interpolation are carried across and SWAPPED per key (a key's
+// in-ease becomes its out-ease and vice versa), which is what makes the
+// reversed curve actually mirror the original rather than keeping the same
+// acceleration shape pointing the wrong way. Spatial tangents (Position's
+// motion path) get the same swap.
+// =============================================================================
+function collectAnimatedProps(group: PropertyGroup, out: Property[], depth: number): void {
+  if (depth > 8) return; // depth guard: no realistic property tree is deeper
+  for (let i = 1; i <= group.numProperties; i++) {
+    const child = group.property(i) as PropertyBase;
+    if (!child) continue;
+    if (child.propertyType === PropertyType.PROPERTY) {
+      const prop = child as Property;
+      if (prop.numKeys >= 2) out.push(prop);
+    } else {
+      // Downward only -- children, never propertyGroup(1)/the parent.
+      collectAnimatedProps(child as PropertyGroup, out, depth + 1);
+    }
+  }
+}
+
+function reverseKeyframesOnProperty(prop: Property): boolean {
+  const n = prop.numKeys;
+  if (n < 2) return false;
+  const firstTime = prop.keyTime(1);
+  const lastTime = prop.keyTime(n);
+
+  const snapshot: any[] = [];
+  for (let k = 1; k <= n; k++) {
+    const entry: any = {
+      time: prop.keyTime(k),
+      value: prop.keyValue(k),
+      inInterp: prop.keyInInterpolationType(k),
+      outInterp: prop.keyOutInterpolationType(k),
+      inEase: prop.keyInTemporalEase(k),
+      outEase: prop.keyOutTemporalEase(k),
+      spatial: null as any,
+    };
+    if (prop.isSpatial) {
+      try {
+        entry.spatial = {
+          inTangent: prop.keyInSpatialTangent(k),
+          outTangent: prop.keyOutSpatialTangent(k),
+          autoBezier: prop.keySpatialAutoBezier(k),
+          continuous: prop.keySpatialContinuous(k),
+          roving: prop.keyRoving(k),
+        };
+      } catch (e) { /* roving/tangent reads can throw on edge keys -- fine */ }
+    }
+    snapshot.push(entry);
+  }
+
+  for (let k = n; k >= 1; k--) prop.removeKey(k);
+
+  // Re-add mirrored about [firstTime, lastTime]. Written back in ascending
+  // time order, so new key j corresponds to snapshot[n - j].
+  for (let i = n - 1; i >= 0; i--) {
+    prop.setValueAtTime(firstTime + (lastTime - snapshot[i].time), snapshot[i].value);
+  }
+
+  for (let j = 1; j <= n; j++) {
+    const src = snapshot[n - j];
+    // Swapped: what used to lead INTO this key now leads OUT of it.
+    try { prop.setInterpolationTypeAtKey(j, src.outInterp, src.inInterp); } catch (e) { /* hold-only props */ }
+    try { prop.setTemporalEaseAtKey(j, src.outEase, src.inEase); } catch (e) { /* no temporal ease support */ }
+    if (src.spatial) {
+      try {
+        prop.setSpatialAutoBezierAtKey(j, src.spatial.autoBezier);
+        prop.setSpatialContinuousAtKey(j, src.spatial.continuous);
+        prop.setSpatialTangentsAtKey(j, src.spatial.outTangent, src.spatial.inTangent);
+        prop.setRovingAtKey(j, src.spatial.roving);
+      } catch (e) { /* roving is illegal on the first/last key -- ignore */ }
+    }
+  }
+  return true;
+}
+
+export const motionToolsReverseKeyframes = (): Result => {
+  try {
+    const comp = app.project.activeItem;
+    if (!(comp instanceof CompItem)) return { success: false, error: "Select or open a composition first." };
+
+    const targets: Property[] = [];
+    const selectedProps = comp.selectedProperties;
+    for (let i = 0; i < selectedProps.length; i++) {
+      const p = selectedProps[i];
+      if (p.propertyType === PropertyType.PROPERTY && (p as Property).numKeys >= 2) targets.push(p as Property);
+    }
+
+    if (targets.length === 0) {
+      const layers = comp.selectedLayers;
+      if (layers.length === 0) {
+        return { success: false, error: "Select some layers, or the animated properties you want reversed." };
+      }
+      for (let i = 0; i < layers.length; i++) {
+        collectAnimatedProps(layers[i] as any as PropertyGroup, targets, 0);
+      }
+    }
+
+    if (targets.length === 0) {
+      return { success: false, error: "Nothing animated in the selection (a property needs 2+ keyframes to reverse)." };
+    }
+
+    app.beginUndoGroup("Reverse Keyframes");
+    let touched = 0;
+    for (let i = 0; i < targets.length; i++) {
+      try {
+        if (reverseKeyframesOnProperty(targets[i])) touched++;
+      } catch (e) { /* skip one stubborn property rather than abort the batch */ }
+    }
+    app.endUndoGroup();
+    if (touched === 0) return { success: false, error: "Couldn't reverse any of the selected properties." };
     return { success: true };
   } catch (e) {
     app.endUndoGroup();

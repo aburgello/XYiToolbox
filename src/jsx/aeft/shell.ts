@@ -293,6 +293,75 @@ export const loadPinnedToolsetLinks = (): string[] => loadTabList(TOOLSET_PINNED
 export const savePinnedToolsetLinks = (ids: string[]): Result => saveTabList(TOOLSET_PINNED_KEY, ids);
 
 // =============================================================================
+// RailScreen personalisation -- the SAME long-press "edit mode" concept as
+// the Toolset grid above (HIDE a tool, drag it into a different STAGE
+// group, rename a stage's label), applied to RailScreen's vertical rail
+// (currently only ToolsScreen -- "Size & Format"/"Layers & Rigging"/etc --
+// but written generically since RailScreen.tsx is a shared component and
+// LocaliseScreen could adopt it later). Reordering within/across stages
+// reuses the EXISTING saveToolOrder()/loadAllToolOrders() above unchanged
+// (a stage's tool list is just that category's flat saved order filtered
+// to the stage's membership, same as RailScreen already derives its rows
+// today) -- only hide/stage-membership/stage-label are new state.
+//
+// Keyed by categoryId (unlike the Toolset keys above, which are global --
+// there's only one Toolset grid, but RailScreen is reused per category),
+// stored as one JSON blob per key covering every category's map in one
+// round trip -- same "load everything once, category screens read their
+// own slice" shape as loadAllToolOrders(). JSON is a deliberate choice
+// over the tab-separated convention used elsewhere in this file: a stage
+// override needs a real toolId->stageId MAP per category, and this
+// codebase already has precedent for JSON-in-app.settings (motionTools.ts's
+// ease presets) rather than inventing a third delimiter scheme.
+// =============================================================================
+const RAIL_SETTINGS_SECTION = "XYiToolbox";
+const RAIL_HIDDEN_KEY = "OVRailHidden"; // { [categoryId]: toolId[] }
+const RAIL_STAGE_KEY = "OVRailStage"; // { [categoryId]: { [toolId]: stageId } }
+const RAIL_LABELS_KEY = "OVRailLabels"; // { [categoryId]: { [stageId]: label } }
+
+function loadRailJSON(key: string): Record<string, any> {
+  if (!app.settings.haveSetting(RAIL_SETTINGS_SECTION, key)) return {};
+  try {
+    const raw = app.settings.getSetting(RAIL_SETTINGS_SECTION, key);
+    if (raw === "") return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveRailJSON(key: string, data: Record<string, any>): Result {
+  try {
+    app.settings.saveSetting(RAIL_SETTINGS_SECTION, key, JSON.stringify(data));
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+export const loadAllRailHidden = (): Record<string, string[]> => loadRailJSON(RAIL_HIDDEN_KEY) as Record<string, string[]>;
+export const saveRailHidden = (categoryId: string, toolIds: string[]): Result => {
+  const all = loadRailJSON(RAIL_HIDDEN_KEY);
+  all[categoryId] = toolIds;
+  return saveRailJSON(RAIL_HIDDEN_KEY, all);
+};
+
+export const loadAllRailStages = (): Record<string, Record<string, string>> => loadRailJSON(RAIL_STAGE_KEY) as Record<string, Record<string, string>>;
+export const saveRailStages = (categoryId: string, overrides: Record<string, string>): Result => {
+  const all = loadRailJSON(RAIL_STAGE_KEY);
+  all[categoryId] = overrides;
+  return saveRailJSON(RAIL_STAGE_KEY, all);
+};
+
+export const loadAllRailLabels = (): Record<string, Record<string, string>> => loadRailJSON(RAIL_LABELS_KEY) as Record<string, Record<string, string>>;
+export const saveRailLabels = (categoryId: string, labels: Record<string, string>): Result => {
+  const all = loadRailJSON(RAIL_LABELS_KEY);
+  all[categoryId] = labels;
+  return saveRailJSON(RAIL_LABELS_KEY, all);
+};
+
+// =============================================================================
 // Hidden theme picker (triggered by typing "jacqui" into the home search box)
 // -- a single theme id, or "" for the default/host-matched look. Same
 // section as everything else here; deliberately its own single string key

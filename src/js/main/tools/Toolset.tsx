@@ -63,6 +63,7 @@ import {
     Check,
     Search,
     Terminal,
+    LayoutTemplate,
 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
@@ -430,6 +431,29 @@ export const ACTIONS: ActionEntry[] = [
             return evalTSSafe("setCompDuration", seconds);
         },
         successText: () => "Comp duration updated.",
+    },
+    {
+        id: "build-from-csv",
+        label: "Build From CSV",
+        description: "Pick a CSV of positioned/masked assets and build a single new comp from it (also on the Extreme Tools 02 page).",
+        icon: LayoutTemplate,
+        group: "organise",
+        run: async () => {
+            const val = await promptDialog("Duration in seconds:", "15");
+            if (val === null) return null;
+            const duration = parseFloat(val);
+            if (isNaN(duration) || duration <= 0) {
+                return { success: false, error: "Enter a valid duration in seconds." };
+            }
+            // page/art/tt are accepted by extBuildCompFromCsv but never read
+            // inside it -- same dead-parameter quirk as the original toolbox
+            // tab passing all 4 fields into buildCompFromCSV(); see
+            // ExtremeTools02.tsx's own comment. The CSV file itself is
+            // picked via a native dialog inside extBuildCompFromCsv, not
+            // collected here.
+            return evalTSSafe("extBuildCompFromCsv", duration, "", "", "");
+        },
+        successText: (result) => result.message || "Comp built from CSV.",
     },
 ];
 

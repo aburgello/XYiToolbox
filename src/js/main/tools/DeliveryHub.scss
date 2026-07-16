@@ -601,7 +601,14 @@
     // read comfortably rather than a token increase.
     .dh-log {
         margin: 14px 14px 8px;
-        max-height: 220px;
+        // Was a flat 220px, which left most of the panel empty below it while
+        // a real multi-comp queue log (5 lines per comp) had to be scrolled a
+        // few lines at a time. Relative to the panel's own height so it uses
+        // whatever room is actually there -- deliberately NOT `min(60vh,
+        // Npx)`: CSS min()/max()/clamp() landed in Chrome 79 and this project
+        // builds for chrome74 (see CLAUDE.md's color-mix()/:has() gotchas).
+        // A short panel just gives a shorter box, which still scrolls.
+        max-height: 60vh;
         overflow-y: auto;
         background: #191919;
         border: 1px solid #2c2c2c;

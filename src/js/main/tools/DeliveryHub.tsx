@@ -65,6 +65,11 @@ function buildMockRows(): RowData[] {
     }));
 }
 
+// Bitrate used for a row with no target file size. Mirrors deliver.ts's
+// DELIVERY_DEFAULT_MBPS (that's the one that actually decides the render --
+// this copy only labels the preview) -- keep the two in step.
+const DEFAULT_MBPS = 26;
+
 function getShortLabel(fullName: string): string {
     const match = fullName.match(/([A-Za-z0-9]+)_(\d{2,5}x\d{2,5})/);
     if (match) return match[1] + "_" + match[2];
@@ -266,14 +271,37 @@ const DeliveryHubTool = () => {
     // --- Delivery -----------------------------------------------------------
     const [deliveryBusy, setDeliveryBusy] = useState(false);
 
+    // Delivery creates the comps AND drops them straight into the checklist
+    // below -- the two used to be separate steps (make the comps, then go
+    // re-select them in the Project panel and hit Load), which is busywork
+    // when the comps it just made are always the ones you want to queue.
+    // Rows are APPENDED, not replaced: clicking Delivery shouldn't wipe rows
+    // already loaded and configured. delivery() hands back the ids it
+    // created, so this doesn't depend on the Project-panel selection still
+    // being what it was when the click started.
     const runDelivery = async () => {
         setDeliveryBusy(true);
         try {
             const result = await evalTSSafe("delivery");
-            pushToast(
-                result.success ? "Delivery comp(s) created." : result.error || "Something went wrong.",
-                result.success ? "success" : "error"
-            );
+            if (!result.success) {
+                pushToast(result.error || "Something went wrong.", "error");
+                return;
+            }
+            const ids = (result.compIds as number[]) || [];
+            if (ids.length === 0) {
+                pushToast("Delivery comp(s) created.");
+                return;
+            }
+            const loaded = await evalTSSafe("deliveryChecklistLoadCompsByIds", ids);
+            if (!loaded.success) {
+                // The comps themselves were made -- only the auto-load fell
+                // over, and Load Comps is still right there.
+                pushToast("Delivery comp(s) created, but couldn't load them into the list.", "error");
+                return;
+            }
+            const added = appendComps((loaded.comps as any[]) || []);
+            if (added > 0) sfx.bop();
+            pushToast(`Delivery comp(s) created — ${added} loaded below.`);
         } finally {
             setDeliveryBusy(false);
         }
@@ -298,30 +326,48 @@ const DeliveryHubTool = () => {
         setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3500);
     };
 
+    const makeRow = (c: any, batchOffset: number): RowData => ({
+        id: c.id,
+        name: c.name,
+        folderName: c.folderName ?? null,
+        batchFolder: c.batchFolder ?? null,
+        territoryCode: c.territoryCode ?? null,
+        sourcePath: c.sourcePath ?? null,
+        duration: c.duration ?? 0,
+        frameRate: c.frameRate ?? 0,
+        sizeMB: "",
+        maxMbps: "",
+        fps: bulkFps,
+        batchOffset,
+        includeAudio: false,
+        queued: false,
+    });
+
+    // Adds comps to the list without disturbing what's already there (used by
+    // the Delivery button's auto-load). Skips any comp already in the list, so
+    // clicking Delivery on a comp that's already queued up doesn't double it.
+    // Returns how many rows were actually added. batchOffset is the row count
+    // BEFORE the append, which is what makes only the new rows cascade in --
+    // the entrance delay is (index - batchOffset).
+    const appendComps = (comps: any[]): number => {
+        // Reads `rows` from this render's closure rather than counting inside
+        // a setRows updater -- React runs updaters lazily, so a count taken in
+        // there would still be 0 by the time we returned it.
+        const fresh = comps
+            .filter((c) => !rows.some((r) => r.id === c.id))
+            .map((c) => makeRow(c, rows.length));
+        if (fresh.length === 0) return 0;
+        setRows((prev) => prev.concat(fresh));
+        return fresh.length;
+    };
+
     const loadComps = async () => {
         setCheckError(null);
         try {
             const result = await evalTS("deliveryChecklistLoadComps");
             if (result === undefined) throw new Error("no bridge");
             if (!result.success) { setCheckError(result.error || "Something went wrong."); return; }
-            setRows(
-                (result.comps || []).map((c: any, i: number) => ({
-                    id: c.id,
-                    name: c.name,
-                    folderName: c.folderName ?? null,
-                    batchFolder: c.batchFolder ?? null,
-                    territoryCode: c.territoryCode ?? null,
-                    sourcePath: c.sourcePath ?? null,
-                    duration: c.duration ?? 0,
-                    frameRate: c.frameRate ?? 0,
-                    sizeMB: "",
-                    maxMbps: "",
-                    fps: bulkFps,
-                    batchOffset: i,
-                    includeAudio: false,
-                    queued: false,
-                }))
-            );
+            setRows((result.comps || []).map((c: any, i: number) => makeRow(c, i)));
             setBatchKey((k) => k + 1);
             if ((result.comps || []).length > 0) sfx.bop();
         } catch {
@@ -329,11 +375,14 @@ const DeliveryHubTool = () => {
         }
     };
 
+    // MB is optional everywhere now (an empty one renders at DEFAULT_MBPS) --
+    // only a value that's actually been typed and is nonsense gets rejected.
+    const isBadNumber = (v: string) => v !== "" && (isNaN(parseFloat(v)) || parseFloat(v) <= 0);
+
     const applyBulk = () => {
-        const val = parseFloat(bulkSize);
-        if (isNaN(val) || val <= 0) { setCheckError("Invalid MB value."); return; }
-        const fps = parseFloat(bulkFps);
-        if (bulkFps !== "" && (isNaN(fps) || fps <= 0)) { setCheckError("Invalid fps value."); return; }
+        if (isBadNumber(bulkSize)) { setCheckError("Invalid MB value."); return; }
+        if (isBadNumber(bulkMbps)) { setCheckError("Invalid Mbps value."); return; }
+        if (isBadNumber(bulkFps)) { setCheckError("Invalid fps value."); return; }
         setCheckError(null);
         setRows((r) => r.map((row) => ({ ...row, sizeMB: bulkSize, maxMbps: bulkMbps, fps: bulkFps })));
     };
@@ -341,7 +390,7 @@ const DeliveryHubTool = () => {
     const queueAll = async () => {
         if (rows.length === 0) { setCheckError("Load comps first."); return; }
         for (const row of rows) {
-            if (isNaN(parseFloat(row.sizeMB)) || parseFloat(row.sizeMB) <= 0) {
+            if (isBadNumber(row.sizeMB)) {
                 setCheckError(`Invalid MB on "${getShortLabel(row.name)}".`); return;
             }
             if (row.maxMbps !== "" && (isNaN(parseFloat(row.maxMbps)) || parseFloat(row.maxMbps) <= 0)) {
@@ -358,7 +407,9 @@ const DeliveryHubTool = () => {
                 "deliveryChecklistQueue",
                 rows.map((r) => ({
                     id: r.id,
-                    sizeMB: parseFloat(r.sizeMB),
+                    // null = "no target size" -> deliver.ts renders it at its
+                    // DELIVERY_DEFAULT_MBPS instead of refusing to queue.
+                    sizeMB: r.sizeMB !== "" ? parseFloat(r.sizeMB) : null,
                     maxMbps: r.maxMbps !== "" ? parseFloat(r.maxMbps) : null,
                     fps: r.fps !== "" ? parseFloat(r.fps) : null,
                     includeAudio: r.includeAudio,
@@ -429,26 +480,19 @@ const DeliveryHubTool = () => {
                 </AnimatePresence>
             </div>
 
-            {/* ── Bulk edit bar ───────────────────────────────────── */}
+            {/* ── Bulk edit bar ─────────────────────────────────────
+                Field order here MATCHES the row order below (MB, fps, ≤ Mbps).
+                It used to be MB, ≤ Mbps, fps -- so the bulk field you were
+                aiming at never sat above the row field it fills in. */}
             <div className="dh-bulk-bar">
                 <div className="dh-bar-spacer" />
-                <Tooltip text="Target file size (MB)">
+                <Tooltip text="Target file size (MB) — optional, defaults to 26 Mbps">
                     <input
                         className="dh-spec-input"
                         type="text"
                         placeholder="MB"
                         value={bulkSize}
                         onChange={(e) => setBulkSize(e.target.value)}
-                    />
-                </Tooltip>
-                <span className="dh-specs-sep">≤</span>
-                <Tooltip text="Bitrate cap (optional)">
-                    <input
-                        className="dh-spec-input dh-spec-input--secondary"
-                        type="text"
-                        placeholder="Mbps"
-                        value={bulkMbps}
-                        onChange={(e) => setBulkMbps(e.target.value)}
                     />
                 </Tooltip>
                 <span className="dh-specs-sep" style={{ marginLeft: 2 }}>fps</span>
@@ -467,6 +511,16 @@ const DeliveryHubTool = () => {
                 >
                     {(close) => <FpsDropletBody close={close} onPick={(v) => { setBulkFps(v); }} />}
                 </Droplet>
+                <span className="dh-specs-sep">≤</span>
+                <Tooltip text="Bitrate cap (optional)">
+                    <input
+                        className="dh-spec-input dh-spec-input--secondary"
+                        type="text"
+                        placeholder="Mbps"
+                        value={bulkMbps}
+                        onChange={(e) => setBulkMbps(e.target.value)}
+                    />
+                </Tooltip>
                 <Tooltip text="Apply to all rows">
                     <motion.button
                         className="dh-icon-btn"
@@ -603,7 +657,11 @@ const DeliveryHubTool = () => {
                                                         <div key={row.id} className="dh-preview-item">
                                                             <span className="dh-preview-file">{outName}</span>
                                                             <span className="dh-preview-tags">
-                                                                {row.sizeMB && <span className="dh-preview-tag">{row.sizeMB} MB</span>}
+                                                                {/* No target size is a valid state now -- show what it'll
+                                                                    actually render at rather than leaving a blank gap. */}
+                                                                {row.sizeMB
+                                                                    ? <span className="dh-preview-tag">{row.sizeMB} MB</span>
+                                                                    : <span className="dh-preview-tag dh-preview-tag--native">{DEFAULT_MBPS} Mbps</span>}
                                                                 {row.duration > 0 && <span className="dh-preview-tag">{row.duration} sec</span>}
                                                                 <span className={"dh-preview-tag" + (row.fps ? "" : " dh-preview-tag--native")}>{row.fps || row.frameRate} fps</span>
                                                             </span>

@@ -9,6 +9,20 @@
     animation: ov-spin 0.9s linear infinite;
 }
 
+// iOS-style "jiggle mode" shake for edit-mode tiles/rows -- shared by the
+// Toolset grid (Toolset.scss's .action-edit-item.jiggle) and RailScreen's
+// vertical rail (RailScreen.scss's .rail-tool-row-editing.jiggle), both of
+// which put this on an INNER face/row element, never the outer draggable
+// wrapper -- the drag library (dnd-kit) drives that wrapper's own inline
+// transform, and an inline style always wins over a running CSS animation's
+// computed transform, so animating the same element would fight the drag.
+// transform-only, chrome74-safe.
+@keyframes ov-jiggle {
+    0%   { transform: rotate(-1.1deg); }
+    50%  { transform: rotate(1.1deg); }
+    100% { transform: rotate(-1.1deg); }
+}
+
 // Icon micro-interaction on button hover -- used by formTool.scss and every
 // tool's own bespoke button styles (OV Library, Localised Library, Campaign
 // Localiser, Random Layers) so the hover feel is consistent everywhere, not

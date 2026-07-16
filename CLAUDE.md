@@ -1398,6 +1398,27 @@ repurposing `promptDialog`'s free-text input, which would let a typo
 silently match nothing. Renders a plain `<select>` styled with the same
 `.dialog-input` class the prompt's `<input>` already uses.
 
+## Build From CSV also on the Toolset grid (second entry point, not a new tool)
+Per user request, Extreme Tools 02's "Build From CSV" button
+(`extBuildCompFromCsv()`, already documented above) is now ALSO a
+one-click Toolset grid entry (`ACTIONS`' `"build-from-csv"`,
+`Toolset.tsx`) -- same backend function, second front door. Unlike the
+Toggle By Label/Comp Duration entries below (genuinely new tools with no
+prior page), Build From CSV already has a full page with 4 fields
+(Page/Art/TT/Duration) -- but per the "Right logic, not just right name"
+CLAUDE.md rule and the `extBuildCompFromCsv` comment itself, **Page/Art/TT
+are dead parameters the backend never reads**; only Duration does
+anything. That's what makes a one-click grid entry viable here without
+losing functionality: the grid button's `run()` prompts for Duration only
+(`promptDialog`, default "15", validated `>0`), passes empty strings for
+the 3 unused fields, and lets `extBuildCompFromCsv`'s own
+`File.openDialog()` handle CSV selection same as it always did -- nothing
+new added to `aeft.ts`. The dedicated Extreme Tools 02 page is UNCHANGED
+and still has all 4 fields for anyone who wants them visible/persisted
+across multiple runs; the grid button is a faster path for the common
+case (CSV already has its own Page/Art/TT baked in, only Duration varies
+run to run in practice).
+
 ## Toggle By Label / Comp Duration -- new tools found outside the
 ## original 22-listbox-tab + Toolset survey
 Two more one-click Toolset actions, ported from `ToggleByLabel.jsx` and
@@ -1659,6 +1680,91 @@ respecting `useReducedMotion()`.
   `AnimatePresence` rAF-stall (see "Preview harness caveat" above) blocks
   the DOM from visually catching up in this automated tab -- same
   non-bug, don't re-flag it in a future session.
+
+## Master Tools: Aspect Ratio buttons shifted the comp / Auto AR drifted
+Real-AE report with screenshots: with an Auto AR rig on the layer, clicking
+"[L] 30 Sheet" under Aspect Ratios left the content shoved outside the comp,
+with the anchor point looking wrong too. TWO independent porting bugs, both
+now fixed; `resizeCompositionCentered()`'s offset MATH was never the
+problem (a diagnostic build that once instrumented it has been reverted).
+
+**THE ACTUAL SMOKING GUN, found in a later session (2026-07) by comparing
+the layer's Transform values side-by-side after an old-toolbox click vs an
+ours click: `resizeCompositionCentered()` was silently SHIFTING EVERY
+LAYER'S ANCHOR POINT by (widthOffset, heightOffset) on each resize** --
+which is exactly the "anchor point looking wrong" in the original report,
+and single-handedly produced the off-center content. Root cause: the port
+used `layer.property("Point of Interest")` for the camera-target branch,
+but **Point of Interest and Anchor Point share the same matchName ("ADBE
+Anchor Point"), so that string lookup on a normal footage/precomp layer
+resolves to the layer's ANCHOR POINT** and the "POI" compensation then
+moves the anchor. The original `XYi_CompSize.jsx` uses attribute access
+(`layer.transform.pointOfInterest`), which is falsy on non-camera layers
+-- that difference is load-bearing, not style. Fixed by switching the
+whole loop to `layer.transform.*` attribute access AND gating the POI
+branch on `typeof layer.sourceRectAtTime !== "function"` (cameras/lights
+only -- same duck-type rule motionTools.ts established). **If a port ever
+needs a camera/light-only transform property, never fetch it via
+`layer.property("<display name>")`** -- matchName collisions make that
+resolve against the wrong property on other layer types. Projects resized
+by the buggy build carry the damage baked in (anchors moved); fix by
+setting the layer's Anchor Point back to its source center (e.g. 960,400
+for a 1920x800 precomp) or re-doing the resize from a clean master.
+
+1. **`MasterTools.tsx`'s preset sizes were reconstructed from the ASPECT-RATIO
+   table instead of copied from the original's real button values.** This
+   matters because Auto AR's rig stores ABSOLUTE layer-space pixel values in
+   its Point/Slider controls, hand-tuned by an artist against the real comp
+   sizes -- a right-ratio but wrong-size comp lands the content in the wrong
+   place at the wrong scale.
+   **Never re-derive these from an aspect ratio; they're literal sizes.**
+   **SUPERSEDED (2026-07): the "correct" values this fix installed
+   (30 Sheet 2416x1080, 48 2160x1080, 96 4320x1080, Extreme 8372x1080,
+   Square 1080x1080, P Tall 1080x3048 -- "every landscape preset is 1080
+   tall") were themselves WRONG for the studio's live toolbox** -- they came
+   from a different/older `XYi_Toolbox.jsx` revision, and the user reported
+   the exact same off-center symptom again with screenshots. The LIVE
+   toolbox's real `ComSiz(w,h)` wiring (the "// Aspect Ratios" onClick
+   block, lines ~3726-3746 of `~/Documents/XYi_Toolbox.jsx`) passes:
+   [L] Square 1920x1920, Quad 1440x1080, 1920x1080, 48 Sheet 1920x960,
+   30 Sheet 1920x858, 96 Sheet 5760x1440, Extreme 3840x586;
+   [P] Square 1920x1920, 1 Sheet 1080x1600, 6 Sheet 1080x1620,
+   1080x1920, Tall Portrait 844x2382; Extremes 1080x5760 / 5760x1920 /
+   5760x1440 / 5760x1080 / 7424x448. `MasterTools.tsx` now matches these
+   exactly. If this ever regresses again, re-read the live
+   `~/Documents/XYi_Toolbox.jsx` onClick lines directly -- don't trust any
+   remembered/documented set of sizes, including this one.
+2. **SUPERSEDED -- this "fix" was itself a REGRESSION.** An earlier session
+   removed the "AUTO-CENTER LOGIC" interpolation point (`[source aspect
+   ratio, source center]`) from `autoArBuildExpression()` and changed the
+   Extreme key to `3550/458` = 7.751, claiming both diverged from
+   `XYi_AutAR.jsx`. It was diffing against the WRONG FILE:
+   `~/Documents/toolset/XYi_AutAR.jsx` is the old v1
+   ("AspectRig_Universal"). **The studio's live install --
+   `/Applications/Adobe After Effects 2026/Scripts/toolset/XYi_AutAR.jsx`,
+   header "AspectRig_Universal_v2" -- HAS the auto-center point, uses
+   Extreme = 6.552901024 (= 3840/586, matching the live Extreme button)
+   and 96 = 4.0 (= 5760/1440), builds BOTH [L]+[P] control sets, and drops
+   [P] Square** -- i.e. our port's original behavior was right all along
+   (it was ported FROM v2). Both reverted back to v2 (2026-07). **When
+   diffing any tool against "the original," use the live install under
+   `/Applications/Adobe After Effects 2026/Scripts/`, not the
+   ~/Documents/toolset copies -- a batch diff found several other files
+   that differ between the two locations too** (XYi_BuildExtCsv,
+   XYi_Campaign_Scanner, XYi_Cheeky_InvT_Check, XYi_LOSCsv, XYI_Scan, and
+   the toolbox itself).
+
+**Both were "ported 1:1" claims in this file that weren't true** -- the same
+class of mistake as the LOS Tools incident, and neither was findable by
+reading `tools.ts` alone; both needed a line-by-line diff against
+`~/Documents/toolset/XYi_AutAR.jsx` + `XYi_CompSize.jsx` and the original's
+button-wiring lines. **Layers rigged BEFORE this fix still carry the old
+expression baked into them** (expressions live on the layer, not in this
+code) -- re-run Auto AR on them to refresh it; `autoArAddControl()` returns
+existing controls untouched, so their tuned Pos/Scale values survive.
+Deliberately KEPT (not reverted to the original): this port builds BOTH the
+[L] and [P] control sets and interpolates over the union, where the original
+built only the set matching the comp's current orientation.
 
 ## Turk It / Un-Turk It now also syncs the Frontcard version text
 Ported from `XYi_TurkIt_V02.jsx`, an updated version of the already-real
@@ -3309,3 +3415,177 @@ ease SHAPE, never an absolute velocity from wherever it happened to be
 copied. `tsc -p tsconfig-build.json` + `yarn build` clean. This only
 affects NEWLY saved presets going forward (nothing was in a shipped,
 in-use `app.settings` store yet to migrate).
+
+## Motion Tools is now "XYTools" (rename is deliberately PARTIAL)
+Renamed for branding. **Only the user-facing strings and the FRONTEND file
+names changed** -- `MotionToolsDroplet.tsx`/`.scss` are now
+`XYToolsDroplet.tsx`/`.scss` (component `XYToolsDroplet`, panel class
+`.xytools-panel`, header/trigger labels read "XYTools").
+
+**Everything on the ExtendScript side kept its old name on purpose**: the
+backend file is still `src/jsx/aeft/motionTools.ts`, every bridge function is
+still `motionTools*`, and the ease presets still persist under the
+`app.settings` key **`"MotionToolsEasePresets"`**. That key is live on
+artists' machines -- renaming it would silently orphan every preset they've
+already saved. The `mt-` CSS class prefix also stayed (pure churn to change).
+**Don't "finish" the rename.** Both file headers say so at the top.
+
+## XYTools: two new tabs' worth of features
+Tab bar went from 5 to 6: Anchor, Align, **Fit**, Move, **Time** (was
+"Stagger"), Ease. All four new backend functions live at the bottom of
+`motionTools.ts`, follow the same conventions as the rest of that file
+(active comp + `selectedLayers`/`selectedProperties`, own `beginUndoGroup`,
+duck-typed `sourceRectAtTime` capability check instead of `instanceof
+AVLayer`, `{success, error}` returns) and are **ExtendScript-only -- none of
+them are verifiable in browser preview**, same caveat as everything else
+here. All are zero master-file risk (pure in-comp edits).
+
+- **Fit tab** -- `motionToolsFit(mode)` with `"cover"` (Fill: covers the
+  frame, crops the overflow), `"contain"` (Fit: sits inside it), `"stretch"`
+  (exact comp size, distorts -- same deliberately non-proportional behavior
+  Adjust has). Measures the layer's own content rect via the existing
+  `getContentFrameRect()` (so a precomp uses its own frame, not its bleed --
+  the bug already fixed for the anchor tools) and **re-centers the layer in
+  the comp**, since fitting without centering leaves it scaled but parked
+  where it was. Built for this studio's actual daily job: retargeting one
+  creative across a dozen DOOH sizes. Rotation ignored (same axis-aligned
+  assumption align/distribute make).
+- **Flip** (also Fit tab) -- `motionToolsFlip(axis)` negates one Scale axis.
+  **Flips around the ANCHOR POINT with no position compensation** -- that's
+  AE's own behavior for a negative scale and the expected result; silently
+  re-centering it would be the surprise. The hint text points at the Anchor
+  tab for setting the pivot first.
+- **Reverse Keyframes** (Time tab) -- `motionToolsReverseKeyframes()` mirrors
+  each property's keys about the span they already occupy (first and last key
+  stay put), so the animation plays backwards without moving in the timeline.
+  Acts on `comp.selectedProperties` if anything's selected there, else falls
+  back to every animated property on the selected LAYERS via
+  `collectAnimatedProps()`. **That helper walks the property tree DOWNWARD
+  ONLY** -- deliberately: adding a `propertyGroup(1)` step (which returns the
+  PARENT, not a child) is exactly what froze AE solid in True Comp Duplicator
+  (see that section above). Never reintroduce an upward step there.
+  Interpolation types, temporal eases, and spatial tangents are all carried
+  across and **swapped per key** (a key's in-ease becomes its out-ease), which
+  is what makes the reversed curve actually mirror the original instead of
+  keeping the same acceleration pointing the wrong way. Roving/edge-key writes
+  are individually try/caught (AE throws on roving the first/last key).
+- **Trim In/Out to playhead** (Time tab) -- `motionToolsTrim(edge)`, i.e.
+  AE's Alt+[ / Alt+] from the panel. Skips (and reports) any layer whose span
+  doesn't contain the playhead rather than letting AE throw on an inPoint past
+  its outPoint.
+
+## DeliveryHub: auto-load after Delivery, optional MB, matching field order
+Three changes, all from direct studio feedback on real use.
+
+- **The Delivery button now loads the comps it just created straight into the
+  checklist below** -- previously you clicked Delivery, then went back to the
+  Project panel, re-selected those same new comps, and clicked Load. `delivery()`
+  (`deliver.ts`) now returns `compIds` (the ids of the comps it made -- purely
+  additive; it returned a bare `{success}` before), and DeliveryHub feeds them to
+  the new **`deliveryChecklistLoadCompsByIds(ids)`**. **Ids, not the selection**:
+  `delivery()` calls `openInViewer()` per comp and the user can click elsewhere
+  before the round-trip lands, so re-reading `app.project.selection` afterwards
+  would be a race. `deliveryChecklistLoadComps()` and the by-ids variant share
+  `deliveryDetectTerritoryCode()` + `deliveryBuildCompEntry()` so both build
+  identical rows rather than two copies that drift.
+  - Rows are **APPENDED, not replaced** (`appendComps()` in DeliveryHub.tsx),
+    deduped by comp id -- clicking Delivery must not wipe rows already loaded and
+    configured. It counts the additions from the `rows` closure, NOT inside the
+    `setRows` updater: React runs updaters lazily, so a count taken in there is
+    still 0 by the time the caller reads it (this was written the wrong way first).
+- **A target size (MB) is no longer required to queue.** An empty MB row now
+  renders at **`DELIVERY_DEFAULT_MBPS = 26`** (`deliver.ts`) -- a real value in
+  `DELIVERY_TEMPLATE_BITRATES_MBPS`, so it always resolves to an actual
+  `H264_26MBPS_MOS` template. `deliveryChecklistQueue`'s `sizeMB` is now
+  `number | null` (optional, not removed -- the dead `DeliveryChecklist.tsx`
+  still passes a plain number and still type-checks). A per-row **Mbps cap still
+  outranks the default**, exactly as it already outranks a size-derived bitrate.
+  The queue log says which of the two paths a row took. DeliveryHub mirrors the
+  value as `DEFAULT_MBPS` purely to label the preview ("26 Mbps" instead of a
+  blank tag where the MB tag would be) -- **keep the two literals in step**;
+  only the ExtendScript one actually decides the render.
+- **The bulk bar's fields are reordered to MB -> fps -> ≤ Mbps, matching the
+  row order.** They used to be MB -> ≤ Mbps -> fps, so the bulk field you aimed
+  at never sat above the row field it fills.
+
+## RailScreen (Tools/Localise category screens) -- not previously documented here
+`screens/RailScreen.tsx` is a shared component powering `ToolsScreen.tsx`
+(the "Tools" category's real screen -- a grouped VERTICAL rail: workflow
+stages like "Size & Format"/"Layers & Rigging"/"Utility"/"Scripting" on the
+left, the selected tool full-width on the right). It superseded the older
+generic `CategoryScreen.tsx` master-detail screen for Tools at some earlier
+point in this project's history, but that supersession was never written up
+here -- worth knowing so a future session doesn't assume `CategoryScreen.tsx`
+is still live for any category (per ITS OWN header comment, it currently
+isn't -- kept only as a fallback for a hypothetical future category with no
+bespoke design yet). **LocaliseScreen does NOT use RailScreen** -- it's a
+separate bespoke landing (two big cards + a flat "Utilities" grid), so
+everything below is Tools-only today even though RailScreen itself is
+written generically (keyed by `categoryId`) in case that changes.
+
+## RailScreen edit mode: hide tools, move between stages, reorder -- same
+## long-press system as the Toolset grid
+Per direct request: bring the Toolset grid's long-press "hold until it
+jiggles" personalisation system to the Tools rail too -- hide a tool you
+never use, drag a tool into a DIFFERENT stage group (its "category" within
+Tools), reorder within/across stages, rename a stage's label. Implemented
+as a close mirror of `tools/Toolset.tsx`'s existing edit mode (hidden/
+groupOverride/labelOverride + dnd-kit DndContext spanning every group +
+DragOverlay), adapted from a wrapping tile grid to a single-column vertical
+rail -- see `RailScreen.tsx`'s own header comment for the state shape.
+
+- **Long-press a row's icon/label is the ONLY entry point** -- no visible
+  "Edit" button in normal mode, matching Toolset's own choice (the Done bar
+  only exists while `editMode` is true). Same 500ms timer + Pointer/Mouse
+  dual-handler + `guardClick` swallow-the-post-longpress-click pattern,
+  copied verbatim from Toolset.tsx's reasoning (AE's CEP panel doesn't
+  reliably fire Pointer Events' press-and-hold, and a stale timer left
+  ticking after a quick click can otherwise pop edit mode open on its own
+  ~500ms later -- `guardClick`'s unconditional `endPress()` call is the
+  actual fix, the dedicated up/leave handlers are just the fast path).
+- **Reordering reuses the EXISTING `useToolOrder` hook/`saveToolOrder`
+  bridge call unchanged** -- no new order storage. Only two genuinely new
+  pieces of state were needed: which tools are hidden, and which stage a
+  tool effectively belongs to (`stageOverride`) -- both keyed by
+  `categoryId` and persisted via three new `shell.ts` function pairs
+  (`loadAllRailHidden`/`saveRailHidden`, `loadAllRailStages`/
+  `saveRailStages`, `loadAllRailLabels`/`saveRailLabels`), one JSON blob
+  per key covering every category's map in one round trip (same
+  "load everything once" shape as `loadAllToolOrders()`). **JSON, not the
+  tab-separated convention most of `shell.ts` otherwise uses** -- a stage
+  override genuinely needs a `toolId -> stageId` map per category, and
+  this codebase already has JSON-in-`app.settings` precedent
+  (motionTools.ts's ease presets), so it reuses that rather than inventing
+  a fourth ad hoc delimiter scheme.
+- **A synthetic `"more"` stage is ALWAYS rendered while editing**, even
+  when currently empty, so a tool can be dragged into (or entirely out of)
+  the auto-generated "leftover tools with no explicit stage" bucket the
+  normal (non-edit) render already had -- same "fixed group list, not
+  conditionally rendered" approach Toolset.tsx's `GROUPS` takes for its own
+  "custom" group.
+- **Jiggle keyframe moved out of `Toolset.scss` into `shared.scss`**
+  (`ov-jiggle`, was `toolset-jiggle`) since RailScreen's edit-mode rows now
+  use the identical animation -- avoids a second, drifting copy of the same
+  four lines. Same "jiggle lives on an INNER face element, never the
+  outer draggable wrapper dnd-kit itself drives via inline transform"
+  split both files independently arrived at, now explained once in the
+  shared keyframe's own comment.
+- **`DragOverlay` portals to `document.body`, outside `.rail-hub`'s own DOM
+  subtree** -- the `--cat-*` custom properties `categoryStyleVars()` sets
+  on `.rail-hub` don't cascade into a portaled subtree, so the dragged
+  row's floating copy explicitly re-applies `categoryStyleVars(categoryId)`
+  as its own inline style rather than relying on inheritance (same fix
+  category this app's other portal-based pieces, e.g. Tooltip/Droplet,
+  already needed for the same reason).
+- **A hidden tool can still be opened via direct search/⌘K/a deep link** --
+  hiding only removes it from the rail's own row list; `selectedTool` is
+  looked up against the full unfiltered `ordered` list, not the
+  hidden-filtered `flat` one used for the rail's own rendering and
+  fallback-select-first-tool logic.
+- **Deliberately did NOT touch `CategoryScreen.tsx`** -- it's the generic,
+  currently-unused fallback screen (see the RailScreen section just above),
+  and the user's request was specifically about the Tools page. If a
+  future category ever gets routed through `CategoryScreen.tsx` for real,
+  it would need this same treatment built separately (its drag mechanism
+  is Framer Motion's `Reorder.Group`, not dnd-kit, so it isn't a drop-in
+  port of this implementation).

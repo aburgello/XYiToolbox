@@ -15,11 +15,25 @@ import { getTerritoryCountryCode } from "./localise";
 // suffix from the name, parses the target size from that name (via
 // parseFilenameMeta, same helper Cheeky T Check uses), and wraps it in a
 // new comp scaled to that target size, trimmed to its work area.
+//
+// Returns the ids of the comps it created (`compIds`) -- purely additive to
+// the original port, which returned a bare {success}. DeliveryHub feeds them
+// straight into deliveryChecklistLoadCompsByIds() so the comps this button
+// just made land in the checklist below WITHOUT the user having to go and
+// re-select them in the Project panel and click Load. Ids, not the current
+// selection: `delivery()` calls openInViewer() per comp and the user is free
+// to click elsewhere before the round-trip lands, so reading the selection
+// afterwards would be a race.
 // =============================================================================
-export const delivery = (): Result => {
+interface DeliveryResult extends Result {
+  compIds?: number[];
+}
+
+export const delivery = (): DeliveryResult => {
   try {
     if (app.project.selection.length === 0) return { success: false, error: "Please select compositions first." };
     app.beginUndoGroup("XYi Prep for Delivery");
+    const compIds: number[] = [];
 
     for (let i = 0; i < app.project.selection.length; i++) {
       const activeItem = app.project.selection[i] as AVItem;
@@ -45,10 +59,11 @@ export const delivery = (): Result => {
       myComp.openInViewer();
       app.executeCommand(app.findMenuCommandId("Trim Comp to Work Area"));
       myComp.displayStartTime = 0;
+      compIds.push(myComp.id);
     }
 
     app.endUndoGroup();
-    return { success: true };
+    return { success: true, compIds };
   } catch (e) {
     app.endUndoGroup();
     return { success: false, error: e.toString() };
@@ -433,6 +448,16 @@ const DELIVERY_TEMPLATE_BITRATES_MBPS = [
 ];
 const DELIVERY_AUDIO_RESERVE_KBPS = 192;
 
+// Fallback bitrate for a row with NO target file size set. A target size used
+// to be mandatory (the queue refused to run without one on every row), which
+// meant a row that just needs "render it at our normal quality" still had to
+// have a number invented for it. 26 Mbps is a real template in the curated
+// list above, so it always resolves to an actual H264_26MBPS_MOS. A per-row
+// Mbps cap still wins over this, same as it wins over a size-derived bitrate.
+// Mirrored as DEFAULT_MBPS in DeliveryHub.tsx for the preview label -- keep
+// the two in step.
+const DELIVERY_DEFAULT_MBPS = 26;
+
 // All templates in the curated list use consistent uppercase "MBPS" --
 // the previous list's one-off lowercase "Mbps" exception at 50 no longer
 // applies (that was tied to a specific already-existing template name;
@@ -510,10 +535,11 @@ interface DeliveryLoadResult extends Result {
   comps?: DeliveryCompEntry[];
 }
 
-export const deliveryChecklistLoadComps = (): DeliveryLoadResult => {
-  const sel = app.project.selection;
-  const comps: DeliveryCompEntry[] = [];
-
+// Territory detection + per-comp entry building, split out of
+// deliveryChecklistLoadComps() so deliveryChecklistLoadCompsByIds() (used by
+// the Delivery button's auto-load) builds IDENTICAL row data rather than a
+// second, drifting copy of it.
+function deliveryDetectTerritoryCode(): string | null {
   // Detect territory from the project file's folder tree (same approach as tsExtractInfoFromPath)
   let territoryCode: string | null = null;
   const projFile = app.project.file;
@@ -537,25 +563,50 @@ export const deliveryChecklistLoadComps = (): DeliveryLoadResult => {
       }
     }
   }
+  return territoryCode;
+}
+
+function deliveryBuildCompEntry(comp: CompItem, territoryCode: string | null): DeliveryCompEntry {
+  const srcFile = deliveryFindMovSourceFile(comp);
+  const srcParent = srcFile ? srcFile.parent : null;
+  return {
+    id: comp.id,
+    name: comp.name,
+    folderName: srcFile ? decode(srcFile.parent.name) : null,
+    batchFolder: srcParent && srcParent.parent ? decode(srcParent.parent.name) : null,
+    sourcePath: srcFile ? srcFile.fsName : null,
+    duration: comp.duration,
+    frameRate: comp.frameRate,
+    territoryCode,
+  };
+}
+
+export const deliveryChecklistLoadComps = (): DeliveryLoadResult => {
+  const sel = app.project.selection;
+  const comps: DeliveryCompEntry[] = [];
+  const territoryCode = deliveryDetectTerritoryCode();
 
   for (let i = 0; i < sel.length; i++) {
     const item = sel[i];
-    if (item instanceof CompItem) {
-      const srcFile = deliveryFindMovSourceFile(item);
-      const srcParent = srcFile ? srcFile.parent : null;
-      comps.push({
-        id: item.id,
-        name: item.name,
-        folderName: srcFile ? decode(srcFile.parent.name) : null,
-        batchFolder: srcParent && srcParent.parent ? decode(srcParent.parent.name) : null,
-        sourcePath: srcFile ? srcFile.fsName : null,
-        duration: item.duration,
-        frameRate: item.frameRate,
-        territoryCode,
-      });
-    }
+    if (item instanceof CompItem) comps.push(deliveryBuildCompEntry(item, territoryCode));
   }
   if (comps.length === 0) return { success: false, error: "Select one or more comps in the Project panel first." };
+  return { success: true, comps };
+};
+
+// Same rows as deliveryChecklistLoadComps(), but for comps named explicitly
+// by id instead of by whatever happens to be selected right now -- how the
+// Delivery button hands its freshly-created comps straight to the checklist.
+// A comp that's since been deleted is skipped rather than failing the batch.
+export const deliveryChecklistLoadCompsByIds = (ids: number[]): DeliveryLoadResult => {
+  const comps: DeliveryCompEntry[] = [];
+  const territoryCode = deliveryDetectTerritoryCode();
+
+  for (let i = 0; i < ids.length; i++) {
+    const item = app.project.itemByID(ids[i]);
+    if (item && item instanceof CompItem) comps.push(deliveryBuildCompEntry(item, territoryCode));
+  }
+  if (comps.length === 0) return { success: false, error: "Those comps no longer exist." };
   return { success: true, comps };
 };
 
@@ -564,7 +615,7 @@ interface DeliveryQueueResult extends Result {
 }
 
 export const deliveryChecklistQueue = (
-  rows: { id: number; sizeMB: number; maxMbps?: number | null; fps?: number | null; includeAudio?: boolean }[]
+  rows: { id: number; sizeMB?: number | null; maxMbps?: number | null; fps?: number | null; includeAudio?: boolean }[]
 ): DeliveryQueueResult => {
   try {
     app.beginUndoGroup("Bitrate Delivery Queue");
@@ -586,13 +637,19 @@ export const deliveryChecklistQueue = (
       }
       const duration = comp.duration;
 
-      const requiredMbps = deliveryCalcRequiredBitrateMbps(targetMB, duration, includeAudio);
+      // No target size on this row -> render at the studio default bitrate
+      // instead of refusing to queue it.
+      const hasTarget = targetMB != null && targetMB > 0;
+      const requiredMbps = hasTarget
+        ? deliveryCalcRequiredBitrateMbps(targetMB!, duration, includeAudio)
+        : DELIVERY_DEFAULT_MBPS;
       // A max-bitrate cap is a hard spec constraint (e.g. an ad network's
       // "must stay under 30 Mbps") -- it always wins over the file-size
       // target if the two conflict. Capping means the resulting file will
       // likely land BELOW the requested target size, which is the correct
       // tradeoff (never breaking the cap) rather than hiding it -- the log
-      // line below says so explicitly when that happens.
+      // line below says so explicitly when that happens. It outranks the
+      // no-target default the same way.
       const capped = maxMbps != null && maxMbps > 0 && requiredMbps > maxMbps;
       const effectiveMbps = capped ? maxMbps! : requiredMbps;
       const templateName = deliveryFindTemplateName(effectiveMbps);
@@ -623,16 +680,20 @@ export const deliveryChecklistQueue = (
       }
 
       log += comp.name + "\n";
-      log += "  Target size: " + targetMB + "MB" + (includeAudio ? " (incl. audio)" : "") + "\n";
+      log += hasTarget
+        ? "  Target size: " + targetMB + "MB" + (includeAudio ? " (incl. audio)" : "") + "\n"
+        : "  No target size -- using the " + DELIVERY_DEFAULT_MBPS + " Mbps default\n";
       // 3 decimals, not 2 -- deliveryFindTemplateName() compares against
       // this exact unrounded value (never rounds UP, since that could push
       // the render past the target size), so a 2-decimal display could
       // show e.g. "0.80 Mbps" for an actual 0.798, making a genuinely
       // correct "picked 0.6 not 0.8" choice look like a bug. 3 decimals is
       // enough precision to make that visible without becoming unreadable.
-      log += "  Required bitrate: " + requiredMbps.toFixed(3) + " Mbps" + (maxMbps != null ? " (cap: " + maxMbps + " Mbps)" : "") + "\n";
+      log += (hasTarget ? "  Required bitrate: " : "  Default bitrate: ") + requiredMbps.toFixed(3) + " Mbps" + (maxMbps != null ? " (cap: " + maxMbps + " Mbps)" : "") + "\n";
       if (capped) {
-        log += "  *** Capped to " + maxMbps + " Mbps -- resulting file will likely be SMALLER than the " + targetMB + "MB target ***\n";
+        log += hasTarget
+          ? "  *** Capped to " + maxMbps + " Mbps -- resulting file will likely be SMALLER than the " + targetMB + "MB target ***\n"
+          : "  *** Capped to " + maxMbps + " Mbps (below the " + DELIVERY_DEFAULT_MBPS + " Mbps default) ***\n";
       }
       log += "  Applied template: " + templateName + (appliedOK ? "" : "  *** TEMPLATE NOT FOUND - apply manually ***") + "\n";
       log += pathLine + "\n";

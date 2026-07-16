@@ -25,6 +25,16 @@ interface SizePreset {
     h: number;
 }
 
+// These are the EXACT pixel sizes the LIVE XYi_Toolbox.jsx's own buttons
+// pass to ComSiz()/resizeCompCentered() (the "// Aspect Ratios" onClick
+// block, lines ~3726-3746 of ~/Documents/XYi_Toolbox.jsx) -- verified
+// 2026-07 against that file directly after a real-AE report of content
+// landing off-center. Do NOT "recompute" them from a ratio table, and do
+// NOT trust an older revision's values (a previous fix set 2416x1080 for
+// 30 Sheet etc. from a different toolbox version; the live one passes
+// 1920x858). Auto AR's rig stores absolute layer-space pixel values tuned
+// by an artist against these real comp sizes, so a right-ratio/wrong-size
+// comp lands the content in the wrong place at the wrong scale.
 const ASPECT_RATIOS_LEFT: SizePreset[] = [
     { label: "[L] Square", w: 1920, h: 1920 },
     { label: "[L] Quad", w: 1440, h: 1080 },
@@ -59,14 +69,9 @@ const MasterToolsTool = () => {
         try {
             const result = await fn();
             if (result === undefined) throw new Error("no bridge");
-            // TEMPORARY: surfaces result.message when present (currently
-            // only resizeCompositionCentered's diagnostic build sets one)
-            // instead of the generic "complete" text, so the centering-bug
-            // debug output is actually visible here -- revert to the plain
-            // `${label} complete.` text once that diagnostic is removed.
             setStatus(
                 result.success
-                    ? { text: result.message ? `${label}: ${result.message}` : `${label} complete.`, type: "success" }
+                    ? { text: `${label} complete.`, type: "success" }
                     : { text: result.error || "Something went wrong.", type: "error" }
             );
         } catch (e) {

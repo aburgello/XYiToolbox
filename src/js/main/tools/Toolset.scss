@@ -1,12 +1,3 @@
-// iOS-style "jiggle mode" shake for edit-mode tiles. Applied to each tile's
-// inner face (not the draggable Reorder.Item wrapper) -- see Toolset.scss's
-// .action-edit-item.jiggle rule for why. transform-only, chrome74-safe.
-@keyframes toolset-jiggle {
-    0%   { transform: rotate(-1.1deg); }
-    50%  { transform: rotate(1.1deg); }
-    100% { transform: rotate(-1.1deg); }
-}
-
 .toolset-grid {
     display: flex;
     flex-direction: column;
@@ -234,9 +225,10 @@
     // the item's own transform for drag, and an inline transform always wins
     // over a CSS one (documented gotcha in CLAUDE.md), so animating the item
     // would fight the drag. Staggered start times so tiles don't shake in
-    // lockstep (the iOS look).
+    // lockstep (the iOS look). Keyframe lives in shared.scss (ov-jiggle) --
+    // reused by RailScreen's edit mode too, see that file's own comment.
     .action-edit-item.jiggle .action-edit-face {
-        animation: toolset-jiggle 0.34s ease-in-out infinite;
+        animation: ov-jiggle 0.34s ease-in-out infinite;
     }
     .action-edit-item.jiggle:nth-child(2n) .action-edit-face { animation-delay: -0.11s; }
     .action-edit-item.jiggle:nth-child(3n) .action-edit-face { animation-delay: -0.22s; }

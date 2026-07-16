@@ -2838,19 +2838,16 @@ export const extremeToolsPortrait = (
 // explicit flags -- see its comment). All operate on the active
 // comp/selected layers only.
 // =============================================================================
-// TEMPORARY diagnostic build -- reports exactly what happened on each
-// click (old/new size, computed offset, and each layer's skip reason or
-// before/after Position) via the Result's `message`, surfaced by
-// MasterTools.tsx's status banner. Added to track down a real user-
-// reported bug (content not staying centered on resize, confirmed via
-// screenshots against a layer that WAS centered beforehand) that couldn't
-// be found by static code comparison against the original XYi_CompSize.jsx
-// (the offset math is textually identical) -- revert the diagnostic
-// message-building once the root cause is confirmed from real output.
-// Also fixes a real latent gap found while touching this: the catch block
-// never called app.endUndoGroup(), unlike every other function in this
-// file -- an exception mid-loop would leave the undo group open
-// indefinitely, silently merging unrelated later operations into it.
+// The offset math below is a faithful port of XYi_CompSize.jsx's
+// resizeCompCentered(). The "content not staying centered on resize" bug
+// this was once instrumented with a diagnostic build to chase was NOT in
+// here -- it was (a) MasterTools.tsx passing reconstructed-from-aspect-ratio
+// pixel sizes instead of the original buttons' real ones, and (b) an
+// auto-center point injected into Auto AR's Position expression that the
+// original rig never had. Both fixed at their own sites; the diagnostic
+// message-building is reverted. The one intentional addition kept here: the
+// catch block calls app.endUndoGroup(), which the original never did -- an
+// exception mid-loop would otherwise leave the undo group open indefinitely.
 export const resizeCompositionCentered = (newWidth: number, newHeight: number): Result => {
   try {
     const comp = app.project.activeItem;
@@ -2863,46 +2860,51 @@ export const resizeCompositionCentered = (newWidth: number, newHeight: number): 
     const widthOffset = (newWidth - oldWidth) / 2;
     const heightOffset = (newHeight - oldHeight) / 2;
 
-    let debugLog = "old=" + oldWidth + "x" + oldHeight + " new=" + newWidth + "x" + newHeight + " offset=(" + widthOffset + "," + heightOffset + ") layers=" + comp.numLayers + " | ";
-
     for (let i = 1; i <= comp.numLayers; i++) {
       const layer = comp.layer(i);
-      if (layer.parent !== null || layer.locked) {
-        debugLog += layer.name + ":SKIP(parent=" + (layer.parent !== null) + ",locked=" + layer.locked + ") ";
-        continue;
-      }
+      if (layer.parent !== null || layer.locked) continue;
 
-      const posProp = layer.property("Position") as Property;
-      if (posProp.dimensionsSeparated) {
-        const xProp = layer.property("X Position") as Property;
-        const yProp = layer.property("Y Position") as Property;
-        const beforeX = xProp.value as number;
-        const beforeY = yProp.value as number;
-        xProp.setValue(beforeX + widthOffset);
-        yProp.setValue(beforeY + heightOffset);
-        debugLog += layer.name + ":SEP before=(" + beforeX + "," + beforeY + ") after=(" + xProp.value + "," + yProp.value + ") ";
+      // Access transform properties as ATTRIBUTES (layer.transform.position),
+      // exactly like XYi_CompSize.jsx -- NOT via layer.property("name")
+      // string lookup. This distinction is load-bearing, found from a real
+      // broken resize: Point of Interest and Anchor Point share the same
+      // matchName ("ADBE Anchor Point"), so layer.property("Point of
+      // Interest") on a normal footage/precomp layer resolves to that
+      // layer's ANCHOR POINT -- the old code here silently shifted every
+      // layer's anchor by (widthOffset, heightOffset) on each resize,
+      // wrecking rigged layers. transform.pointOfInterest is falsy on
+      // non-camera/light layers, matching the original's guard.
+      const tf = (layer as any).transform;
+      if (tf.position.dimensionsSeparated) {
+        tf.xPosition.setValue((tf.xPosition.value as number) + widthOffset);
+        tf.yPosition.setValue((tf.yPosition.value as number) + heightOffset);
       } else {
-        const curPos = posProp.value as number[];
-        if (layer.threeDLayer) {
-          posProp.setValue([curPos[0] + widthOffset, curPos[1] + heightOffset, curPos[2]]);
+        const curPos = tf.position.value as number[];
+        if ((layer as any).threeDLayer) {
+          tf.position.setValue([curPos[0] + widthOffset, curPos[1] + heightOffset, curPos[2]]);
         } else {
-          posProp.setValue([curPos[0] + widthOffset, curPos[1] + heightOffset]);
+          tf.position.setValue([curPos[0] + widthOffset, curPos[1] + heightOffset]);
         }
-        const afterPos = posProp.value as number[];
-        debugLog += layer.name + ":before=(" + curPos[0] + "," + curPos[1] + ") after=(" + afterPos[0] + "," + afterPos[1] + ") numKeys=" + posProp.numKeys + " ";
       }
 
-      const poiProp = layer.property("Point of Interest") as Property | null;
-      if (poiProp && poiProp.numKeys === 0) {
-        const curPOI = poiProp.value as number[];
-        poiProp.setValue([curPOI[0] + widthOffset, curPOI[1] + heightOffset, curPOI[2]]);
+      // Belt-and-braces on top of the original's own truthiness guard:
+      // only cameras/lights genuinely have a Point of Interest, and they're
+      // also the only layer types without sourceRectAtTime (same duck-type
+      // rule motionTools.ts established for the inverse check).
+      const isCameraOrLight = typeof (layer as any).sourceRectAtTime !== "function";
+      if (isCameraOrLight) {
+        const poiProp = tf.pointOfInterest;
+        if (poiProp && poiProp.numKeys === 0) {
+          const curPOI = poiProp.value as number[];
+          poiProp.setValue([curPOI[0] + widthOffset, curPOI[1] + heightOffset, curPOI[2]]);
+        }
       }
     }
 
     comp.width = Math.floor(newWidth);
     comp.height = Math.floor(newHeight);
     app.endUndoGroup();
-    return { success: true, message: debugLog };
+    return { success: true, message: "Resized " + oldWidth + "x" + oldHeight + " -> " + comp.width + "x" + comp.height + "." };
   } catch (e) {
     app.endUndoGroup();
     return { success: false, error: e.toString() };
@@ -2946,13 +2948,29 @@ export const velocityScaler = (): Result => {
 // generated expression that interpolates between whichever of those
 // controls have been manually set, based on the comp's current aspect
 // ratio. Entirely expression/effects-based -- touches no files.
+// Aspect-ratio keys, copied EXACTLY from the LIVE installed XYi_AutAR.jsx
+// ("/Applications/Adobe After Effects 2026/Scripts/toolset/XYi_AutAR.jsx",
+// header "AspectRig_Universal_v2"). CRITICAL VERSION TRAP, hit twice now:
+// ~/Documents/toolset/XYi_AutAR.jsx is the OLDER v1 ("AspectRig_Universal")
+// with different keys (96 = 2305/576, Extreme = 3550/458 = 7.751) and no
+// auto-center logic -- a previous session "fixed" this file toward v1 and
+// broke real studio rigs. The live v2's keys line up with the live
+// toolbox's Aspect Ratio button sizes (96 = 4.0 = 5760/1440, Extreme =
+// 6.552901024 = 3840/586). Always diff against the LIVE install, not the
+// Documents copy.
 const AUTO_AR_LANDSCAPE = {
   labels: ["Square", "Quad", "1920x1080", "48", "30", "96", "Extreme"],
   w: { Square: 1.0, Quad: 1.333333, "1920x1080": 1.777778, "48": 2.0, "30": 2.237762, "96": 4.0, Extreme: 6.552901024 } as Record<string, number>,
 };
+// The original's portrait set also carried a "Square" (1.0) entry, but it
+// only ever built ONE set (landscape OR portrait, per the comp's current
+// orientation). This port builds both and interpolates over the union, so a
+// [P] Square would sit at the exact same aspect as [L] Square -- two points
+// at an identical w, i.e. a degenerate zero-width interpolation segment.
+// Dropped deliberately; [L] Square already covers 1.0.
 const AUTO_AR_PORTRAIT = {
   labels: ["1Sheet", "1080x1920", "Tall-Port", "6Sheet"],
-  w: { "1Sheet": 0.675, "1080x1920": 0.5625, "Tall-Port": 0.354324, "6Sheet": 0.666667 } as Record<string, number>,
+  w: { "1Sheet": 1080 / 1600, "1080x1920": 1080 / 1920, "Tall-Port": 844 / 2382, "6Sheet": 1080 / 1620 } as Record<string, number>,
 };
 
 function autoArAddControl(effectsGroup: Property, type: "point" | "slider", name: string, val: any): Property {
@@ -2996,12 +3014,21 @@ function autoArBuildExpression(type: "position" | "scale", landscapeObj: typeof 
   expr += "  if(wv !== undefined) points.push([wv, val]);\n";
   expr += "}\n";
 
+  // AUTO-CENTER LOGIC -- part of the LIVE v2 XYi_AutAR.jsx (position only):
+  // injects one extra interpolation point at the layer SOURCE's own aspect
+  // ratio, valued at the source's center. This is what recenters a layer
+  // when the comp is resized to (or near) the source's own aspect. A
+  // previous session removed this as a "phantom point the original never
+  // had" -- it diffed against the OLD v1 in ~/Documents/toolset, which
+  // indeed never had it; the studio's live v2 DOES. Keep it. (The
+  // hypotheticalHeight line is dead code in v2 too -- kept verbatim.)
   if (isPos) {
     expr += "\n// --- AUTO-CENTER LOGIC ---\n";
     expr += "try {\n";
     expr += "    if (thisLayer.source) {\n";
     expr += "        var srcAspect = thisLayer.source.width / thisLayer.source.height;\n";
     expr += "        var centerX = thisLayer.source.width / 2;\n";
+    expr += "        var hypotheticalHeight = thisComp.width / srcAspect;\n";
     expr += "        var centerY = thisLayer.source.height / 2;\n";
     expr += "        points.push([srcAspect, [centerX, centerY]]);\n";
     expr += "    }\n";

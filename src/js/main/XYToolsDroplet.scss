@@ -1,5 +1,5 @@
 // =============================================================================
-// MotionToolsDroplet.scss -- panel chrome inherited from Droplet.scss's
+// XYToolsDroplet.scss -- panel chrome inherited from Droplet.scss's
 // .droplet-panel; this file styles the tabbed content inside it.
 // Fixed teal accent ($mt-accent), not tied to a category (--cat-*) -- this
 // lives on the home screen, outside any category context. The component also
@@ -11,7 +11,7 @@ $mt-accent-soft: rgba(79, 209, 197, 0.14);
 $mt-accent-glow: rgba(79, 209, 197, 0.35);
 $mt-surface: #202020;
 
-.motion-tools-panel {
+.xytools-panel {
     width: 344px;
     padding: 14px;
     box-sizing: border-box;

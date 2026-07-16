@@ -1,16 +1,26 @@
 // =============================================================================
-// src/js/main/MotionToolsDroplet.tsx
+// src/js/main/XYToolsDroplet.tsx
 // -----------------------------------------------------------------------------
-// "Motion Tools" -- a quick-access popover to the LEFT of the home screen's
+// "XYTools" -- a quick-access popover to the LEFT of the home screen's
 // search box (HomeScreen.tsx), giving the layer-transform actions motion
 // designers reach for constantly. Modeled on the tools people actually rate
 // (Mister Horse's Motion 2, aescripts' Motion Tools Pro) rather than a port
-// of any one of them -- a polished tabbed panel: Anchor, Align, Move,
+// of any one of them -- a polished tabbed panel: Anchor, Align, Fit, Move,
 // Stagger, Ease.
+//
+// NAMING: the panel was called "Motion Tools" while it was being built and
+// was renamed to XYTools (studio branding). Only the USER-FACING strings and
+// this file's own name changed -- the ExtendScript bridge functions are still
+// `motionTools*` (src/jsx/aeft/motionTools.ts) and the ease presets still
+// persist under the app.settings key "MotionToolsEasePresets". Renaming
+// either would be churn with a real cost: the settings key in particular is
+// live on artists' machines, and changing it would silently orphan every
+// preset they've already saved. Don't "finish" the rename there.
 //
 // Backend: src/jsx/aeft/motionTools.ts -- every button is a real evalTSSafe
 // call on the active comp's selectedLayers (or selectedProperties, for
-// Excite). No file dialogs, no master files -- pure in-comp edits.
+// Excite/Reverse Keyframes). No file dialogs, no master files -- pure in-comp
+// edits.
 //
 // Every hover label in this panel goes through the shared <Tooltip>, not a
 // native `title` attribute, for the same styled-bubble look as the rest of
@@ -41,28 +51,30 @@
 // complaint with plain onClick buttons. A Step field sets the per-tick
 // amount; Shift multiplies by 10 (AE's own arrow-key convention).
 //
-// The whole panel sets the shared --cat-* accent vars to Motion Tools' teal
+// The whole panel sets the shared --cat-* accent vars to XYTools' teal
 // so SegmentedToggle/CheckboxToggle (which key off those vars) adopt the
 // tool's colour instead of the generic fallback blue.
 // =============================================================================
 import React, { useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import {
-    Move, Crosshair, ArrowRightLeft, Sparkles, Group,
+    Move, Crosshair, ArrowRightLeft, Sparkles, Group, Maximize,
     ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Minus, Plus, RotateCcw, RotateCw,
     AlignStartVertical, AlignCenterVertical, AlignEndVertical,
     AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
     AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter,
-    Eraser, Copy, ClipboardPaste, BookmarkPlus, Trash2,
+    FlipHorizontal, FlipVertical, Shrink, Expand, StretchHorizontal,
+    Eraser, Copy, ClipboardPaste, BookmarkPlus, Trash2, Undo2,
+    ArrowRightToLine, ArrowLeftToLine,
 } from "lucide-react";
 import Droplet from "./Droplet";
 import Tooltip from "./Tooltip";
 import SegmentedToggle from "./SegmentedToggle";
 import CheckboxToggle from "./CheckboxToggle";
 import { evalTSSafe } from "../lib/utils/evalTSSafe";
-import "./MotionToolsDroplet.scss";
+import "./XYToolsDroplet.scss";
 
-type Tab = "anchor" | "align" | "transform" | "sequence" | "ease";
+type Tab = "anchor" | "align" | "fit" | "transform" | "sequence" | "ease";
 
 interface EasePresetDTO {
     id: string;
@@ -73,8 +85,9 @@ interface EasePresetDTO {
 const TABS: { id: Tab; label: string; Icon: React.ComponentType<{ size?: number }> }[] = [
     { id: "anchor",    label: "Anchor",  Icon: Crosshair },
     { id: "align",     label: "Align",   Icon: AlignCenterHorizontal },
+    { id: "fit",       label: "Fit",     Icon: Maximize },
     { id: "transform", label: "Move",    Icon: Move },
-    { id: "sequence",  label: "Stagger", Icon: ArrowRightLeft },
+    { id: "sequence",  label: "Time",    Icon: ArrowRightLeft },
     { id: "ease",      label: "Ease",    Icon: Sparkles },
 ];
 
@@ -91,7 +104,7 @@ const ANCHOR_GRID: { relX: number; relY: number; label: string }[] = [
 ];
 
 // Teal accent, fed into the shared --cat-* vars so SegmentedToggle /
-// CheckboxToggle pick it up. Mirrors MotionToolsDroplet.scss's $mt-accent.
+// CheckboxToggle pick it up. Mirrors XYToolsDroplet.scss's $mt-accent.
 const MT_ACCENT_VARS: React.CSSProperties = {
     ["--cat-grad" as any]: "linear-gradient(135deg, #2b8f85 0%, #1c6b63 100%)",
     ["--cat-border" as any]: "#4fd1c5",
@@ -160,7 +173,7 @@ const RepeatButton: React.FC<{
     );
 };
 
-const MotionToolsDroplet: React.FC = () => {
+const XYToolsDroplet: React.FC = () => {
     const reduced = useReducedMotion();
     const [tab, setTab] = useState<Tab>("anchor");
     const [error, setError] = useState<string | null>(null);
@@ -279,7 +292,7 @@ const MotionToolsDroplet: React.FC = () => {
 
     return (
         <Droplet
-            panelClassName="motion-tools-panel"
+            panelClassName="xytools-panel"
             trigger={({ open, toggle }) => (
                 <Tooltip text="XYTools">
                     <button className={"favorites-toggle" + (open ? " active" : "")} onClick={toggle}>
@@ -292,7 +305,7 @@ const MotionToolsDroplet: React.FC = () => {
                 <div className="mt-droplet-body" style={MT_ACCENT_VARS}>
                     <div className="mt-droplet-head">
                         <span className="mt-droplet-head-icon"><Move size={13} /></span>
-                        <span>Motion Tools</span>
+                        <span>XYTools</span>
                     </div>
 
                     {/* No Tooltip here -- each tab already shows its own
@@ -389,6 +402,39 @@ const MotionToolsDroplet: React.FC = () => {
                                 </div>
                             )}
 
+                            {tab === "fit" && (
+                                <div className="mt-section">
+                                    <div className="mt-section-label">Fit to Composition</div>
+                                    <div className="mt-row mt-row--fill">
+                                        <button className="mt-text-btn mt-text-btn--grow" onClick={() => run("motionToolsFit", "cover")}>
+                                            <Expand size={13} /> Fill
+                                        </button>
+                                        <button className="mt-text-btn mt-text-btn--grow" onClick={() => run("motionToolsFit", "contain")}>
+                                            <Shrink size={13} /> Fit
+                                        </button>
+                                        <button className="mt-text-btn mt-text-btn--grow" onClick={() => run("motionToolsFit", "stretch")}>
+                                            <StretchHorizontal size={13} /> Stretch
+                                        </button>
+                                    </div>
+                                    <p className="mt-hint">
+                                        <strong>Fill</strong> covers the frame (crops the overflow),
+                                        <strong> Fit</strong> sits inside it, <strong>Stretch</strong> hits
+                                        the exact size and distorts. All three re-center the layer.
+                                    </p>
+
+                                    <div className="mt-section-label mt-section-label--sub">Flip</div>
+                                    <div className="mt-row mt-row--fill">
+                                        <button className="mt-text-btn mt-text-btn--grow" onClick={() => run("motionToolsFlip", "horizontal")}>
+                                            <FlipHorizontal size={13} /> Horizontal
+                                        </button>
+                                        <button className="mt-text-btn mt-text-btn--grow" onClick={() => run("motionToolsFlip", "vertical")}>
+                                            <FlipVertical size={13} /> Vertical
+                                        </button>
+                                    </div>
+                                    <p className="mt-hint">Flips around the anchor point — set that first on the Anchor tab.</p>
+                                </div>
+                            )}
+
                             {tab === "transform" && (
                                 <div className="mt-section">
                                     <div className="mt-transform-toolbar">
@@ -438,6 +484,30 @@ const MotionToolsDroplet: React.FC = () => {
                                         <ArrowRightLeft size={14} /> Sequence Layers
                                     </button>
                                     <p className="mt-hint">Cascades selected layers in time, top to bottom.</p>
+
+                                    <div className="mt-section-label mt-section-label--sub">Keyframes · Trim</div>
+                                    <div className="mt-row mt-row--fill">
+                                        <Tooltip text="Reverse the selected keyframes (or every animated property on the selected layers)" grow>
+                                            <button className="mt-text-btn mt-text-btn--grow" onClick={() => run("motionToolsReverseKeyframes")}>
+                                                <Undo2 size={13} /> Reverse Keys
+                                            </button>
+                                        </Tooltip>
+                                        <span className="mt-divider" />
+                                        <Tooltip text="Trim layer In to the playhead" grow>
+                                            <button className="mt-icon-btn" onClick={() => run("motionToolsTrim", "in")}>
+                                                <ArrowRightToLine size={15} />
+                                            </button>
+                                        </Tooltip>
+                                        <Tooltip text="Trim layer Out to the playhead" grow>
+                                            <button className="mt-icon-btn" onClick={() => run("motionToolsTrim", "out")}>
+                                                <ArrowLeftToLine size={15} />
+                                            </button>
+                                        </Tooltip>
+                                    </div>
+                                    <p className="mt-hint">
+                                        Reverse mirrors keys about the span they already occupy — the animation
+                                        plays backwards without moving in the timeline.
+                                    </p>
                                 </div>
                             )}
 
@@ -544,4 +614,4 @@ const MotionToolsDroplet: React.FC = () => {
     );
 };
 
-export default MotionToolsDroplet;
+export default XYToolsDroplet;
