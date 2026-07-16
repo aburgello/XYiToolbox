@@ -537,8 +537,9 @@ interface DeliveryLoadResult extends Result {
 
 // Territory detection + per-comp entry building, split out of
 // deliveryChecklistLoadComps() so deliveryChecklistLoadCompsByIds() (used by
-// the Delivery button's auto-load) builds IDENTICAL row data rather than a
-// second, drifting copy of it.
+// the Delivery button's auto-load) and deliveryRotate90CC() (the Delivery
+// Hub row-level rotate) all build IDENTICAL row data rather than drifting
+// copies of the same construction.
 function deliveryDetectTerritoryCode(): string | null {
   // Detect territory from the project file's folder tree (same approach as tsExtractInfoFromPath)
   let territoryCode: string | null = null;
@@ -608,6 +609,82 @@ export const deliveryChecklistLoadCompsByIds = (ids: number[]): DeliveryLoadResu
   }
   if (comps.length === 0) return { success: false, error: "Those comps no longer exist." };
   return { success: true, comps };
+};
+
+// =============================================================================
+// Rotate 90CC for a single Delivery Hub row -- some territories want a
+// delivered file rotated (portrait <-> landscape), so this wraps ONE comp
+// (identified by its project item id, not the current selection like the
+// Toolset grid's own rotate90cc() above) in a new width/height-swapped comp
+// rotated -90deg -- same technique as rotate90cc(), just targeted at a
+// specific row instead of app.project.selection, and returning the new
+// wrapper comp's own info so DeliveryHub.tsx can REPLACE that row in place
+// (new id, new name, new duration) rather than adding a second row next to
+// the original -- the original, un-rotated comp is untouched on disk/in the
+// project, same "wraps, never destroys" behavior as the Toolset version.
+// =============================================================================
+interface DeliveryRotateResult extends Result {
+  comp?: DeliveryCompEntry;
+}
+
+export const deliveryRotate90CC = (compId: number): DeliveryRotateResult => {
+  try {
+    const proj = app.project;
+    const original = proj.itemByID(compId);
+    if (!original || !(original instanceof CompItem)) {
+      return { success: false, error: "Comp no longer exists (reload the list)." };
+    }
+
+    app.beginUndoGroup("Rotate 90CC (Delivery)");
+    const newName = original.name + "_90CC";
+    const oldWidth = original.width;
+    const oldHeight = original.height;
+    const oldDuration = original.duration;
+    const frameRate = original.frameRate;
+    const pixcor = Math.round(oldWidth * original.pixelAspect);
+
+    const rotatedComp = proj.items.addComp(newName, oldHeight, pixcor, 1, oldDuration, frameRate);
+    const wrapperLayer = rotatedComp.layers.add(original);
+    (wrapperLayer.property("Rotation") as Property).setValue(-90);
+    app.endUndoGroup();
+
+    // deliveryBuildCompEntry() runs against the ORIGINAL comp, not the new
+    // wrapper (the wrapper's only layer is the original COMP, not raw
+    // footage, so deliveryFindMovSourceFile on the wrapper itself would
+    // always find nothing) -- that's what lets the replacement row keep
+    // the same batch/folder/territory context the original row had. The
+    // identity/duration/frameRate fields are then overridden to the NEW
+    // rotated comp's own values, since those are what the replacement row
+    // actually needs to reference going forward.
+    //
+    // Built with an explicit object literal, NOT `{ ...entry, ... }` --
+    // object spread compiles (via esbuild, this project's actual
+    // ExtendScript build path, not real tsc -- see CLAUDE.md) to a helper
+    // that calls Object.keys(), which doesn't exist in ExtendScript's own
+    // JS engine. Threw "Function Object.keys is undefined" the instant a
+    // real rotate ran in AE -- same class of gap as the missing
+    // Array.prototype methods already documented there. Every other
+    // object literal in this codebase is built explicitly for exactly
+    // this reason; this was the one place that didn't, now fixed.
+    const entry = deliveryBuildCompEntry(original, deliveryDetectTerritoryCode());
+
+    return {
+      success: true,
+      comp: {
+        id: rotatedComp.id,
+        name: rotatedComp.name,
+        folderName: entry.folderName,
+        batchFolder: entry.batchFolder,
+        sourcePath: entry.sourcePath,
+        duration: rotatedComp.duration,
+        frameRate: rotatedComp.frameRate,
+        territoryCode: entry.territoryCode,
+      },
+    };
+  } catch (e) {
+    app.endUndoGroup();
+    return { success: false, error: e.toString() };
+  }
 };
 
 interface DeliveryQueueResult extends Result {

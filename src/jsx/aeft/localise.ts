@@ -2329,6 +2329,15 @@ function csvLocTrim(str: string): string {
   return String(str).replace(/^\s+|\s+$/g, "");
 }
 
+// Zero-pads a trailing single digit so "Batch_1"/"France 2"/"Batch1" become
+// "Batch_01"/"France 02"/"Batch01" -- whatever separator (or none) was
+// already there is left untouched, only a LONE trailing digit gets padded.
+// A batch already double-digit-or-more ("Batch_10", "Batch_100") is left
+// alone, same for one with no trailing digit at all.
+function csvLocPadBatchNumber(name: string): string {
+  return name.replace(/(\d+)$/, (digits) => (digits.length === 1 ? "0" + digits : digits));
+}
+
 // Ported 1:1 from campLocCSV()'s nameGen() -- duplicates the matched master
 // comp, rescales it via the same null-parent technique as DRQR/Scale
 // Composition, propagates the new size into every V## comp under "Main",
@@ -2448,7 +2457,7 @@ export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExi
     }
     const bLineMatch = metaLine.match(/^Batch:\s*(.*)$/i);
     if (bLineMatch) {
-      batchName = csvLocTrim(bLineMatch[1]);
+      batchName = csvLocPadBatchNumber(csvLocTrim(bLineMatch[1]));
       continue;
     }
     const fLineMatch = metaLine.match(/^Source Folder:\s*(.*)$/i);
@@ -2547,9 +2556,12 @@ export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExi
       const scanFilmTitle = masterName.split("_")[0];
       const scanIndo = masterName.split("_")[1];
       const scanArtworkType = csvLocTrim(texLoc[0]);
-      const batchStr = batchName !== "" ? "_" + batchName : "";
 
-      const newCompName = scanFilmTitle + "_" + scanIndo + "_DGTL_" + scanArtworkType + "_" + campaign + "_" + width + "x" + height + "_" + duration + batchStr + "_" + territoryCode;
+      // Batch name is deliberately NOT in the filename -- it's still used
+      // above to build the output folder path (<Source Folder>/AE/<Batch
+      // Name>), so the file still lands in the right batch folder on
+      // disk, it just doesn't repeat the batch name in every filename too.
+      const newCompName = scanFilmTitle + "_" + scanIndo + "_DGTL_" + scanArtworkType + "_" + campaign + "_" + width + "x" + height + "_" + duration + "_" + territoryCode;
 
       const outputFile = new File(outputFolder.toString() + "/" + newCompName + "_V01.aep");
       if (skipExisting && outputFile.exists) {

@@ -3,7 +3,7 @@
 // =============================================================================
 import React, { useState, useRef } from "react";
 import { motion, AnimatePresence, useAnimate, useReducedMotion } from "motion/react";
-import { Truck, ListPlus, Trash2, ChevronsDown, Send, AlertCircle, AlertTriangle, Check, X, Volume2, VolumeX, Folder } from "lucide-react";
+import { Truck, ListPlus, Trash2, ChevronsDown, Send, AlertCircle, AlertTriangle, Check, X, Volume2, VolumeX, Folder, RotateCcw } from "lucide-react";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import { evalTS } from "../../lib/utils/bolt";
 import { sfx } from "../../lib/utils/sfx";
@@ -361,6 +361,57 @@ const DeliveryHubTool = () => {
         return fresh.length;
     };
 
+    // Keyed by the row's id at the moment the click happened -- once the
+    // rotate succeeds the row's own `id` field is REPLACED with the new
+    // wrapper comp's id (see below), so this set has to be cleared using
+    // the id captured in the closure, not whatever `row.id` reads as by
+    // the time the async call resolves.
+    const [rotatingIds, setRotatingIds] = useState<Set<number>>(new Set());
+
+    const handleRotateRow = async (rowId: number) => {
+        setRotatingIds((s) => new Set(s).add(rowId));
+        try {
+            const result = await evalTS("deliveryRotate90CC", rowId);
+            if (result === undefined) { pushToast("No CEP bridge detected — open this panel inside After Effects to run it.", "error"); return; }
+            if (!result.success || !result.comp) { pushToast(result.error || "Rotate failed.", "error"); return; }
+            const rotated = result.comp;
+            // Deliberately NOT makeRow() -- this REPLACES an existing row in
+            // place, so the fields the user already set (sizeMB/maxMbps/fps/
+            // includeAudio/batchOffset) need to survive; makeRow() always
+            // resets those to defaults, which is right for a brand-new row
+            // but would silently wipe out whatever the user had already
+            // typed into this one. Only the identity (id/name) and comp-
+            // derived fields (folder/batch/duration/frameRate/sourcePath)
+            // swap to the new rotated wrapper comp.
+            setRows((r) =>
+                r.map((x) =>
+                    x.id === rowId
+                        ? {
+                              ...x,
+                              id: rotated.id,
+                              name: rotated.name,
+                              folderName: rotated.folderName ?? null,
+                              batchFolder: rotated.batchFolder ?? null,
+                              territoryCode: rotated.territoryCode ?? null,
+                              sourcePath: rotated.sourcePath ?? null,
+                              duration: rotated.duration ?? 0,
+                              frameRate: rotated.frameRate ?? 0,
+                          }
+                        : x
+                )
+            );
+            pushToast(`Rotated → ${rotated.name}`);
+        } catch {
+            pushToast("No CEP bridge detected — open this panel inside After Effects to run it.", "error");
+        } finally {
+            setRotatingIds((s) => {
+                const next = new Set(s);
+                next.delete(rowId);
+                return next;
+            });
+        }
+    };
+
     const loadComps = async () => {
         setCheckError(null);
         try {
@@ -584,6 +635,15 @@ const DeliveryHubTool = () => {
                                                 onClick={() => setRows((r) => r.map((x, xi) => xi === i ? { ...x, includeAudio: !x.includeAudio } : x))}
                                             >
                                                 {row.includeAudio ? <Volume2 size={11} /> : <VolumeX size={11} />}
+                                            </button>
+                                        </Tooltip>
+                                        <Tooltip text="Rotate 90° -- replaces this row with the rotated comp">
+                                            <button
+                                                className="dh-row-rotate"
+                                                disabled={rotatingIds.has(row.id)}
+                                                onClick={() => handleRotateRow(row.id)}
+                                            >
+                                                <RotateCcw size={11} className={rotatingIds.has(row.id) ? "spin" : ""} />
                                             </button>
                                         </Tooltip>
                                         <label className="dh-row-field">

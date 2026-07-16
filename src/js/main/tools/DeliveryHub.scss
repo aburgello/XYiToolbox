@@ -468,6 +468,25 @@
         }
     }
 
+    // Rotate 90CC -- replaces the row with the rotated wrapper comp
+    // (deliveryRotate90CC in aeft/deliver.ts), so some territories'
+    // "needs to be delivered rotated" ask is one click, not a trip out to
+    // the Toolset grid and back to re-select the new comp by hand.
+    .dh-row-rotate {
+        display: flex;
+        align-items: center;
+        background: none;
+        border: none;
+        padding: 0;
+        color: #555;
+        cursor: pointer;
+        flex-shrink: 0;
+        transition: color 0.15s ease;
+
+        &:hover:not(:disabled) { color: var(--cat-icon, #fdba74); }
+        &:disabled { cursor: default; color: var(--cat-icon, #fdba74); opacity: 0.7; }
+    }
+
     // Missing row: name dimmed
     .dh-row--missing {
         border-color: rgba(224,122,122,0.15);
