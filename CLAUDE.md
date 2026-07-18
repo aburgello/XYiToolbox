@@ -3589,3 +3589,97 @@ rail -- see `RailScreen.tsx`'s own header comment for the state shape.
   it would need this same treatment built separately (its drag mechanism
   is Framer Motion's `Reorder.Group`, not dnd-kit, so it isn't a drop-in
   port of this implementation).
+
+## Home cascade replays ~1-2s after cold start (GsapScreenTransition dedup)
+
+Real-AE report: "I open the toolbox, it comes in. After 1-2 seconds
+(without touching anything) it does the homepage cascading animation
+again." A previous session had already added a de-dupe to
+`GsapScreenTransition` (module-scope `lastAnimatedKey` + a
+`DUPLICATE_MOUNT_WINDOW_MS = 1500` timer) for the CEP host's cold-start
+double-mount, plus the `screenKey` prop and `main.tsx`'s module-scope
+`persistedScreen`. It did not fix this symptom, and briefly chased an
+"async data load re-triggering an entrance animation" theory.
+
+Diagnosis (that theory was a wrong turn): a Framer/GSAP entrance animation
+cannot replay without a **remount** or a React `key` change. On home,
+`main.tsx`'s `screenKey` is the constant `"home"` and never changes, and
+nothing in HomeScreen/Toolset feeds an async-loaded value into a React
+`key` (every key is a static id -- `category.id`, `action.id`,
+`favoriteKey`, etc.; async loads of theme/order/hidden/pinned only
+re-order or filter already-mounted, stably-keyed elements, which React
+reconciles without remounting, so Framer's `initial` never re-fires). So
+the re-cascade is necessarily a **remount of the whole tree** -- i.e. the
+already-documented CEP cold-start double-mount (React root created twice
+in the same JS realm) -- just landing 1-2s in on this machine, **past the
+1500ms window**, so `now - lastAnimatedAt < 1500` was false and the enter
+animation replayed on already-visible content.
+
+Fix (`GsapScreenTransition.tsx`): **removed the time window entirely**;
+dedupe now purely on key equality -- skip the enter animation iff
+`!exit && screenKey != null && screenKey === lastAnimatedKey`. The timer
+was only ever a fragile proxy for "is this the double-mount" (how slow can
+a cold start get? unknown -- 1500ms guessed too low). Key equality answers
+that directly and is provably safe: every genuine navigation changes
+`screenKey` and animates its target (home -> category -> home animates
+each hop, because "category" is recorded as `lastAnimatedKey` in between,
+so the return to "home" no longer matches) -- therefore a mount whose key
+still equals the last-animated key can only be a re-display of the current
+screen with no navigation since, which is exactly and only the
+double-mount. Reopening the panel is a fresh JS realm that resets the
+module var to `null`, so a genuine reopen still animates. Removed
+`lastAnimatedAt` and `DUPLICATE_MOUNT_WINDOW_MS`.
+
+### Follow-up: it also replays on FIRST HOVER, and the state is not a plain module var
+
+Second real-AE report after the timer removal: "it loads and does the
+animation fine, but the first time I hover a button in the session it
+replays the entrance." Investigated exhaustively in browser preview and
+**could not reproduce** -- with instrumentation (MutationObserver on
+`.home-screen` subtree styles) there were ZERO style mutations / remounts
+from: a real `prefetchTool` chunk load (the offline hover-prefetch on
+search cards + the existing category-card `onHoverStart` prefetch),
+synthetic hover/pointer events, or synthetic `focus`/`visibilitychange`/
+`pageshow`. Also ruled out: chunk-load GSAP side effects (the local
+`gsap/index.ts` barrel that calls `registerPlugin(ScrollTrigger)` is
+imported by NOTHING -- dead code; every gsap component imports raw
+`"gsap"`), and Suspense (none on the home screen). So it is a real-AE
+CEF-host rAF/visibility/reload behaviour that a normal (even hidden)
+browser tab doesn't exhibit.
+
+Mechanism narrowed decisively though: on home the GSAP transition animates
+the **whole container** (`tl.to(container, {opacity:1, y:0})`), so "the
+entrance replaying" = that enter effect re-ran, and that effect only runs
+on **mount** (its deps don't change on hover). So the real-AE re-trigger
+is a mount -- a remount OR a full document reload -- happening on first
+interaction rather than at a fixed delay (which is also why the earlier
+1500ms timer couldn't catch it: the first hover can be much later). The
+key-equality dedupe above already handles a React remount (module var
+survives within one JS realm). The gap it left: a full CEF **reload /
+re-navigation** wipes module state, so `lastAnimatedKey` resets to null
+and the guard misses it.
+
+Hardening (`GsapScreenTransition.tsx`): the last-animated key is now
+persisted in **`sessionStorage`** (key `"xyi.gsapLastAnimatedKey"`), read
+through a module-var cache, instead of a bare module var. sessionStorage
+survives a same-origin reload but is empty for a genuinely fresh panel
+open (new session) -- exactly the boundary wanted: suppress the spurious
+cold-start replay (whether it arrives as a React remount OR a full
+reload), still animate a real first open. Wrapped in try/catch (falls back
+to the module cache if a CEF config blocks sessionStorage). `get
+LastAnimatedKey()`/`setLastAnimatedKey()` replace the bare variable.
+
+Verification: `tsc` + `yarn build` clean. The hidden-tab/frozen-rAF limit
+was turned into the actual test -- the skip path sets
+`container.opacity = "1"` immediately while the animate path sets `"0"`
+(which stays frozen with rAF dead), so container opacity after load
+reports which path ran. Confirmed all three cases in preview by driving
+real reloads: (A) fresh session (storage cleared) -> **animate** path
+(opacity `0`) and it records `"home"`; (B) same-key reload (storage
+`"home"`, i.e. the CEF replay case) -> **skip** path (opacity `1`,
+transform `none`, shown immediately, no re-cascade); (C) real navigation
+home -> Tools -> **animate** path (opacity `0`) and records
+`"category:tools"` (no regression). The "no longer replays on first hover"
+outcome itself is host-specific and still needs a real-AE confirm -- but
+the dedupe now covers both the remount and full-reload mount paths, and a
+same-key reload was proven deduped.

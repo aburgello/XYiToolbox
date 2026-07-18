@@ -97,7 +97,28 @@ export default defineConfig({
     rollupOptions: {
       input,
       output: {
-        manualChunks: {},
+        // Inline EVERY dynamic import into the single entry chunk instead
+        // of splitting per-tool. The tools are declared with React.lazy()
+        // in toolRegistry.tsx, which Rollup would otherwise emit as ~50
+        // separate .cjs chunks. In the real CEF panel host those chunks
+        // are NOT loaded as ES modules -- vite-cep-plugin's hand-rolled
+        // synchronous require() loader fetches each one with a BLOCKING
+        // XMLHttpRequest the first time its React.lazy import() fires, and
+        // that first fetch+eval visibly disrupts the panel: the home
+        // entrance animation replays and navigation state resets to home
+        // ("hover/click a category card, the homepage re-animates and
+        // bounces me back; second time works because the chunk is now
+        // cached"). Inlining removes the runtime fetch entirely -- every
+        // tool is already present in the one entry chunk the loader
+        // evaluates at startup, so React.lazy resolves instantly from the
+        // in-memory module registry and nothing is ever fetched mid-
+        // interaction. Single panel (cep.config.ts) so single-input, which
+        // is what inlineDynamicImports requires. Same "one big local file,
+        // no per-chunk load cost that matters off local disk" reasoning as
+        // cssCodeSplit:false above. **Build-artifact verified (chunk count
+        // drops from ~50 to 1); final confirmation needs a real yarn zxp +
+        // reinstall, same as the cssCodeSplit fix.**
+        inlineDynamicImports: true,
         // esModule: false,
         preserveModules: false,
         format: "cjs",

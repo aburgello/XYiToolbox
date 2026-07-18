@@ -81,6 +81,21 @@
         letter-spacing: 0.08em;
         text-transform: uppercase;
         color: #777;
+
+        // Group accent dot -- reads --btn-border from the .action-group
+        // wrapper (Toolset.tsx), so the section label carries the same
+        // colour identity as its buttons' icons. The "find the section by
+        // colour" scanning cue, on the label itself.
+        &::before {
+            content: "";
+            display: inline-block;
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: var(--btn-border, #666);
+            margin-right: 6px;
+            vertical-align: 1px;
+        }
     }
 
     .action-grid {
@@ -111,14 +126,15 @@
                 background: var(--btn-bg, #2a2a2a);
                 border-color: var(--btn-border, #444);
                 box-shadow: 0 3px 10px var(--btn-glow, rgba(0, 0, 0, 0.35));
-
-                .action-icon {
-                    color: var(--btn-border);
-                }
             }
 
+            // Icon carries its group's accent AT REST (not only on hover) --
+            // the resting tint is the "find a section's buttons by colour"
+            // scanning cue. --btn-border inherits from the .action-group
+            // wrapper (Toolset.tsx), same value every button in the group.
             .action-icon {
                 display: inline-flex;
+                color: var(--btn-border, #999);
                 transition: color 0.2s ease;
             }
         }
@@ -612,5 +628,68 @@
         &:hover {
             filter: brightness(1.12);
         }
+    }
+}
+
+// --- Droplet content for "Quick FX" (last 5 used effects) -----------------
+.droplet-quick-fx {
+    width: 208px;
+
+    .hint {
+        margin: 4px 2px;
+        font-size: 11px;
+        color: #777;
+    }
+}
+
+.qfxr-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 176px;
+    overflow-y: auto;
+}
+
+// Same row shape as .add-tool-result (Toolset's other "search/pick a thing
+// from a droplet" list) -- reused rather than duplicated since both are a
+// plain icon + label row in an anchored popover.
+.qfxr-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    background: none;
+    border: none;
+    color: #ddd;
+    text-align: left;
+    padding: 6px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.12s ease;
+
+    svg { flex-shrink: 0; color: #888; }
+
+    &:hover {
+        background: rgba(255, 255, 255, 0.06);
+    }
+}
+
+.qfxr-open-page {
+    display: block;
+    width: 100%;
+    background: none;
+    border: 1px dashed #444;
+    color: #999;
+    border-radius: 5px;
+    padding: 5px 0;
+    font-size: 11px;
+    cursor: pointer;
+    margin-top: 4px;
+    transition: border-color 0.15s ease, color 0.15s ease;
+
+    &:hover {
+        border-color: #666;
+        color: #ddd;
     }
 }

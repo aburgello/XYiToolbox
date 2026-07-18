@@ -52,7 +52,7 @@ import {
     Tag,
     Type,
     Move,
-    Sparkles,
+    Image as ImageIcon,
     FileEdit,
     Globe,
     ToggleLeft,
@@ -64,6 +64,7 @@ import {
     Search,
     Terminal,
     LayoutTemplate,
+    Sparkles,
 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
@@ -91,6 +92,17 @@ export interface ActionResult {
     error?: string;
     savedFiles?: string[];
     message?: string;
+}
+
+// Mirrors aeft/effects.ts's own QuickFxRecentEntry -- can't import that type
+// directly (it's an ExtendScript file under a different tsconfig/module
+// world than this one, same reason every cross-bridge call in this app goes
+// through the loose `Scripts` catch-all type instead of per-function types).
+interface QuickFxRecentEntry {
+    id: string;
+    label: string;
+    matchName: string;
+    category: string;
 }
 
 export interface ActionEntry {
@@ -371,7 +383,7 @@ export const ACTIONS: ActionEntry[] = [
         id: "mc-it",
         label: "MC It!",
         description: "Batch-replaces PNG footage across a folder of .aep files with the best-matching PNG (by resolution/number/filename similarity) from a second folder. Saves each file in place -- run this on your territory working copies, not on masters.",
-        icon: Sparkles,
+        icon: ImageIcon,
         group: "naming",
         run: () => evalTSSafe("mcIt"),
         successText: (result) => result.message || "Done.",
@@ -431,6 +443,39 @@ export const ACTIONS: ActionEntry[] = [
             return evalTSSafe("setCompDuration", seconds);
         },
         successText: () => "Comp duration updated.",
+    },
+    {
+        id: "quick-fx-recent",
+        label: "Quick FX",
+        description: "Re-apply one of your last 5 used effects to the selected layer(s) -- see the full Effects page (Tools) for the whole curated list.",
+        icon: Sparkles,
+        group: "transform",
+        // Real logic lives in QuickFxRecentDropletBody -- this run() is
+        // never actually called (the id is special-cased in the render
+        // loop below to open a Droplet instead, same as toggle-by-label/
+        // comp-duration), but every ActionEntry needs one so this action
+        // is still resolvable/searchable (CommandPalette.tsx) like any
+        // other -- selecting it there falls back to the modal-picker
+        // convention documented in the Droplet.tsx CLAUDE.md section
+        // (no anchored droplet position to reuse in a floating overlay).
+        run: async () => {
+            // evalTSSafe's ActionResult only declares success/error/message/
+            // savedFiles/log by name -- everything else (like "effects" here)
+            // comes back through its index signature as `unknown`, so it's
+            // cast to what quickFxListRecentEffects actually returns, same
+            // as "Turk It"'s own `(result as {maxVersion?}).maxVersion` read
+            // above in runAction().
+            const list = (await evalTSSafe("quickFxListRecentEffects")) as ActionResult & { effects?: QuickFxRecentEntry[] };
+            if (!list.success || !list.effects || list.effects.length === 0) {
+                return { success: false, error: "No recent effects yet -- apply one from the Effects page (Tools) first." };
+            }
+            const labels = list.effects.map((e) => e.label);
+            const choice = await selectDialog("Re-apply which effect?", labels, 0);
+            if (choice === null) return null;
+            const fx = list.effects[choice];
+            return evalTSSafe("applyEffectToSelectedLayers", fx.id, fx.matchName, fx.label, fx.category);
+        },
+        successText: (result) => result.message || "Effect applied.",
     },
     {
         id: "build-from-csv",
@@ -566,6 +611,74 @@ const CompDurationDropletBody: React.FC<{ close: () => void; onResult: (result: 
                 <button className="duration-custom-toggle" onClick={() => setCustomOpen(true)}>
                     Custom…
                 </button>
+            )}
+        </>
+    );
+};
+
+// Droplet content for "Quick FX" -- fetches the last 5 distinct effects
+// applied from either this button or the full Effects page (they share the
+// same backend history, quickFxListRecentEffects/recordRecentEffect in
+// aeft/effects.ts) and lets you re-apply one in a single click, no need to
+// go find it again in the full curated list. Needs its own async load-on-
+// open state, so -- same Rules of Hooks reasoning as CompDurationDropletBody
+// above -- this has to be a real component, not inline render-prop logic.
+const QuickFxRecentDropletBody: React.FC<{
+    close: () => void;
+    onResult: (result: ActionResult | null | undefined) => void;
+    onNavigate?: (screen: Screen) => void;
+}> = ({ close, onResult, onNavigate }) => {
+    const [loading, setLoading] = useState(true);
+    const [bridgeMissing, setBridgeMissing] = useState(false);
+    const [effects, setEffects] = useState<QuickFxRecentEntry[]>([]);
+
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            // Same index-signature cast as the ACTIONS entry's own run()
+            // above -- "effects" isn't one of evalTSSafe's own named
+            // ActionResult fields.
+            const result = (await evalTSSafe("quickFxListRecentEffects")) as ActionResult & { effects?: QuickFxRecentEntry[] };
+            if (cancelled) return;
+            if (result === undefined) setBridgeMissing(true);
+            else if (result.success && result.effects) setEffects(result.effects);
+            setLoading(false);
+        })();
+        return () => { cancelled = true; };
+    }, []);
+
+    const apply = async (fx: QuickFxRecentEntry) => {
+        close();
+        onResult(await evalTSSafe("applyEffectToSelectedLayers", fx.id, fx.matchName, fx.label, fx.category));
+    };
+
+    return (
+        <>
+            <p className="droplet-title">Quick FX — last used</p>
+            {loading ? (
+                <p className="hint">Loading…</p>
+            ) : bridgeMissing ? (
+                <p className="hint">No CEP bridge detected — open this panel inside After Effects to run it.</p>
+            ) : effects.length === 0 ? (
+                <>
+                    <p className="hint">No recent effects yet.</p>
+                    <button
+                        type="button"
+                        className="qfxr-open-page"
+                        onClick={() => { close(); onNavigate?.({ type: "tool", toolId: "quick-fx", backTo: { type: "home" } }); }}
+                    >
+                        Open Effects page…
+                    </button>
+                </>
+            ) : (
+                <div className="qfxr-list">
+                    {effects.map((fx) => (
+                        <button key={fx.id} className="qfxr-item" onClick={() => apply(fx)}>
+                            <Sparkles size={13} />
+                            {fx.label}
+                        </button>
+                    ))}
+                </div>
             )}
         </>
     );
@@ -1198,7 +1311,11 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
                     } as React.CSSProperties;
 
                     return (
-                        <div className="action-group" key={group.id}>
+                        // btnStyle (the --btn-* accent vars) sits on the group
+                        // wrapper so it inherits down to BOTH the buttons AND
+                        // the group label -- the label's coloured dot (::before
+                        // in the scss) reads --btn-border from here.
+                        <div className="action-group" key={group.id} style={btnStyle}>
                             <div className="action-group-divider">
                                 <h3 className="action-group-label">{groupLabelOf(group.id)}</h3>
                             </div>
@@ -1234,11 +1351,15 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
                                         </motion.button>
                                     );
 
-                                    if (action.id === "toggle-by-label" || action.id === "comp-duration") {
+                                    if (action.id === "toggle-by-label" || action.id === "comp-duration" || action.id === "quick-fx-recent") {
+                                        const panelClassName =
+                                            action.id === "toggle-by-label" ? "droplet-swatches" :
+                                            action.id === "comp-duration" ? "droplet-duration" :
+                                            "droplet-quick-fx";
                                         return (
                                             <Droplet
                                                 key={action.id}
-                                                panelClassName={action.id === "toggle-by-label" ? "droplet-swatches" : "droplet-duration"}
+                                                panelClassName={panelClassName}
                                                 trigger={({ open, toggle }) => (
                                                     <Tooltip text={action.description} delay={1500}>
                                                         {renderButton(toggle, open)}
@@ -1251,10 +1372,16 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
                                                             close={close}
                                                             onResult={(r) => reportResult(r, action.successText)}
                                                         />
-                                                    ) : (
+                                                    ) : action.id === "comp-duration" ? (
                                                         <CompDurationDropletBody
                                                             close={close}
                                                             onResult={(r) => reportResult(r, action.successText)}
+                                                        />
+                                                    ) : (
+                                                        <QuickFxRecentDropletBody
+                                                            close={close}
+                                                            onResult={(r) => reportResult(r, action.successText)}
+                                                            onNavigate={onNavigate}
                                                         />
                                                     )
                                                 }

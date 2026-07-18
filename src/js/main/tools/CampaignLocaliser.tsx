@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { FolderInput, FolderCog, Rabbit, ArrowRight, Replace, Image as ImageIcon } from "lucide-react";
+import { FolderInput, FolderCog, Rabbit, ArrowRight, Image as ImageIcon } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { sfx } from "../../lib/utils/sfx";
 import StatusIcon from "../StatusIcon";
@@ -118,10 +118,7 @@ const CampaignLocaliserTool: React.FC<ToolProps> = (_props) => {
                         </div>
                         <div className="cl-quick-row">
                             <button disabled={busy} onClick={() => run("MC It!", () => evalTS("mcIt"))}>
-                                <Replace size={14} /> MC It!
-                            </button>
-                            <button disabled={busy} onClick={() => run("JPEG Loc", () => evalTS("jpegLoc"))}>
-                                <ImageIcon size={14} /> JPEG Loc
+                                <ImageIcon size={14} /> MC It!
                             </button>
                         </div>
                     </div>
@@ -181,10 +178,7 @@ const CampaignLocaliserTool: React.FC<ToolProps> = (_props) => {
                         </div>
                         <div className="cl-quick-row">
                             <button disabled={busy} onClick={() => run("MC It!", () => evalTS("mcIt"))}>
-                                <Replace size={14} /> MC It!
-                            </button>
-                            <button disabled={busy} onClick={() => run("JPEG Loc", () => evalTS("jpegLoc"))}>
-                                <ImageIcon size={14} /> JPEG Loc
+                                <ImageIcon size={14} /> MC It!
                             </button>
                         </div>
                     </div>

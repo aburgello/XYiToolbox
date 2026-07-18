@@ -49,6 +49,7 @@ import {
     ListVideo,
     Scissors,
     LayoutList,
+    Sparkles,
 } from "lucide-react";
 
 // --- Lazy tool imports --------------------------------------------------
@@ -87,6 +88,7 @@ const CompInspectorTool     = React.lazy(() => import("./tools/CompInspector"));
 const RenderQueueManagerTool = React.lazy(() => import("./tools/RenderQueueManager"));
 const MaskSeparatorTool      = React.lazy(() => import("./tools/MaskSeparator"));
 const ReplicatorTool         = React.lazy(() => import("./tools/Replicator"));
+const QuickFXTool            = React.lazy(() => import("./tools/QuickFX"));
 // WrikeTasksTool intentionally NOT imported here -- see the "Wrike Tasks
 // (unhooked)" note near the end of CLAUDE.md before re-adding it.
 
@@ -130,6 +132,7 @@ const PREFETCH_MAP: Record<string, () => Promise<any>> = {
     "render-queue-manager": () => import("./tools/RenderQueueManager"),
     "mask-separator":       () => import("./tools/MaskSeparator"),
     "replicator":           () => import("./tools/Replicator"),
+    "quick-fx":             () => import("./tools/QuickFX"),
 };
 
 export const prefetchTool = (toolId: string) => {
@@ -495,6 +498,21 @@ export const TOOLS: ToolEntry[] = [
         Component: ReplicatorTool,
         actions: ["Copy"],
         description: "Recursively copies a source folder's contents into a destination folder, skipping files that already exist there.",
+    },
+    {
+        id: "quick-fx",
+        label: "Effects",
+        categories: ["tools"],
+        icon: Sparkles,
+        Component: QuickFXTool,
+        actions: [
+            "Fast Box Blur", "Gaussian Blur", "Directional Blur", "Sharpen",
+            "Linear Wipe", "Gradient Wipe", "Radial Wipe", "Venetian Blinds", "Block Dissolve",
+            "Lumetri Color", "Curves", "Hue/Saturation", "Levels", "Tint", "Brightness & Contrast", "Exposure", "Vibrance",
+            "Glow", "Drop Shadow",
+            "Turbulent Displace",
+        ],
+        description: "One-click apply for a curated list of AE effects to the selected layer(s) -- a faster alternative to AE's own Effects & Presets search.",
     },
     // wrike-tasks entry intentionally removed -- unhooked, not deleted, see
     // CLAUDE.md's "Wrike Tasks (unhooked)" note.

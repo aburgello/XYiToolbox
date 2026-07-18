@@ -1,0 +1,283 @@
+// =============================================================================
+// src/js/main/tools/QuickFX.scss
+// -----------------------------------------------------------------------------
+// Search box + colour-grouped pill sections. Pills mirror Toolset.tsx's own
+// .action-grid button geometry (18px radius, content-sized flex-wrap) for
+// visual consistency with the rest of the app -- written fresh here rather
+// than importing Toolset.scss, since that file is scoped under
+// .toolset-grid and isn't meant to be reused outside it.
+// =============================================================================
+.qfx-tool {
+    gap: 4px;
+}
+
+.qfx-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #1e1e1e;
+    border: 1px solid #3a3a3a;
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-bottom: 14px;
+    color: #888;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+
+    &:focus-within {
+        border-color: var(--cat-border, #4a9eff);
+        box-shadow: 0 0 0 2px var(--cat-glow, rgba(74, 158, 255, 0.25));
+    }
+
+    svg { flex-shrink: 0; }
+
+    input {
+        flex: 1;
+        background: none;
+        border: none;
+        outline: none;
+        color: #eee;
+        font-size: 12px;
+
+        &::placeholder { color: #666; }
+    }
+}
+
+.qfx-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.qfx-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+// Coloured dot before the section label -- same "find the group by colour"
+// cue as Toolset.tsx's .action-group-label, reading --qfx-accent (set
+// inline per-section in QuickFX.tsx) instead of --btn-border.
+.qfx-section-label {
+    display: flex;
+    align-items: center;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #888;
+
+    &::before {
+        content: "";
+        display: inline-block;
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--qfx-accent, #666);
+        margin-right: 6px;
+    }
+}
+
+.qfx-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+// Scoped as `.qfx-tool .qfx-pill` (not a bare `.qfx-pill` class selector) so
+// it outranks formTool.scss's `.form-tool button` rule (class+element beats
+// a lone class) -- QuickFX.tsx's root div carries both "form-tool" and
+// "qfx-tool", so that generic button rule (5px radius, #262626 bg) would
+// otherwise silently win over everything below it.
+.qfx-tool .qfx-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    color: #ddd;
+    border-radius: 18px;
+    padding: 7px 13px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+
+    &:hover:not(:disabled) {
+        background: rgba(255, 255, 255, 0.03);
+        border-color: var(--qfx-accent, #666);
+        box-shadow: 0 3px 10px var(--qfx-glow, rgba(0, 0, 0, 0.3));
+        color: #fff;
+
+        .qfx-pill-icon { color: var(--qfx-accent, #999); }
+    }
+
+    &:disabled {
+        opacity: 0.5;
+        cursor: default;
+    }
+
+    .qfx-pill-icon {
+        color: #777;
+        flex-shrink: 0;
+        transition: color 0.15s ease;
+    }
+}
+
+// --- My Combos --------------------------------------------------------
+.qfx-combos {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid #2c2c2c;
+}
+
+.qfx-combos-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+// Fixed amber accent (not --qfx-accent, which is per-CURATED-category) --
+// combos are the user's own personal section, not one of the 5 curated
+// groups below, so it deliberately doesn't cycle with CATEGORY_PALETTE.
+.qfx-section-label--combos::before {
+    background: #facc15;
+}
+
+.qfx-tool .qfx-record-btn {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: none;
+    border: 1px dashed #555;
+    color: #aaa;
+    border-radius: 14px;
+    padding: 5px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease;
+
+    &:hover:not(:disabled) {
+        border-color: #facc15;
+        color: #facc15;
+    }
+
+    &:disabled {
+        opacity: 0.5;
+        cursor: default;
+    }
+}
+
+.qfx-combo-save-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: #1e1e1e;
+    border: 1px solid #3a3a3a;
+    border-radius: 8px;
+    padding: 6px 8px;
+
+    input {
+        flex: 1;
+        min-width: 0;
+        background: none;
+        border: none;
+        outline: none;
+        color: #eee;
+        font-size: 12px;
+
+        &::placeholder { color: #666; }
+    }
+}
+
+.qfx-combo-save-hint {
+    flex-shrink: 0;
+    font-size: 10px;
+    color: #888;
+    white-space: nowrap;
+}
+
+.qfx-combo-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.qfx-combo-pill {
+    display: flex;
+    align-items: stretch;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 18px;
+    overflow: hidden;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+
+    &:hover {
+        border-color: #facc15;
+        box-shadow: 0 3px 10px rgba(250, 204, 21, 0.2);
+    }
+}
+
+.qfx-tool .qfx-combo-pill-main {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    color: #ddd;
+    padding: 7px 4px 7px 13px;
+    cursor: pointer;
+    font-size: 12px;
+
+    &:hover:not(:disabled) { color: #fff; }
+    &:disabled { opacity: 0.5; cursor: default; }
+
+    svg { flex-shrink: 0; color: #facc15; }
+}
+
+.qfx-combo-count {
+    background: rgba(255, 255, 255, 0.08);
+    color: #999;
+    border-radius: 8px;
+    padding: 1px 6px;
+    font-size: 10px;
+}
+
+.qfx-tool .qfx-combo-icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: #777;
+    padding: 0 8px;
+    cursor: pointer;
+    transition: color 0.15s ease, background 0.15s ease;
+
+    &:hover {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.06);
+    }
+}
+
+.qfx-combo-rename-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: #1e1e1e;
+    border: 1px solid #facc15;
+    border-radius: 18px;
+    padding: 4px 4px 4px 10px;
+
+    input {
+        flex: 1;
+        min-width: 90px;
+        background: none;
+        border: none;
+        outline: none;
+        color: #eee;
+        font-size: 12px;
+    }
+}
