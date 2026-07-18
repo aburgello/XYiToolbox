@@ -14,6 +14,12 @@ import { applyTheme, DEFAULT_THEME_ID } from "../themes";
 
 export function useTheme() {
     const [themeId, setThemeIdState] = useState(DEFAULT_THEME_ID);
+    // Which theme ids have their background decoration (see themes.ts's
+    // per-theme motif / ThemeDecoration.tsx) switched on -- toggled by
+    // double-clicking a theme's name in ThemePicker.tsx. Persisted as a
+    // tab-separated list (shell.ts's saveThemeDecorations), independent of
+    // which theme is actually active right now.
+    const [decoratedThemes, setDecoratedThemes] = useState<Set<string>>(new Set());
 
     useEffect(() => {
         (async () => {
@@ -26,6 +32,14 @@ export function useTheme() {
             } catch {
                 // No bridge (preview) or never saved -- default theme is a fine default.
             }
+            try {
+                const decoResult = await evalTS("loadThemeDecorations");
+                if (decoResult && decoResult.success && decoResult.message) {
+                    setDecoratedThemes(new Set(decoResult.message.split("\t").filter(Boolean)));
+                }
+            } catch {
+                // No bridge (preview) or never saved -- no decorations is a fine default.
+            }
         })();
     }, []);
 
@@ -37,5 +51,20 @@ export function useTheme() {
         });
     }, []);
 
-    return { themeId, setTheme };
+    const toggleThemeDecoration = useCallback((id: string) => {
+        setDecoratedThemes((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) {
+                next.delete(id);
+            } else {
+                next.add(id);
+            }
+            evalTS("saveThemeDecorations", Array.from(next).join("\t")).catch(() => {
+                // Failed save only means the toggle won't survive a restart.
+            });
+            return next;
+        });
+    }, []);
+
+    return { themeId, setTheme, decoratedThemes, toggleThemeDecoration };
 }

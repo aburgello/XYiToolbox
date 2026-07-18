@@ -23,7 +23,9 @@ import { iconWiggle, cardLift, categoryLift } from "../animations";
 import { useFavorites, favoriteKey } from "../hooks/useFavorites";
 import { useCustomTools } from "../hooks/useCustomTools";
 import { useTheme } from "../hooks/useTheme";
+import { THEMES } from "../themes";
 import ThemePicker from "../ThemePicker";
+import ThemeDecoration from "../ThemeDecoration";
 import ToolsetTool from "../tools/Toolset";
 import XYToolsDroplet from "../XYToolsDroplet";
 import Tooltip from "../Tooltip";
@@ -131,8 +133,11 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
     // tool-name/action search below. Exact match, not a substring match,
     // so it can't accidentally trigger while typing toward some real tool
     // name and won't collide with anything actually searchable.
-    const { themeId, setTheme } = useTheme();
+    const { themeId, setTheme, decoratedThemes, toggleThemeDecoration } = useTheme();
     const isThemeEasterEgg = search.trim().toLowerCase() === "jacqui";
+    const activeThemeDecoration = decoratedThemes.has(themeId)
+        ? THEMES.find((t) => t.id === themeId)
+        : undefined;
 
     // Search: matches tool names AND individual action labels.
     const { customTools } = useCustomTools();
@@ -228,6 +233,9 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
                         animate={{ opacity: [0, 1, 0.4], scale: 1, x: 0, y: 0 }}
                         transition={{ x: { type: "spring", stiffness: 45, damping: 12, mass: 1, delay: 0.36 }, y: { type: "spring", stiffness: 45, damping: 12, mass: 1, delay: 0.36 }, scale: { type: "spring", stiffness: 45, damping: 12, mass: 1, delay: 0.36 }, opacity: { duration: 1.8, times: [0, 0.4, 1], ease: "easeInOut", delay: 0.36 } }}
                     />
+                    {activeThemeDecoration && (
+                        <ThemeDecoration motif={activeThemeDecoration.motif} accent={activeThemeDecoration.accent} />
+                    )}
                 </div>
 
                 <div className="home-content">
@@ -401,7 +409,12 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
                                     transition={{ duration: 0.15 }}
                                 >
                                     {isThemeEasterEgg ? (
-                                        <ThemePicker themeId={themeId} onPick={setTheme} />
+                                        <ThemePicker
+                        themeId={themeId}
+                        onPick={setTheme}
+                        decoratedThemes={decoratedThemes}
+                        onToggleDecoration={toggleThemeDecoration}
+                    />
                                     ) : searchHits.length === 0 ? (
                                         <p className="hint">No tools match "{search}".</p>
                                     ) : (

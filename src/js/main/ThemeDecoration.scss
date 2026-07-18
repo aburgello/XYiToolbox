@@ -1,0 +1,64 @@
+// =============================================================================
+// src/js/main/ThemeDecoration.scss
+// -----------------------------------------------------------------------------
+// Standalone class names (mounted inside HomeScreen's `.home-ambient-bg`,
+// which already establishes position/overflow/pointer-events for this whole
+// layer) -- same top-level-rule convention as main.scss's own ambient blobs.
+// No modern CSS here (no color-mix()/@container/:has()) per this project's
+// chrome74 build target.
+//
+// One single, very slow wander animation for every particle -- it eases
+// through three randomized drift waypoints (--decor-x1/y1 .. x3/y3) and back
+// to origin at 0%/100%, so it genuinely relocates over the cycle yet the loop
+// is seamless (no reset jump). Opacity/scale pulse gently along the way. Kept
+// deliberately faint (peak opacity ~0.34) so it never competes with real
+// content during daily work. See ThemeDecoration.tsx's header for the "why so
+// calm" rationale.
+// =============================================================================
+.theme-decor {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+}
+
+.theme-decor-particle {
+    position: absolute;
+    display: block;
+    line-height: 0;
+    opacity: 0;
+    will-change: transform, opacity;
+    animation-name: theme-decor-shimmer;
+    animation-iteration-count: infinite;
+    animation-timing-function: ease-in-out;
+}
+
+@keyframes theme-decor-shimmer {
+    0% {
+        opacity: 0.06;
+        transform: translate(0, 0) scale(0.82);
+    }
+    25% {
+        opacity: 0.3;
+        transform: translate(var(--decor-x1, 0px), var(--decor-y1, 0px)) scale(1.02);
+    }
+    50% {
+        opacity: 0.34;
+        transform: translate(var(--decor-x2, 0px), var(--decor-y2, 0px)) scale(1.06);
+    }
+    75% {
+        opacity: 0.3;
+        transform: translate(var(--decor-x3, 0px), var(--decor-y3, 0px)) scale(1.02);
+    }
+    100% {
+        opacity: 0.06;
+        transform: translate(0, 0) scale(0.82);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .theme-decor-particle {
+        animation: none !important;
+        opacity: 0.28 !important;
+        transform: none !important;
+    }
+}

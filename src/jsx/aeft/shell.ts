@@ -389,6 +389,32 @@ export const saveTheme = (themeId: string): Result => {
   }
 };
 
+// Which themes have their background decoration (stars/bubbles/etc, see
+// themes.ts's per-theme motif) switched on -- toggled by double-clicking a
+// theme's name in ThemePicker.tsx. Tab-separated list of theme ids, same
+// convention as every other multi-value app.settings key in this file.
+const THEME_DECORATIONS_KEY = "OVThemeDecorations";
+
+export const loadThemeDecorations = (): Result => {
+  try {
+    const raw = app.settings.haveSetting(TOOLSET_SETTINGS_SECTION, THEME_DECORATIONS_KEY)
+      ? app.settings.getSetting(TOOLSET_SETTINGS_SECTION, THEME_DECORATIONS_KEY)
+      : "";
+    return { success: true, message: raw };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+};
+
+export const saveThemeDecorations = (themeIds: string): Result => {
+  try {
+    app.settings.saveSetting(TOOLSET_SETTINGS_SECTION, THEME_DECORATIONS_KEY, themeIds);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+};
+
 // =============================================================================
 // UI sound effects (sfx.ts) -- persisted on/off toggle, same section as
 // every other app-shell preference. Defaults to OFF (loadSfxEnabled returns

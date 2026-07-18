@@ -71,3 +71,11 @@
 .theme-swatch-check {
     color: var(--swatch-accent, #4a9eff);
 }
+
+// Shown when double-clicking this swatch's name has enabled its background
+// decoration (ThemeDecoration.tsx) -- a small wand icon, distinct from the
+// "currently selected" check mark so both can show at once.
+.theme-swatch-decorated {
+    color: var(--swatch-accent, #4a9eff);
+    opacity: 0.85;
+}
