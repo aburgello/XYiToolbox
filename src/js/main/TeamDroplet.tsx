@@ -123,12 +123,18 @@ const TeamDroplet: React.FC = () => {
                 // toggle + no-guest-session + NAS mounted, and never errors) --
                 // deliberately silent on success, it's background housekeeping.
                 const synced = (await evalTS("teamAutoSyncProfile")) as { success?: boolean; message?: string } | undefined;
-                // Auto-sync can CREATE the owner's profile.json (first run on a
-                // tagged station), which the initial refresh() above -- fired
-                // before this block -- wouldn't have seen. Re-list so the row's
-                // "NO SETUP YET" clears the same session, not only next open.
-                // (message is only set when it actually saved, not on a skip.)
-                if (synced && synced.success && synced.message) refresh();
+                // Always re-list after the startup housekeeping, not only when
+                // auto-sync reported a save. TWO real races this catches, both
+                // seen on the office NAS install: (1) the initial refresh()
+                // above can fire before the network share finishes mounting
+                // right after AE launches (the folder reads as empty for a
+                // beat, so every member shows "NO SETUP YET"); (2) auto-sync
+                // may have just created the owner's profile.json. By this point
+                // the version/sync/auto-sync round-trips have completed, so the
+                // share is definitely reachable -- a second listing now shows
+                // the real state without the user reopening the panel.
+                void synced;
+                refresh();
             } catch (e) {
                 // no bridge / NAS unreachable -- quiet, same as every background load
             }
@@ -279,7 +285,7 @@ const TeamDroplet: React.FC = () => {
     return (
         <Droplet
             panelClassName="team-droplet-panel"
-            trigger={({ toggle }) => (
+            trigger={({ open, toggle }) => (
                 <Tooltip
                     text={
                         guestActive
@@ -289,7 +295,12 @@ const TeamDroplet: React.FC = () => {
                               : "Team"
                     }
                 >
-                    <button className="favorites-toggle team-trigger" onClick={toggle}>
+                    {/* Re-list on OPEN (open is the state BEFORE toggle, so
+                        !open means we're about to show it) -- guarantees the
+                        member rows reflect the live folder every time the menu
+                        is viewed, independent of the mount-time fetch that can
+                        race the NAS mount. */}
+                    <button className="favorites-toggle team-trigger" onClick={() => { if (!open) refresh(); toggle(); }}>
                         <Users size={14} />
                         {guestActive ? <span className="team-guest-dot" /> : updateAvailable && <span className="team-update-dot" />}
                     </button>
