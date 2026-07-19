@@ -35,6 +35,7 @@ import { ToolScreen } from "./screens/ToolScreen";
 import CommandPalette from "./CommandPalette";
 import { GsapScreenTransition } from "./gsap/components/GsapScreenTransition";
 import { useTheme } from "./hooks/useTheme";
+import { registerSoftReload } from "./softReload";
 // ---------------------------------------------------------------------------
 // Screen type -- exported so screen components can reference it without a
 // circular import (they import Screen, Main imports them).
@@ -152,4 +153,19 @@ const Main = () => {
     );
 };
 
-export default Main;
+// Root wrapper owning the soft-reload remount key (see softReload.ts).
+// Bumping it remounts <Main/> and everything beneath, so every hook's
+// mount-time app.settings read runs again -- exactly what applying a team
+// profile needs, and what a hard window.location.reload() was previously
+// (unsafely) used for. Kept as a separate component from Main so useTheme()
+// and the screen state inside Main are themselves re-run by the remount.
+const AppRoot: React.FC = () => {
+    const [remountKey, setRemountKey] = useState(0);
+    useEffect(() => {
+        registerSoftReload(() => setRemountKey((k) => k + 1));
+        return () => registerSoftReload(null);
+    }, []);
+    return <Main key={remountKey} />;
+};
+
+export default AppRoot;

@@ -4025,3 +4025,48 @@ Two follow-ups after real-AE testing of the profiles roster:
 `tsc` (both configs) + `yarn build` clean. Data-dependent (needs the NAS +
 bridge), so the fix itself needs a real-AE pass: confirm a saved member's
 row now clears "NO SETUP YET" and lights up in their colour.
+
+### ROOT CAUSE: File.exists lies on the network-mounted team folder
+
+The "NO SETUP YET" saga (multiple rounds of fixing *detection* that never
+worked) had a single cause, and it was NOT in the detection logic:
+
+`readTextFile()` opened with `if (!file.exists) return null;`. On the
+studio's network-mounted team folder **File.exists returns FALSE for files
+that plainly exist** (confirmed: `Antonio/profile.json` visible in Finder,
+`.exists` false). EVERY read in team.ts funnels through `readTextFile`, so
+that one stat silently broke the whole feature at once:
+- profile detection -> `hasProfile` false -> every row "NO SETUP YET"
+- `teamApplyProfile` -> null content -> "hasn't saved a setup yet", i.e.
+  **importing a colleague's setup was impossible** (the user's actual
+  blocker, and the tell that detection wasn't the real problem)
+- `teamCheckVersion` / `teamSyncShared` -> quietly no-op'd
+
+Every earlier attempt rewrote how we *detect* the file (mask `getFiles`,
+no-mask `getFiles` + name match, reconstructed-path stat). None could work,
+because detection and consumption both sat behind the same broken gate.
+
+Fixes:
+- `readTextFile` no longer stats. It just attempts `file.open("r")` --
+  the authoritative test (opens = readable; fails = unusable regardless of
+  what `.exists` claims). `open()` on a genuinely missing file returns
+  false, so the "not there" case still yields null; the stat bought nothing.
+- `memberProfileContent(folder)` -- detection now proves a profile is
+  usable by ACTUALLY READING IT, the same mechanism `teamApplyProfile`
+  uses. Detection and consumption can no longer disagree: if a row shows
+  as ready, applying it will work.
+- `teamApplyProfile` reads via `memberProfileContent` and drops the
+  `legacy.exists` gate on its fallback.
+- `teamDeleteProfile` no longer gates removal on `.exists` (which made
+  Delete a silent no-op on the same mount); it attempts the remove on both
+  the listed file and the constructed path.
+
+RULE FOR THIS FILE: never gate a team-folder operation on `File.exists` /
+`Folder.exists` for FILES. Attempt the real operation (open/read/remove)
+and treat its failure as the answer. `.exists` is only safe-ish for the
+root folder mount check (`teamFolder()`), which is a directory and has
+behaved.
+
+`tsc -p tsconfig-build.json` + `yarn build` clean. A `debugTrace` field
+(per-member `read=OK/LEGACY/none`) is still returned by `teamListProfiles`
+for one more real-AE confirmation pass; remove it once verified.

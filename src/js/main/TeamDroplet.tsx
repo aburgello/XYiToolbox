@@ -27,6 +27,7 @@ import Tooltip from "./Tooltip";
 import CheckboxToggle from "./CheckboxToggle";
 import { confirmDialog } from "./Dialog";
 import { evalTS } from "../lib/utils/bolt";
+import { requestSoftReload } from "./softReload";
 import "./TeamDroplet.scss";
 
 // Keep in step with HomeScreen.tsx's "Toolbox {version}" hover text -- this
@@ -238,9 +239,11 @@ const TeamDroplet: React.FC = () => {
                 showNote(result.error || "Something went wrong.", true);
                 return;
             }
-            // Same full-reload convention as applying a profile -- every
-            // screen re-reads its settings fresh.
-            window.location.reload();
+            // Soft remount, NOT window.location.reload() -- see softReload.ts.
+            // A hard reload in a CEP panel can come back with a broken base
+            // URL (unstyled white page); remounting re-runs every hook's
+            // settings read with none of that risk.
+            requestSoftReload();
         } catch (e) {
             showNote("No CEP bridge detected — open this panel inside After Effects.", true);
         } finally {
@@ -268,10 +271,11 @@ const TeamDroplet: React.FC = () => {
                 showNote(result.error || "Something went wrong.", true);
                 return;
             }
-            // Full reload -- every screen/hook re-reads its settings fresh, the
-            // same way a panel reopen would. GsapScreenTransition's sessionStorage
-            // dedupe keeps the reload from replaying the entrance cascade.
-            window.location.reload();
+            // Soft remount, NOT window.location.reload() -- see softReload.ts.
+            // Every screen/hook re-reads its settings fresh on the remount,
+            // the same outcome a panel reopen gives, without the CEP hard-
+            // reload hazard that returned an unstyled white panel.
+            requestSoftReload();
         } catch (e) {
             showNote("No CEP bridge detected — open this panel inside After Effects.", true);
         } finally {

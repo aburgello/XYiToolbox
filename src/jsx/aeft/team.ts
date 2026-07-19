@@ -78,9 +78,27 @@ export const teamSelectFolder = (): TeamFolderResult => {
 
 // --- Small file helpers ----------------------------------------------------
 
+// Reads a text file WITHOUT gating on File.exists.
+//
+// THIS WAS THE ROOT CAUSE of the long-running "NO SETUP YET" bug. On the
+// studio's network-mounted team folder, File.exists returns FALSE for files
+// that plainly exist (confirmed: Antonio/profile.json visible in Finder,
+// .exists false). Because every read in this file funnels through here, that
+// one stat silently broke the whole feature at once:
+//   - profile detection -> hasProfile false -> every row "NO SETUP YET"
+//   - teamApplyProfile  -> null content -> "hasn't saved a setup yet",
+//     i.e. importing a colleague's setup was impossible
+//   - version check / shared-library sync -> quietly no-op'd
+// Fixing detection alone never worked because detection AND consumption both
+// sat behind this same gate.
+//
+// file.open("r") is the authoritative test: if it opens, the file is there
+// and readable; if it doesn't, it's unusable no matter what .exists claims.
+// So just attempt the open and let that be the answer. (open() on a missing
+// file returns false, so the "not there" case still returns null -- we lose
+// nothing by dropping the stat.)
 function readTextFile(file: File): string | null {
   try {
-    if (!file.exists) return null;
     file.encoding = "UTF-8";
     if (!file.open("r")) return null;
     const content = file.read();
@@ -167,6 +185,7 @@ interface ProfileListResult extends Result {
   profiles?: TeamProfileInfo[];
   folderSet?: boolean;
   mounted?: boolean;
+  debugTrace?: string; // TEMP: per-member getFiles trace, surfaced in the panel
 }
 
 // Finds the profile.json inside a member folder by LISTING the folder
@@ -212,6 +231,24 @@ function folderProfileFile(folder: Folder): File | null {
 // (case-/sanitisation-insensitive), so apply/delete land on the same folder
 // the list showed even if the on-disk name differs slightly from the
 // sanitised reconstruction. Falls back to the constructed path.
+// Returns a member's profile.json CONTENT, or null if there isn't a usable
+// one. Detection deliberately uses the exact same mechanism as consumption
+// (an actual read) rather than a separate existence probe -- that mismatch is
+// what let the list say "NO SETUP YET" while a perfectly good profile sat
+// there, and conversely would have let a row look ready when applying it
+// couldn't actually load it. If this returns a string, teamApplyProfile can
+// definitely read it too.
+function memberProfileContent(folder: Folder): string | null {
+  const viaListing = folderProfileFile(folder);
+  if (viaListing) {
+    const c = readTextFile(viaListing);
+    if (c && c.length > 0) return c;
+  }
+  // Fall back to the constructed path -- no stat, just try to open it.
+  const c2 = readTextFile(new File(folder.fsName + "/" + PROFILE_FILE_NAME));
+  return c2 && c2.length > 0 ? c2 : null;
+}
+
 function memberFolderByName(name: string): Folder | null {
   const root = teamFolder();
   if (!root) return null;
@@ -245,14 +282,20 @@ export const teamListProfiles = (): ProfileListResult => {
     const seen: { [lower: string]: boolean } = {};
 
     const items = root.getFiles();
+    let debugTrace = "root=" + root.fsName + " rootN=" + items.length + " | ";
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       if (!(item instanceof Folder)) continue;
       const name = item.name;
       if (!name || name.charAt(0) === "_") continue;
       if (name.toLowerCase() === "profiles") continue; // legacy layout, handled below
+      // hasProfile == "a profile is genuinely readable here", proven by
+      // actually reading it (see memberProfileContent) -- never a stat.
       const legacy = legacyProfileFile(name);
-      profiles.push({ name: name, hasProfile: folderProfileFile(item as Folder) !== null || (legacy !== null && legacy.exists) });
+      const memberContent = memberProfileContent(item as Folder);
+      const legacyContent = memberContent === null && legacy !== null ? readTextFile(legacy) : null;
+      debugTrace += name + "{read=" + (memberContent !== null ? "OK" : legacyContent !== null ? "LEGACY" : "none") + "} ";
+      profiles.push({ name: name, hasProfile: memberContent !== null || legacyContent !== null });
       seen[name.toLowerCase()] = true;
     }
 
@@ -279,7 +322,7 @@ export const teamListProfiles = (): ProfileListResult => {
       }
     }
 
-    return { success: true, profiles: profiles, folderSet: true, mounted: true };
+    return { success: true, profiles: profiles, folderSet: true, mounted: true, debugTrace: debugTrace };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -477,13 +520,17 @@ export const teamAutoSyncProfile = (): Result => {
 export const teamApplyProfile = (memberName: string): Result => {
   try {
     if (!teamFolder()) return { success: false, error: "Team folder not set or not reachable (is the NAS mounted?)." };
+    // Read the SAME way teamListProfiles decides hasProfile (memberProfileContent
+    // -> readTextFile, never a stat), so a row that shows as ready always
+    // applies. The old version gated the legacy fallback on legacy.exists,
+    // which -- like readTextFile's removed .exists gate -- returns false on the
+    // studio's network mount and made importing a colleague's setup impossible.
     const memberFolder = memberFolderByName(memberName);
-    let file: File | null = memberFolder ? folderProfileFile(memberFolder) : null;
-    if (!file) {
+    let content: string | null = memberFolder ? memberProfileContent(memberFolder) : null;
+    if (content === null) {
       const legacy = legacyProfileFile(memberName);
-      if (legacy && legacy.exists) file = legacy;
+      if (legacy) content = readTextFile(legacy);
     }
-    const content = file ? readTextFile(file) : null;
     if (!content) return { success: false, error: '"' + memberName + '" hasn\'t saved a setup yet -- they need to hit "Save current setup as" on their machine first.' };
     const parsed = JSON.parse(content);
     if (!parsed || parsed.type !== PROFILE_FILE_TYPE || !parsed.settings) {
@@ -534,11 +581,19 @@ export const teamApplyProfile = (memberName: string): Result => {
 export const teamDeleteProfile = (memberName: string): ProfileListResult => {
   try {
     if (!teamFolder()) return { success: false, error: "Team folder not reachable." };
+    // Just attempt the remove -- never gate on .exists (it lies on the studio's
+    // network mount, which would silently make Delete a no-op). remove()
+    // returning false for an absent file is the harmless case.
     const memberFolder = memberFolderByName(memberName);
     const file = memberFolder ? folderProfileFile(memberFolder) : null;
-    if (file && file.exists) file.remove();
+    if (file) { try { file.remove(); } catch (e2) { /* absent or locked */ } }
+    // Also try the constructed path: folderProfileFile can come back null when
+    // the listing misses it, and we still want Delete to land.
+    if (memberFolder) {
+      try { new File(memberFolder.fsName + "/" + PROFILE_FILE_NAME).remove(); } catch (e4) { /* already gone */ }
+    }
     const legacy = legacyProfileFile(memberName);
-    if (legacy && legacy.exists) legacy.remove();
+    if (legacy) { try { legacy.remove(); } catch (e3) { /* absent */ } }
     return teamListProfiles();
   } catch (e) {
     return { success: false, error: e.toString() };
