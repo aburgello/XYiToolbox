@@ -4067,6 +4067,8 @@ and treat its failure as the answer. `.exists` is only safe-ish for the
 root folder mount check (`teamFolder()`), which is a directory and has
 behaved.
 
-`tsc -p tsconfig-build.json` + `yarn build` clean. A `debugTrace` field
-(per-member `read=OK/LEGACY/none`) is still returned by `teamListProfiles`
-for one more real-AE confirmation pass; remove it once verified.
+`tsc -p tsconfig-build.json` + `yarn build` clean. Real-AE confirmed: a
+saved profile now clears "NO SETUP YET" and applying a colleague's setup
+works. The temporary `debugTrace` field on `teamListProfiles` and the
+in-panel yellow debug readout (`TeamDroplet.tsx`) have both been removed
+now that the fix is verified.

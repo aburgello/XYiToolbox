@@ -185,7 +185,6 @@ interface ProfileListResult extends Result {
   profiles?: TeamProfileInfo[];
   folderSet?: boolean;
   mounted?: boolean;
-  debugTrace?: string; // TEMP: per-member getFiles trace, surfaced in the panel
 }
 
 // Finds the profile.json inside a member folder by LISTING the folder
@@ -282,7 +281,6 @@ export const teamListProfiles = (): ProfileListResult => {
     const seen: { [lower: string]: boolean } = {};
 
     const items = root.getFiles();
-    let debugTrace = "root=" + root.fsName + " rootN=" + items.length + " | ";
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       if (!(item instanceof Folder)) continue;
@@ -294,7 +292,6 @@ export const teamListProfiles = (): ProfileListResult => {
       const legacy = legacyProfileFile(name);
       const memberContent = memberProfileContent(item as Folder);
       const legacyContent = memberContent === null && legacy !== null ? readTextFile(legacy) : null;
-      debugTrace += name + "{read=" + (memberContent !== null ? "OK" : legacyContent !== null ? "LEGACY" : "none") + "} ";
       profiles.push({ name: name, hasProfile: memberContent !== null || legacyContent !== null });
       seen[name.toLowerCase()] = true;
     }
@@ -322,7 +319,7 @@ export const teamListProfiles = (): ProfileListResult => {
       }
     }
 
-    return { success: true, profiles: profiles, folderSet: true, mounted: true, debugTrace: debugTrace };
+    return { success: true, profiles: profiles, folderSet: true, mounted: true };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
