@@ -78,6 +78,7 @@ const TeamDroplet: React.FC = () => {
     const [machineOwner, setMachineOwner] = useState("");
     const [liveSync, setLiveSync] = useState(false);
     const [guestProfile, setGuestProfile] = useState("");
+    const [debugInfo, setDebugInfo] = useState(""); // TEMP: raw fetch readout shown in-panel
 
     const refresh = async () => {
         try {
@@ -87,7 +88,19 @@ const TeamDroplet: React.FC = () => {
                 setMounted(!!folder.mounted);
             }
             const list = await evalTS("teamListProfiles");
-            if (list && list.success) setProfiles(list.profiles || []);
+            // TEMP DEBUG: surface exactly what the frontend receives + when,
+            // so we can see (in the panel itself, no Script Playground) whether
+            // this fetch runs on open and what hasProfile each member gets.
+            const stamp = new Date().toLocaleTimeString();
+            if (list && list.success) {
+                setProfiles(list.profiles || []);
+                setDebugInfo(
+                    stamp + " mounted=" + (list as { mounted?: boolean }).mounted + " | " +
+                    ((list.profiles as ProfileInfo[] | undefined) || []).map((p) => p.name + ":" + (p.hasProfile ? "Y" : "n")).join(" ")
+                );
+            } else {
+                setDebugInfo(stamp + " FETCH FAILED: " + JSON.stringify(list));
+            }
             const machine = await evalTS("teamGetMachineState");
             if (machine && machine.success) {
                 setMachineOwner(machine.owner || "");
@@ -412,6 +425,11 @@ const TeamDroplet: React.FC = () => {
 
                     {syncNote && <p className="team-sync-note">{syncNote}</p>}
                     {note && <p className={note.isError ? "team-note team-note--error" : "team-note"}>{note.text}</p>}
+                    {debugInfo && (
+                        <p style={{ fontSize: "9px", color: "#f59e0b", wordBreak: "break-all", margin: "4px 0 0", lineHeight: 1.35 }}>
+                            DBG {debugInfo}
+                        </p>
+                    )}
                 </div>
             )}
         </Droplet>
