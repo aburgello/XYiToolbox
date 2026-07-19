@@ -115,6 +115,7 @@
     min-width: 0;
     display: flex;
     align-items: center;
+    gap: 8px;
     background: none;
     border: 1px solid transparent;
     color: #ddd;
@@ -123,13 +124,38 @@
     border-radius: 5px;
     font-size: 11.5px;
     cursor: pointer;
-    transition: background 0.12s ease, border-color 0.12s ease;
+    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 
     &:hover:not(:disabled) {
         background: rgba(255, 255, 255, 0.05);
-        border-color: var(--cat-border, #666);
+        // Hover uses the member's OWN colour for the outline, not the page
+        // accent -- reinforces whose row you're on.
+        border-color: var(--member-color, #666);
     }
-    &:disabled { opacity: 0.5; cursor: default; }
+    &:disabled { cursor: default; }
+
+    // Profile SAVED: wear the person's colour bright.
+    &--set {
+        color: var(--member-color, #ddd);
+        font-weight: 600;
+        .team-profile-dot { background: var(--member-color, #888); box-shadow: 0 0 6px var(--member-color, transparent); }
+    }
+    // NO SETUP YET: muted grey, colour dot dimmed, so empty slots recede.
+    &--empty {
+        color: #6a6a6a;
+        .team-profile-dot { background: #4a4a4a; }
+    }
+}
+
+// Small colour chip before each member name -- the person's colour, dim
+// while empty and lit once their profile exists (the dot's own rules live
+// under the --set / --empty modifiers above).
+.team-profile-dot {
+    flex-shrink: 0;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
 }
 
 .team-profile-del {
@@ -284,8 +310,10 @@
     transition: color 0.12s ease;
 
     &:hover { color: #aaa; }
-    &--owner { color: #2dd4bf; }
-    &--owner:hover { color: #7ce8da; }
+    // Tagged owner: lit in that person's own colour (inherited from the row's
+    // --member-color), so "whose Mac this is" reads at a glance.
+    &--owner { color: var(--member-color, #2dd4bf); }
+    &--owner:hover { filter: brightness(1.25); }
 }
 
 .team-livesync-row {

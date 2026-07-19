@@ -42,6 +42,22 @@ interface ProfileInfo {
     hasProfile: boolean;
 }
 
+// Per-person accent, keyed by lowercased member name (studio roster). A row
+// wears its person's colour BRIGHT once their profile is saved, and stays a
+// muted grey while it's still "NO SETUP YET" -- so a filled-in roster reads
+// as a wall of distinct colours and the empty slots recede. Unknown names
+// (someone added later) fall back to a neutral accent rather than breaking.
+const MEMBER_COLORS: Record<string, string> = {
+    jacqui: "#f472b6",   // pink
+    antonio: "#60a5fa",  // blue
+    turk: "#ef4444",     // red
+    luke: "#fb923c",     // orange
+    maria: "#4ade80",    // green
+    nicholas: "#2dd4bf", // teal
+    aaron: "#a78bfa",    // purple
+};
+const memberColor = (name: string): string => MEMBER_COLORS[name.trim().toLowerCase()] || "#8a8a8a";
+
 // Once-per-session results, surviving home-screen remounts.
 let sessionChecked = false;
 let cachedLatestVersion = "";
@@ -106,7 +122,13 @@ const TeamDroplet: React.FC = () => {
                 // owner's NAS profile (aeft/team.ts gates it on owner + opt-in
                 // toggle + no-guest-session + NAS mounted, and never errors) --
                 // deliberately silent on success, it's background housekeeping.
-                await evalTS("teamAutoSyncProfile");
+                const synced = (await evalTS("teamAutoSyncProfile")) as { success?: boolean; message?: string } | undefined;
+                // Auto-sync can CREATE the owner's profile.json (first run on a
+                // tagged station), which the initial refresh() above -- fired
+                // before this block -- wouldn't have seen. Re-list so the row's
+                // "NO SETUP YET" clears the same session, not only next open.
+                // (message is only set when it actually saved, not on a skip.)
+                if (synced && synced.success && synced.message) refresh();
             } catch (e) {
                 // no bridge / NAS unreachable -- quiet, same as every background load
             }
@@ -315,14 +337,19 @@ const TeamDroplet: React.FC = () => {
                             ) : (
                                 <div className="team-profile-list">
                                     {profiles.map((p) => (
-                                        <div key={p.name} className="team-profile-row">
+                                        <div
+                                            key={p.name}
+                                            className="team-profile-row"
+                                            style={{ "--member-color": memberColor(p.name) } as React.CSSProperties}
+                                        >
                                             <button
                                                 type="button"
-                                                className={p.hasProfile ? "team-profile-apply" : "team-profile-apply team-profile-apply--empty"}
+                                                className={p.hasProfile ? "team-profile-apply team-profile-apply--set" : "team-profile-apply team-profile-apply--empty"}
                                                 disabled={busy || !p.hasProfile}
                                                 title={p.hasProfile ? `Apply ${p.name}'s setup on this machine` : `${p.name} hasn't saved a setup yet`}
                                                 onClick={() => applyProfile(p)}
                                             >
+                                                <span className="team-profile-dot" />
                                                 {p.name}
                                                 {!p.hasProfile && <span className="team-profile-empty-tag">no setup yet</span>}
                                             </button>

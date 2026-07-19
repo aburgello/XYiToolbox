@@ -3963,3 +3963,36 @@ whole flow is app.settings/NAS-side, so the real pass needs AE: tag a
 machine, save/apply a colleague's profile, confirm the banner + restore
 round-trips the original setup, and confirm live sync updates
 `<member>/profile.json`'s savedAt on panel open.
+
+### Fix: "NO SETUP YET" never cleared + per-person member colours
+
+Two follow-ups after real-AE testing of the profiles roster:
+
+- **`hasProfile` false-negative over the NAS.** A member folder plainly
+  containing `profile.json` (confirmed in Finder) still showed "NO SETUP
+  YET" forever. Root cause: `teamListProfiles` decided `hasProfile` via
+  `new File(item.fsName + "/profile.json").exists`, and that reconstructed-
+  path stat proved unreliable on a network-mounted team folder (encoding /
+  separator / NAS-cache quirks -- the same class of ExtendScript-filesystem
+  gotcha this project keeps hitting). Fixed with `memberHasProfile(folder)`:
+  checks `folder.getFiles(PROFILE_FILE_NAME).length > 0` FIRST (reads the
+  OS's own directory listing, reliable over a mount) and keeps the
+  `.exists` path as a fallback OR. Also: `teamAutoSyncProfile` can CREATE
+  the owner's profile.json on first run of a session, after the mount's
+  initial `refresh()` already listed -- so TeamDroplet now re-`refresh()`es
+  when auto-sync reports it actually saved (its `message` is only set on a
+  real save, not a skip), clearing the tag same-session instead of only on
+  next open.
+- **Per-person colours (studio request).** `MEMBER_COLORS` maps each roster
+  name (lowercased) to an accent -- Jacqui pink, Antonio blue, Turk red,
+  Luke orange, Maria green, Nicholas teal, Aaron purple; unknown names fall
+  back to neutral grey. Each row carries its colour as a `--member-color`
+  CSS var. A member wears their colour BRIGHT (name + a leading dot, dot
+  glowing) once their profile exists (`--set`), and stays muted grey while
+  "NO SETUP YET" (`--empty`) so a filled roster reads as a wall of distinct
+  colours and empty slots recede. The row's hover outline and the tagged-
+  owner Home icon also use `--member-color`.
+
+`tsc` (both configs) + `yarn build` clean. Data-dependent (needs the NAS +
+bridge), so the fix itself needs a real-AE pass: confirm a saved member's
+row now clears "NO SETUP YET" and lights up in their colour.

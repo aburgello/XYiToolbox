@@ -169,6 +169,28 @@ interface ProfileListResult extends Result {
   mounted?: boolean;
 }
 
+// Does this member folder contain a profile.json? Checks TWO ways because
+// File(reconstructed-path).exists proved unreliable over a network-mounted
+// team folder (reported: Antonio/profile.json plainly existed in Finder yet
+// hasProfile came back false, so the row stayed "NO SETUP YET" forever). A
+// directory LISTING via getFiles() reads the OS's own listing rather than
+// stat-ing a hand-built path (which can trip on encoding / a trailing-slash
+// double-separator / NAS caching), so it's the reliable signal; the .exists
+// check stays as a belt-and-suspenders OR.
+function memberHasProfile(folder: Folder): boolean {
+  try {
+    const matches = folder.getFiles(PROFILE_FILE_NAME);
+    if (matches && matches.length > 0) return true;
+  } catch (e) {
+    // getFiles can throw on an unreadable folder -- fall through to .exists.
+  }
+  try {
+    return new File(folder.fsName + "/" + PROFILE_FILE_NAME).exists;
+  } catch (e) {
+    return false;
+  }
+}
+
 function memberProfileFile(name: string): File | null {
   const root = teamFolder();
   if (!root) return null;
@@ -197,9 +219,8 @@ export const teamListProfiles = (): ProfileListResult => {
       const name = item.name;
       if (!name || name.charAt(0) === "_") continue;
       if (name.toLowerCase() === "profiles") continue; // legacy layout, handled below
-      const profileFile = new File(item.fsName + "/" + PROFILE_FILE_NAME);
       const legacy = legacyProfileFile(name);
-      profiles.push({ name: name, hasProfile: profileFile.exists || (legacy !== null && legacy.exists) });
+      profiles.push({ name: name, hasProfile: memberHasProfile(item as Folder) || (legacy !== null && legacy.exists) });
       seen[name.toLowerCase()] = true;
     }
 
