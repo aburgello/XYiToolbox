@@ -169,32 +169,56 @@ interface ProfileListResult extends Result {
   mounted?: boolean;
 }
 
-// Does this member folder contain a profile.json? Checks TWO ways because
-// File(reconstructed-path).exists proved unreliable over a network-mounted
-// team folder (reported: Antonio/profile.json plainly existed in Finder yet
-// hasProfile came back false, so the row stayed "NO SETUP YET" forever). A
-// directory LISTING via getFiles() reads the OS's own listing rather than
-// stat-ing a hand-built path (which can trip on encoding / a trailing-slash
-// double-separator / NAS caching), so it's the reliable signal; the .exists
-// check stays as a belt-and-suspenders OR.
-function memberHasProfile(folder: Folder): boolean {
+// Finds the profile.json inside a member folder by LISTING the folder
+// (folder.getFiles() with NO mask) and name-matching, rather than a string
+// mask -- getFiles("profile.json") -- or a stat on a reconstructed path --
+// new File(fsName + "/profile.json").exists. BOTH of those were tried and
+// BOTH failed over the office's network-mounted team folder: Antonio's
+// profile.json plainly existed in Finder yet every row stayed "NO SETUP
+// YET". The no-mask getFiles() is the EXACT same call that reliably
+// enumerates the member folders under the root (see teamListProfiles), so
+// it's the one to trust everywhere -- let the OS hand us the real directory
+// listing and compare names ourselves. Returns the File object straight from
+// that listing (safe to read immediately); the reconstructed-path stat stays
+// only as a last-resort fallback.
+function folderProfileFile(folder: Folder): File | null {
   try {
-    const matches = folder.getFiles(PROFILE_FILE_NAME);
-    if (matches && matches.length > 0) return true;
+    const items = folder.getFiles();
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it instanceof File && String(it.name).toLowerCase() === PROFILE_FILE_NAME) return it as File;
+    }
   } catch (e) {
-    // getFiles can throw on an unreadable folder -- fall through to .exists.
+    // unreadable folder -- fall through to the stat fallback
   }
   try {
-    return new File(folder.fsName + "/" + PROFILE_FILE_NAME).exists;
+    const f = new File(folder.fsName + "/" + PROFILE_FILE_NAME);
+    if (f.exists) return f;
   } catch (e) {
-    return false;
+    // ignore
   }
+  return null;
 }
 
-function memberProfileFile(name: string): File | null {
+// Resolves a member NAME to its folder by matching the root's ACTUAL listing
+// (case-/sanitisation-insensitive), so apply/delete land on the same folder
+// the list showed even if the on-disk name differs slightly from the
+// sanitised reconstruction. Falls back to the constructed path.
+function memberFolderByName(name: string): Folder | null {
   const root = teamFolder();
   if (!root) return null;
-  return new File(root.fsName + "/" + sanitizeFileName(name) + "/" + PROFILE_FILE_NAME);
+  const target = sanitizeFileName(name).toLowerCase();
+  try {
+    const items = root.getFiles();
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it instanceof Folder && sanitizeFileName(it.name).toLowerCase() === target) return it as Folder;
+    }
+  } catch (e) {
+    // fall through to the constructed path
+  }
+  const direct = new Folder(root.fsName + "/" + sanitizeFileName(name));
+  return direct.exists ? direct : null;
 }
 
 function legacyProfileFile(name: string): File | null {
@@ -220,7 +244,7 @@ export const teamListProfiles = (): ProfileListResult => {
       if (!name || name.charAt(0) === "_") continue;
       if (name.toLowerCase() === "profiles") continue; // legacy layout, handled below
       const legacy = legacyProfileFile(name);
-      profiles.push({ name: name, hasProfile: memberHasProfile(item as Folder) || (legacy !== null && legacy.exists) });
+      profiles.push({ name: name, hasProfile: folderProfileFile(item as Folder) !== null || (legacy !== null && legacy.exists) });
       seen[name.toLowerCase()] = true;
     }
 
@@ -260,9 +284,18 @@ export const teamSaveProfile = (name: string): ProfileListResult => {
     const root = teamFolder();
     if (!root) return { success: false, error: "Team folder not set or not reachable -- set it first (is the NAS mounted?)." };
 
-    const memberFolder = new Folder(root.fsName + "/" + sanitizeFileName(trimmed));
-    if (!memberFolder.exists && !memberFolder.create()) {
-      return { success: false, error: "Could not create the member folder on the team share." };
+    // Reuse the member's existing folder when the root listing finds it --
+    // avoids a spurious "could not create" if a network-mount .exists check
+    // is flaky on an already-present folder (same class of NAS quirk the
+    // profile-detection fix above works around). Only construct + create
+    // when the member genuinely has no folder yet.
+    let memberFolder = memberFolderByName(trimmed);
+    if (!memberFolder) {
+      const fresh = new Folder(root.fsName + "/" + sanitizeFileName(trimmed));
+      if (!fresh.create() && !fresh.exists) {
+        return { success: false, error: "Could not create the member folder on the team share." };
+      }
+      memberFolder = fresh;
     }
 
     const settings: { [key: string]: string } = {};
@@ -436,8 +469,12 @@ export const teamAutoSyncProfile = (): Result => {
 export const teamApplyProfile = (memberName: string): Result => {
   try {
     if (!teamFolder()) return { success: false, error: "Team folder not set or not reachable (is the NAS mounted?)." };
-    let file = memberProfileFile(memberName);
-    if (!file || !file.exists) file = legacyProfileFile(memberName);
+    const memberFolder = memberFolderByName(memberName);
+    let file: File | null = memberFolder ? folderProfileFile(memberFolder) : null;
+    if (!file) {
+      const legacy = legacyProfileFile(memberName);
+      if (legacy && legacy.exists) file = legacy;
+    }
     const content = file ? readTextFile(file) : null;
     if (!content) return { success: false, error: '"' + memberName + '" hasn\'t saved a setup yet -- they need to hit "Save current setup as" on their machine first.' };
     const parsed = JSON.parse(content);
@@ -489,7 +526,8 @@ export const teamApplyProfile = (memberName: string): Result => {
 export const teamDeleteProfile = (memberName: string): ProfileListResult => {
   try {
     if (!teamFolder()) return { success: false, error: "Team folder not reachable." };
-    const file = memberProfileFile(memberName);
+    const memberFolder = memberFolderByName(memberName);
+    const file = memberFolder ? folderProfileFile(memberFolder) : null;
     if (file && file.exists) file.remove();
     const legacy = legacyProfileFile(memberName);
     if (legacy && legacy.exists) legacy.remove();

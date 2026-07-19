@@ -3910,6 +3910,35 @@ Four things surfaced installing on the real office Mac; all fixed.
   `OVThemeDecorations` are in `PROFILE_KEYS`, so applying a member's
   profile carries their theme too.
 
+### Real-AE round 2: every member stuck on "NO SETUP YET" (NAS path quirk)
+
+Installed on the office Mac (team folder ON the NAS): every member row
+showed "NO SETUP YET" even though `Antonio/profile.json` plainly existed
+in Finder -- so nobody's setup was ever loadable. Root cause was **how
+`profile.json` was detected, not whether it existed**. Two ExtendScript
+path forms are unreliable over a network-mounted folder and the code used
+BOTH: `folder.getFiles("profile.json")` (a STRING MASK) and
+`new File(folder.fsName + "/profile.json").exists` (a stat on a
+RECONSTRUCTED path). A first fix attempt tried them as an OR and still
+failed -- because both forms are the flaky ones.
+
+**The reliable signal: `folder.getFiles()` with NO mask** -- the exact
+same call that DOES reliably enumerate the member folders under the root.
+Fix (`team.ts`): `folderProfileFile(folder)` lists the folder with no
+mask and name-matches `profile.json` (case-insensitive), returning the
+`File` straight from that listing; `memberFolderByName(name)` resolves a
+member name by matching the root listing (not a reconstructed path). List
+(`teamListProfiles`), apply (`teamApplyProfile`), delete
+(`teamDeleteProfile`), AND save-folder-reuse (`teamSaveProfile`) all now
+go through these. The reconstructed-path stat stays only as a last-resort
+fallback. **Lesson: over a NAS mount, prefer `getFiles()` (no mask) +
+manual name compare over BOTH string-mask `getFiles(mask)` and
+`new File(fsName + "/name").exists` -- both of the latter proved flaky
+here.** ExtendScript-only, so confirmed by build + logic; needs the
+real-NAS Mac to verify. Fast diagnostic if it ever recurs (paste into
+Script Playground): list the team folder root, and for each child folder
+list `getFiles()` -- shows exactly what the scan sees vs what's in Finder.
+
 ## "Workspace follows you": machine ownership, guest sessions, live sync
 
 Follow-up to the Team profiles batch above, picking up a parallel
