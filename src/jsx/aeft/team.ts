@@ -186,7 +186,15 @@ function folderProfileFile(folder: Folder): File | null {
     const items = folder.getFiles();
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
-      if (it instanceof File && String(it.name).toLowerCase() === PROFILE_FILE_NAME) return it as File;
+      // Match by NAME only -- do NOT gate on `it instanceof File`. A profile
+      // is only ever a file, and host-class instanceof isn't fully trustable
+      // in this engine (see CLAUDE.md's motionTools instanceof-AVLayer note);
+      // a folder literally named "profile.json" can't collide in practice.
+      // Hand back a File pointed at the OS-provided fsName (a full, correctly
+      // encoded path -- not the fsName+"/name" reconstruction that was flaky).
+      if (it && String(it.name).toLowerCase() === PROFILE_FILE_NAME) {
+        return new File(it.fsName);
+      }
     }
   } catch (e) {
     // unreadable folder -- fall through to the stat fallback
