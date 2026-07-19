@@ -1,7 +1,7 @@
 // =============================================================================
 // src/js/main/tools/DeliveryHub.tsx
 // =============================================================================
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence, useAnimate, useReducedMotion } from "motion/react";
 import { Truck, ListPlus, Trash2, ChevronsDown, Send, AlertCircle, AlertTriangle, Check, X, Volume2, VolumeX, Folder, RotateCcw } from "lucide-react";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
@@ -320,10 +320,108 @@ const DeliveryHubTool = () => {
 
     const [toasts, setToasts] = useState<Toast[]>([]);
     const toastId = useRef(0);
-    const pushToast = (text: string, type: Toast["type"] = "success") => {
+    const pushToast = (text: string, type: Toast["type"] = "success", durationMs = 3500) => {
         const id = ++toastId.current;
         setToasts((t) => [...t, { id, text, type }]);
-        setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3500);
+        setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), durationMs);
+    };
+
+    // --- Render watch -------------------------------------------------------
+    // After Queue succeeds, poll renderWatchSnapshot (deliver.ts) and toast
+    // each item's real result the moment it finishes: name, destination
+    // folder, fps, total MB on disk, and the EFFECTIVE bitrate (from the
+    // file's actual size/duration -- what the template really produced, not
+    // the requested target). Details:
+    //   - RAW evalTS, deliberately not evalTSSafe: while AE renders, bridge
+    //     calls block until the render releases the engine -- that's one
+    //     slow call, not a failure, and a 15s timeout would misreport every
+    //     long render as "AE busy". The blocked call resolving IS the
+    //     "render finished" signal in practice.
+    //   - Watches only the items that were queued/rendering at Queue time
+    //     (by queue index), so old DONE items from earlier sessions don't
+    //     re-toast.
+    //   - Stops when nothing watched is left pending, on unmount, or after
+    //     a 4h safety cap. Leaving the Deliver page stops the watch (the
+    //     component owns it) -- fine in practice, the queue log + Renders
+    //     folder still tell the story; noted here so it's a known limit,
+    //     not a surprise.
+    const watchPendingRef = useRef<number[]>([]);
+    const watchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const watchDeadlineRef = useRef(0);
+
+    useEffect(() => () => {
+        if (watchTimerRef.current) clearTimeout(watchTimerRef.current);
+    }, []);
+
+    interface WatchItem {
+        index: number;
+        compName: string;
+        status: string;
+        outputPath: string;
+        sizeBytes: number;
+        fps: number;
+        durationSec: number;
+    }
+
+    const pollRenderWatch = async () => {
+        try {
+            const result = (await evalTS("renderWatchSnapshot")) as
+                | { success: boolean; items?: WatchItem[] }
+                | undefined;
+            if (!result || !result.success || !result.items) return; // bridge hiccup -- retry next tick
+
+            const stillPending: number[] = [];
+            for (const idx of watchPendingRef.current) {
+                const item = result.items.find((it) => it.index === idx);
+                if (!item) continue; // removed from the queue -- stop watching it
+                if (item.status === "queued" || item.status === "rendering") {
+                    stillPending.push(idx);
+                    continue;
+                }
+                if (item.status === "done") {
+                    const folder = item.outputPath.replace(/[\\/][^\\/]*$/, "");
+                    const mb = item.sizeBytes / 1_000_000; // decimal MB, same convention as the checklist's own math
+                    const mbps = item.durationSec > 0 ? (item.sizeBytes * 8) / item.durationSec / 1_000_000 : 0;
+                    const parts = [
+                        item.fps > 0 ? `${Math.round(item.fps * 100) / 100} fps` : null,
+                        item.sizeBytes > 0 ? `${mb.toFixed(1)} MB` : null,
+                        mbps > 0 ? `${mbps.toFixed(1)} Mbps` : null,
+                    ].filter(Boolean);
+                    pushToast(
+                        `Rendered "${item.compName}" → ${folder}${parts.length ? ` · ${parts.join(" · ")}` : ""}`,
+                        "success",
+                        15000 // long-lived: the artist may not be looking when a long render lands
+                    );
+                    sfx.success();
+                }
+                // done / failed / other: either way, stop watching this index
+            }
+            watchPendingRef.current = stillPending;
+        } catch {
+            // bridge hiccup -- keep the pending list, retry next tick
+        }
+
+        if (watchPendingRef.current.length > 0 && Date.now() < watchDeadlineRef.current) {
+            watchTimerRef.current = setTimeout(pollRenderWatch, 5000);
+        }
+    };
+
+    const startRenderWatch = async () => {
+        try {
+            const result = (await evalTS("renderWatchSnapshot")) as
+                | { success: boolean; items?: WatchItem[] }
+                | undefined;
+            if (!result || !result.success || !result.items) return;
+            watchPendingRef.current = result.items
+                .filter((it) => it.status === "queued" || it.status === "rendering")
+                .map((it) => it.index);
+            if (watchPendingRef.current.length === 0) return;
+            watchDeadlineRef.current = Date.now() + 4 * 60 * 60 * 1000;
+            if (watchTimerRef.current) clearTimeout(watchTimerRef.current);
+            watchTimerRef.current = setTimeout(pollRenderWatch, 5000);
+        } catch {
+            // no bridge -- nothing to watch
+        }
     };
 
     const makeRow = (c: any, batchOffset: number): RowData => ({
@@ -467,7 +565,12 @@ const DeliveryHubTool = () => {
                 }))
             );
             if (result === undefined) throw new Error("no bridge");
-            if (result.success) { setLog(result.log || ""); setRows((r) => r.map((x) => ({ ...x, queued: true }))); pushToast("Queued."); }
+            if (result.success) {
+                setLog(result.log || "");
+                setRows((r) => r.map((x) => ({ ...x, queued: true })));
+                pushToast("Queued — you'll get a toast per file as renders finish (while this page stays open).");
+                startRenderWatch();
+            }
             else setCheckError(result.error || "Something went wrong.");
         } catch {
             setCheckError("No CEP bridge — open inside After Effects.");

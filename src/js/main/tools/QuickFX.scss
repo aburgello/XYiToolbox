@@ -281,3 +281,232 @@
         font-size: 12px;
     }
 }
+
+// Unobtrusive one-off "verify these matchNames against this install" action,
+// pinned under the full effect list. Muted/text-button styling so it reads as
+// a diagnostic, not another effect to apply.
+.qfx-verify-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 14px;
+    background: none;
+    border: 1px dashed #3d3d3d;
+    color: #888;
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 10.5px;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease;
+
+    &:hover:not(:disabled) { color: #ccc; border-color: #555; }
+    &:disabled { opacity: 0.55; cursor: default; }
+    svg { flex-shrink: 0; }
+}
+
+// --- My Effects (user-pinned) + All Installed search results ---------------
+// A pinned pill is the standard .qfx-pill plus a small unpin X that only
+// materialises on hover of that pill's own wrapper, so the resting row reads
+// identically to the curated ones.
+.qfx-pill-wrap {
+    position: relative;
+    display: inline-flex;
+}
+
+// Scoped `.qfx-tool .qfx-unpin-btn` (class+class), not bare `.qfx-unpin-btn`
+// -- same specificity fix as .qfx-pill/.qfx-combo-icon-btn above: formTool's
+// `.form-tool button` rule outranks a lone class and would repaint these as
+// grey 5px-radius buttons.
+.qfx-tool .qfx-unpin-btn {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    background: #3a3a3a;
+    border: 1px solid #555;
+    border-radius: 50%;
+    color: #bbb;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+
+    &:hover {
+        background: #7a2e2e;
+        color: #fff;
+    }
+}
+
+.qfx-pill-wrap:hover .qfx-unpin-btn {
+    opacity: 1;
+}
+
+// Installed search hits render as full-width ROWS, not pills -- they carry a
+// category caption and a pin action, and a broad query can return dozens, so
+// a scannable list beats a wall of wrapping pills here.
+.qfx-installed-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.qfx-installed-row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.qfx-tool .qfx-installed-apply {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: none;
+    border: 1px solid transparent;
+    color: #ccc;
+    text-align: left;
+    padding: 5px 8px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+
+    svg { flex-shrink: 0; color: #777; }
+
+    &:hover:not(:disabled) {
+        background: rgba(255, 255, 255, 0.05);
+        border-color: var(--qfx-accent, #666);
+        color: #fff;
+
+        svg { color: var(--qfx-accent, #999); }
+    }
+
+    &:disabled { opacity: 0.5; cursor: default; }
+}
+
+.qfx-installed-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.qfx-installed-cat {
+    margin-left: auto;
+    flex-shrink: 0;
+    font-size: 9.5px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+// --- Recents strip / keyboard highlight / collapsible sections /
+// --- combo export-import (team-UX pass) ------------------------------------
+
+// Slim single-line strip under the search box -- deliberately quieter than
+// the real pill grid (smaller, borderless-until-hover) so it reads as a
+// shortcut row, not another category.
+.qfx-recents {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin: -6px 0 10px;
+}
+
+.qfx-recents-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #777;
+    margin-right: 2px;
+}
+
+.qfx-tool .qfx-recent-pill {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid transparent;
+    color: #bbb;
+    border-radius: 12px;
+    padding: 3px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+
+    &:hover:not(:disabled) {
+        border-color: var(--cat-border, #666);
+        color: #fff;
+    }
+    &:disabled { opacity: 0.5; cursor: default; }
+}
+
+// Keyboard-highlighted hit -- the accent border + ring normally reserved for
+// hover, held steady so Enter's target is unambiguous while typing.
+.qfx-tool .qfx-kbd-active {
+    border-color: var(--qfx-accent, var(--cat-border, #666)) !important;
+    box-shadow: 0 0 0 2px var(--qfx-glow, rgba(255, 255, 255, 0.15));
+    color: #fff;
+}
+
+// Section labels are now toggle buttons -- reset the form-tool button chrome
+// (class+class scoping so this outranks `.form-tool button`, same fix as
+// every other button in this file) and keep the exact resting label look.
+.qfx-tool .qfx-section-toggle {
+    display: flex;
+    align-items: center;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    color: #888;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+
+    &:hover { color: #ccc; }
+}
+
+.qfx-chevron {
+    margin-left: 5px;
+    color: #666;
+    transition: transform 0.15s ease;
+
+    &.qfx-chevron--closed {
+        transform: rotate(-90deg);
+    }
+}
+
+// Combos header: export/import sit as quiet icon buttons beside Record.
+.qfx-combos-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.qfx-tool .qfx-transfer-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    background: none;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    color: #888;
+    cursor: pointer;
+    transition: color 0.12s ease, border-color 0.12s ease;
+
+    &:hover {
+        color: #fff;
+        border-color: #666;
+    }
+}

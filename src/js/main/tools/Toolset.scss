@@ -631,14 +631,20 @@
     }
 }
 
-// --- Droplet content for "Quick FX" (last 5 used effects) -----------------
+// --- Droplet content for "Quick FX" (last 5 used / search-all) ------------
 .droplet-quick-fx {
-    width: 208px;
+    width: 232px; // a touch wider than the other droplets -- rows carry a category caption
 
     .hint {
         margin: 4px 2px;
         font-size: 11px;
         color: #777;
+    }
+
+    // Reuses .add-tool-search's input chrome; just needs breathing room
+    // above the result list here.
+    .add-tool-search {
+        margin-bottom: 4px;
     }
 }
 
@@ -673,6 +679,30 @@
     &:hover {
         background: rgba(255, 255, 255, 0.06);
     }
+
+    // The top search match -- what Enter will apply -- held in the same
+    // steady highlight the Effects page's keyboard navigation uses, so the
+    // two search surfaces read as one system.
+    &.qfxr-item--top {
+        background: rgba(255, 255, 255, 0.06);
+        border-radius: 4px;
+        box-shadow: inset 0 0 0 1px var(--btn-border, #666);
+    }
+}
+
+.qfxr-item-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.qfxr-item-cat {
+    margin-left: auto;
+    flex-shrink: 0;
+    font-size: 8.5px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
 }
 
 .qfxr-open-page {
@@ -685,7 +715,7 @@
     padding: 5px 0;
     font-size: 11px;
     cursor: pointer;
-    margin-top: 4px;
+    margin-top: 8px;
     transition: border-color 0.15s ease, color 0.15s ease;
 
     &:hover {

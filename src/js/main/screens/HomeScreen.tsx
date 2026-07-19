@@ -31,6 +31,7 @@ import XYToolsDroplet from "../XYToolsDroplet";
 import Tooltip from "../Tooltip";
 import TimeTrackerDroplet from "../TimeTrackerDroplet";
 import SfxDroplet from "../SfxDroplet";
+import TeamDroplet from "../TeamDroplet";
 import { sfx } from "../../lib/utils/sfx";
 import logo from "../../assets/xyi-logo.png";
 import easterEggGif from "../../assets/easter-egg.gif";
@@ -315,6 +316,7 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
                                 </button>
                             </Tooltip>
                             <SfxDroplet />
+                            <TeamDroplet />
                             <TimeTrackerDroplet
                                 onOpenFullTracker={() => onNavigate({ type: "tool", toolId: "timesheet-tracker", backTo: { type: "home" } })}
                             />

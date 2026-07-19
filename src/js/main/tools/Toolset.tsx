@@ -11,7 +11,7 @@
 // To add a new one-click tool here: add its aeft.ts function, then add one
 // entry to ACTIONS below.
 // =============================================================================
-import React, { useRef, useState, useEffect, useCallback } from "react";
+import React, { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import {
     DndContext,
@@ -72,7 +72,7 @@ import { sfx } from "../../lib/utils/sfx";
 import Tooltip from "../Tooltip";
 import StatusIcon from "../StatusIcon";
 import Droplet from "../Droplet";
-import { promptDialog, selectDialog } from "../Dialog";
+import { alertDialog, promptDialog, selectDialog } from "../Dialog";
 import { iconWiggle, buttonLift } from "../animations";
 import { TOOLS } from "../toolRegistry";
 import { useCustomTools, type CustomToolEntry } from "../hooks/useCustomTools";
@@ -445,6 +445,59 @@ export const ACTIONS: ActionEntry[] = [
         successText: () => "Comp duration updated.",
     },
     {
+        id: "pre-flight",
+        label: "Pre-Flight",
+        description: "Audits the open project before handover/render: missing footage, effects not installed on this machine, and (where AE allows) missing fonts.",
+        icon: CheckSquare,
+        group: "qc",
+        run: async () => {
+            const result = (await evalTSSafe("preflightAudit")) as ActionResult & {
+                report?: {
+                    projectName: string;
+                    compCount: number;
+                    footageCount: number;
+                    missingFootage: string[];
+                    missingEffects: { matchName: string; label: string; usedIn: string[] }[];
+                    fontsChecked: boolean;
+                    missingFonts: string[];
+                    fontsUsed: number;
+                };
+            };
+            if (!result.success || !result.report) {
+                return { success: false, error: result.error || "Something went wrong." };
+            }
+            const r = result.report;
+            const lines: string[] = [];
+            lines.push(`Pre-Flight — ${r.projectName}`);
+            lines.push(`${r.compCount} comp${r.compCount === 1 ? "" : "s"} · ${r.footageCount} footage item${r.footageCount === 1 ? "" : "s"}`);
+            lines.push("");
+            lines.push(
+                r.missingFootage.length === 0
+                    ? "✓ Footage: nothing missing"
+                    : `✗ Missing footage (${r.missingFootage.length}): ${r.missingFootage.join(", ")}`
+            );
+            lines.push(
+                r.missingEffects.length === 0
+                    ? "✓ Effects: everything used is installed here"
+                    : `✗ Effects not installed on this machine (${r.missingEffects.length}): ` +
+                      r.missingEffects.map((fx) => `${fx.label} (in ${fx.usedIn.join(", ")})`).join("; ")
+            );
+            lines.push(
+                !r.fontsChecked
+                    ? "– Fonts: not checkable on this AE version"
+                    : r.missingFonts.length === 0
+                    ? `✓ Fonts: all ${r.fontsUsed} resolve`
+                    : `✗ Missing fonts (${r.missingFonts.length}): ${r.missingFonts.join(", ")}`
+            );
+            // A report reads better held open in a dialog than auto-dismissing
+            // in a toast; returning null afterwards means "already reported,
+            // no toast" -- same convention as a cancelled picker.
+            await alertDialog(lines.join("\n"));
+            return null;
+        },
+        successText: () => "",
+    },
+    {
         id: "quick-fx-recent",
         label: "Quick FX",
         description: "Re-apply one of your last 5 used effects to the selected layer(s) -- see the full Effects page (Tools) for the whole curated list.",
@@ -616,11 +669,13 @@ const CompDurationDropletBody: React.FC<{ close: () => void; onResult: (result: 
     );
 };
 
-// Droplet content for "Quick FX" -- fetches the last 5 distinct effects
+// Droplet content for "Quick FX" -- opens on the last 5 distinct effects
 // applied from either this button or the full Effects page (they share the
 // same backend history, quickFxListRecentEffects/recordRecentEffect in
-// aeft/effects.ts) and lets you re-apply one in a single click, no need to
-// go find it again in the full curated list. Needs its own async load-on-
+// aeft/effects.ts), and typing in its search bar swaps those recents for
+// the 5 closest matches across EVERY effect installed on this machine
+// (app.effects via quickFxListInstalledEffects -- built-ins and third-party
+// plugins alike), Enter applying the top one. Needs its own async load-on-
 // open state, so -- same Rules of Hooks reasoning as CompDurationDropletBody
 // above -- this has to be a real component, not inline render-prop logic.
 const QuickFxRecentDropletBody: React.FC<{
@@ -631,6 +686,8 @@ const QuickFxRecentDropletBody: React.FC<{
     const [loading, setLoading] = useState(true);
     const [bridgeMissing, setBridgeMissing] = useState(false);
     const [effects, setEffects] = useState<QuickFxRecentEntry[]>([]);
+    const [query, setQuery] = useState("");
+    const [installed, setInstalled] = useState<{ displayName: string; matchName: string; category: string }[]>([]);
 
     useEffect(() => {
         let cancelled = false;
@@ -644,41 +701,135 @@ const QuickFxRecentDropletBody: React.FC<{
             else if (result.success && result.effects) setEffects(result.effects);
             setLoading(false);
         })();
+        // Fetched alongside recents (not lazily on first keystroke) so the
+        // first search is instant -- one cheap read of AE's own registry.
+        (async () => {
+            const result = (await evalTSSafe("quickFxListInstalledEffects")) as ActionResult & {
+                effects?: { displayName: string; matchName: string; category: string }[];
+            };
+            if (cancelled) return;
+            if (result && result.success && result.effects) setInstalled(result.effects);
+        })();
         return () => { cancelled = true; };
     }, []);
+
+    // Top 5 across the full installed list: names that START with the query
+    // outrank names that merely contain it (typing "glo" should surface
+    // Glow before anything with "glo" buried mid-word), category matches
+    // fill remaining slots last.
+    const matches = useMemo(() => {
+        const q = query.trim().toLowerCase();
+        if (!q) return [];
+        const starts: typeof installed = [];
+        const contains: typeof installed = [];
+        const catOnly: typeof installed = [];
+        for (const fx of installed) {
+            const name = fx.displayName.toLowerCase();
+            if (name.indexOf(q) === 0) starts.push(fx);
+            else if (name.indexOf(q) !== -1) contains.push(fx);
+            else if (fx.category.toLowerCase().indexOf(q) !== -1) catOnly.push(fx);
+        }
+        return starts.concat(contains, catOnly).slice(0, 5);
+    }, [query, installed]);
 
     const apply = async (fx: QuickFxRecentEntry) => {
         close();
         onResult(await evalTSSafe("applyEffectToSelectedLayers", fx.id, fx.matchName, fx.label, fx.category));
     };
 
+    const applyInstalled = (fx: { displayName: string; matchName: string; category: string }) =>
+        apply({ id: "inst-" + fx.matchName, label: fx.displayName, matchName: fx.matchName, category: fx.category });
+
+    // Arrow keys move the highlight through the matches, Enter applies the
+    // highlighted one -- the same keyboard interaction the Effects page's
+    // search has, so the two search surfaces behave identically.
+    const [kbdIndex, setKbdIndex] = useState(0);
+    useEffect(() => setKbdIndex(0), [query]);
+    const activeIndex = matches.length > 0 ? Math.min(kbdIndex, matches.length - 1) : 0;
+
+    // The "Open Effects page…" link is a PERSISTENT footer, shown whenever the
+    // bridge is present -- not only in the empty state. With recents present it
+    // used to vanish, leaving no way to reach the full curated list from here
+    // (you'd have had to add a second Effects button to the grid just to get
+    // there). It's the one navigation this droplet always needs.
+    const openPageButton = (
+        <button
+            type="button"
+            className="qfxr-open-page"
+            onClick={() => { close(); onNavigate?.({ type: "tool", toolId: "quick-fx", backTo: { type: "home" } }); }}
+        >
+            Open Effects page…
+        </button>
+    );
+
+    const searching = query.trim() !== "";
+
     return (
         <>
-            <p className="droplet-title">Quick FX — last used</p>
+            <p className="droplet-title">{searching ? "Quick FX — search all" : "Quick FX — last used"}</p>
             {loading ? (
                 <p className="hint">Loading…</p>
             ) : bridgeMissing ? (
                 <p className="hint">No CEP bridge detected — open this panel inside After Effects to run it.</p>
-            ) : effects.length === 0 ? (
-                <>
-                    <p className="hint">No recent effects yet.</p>
-                    <button
-                        type="button"
-                        className="qfxr-open-page"
-                        onClick={() => { close(); onNavigate?.({ type: "tool", toolId: "quick-fx", backTo: { type: "home" } }); }}
-                    >
-                        Open Effects page…
-                    </button>
-                </>
             ) : (
-                <div className="qfxr-list">
-                    {effects.map((fx) => (
-                        <button key={fx.id} className="qfxr-item" onClick={() => apply(fx)}>
-                            <Sparkles size={13} />
-                            {fx.label}
-                        </button>
-                    ))}
-                </div>
+                <>
+                    <div className="add-tool-search">
+                        <Search size={12} />
+                        <input
+                            type="text"
+                            autoFocus
+                            placeholder="Search all effects…"
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === "ArrowDown" && matches.length > 0) {
+                                    e.preventDefault();
+                                    setKbdIndex((i) => Math.min(i + 1, matches.length - 1));
+                                } else if (e.key === "ArrowUp" && matches.length > 0) {
+                                    e.preventDefault();
+                                    setKbdIndex((i) => Math.max(i - 1, 0));
+                                } else if (e.key === "Enter" && matches.length > 0) {
+                                    applyInstalled(matches[activeIndex]);
+                                } else if (e.key === "Escape" && searching) {
+                                    e.stopPropagation(); // first Esc clears the query; a second closes the droplet
+                                    setQuery("");
+                                }
+                            }}
+                        />
+                    </div>
+                    {searching ? (
+                        matches.length === 0 ? (
+                            <p className="hint">{installed.length === 0 ? "Effect list not loaded — try reopening this menu." : `No effects match "${query}".`}</p>
+                        ) : (
+                            <div className="qfxr-list">
+                                {matches.map((fx, i) => (
+                                    <button
+                                        key={fx.matchName}
+                                        className={i === activeIndex ? "qfxr-item qfxr-item--top" : "qfxr-item"}
+                                        title={fx.category ? `${fx.category} — Enter applies the highlighted match` : "Enter applies the highlighted match"}
+                                        onClick={() => applyInstalled(fx)}
+                                    >
+                                        <Sparkles size={13} />
+                                        <span className="qfxr-item-label">{fx.displayName}</span>
+                                        {fx.category && <span className="qfxr-item-cat">{fx.category}</span>}
+                                    </button>
+                                ))}
+                            </div>
+                        )
+                    ) : effects.length === 0 ? (
+                        <p className="hint">No recent effects yet.</p>
+                    ) : (
+                        <div className="qfxr-list">
+                            {effects.map((fx) => (
+                                <button key={fx.id} className="qfxr-item" onClick={() => apply(fx)}>
+                                    <Sparkles size={13} />
+                                    <span className="qfxr-item-label">{fx.label}</span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                    {openPageButton}
+                </>
             )}
         </>
     );

@@ -80,12 +80,31 @@ const Droplet: React.FC<Props> = ({ trigger, children, panelClassName }) => {
         const panelRect = panelEl.getBoundingClientRect();
         const spaceBelow = window.innerHeight - anchorRect.bottom;
         const spaceAbove = anchorRect.top;
-        const placement: "top" | "bottom" = spaceBelow >= panelRect.height + GAP || spaceBelow >= spaceAbove ? "bottom" : "top";
+
+        // Prefer opening DOWN, but only when the panel actually FITS below the
+        // anchor. A CEP panel is often docked at the bottom of AE's workspace,
+        // so window.innerHeight is the panel's own (often short) height -- a
+        // droplet that doesn't fit below would spill past the panel's own edge
+        // and get clipped by AE. So flip it UP whenever there's room above
+        // instead; only when it fits neither side do we fall back to the
+        // roomier one. (The old logic went "bottom" whenever spaceBelow was
+        // merely >= spaceAbove, which forced downward-overflow for a button in
+        // the upper half of a short panel -- the reported bug.)
+        const fitsBelow = spaceBelow >= panelRect.height + GAP;
+        const fitsAbove = spaceAbove >= panelRect.height + GAP;
+        const placement: "top" | "bottom" =
+            fitsBelow ? "bottom" : fitsAbove ? "top" : spaceBelow >= spaceAbove ? "bottom" : "top";
 
         let left = anchorRect.left;
         left = Math.max(EDGE_MARGIN, Math.min(left, window.innerWidth - panelRect.width - EDGE_MARGIN));
 
-        const top = placement === "bottom" ? anchorRect.bottom + GAP : anchorRect.top - panelRect.height - GAP;
+        let top = placement === "bottom" ? anchorRect.bottom + GAP : anchorRect.top - panelRect.height - GAP;
+        // Vertical clamp: never render past the panel's own top/bottom edge,
+        // even when the droplet is taller than the room on the chosen side
+        // (its own content scrolls -- lists carry a max-height/overflow). This
+        // keeps at least the top of the droplet on-screen rather than letting
+        // it disappear above the panel or under AE's docked panels below.
+        top = Math.max(EDGE_MARGIN, Math.min(top, window.innerHeight - panelRect.height - EDGE_MARGIN));
 
         setPos({ top, left, placement });
     };

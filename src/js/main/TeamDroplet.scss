@@ -1,0 +1,202 @@
+// =============================================================================
+// src/js/main/TeamDroplet.scss -- the home screen's Team menu (profiles,
+// team folder, update nudge). Panel chrome comes from Droplet.scss; these are
+// content styles only, same split as SfxDroplet.scss.
+// =============================================================================
+.team-droplet-panel {
+    width: 248px;
+
+    .hint {
+        margin: 2px 0;
+        font-size: 10.5px;
+        color: #777;
+        line-height: 1.45;
+    }
+}
+
+.team-trigger {
+    position: relative;
+}
+
+.team-update-dot {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #facc15;
+    // A dot, not a pulse -- this sits on the always-visible home screen all
+    // day; the same "no perpetual motion" rule as the ambient background.
+}
+
+.team-droplet-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.team-update-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    background: rgba(250, 204, 21, 0.08);
+    border: 1px solid rgba(250, 204, 21, 0.4);
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 10.5px;
+    line-height: 1.4;
+    color: #fde68a;
+
+    svg { flex-shrink: 0; margin-top: 1px; color: #facc15; }
+}
+
+.team-folder-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.team-folder-path {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    // Path reads right-to-left so the meaningful tail (deepest folder) stays
+    // visible when it ellipsizes.
+    direction: rtl;
+    text-align: left;
+    font-size: 10.5px;
+    color: #999;
+}
+
+.team-folder-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    background: none;
+    border: 1px solid #3a3a3a;
+    color: #999;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 10.5px;
+    cursor: pointer;
+    transition: color 0.12s ease, border-color 0.12s ease;
+
+    &:hover { color: #fff; border-color: #666; }
+}
+
+.team-section-label {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #888;
+}
+
+.team-profile-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+.team-profile-row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.team-profile-apply {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    background: none;
+    border: 1px solid transparent;
+    color: #ddd;
+    text-align: left;
+    padding: 6px 8px;
+    border-radius: 5px;
+    font-size: 11.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, border-color 0.12s ease;
+
+    &:hover:not(:disabled) {
+        background: rgba(255, 255, 255, 0.05);
+        border-color: var(--cat-border, #666);
+    }
+    &:disabled { opacity: 0.5; cursor: default; }
+}
+
+.team-profile-del {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: #666;
+    padding: 4px 6px;
+    cursor: pointer;
+    transition: color 0.12s ease;
+
+    &:hover { color: #e07a7a; }
+}
+
+.team-save-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: #1e1e1e;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    padding: 3px 3px 3px 8px;
+
+    input {
+        flex: 1;
+        min-width: 0;
+        background: none;
+        border: none;
+        outline: none;
+        color: #eee;
+        font-size: 11px;
+
+        &::placeholder { color: #666; }
+    }
+}
+
+.team-save-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: #888;
+    padding: 4px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease;
+
+    &:hover:not(:disabled) { color: #fff; background: rgba(255, 255, 255, 0.06); }
+    &:disabled { opacity: 0.45; cursor: default; }
+}
+
+.team-sync-note {
+    margin: 0;
+    font-size: 10px;
+    color: #7dd3a8;
+}
+
+.team-note {
+    margin: 0;
+    font-size: 10.5px;
+    color: #9ac79a;
+    line-height: 1.4;
+
+    &.team-note--error { color: #e07a7a; }
+}

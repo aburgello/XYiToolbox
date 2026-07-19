@@ -3683,3 +3683,175 @@ home -> Tools -> **animate** path (opacity `0`) and records
 outcome itself is host-specific and still needs a real-AE confirm -- but
 the dedupe now covers both the remount and full-reload mount paths, and a
 same-key reload was proven deduped.
+
+## Quick FX ("Effects" tool) — review pass improvements
+
+The Effects tool (`tools/QuickFX.tsx` + `quickFxData.ts`, backend
+`jsx/aeft/effects.ts`) one-click-applies a curated list of AE effects by
+stable `matchName` to the selected layers, with a "My Combos" section for
+recording a layer's whole effect stack and re-applying it. Architecture is
+the same generic-action + data-list split as Toolset's ACTIONS. This pass
+addressed a review of it:
+
+- **Combos now capture parameter VALUES, not just the effect list** (the
+  headline fix). `quickFxGetSelectedLayerEffects` records each effect's
+  settings via `captureEffectProps()` — a depth-first walk of the effect's
+  leaf properties, keeping `{matchName, value}` for each settable static
+  value. Skips: NO_VALUE/CUSTOM_VALUE params (headers, the Curves curve
+  shape — no scriptable setValue), LAYER_INDEX/MASK_INDEX (an index that
+  means nothing in another comp), and anything keyframed or
+  expression-driven (a combo is a static look; setValue would also nuke the
+  animation). `quickFxApplyCombo` restores them via `applyEffectProps()`:
+  positional zip against the same filter onto the freshly-added effect
+  (identical matchName ⇒ identical property tree), with a matchName guard
+  that stops on the first mismatch (AE-version structure drift) rather than
+  writing a value into the wrong slot. `EffectComboEffect.props` is
+  OPTIONAL, so combos saved before this land still load and re-apply (at
+  defaults, exactly as before). Known limitation: CUSTOM_VALUE params
+  (Curves shape, some LUT/histogram data) can't be scripted, so those
+  aren't carried.
+- **matchName self-check.** **SUPERSEDED mechanism**: originally added +
+  immediately removed every curated matchName on a selected layer; once
+  `app.effects` landed, `quickFxVerifyMatchNames` was REWRITTEN as a pure
+  membership check against AE's own installed-effects registry (instant,
+  no layer/selection/undo group needed) and widened to also cover pinned
+  My Effects and every recorded combo's effects — the real staleness risk
+  (a third-party plugin uninstalled after pinning/recording). Curated
+  entries still arrive as a JSON string so `quickFxData.ts` stays the
+  single source of truth; user effects + combos are read from settings
+  backend-side.
+- **Effect reveal.** `applyEffectToSelectedLayers` now sets the just-added
+  effect `.selected = true` (own try/catch, best-effort) so AE highlights
+  it in Effect Controls instead of leaving you to hunt for it.
+- **undo-group guard.** `applyEffectToSelectedLayers` / `quickFxApplyCombo`
+  / the new verify fn only call `endUndoGroup()` in their catch if a group
+  was actually begun (`undoOpen` flag) — the early comp/selection returns
+  happen before `beginUndoGroup`.
+- **Frontend polish.** Status line auto-dismisses after 4s (was lingering
+  indefinitely, unlike the Toolset toasts); per-pill disable (`busyId ===
+  fx.id` / `comboBusyId === combo.id`) instead of disabling the whole grid
+  during a near-instant apply; `errorMessage()` surfaces a real
+  ExtendScript rejection verbatim while still mapping BOTH the "no bridge"
+  sentinel AND the raw `evalScript` TypeError (no `window.__adobe_cep__`) to
+  the clean bridge message; search now also matches `matchName`; combo hints
+  updated to say settings ARE saved.
+- **Grid droplet: persistent "Open Effects page…" link.** In
+  `Toolset.tsx`'s `QuickFxRecentDropletBody`, that link used to show only in
+  the empty state, so once you had recents there was no way to reach the
+  full curated list from the droplet. It's now a permanent footer whenever
+  the bridge is present.
+
+Verified: `tsc -p tsconfig-build.json` (clean) + `tsc -p tsconfig.json`
+(no QuickFX/Toolset errors — `effects.ts`'s ambient-globals noise under the
+frontend config is expected, same as `motionTools.ts`) + `yarn build`
+clean. Browser preview confirmed the Effects page renders (5 sections, 20
+pills, verify button), matchName search filters correctly, and the
+no-bridge path shows the clean message not a raw TypeError. The actual
+effect-apply / value-capture / value-restore is ExtendScript-only and
+needs a real-AE pass (record a tuned-look combo, re-apply elsewhere,
+confirm the settings come across; run the verify button once to confirm
+the curated matchNames).
+
+## Team features batch: Team Folder, profiles, update nudge, shared
+## libraries, render-finished toasts, Pre-Flight
+Six features built in one approved batch (user picked all four proposals,
+then added profiles on top). All frontend surfaces verified in browser
+preview (fiber-injected state where the bridge is absent); every
+ExtendScript half carries this file's usual "needs a first real-AE pass"
+caveat. `tsc -p tsconfig-build.json` + `yarn build` clean, single-chunk
+property intact, and a full forward wiring audit (all 17 new evalTS names
+resolve in the compiled `dist/cep/jsx/index.js` AND are called from
+`src/js`) was run per this file's own audit rule.
+
+- **`src/jsx/aeft/team.ts` (new) -- the Team Folder foundation.** One
+  user-picked folder on the NAS (persisted per-machine under
+  `"TeamFolderPath"` -- deliberately NOT part of a profile) holding
+  `profiles/*.json`, `shared-combos.json`, `shared-expressions.json`, and
+  `toolbox-version.txt`. An unmounted share returns null internally and
+  every feature degrades quietly -- a laptop away from the studio is a
+  normal state, not an error.
+- **Profiles** -- named snapshots of every personalisation setting, so an
+  artist applies THEIR whole setup on any machine (the direct ask: "she
+  could toggle her name and have her preferences applied"). `PROFILE_KEYS`
+  in team.ts is the canonical list (Toolset hidden/order/groups/labels/
+  pins, rail state, tool orders, favorites, theme+decorations, sfx,
+  pinned effects, combos, ease presets, custom tools). **Values are
+  snapshotted/restored as OPAQUE STRINGS** -- team.ts never parses a
+  store's own format, which keeps it robust as stores evolve. **Applying
+  resets keys the profile doesn't carry to `""`** (every loader treats
+  empty as default) so the previous user's customisation can't bleed
+  through, then the frontend does `window.location.reload()` --
+  GsapScreenTransition's sessionStorage dedupe keeps that reload from
+  replaying the entrance cascade. **SECURITY: profiles land in a SHARED
+  folder -- `WrikeApiToken` (a secret) is explicitly excluded from
+  PROFILE_KEYS, as are content libraries (campaigns/LocLib), UsefulFolders
+  (machine paths + ScriptUI-shared), and usage history. Keep any future
+  credential-bearing setting out of PROFILE_KEYS too.** If a new
+  personalisation setting is added to the app, add its key to
+  PROFILE_KEYS or it silently won't travel with profiles.
+- **UI: `TeamDroplet.tsx`/`.scss`** -- a Users icon in the home search row
+  (same droplet pattern as SfxDroplet), gathering folder setup, the
+  profile list (apply = confirmDialog naming the consequence -> apply ->
+  reload; per-profile delete), save-as row, the update banner, and the
+  sync note. Version/sync checks run ONCE per session via module-scope
+  guards (home remounts must not re-scan the NAS or re-toast). The
+  update nudge is a static yellow dot on the trigger -- deliberately not
+  pulsing, per this file's "no perpetual motion on the always-visible
+  home screen" rule. Version comparison is plain string inequality +
+  lexicographic greater-than against `TOOLBOX_VERSION` (exported from
+  TeamDroplet.tsx -- **keep in step with HomeScreen's version text**);
+  fine for the studio's zero-padded `year.month` format.
+- **Shared libraries (combos + expressions)** -- pull: `teamSyncShared()`
+  on panel open merges new entries from the shared files into the local
+  stores (merge by NAME case-insensitive, imported combos get fresh ids
+  -- same rules as quickFxImportCombos). Push: **opt-in per item**, a
+  Users-icon "Share to team" button per combo pill (QuickFX.tsx) and per
+  expression row (ExpressionsBank.tsx) -- deliberately NOT a blind
+  bidirectional whole-store sync, so scratch content doesn't flood the
+  team and local deletions don't resurrect. effects.ts's
+  `loadCombos`/`saveCombos` were exported for this;
+  `expressionsBankLoad`/`expressionsBankSave` already had JSON-string
+  interfaces team.ts reuses (no format duplication). Custom tools keep
+  their existing file export/import; extend team-sync to them later if
+  asked.
+- **Render-finished toasts (DeliveryHub)** -- after Queue succeeds,
+  `startRenderWatch()` polls `renderWatchSnapshot()` (deliver.ts, read-
+  only queue snapshot) and toasts each watched item the moment it's DONE:
+  comp name, destination folder, fps, real on-disk MB, and EFFECTIVE
+  Mbps computed from actual file size/duration (what the template
+  produced, not the requested target). **Raw `evalTS`, deliberately not
+  `evalTSSafe`**: bridge calls BLOCK while AE renders, so one poll can
+  take the whole render -- that resolving IS the finish signal; a 15s
+  timeout would misreport every long render as "AE busy". Long-lived
+  toasts (15s) + `sfx.success()`. Watches only items queued/rendering at
+  Queue time (old DONE items never re-toast); stops when none pending, on
+  unmount, or a 4h cap. **Known limit, stated in the queued toast
+  itself: leaving the Deliver page stops the watch** (the component owns
+  it) -- promote to a global watcher only if that bites in practice.
+- **Pre-Flight (`src/jsx/aeft/preflight.ts` + a `qc`-group Toolset
+  button)** -- read-only audit of the open project before handover/
+  render: missing footage (`footageMissing`), **effects used anywhere in
+  the project vs THIS machine's `app.effects` registry** (the novel
+  check -- a third-party plugin missing on the receiving machine
+  otherwise fails silently at render), and fonts BEST-EFFORT behind a
+  feature gate (`app.fonts.getFontsByPostScriptName`, newer AE only,
+  UNVERIFIED -- older AE reports "fonts not checkable" rather than
+  pretending they passed). `Pseudo/*` matchNames (expression controls
+  saved into projects) are skipped as known-benign. Report renders via
+  `alertDialog` (a report wants to be held open, not auto-dismiss in a
+  toast); the run() returns `null` after, per the "already reported, no
+  toast" convention.
+- **Correction that enabled half of this batch**: an earlier session
+  claim that "no API exists to enumerate installed effects" was WRONG --
+  `app.effects` is exactly that (QuickFX's search-all, the verify
+  rewrite, and Pre-Flight's missing-effects check all build on it). The
+  corrected headers live in effects.ts/QuickFX.tsx; the lesson (verify
+  API capability claims against docs/probes before writing them into
+  comments as fact) is recorded in auto-memory.
+
+First-real-AE checklist for this batch: set the Team Folder, save +
+apply a profile between two machines, drop a `toolbox-version.txt` and
+confirm the dot, share a combo/expression and watch it arrive on
+another machine's panel open, queue a real render and wait for the
+finished toast's numbers, and run Pre-Flight on a project with a
+known-missing footage item + a third-party effect.

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Save, Pencil, Copy, Trash2, Plus, Search, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown } from "lucide-react";
+import { Save, Pencil, Copy, Trash2, Plus, Search, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Users } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
@@ -211,6 +211,21 @@ const ExpressionsBank: React.FC = () => {
         setStatus({ type: "success", text: "Expression removed." });
     };
 
+    // Pushes one expression into the team folder's shared-expressions.json
+    // (aeft/team.ts) -- colleagues' panels pull it automatically on open via
+    // teamSyncShared, same flow as QuickFX's combo sharing.
+    const shareEntry = async (id: string) => {
+        try {
+            const result = await evalTS("teamShareExpression", id);
+            if (result === undefined) throw new Error("no bridge");
+            setStatus(result.success
+                ? { type: "success", text: result.message || "Shared with the team." }
+                : { type: "error", text: result.error || "Something went wrong." });
+        } catch {
+            setStatus({ type: "error", text: "No CEP bridge detected — open this panel inside After Effects." });
+        }
+    };
+
     const copyCode = async (code: string) => {
         // CEP panels run inside CEF, which never grants navigator.clipboard
         // to a panel webview (no permission-prompt UI exists in CEP's
@@ -312,6 +327,9 @@ const ExpressionsBank: React.FC = () => {
                                             <span className="eb-entry-uses" title="Times used">{e.uses}</span>
                                             <Tooltip text="Copy code">
                                                 <button className="eb-icon-btn" onClick={() => copyCode(e.code)}><Copy size={12} /></button>
+                                            </Tooltip>
+                                            <Tooltip text="Share to team library">
+                                                <button className="eb-icon-btn" onClick={() => shareEntry(e.id)}><Users size={12} /></button>
                                             </Tooltip>
                                             <Tooltip text="Edit">
                                                 <button className="eb-icon-btn" onClick={() => startEdit(e)}><Pencil size={12} /></button>

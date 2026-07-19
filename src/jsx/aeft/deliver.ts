@@ -783,3 +783,75 @@ export const deliveryChecklistQueue = (
     return { success: false, error: e.toString() };
   }
 };
+// --- Render watch (DeliveryHub's render-finished toast) ----------------------
+// A read-only snapshot of the render queue so the React side can poll for
+// "what just finished" after queuing: per item, its status bucket, output
+// path, and -- once the file exists on disk -- its real size, from which the
+// frontend derives total MB and effective Mbps. Polled with a RAW evalTS
+// (not evalTSSafe): while AE is actively rendering, ExtendScript calls block
+// until the render lets go, which reads as one very slow call rather than a
+// failure -- a 15s timeout would misreport every long render as "AE busy".
+interface RenderWatchItem {
+  index: number;
+  compName: string;
+  status: "queued" | "rendering" | "done" | "other";
+  outputPath: string;
+  sizeBytes: number;
+  fps: number;
+  durationSec: number;
+}
+
+interface RenderWatchResult extends Result {
+  items?: RenderWatchItem[];
+}
+
+export const renderWatchSnapshot = (): RenderWatchResult => {
+  try {
+    const rq = app.project.renderQueue;
+    const items: RenderWatchItem[] = [];
+    for (let i = 1; i <= rq.numItems; i++) {
+      const item = rq.item(i);
+      let status: RenderWatchItem["status"] = "other";
+      try {
+        if (item.status === RQItemStatus.QUEUED) status = "queued";
+        else if (item.status === RQItemStatus.RENDERING) status = "rendering";
+        else if (item.status === RQItemStatus.DONE) status = "done";
+      } catch (e) {
+        // keep "other"
+      }
+
+      let outputPath = "";
+      let sizeBytes = 0;
+      try {
+        const om = item.outputModule(1);
+        if (om && om.file) {
+          outputPath = om.file.fsName;
+          const f = new File(outputPath);
+          if (f.exists) sizeBytes = f.length;
+        }
+      } catch (e) {
+        // no output module / inaccessible file -- leave blanks
+      }
+
+      let fps = 0;
+      let durationSec = 0;
+      let compName = "";
+      try {
+        if (item.comp) {
+          compName = item.comp.name;
+          fps = item.comp.frameRate;
+          durationSec = item.comp.duration;
+        }
+        // The queued span can be shorter than the comp (work-area renders).
+        if (item.timeSpanDuration && item.timeSpanDuration > 0) durationSec = item.timeSpanDuration;
+      } catch (e) {
+        // comp gone -- leave zeros
+      }
+
+      items.push({ index: i, compName: compName, status: status, outputPath: outputPath, sizeBytes: sizeBytes, fps: fps, durationSec: durationSec });
+    }
+    return { success: true, items: items };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
