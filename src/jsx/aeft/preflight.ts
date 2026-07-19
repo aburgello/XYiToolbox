@@ -98,26 +98,54 @@ export const preflightAudit = (): PreflightResult => {
       for (let li = 1; li <= item.numLayers; li++) {
         const layer = item.layer(li);
 
-        // Effects on this layer vs the installed registry.
+        // Effects on this layer: flagged as missing when EITHER signal says
+        // so --
+        //   1. The display name starts with "Missing:" -- AE's own placeholder
+        //      rename for an effect whose plugin isn't loaded (this is
+        //      exactly what the Effect Controls panel shows, e.g.
+        //      "Missing: UnMult"). This is the authoritative check: a REAL
+        //      false negative shipped without it, because a missing-effect
+        //      placeholder doesn't reliably fail the registry test below
+        //      (its matchName can read empty or as a registered placeholder,
+        //      depending on AE version).
+        //   2. The matchName isn't in app.effects (catches an effect whose
+        //      placeholder naming ever differs, e.g. localised AE).
+        // Each effect is probed in its OWN try/catch -- the first shipped
+        // version wrapped the whole per-layer loop, so one unreadable
+        // placeholder silently skipped every remaining effect on that layer.
         try {
           const fxGroup = layer.property("ADBE Effect Parade");
           if (fxGroup) {
             const group = fxGroup as Property;
             for (let fi = 1; fi <= group.numProperties; fi++) {
-              const fx = group.property(fi) as Property;
-              if (!fx || !fx.matchName) continue;
-              // Expression/pseudo controls saved into projects aren't in
-              // app.effects on any machine -- skip the known-benign one.
-              if (fx.matchName.indexOf("Pseudo/") === 0) continue;
-              if (!installed[fx.matchName]) {
-                if (!effectIssues[fx.matchName]) {
-                  effectIssues[fx.matchName] = { matchName: fx.matchName, label: fx.name, usedIn: [] };
+              try {
+                const fx = group.property(fi) as Property;
+                if (!fx) continue;
+                let fxName = "";
+                let fxMatch = "";
+                try { fxName = fx.name || ""; } catch (e3) { /* unreadable */ }
+                try { fxMatch = fx.matchName || ""; } catch (e3) { /* unreadable */ }
+
+                const isMissingByName = fxName.indexOf("Missing:") === 0;
+                // Expression/pseudo controls saved into projects aren't in
+                // app.effects on any machine -- benign, skip (unless AE
+                // itself says Missing, which wins).
+                const isMissingByRegistry =
+                  fxMatch !== "" && fxMatch.indexOf("Pseudo/") !== 0 && !installed[fxMatch];
+
+                if (!isMissingByName && !isMissingByRegistry) continue;
+
+                const issueKey = fxMatch || fxName || "(unidentified effect)";
+                if (!effectIssues[issueKey]) {
+                  effectIssues[issueKey] = { matchName: fxMatch, label: fxName || issueKey, usedIn: [] };
                 }
                 let already = false;
-                for (let u = 0; u < effectIssues[fx.matchName].usedIn.length; u++) {
-                  if (effectIssues[fx.matchName].usedIn[u] === item.name) { already = true; break; }
+                for (let u = 0; u < effectIssues[issueKey].usedIn.length; u++) {
+                  if (effectIssues[issueKey].usedIn[u] === item.name) { already = true; break; }
                 }
-                if (!already) effectIssues[fx.matchName].usedIn.push(item.name);
+                if (!already) effectIssues[issueKey].usedIn.push(item.name);
+              } catch (e2) {
+                // one unreadable effect must not hide the rest of the stack
               }
             }
           }

@@ -21,9 +21,10 @@
 // sync results.
 // =============================================================================
 import React, { useEffect, useState } from "react";
-import { Users, FolderCog, Trash2, Save, RefreshCw } from "lucide-react";
+import { Users, FolderCog, Trash2, Save, RefreshCw, Home, Undo2 } from "lucide-react";
 import Droplet from "./Droplet";
 import Tooltip from "./Tooltip";
+import CheckboxToggle from "./CheckboxToggle";
 import { confirmDialog } from "./Dialog";
 import { evalTS } from "../lib/utils/bolt";
 import "./TeamDroplet.scss";
@@ -32,9 +33,13 @@ import "./TeamDroplet.scss";
 // is the value compared against the team folder's toolbox-version.txt.
 export const TOOLBOX_VERSION = "2026.07";
 
+// Mirrors team.ts's TeamProfileInfo: a member is a SUBFOLDER of the team
+// folder (Antonio/, Jacqui/, ...); hasProfile says whether that member has
+// saved a setup snapshot yet (a pre-created folder with no profile.json
+// still lists, greyed, so the studio can scaffold the roster up front).
 interface ProfileInfo {
     name: string;
-    fileName: string;
+    hasProfile: boolean;
 }
 
 // Once-per-session results, surviving home-screen remounts.
@@ -51,6 +56,12 @@ const TeamDroplet: React.FC = () => {
     const [note, setNote] = useState<{ text: string; isError: boolean } | null>(null);
     const [latestVersion, setLatestVersion] = useState(cachedLatestVersion);
     const [syncNote, setSyncNote] = useState(cachedSyncNote);
+    // Per-machine identity state (aeft/team.ts's Machine ownership section):
+    // whose station this is, whether their profile live-syncs to the NAS on
+    // open, and whether a colleague's setup is currently applied as a guest.
+    const [machineOwner, setMachineOwner] = useState("");
+    const [liveSync, setLiveSync] = useState(false);
+    const [guestProfile, setGuestProfile] = useState("");
 
     const refresh = async () => {
         try {
@@ -61,6 +72,12 @@ const TeamDroplet: React.FC = () => {
             }
             const list = await evalTS("teamListProfiles");
             if (list && list.success) setProfiles(list.profiles || []);
+            const machine = await evalTS("teamGetMachineState");
+            if (machine && machine.success) {
+                setMachineOwner(machine.owner || "");
+                setLiveSync(!!machine.liveSync);
+                setGuestProfile(machine.guestProfile || "");
+            }
         } catch (e) {
             // browser preview -- no bridge, panel just shows "not set"
         }
@@ -85,6 +102,11 @@ const TeamDroplet: React.FC = () => {
                     cachedSyncNote = `Synced from team: ${parts.join(" · ")}.`;
                     setSyncNote(cachedSyncNote);
                 }
+                // Live profile sync: pushes this station's setup to its tagged
+                // owner's NAS profile (aeft/team.ts gates it on owner + opt-in
+                // toggle + no-guest-session + NAS mounted, and never errors) --
+                // deliberately silent on success, it's background housekeeping.
+                await evalTS("teamAutoSyncProfile");
             } catch (e) {
                 // no bridge / NAS unreachable -- quiet, same as every background load
             }
@@ -134,14 +156,72 @@ const TeamDroplet: React.FC = () => {
         }
     };
 
+    const setOwner = async (name: string) => {
+        try {
+            // Clicking the tagged owner's own home icon untags the machine.
+            const next = machineOwner === name ? "" : name;
+            const result = await evalTS("teamSetMachineOwner", next);
+            if (result === undefined) throw new Error("no bridge");
+            if (!result.success) {
+                showNote(result.error || "Something went wrong.", true);
+                return;
+            }
+            setMachineOwner(next);
+            showNote(next ? `This Mac is now tagged as ${next}'s station.` : "Machine untagged.", false);
+        } catch (e) {
+            showNote("No CEP bridge detected — open this panel inside After Effects.", true);
+        }
+    };
+
+    const toggleLiveSync = async (enabled: boolean) => {
+        setLiveSync(enabled); // optimistic -- a toggle should feel instant
+        try {
+            const result = await evalTS("teamSetLiveSync", enabled);
+            if (result === undefined) throw new Error("no bridge");
+            if (!result.success) {
+                setLiveSync(!enabled);
+                showNote(result.error || "Something went wrong.", true);
+            }
+        } catch (e) {
+            setLiveSync(!enabled);
+            showNote("No CEP bridge detected — open this panel inside After Effects.", true);
+        }
+    };
+
+    const restoreSetup = async () => {
+        setBusy(true);
+        try {
+            const result = await evalTS("teamRestoreLocalSetup");
+            if (result === undefined) throw new Error("no bridge");
+            if (!result.success) {
+                showNote(result.error || "Something went wrong.", true);
+                return;
+            }
+            // Same full-reload convention as applying a profile -- every
+            // screen re-reads its settings fresh.
+            window.location.reload();
+        } catch (e) {
+            showNote("No CEP bridge detected — open this panel inside After Effects.", true);
+        } finally {
+            setBusy(false);
+        }
+    };
+
     const applyProfile = async (profile: ProfileInfo) => {
+        // The scary "save first!" wording is gone -- a guest apply now backs
+        // the machine's own setup up automatically (aeft/team.ts), and the
+        // owner reclaiming their machine (applying their own profile on a
+        // station tagged theirs) ends the guest session instead.
+        const isOwnerReclaim = machineOwner !== "" && profile.name === machineOwner;
         const ok = await confirmDialog(
-            `Apply "${profile.name}"'s setup? This replaces this machine's panel personalisation (Toolset layout, favorites, theme, pinned effects…) and reloads the panel. Save the current setup as a profile first if it isn't already.`
+            isOwnerReclaim
+                ? `Load ${profile.name}'s setup from the team folder and reload the panel?`
+                : `Apply "${profile.name}"'s setup on this machine? The current setup is backed up automatically — restore it any time from this Team menu.`
         );
         if (!ok) return;
         setBusy(true);
         try {
-            const result = await evalTS("teamApplyProfile", profile.fileName);
+            const result = await evalTS("teamApplyProfile", profile.name);
             if (result === undefined) throw new Error("no bridge");
             if (!result.success) {
                 showNote(result.error || "Something went wrong.", true);
@@ -159,10 +239,10 @@ const TeamDroplet: React.FC = () => {
     };
 
     const deleteProfile = async (profile: ProfileInfo) => {
-        const ok = await confirmDialog(`Delete the profile "${profile.name}" for the whole team? (It only removes the saved snapshot, nobody's live setup changes.)`);
+        const ok = await confirmDialog(`Delete "${profile.name}"'s saved setup for the whole team? (Removes only the snapshot — their folder stays, and nobody's live setup changes.)`);
         if (!ok) return;
         try {
-            const result = await evalTS("teamDeleteProfile", profile.fileName);
+            const result = await evalTS("teamDeleteProfile", profile.name);
             if (result === undefined) throw new Error("no bridge");
             if (result.success) setProfiles(result.profiles || []);
             else showNote(result.error || "Something went wrong.", true);
@@ -172,15 +252,24 @@ const TeamDroplet: React.FC = () => {
     };
 
     const updateAvailable = latestVersion !== "";
+    const guestActive = guestProfile !== "";
 
     return (
         <Droplet
             panelClassName="team-droplet-panel"
             trigger={({ toggle }) => (
-                <Tooltip text={updateAvailable ? `Team — Toolbox ${latestVersion} is available` : "Team"}>
+                <Tooltip
+                    text={
+                        guestActive
+                            ? `Team — using ${guestProfile}'s setup (guest)`
+                            : updateAvailable
+                              ? `Team — Toolbox ${latestVersion} is available`
+                              : "Team"
+                    }
+                >
                     <button className="favorites-toggle team-trigger" onClick={toggle}>
                         <Users size={14} />
-                        {updateAvailable && <span className="team-update-dot" />}
+                        {guestActive ? <span className="team-guest-dot" /> : updateAvailable && <span className="team-update-dot" />}
                     </button>
                 </Tooltip>
             )}
@@ -196,6 +285,18 @@ const TeamDroplet: React.FC = () => {
                         </div>
                     )}
 
+                    {guestActive && (
+                        <div className="team-guest-banner">
+                            <span>
+                                Using <strong>{guestProfile}</strong>'s setup{machineOwner ? ` on ${machineOwner}'s Mac` : ""}.
+                            </span>
+                            <button type="button" className="team-guest-restore" disabled={busy} onClick={restoreSetup}>
+                                <Undo2 size={12} />
+                                Restore {machineOwner ? `${machineOwner}'s` : "previous"} setup
+                            </button>
+                        </div>
+                    )}
+
                     <div className="team-folder-row">
                         <span className="team-folder-path" title={folderPath || undefined}>
                             {folderPath ? (mounted ? folderPath : `${folderPath} (not reachable)`) : "Team folder not set"}
@@ -208,21 +309,49 @@ const TeamDroplet: React.FC = () => {
 
                     {folderPath !== "" && (
                         <>
-                            <span className="team-section-label">Profiles</span>
+                            <span className="team-section-label">Members</span>
                             {profiles.length === 0 ? (
-                                <p className="hint">No profiles yet — save yours below, and it becomes available on every machine that shares this team folder.</p>
+                                <p className="hint">No members yet — each member is a subfolder of the team folder (create them by hand, or just save your setup below and your folder is created for you).</p>
                             ) : (
                                 <div className="team-profile-list">
                                     {profiles.map((p) => (
-                                        <div key={p.fileName} className="team-profile-row">
-                                            <button type="button" className="team-profile-apply" disabled={busy} onClick={() => applyProfile(p)}>
+                                        <div key={p.name} className="team-profile-row">
+                                            <button
+                                                type="button"
+                                                className={p.hasProfile ? "team-profile-apply" : "team-profile-apply team-profile-apply--empty"}
+                                                disabled={busy || !p.hasProfile}
+                                                title={p.hasProfile ? `Apply ${p.name}'s setup on this machine` : `${p.name} hasn't saved a setup yet`}
+                                                onClick={() => applyProfile(p)}
+                                            >
                                                 {p.name}
+                                                {!p.hasProfile && <span className="team-profile-empty-tag">no setup yet</span>}
                                             </button>
-                                            <button type="button" className="team-profile-del" title="Delete profile" onClick={() => deleteProfile(p)}>
-                                                <Trash2 size={12} />
+                                            <button
+                                                type="button"
+                                                className={machineOwner === p.name ? "team-profile-home team-profile-home--owner" : "team-profile-home"}
+                                                title={machineOwner === p.name ? `This is ${p.name}'s Mac — click to untag` : `Tag this Mac as ${p.name}'s station`}
+                                                onClick={() => setOwner(p.name)}
+                                            >
+                                                <Home size={12} />
                                             </button>
+                                            {p.hasProfile && (
+                                                <button type="button" className="team-profile-del" title="Delete saved setup" onClick={() => deleteProfile(p)}>
+                                                    <Trash2 size={12} />
+                                                </button>
+                                            )}
                                         </div>
                                     ))}
+                                </div>
+                            )}
+
+                            {machineOwner !== "" && (
+                                <div className="team-livesync-row">
+                                    <CheckboxToggle
+                                        checked={liveSync}
+                                        onChange={toggleLiveSync}
+                                        label={`Keep ${machineOwner}'s profile synced`}
+                                    />
+                                    <span className="team-livesync-hint">Saves this station's setup to the team folder on panel open, so it's always current elsewhere.</span>
                                 </div>
                             )}
 

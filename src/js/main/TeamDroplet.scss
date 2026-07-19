@@ -200,3 +200,105 @@
 
     &.team-note--error { color: #e07a7a; }
 }
+
+// A pre-created member folder with no saved snapshot yet -- listed (the
+// roster is visible up front) but not clickable until they save one.
+.team-profile-apply--empty {
+    color: #777;
+    cursor: default;
+}
+
+.team-profile-empty-tag {
+    margin-left: auto;
+    flex-shrink: 0;
+    font-size: 8.5px;
+    color: #5f5f5f;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding-left: 8px;
+}
+
+// --- Machine ownership / guest sessions --------------------------------
+// Guest-session dot: teal, distinct from the yellow update dot -- "someone
+// else's setup is live here" is state, not news, but it should be visible
+// from the home screen so an owner coming back to their desk spots it
+// without opening the menu. Same static-dot no-pulse rule as above.
+.team-guest-dot {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #2dd4bf;
+}
+
+.team-guest-banner {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: rgba(45, 212, 191, 0.08);
+    border: 1px solid rgba(45, 212, 191, 0.4);
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 10.5px;
+    line-height: 1.4;
+    color: #99e8dc;
+
+    strong { color: #d3f7f1; font-weight: 600; }
+}
+
+.team-guest-restore {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    background: rgba(45, 212, 191, 0.14);
+    border: 1px solid #2dd4bf;
+    color: #d3f7f1;
+    border-radius: 5px;
+    padding: 4px 8px;
+    font-size: 10.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease;
+
+    &:hover:not(:disabled) { background: rgba(45, 212, 191, 0.26); }
+    &:disabled { opacity: 0.5; cursor: default; }
+    svg { flex-shrink: 0; }
+}
+
+// Home icon on each member row: tags this Mac as that member's station.
+// Grey until it IS the tagged owner, then teal -- the tag is what the
+// guest-restore banner and live sync key off.
+.team-profile-home {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: #555;
+    padding: 4px 6px;
+    cursor: pointer;
+    transition: color 0.12s ease;
+
+    &:hover { color: #aaa; }
+    &--owner { color: #2dd4bf; }
+    &--owner:hover { color: #7ce8da; }
+}
+
+.team-livesync-row {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-top: 2px;
+}
+
+.team-livesync-hint {
+    font-size: 9.5px;
+    color: #777;
+    line-height: 1.35;
+    // Indented under the toggle's own label, not the checkbox square.
+    padding-left: 24px;
+}

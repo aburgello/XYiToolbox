@@ -143,8 +143,15 @@ const ExpressionsBank: React.FC = () => {
                 const result = await evalTS("expressionsBankLoad");
                 if (result === undefined) throw new Error("no bridge");
                 if (result.success) {
-                    const parsed = JSON.parse(result.message);
-                    setEntries(parsed.length > 0 ? parsed : MOCK_ENTRIES);
+                    const parsed: ExprEntry[] = JSON.parse(result.message);
+                    // Merge the built-in templates in (stored entries win by
+                    // name) instead of the old "stored replaces templates"
+                    // rule -- team sync (teamSyncShared) can now populate an
+                    // otherwise-empty store in the background, and without
+                    // this merge one synced entry would make all 20
+                    // templates vanish from the list.
+                    const storedNames = new Set(parsed.map((s) => s.name.toLowerCase()));
+                    setEntries(parsed.concat(MOCK_ENTRIES.filter((t) => !storedNames.has(t.name.toLowerCase()))));
                 } else {
                     setEntries(MOCK_ENTRIES);
                 }
@@ -213,10 +220,17 @@ const ExpressionsBank: React.FC = () => {
 
     // Pushes one expression into the team folder's shared-expressions.json
     // (aeft/team.ts) -- colleagues' panels pull it automatically on open via
-    // teamSyncShared, same flow as QuickFX's combo sharing.
-    const shareEntry = async (id: string) => {
+    // teamSyncShared, same flow as QuickFX's combo sharing. Passes the FULL
+    // entry, not an id: the 20 built-in templates only exist in this file's
+    // MOCK_ENTRIES until first edit (never in app.settings), so a backend
+    // id-lookup couldn't find them -- the "Expression not found" bug from
+    // the first real share attempt.
+    const shareEntry = async (entry: ExprEntry) => {
         try {
-            const result = await evalTS("teamShareExpression", id);
+            const result = await evalTS(
+                "teamShareExpression",
+                JSON.stringify({ id: entry.id, name: entry.name, tag: entry.tag, code: entry.code, uses: 0, description: entry.description })
+            );
             if (result === undefined) throw new Error("no bridge");
             setStatus(result.success
                 ? { type: "success", text: result.message || "Shared with the team." }
@@ -329,7 +343,7 @@ const ExpressionsBank: React.FC = () => {
                                                 <button className="eb-icon-btn" onClick={() => copyCode(e.code)}><Copy size={12} /></button>
                                             </Tooltip>
                                             <Tooltip text="Share to team library">
-                                                <button className="eb-icon-btn" onClick={() => shareEntry(e.id)}><Users size={12} /></button>
+                                                <button className="eb-icon-btn" onClick={() => shareEntry(e)}><Users size={12} /></button>
                                             </Tooltip>
                                             <Tooltip text="Edit">
                                                 <button className="eb-icon-btn" onClick={() => startEdit(e)}><Pencil size={12} /></button>

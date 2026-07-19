@@ -3855,3 +3855,111 @@ confirm the dot, share a combo/expression and watch it arrive on
 another machine's panel open, queue a real render and wait for the
 finished toast's numbers, and run Pre-Flight on a project with a
 known-missing footage item + a third-party effect.
+
+### Real-AE round 1 refinements (first office install on the NAS Mac)
+
+Four things surfaced installing on the real office Mac; all fixed.
+
+- **Pre-Flight said "everything installed" while Effect Controls clearly
+  showed "Missing: UnMult".** The registry-only check (matchName not in
+  `app.effects`) was a real FALSE NEGATIVE: a missing-effect placeholder's
+  matchName can read empty or as a registered placeholder depending on AE
+  version, so it slips the `!installed[matchName]` test. **Fix
+  (`preflight.ts`): flag an effect missing if EITHER its display name
+  starts with `"Missing:"` (AE's own placeholder rename -- the
+  authoritative signal, exactly what Effect Controls shows) OR its
+  matchName isn't in the registry.** Also moved the try/catch to
+  PER-EFFECT (was per-layer, so one unreadable placeholder silently
+  skipped every remaining effect on that layer) and made the report key
+  off name when matchName is blank. **If Pre-Flight ever again passes a
+  project with a visibly-missing effect, the `"Missing:"` prefix is the
+  check to trust first** -- AE localises effect display names but this
+  placeholder prefix has held; if a non-English AE ever shows a
+  translated prefix, add it alongside `"Missing:"` here.
+- **"Share to team" on an Expressions Bank entry said "Expression not
+  found."** The 20 built-in templates live only in the frontend
+  (`ExpressionsBank.tsx`'s `MOCK_ENTRIES`) and are never written to
+  `app.settings` until the user edits one -- so `teamShareExpression`'s
+  id-lookup in the persisted store couldn't find a template. **Fix:
+  `teamShareExpression` now takes the FULL entry as a JSON payload
+  (`entryJson`), not an id -- the frontend already holds everything the
+  shared file needs.** Same lesson applies to any future "share this
+  built-in thing" action: pass the payload, don't assume it's persisted.
+- **Expressions Bank load now MERGES templates with stored entries**
+  (stored wins by name) instead of "stored replaces templates." Needed
+  because team-sync can now populate an otherwise-empty store in the
+  background, and the old rule made one synced entry hide all 20
+  templates. `teamSyncShared` writing into the store no longer erases the
+  built-ins from the list.
+- **Profiles are now MEMBER SUBFOLDERS, not a flat `profiles/` dir**
+  (v2 layout, direct request: pre-create `Antonio/`, `Aaron/`, `Maria/`,
+  `Turk/`, `Luke/`, `Jacqui/`, `Nicholas/` as the roster). Each member is
+  a subfolder of the team folder; their snapshot is `<member>/profile.json`.
+  `teamListProfiles` enumerates subfolders (excluding `_`-prefixed and the
+  legacy `profiles/`), returning `{name, hasProfile}` -- a pre-created
+  folder with no `profile.json` yet lists greyed/disabled with a "no setup
+  yet" tag (roster visible up front). `teamApplyProfile`/`teamDeleteProfile`
+  now take the MEMBER NAME, not a filename. **Legacy flat
+  `profiles/<name>.json` from v1 is still READ as a fallback** (apply +
+  list) so nothing already saved orphans, but saving always writes the
+  member-folder layout. Delete removes only the snapshot, never the member
+  folder (it's their home for any future per-member data, and may be
+  studio-pre-created). The member folder is created automatically by "Save
+  current setup as" if it doesn't exist.
+- **Theme IS in a profile** (asked directly): `OVTheme` +
+  `OVThemeDecorations` are in `PROFILE_KEYS`, so applying a member's
+  profile carries their theme too.
+
+## "Workspace follows you": machine ownership, guest sessions, live sync
+
+Follow-up to the Team profiles batch above, picking up a parallel
+session's open design question ("identity-aware auto-load? live profile
+sync? adaptive frequently-used?"). The user's answer reshaped it: everyone
+has their OWN station (used 99% of the time) and occasionally hops onto a
+colleague's Mac. That kills the value of OS-username detection on open
+(your own Mac's local settings already ARE your setup; and hop-ons may
+share the host's OS session, so `system.userName` can't identify a guest
+anyway) -- what actually matters is making the occasional guest hop
+**fresh going in and safe coming out**. Deliberately NOT built:
+`system.userName`-based suggestions, and the adaptive "frequently used"
+cluster (speculative, layout-shifts-under-you risk; the parallel session
+itself flagged it as hold-unless-keen).
+
+Three per-MACHINE local settings (never in PROFILE_KEYS -- a profile must
+not carry another machine's ownership tag or backup), in `aeft/team.ts`'s
+new "Machine ownership / guest sessions" section:
+- `TeamMachineOwner` -- member name this station belongs to. Tagged once
+  via a Home icon on each member row in TeamDroplet (grey = untagged,
+  teal = this station's owner; clicking the owner's own icon untags).
+- `TeamPreGuestBackup` -- **guest-safe apply**. `teamApplyProfile` now
+  snapshots the machine's current PROFILE_KEYS into this local key before
+  the FIRST non-owner apply (back-to-back guest applies keep the ORIGINAL
+  backup, only updating the displayed guest name); applying the tagged
+  owner's own profile clears the backup instead (owner reclaiming their
+  machine ends the guest session). While a backup exists the Team trigger
+  shows a teal dot and the droplet a banner -- "Using <guest>'s setup on
+  <owner>'s Mac" -- with one-click `teamRestoreLocalSetup` (writes the
+  backup values back over every PROFILE_KEY, clears the backup, reloads
+  the panel). The old apply-confirm's "save your setup first!" warning is
+  gone -- backup is automatic now, and the dialog says so.
+- `TeamLiveSync` -- opt-in toggle (shown only when the machine is tagged):
+  `teamAutoSyncProfile` runs once per session from TeamDroplet's existing
+  mount block and silently pushes this station's setup to the owner's NAS
+  profile, so the snapshot a colleague's machine applies is always the
+  latest (effectively "as of end of last session", since settings persist).
+  Every skip path returns success with no message (a laptop off the studio
+  network must never toast an error). **CRITICAL guard**: it never syncs
+  while a guest backup is active -- that would overwrite the owner's NAS
+  profile with the GUEST's setup.
+
+Restore-vs-absent-keys note: `app.settings` has no delete API, so keys the
+backup recorded as absent are restored as `""` -- every loader in this app
+already treats an empty string as its default/empty state (same convention
+`teamApplyProfile` has always relied on for keys a profile doesn't carry).
+
+Verified `tsc -p tsconfig-build.json` (clean; frontend-config noise on
+team.ts is the usual ambient-globals state) + `yarn build` clean. The
+whole flow is app.settings/NAS-side, so the real pass needs AE: tag a
+machine, save/apply a colleague's profile, confirm the banner + restore
+round-trips the original setup, and confirm live sync updates
+`<member>/profile.json`'s savedAt on panel open.
