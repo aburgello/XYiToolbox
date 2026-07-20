@@ -49,36 +49,149 @@ function getContentFrameRect(layer: AVLayer, time: number): { left: number; top:
   return layer.sourceRectAtTime(time, false);
 }
 
-// Axis-aligned bounding box of an AVLayer's rendered content in COMP space,
-// derived from its own content rect (getContentFrameRect() above --
-// sourceRectAtTime for real footage, or the nested comp's own frame for a
-// precomp layer -- independent of the current anchor/position either way)
-// transformed by the layer's current anchor, position, and scale. Rotation
-// is intentionally ignored -- align/distribute
-// tools everywhere (AE's own included) work on axis-aligned bounds, and
-// factoring in rotation would give a looser, less predictable box. **Parenting
-// caveat**: `Position` for a parented layer is in its PARENT's space, so
-// aligning a parented layer to the comp mixes coordinate spaces and will be
-// off -- same limitation Motion 2/most align scripts have; flagged rather
-// than silently wrong.
 interface LayerBounds { left: number; top: number; width: number; height: number; cx: number; cy: number; }
 
+// ---------------------------------------------------------------------------
+// Comp-space geometry composed BY HAND from scriptable transform properties.
+//
+// AE's expression-language toComp()/toWorld()/fromComp() do NOT exist in the
+// scripting DOM (confirmed against types-for-adobe: only `copyToComp` is
+// there). Calling them threw, which is why every layer was filtered out as
+// "no visible bounds". So we walk the parent chain ourselves using only
+// Position / Rotation / Scale / Anchor Point.
+//
+// A layer's Position/Rotation/Scale/Anchor are all expressed in its PARENT's
+// "child frame" -- the frame whose ORIGIN sits at the parent's anchor point.
+// A child at Position (0,0) lands its own anchor exactly on the parent's
+// anchor; that's what fixes the reported bug (reading Position as if it were
+// comp space mixed coordinate spaces and displaced the layer).
+//
+// Scope, deliberately unchanged from before: 2D only. X/Y rotation,
+// orientation, and camera projection are ignored -- these are flat DOOH
+// comps and align/distribute have always been axis-aligned/2D. A 3D-rotated
+// layer will be treated by its X/Y position and Z rotation only.
+// ---------------------------------------------------------------------------
+interface Xf2D { px: number; py: number; rot: number; sx: number; sy: number; ax: number; ay: number; }
+
+function readXf(layer: Layer, time: number): Xf2D {
+  const p = currentOrKeyframedValue(layer.property("Position") as Property, time) as number[];
+  const rotP = layer.property("Rotation") as Property;
+  const r = rotP ? (currentOrKeyframedValue(rotP, time) as number) : 0;
+  const sP = layer.property("Scale") as Property;
+  const s = sP ? (currentOrKeyframedValue(sP, time) as number[]) : [100, 100];
+  const aP = layer.property("Anchor Point") as Property;
+  const a = aP ? (currentOrKeyframedValue(aP, time) as number[]) : [0, 0];
+  return { px: p[0], py: p[1], rot: r, sx: s[0] / 100, sy: s[1] / 100, ax: a[0], ay: a[1] };
+}
+
+// A point q in `layer`'s own child frame -> comp space (recurse up the chain).
+function childFrameToComp(layer: Layer, qx: number, qy: number, time: number): number[] {
+  const xf = readXf(layer, time);
+  const rad = (xf.rot * Math.PI) / 180;
+  const cos = Math.cos(rad), sin = Math.sin(rad);
+  const sxv = xf.sx * qx, syv = xf.sy * qy;
+  const mx = xf.px + (cos * sxv - sin * syv);
+  const my = xf.py + (sin * sxv + cos * syv);
+  const parent = layer.parent as Layer | null;
+  if (!parent) return [mx, my];
+  return childFrameToComp(parent, mx, my, time);
+}
+
+// Inverse of childFrameToComp: a comp-space point -> the q in `layer`'s child
+// frame that maps to it. Invert the parent chain top-down, then this layer.
+function compToChildFrame(layer: Layer, cx: number, cy: number, time: number): number[] {
+  const parent = layer.parent as Layer | null;
+  const m = parent ? compToChildFrame(parent, cx, cy, time) : [cx, cy];
+  const xf = readXf(layer, time);
+  const dx = m[0] - xf.px, dy = m[1] - xf.py;
+  const rad = (-xf.rot * Math.PI) / 180;
+  const cos = Math.cos(rad), sin = Math.sin(rad);
+  const rx = cos * dx - sin * dy;
+  const ry = sin * dx + cos * dy;
+  return [xf.sx !== 0 ? rx / xf.sx : rx, xf.sy !== 0 ? ry / xf.sy : ry];
+}
+
+// Comp-space location of a point given in `layer`'s own SOURCE space (what
+// sourceRectAtTime/getContentFrameRect return): shift by the anchor, then
+// run it through the layer's own transform and up the parent chain.
+function sourcePointToComp(layer: Layer, srcX: number, srcY: number, time: number): number[] {
+  const xf = readXf(layer, time);
+  return childFrameToComp(layer, srcX - xf.ax, srcY - xf.ay, time);
+}
+
+// Axis-aligned bounding box of an AVLayer's rendered content in COMP space,
+// derived from its own content rect (getContentFrameRect() -- sourceRectAtTime
+// for real footage, or the nested comp's own frame for a precomp). The four
+// corners go through sourcePointToComp (parent-chain-aware), so bounds are
+// correct for a PARENTED layer -- the fix. Building the box from the mapped
+// corners also folds in Z rotation (AABB of the rotated rect); the old
+// anchor/position math ignored rotation, a small intentional change that now
+// matches what's on screen.
 function getLayerBounds(layer: AVLayer, time: number): LayerBounds | null {
-  const rect = getContentFrameRect(layer, time);
-  const anchorProp = layer.property("Anchor Point") as Property;
+  let rect: { left: number; top: number; width: number; height: number };
+  try {
+    rect = getContentFrameRect(layer, time);
+  } catch (e) {
+    return null;
+  }
+  const corners = [
+    [rect.left, rect.top],
+    [rect.left + rect.width, rect.top],
+    [rect.left, rect.top + rect.height],
+    [rect.left + rect.width, rect.top + rect.height],
+  ];
+  let minX = Number.MAX_VALUE, minY = Number.MAX_VALUE, maxX = -Number.MAX_VALUE, maxY = -Number.MAX_VALUE;
+  for (let i = 0; i < corners.length; i++) {
+    let c: number[];
+    try {
+      c = sourcePointToComp(layer, corners[i][0], corners[i][1], time);
+    } catch (e) {
+      return null;
+    }
+    if (c[0] < minX) minX = c[0];
+    if (c[1] < minY) minY = c[1];
+    if (c[0] > maxX) maxX = c[0];
+    if (c[1] > maxY) maxY = c[1];
+  }
+  const width = maxX - minX;
+  const height = maxY - minY;
+  return { left: minX, top: minY, width: width, height: height, cx: minX + width / 2, cy: minY + height / 2 };
+}
+
+// Move a layer so its rendered content shifts by (dx, dy) in COMP space,
+// writing its Position correctly whether or not it's parented.
+//
+// Unparented: comp space == Position space, so this is just Position + (dx,
+// dy) -- byte-for-byte the old align/distribute behavior, zero change for the
+// common case.
+//
+// Parented: `Position` lives in the parent's child frame, so a raw add moves
+// the layer by the wrong amount (and wrong direction under a rotated/scaled
+// parent) -- the reported bug. The layer's anchor renders at
+// childFrameToComp(parent, Position); we shift THAT comp point by the delta
+// and invert with compToChildFrame(parent, ...) to recover the new Position.
+// Nested parenting is handled because both walk the whole chain. Any z
+// component of Position is preserved. try/catch falls back to the raw add if
+// a parent's transform can't be read (e.g. a camera/light used as parent).
+function applyCompDeltaToPosition(layer: Layer, dx: number, dy: number, time: number): void {
   const posProp = layer.property("Position") as Property;
-  const scaleProp = layer.property("Scale") as Property;
-  if (!anchorProp || !posProp) return null;
-  const anchor = currentOrKeyframedValue(anchorProp, time) as number[];
-  const pos = currentOrKeyframedValue(posProp, time) as number[];
-  const scale = scaleProp ? (currentOrKeyframedValue(scaleProp, time) as number[]) : [100, 100];
-  const sx = scale[0] / 100;
-  const sy = scale[1] / 100;
-  const left = pos[0] + (rect.left - anchor[0]) * sx;
-  const top = pos[1] + (rect.top - anchor[1]) * sy;
-  const width = rect.width * sx;
-  const height = rect.height * sy;
-  return { left, top, width, height, cx: left + width / 2, cy: top + height / 2 };
+  const pos = (currentOrKeyframedValue(posProp, time) as number[]).slice();
+  const parent = layer.parent as Layer | null;
+  if (parent) {
+    try {
+      const anchorComp = childFrameToComp(parent, pos[0], pos[1], time);
+      const newPos = compToChildFrame(parent, anchorComp[0] + dx, anchorComp[1] + dy, time);
+      pos[0] = newPos[0];
+      pos[1] = newPos[1];
+      applyValue(posProp, time, pos);
+      return;
+    } catch (e) {
+      // fall through to the raw add below
+    }
+  }
+  pos[0] += dx;
+  pos[1] += dy;
+  applyValue(posProp, time, pos);
 }
 
 // =============================================================================
@@ -1014,8 +1127,6 @@ export const motionToolsAlign = (edge: string, relativeTo: string): Result => {
     for (let i = 0; i < entries.length; i++) {
       const layer = entries[i].layer;
       const b = entries[i].bounds;
-      const posProp = layer.property("Position") as Property;
-      const pos = currentOrKeyframedValue(posProp, time) as number[];
 
       let delta = 0;
       if (edge === "left") delta = targetMin - b.left;
@@ -1025,10 +1136,10 @@ export const motionToolsAlign = (edge: string, relativeTo: string): Result => {
       else if (edge === "bottom") delta = targetMax - (b.top + b.height);
       else if (edge === "vcenter") delta = targetCenter - b.cy;
 
-      const next = pos.slice();
-      if (isHorizontal) next[0] = pos[0] + delta;
-      else next[1] = pos[1] + delta;
-      applyValue(posProp, time, next);
+      // Bounds (b) are in comp space (parent-aware) and so is `delta`;
+      // applyCompDeltaToPosition writes it back into Position correctly
+      // whether or not the layer is parented.
+      applyCompDeltaToPosition(layer, isHorizontal ? delta : 0, isHorizontal ? 0 : delta, time);
     }
     app.endUndoGroup();
     return { success: true };
@@ -1072,13 +1183,10 @@ export const motionToolsDistribute = (axis: string): Result => {
     for (let i = 1; i < entries.length - 1; i++) {
       const layer = entries[i].layer;
       const b = entries[i].bounds;
-      const posProp = layer.property("Position") as Property;
-      const pos = currentOrKeyframedValue(posProp, time) as number[];
       const targetCenter = first + gap * i;
-      const next = pos.slice();
-      if (isHorizontal) next[0] = pos[0] + (targetCenter - b.cx);
-      else next[1] = pos[1] + (targetCenter - b.cy);
-      applyValue(posProp, time, next);
+      // Comp-space delta, parent-aware apply (see align above).
+      const delta = isHorizontal ? targetCenter - b.cx : targetCenter - b.cy;
+      applyCompDeltaToPosition(layer, isHorizontal ? delta : 0, isHorizontal ? 0 : delta, time);
     }
     app.endUndoGroup();
     return { success: true };
