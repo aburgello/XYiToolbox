@@ -112,10 +112,12 @@ const TeamDroplet: React.FC = () => {
                     setLatestVersion(version.latest);
                 }
                 const sync = await evalTS("teamSyncShared");
-                if (sync && sync.success && ((sync.newCombos || 0) > 0 || (sync.newExpressions || 0) > 0)) {
+                if (sync && sync.success && ((sync.newCombos || 0) > 0 || (sync.newExpressions || 0) > 0 || (sync.newTools || 0) > 0 || (sync.newCampaigns || 0) > 0)) {
                     const parts: string[] = [];
                     if (sync.newCombos) parts.push(`${sync.newCombos} new team combo${sync.newCombos === 1 ? "" : "s"}`);
                     if (sync.newExpressions) parts.push(`${sync.newExpressions} new expression${sync.newExpressions === 1 ? "" : "s"}`);
+                    if (sync.newTools) parts.push(`${sync.newTools} new tool${sync.newTools === 1 ? "" : "s"}`);
+                    if (sync.newCampaigns) parts.push(`${sync.newCampaigns} new campaign${sync.newCampaigns === 1 ? "" : "s"}`);
                     cachedSyncNote = `Synced from team: ${parts.join(" · ")}.`;
                     setSyncNote(cachedSyncNote);
                 }

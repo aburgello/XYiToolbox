@@ -27,6 +27,7 @@ import React, { useEffect, useRef, useState } from "react";
 import "gsap";
 import "./main.scss";
 import { DialogHost } from "./Dialog";
+import { PreFlightHost } from "./PreFlightModal";
 import { HomeScreen } from "./screens/HomeScreen";
 import { CategoryScreen } from "./screens/CategoryScreen";
 import { LocaliseScreen } from "./screens/LocaliseScreen";
@@ -149,6 +150,7 @@ const Main = () => {
             </GsapScreenTransition>
             <CommandPalette screen={screen} onNavigate={setScreen} />
             <DialogHost />
+            <PreFlightHost />
         </div>
     );
 };

@@ -33,6 +33,7 @@ import {
     Droplets, ArrowRightLeft, Palette, Wand2, Waves,
 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
+import { fuzzyFilter } from "../lib/fuzzySearch";
 import StatusIcon from "../StatusIcon";
 import { QUICK_FX, QUICK_FX_CATEGORIES, type QuickFxEntry } from "./quickFxData";
 import "../shared.scss";
@@ -156,16 +157,13 @@ const QuickFXTool = () => {
     const [status, setStatus] = useState<StatusMsgWithId | null>(null);
     const statusIdRef = React.useRef(0);
 
-    const filtered = useMemo(() => {
-        const q = query.trim().toLowerCase();
-        if (!q) return QUICK_FX;
-        return QUICK_FX.filter(
-            (fx) =>
-                fx.label.toLowerCase().indexOf(q) !== -1 ||
-                fx.category.toLowerCase().indexOf(q) !== -1 ||
-                fx.matchName.toLowerCase().indexOf(q) !== -1
-        );
-    }, [query]);
+    // Fuzzy (fuse.js, shared lib/fuzzySearch helper -- same config as the home
+    // search + ⌘K palette) across label/category/matchName, so "gaussain" still
+    // finds Gaussian Blur. Empty query returns the full curated list (browse).
+    const filtered = useMemo(
+        () => fuzzyFilter(QUICK_FX, query, ["label", "category", "matchName"]),
+        [query]
+    );
 
     const grouped = useMemo(() => {
         const map = new Map<string, QuickFxEntry[]>();
@@ -303,26 +301,27 @@ const QuickFXTool = () => {
     // everything already visible as a pill (curated + pinned), capped so a
     // broad query ("blur") doesn't dump hundreds of rows.
     const installedHits = useMemo(() => {
-        const q = query.trim().toLowerCase();
-        if (!q || installedEffects.length === 0) return [];
+        if (!query.trim() || installedEffects.length === 0) return [];
         const shown = new Set<string>();
         for (const fx of QUICK_FX) shown.add(fx.matchName);
         for (const fx of userEffects) shown.add(fx.matchName);
+        // Fuzzy-match across the whole installed registry, then drop anything
+        // already visible as a pill and cap so a broad query ("blur") doesn't
+        // dump hundreds of rows. Fuse's relevance order is preserved.
+        const matched = fuzzyFilter(installedEffects, query, ["displayName", "category"]);
         const hits: InstalledEffect[] = [];
-        for (const fx of installedEffects) {
+        for (const fx of matched) {
             if (shown.has(fx.matchName)) continue;
-            if (fx.displayName.toLowerCase().indexOf(q) === -1 && fx.category.toLowerCase().indexOf(q) === -1) continue;
             hits.push(fx);
             if (hits.length >= 30) break;
         }
         return hits;
     }, [query, installedEffects, userEffects]);
 
-    const filteredUserEffects = useMemo(() => {
-        const q = query.trim().toLowerCase();
-        if (!q) return userEffects;
-        return userEffects.filter((fx) => fx.label.toLowerCase().indexOf(q) !== -1 || fx.category.toLowerCase().indexOf(q) !== -1);
-    }, [query, userEffects]);
+    const filteredUserEffects = useMemo(
+        () => fuzzyFilter(userEffects, query, ["label", "category"]),
+        [query, userEffects]
+    );
 
     // --- Keyboard-first apply ------------------------------------------
     // While searching, one flat ordered list of every visible hit (My

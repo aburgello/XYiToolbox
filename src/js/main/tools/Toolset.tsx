@@ -73,6 +73,7 @@ import Tooltip from "../Tooltip";
 import StatusIcon from "../StatusIcon";
 import Droplet from "../Droplet";
 import { alertDialog, promptDialog, selectDialog } from "../Dialog";
+import { openPreFlight, type PreflightReport } from "../PreFlightModal";
 import { iconWiggle, buttonLift } from "../animations";
 import { TOOLS } from "../toolRegistry";
 import { useCustomTools, type CustomToolEntry } from "../hooks/useCustomTools";
@@ -452,47 +453,16 @@ export const ACTIONS: ActionEntry[] = [
         group: "qc",
         run: async () => {
             const result = (await evalTSSafe("preflightAudit")) as ActionResult & {
-                report?: {
-                    projectName: string;
-                    compCount: number;
-                    footageCount: number;
-                    missingFootage: string[];
-                    missingEffects: { matchName: string; label: string; usedIn: string[] }[];
-                    fontsChecked: boolean;
-                    missingFonts: string[];
-                    fontsUsed: number;
-                };
+                report?: PreflightReport;
             };
             if (!result.success || !result.report) {
                 return { success: false, error: result.error || "Something went wrong." };
             }
-            const r = result.report;
-            const lines: string[] = [];
-            lines.push(`Pre-Flight — ${r.projectName}`);
-            lines.push(`${r.compCount} comp${r.compCount === 1 ? "" : "s"} · ${r.footageCount} footage item${r.footageCount === 1 ? "" : "s"}`);
-            lines.push("");
-            lines.push(
-                r.missingFootage.length === 0
-                    ? "✓ Footage: nothing missing"
-                    : `✗ Missing footage (${r.missingFootage.length}): ${r.missingFootage.join(", ")}`
-            );
-            lines.push(
-                r.missingEffects.length === 0
-                    ? "✓ Effects: everything used is installed here"
-                    : `✗ Effects not installed on this machine (${r.missingEffects.length}): ` +
-                      r.missingEffects.map((fx) => `${fx.label} (in ${fx.usedIn.join(", ")})`).join("; ")
-            );
-            lines.push(
-                !r.fontsChecked
-                    ? "– Fonts: not checkable on this AE version"
-                    : r.missingFonts.length === 0
-                    ? `✓ Fonts: all ${r.fontsUsed} resolve`
-                    : `✗ Missing fonts (${r.missingFonts.length}): ${r.missingFonts.join(", ")}`
-            );
-            // A report reads better held open in a dialog than auto-dismissing
-            // in a toast; returning null afterwards means "already reported,
-            // no toast" -- same convention as a cancelled picker.
-            await alertDialog(lines.join("\n"));
+            // The result is an INTERACTIVE modal now (reveal-in-Finder + relink
+            // per missing footage item), not a plain text alert -- see
+            // PreFlightModal.tsx. Returning null afterwards means "already
+            // reported, no toast" (same convention as a cancelled picker).
+            await openPreFlight(result.report);
             return null;
         },
         successText: () => "",

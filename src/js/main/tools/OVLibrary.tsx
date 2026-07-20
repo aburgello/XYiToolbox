@@ -28,6 +28,7 @@ import {
     Film,
     ImagePlus,
     Columns2,
+    Users,
 } from "lucide-react";
 import CSInterface from "../../lib/cep/csinterface";
 import { csi, evalTS } from "../../lib/utils/bolt";
@@ -797,6 +798,23 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false }) => {
         await refreshCampaigns();
     };
 
+    // Share the selected campaign to the team library (aeft/team.ts). Same
+    // one-click "push to shared file, colleagues pull on open" flow as effect
+    // combos / Expressions Bank / custom tools -- so a campaign set up once
+    // shows up on everyone's panel instead of each person adding it by hand.
+    // Safe because the masters-root path lives on the shared NAS and resolves
+    // the same on every studio Mac.
+    const handleShareCampaign = async () => {
+        if (!selectedCampaign) return;
+        const payload = JSON.stringify({ name: selectedCampaign.name, mastersRoot: selectedCampaign.mastersRoot });
+        const result = await safeEvalTS("teamShareCampaign", payload);
+        if (result && result.success) {
+            pushToast(result.message || "Shared with the team.", "success");
+        } else if (result) {
+            pushToast(result.error || "Could not share campaign.", "error");
+        }
+    };
+
     // --- Custom creative thumbnails --------------------------------------
     const handleSetCustomThumbnail = async (creativeName: string) => {
         if (!selectedCampaign) return;
@@ -946,6 +964,11 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false }) => {
                                         <button className="ov-campaign-action" onClick={() => { close(); handleNewCampaign(); }}>
                                             <FolderPlus size={13} /> New Campaign…
                                         </button>
+                                        {selectedCampaign && (
+                                            <button className="ov-campaign-action" onClick={() => { close(); handleShareCampaign(); }}>
+                                                <Users size={13} /> Share "{selectedCampaign.name}" with team
+                                            </button>
+                                        )}
                                         {selectedCampaign && (
                                             <button className="ov-campaign-action ov-campaign-action--danger" onClick={() => { close(); handleRemoveCampaign(); }}>
                                                 <Trash2 size={13} /> Remove "{selectedCampaign.name}"

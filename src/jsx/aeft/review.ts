@@ -288,22 +288,78 @@ export const scanMastersForCreative = (mastersRoot: string, creative: string): M
   return records;
 };
 
-// Scans the mirrored Renders/<Creative> tree once, returning a flat list of
-// stem -> fsName pairs so main.tsx can build its own lookup map. This
-// render <-> master pairing (identical filename stem) is UNVERIFIED against
-// a real render filename -- see CLAUDE.md.
-export const scanRendersForCreative = (mastersRoot: string, creative: string): RenderEntry[] => {
-  const rendersFolder = new Folder(mastersRoot + "/Renders/" + creative);
-  const out: RenderEntry[] = [];
-  if (!rendersFolder.exists) return out;
-  const allFiles = findAllFiles(rendersFolder);
-  for (let i = 0; i < allFiles.length; i++) {
-    const fName = allFiles[i].name;
-    if (!isVideoFile(fName)) continue;
-    const dot = fName.lastIndexOf(".");
-    const fStem = dot === -1 ? fName : fName.substring(0, dot);
-    out.push({ stem: fStem, path: allFiles[i].fsName });
+// Case-insensitive child-folder lookup -- studio folder names occasionally
+// vary in case ("Support" vs "support"), so match by name rather than
+// constructing an exact path and hoping the case is right.
+function findChildFolderCI(parent: Folder, name: string): Folder | null {
+  if (!parent || !parent.exists) return null;
+  const lower = name.toLowerCase();
+  const items = parent.getFiles();
+  for (let i = 0; i < items.length; i++) {
+    if (items[i] instanceof Folder && items[i].name.toLowerCase() === lower) return items[i] as Folder;
   }
+  return null;
+}
+
+// The campaign's preview-mp4 folder: <mastersRoot>/Support/Motion_Components/_mp4.
+// A newer studio layout keeps lightweight web-playable preview mp4s here
+// (a flat, campaign-wide folder -- NOT per-creative like Renders/<Creative>),
+// alongside the masters rather than in the Renders tree. Returns null (not an
+// error) when the campaign doesn't use this layout.
+function findMotionComponentsMp4Folder(mastersRoot: string): Folder | null {
+  const support = findChildFolderCI(new Folder(mastersRoot), "Support");
+  if (!support) return null;
+  const mc = findChildFolderCI(support, "Motion_Components");
+  if (!mc) return null;
+  return findChildFolderCI(mc, "_mp4");
+}
+
+// Returns a flat list of stem -> fsName preview-video pairs for a creative so
+// main.tsx can build its own lookup map. Two sources, merged:
+//   1. The mirrored Renders/<Creative> tree (the original layout).
+//   2. <mastersRoot>/Support/Motion_Components/_mp4 -- the newer flat,
+//      campaign-wide preview-mp4 folder. Because that folder is NOT scoped
+//      per creative, each mp4 is only included if its filename stem matches
+//      one of THIS creative's own master .aep stems -- otherwise another
+//      creative's mp4 could leak into this card's preview (pickPreviewRender
+//      on the React side just takes the best-extension entry, it doesn't
+//      re-check the stem).
+// The stem <-> master pairing (identical filename stem, extension aside) is
+// the same convention Renders uses and is UNVERIFIED against real preview-mp4
+// filenames -- see CLAUDE.md; if previews don't appear, check the mp4 naming
+// matches the master stem first.
+export const scanRendersForCreative = (mastersRoot: string, creative: string): RenderEntry[] => {
+  const out: RenderEntry[] = [];
+  const seen: { [path: string]: boolean } = {};
+
+  const pushVideos = function (files: File[], stemFilter: { [stem: string]: boolean } | null) {
+    for (let i = 0; i < files.length; i++) {
+      const fName = files[i].name;
+      if (!isVideoFile(fName)) continue;
+      const dot = fName.lastIndexOf(".");
+      const fStem = dot === -1 ? fName : fName.substring(0, dot);
+      if (stemFilter && !stemFilter[fStem.toLowerCase()]) continue;
+      const path = files[i].fsName;
+      if (seen[path]) continue;
+      seen[path] = true;
+      out.push({ stem: fStem, path: path });
+    }
+  };
+
+  // 1. Renders/<Creative> (original layout) -- no stem filter, already scoped.
+  const rendersFolder = new Folder(mastersRoot + "/Renders/" + creative);
+  if (rendersFolder.exists) pushVideos(findAllFiles(rendersFolder), null);
+
+  // 2. Support/Motion_Components/_mp4 (newer flat layout) -- filter to this
+  // creative's own master stems.
+  const mp4Folder = findMotionComponentsMp4Folder(mastersRoot);
+  if (mp4Folder && mp4Folder.exists) {
+    const masters = scanMastersForCreative(mastersRoot, creative);
+    const stems: { [stem: string]: boolean } = {};
+    for (let i = 0; i < masters.length; i++) stems[masters[i].stem.toLowerCase()] = true;
+    pushVideos(findAllFiles(mp4Folder), stems);
+  }
+
   return out;
 };
 

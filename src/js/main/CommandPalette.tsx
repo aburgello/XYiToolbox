@@ -12,10 +12,11 @@
 // TOOLS (dedicated tool pages), and doesn't know about Toolset.tsx's ~19
 // one-click grid buttons at all -- there was previously no way to search
 // for "Turk It" or "Frontcard" from anywhere, home included. This is a
-// superset: same substring-match convention HomeScreen's search already
-// uses (no fuzzy-scoring library, consistent with this codebase's existing
-// simplicity), extended to cover Toolset actions and to work from any
-// screen via a module-independent global keydown listener.
+// superset: it covers Toolset actions (which HomeScreen's box doesn't) and
+// works from any screen via a module-independent global keydown listener.
+// Matching is fuzzy (fuse.js, via lib/fuzzySearch.ts -- shared with
+// HomeScreen so both boxes behave identically), layered under the ranking
+// tiers described at the `searchRecords` memo below.
 //
 // Selecting a TOOLS hit navigates (same auto-action mechanism main.tsx
 // already has for HomeScreen's search) with `backTo` set to whatever
@@ -33,6 +34,7 @@ import { TOOLS, categoryStyleVars, type ToolEntry } from "./toolRegistry";
 import { ACTIONS, customButtonToAction, type ActionEntry } from "./tools/Toolset";
 import { useFavorites, favoriteKey } from "./hooks/useFavorites";
 import { useCustomTools, type CustomToolEntry } from "./hooks/useCustomTools";
+import { rankedFuzzySearch, type FuzzyRecord } from "./lib/fuzzySearch";
 import StatusIcon from "./StatusIcon";
 import Tooltip from "./Tooltip";
 import type { Screen } from "./main";
@@ -121,9 +123,44 @@ const CommandPalette: React.FC<Props> = ({ screen, onNavigate }) => {
         return () => cancelAnimationFrame(id);
     }, [open]);
 
-    const hits = useMemo<Hit[]>(() => {
-        const q = query.trim().toLowerCase();
+    // Flat, fuzzy-searchable index of everything the palette can find. Built
+    // once per customTools change (TOOLS/ACTIONS are static module constants);
+    // the query itself is applied separately below so typing doesn't rebuild
+    // the index. Each record carries a `tier` that preserves the exact ranking
+    // the substring version had -- a whole-tool name match (tier 0) outranks a
+    // one-click action LABEL match (1), custom button/page labels (2/3), a
+    // buried inner-action match like "trott 2.0" (4), then anything matched
+    // only via description text (5-7). Fuse scores WITHIN a tier; the tier
+    // decides which kind of match wins the top slot. An entity indexed under
+    // several fields (its label AND its description) is deduped by hit key down
+    // in rankedFuzzySearch, keeping its best appearance -- which is why the old
+    // hand-written "exclude things whose label already matched" filters are
+    // gone.
+    const searchRecords = useMemo<FuzzyRecord<Hit>[]>(() => {
+        const recs: FuzzyRecord<Hit>[] = [];
+        const push = (text: string, tier: number, hit: Hit) => {
+            if (text) recs.push({ text, tier, hit, hitKey: hit.key });
+        };
+        for (const t of TOOLS) push(t.label, 0, { kind: "tool", key: t.id, tool: t });
+        for (const a of ACTIONS) push(a.label, 1, { kind: "action", key: "toolset:" + a.id, action: a });
 
+        const customButtonTools = customTools.filter((t) => t.kind === "button");
+        const customPageTools = customTools.filter((t) => t.kind === "page");
+        for (const t of customButtonTools) push(t.name, 2, { kind: "action", key: "custom:" + t.id, action: customButtonToAction(t) });
+        for (const t of customPageTools) push(t.name, 3, { kind: "custom-page", key: "custompage:" + t.id, entry: t });
+
+        for (const t of TOOLS)
+            for (const a of t.actions || [])
+                push(a, 4, { kind: "tool", key: t.id + ":" + a, tool: t, matchedAction: a });
+
+        for (const a of ACTIONS) push(a.description, 5, { kind: "action", key: "toolset:" + a.id, action: a });
+        for (const t of customButtonTools) push(t.description, 6, { kind: "action", key: "custom:" + t.id, action: customButtonToAction(t) });
+        for (const t of customPageTools) push(t.description, 7, { kind: "custom-page", key: "custompage:" + t.id, entry: t });
+        return recs;
+    }, [customTools]);
+
+    const hits = useMemo<Hit[]>(() => {
+        const q = query.trim();
         if (!q) {
             // Empty query: surface favorites (reuses the same favorites this
             // app already has via the home screen's star icon) rather than
@@ -135,59 +172,8 @@ const CommandPalette: React.FC<Props> = ({ screen, onNavigate }) => {
                 matchedAction: action,
             }));
         }
-
-        // Ranked so a whole-tool match ("localised library") outranks a
-        // one-click action LABEL match, which outranks a buried inner-action
-        // match ("trott 2.0"), which outranks an action matched only via its
-        // description text (e.g. "check" matching Scale Fit's description
-        // mentioning "checkbox effect") -- that last tier is deliberately
-        // last, not excluded: still findable for someone searching by what
-        // a button DOES, just not competing with an obvious label match for
-        // the top slot where it'd look unexplained.
-        const toolNameHits: Hit[] = TOOLS.filter((t) => t.label.toLowerCase().includes(q)).map((t) => ({
-            kind: "tool",
-            key: t.id,
-            tool: t,
-        }));
-        const actionLabelHits: Hit[] = ACTIONS.filter((a) => a.label.toLowerCase().includes(q)).map((a) => ({
-            kind: "action" as const,
-            key: "toolset:" + a.id,
-            action: a,
-        }));
-        const innerActionHits: Hit[] = TOOLS.flatMap((t) =>
-            (t.actions || [])
-                .filter((a) => a.toLowerCase().includes(q) && !t.label.toLowerCase().includes(q))
-                .map((a) => ({ kind: "tool" as const, key: t.id + ":" + a, tool: t, matchedAction: a }))
-        );
-        const actionDescriptionHits: Hit[] = ACTIONS.filter(
-            (a) => !a.label.toLowerCase().includes(q) && a.description.toLowerCase().includes(q)
-        ).map((a) => ({ kind: "action" as const, key: "toolset:" + a.id, action: a }));
-
-        // Custom tools (Script Playground's "Save as Tool...") slot into the
-        // same two tiers their real counterparts use: a "button"-kind one
-        // reads and runs exactly like an ACTIONS entry, a "page"-kind one
-        // reads like a tool but always navigates to My Tools (see the Hit
-        // type's own comment for why it never auto-runs).
-        const customButtonTools = customTools.filter((t) => t.kind === "button");
-        const customPageTools = customTools.filter((t) => t.kind === "page");
-        const customButtonLabelHits: Hit[] = customButtonTools
-            .filter((t) => t.name.toLowerCase().includes(q))
-            .map((t) => ({ kind: "action" as const, key: "custom:" + t.id, action: customButtonToAction(t) }));
-        const customPageLabelHits: Hit[] = customPageTools
-            .filter((t) => t.name.toLowerCase().includes(q))
-            .map((t) => ({ kind: "custom-page" as const, key: "custompage:" + t.id, entry: t }));
-        const customButtonDescriptionHits: Hit[] = customButtonTools
-            .filter((t) => !t.name.toLowerCase().includes(q) && t.description.toLowerCase().includes(q))
-            .map((t) => ({ kind: "action" as const, key: "custom:" + t.id, action: customButtonToAction(t) }));
-        const customPageDescriptionHits: Hit[] = customPageTools
-            .filter((t) => !t.name.toLowerCase().includes(q) && t.description.toLowerCase().includes(q))
-            .map((t) => ({ kind: "custom-page" as const, key: "custompage:" + t.id, entry: t }));
-
-        return [
-            ...toolNameHits, ...actionLabelHits, ...customButtonLabelHits, ...customPageLabelHits,
-            ...innerActionHits, ...actionDescriptionHits, ...customButtonDescriptionHits, ...customPageDescriptionHits,
-        ];
-    }, [query, favoriteEntries, customTools]);
+        return rankedFuzzySearch(searchRecords, q);
+    }, [query, favoriteEntries, searchRecords]);
 
     // Keep the highlighted row in view when navigating by keyboard past the
     // edge of the scrollable list.

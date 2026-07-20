@@ -6,7 +6,7 @@
 // favorites open/closed, logo spin/easter egg) lives here rather than in
 // the top-level Main component.
 // =============================================================================
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence, type Transition } from "motion/react";
 import {
     Search,
@@ -22,6 +22,7 @@ import { TOOLS, CATEGORIES, categoryStyleVars, prefetchTool } from "../toolRegis
 import { iconWiggle, cardLift, categoryLift } from "../animations";
 import { useFavorites, favoriteKey } from "../hooks/useFavorites";
 import { useCustomTools } from "../hooks/useCustomTools";
+import { rankedFuzzySearch, type FuzzyRecord } from "../lib/fuzzySearch";
 import { useTheme } from "../hooks/useTheme";
 import { THEMES } from "../themes";
 import ThemePicker from "../ThemePicker";
@@ -140,31 +141,36 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
         ? THEMES.find((t) => t.id === themeId)
         : undefined;
 
-    // Search: matches tool names AND individual action labels.
+    // Search: fuzzy (fuse.js, via the shared lib/fuzzySearch helper -- same
+    // config the ⌘K Command Palette uses, so both boxes behave identically)
+    // over tool names, individual action labels, and custom tools. Ranking
+    // tiers preserved from the old substring version: tool name (0) > inner
+    // action label (1) > custom tool (2).
+    type HomeHit = { tool: typeof TOOLS[number]; matchedAction?: string; suppressAutoAction?: boolean };
     const { customTools } = useCustomTools();
     const myToolsEntry = TOOLS.find((t) => t.id === "my-tools");
-    const searchLower = search.trim().toLowerCase();
-    const searchHits: { tool: typeof TOOLS[number]; matchedAction?: string; suppressAutoAction?: boolean }[] = searchLower
-        ? [
-              ...TOOLS.flatMap((t) => {
-                  const hits: { tool: typeof TOOLS[number]; matchedAction?: string }[] = [];
-                  if (t.label.toLowerCase().includes(searchLower)) hits.push({ tool: t });
-                  for (const action of t.actions || []) {
-                      if (action.toLowerCase().includes(searchLower)) hits.push({ tool: t, matchedAction: action });
-                  }
-                  return hits;
-              }),
-              // Custom tools (Script Playground's "Save as Tool...") always
-              // point at My Tools and never auto-run -- unlike a real inner
-              // action, a matched label here isn't a known static button to
-              // safely auto-click, it's an arbitrary saved script.
-              ...(myToolsEntry
-                  ? customTools
-                        .filter((c) => c.name.toLowerCase().includes(searchLower) || c.description.toLowerCase().includes(searchLower))
-                        .map((c) => ({ tool: myToolsEntry, matchedAction: c.name, suppressAutoAction: true }))
-                  : []),
-          ]
-        : [];
+    const searchQuery = search.trim();
+    const searchRecords = useMemo<FuzzyRecord<HomeHit>[]>(() => {
+        const recs: FuzzyRecord<HomeHit>[] = [];
+        for (const t of TOOLS) {
+            recs.push({ text: t.label, tier: 0, hit: { tool: t }, hitKey: t.id });
+            for (const action of t.actions || [])
+                recs.push({ text: action, tier: 1, hit: { tool: t, matchedAction: action }, hitKey: t.id + ":" + action });
+        }
+        // Custom tools (Script Playground's "Save as Tool...") always point at
+        // My Tools and never auto-run -- unlike a real inner action, a matched
+        // label here isn't a known static button to safely auto-click, it's an
+        // arbitrary saved script. Indexed under both name and description.
+        if (myToolsEntry) {
+            for (const c of customTools) {
+                const hit: HomeHit = { tool: myToolsEntry, matchedAction: c.name, suppressAutoAction: true };
+                recs.push({ text: c.name, tier: 2, hit, hitKey: "custom:" + c.id });
+                recs.push({ text: c.description, tier: 3, hit, hitKey: "custom:" + c.id });
+            }
+        }
+        return recs;
+    }, [customTools, myToolsEntry]);
+    const searchHits: HomeHit[] = searchQuery ? rankedFuzzySearch(searchRecords, searchQuery) : [];
 
     const renderToolCard = (tool: typeof TOOLS[number], backTo: Screen, matchedAction?: string, suppressAutoAction?: boolean) => {
         const Icon = tool.icon;
@@ -402,7 +408,7 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
                         </AnimatePresence>
 
                         <AnimatePresence>
-                            {searchLower && (
+                            {searchQuery && (
                                 <motion.div
                                     className="tool-card-grid search-results"
                                     initial={{ opacity: 0, height: 0 }}

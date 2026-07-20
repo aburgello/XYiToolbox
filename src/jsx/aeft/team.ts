@@ -25,8 +25,9 @@
 // PROFILE_KEYS too.
 // =============================================================================
 import { Result, SETTINGS_SECTION } from "./shared";
-import { expressionsBankLoad, expressionsBankSave } from "./tools";
+import { expressionsBankLoad, expressionsBankSave, loadCustomTools, saveCustomTools } from "./tools";
 import { loadCombos, saveCombos, EffectComboEntry } from "./effects";
+import { loadCampaignsRaw, saveCampaign } from "./review";
 
 const TEAM_FOLDER_KEY = "TeamFolderPath";
 
@@ -627,8 +628,22 @@ export const teamCheckVersion = (): VersionResult => {
 
 const SHARED_COMBOS_FILE = "shared-combos.json";
 const SHARED_EXPRESSIONS_FILE = "shared-expressions.json";
+const SHARED_TOOLS_FILE = "shared-tools.json";
+const SHARED_CAMPAIGNS_FILE = "shared-campaigns.json";
 const SHARED_COMBOS_TYPE = "xyi-shared-combos";
 const SHARED_EXPRESSIONS_TYPE = "xyi-shared-expressions";
+const SHARED_TOOLS_TYPE = "xyi-shared-tools";
+const SHARED_CAMPAIGNS_TYPE = "xyi-shared-campaigns";
+
+// OV Library campaign: just a name + the masters-root path. Sharing these is
+// safe/useful here specifically because the masters live on the studio NAS at
+// a path that resolves identically on every artist's Mac (same consistent-
+// mount assumption Frontcard's hardcoded template path relies on) -- so one
+// person's saved campaign points every other machine at the same real folder.
+interface SharedCampaign {
+  name: string;
+  mastersRoot: string;
+}
 
 interface ExpressionEntry {
   id: string;
@@ -637,6 +652,17 @@ interface ExpressionEntry {
   code: string;
   uses: number;
   description: string;
+}
+
+// Mirrors the frontend's CustomToolEntry (useCustomTools.ts). The `id` is
+// machine-local -- stripped on share, re-minted on pull -- so it's optional
+// on the shared-file shape.
+interface SharedCustomTool {
+  id?: string;
+  name: string;
+  description: string;
+  code: string;
+  kind: string;
 }
 
 function readSharedFile<T>(fileName: string, expectedType: string): T[] | null {
@@ -669,9 +695,21 @@ function loadLocalExpressions(): ExpressionEntry[] {
   }
 }
 
+function loadLocalCustomTools(): SharedCustomTool[] {
+  const result = loadCustomTools();
+  if (!result.success || !(result as { message?: string }).message) return [];
+  try {
+    return JSON.parse((result as { message: string }).message) as SharedCustomTool[];
+  } catch (e) {
+    return [];
+  }
+}
+
 interface SyncResult extends Result {
   newCombos?: number;
   newExpressions?: number;
+  newTools?: number;
+  newCampaigns?: number;
 }
 
 export const teamSyncShared = (): SyncResult => {
@@ -725,7 +763,53 @@ export const teamSyncShared = (): SyncResult => {
       if (newExpressions > 0) expressionsBankSave(JSON.stringify(local));
     }
 
-    return { success: true, newCombos: newCombos, newExpressions: newExpressions };
+    // Custom tools (Script Playground scripts): shared -> local, merge by
+    // name, fresh local ids. Same rules as combos/expressions above.
+    let newTools = 0;
+    const sharedTools = readSharedFile<SharedCustomTool>(SHARED_TOOLS_FILE, SHARED_TOOLS_TYPE);
+    if (sharedTools && sharedTools.length > 0) {
+      const local = loadLocalCustomTools();
+      const names: { [lower: string]: boolean } = {};
+      for (let i = 0; i < local.length; i++) names[local[i].name.toLowerCase()] = true;
+      for (let i = 0; i < sharedTools.length; i++) {
+        const tool = sharedTools[i];
+        if (!tool || !tool.name || !tool.code) continue;
+        if (names[tool.name.toLowerCase()]) continue;
+        local.push({
+          id: "tool-" + new Date().getTime() + "-" + Math.floor(Math.random() * 100000) + "-" + i,
+          name: tool.name,
+          description: tool.description || "",
+          code: tool.code,
+          kind: tool.kind === "button" ? "button" : "page",
+        });
+        names[tool.name.toLowerCase()] = true;
+        newTools++;
+      }
+      if (newTools > 0) saveCustomTools(JSON.stringify(local));
+    }
+
+    // OV Library campaigns: shared -> local, merge by name (saveCampaign
+    // already refuses a duplicate name, so this only ever ADDS new ones --
+    // it never overwrites a local campaign's path).
+    let newCampaigns = 0;
+    const sharedCampaigns = readSharedFile<SharedCampaign>(SHARED_CAMPAIGNS_FILE, SHARED_CAMPAIGNS_TYPE);
+    if (sharedCampaigns && sharedCampaigns.length > 0) {
+      const localCamps = loadCampaignsRaw();
+      const names: { [lower: string]: boolean } = {};
+      for (let i = 0; i < localCamps.length; i++) names[localCamps[i].name.toLowerCase()] = true;
+      for (let i = 0; i < sharedCampaigns.length; i++) {
+        const camp = sharedCampaigns[i];
+        if (!camp || !camp.name || !camp.mastersRoot) continue;
+        if (names[camp.name.toLowerCase()]) continue;
+        const r = saveCampaign(camp.name, camp.mastersRoot);
+        if (r.success) {
+          names[camp.name.toLowerCase()] = true;
+          newCampaigns++;
+        }
+      }
+    }
+
+    return { success: true, newCombos: newCombos, newExpressions: newExpressions, newTools: newTools, newCampaigns: newCampaigns };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -784,6 +868,72 @@ export const teamShareExpression = (entryJson: string): Result => {
     }
     shared.push(entry);
     if (!writeSharedFile(SHARED_EXPRESSIONS_FILE, SHARED_EXPRESSIONS_TYPE, shared)) {
+      return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
+    }
+    return { success: true, message: 'Shared "' + entry.name + '" with the team.' };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// Share ONE custom tool (Script Playground script) to the team library. Takes
+// the full entry as a JSON payload -- same reasoning as teamShareExpression:
+// the frontend already holds everything the shared file needs, so no store
+// lookup. The machine-local `id` is dropped on the way out (pull re-mints one).
+export const teamShareCustomTool = (entryJson: string): Result => {
+  try {
+    if (!teamFolder()) return { success: false, error: "Team folder not set -- set it in the Team menu on the home screen first." };
+    let entry: SharedCustomTool | null = null;
+    try {
+      entry = JSON.parse(entryJson) as SharedCustomTool;
+    } catch (e2) {
+      return { success: false, error: "Could not read the tool data." };
+    }
+    if (!entry || !entry.name || !entry.code) return { success: false, error: "Tool has no name/code to share." };
+
+    const shared = readSharedFile<SharedCustomTool>(SHARED_TOOLS_FILE, SHARED_TOOLS_TYPE) || [];
+    for (let i = 0; i < shared.length; i++) {
+      if (shared[i].name.toLowerCase() === entry.name.toLowerCase()) {
+        return { success: true, message: '"' + entry.name + '" is already in the team library.' };
+      }
+    }
+    shared.push({
+      name: entry.name,
+      description: entry.description || "",
+      code: entry.code,
+      kind: entry.kind === "button" ? "button" : "page",
+    });
+    if (!writeSharedFile(SHARED_TOOLS_FILE, SHARED_TOOLS_TYPE, shared)) {
+      return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
+    }
+    return { success: true, message: 'Shared "' + entry.name + '" with the team.' };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// Share ONE OV Library campaign (name + masters-root path) to the team, so
+// everyone points at the same masters folder instead of each adding it by
+// hand. Takes the full entry as a JSON payload, same pattern as the others.
+export const teamShareCampaign = (campaignJson: string): Result => {
+  try {
+    if (!teamFolder()) return { success: false, error: "Team folder not set -- set it in the Team menu on the home screen first." };
+    let entry: SharedCampaign | null = null;
+    try {
+      entry = JSON.parse(campaignJson) as SharedCampaign;
+    } catch (e2) {
+      return { success: false, error: "Could not read the campaign data." };
+    }
+    if (!entry || !entry.name || !entry.mastersRoot) return { success: false, error: "Campaign has no name/path to share." };
+
+    const shared = readSharedFile<SharedCampaign>(SHARED_CAMPAIGNS_FILE, SHARED_CAMPAIGNS_TYPE) || [];
+    for (let i = 0; i < shared.length; i++) {
+      if (shared[i].name.toLowerCase() === entry.name.toLowerCase()) {
+        return { success: true, message: '"' + entry.name + '" is already in the team library.' };
+      }
+    }
+    shared.push({ name: entry.name, mastersRoot: entry.mastersRoot });
+    if (!writeSharedFile(SHARED_CAMPAIGNS_FILE, SHARED_CAMPAIGNS_TYPE, shared)) {
       return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
     }
     return { success: true, message: 'Shared "' + entry.name + '" with the team.' };

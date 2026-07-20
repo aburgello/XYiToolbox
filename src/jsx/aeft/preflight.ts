@@ -24,11 +24,23 @@ interface PreflightEffectIssue {
   usedIn: string[];
 }
 
+// Each missing footage item carries its project item `id` (so the modal can
+// target it for reveal/relink even though the project selection may change)
+// and its EXPECTED path (where AE is looking for the file that isn't there),
+// which drives both "Reveal in Finder" (nearest existing ancestor folder) and
+// the auto-relink sibling match.
+interface PreflightFootageIssue {
+  id: number;
+  name: string;
+  path: string;
+  fileName: string;
+}
+
 interface PreflightReport {
   projectName: string;
   compCount: number;
   footageCount: number;
-  missingFootage: string[];
+  missingFootage: PreflightFootageIssue[];
   missingEffects: PreflightEffectIssue[];
   fontsChecked: boolean;
   missingFonts: string[];
@@ -85,7 +97,16 @@ export const preflightAudit = (): PreflightResult => {
       if (item instanceof FootageItem) {
         report.footageCount++;
         try {
-          if ((item as any).footageMissing) report.missingFootage.push(item.name);
+          if ((item as any).footageMissing) {
+            let path = "";
+            let fileName = "";
+            try {
+              if (item.file) { path = item.file.fsName; fileName = item.file.name; }
+            } catch (ef) {
+              // some sources (solids) have no .file -- leave path blank
+            }
+            report.missingFootage.push({ id: item.id, name: item.name, path: path, fileName: fileName });
+          }
         } catch (e) {
           // solids/placeholders can lack the flag -- not missing
         }
@@ -183,6 +204,101 @@ export const preflightAudit = (): PreflightResult => {
 
     return { success: true, report: report };
   } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// -----------------------------------------------------------------------------
+// Reveal a missing footage item's EXPECTED location in Finder/Explorer. The
+// file itself is gone (that's why it's missing), so we walk UP from its
+// expected path to the nearest ancestor folder that actually exists and open
+// that -- lands the user as close as possible to where AE was looking. Same
+// system.callSystem open/explorer approach as review.ts's revealFile.
+// -----------------------------------------------------------------------------
+export const preflightRevealMissing = (itemId: number): Result => {
+  try {
+    const item = app.project.itemByID(itemId);
+    if (!(item instanceof FootageItem)) return { success: false, error: "That footage item is no longer in the project." };
+    let expected: File | null = null;
+    try { expected = item.file; } catch (e) { expected = null; }
+    if (!expected) return { success: false, error: "This item has no file path to reveal (it may be a solid or placeholder)." };
+
+    // Nearest existing ancestor folder.
+    let folder: Folder | null = expected.parent;
+    while (folder && !folder.exists) {
+      const up = folder.parent;
+      if (!up || up.fsName === folder.fsName) { folder = null; break; }
+      folder = up;
+    }
+    if (!folder || !folder.exists) {
+      return { success: false, error: "None of the expected folders exist on this machine:\n" + expected.fsName };
+    }
+    const p = folder.fsName;
+    if ($.os.indexOf("Windows") !== -1) system.callSystem('explorer "' + p + '"');
+    else system.callSystem('open "' + p + '"');
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+interface PreflightRelinkResult extends Result {
+  cancelled?: boolean;
+  relinked?: string[];
+}
+
+// Relink a missing footage item to a user-picked file, then auto-relink any
+// OTHER missing footage items whose expected filename matches a file sitting
+// in the SAME folder the user just picked from. Predictable "same folder,
+// exact filename" rule -- never guesses across folders, never fuzzy-matches.
+// Returns cancelled:true (no error) if the user dismisses the picker.
+export const preflightReplaceMissing = (itemId: number): PreflightRelinkResult => {
+  try {
+    const item = app.project.itemByID(itemId);
+    if (!(item instanceof FootageItem)) return { success: false, error: "That footage item is no longer in the project." };
+
+    const picked = File.openDialog("Select the replacement for: " + item.name);
+    if (!picked) return { success: false, cancelled: true };
+
+    app.beginUndoGroup("Pre-Flight Relink");
+    const relinked: string[] = [];
+    try {
+      item.replace(picked as File);
+      relinked.push(item.name);
+    } catch (er) {
+      app.endUndoGroup();
+      return { success: false, error: "Could not relink " + item.name + ": " + er.toString() };
+    }
+
+    // Auto-relink siblings: for every other still-missing footage item, look
+    // for a file with its expected NAME in the folder we just picked from.
+    const folder = (picked as File).parent;
+    for (let i = 1; i <= app.project.numItems; i++) {
+      const other = app.project.item(i);
+      if (other.id === itemId) continue;
+      if (!(other instanceof FootageItem)) continue;
+      let stillMissing = false;
+      try { stillMissing = (other as any).footageMissing; } catch (e) { stillMissing = false; }
+      if (!stillMissing) continue;
+
+      let wantName = "";
+      try { if (other.file) wantName = other.file.name; } catch (e) { wantName = ""; }
+      if (!wantName) continue;
+
+      const candidate = new File(folder.fsName + "/" + wantName);
+      if (candidate.exists) {
+        try {
+          other.replace(candidate);
+          relinked.push(other.name);
+        } catch (e) {
+          // one sibling failing to relink shouldn't abort the rest
+        }
+      }
+    }
+    app.endUndoGroup();
+    return { success: true, relinked: relinked };
+  } catch (e) {
+    try { app.endUndoGroup(); } catch (e2) { /* no group open */ }
     return { success: false, error: e.toString() };
   }
 };

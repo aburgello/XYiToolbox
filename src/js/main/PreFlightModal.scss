@@ -1,0 +1,287 @@
+// =============================================================================
+// src/js/main/PreFlightModal.scss
+// -----------------------------------------------------------------------------
+// Styling for PreFlightModal.tsx. Shares the same fixed full-panel dark-
+// backdrop modal language as Dialog.scss (mounted at the app-shell root,
+// outside any category tint), but wider and vertically scrollable since a
+// Pre-Flight report is a list, not a one-line message. Its own fixed "system"
+// accent (amber -- this is a WARNING/QC surface), distinct from Dialog's
+// indigo, rather than borrowing a category color it has no business claiming.
+// =============================================================================
+.preflight-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000; // same tier as Dialog -- a report should sit above toasts/palette
+    padding: 24px;
+    box-sizing: border-box;
+}
+
+.preflight-card {
+    --pf-accent: #fbbf24;
+    --pf-accent-soft: rgba(251, 191, 36, 0.14);
+
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    background: #262626;
+    border: 1px solid #444;
+    border-radius: 8px;
+    width: 100%;
+    max-width: 460px;
+    max-height: min(78vh, 640px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+    color: #ddd;
+    font-size: 12px;
+    overflow: hidden;
+
+    &::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: linear-gradient(135deg, #fbbf24 0%, #d97706 100%);
+    }
+}
+
+.preflight-head {
+    padding: 16px 18px 12px;
+    border-bottom: 1px solid #383838;
+    flex: 0 0 auto;
+}
+
+.preflight-title-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.preflight-title-icon {
+    color: var(--pf-accent);
+    flex: 0 0 auto;
+}
+
+.preflight-title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: #f0f0f0;
+    flex: 1;
+}
+
+.preflight-rescan {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: #303030;
+    border: 1px solid #484848;
+    border-radius: 5px;
+    color: #cbcbcb;
+    font-size: 11px;
+    padding: 4px 9px;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+
+    &:hover:not(:disabled) {
+        border-color: var(--pf-accent);
+        color: #fff;
+    }
+    &:disabled {
+        opacity: 0.55;
+        cursor: default;
+    }
+}
+
+.preflight-project {
+    margin: 9px 0 2px;
+    font-size: 12px;
+    color: #d8d8d8;
+    word-break: break-all;
+}
+
+.preflight-counts {
+    margin: 0;
+    font-size: 11px;
+    color: #8f8f8f;
+}
+
+.preflight-body {
+    padding: 6px 18px 4px;
+    overflow-y: auto;
+    flex: 1 1 auto;
+}
+
+.preflight-section {
+    padding: 10px 0;
+    border-bottom: 1px solid #333;
+
+    &:last-child {
+        border-bottom: none;
+    }
+}
+
+.preflight-section-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+
+    &.ok {
+        color: #5fbf8a;
+    }
+    &.bad {
+        color: #e8956b;
+    }
+    &.neutral {
+        color: #9a9a9a;
+    }
+    svg {
+        flex: 0 0 auto;
+    }
+}
+
+.preflight-list {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.preflight-item {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    background: #1f1f1f;
+    border: 1px solid #383838;
+    border-radius: 6px;
+    padding: 8px 10px;
+
+    &--static {
+        background: transparent;
+        border-color: #333;
+    }
+}
+
+.preflight-item-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0; // let children truncate instead of overflowing the row
+    flex: 1;
+}
+
+.preflight-item-name {
+    color: #e6e6e6;
+    font-weight: 500;
+    word-break: break-all;
+    line-height: 1.35;
+}
+
+.preflight-item-path {
+    color: #808080;
+    font-size: 10.5px;
+    word-break: break-all;
+    line-height: 1.3;
+}
+
+.preflight-item-done {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: #5fbf8a;
+    font-size: 10.5px;
+    margin-top: 2px;
+}
+
+.preflight-item-error {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 4px;
+    color: #e07a5f;
+    font-size: 10.5px;
+    margin-top: 2px;
+    word-break: break-word;
+
+    svg {
+        flex: 0 0 auto;
+        margin-top: 1px;
+    }
+}
+
+.preflight-item-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    flex: 0 0 auto;
+
+    button {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        background: #2c2c2c;
+        border: 1px solid #494949;
+        border-radius: 5px;
+        color: #cfcfcf;
+        font-size: 11px;
+        padding: 4px 9px;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: border-color 0.15s, color 0.15s, background 0.15s;
+
+        &:hover:not(:disabled) {
+            border-color: var(--pf-accent);
+            color: #fff;
+            background: var(--pf-accent-soft);
+        }
+        &:disabled {
+            opacity: 0.5;
+            cursor: default;
+        }
+        svg {
+            flex: 0 0 auto;
+        }
+    }
+
+    .preflight-replace {
+        border-color: #5a6bb5;
+        color: #b9c2ee;
+        &:hover:not(:disabled) {
+            border-color: #7d8ce0;
+            background: rgba(90, 107, 181, 0.18);
+            color: #fff;
+        }
+    }
+}
+
+.preflight-foot {
+    padding: 12px 18px;
+    border-top: 1px solid #383838;
+    display: flex;
+    justify-content: flex-end;
+    flex: 0 0 auto;
+}
+
+.preflight-done {
+    background: linear-gradient(135deg, #4c6ef5 0%, #363a94 100%);
+    border: 1px solid #6478f7;
+    border-radius: 6px;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 7px 20px;
+    cursor: pointer;
+    transition: filter 0.15s;
+
+    &:hover {
+        filter: brightness(1.1);
+    }
+}
