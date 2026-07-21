@@ -331,24 +331,12 @@ const LocalisedLibraryTool = () => {
         refreshTerritories(selectedCampaign);
     }, [selectedCampaign]);
 
-    // Defaults straight into the AEP folder on entering a territory --
-    // that's the one actually needed on nearly every visit, PNG/AI/other
-    // folders stay a click away rather than forcing an extra click past
-    // the folder list every single time. Only fires off `selectedTerritory`
-    // (deliberately not `components`/`customFolders` too) -- re-running
-    // this on every component/folder list change would yank the user back
-    // to AEP mid-session (e.g. right after they'd clicked into PNG to add
-    // something), not just on first entering the territory.
+    // On entering a territory, stay at the folder list rather than diving
+    // straight into any one folder (previously auto-selected AEP). The user
+    // asked to stay out of AEP -- the folder list is the neutral landing so
+    // whichever folder they actually want is one deliberate click away.
     useEffect(() => {
-        if (!selectedTerritory) {
-            setSelectedFolder(null);
-            return;
-        }
-        const terrComponents = components.filter((c) => c.campaign === selectedCampaign?.name && c.territory === selectedTerritory);
-        const terrCustomFolders = customFolders.filter((f) => f.campaign === selectedCampaign?.name && f.territory === selectedTerritory);
-        const hasAep = terrComponents.some((c) => folderForComponent(c) === "AEP") || terrCustomFolders.some((f) => f.name === "AEP");
-        setSelectedFolder(hasAep ? "AEP" : null);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        setSelectedFolder(null);
     }, [selectedTerritory]);
 
     // Fresh territory, fresh JPG_PNG browse -- a listing scanned for
