@@ -67,6 +67,7 @@ import {
     Sparkles,
 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
+import { showMcItReport, type McReport } from "../McItReportModal";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import { sfx } from "../../lib/utils/sfx";
 import Tooltip from "../Tooltip";
@@ -383,10 +384,14 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "mc-it",
         label: "MC It!",
-        description: "Batch-replaces PNG footage across a folder of .aep files with the best-matching PNG (by resolution/number/filename similarity) from a second folder. Saves each file in place -- run this on your territory working copies, not on masters.",
+        description: "Batch-replaces PNG/JPG footage across a folder of .aep files with the best-matching image from the territory's JPG_PNG batch (auto-derived when the standard tree matches). Previews first — nothing is saved until you Apply in the results modal.",
         icon: ImageIcon,
         group: "naming",
-        run: () => evalTSSafe("mcIt"),
+        // Plain evalTS, NOT evalTSSafe: the safe wrapper gives up with "AE is
+        // busy" after 15s, and a real MC It! batch (open+save per project)
+        // routinely exceeds that while the script is still running fine.
+        // Dry-run first ("", "", true): the results modal offers Apply.
+        run: () => evalTS("mcIt", "", "", true),
         successText: (result) => result.message || "Done.",
     },
     {
@@ -1021,6 +1026,14 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
 
     const runAction = async (action: ActionEntry) => {
         const result = await action.run();
+        // MC It! returns a full structured report -- show the app-root results
+        // modal (McItReportHost in main.tsx) instead of a one-line toast, same
+        // rich UI as Campaign Localiser's own MC It! button.
+        if (action.id === "mc-it" && result && result.success) {
+            showMcItReport(result as unknown as McReport);
+            sfx.success();
+            return;
+        }
         reportResult(result, action.successText, action.successSound);
         // Turk It reports the highest resulting version as maxVersion (see
         // aeft/tools.ts's turkIt) -- outside ActionResult's own strict

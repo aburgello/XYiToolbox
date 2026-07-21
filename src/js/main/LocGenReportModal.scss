@@ -1,0 +1,45 @@
+// ── Localiser (Generate / Trott) results modal — extends mcit-* styles ───────
+.locgen-problem-count { color: #d98c8c; font-weight: 600; }
+
+.locgen-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 5px 8px;
+    border-radius: 7px;
+    margin-bottom: 3px;
+    background: #202022;
+    border: 1px solid #2c2c2e;
+
+    > svg { flex-shrink: 0; margin-top: 2px; }
+    &--generated > svg { color: #7fca8f; }
+    &--skipped-existing > svg { color: #888; }
+    &--no-master > svg,
+    &--no-comp > svg { color: #d9b56f; }
+    &--error > svg { color: #d98c8c; }
+
+    &--skipped-existing { opacity: 0.7; }
+    &--no-master,
+    &--no-comp,
+    &--error { border-color: #3a2c2c; background: #241e1e; }
+
+    .locgen-row-text {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+    }
+    .locgen-row-source {
+        font-size: 11px;
+        color: #ddd;
+        word-break: break-all;
+    }
+    .locgen-row-meta {
+        font-size: 10.5px;
+        color: #999;
+        margin-top: 1px;
+        word-break: break-all;
+    }
+    .locgen-row-ok { color: #7fca8f; }
+    .locgen-row-muted { color: #888; }
+    .locgen-row-bad { color: #d0a0a0; }
+}

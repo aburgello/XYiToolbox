@@ -28,6 +28,8 @@ import "gsap";
 import "./main.scss";
 import { DialogHost } from "./Dialog";
 import { PreFlightHost } from "./PreFlightModal";
+import { McItReportHost } from "./McItReportModal";
+import { LocGenReportHost } from "./LocGenReportModal";
 import { HomeScreen } from "./screens/HomeScreen";
 import { CategoryScreen } from "./screens/CategoryScreen";
 import { LocaliseScreen } from "./screens/LocaliseScreen";
@@ -151,6 +153,8 @@ const Main = () => {
             <CommandPalette screen={screen} onNavigate={setScreen} />
             <DialogHost />
             <PreFlightHost />
+            <McItReportHost />
+            <LocGenReportHost />
         </div>
     );
 };

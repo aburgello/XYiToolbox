@@ -27,6 +27,7 @@ import {
     Search,
     ClipboardPaste,
     RefreshCw,
+    Image as ImageIcon,
 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { fs, path } from "../../lib/cep/node";
@@ -34,11 +35,25 @@ import CheckboxToggle from "../CheckboxToggle";
 import Tooltip from "../Tooltip";
 import Dropdown from "../Dropdown";
 import { alertDialog, promptDialog } from "../Dialog";
+import { showMcItReport, type McReport } from "../McItReportModal";
 import type { SpecRow } from "../lib/pdfSpecs";
 
 interface Campaign {
     name: string;
     marketsRoot: string;
+}
+
+// Mirrors csvLocaliserRun()'s CsvLocRowReport host-side.
+interface CsvLocRow {
+    row: number;
+    artwork: string;
+    campaign: string;
+    size: string;
+    duration: string;
+    status: "generated" | "skipped-existing" | "no-master" | "error";
+    master?: string;
+    output?: string;
+    error?: string;
 }
 
 // The campaign root (e.g. .../INT) holds sibling *_Markets and *_Masters folders
@@ -105,6 +120,9 @@ const CSVLocaliserTool = () => {
     const [search, setSearch] = useState("");
     // Per-batch run state, keyed by `${territory}/${pdfName}`.
     const [batchStatus, setBatchStatus] = useState<Record<string, "running" | "done" | "failed">>({});
+    // Per-batch localiser row results (csvLocaliserRun's structured report),
+    // same key -- rendered inline under the batch after a run.
+    const [batchRows, setBatchRows] = useState<Record<string, CsvLocRow[]>>({});
 
     // paste fallback
     const [pasteOpen, setPasteOpen] = useState(false);
@@ -292,10 +310,32 @@ const CSVLocaliserTool = () => {
             const csv = buildLocaliserCsv({ territory: t.territory, batch: b.batch, sourceFolder: t.sourceFolder, rows: b.rows });
             const res = await evalTS("csvLocaliserRun", aepPath, csv, skipExisting);
             if (res === undefined) throw new Error("no bridge");
-            setBatchStatus((s) => ({ ...s, [key]: res.success ? "done" : "failed" }));
-            setNotice(res.success ? `${t.territory} · ${b.batch} localised — see the per-row alert dialogs.` : res.error || "Something went wrong.");
+            const rows = (res.success ? (res as { rows?: CsvLocRow[] }).rows : undefined) || [];
+            const problems = rows.filter((r) => r.status === "no-master" || r.status === "error").length;
+            if (rows.length) setBatchRows((s) => ({ ...s, [key]: rows }));
+            setBatchStatus((s) => ({ ...s, [key]: res.success && problems === 0 ? "done" : "failed" }));
+            setNotice(res.success ? `${t.territory} · ${b.batch}: ${res.message || "run finished."}` : res.error || "Something went wrong.");
         } catch (e: any) {
             setBatchStatus((s) => ({ ...s, [key]: "failed" }));
+            setNotice(e?.message || "No CEP bridge — open this panel inside After Effects to run it.");
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    // MC It! for ONE batch, dialogs-free: the scan already knows the AEP
+    // output folder (<Territory>/AE/<paddedBatch>) and mcIt() derives the
+    // JPG_PNG sibling itself. Dry-run first — the app-root modal offers Apply.
+    const runBatchMcIt = async (t: TerritoryScan, b: Batch) => {
+        setNotice(null);
+        setBusy(true);
+        try {
+            const aepDir = path.join(t.sourceFolder, "AE", padBatch(b.batch));
+            const res = await evalTS("mcIt", aepDir, "", true);
+            if (res === undefined) throw new Error("no bridge");
+            if (res.success) showMcItReport(res as unknown as McReport);
+            else setNotice(res.error || "MC It! couldn't run on this batch.");
+        } catch (e: any) {
             setNotice(e?.message || "No CEP bridge — open this panel inside After Effects to run it.");
         } finally {
             setBusy(false);
@@ -308,7 +348,13 @@ const CSVLocaliserTool = () => {
         try {
             const res = await evalTS("csvLocaliserRun", aepPath, csvText, skipExisting);
             if (res === undefined) throw new Error("no bridge");
-            setNotice(res.success ? "Run finished — see the alert dialog(s) for row-by-row results." : res.error || "Something went wrong.");
+            if (res.success) {
+                const rows = (res as { rows?: CsvLocRow[] }).rows || [];
+                const problems = rows.filter((r) => r.status === "no-master" || r.status === "error").length;
+                setNotice((res.message || "Run finished.") + (problems ? ` — ${problems} row(s) had no master match.` : ""));
+            } else {
+                setNotice(res.error || "Something went wrong.");
+            }
         } catch (e) {
             setNotice("No CEP bridge — open this panel inside After Effects to run it.");
         } finally {
@@ -426,21 +472,34 @@ const CSVLocaliserTool = () => {
                                                             <span className="specs-batch-tag">{b.batch}</span>
                                                             {b.error ? <span className="specs-batch-err">{b.error}</span> : <span className="specs-batch-ok">{b.rows.length} rows</span>}
                                                             {canRun && (
-                                                                <button
-                                                                    className={"specs-batch-run" + (st === "done" ? " is-done" : st === "failed" ? " is-failed" : "")}
-                                                                    disabled={busy || !aepPath}
-                                                                    onClick={() => runBatch(t, b)}
-                                                                >
-                                                                    {st === "running" ? (
-                                                                        <><RefreshCw size={12} className="spin" /> Running…</>
-                                                                    ) : st === "done" ? (
-                                                                        <><Check size={12} /> Done · Re-run</>
-                                                                    ) : st === "failed" ? (
-                                                                        <><PlayCircle size={12} /> Retry</>
-                                                                    ) : (
-                                                                        <><PlayCircle size={12} /> Localise batch</>
-                                                                    )}
-                                                                </button>
+                                                                <>
+                                                                    <button
+                                                                        className={"specs-batch-run" + (st === "done" ? " is-done" : st === "failed" ? " is-failed" : "")}
+                                                                        disabled={busy || !aepPath}
+                                                                        onClick={() => runBatch(t, b)}
+                                                                    >
+                                                                        {st === "running" ? (
+                                                                            <><RefreshCw size={12} className="spin" /> Running…</>
+                                                                        ) : st === "done" ? (
+                                                                            <><Check size={12} /> Done · Re-run</>
+                                                                        ) : st === "failed" ? (
+                                                                            <><PlayCircle size={12} /> Retry</>
+                                                                        ) : (
+                                                                            <><PlayCircle size={12} /> Localise batch</>
+                                                                        )}
+                                                                    </button>
+                                                                    {/* Enabled once the batch's AE output exists (pre-scan
+                                                                        detection or a completed run this session). */}
+                                                                    <Tooltip text="Swap the placeholder PNG/JPGs in this batch's AEPs for the localised images (previews first)">
+                                                                        <button
+                                                                            className="specs-batch-run specs-batch-mcit"
+                                                                            disabled={busy || (!b.done && st !== "done")}
+                                                                            onClick={() => runBatchMcIt(t, b)}
+                                                                        >
+                                                                            <ImageIcon size={12} /> MC It!
+                                                                        </button>
+                                                                    </Tooltip>
+                                                                </>
                                                             )}
                                                         </div>
                                                         {b.rows.length > 0 && (
@@ -457,6 +516,30 @@ const CSVLocaliserTool = () => {
                                                                     ))}
                                                                 </tbody>
                                                             </table>
+                                                        )}
+                                                        {batchRows[key] && (
+                                                            <div className="specs-locresult">
+                                                                {(() => {
+                                                                    const rows = batchRows[key];
+                                                                    const gen = rows.filter((r) => r.status === "generated").length;
+                                                                    const skip = rows.filter((r) => r.status === "skipped-existing").length;
+                                                                    const problems = rows.filter((r) => r.status === "no-master" || r.status === "error");
+                                                                    return (
+                                                                        <>
+                                                                            <div className="specs-locresult-line">
+                                                                                <span className="ok">{gen} generated</span>
+                                                                                {skip > 0 && <span className="muted"> · {skip} already existed</span>}
+                                                                                {problems.length > 0 && <span className="bad"> · {problems.length} failed</span>}
+                                                                            </div>
+                                                                            {problems.map((r) => (
+                                                                                <div key={r.row} className="specs-locresult-problem">
+                                                                                    Row {r.row} · {r.campaign} {r.size} {r.duration} — {r.error || "no master matched"}
+                                                                                </div>
+                                                                            ))}
+                                                                        </>
+                                                                    );
+                                                                })()}
+                                                            </div>
                                                         )}
                                                     </div>
                                                 );

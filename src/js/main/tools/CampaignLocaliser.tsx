@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { FolderInput, FolderCog, Rabbit, ArrowRight, Image as ImageIcon } from "lucide-react";
+import { showMcItReport, type McReport } from "../McItReportModal";
+import { showLocGenReport, type LocGenReport } from "../LocGenReportModal";
 import { evalTS } from "../../lib/utils/bolt";
 import { sfx } from "../../lib/utils/sfx";
 import StatusIcon from "../StatusIcon";
@@ -32,6 +34,31 @@ const CampaignLocaliserTool: React.FC<ToolProps> = (_props) => {
     const [trotCampaign, setTrotCampaign] = useState("");
     const [trotUseCampaignName, setTrotUseCampaignName] = useState(false);
 
+    // MC It! gets its own runner: it previews first (dry run — identical
+    // matching, nothing replaced or saved), then the app-root modal
+    // (McItReportHost in main.tsx) offers "Apply" to do it for real using the
+    // same folders. Empty-string args = "prompt/derive the folders host-side".
+    const runMcIt = async () => {
+        setStatus(null);
+        setBusy(true);
+        try {
+            const result = await evalTS("mcIt", "", "", true);
+            if (result === undefined) throw new Error("no bridge");
+            if (result.success) {
+                showMcItReport(result as McReport);
+                sfx.success();
+            } else {
+                setStatus({ text: result.error || "Something went wrong.", type: "error" });
+                sfx.error();
+            }
+        } catch (e) {
+            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+            sfx.error();
+        } finally {
+            setBusy(false);
+        }
+    };
+
     const run = async (action: string, fn: () => Promise<any>) => {
         setStatus(null);
         setBusy(true);
@@ -44,6 +71,31 @@ const CampaignLocaliserTool: React.FC<ToolProps> = (_props) => {
                     : { text: result.error || "Something went wrong.", type: "error" }
             );
             result.success ? sfx.success() : sfx.error();
+        } catch (e) {
+            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+            sfx.error();
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    // Generate Files / Trott / Trott 2.0 now return a structured per-row
+    // report — on success show the app-root results modal (LocGenReportHost)
+    // instead of the one-line status text. A run with no rows (folder cancel)
+    // just falls through to the status line.
+    const runLocGen = async (action: string, fn: () => Promise<any>) => {
+        setStatus(null);
+        setBusy(true);
+        try {
+            const result = await fn();
+            if (result === undefined) throw new Error("no bridge");
+            if (result.success && (result as LocGenReport).rows) {
+                showLocGenReport(result as LocGenReport);
+                sfx.success();
+            } else {
+                setStatus({ text: result.success ? result.message || `${action} finished.` : result.error || "Something went wrong.", type: result.success ? "success" : "error" });
+                result.success ? sfx.success() : sfx.error();
+            }
         } catch (e) {
             setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
             sfx.error();
@@ -100,10 +152,10 @@ const CampaignLocaliserTool: React.FC<ToolProps> = (_props) => {
                                 </div>
                                 <div className="cl-trott-card-spacer" />
                                 <div className="cl-panel-buttons">
-                                    <button disabled={busy} onClick={() => run("Generate Files", () => evalTS("campaignLocaliserGenerate", false))}>
+                                    <button disabled={busy} onClick={() => runLocGen("Generate Files", () => evalTS("campaignLocaliserGenerate", false))}>
                                         <FolderInput size={14} /> Generate Files
                                     </button>
-                                    <button disabled={busy} onClick={() => run("Generate Files", () => evalTS("campaignLocaliserGenerate", true))}>
+                                    <button disabled={busy} onClick={() => runLocGen("Generate Files", () => evalTS("campaignLocaliserGenerate", true))}>
                                         <FolderCog size={14} /> Generate Files (don&rsquo;t replace)
                                     </button>
                                 </div>
@@ -118,7 +170,7 @@ const CampaignLocaliserTool: React.FC<ToolProps> = (_props) => {
                             </div>
                         </div>
                         <div className="cl-quick-row">
-                            <button disabled={busy} onClick={() => run("MC It!", () => evalTS("mcIt"))}>
+                            <button disabled={busy} onClick={runMcIt}>
                                 <ImageIcon size={14} /> MC It!
                             </button>
                         </div>
@@ -157,7 +209,7 @@ const CampaignLocaliserTool: React.FC<ToolProps> = (_props) => {
                                     <input type="text" placeholder="Enter Campaign Name" value={trotCampaign} onChange={(e) => setTrotCampaign(e.target.value)} disabled={busy} />
                                 </div>
                                 <CheckboxToggle className="loc-checkbox-row" checked={trotUseCampaignName} onChange={setTrotUseCampaignName} label="Use Campaign Name" />
-                                <button className="cl-trott-card-btn" disabled={busy} onClick={() => run("Trott!", () => evalTS("campaignLocaliserTrott", trotDuration, trotArtwork, trotUseArtworkName, trotCampaign, trotUseCampaignName))}>
+                                <button className="cl-trott-card-btn" disabled={busy} onClick={() => runLocGen("Trott!", () => evalTS("campaignLocaliserTrott", trotDuration, trotArtwork, trotUseArtworkName, trotCampaign, trotUseCampaignName))}>
                                     <Rabbit size={16} /> Run Trott
                                 </button>
                             </div>
@@ -172,19 +224,20 @@ const CampaignLocaliserTool: React.FC<ToolProps> = (_props) => {
                                     <span className="cl-flow-badge">PDFs</span>
                                 </div>
                                 <div className="cl-trott-card-spacer" />
-                                <button className="cl-trott-card-btn" disabled={busy} onClick={() => run("Trott 2.0", () => evalTS("campaignLocaliserTrott2", trotDuration, trotArtwork, trotUseArtworkName, trotCampaign, trotUseCampaignName))}>
+                                <button className="cl-trott-card-btn" disabled={busy} onClick={() => runLocGen("Trott 2.0", () => evalTS("campaignLocaliserTrott2", trotDuration, trotArtwork, trotUseArtworkName, trotCampaign, trotUseCampaignName))}>
                                     <Rabbit size={16} /> Run Trott 2.0
                                 </button>
                             </div>
                         </div>
                         <div className="cl-quick-row">
-                            <button disabled={busy} onClick={() => run("MC It!", () => evalTS("mcIt"))}>
+                            <button disabled={busy} onClick={runMcIt}>
                                 <ImageIcon size={14} /> MC It!
                             </button>
                         </div>
                     </div>
                 )}
             </div>
+
         </div>
     );
 };

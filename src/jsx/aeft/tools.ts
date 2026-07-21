@@ -7,7 +7,7 @@
 // etc.). Split out of aeft.ts, which is now a thin barrel -- see its header
 // comment for context.
 // =============================================================================
-import { Result, SETTINGS_SECTION, findBestComponentFile } from "./shared";
+import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport } from "./shared";
 import { drqrProcessLayers, makeParentLayerOfAllUnparented, scaleAllCameraZooms, scaleCompToFit } from "./deliver";
 
 
@@ -1681,33 +1681,122 @@ function mcItGetExt(filename: string): string {
   return match ? match[1].toLowerCase() : "";
 }
 
+// Structured run report, returned through the CEP bridge so the panel can
+// render a proper results modal (replaces the old Desktop .txt diagnostic).
+export interface McItItemReport {
+  folder: string; // project subfolder ("PNG", "Artwork", ...)
+  name: string; // original footage filename
+  action: "replaced" | "no-match" | "skipped";
+  newName?: string; // for "replaced"
+  reason?: string; // for "no-match" / "skipped"
+}
+
+export interface McItProjectReport {
+  aep: string;
+  resolution: string; // parsed from the AEP filename
+  skipped?: string; // project-level skip reason (couldn't open / no Footage...)
+  items: McItItemReport[];
+}
+
 interface McItResult {
   success: boolean;
   error?: string;
   message?: string;
+  aepFolder?: string;
+  imageFolder?: string;
+  imageCount?: number;
+  processed?: number;
+  replaced?: number;
+  projects?: McItProjectReport[];
+  finishedAt?: string;
+  runId?: string; // unique per run -- lets the panel suppress re-shows
+  dryRun?: boolean; // preview pass: nothing replaced, nothing saved
 }
 
-export const mcIt = (): McItResult => {
+// <Territory>/AE/Batch_01 -> the matching <Territory>/JPG_PNG batch folder.
+// Batch names differ in zero-padding across the tree (AE/Batch_01 vs
+// JPG_PNG/Batch_1), so compare on a canonical form (alphanumerics only,
+// leading zeros stripped from digit runs). Returns "" when the layout
+// doesn't match -- caller falls back to a picker.
+function mcItDeriveImageFolder(aepFolder: Folder): string {
+  const parent = aepFolder.parent; // .../<Territory>/AE
+  if (!parent) return "";
+  if (String(parent.name).toUpperCase() !== "AE") return "";
+  const territory = parent.parent; // .../<Territory>
+  if (!territory) return "";
+  const jpgRoot = new Folder(territory.fsName + "/JPG_PNG");
+  if (!jpgRoot.exists) return "";
+
+  const canon = (s: string) => String(s).toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/0+(\d)/g, "$1");
+  const want = canon(decode(aepFolder.name));
+
+  const kids = jpgRoot.getFiles();
+  for (let i = 0; i < kids.length; i++) {
+    const k = kids[i];
+    if (k instanceof Folder) {
+      if (canon(decode(k.name)) === want) return k.fsName;
+    }
+  }
+  return "";
+}
+
+// aepFolderPath/imageFolderPath skip the dialogs when the caller already
+// knows them (the CSV Localiser scan UI passes both per batch). With no
+// image path, the standard tree layout is tried first
+// (<Territory>/AE/Batch_01 -> <Territory>/JPG_PNG/Batch_1) and the dialog
+// only appears when derivation fails. dryRun walks the identical matching
+// logic but replaces/saves NOTHING -- the report comes back flagged so the
+// modal can offer "Apply".
+export const mcIt = (aepFolderPath?: string, imageFolderPath?: string, dryRun?: boolean): McItResult => {
   try {
-    const projectFolder = Folder.selectDialog("Select a folder containing After Effects Project files");
+    let projectFolder: Folder | null = null;
+    if (aepFolderPath) {
+      const f = new Folder(aepFolderPath);
+      if (!f.exists) return { success: false, error: "AEP folder not found: " + aepFolderPath };
+      projectFolder = f;
+    } else {
+      projectFolder = Folder.selectDialog("Select a folder containing After Effects Project files");
+    }
     if (!projectFolder) return { success: false, error: "No project folder selected." };
     const aepFiles = (projectFolder.getFiles() as (File | Folder)[]).filter((f): f is File => f instanceof File && /\.aep$/i.test(f.name));
     if (aepFiles.length === 0) return { success: false, error: "No AEP files found in that folder." };
 
-    const imageRootFolder = Folder.selectDialog("Select a folder containing Image files (PNG/JPG) (search includes subfolders)");
+    let imageRootFolder: Folder | null = null;
+    if (imageFolderPath) {
+      const f = new Folder(imageFolderPath);
+      if (!f.exists) return { success: false, error: "Image folder not found: " + imageFolderPath };
+      imageRootFolder = f;
+    } else {
+      const derived = mcItDeriveImageFolder(projectFolder);
+      if (derived) imageRootFolder = new Folder(derived);
+      else imageRootFolder = Folder.selectDialog("Select a folder containing Image files (PNG/JPG) (search includes subfolders)");
+    }
     if (!imageRootFolder) return { success: false, error: "No Image folder selected." };
     const imageFiles = mcItGetAllImageFiles(imageRootFolder);
-    if (imageFiles.length === 0) return { success: false, error: "No Image files found in that folder." };
+    if (imageFiles.length === 0) return { success: false, error: "No Image files found in " + imageRootFolder.fsName };
 
     let processedCount = 0;
     let replacedCount = 0;
 
+    // Structured run report. Accumulated in this script-scope array (survives
+    // every app.open()/proj.save() in the loop -- ExtendScript vars aren't
+    // reset by opening a project) and returned through the bridge at the end,
+    // where the panel renders it as a results modal. Each footage item records
+    // where its candidates dropped off (same-type -> +resolution -> +number),
+    // which pinpoints why a swap didn't happen.
+    const projects: McItProjectReport[] = [];
+
     for (let p = 0; p < aepFiles.length; p++) {
       const aepFile = aepFiles[p];
-      const proj = app.open(aepFile);
-      if (!proj) continue;
-
       const parsedAEP = mcItParseFilename(aepFile.name);
+      const projReport: McItProjectReport = { aep: aepFile.name, resolution: parsedAEP.thirdOne || "", items: [] };
+      projects.push(projReport);
+
+      const proj = app.open(aepFile);
+      if (!proj) {
+        projReport.skipped = "Could not open this project.";
+        continue;
+      }
 
       let footageFolder: FolderItem | null = null;
       for (let i = 1; i <= proj.numItems; i++) {
@@ -1717,58 +1806,192 @@ export const mcIt = (): McItResult => {
           break;
         }
       }
-      if (!footageFolder) continue;
+      if (!footageFolder) {
+        projReport.skipped = "No project folder named exactly 'Footage'.";
+        continue;
+      }
 
+      // "Artwork" added beyond the original pingLoc list: campaign projects
+      // keep their mechanical PSDs plus the raster poster (a lone
+      // "...MotionPoster_..._OVn.jpg/png") in Footage/Artwork, which neither
+      // MC It! nor JPEG Loc used to scan -- so that JPG never got localised.
+      // Safe to include: only .png/.jpe?g footage items are considered below
+      // (PSDs untouched), and the same-type guard still applies.
       const targetFolders: FolderItem[] = [];
       for (let i = 1; i <= footageFolder.numItems; i++) {
         const item = footageFolder.item(i);
-        if (item instanceof FolderItem && (item.name === "PNG" || item.name === "JPG" || item.name === "JPEG" || item.name === "Images")) {
+        if (item instanceof FolderItem && (item.name === "PNG" || item.name === "JPG" || item.name === "JPEG" || item.name === "Images" || item.name === "Artwork")) {
           targetFolders.push(item);
         }
       }
-      if (targetFolders.length === 0) continue;
+      if (targetFolders.length === 0) {
+        projReport.skipped = "No PNG/JPG/JPEG/Images/Artwork subfolder inside 'Footage'.";
+        continue;
+      }
 
       for (let tf = 0; tf < targetFolders.length; tf++) {
         const targetFolder = targetFolders[tf];
+        // Artwork is a MIXED folder (mechanical PSDs, textures, grabs...), so
+        // unlike the dedicated PNG/JPG folders -- where everything is a target
+        // by design -- only items whose filename carries an OV token ("_OV.",
+        // "_OV_", "_OV3.") are considered there. Without this, ANY stray
+        // numbered JPG (e.g. "Sky_Grade_2.jpg") would pass the trailing-number
+        // filter and get silently swapped for a localised poster, because the
+        // fuzzy matcher's accept-threshold is a no-op (inherited 1:1 from
+        // XYi_Detectives.jsx) and never vetoes on name dissimilarity.
+        // Deliberately NOT hasIsolatedOvToken(): that helper rejects "OV3"
+        // (digits after OV), and changing it would alter copy-first decisions
+        // in losOpenForEdit()/jpegLoc(). Scoped to Artwork so re-running on an
+        // already-localised project (footage renamed "..._HU1.png", no OV
+        // left) still re-matches fine in the dedicated folders.
+        const isArtworkFolder = targetFolder.name === "Artwork";
         for (let j = 1; j <= targetFolder.numItems; j++) {
           const footageItem = targetFolder.item(j) as FootageItem;
           if (footageItem.file && /\.(png|jpe?g)$/i.test(footageItem.file.name)) {
+            if (isArtworkFolder && !/(^|[_\s])OV\d*[_\s.]/i.test(footageItem.file.name)) {
+              projReport.items.push({
+                folder: targetFolder.name,
+                name: footageItem.file.name,
+                action: "skipped",
+                reason: "No OV token — not a localisation target.",
+              });
+              continue;
+            }
             const originalName = footageItem.file.name;
             const originalExt = mcItGetExt(originalName);
             const parsedOriginal = mcItParseFilename(originalName);
 
+            // Count how many candidates survive each successive filter, so the
+            // log shows exactly which filter is the wall.
+            let cSameType = 0;
+            let cPlusRes = 0;
+            const resSeenSameType: string[] = [];
             const validCandidates: File[] = [];
             for (let k = 0; k < imageFiles.length; k++) {
               const candidate = imageFiles[k];
               const candidateExt = mcItGetExt(candidate.name);
               const parsedCandidate = mcItParseFilename(candidate.name);
-              const isSameType = originalExt === candidateExt || ((originalExt === "jpg" || originalExt === "jpeg") && (candidateExt === "jpg" || candidateExt === "jpeg"));
-              if (isSameType && parsedAEP.thirdOne === parsedCandidate.thirdOne && parsedOriginal.pngNumber === parsedCandidate.pngNumber) {
-                validCandidates.push(candidate);
-              }
+              // ExtendScript BUG (root cause of "sameType=0 with 24 png
+              // candidates on disk"): the engine evaluates `A || B && C`
+              // LEFT-TO-RIGHT as `(A || B) && C`, not standard JS's
+              // `A || (B && C)`. The TS source had correct parentheses, but
+              // Babel strips redundant parens on emit, so the one-line
+              // `ext === ext || (jpgFamily && jpgFamily)` compiled into the
+              // broken form and returned FALSE for png===png. Keep this as
+              // separate statements -- never a mixed ||/&& expression.
+              const origIsJpg = originalExt === "jpg" || originalExt === "jpeg";
+              const candIsJpg = candidateExt === "jpg" || candidateExt === "jpeg";
+              let isSameType = originalExt === candidateExt;
+              if (!isSameType) isSameType = origIsJpg && candIsJpg;
+              if (!isSameType) continue;
+              cSameType++;
+              if (parsedCandidate.thirdOne && resSeenSameType.join(",").indexOf(parsedCandidate.thirdOne) === -1) resSeenSameType.push(parsedCandidate.thirdOne);
+              if (parsedAEP.thirdOne !== parsedCandidate.thirdOne) continue;
+              cPlusRes++;
+              if (parsedOriginal.pngNumber !== parsedCandidate.pngNumber) continue;
+              validCandidates.push(candidate);
             }
 
             const bestFile = findBestComponentFile(originalName, validCandidates);
             if (bestFile) {
-              footageItem.replace(bestFile);
+              if (!dryRun) {
+                footageItem.replace(bestFile);
+                $.sleep(500);
+              }
               replacedCount++;
-              $.sleep(500);
+              projReport.items.push({
+                folder: targetFolder.name,
+                name: originalName,
+                action: "replaced",
+                newName: bestFile.name,
+              });
+            } else {
+              let reason = "No candidate survived the filters.";
+              if (cSameType === 0) reason = "No same-type (" + originalExt + ") candidate in the image folder.";
+              else if (cPlusRes === 0) reason = "No candidate at the AEP's resolution " + (parsedAEP.thirdOne || "?") + " — sizes seen: " + resSeenSameType.join(", ") + ".";
+              else if (validCandidates.length === 0) reason = "No candidate ending in '" + (parsedOriginal.pngNumber || "<none>") + "' at that resolution.";
+              projReport.items.push({
+                folder: targetFolder.name,
+                name: originalName,
+                action: "no-match",
+                reason: reason,
+              });
             }
           }
         }
       }
 
-      proj.save();
+      if (!dryRun) {
+        proj.save();
+        $.sleep(1500);
+      }
       processedCount++;
-      $.sleep(1500);
     }
 
-    return {
+    const result: McItResult = {
       success: true,
-      message: `Processed ${processedCount} project(s), replaced ${replacedCount} image(s) (PNG/JPG). Files were updated and saved in place.`,
+      message: dryRun
+        ? "Dry run — would replace " + replacedCount + " image(s) across " + processedCount + " project(s). Nothing was saved."
+        : "Processed " + processedCount + " project(s), replaced " + replacedCount + " image(s).",
+      aepFolder: projectFolder.fsName,
+      imageFolder: imageRootFolder.fsName,
+      imageCount: imageFiles.length,
+      processed: processedCount,
+      replaced: replacedCount,
+      projects: projects,
+      finishedAt: new Date().toString(),
+      runId: "" + new Date().getTime(),
+      dryRun: !!dryRun,
     };
+
+    // Persist the report before returning: a long batch outlives a closed
+    // panel (the ExtendScript keeps running inside AE, but the evalTS callback
+    // lands in a destroyed page and the result is lost). The panel's poller
+    // recovers it. Dry runs persist too -- their callback can be lost the
+    // same way, the modal clearly labels them, and Apply still works because
+    // the report carries both folder paths.
+    try {
+      const dir = new Folder(Folder.userData.fsName + "/XYiToolbox");
+      if (!dir.exists) dir.create();
+      const f = new File(dir.fsName + "/mcit_last_report.json");
+      f.encoding = "UTF-8";
+      if (f.open("w")) {
+        f.write(JSON.stringify(result));
+        f.close();
+      }
+    } catch (e) {
+      /* persistence must never break the run */
+    }
+
+    return result;
   } catch (e) {
     return { success: false, error: e.toString() };
+  }
+};
+
+// Panel-side recovery for a run that finished while the panel was closed.
+export const mcItLoadLastReport = (): { success: boolean; json?: string } => {
+  try {
+    const f = new File(Folder.userData.fsName + "/XYiToolbox/mcit_last_report.json");
+    if (!f.exists) return { success: true };
+    if (!f.open("r")) return { success: true };
+    f.encoding = "UTF-8";
+    const json = f.read();
+    f.close();
+    if (json === "") return { success: true };
+    return { success: true, json: json };
+  } catch (e) {
+    return { success: false };
+  }
+};
+
+export const mcItClearLastReport = (): { success: boolean } => {
+  try {
+    const f = new File(Folder.userData.fsName + "/XYiToolbox/mcit_last_report.json");
+    if (f.exists) f.remove();
+    return { success: true };
+  } catch (e) {
+    return { success: false };
   }
 };
 
@@ -1866,7 +2089,7 @@ export interface CampaignLocaliserResult {
   message?: string;
 }
 
-export const campaignLocaliserGenerate = (skipExisting: boolean): CampaignLocaliserResult => {
+export const campaignLocaliserGenerate = (skipExisting: boolean): LocGenResult => {
   try {
     const mastersPath = Folder.selectDialog("Please select the Master / loc folder to scan");
     if (!mastersPath) return { success: false, error: "No masters folder selected." };
@@ -1877,24 +2100,35 @@ export const campaignLocaliserGenerate = (skipExisting: boolean): CampaignLocali
 
     const scanRegV = /V\d\d/;
     let myComp: CompItem | null = app.project.activeItem instanceof CompItem ? app.project.activeItem : null;
-    let generatedCount = 0;
-    let skippedCount = 0;
-    let errorCount = 0;
+    const rows: LocGenRowReport[] = [];
 
     while (!locFile.eof) {
+      const line = locFile.readln();
+      if (!line || line.replace(/^\s+|\s+$/g, "") === "") continue;
+      if (line.match(/^"?Artwork/i)) continue; // header row
+      const rep: LocGenRowReport = { source: line, artwork: "", campaign: "", size: "", duration: "", status: "error" };
+      rows.push(rep);
       try {
-        const line = locFile.readln();
         const texLoc = line.split(",");
-        const sizeParts = texLoc[2].split("x");
-        const campaign = texLoc[1].toUpperCase();
+        if (texLoc.length < 4) {
+          rep.error = "Malformed row (fewer than 4 columns).";
+          continue;
+        }
+        const sizeParts = texLoc[2].replace(/"/g, "").split("x");
+        const campaign = texLoc[1].replace(/"/g, "").toUpperCase();
         const width = Math.floor(Number(sizeParts[0]));
         const height = Math.floor(Number(sizeParts[1]));
         const size = width + "x" + height;
-        const duration = String(texLoc[3]) + "sec";
+        const duration = String(texLoc[3]).replace(/"/g, "") + "sec";
+        rep.artwork = texLoc[0].replace(/"/g, "");
+        rep.campaign = campaign;
+        rep.size = size;
+        rep.duration = duration;
 
         const bestMatch = scanMastersForBestMatch(mastersPath.fsName, campaign, size, duration);
         if (!bestMatch) {
-          errorCount++;
+          rep.status = "no-master";
+          rep.error = "No master matched " + campaign + " / " + size + " / " + duration + ".";
           continue;
         }
 
@@ -1905,10 +2139,11 @@ export const campaignLocaliserGenerate = (skipExisting: boolean): CampaignLocali
         if (ratioPattern.test(masterName)) {
           masterName = masterName.split(ratioPattern)[2];
         }
+        rep.master = masterName;
 
         const masterSizeMatch = masterName.match(/\d+x\d+/);
         if (!masterSizeMatch) {
-          errorCount++;
+          rep.error = "Matched master '" + masterName + "' has no WxH in its name.";
           continue;
         }
         const masterDims = masterSizeMatch[0].split("x");
@@ -1918,16 +2153,17 @@ export const campaignLocaliserGenerate = (skipExisting: boolean): CampaignLocali
 
         const scanFilmTitle = masterName.split("_")[0];
         const scanIndo = masterName.split("_")[1];
-        const scanArtworkType = texLoc[0];
+        const scanArtworkType = texLoc[0].replace(/"/g, "");
         const locFileNameParts = locFile.name.split("_");
         const scanTerritory = locFileNameParts[locFileNameParts.length - 1].slice(0, 2);
 
         const newCompName =
           scanFilmTitle + "_" + scanIndo + "_DGTL_" + scanArtworkType + "_" + campaign + "_" + width + "x" + height + "_" + duration + "_" + scanTerritory;
+        rep.output = newCompName + "_V01.aep";
 
         const outputFile = new File(locFile.parent.fsName + "/" + newCompName + "_V01.aep");
         if (skipExisting && outputFile.exists) {
-          skippedCount++;
+          rep.status = "skipped-existing";
           continue;
         }
 
@@ -1936,7 +2172,7 @@ export const campaignLocaliserGenerate = (skipExisting: boolean): CampaignLocali
         const masterFile = new File(textMasterPath);
         const proj = app.open(masterFile);
         if (!proj) {
-          errorCount++;
+          rep.error = "Could not open the matched master.";
           continue;
         }
 
@@ -1949,7 +2185,8 @@ export const campaignLocaliserGenerate = (skipExisting: boolean): CampaignLocali
           }
         }
         if (!myComp) {
-          errorCount++;
+          rep.status = "no-comp";
+          rep.error = "Master opened but comp '" + masterStem + "' not found inside.";
           continue;
         }
 
@@ -2040,18 +2277,15 @@ export const campaignLocaliserGenerate = (skipExisting: boolean): CampaignLocali
         app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
         app.newProject();
 
-        generatedCount++;
+        rep.status = "generated";
       } catch (lineErr) {
-        errorCount++;
+        rep.status = "error";
+        rep.error = lineErr.toString();
       }
     }
 
     locFile.close();
-
-    return {
-      success: true,
-      message: `Generated ${generatedCount}, skipped ${skippedCount}${errorCount > 0 ? `, ${errorCount} error(s)/no-match` : ""}.`,
-    };
+    return finishLocGenReport("Generate Files", rows, locFile.parent.fsName);
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -2072,6 +2306,96 @@ export const scaleCompositionExplicit = (newWidth: number, newHeight: number): R
     app.beginUndoGroup("XYi Scale Composition");
     scaleCompToFit(comp, newWidth, newHeight);
     app.endUndoGroup();
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// Guide Scale -- ported from toolset/XYI_Guide_Scaler.jsx's guider(). Reads the
+// active comp's ruler guides (AE 23.0+ `CompItem.guides`) to derive a target
+// region, repositions the selected PRE-COMP layer so its top-left sits at that
+// region's top-left, then scales the layer's SOURCE comp to fill the region.
+// The standalone script only ever returned [width, height] and left the actual
+// scaling to a separate scaler, so we finish it here with scaleCompToFit() --
+// the same null-parent technique the other scale modes use.
+//
+// Guide math is unchanged from the original:
+//   - one vertical guide     -> width  = guide X   (region starts at 0)
+//   - two+ vertical guides    -> width  = X2 - X1  (region starts at X1)
+//   - one horizontal guide   -> height = guide Y   (region starts at 0)
+//   - two+ horizontal guides  -> height = Y2 - Y1  (region starts at Y1)
+export const guideScale = (): Result => {
+  try {
+    const activeComp = app.project.activeItem;
+    if (!activeComp || !(activeComp instanceof CompItem)) return { success: false, error: "Please select or open a composition first." };
+
+    const selectedLayers = activeComp.selectedLayers;
+    if (selectedLayers.length !== 1) return { success: false, error: "Please select exactly one layer." };
+
+    const targetLayer = selectedLayers[0];
+    if (!(targetLayer instanceof AVLayer) || !targetLayer.source || !(targetLayer.source instanceof CompItem)) {
+      return { success: false, error: "The selected layer must be a pre-composition." };
+    }
+
+    // CompItem.guides is AE 23.0+ only; older typings/hosts don't expose it.
+    const guides = (activeComp as any).guides;
+    if (guides === undefined) {
+      return { success: false, error: "This version of After Effects is too old to read ruler guides (needs 23.0+)." };
+    }
+
+    const vGuidePositions: number[] = [];
+    const hGuidePositions: number[] = [];
+    for (let i = 0; i < guides.length; i++) {
+      const g = guides[i];
+      const pos = Number(g.position);
+      if (g.orientationType === 1) vGuidePositions.push(pos); // Vertical
+      else if (g.orientationType === 0) hGuidePositions.push(pos); // Horizontal
+    }
+
+    if (vGuidePositions.length === 0 && hGuidePositions.length === 0) {
+      return { success: false, error: "No ruler guides on the active comp — drag guides from the rulers first." };
+    }
+
+    vGuidePositions.sort((a, b) => a - b);
+    hGuidePositions.sort((a, b) => a - b);
+
+    const anchor = targetLayer.property("Anchor Point").value as number[];
+    const position = targetLayer.property("Position").value as number[];
+
+    let widthStore = activeComp.width;
+    let heightStore = activeComp.height;
+
+    if (vGuidePositions.length === 1) {
+      widthStore = vGuidePositions[0];
+      anchor[0] = 0;
+      position[0] = 0;
+    } else if (vGuidePositions.length >= 2) {
+      widthStore = vGuidePositions[1] - vGuidePositions[0];
+      anchor[0] = 0;
+      position[0] = vGuidePositions[0];
+    }
+
+    if (hGuidePositions.length === 1) {
+      heightStore = hGuidePositions[0];
+      anchor[1] = 0;
+      position[1] = 0;
+    } else if (hGuidePositions.length >= 2) {
+      heightStore = hGuidePositions[1] - hGuidePositions[0];
+      anchor[1] = 0;
+      position[1] = hGuidePositions[0];
+    }
+
+    if (widthStore <= 0 || heightStore <= 0) {
+      return { success: false, error: "Guides produced a zero/negative size — check the guide positions." };
+    }
+
+    app.beginUndoGroup("XYi Guide Scale");
+    targetLayer.property("Anchor Point").setValue(anchor);
+    targetLayer.property("Position").setValue(position);
+    scaleCompToFit(targetLayer.source, widthStore, heightStore);
+    app.endUndoGroup();
+
     return { success: true };
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -3700,7 +4024,15 @@ function losImportAepAndFindComp(proj: Project, aepFile: File, desiredCompName: 
   }
   for (let z = 1; z <= proj.numItems; z++) {
     const itz = proj.item(z);
-    if (itz instanceof CompItem && (itz.name === desiredCompName || itz.name === base || (base && itz.name.indexOf(base) !== -1))) return itz;
+    if (!(itz instanceof CompItem)) continue;
+    // Split into separate statements: ExtendScript mis-evaluates a bare
+    // `A || B || C && D` left-to-right as `((A || B) || C) && D`, and Babel
+    // strips the source's grouping parens on emit (same engine bug that broke
+    // MC It!'s isSameType -- see mcIt()). Never mix ||/&& in one expression
+    // in this codebase.
+    if (itz.name === desiredCompName) return itz;
+    if (itz.name === base) return itz;
+    if (base !== "" && itz.name.indexOf(base) !== -1) return itz;
   }
   return null;
 }

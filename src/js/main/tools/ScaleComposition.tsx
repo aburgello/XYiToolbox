@@ -5,11 +5,12 @@
 // XYi_Scaler.jsx's onScaleClick() -- the same null-parent scale-to-fit
 // technique already used by DRQR (scaleCompToFit() in aeft.ts), reused here
 // rather than reimplemented. Guide Scale (ruler-guide-driven layer sizing,
-// XYi_Guide_Scaler.jsx) is NOT ported -- a separate, more involved feature;
-// see CLAUDE.md.
+// XYI_Guide_Scaler.jsx's guider()) is now ported too -- backed by guideScale()
+// in aeft.ts, which reads CompItem.guides (AE 23.0+) and finishes with the same
+// scaleCompToFit() the other modes use (the original returned [w,h] only).
 // =============================================================================
 import React, { useState } from "react";
-import { Maximize2, MoveHorizontal, MoveVertical, Percent, Copy, ScanSearch, Tag, RotateCcw } from "lucide-react";
+import { Maximize2, MoveHorizontal, MoveVertical, Percent, Copy, ScanSearch, Tag, RotateCcw, Ruler } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
@@ -96,6 +97,11 @@ const ScaleCompositionTool = () => {
                 <button disabled={busy} onClick={() => run("Multi Comp Scale", () => evalTS("scaleCompositionMulti"))}>
                     <Copy size={14} /> Multi Comp Scale
                 </button>
+                <Tooltip text="Size the selected pre-comp layer to the active comp's ruler guides (needs AE 23.0+)">
+                    <button disabled={busy} onClick={() => run("Guide Scale", () => evalTS("guideScale"))}>
+                        <Ruler size={14} /> Guide Scale
+                    </button>
+                </Tooltip>
             </div>
 
             <hr className="divider" />

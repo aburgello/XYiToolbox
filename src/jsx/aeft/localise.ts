@@ -7,7 +7,7 @@
 // =============================================================================
 import { CampaignLocaliserResult, TC_COUNTRIES, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, scanMastersForBestMatch } from "./tools";
 import { makeParentLayerOfAllUnparented, scaleAllCameraZooms } from "./deliver";
-import { Result, SETTINGS_SECTION, decode, findBestComponentFile } from "./shared";
+import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport } from "./shared";
 import { loadCampaignsRaw } from "./review";
 
 
@@ -276,26 +276,25 @@ function trotNameGen(myComp: CompItem, width: number, height: number, newCompNam
 // FIRST, then calls campLoc(), which prompts a SECOND time for the PDF
 // folder -- both dialogs happen inside this one function/button click,
 // not a masters-path param collected ahead of time in React.
-export const campaignLocaliserTrott = (troDur: string, troArt: string, troArtOn: boolean, troCamp: string, troCampOn: boolean): Result => {
+export const campaignLocaliserTrott = (troDur: string, troArt: string, troArtOn: boolean, troCamp: string, troCampOn: boolean): LocGenResult => {
   const mastersPathFolder = Folder.selectDialog("Please select the Master / loc folder to scan");
-  if (!mastersPathFolder) return { success: true };
+  if (!mastersPathFolder) return { success: false, error: "No masters folder selected." };
   const mastersPath = mastersPathFolder.fsName;
 
   const folder = Folder.selectDialog("Select a folder containing PDF files");
-  if (folder === null) {
-    alert("No folder selected");
-    return { success: true };
-  }
+  if (folder === null) return { success: false, error: "No PDF folder selected." };
 
   const pdfFiles = (folder.getFiles("*.pdf") as File[]) || [];
-  let count = 0;
   const scanTerritory = getTerritoryCountryCode(trotFindTerrFolder(folder)) || "XX";
   const regex = /\d*[x]\d*/;
+  const rows: LocGenRowReport[] = [];
+  let lastOutFolder = folder.fsName;
 
   for (let i = 0; i < pdfFiles.length; i++) {
     const pdfFile = pdfFiles[i];
     if (!(pdfFile instanceof File) || !pdfFile.name.match(/\.pdf$/i)) continue;
-    count++;
+    const rep: LocGenRowReport = { source: pdfFile.name, artwork: "", campaign: "", size: "", duration: "", status: "error" };
+    rows.push(rep);
 
     try {
       const fileName = pdfFile.name;
@@ -313,15 +312,24 @@ export const campaignLocaliserTrott = (troDur: string, troArt: string, troArtOn:
 
       const pl: "PORTRAIT" | "LANDSCAPE" = width < height ? "PORTRAIT" : "LANDSCAPE";
       const duration = funcDuration + "sec";
+      rep.artwork = artworkType;
+      rep.campaign = funcCampaign;
+      rep.size = size;
+      rep.duration = duration;
 
       const bestMatch = scanMastersForBestMatch(mastersPath, funcCampaign, size, duration);
-      if (!bestMatch) continue;
+      if (!bestMatch) {
+        rep.status = "no-master";
+        rep.error = "No master matched " + funcCampaign + " / " + size + " / " + duration + ".";
+        continue;
+      }
       const textMaster = bestMatch.fsName;
 
       const linesMaster = textMaster.split("/");
       let masterName = linesMaster[linesMaster.length - 1];
       const ratioPattern = /^_(\d+\.\d+)_/;
       if (ratioPattern.test(masterName)) masterName = masterName.split(ratioPattern)[2];
+      rep.master = masterName;
 
       const masterSizeMatch = String(masterName.match(regex));
       const masterSizeParts = masterSizeMatch.split("x");
@@ -333,17 +341,19 @@ export const campaignLocaliserTrott = (troDur: string, troArt: string, troArtOn:
       const scanIndo = masterName.split("_")[1];
 
       const newCompName = scanFilmTitle + "_" + scanIndo + "_DGTL_" + artworkType + "_" + funcCampaign + "_" + width + "x" + height + "_" + duration + "_" + scanTerritory;
+      rep.output = newCompName + "_V01.aep";
 
       const aeFolder = trotFindPDFsFolder(pdfFile.parent);
+      lastOutFolder = aeFolder;
       const outputFile = new File(aeFolder + "/" + newCompName + "_V01.aep");
       if (outputFile.exists) {
-        alert(newCompName + ".aep already exists. Skipping.");
+        rep.status = "skipped-existing";
         continue;
       }
 
       const fileToOpen = new File(textMaster);
       if (!fileToOpen.exists) {
-        alert("Master file not found: " + textMaster);
+        rep.error = "Matched master file not found on disk: " + textMaster;
         continue;
       }
 
@@ -354,16 +364,21 @@ export const campaignLocaliserTrott = (troDur: string, troArt: string, troArtOn:
         const item = proj.item(j);
         if (item instanceof CompItem && item.name === masterStem) myComp = item;
       }
-      if (!myComp) continue;
+      if (!myComp) {
+        rep.status = "no-comp";
+        rep.error = "Master opened but comp '" + masterStem + "' not found inside.";
+        continue;
+      }
 
       trotNameGen(myComp, width, height, newCompName, plm, pdfFile, true);
+      rep.status = "generated";
     } catch (err) {
-      alert("Row failed: " + err.toString());
+      rep.status = "error";
+      rep.error = err.toString();
     }
   }
 
-  alert("Total PDF files processed: " + count);
-  return { success: true };
+  return finishLocGenReport("Trott", rows, lastOutFolder);
 };
 
 // Ported from XYi_Campaign_Trotting2.jsx's campLoc()/gimme()/Detective().
@@ -462,28 +477,27 @@ function trotGimmeV2(filename: string, masterAeFiles: TrotMasterInfo[]): [string
 // Same two-sequential-dialogs shape as campaignLocaliserTrott() above --
 // TroAloTwo() prompts for the Master/loc folder first, then campLoc()
 // prompts for the PDF folder.
-export const campaignLocaliserTrott2 = (_troDur: string, _troArt: string, _troArtOn: boolean, _troCamp: string, _troCampOn: boolean): Result => {
+export const campaignLocaliserTrott2 = (_troDur: string, _troArt: string, _troArtOn: boolean, _troCamp: string, _troCampOn: boolean): LocGenResult => {
   const mastersPathFolder = Folder.selectDialog("Please select the Master / loc folder to scan");
-  if (!mastersPathFolder) return { success: true };
+  if (!mastersPathFolder) return { success: false, error: "No masters folder selected." };
   const mastersPath = mastersPathFolder.fsName;
 
   const folder = Folder.selectDialog("Select a folder containing PDF files");
-  if (folder === null) {
-    alert("No folder selected");
-    return { success: true };
-  }
+  if (folder === null) return { success: false, error: "No PDF folder selected." };
 
   const pdfFiles = (folder.getFiles("*.pdf") as File[]) || [];
-  let count = 0;
   const scanTerritory = getTerritoryCountryCode(trotFindTerrFolder(folder)) || "XX";
   const regex = /\d*[x]\d*/;
+  const rows: LocGenRowReport[] = [];
+  let lastOutFolder = folder.fsName;
 
   const processedMasterFiles = trotPreprocessMasters(mastersPath);
 
   for (let i = 0; i < pdfFiles.length; i++) {
     const pdfFile = pdfFiles[i];
     if (!(pdfFile instanceof File) || !pdfFile.name.match(/\.pdf$/i)) continue;
-    count++;
+    const rep: LocGenRowReport = { source: pdfFile.name, artwork: "", campaign: "", size: "", duration: "", status: "error" };
+    rows.push(rep);
 
     try {
       const fileName = pdfFile.name;
@@ -498,15 +512,27 @@ export const campaignLocaliserTrott2 = (_troDur: string, _troArt: string, _troAr
       const funcCampaign = trotRemoveStopwords(matchInfo[0]);
       const artworkType = matchInfo[1];
       const duration = matchInfo[2];
+      rep.artwork = artworkType;
+      rep.campaign = funcCampaign;
+      rep.size = size;
+      rep.duration = duration;
 
       const bestMatch = scanMastersForBestMatch(mastersPath, funcCampaign, size, duration);
-      if (!bestMatch) continue;
+      if (!bestMatch) {
+        rep.status = "no-master";
+        rep.error =
+          funcCampaign === "No match found"
+            ? "Filename didn't fuzzy-match any master campaign."
+            : "No master matched " + funcCampaign + " / " + size + " / " + duration + ".";
+        continue;
+      }
       const textMaster = bestMatch.fsName;
 
       const linesMaster = textMaster.split("/");
       let masterName = linesMaster[linesMaster.length - 1];
       const ratioPattern = /^_(\d+\.\d+)_/;
       if (ratioPattern.test(masterName)) masterName = masterName.split(ratioPattern)[2];
+      rep.master = masterName;
 
       const masterSizeMatch = String(masterName.match(regex));
       const masterSizeParts = masterSizeMatch.split("x");
@@ -518,17 +544,19 @@ export const campaignLocaliserTrott2 = (_troDur: string, _troArt: string, _troAr
       const scanIndo = masterName.split("_")[1];
 
       const newCompName = scanFilmTitle + "_" + scanIndo + "_DGTL_" + artworkType + "_" + funcCampaign + "_" + width + "x" + height + "_" + duration + "_" + scanTerritory;
+      rep.output = newCompName + "_V01.aep";
 
       const aeFolder = trotFindPDFsFolder(pdfFile.parent);
+      lastOutFolder = aeFolder;
       const outputFile = new File(aeFolder + "/" + newCompName + "_V01.aep");
       if (outputFile.exists) {
-        alert(newCompName + ".aep already exists. Skipping.");
+        rep.status = "skipped-existing";
         continue;
       }
 
       const fileToOpen = new File(textMaster);
       if (!fileToOpen.exists) {
-        alert("Master file not found: " + textMaster);
+        rep.error = "Matched master file not found on disk: " + textMaster;
         continue;
       }
 
@@ -539,16 +567,21 @@ export const campaignLocaliserTrott2 = (_troDur: string, _troArt: string, _troAr
         const item = proj.item(j);
         if (item instanceof CompItem && item.name === masterStem) myComp = item;
       }
-      if (!myComp) continue;
+      if (!myComp) {
+        rep.status = "no-comp";
+        rep.error = "Master opened but comp '" + masterStem + "' not found inside.";
+        continue;
+      }
 
       trotNameGen(myComp, width, height, newCompName, plm, pdfFile, false);
+      rep.status = "generated";
     } catch (err) {
-      alert("Row failed: " + err.toString());
+      rep.status = "error";
+      rep.error = err.toString();
     }
   }
 
-  alert("Total PDF files processed: " + count);
-  return { success: true };
+  return finishLocGenReport("Trott 2.0", rows, lastOutFolder);
 };
 
 // Ported 1:1 from XYi_PDF_to_CSV.jsx's generateCSV() -- no project is ever
@@ -2298,10 +2331,11 @@ export const checkRenderCheck = (marker7: string, marker8: string, marker9: stri
 // (`masterFile.copy(workingCopy.fsName)` then `app.open(workingCopy)`).
 // No safety patch was needed here; this is actually the reference
 // copy-first pattern this whole project's core safety constraint is
-// modeled on. Ported with the same alert()-per-row-failure /
-// alert()-on-final-count behavior as LOS Tools, for the same reason: the
-// user asked for exact fidelity on tools like this, not the rest of this
-// port's usual {success,error}-return convention.
+// modeled on. Originally ported with the alert()-per-row-failure /
+// alert()-on-final-count behavior for fidelity; later made QUIET by request
+// (July 2026): per-row outcomes now return as structured CsvLocRowReport[]
+// for the panel to render, because the scan-first flow runs this once per
+// batch and the alert storm didn't scale.
 // =============================================================================
 const CSV_LOC_SETTINGS_SECTION = "XYiToolbox";
 const CSV_LOC_LAST_PATH_KEY = "CSVLocLastPath";
@@ -2435,11 +2469,35 @@ function csvLocNameGen(myComp: CompItem, width: number, height: number, newCompN
   app.newProject();
 }
 
-export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExisting: boolean): Result => {
+// Per-row outcome, returned through the bridge so the panel can render one
+// structured report per run instead of the original's alert()-per-failure +
+// final-count alert. Crucially "no-master" rows -- previously a SILENT
+// `continue` (the invisible failure mode that hid the JUNGLE_TUNNEL campaign
+// mismatch for a whole afternoon) -- are now first-class results.
+export interface CsvLocRowReport {
+  row: number;
+  artwork: string;
+  campaign: string;
+  size: string;
+  duration: string;
+  status: "generated" | "skipped-existing" | "no-master" | "error";
+  master?: string; // matched master filename
+  output?: string; // written .aep filename
+  error?: string;
+}
+
+export interface CsvLocResult {
+  success: boolean;
+  error?: string;
+  message?: string;
+  outputFolder?: string;
+  rows?: CsvLocRowReport[];
+}
+
+export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExisting: boolean): CsvLocResult => {
   csvLocSaveLastPath(mastersPath);
 
   if (rawCsvText === "") {
-    alert("Please paste the CSV data first.");
     return { success: false, error: "No CSV data pasted." };
   }
 
@@ -2474,8 +2532,9 @@ export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExi
   if (sourceFolder !== "") {
     const sourceFolderObj = new Folder(sourceFolder);
     if (!sourceFolderObj.exists) {
-      alert("The Source Folder from the CSV couldn't be found on disk:\n" + sourceFolder + "\n\nPlease select the output folder manually.");
-      const picked = Folder.selectDialog("Please select a folder to save the Output Files:");
+      // Source Folder from the CSV not on disk -- fall straight to a manual
+      // picker (the dialog title carries the context; no separate alert).
+      const picked = Folder.selectDialog("CSV's Source Folder not found on disk — select the output folder:");
       if (!picked) return { success: false, error: "No output folder selected." };
       outputFolder = picked;
     } else {
@@ -2489,8 +2548,7 @@ export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExi
       }
     }
   } else {
-    alert("No Source Folder was found in the CSV metadata. Please select the output folder manually.");
-    const picked = Folder.selectDialog("Please select a folder to save the Output Files:");
+    const picked = Folder.selectDialog("No Source Folder in the CSV metadata — select the output folder:");
     if (!picked) return { success: false, error: "No output folder selected." };
     outputFolder = picked;
   }
@@ -2507,6 +2565,7 @@ export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExi
   let rowsAttempted = 0;
   let isMetadata = false;
   const regex = /\d*[x]\d*/;
+  const rowReports: CsvLocRowReport[] = [];
 
   for (let l = 0; l < lines.length; l++) {
     const currentLine = csvLocTrim(lines[l]);
@@ -2523,11 +2582,16 @@ export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExi
     if (currentLine.match(/^"?Artwork/i)) continue;
 
     rowsAttempted++;
+    const rep: CsvLocRowReport = { row: rowsAttempted, artwork: "", campaign: "", size: "", duration: "", status: "error" };
+    rowReports.push(rep);
 
     try {
       const cleanLine = currentLine.replace(/"/g, "");
       const texLoc = cleanLine.split(",");
-      if (texLoc.length < 4) continue;
+      if (texLoc.length < 4) {
+        rep.error = "Malformed row (fewer than 4 columns).";
+        continue;
+      }
 
       const sizeArr = csvLocTrim(texLoc[2]).split("x");
       const campaign = csvLocTrim(texLoc[1]).toUpperCase();
@@ -2535,9 +2599,18 @@ export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExi
       const height = Math.floor(Number(sizeArr[1]));
       const size = String(width) + "x" + String(height);
       const duration = csvLocTrim(texLoc[3]) + "sec";
+      rep.artwork = csvLocTrim(texLoc[0]);
+      rep.campaign = campaign;
+      rep.size = size;
+      rep.duration = duration;
 
       const bestMatch = scanMastersForBestMatch(mastersPath, campaign, size, duration);
-      if (!bestMatch) continue;
+      if (!bestMatch) {
+        // Previously a silent `continue` -- the invisible failure mode.
+        rep.status = "no-master";
+        rep.error = "No master matched this campaign/size/duration in " + mastersPath;
+        continue;
+      }
       const textMaster = bestMatch.fsName;
 
       const linesMaster = textMaster.split("/");
@@ -2563,9 +2636,12 @@ export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExi
       // disk, it just doesn't repeat the batch name in every filename too.
       const newCompName = scanFilmTitle + "_" + scanIndo + "_DGTL_" + scanArtworkType + "_" + campaign + "_" + width + "x" + height + "_" + duration + "_" + territoryCode;
 
+      rep.master = masterName;
+
       const outputFile = new File(outputFolder.toString() + "/" + newCompName + "_V01.aep");
       if (skipExisting && outputFile.exists) {
-        alert(newCompName + ".aep already exists. Skipping.");
+        rep.status = "skipped-existing";
+        rep.output = newCompName + "_V01.aep";
         continue;
       }
 
@@ -2589,11 +2665,22 @@ export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExi
       }
 
       csvLocNameGen(myComp, width, height, newCompName, plm);
+      rep.status = "generated";
+      rep.output = newCompName + "_V01.aep";
     } catch (err) {
-      alert("Row " + rowsAttempted + " failed: " + err.toString());
+      rep.status = "error";
+      rep.error = err.toString();
     }
   }
 
-  alert("CSV Import Complete! Rows attempted: " + rowsAttempted);
-  return { success: true };
+  let generated = 0;
+  for (let r = 0; r < rowReports.length; r++) {
+    if (rowReports[r].status === "generated") generated++;
+  }
+  return {
+    success: true,
+    message: generated + " of " + rowsAttempted + " row(s) generated.",
+    outputFolder: outputFolder.fsName,
+    rows: rowReports,
+  };
 };

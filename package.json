@@ -6,9 +6,10 @@
   "scripts": {
     "dev": "vite",
     "watch": "tsc && vite build --watch true",
-    "build": "rimraf dist/* && tsc -p \"tsconfig-build.json\" && vite build --watch false",
-    "zxp": "rimraf dist/* && tsc -p \"tsconfig-build.json\" && cross-env ZXP_PACKAGE=true vite build --watch false",
-    "zip": "rimraf dist/* && tsc -p \"tsconfig-build.json\" && cross-env ZIP_PACKAGE=true vite build --watch false",
+    "build": "yarn audit:jsx && rimraf dist/* && tsc -p \"tsconfig-build.json\" && vite build --watch false",
+    "zxp": "yarn audit:jsx && rimraf dist/* && tsc -p \"tsconfig-build.json\" && cross-env ZXP_PACKAGE=true vite build --watch false",
+    "zip": "yarn audit:jsx && rimraf dist/* && tsc -p \"tsconfig-build.json\" && cross-env ZIP_PACKAGE=true vite build --watch false",
+    "audit:jsx": "node scripts/audit-jsx-precedence.cjs",
     "serve": "cross-env SERVE_PANEL=true vite preview",
     "symlink": "cross-env BOLT_ACTION=symlink vite",
     "delsymlink": "cross-env BOLT_ACTION=delsymlink vite"

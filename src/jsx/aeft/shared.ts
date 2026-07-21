@@ -65,6 +65,96 @@ export interface Result {
   error?: string;
 }
 
+// --- Shared localiser run reporting (Generate Files / Trott / Trott 2.0) -----
+// Structured per-row outcome so these row-based localisers report results in
+// one modal instead of the old alert()-per-failure + silent `continue`s. The
+// silent no-master/no-comp continues were the exact invisible failure mode MC
+// It! had -- a row that found nothing just vanished from the count. Now every
+// row is a first-class result the panel can render and the user can act on.
+export interface LocGenRowReport {
+  source: string; // CSV line summary or PDF filename this row came from
+  artwork: string;
+  campaign: string;
+  size: string;
+  duration: string;
+  status: "generated" | "skipped-existing" | "no-master" | "no-comp" | "error";
+  master?: string; // matched master filename
+  output?: string; // written .aep filename
+  error?: string;
+}
+
+export interface LocGenResult {
+  success: boolean;
+  error?: string;
+  message?: string;
+  tool?: string; // "Generate Files" | "Trott" | "Trott 2.0"
+  outputFolder?: string;
+  rows?: LocGenRowReport[];
+  finishedAt?: string;
+  runId?: string;
+}
+
+// Persist a completed run so a long batch survives the panel being closed
+// (the evalTS callback dies with the page). The panel's LocGenReportHost
+// polls this file and offers the unseen report back. Mirrors mcIt()'s own
+// persistence but in its own slot so the two never clobber each other.
+export function saveLocGenReport(result: LocGenResult): void {
+  try {
+    const dir = new Folder(Folder.userData.fsName + "/XYiToolbox");
+    if (!dir.exists) dir.create();
+    const f = new File(dir.fsName + "/locgen_last_report.json");
+    f.encoding = "UTF-8";
+    if (f.open("w")) {
+      f.write(JSON.stringify(result));
+      f.close();
+    }
+  } catch (e) {
+    /* persistence must never break the run */
+  }
+}
+
+export const locGenLoadLastReport = (): { success: boolean; json?: string } => {
+  try {
+    const f = new File(Folder.userData.fsName + "/XYiToolbox/locgen_last_report.json");
+    if (!f.exists) return { success: true };
+    if (!f.open("r")) return { success: true };
+    f.encoding = "UTF-8";
+    const json = f.read();
+    f.close();
+    if (json === "") return { success: true };
+    return { success: true, json: json };
+  } catch (e) {
+    return { success: false };
+  }
+};
+
+export const locGenClearLastReport = (): { success: boolean } => {
+  try {
+    const f = new File(Folder.userData.fsName + "/XYiToolbox/locgen_last_report.json");
+    if (f.exists) f.remove();
+    return { success: true };
+  } catch (e) {
+    return { success: false };
+  }
+};
+
+// Build the standard finished-result envelope from a row list.
+export function finishLocGenReport(tool: string, rows: LocGenRowReport[], outputFolder: string): LocGenResult {
+  let generated = 0;
+  for (let i = 0; i < rows.length; i++) if (rows[i].status === "generated") generated++;
+  const result: LocGenResult = {
+    success: true,
+    tool: tool,
+    message: generated + " of " + rows.length + " row(s) generated.",
+    outputFolder: outputFolder,
+    rows: rows,
+    finishedAt: new Date().toString(),
+    runId: "" + new Date().getTime(),
+  };
+  saveLocGenReport(result);
+  return result;
+}
+
 // --- Persistence (campaigns only -- nothing else needs to be saved, since
 // this entire library is derived live from disk). Same app.settings section
 // and key as XYi_OV_Library.jsx, so campaigns set up in either tool show up
