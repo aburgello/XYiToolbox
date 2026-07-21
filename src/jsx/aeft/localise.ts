@@ -7,7 +7,7 @@
 // =============================================================================
 import { CampaignLocaliserResult, TC_COUNTRIES, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, scanMastersForBestMatch } from "./tools";
 import { makeParentLayerOfAllUnparented, scaleAllCameraZooms } from "./deliver";
-import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport } from "./shared";
+import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, saveLocGenReport } from "./shared";
 import { loadCampaignsRaw } from "./review";
 
 
@@ -2492,6 +2492,8 @@ export interface CsvLocResult {
   message?: string;
   outputFolder?: string;
   rows?: CsvLocRowReport[];
+  runId?: string;
+  finishedAt?: string;
 }
 
 export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExisting: boolean): CsvLocResult => {
@@ -2677,10 +2679,48 @@ export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExi
   for (let r = 0; r < rowReports.length; r++) {
     if (rowReports[r].status === "generated") generated++;
   }
+  const message = generated + " of " + rowsAttempted + " row(s) generated.";
+  const runId = "" + new Date().getTime();
+  const finishedAt = new Date().toString();
+
+  // Additive only -- nothing above changed. Persist a copy in the shared
+  // LocGen report shape so the panel's LocGenReportHost renders + recovers
+  // this run in the SAME modal as Generate Files / Trott. rowReports carry a
+  // numeric `row`, so synthesise a `source` label for the modal. The returned
+  // value is unchanged for existing consumers (the CSV Localiser inline strip
+  // still reads `rows`); runId/finishedAt are extra fields the live path uses
+  // to dedupe against the poller.
+  const locRows: LocGenRowReport[] = [];
+  for (let r = 0; r < rowReports.length; r++) {
+    const rr = rowReports[r];
+    locRows.push({
+      source: "Row " + rr.row + (rr.campaign ? " · " + rr.campaign : ""),
+      artwork: rr.artwork,
+      campaign: rr.campaign,
+      size: rr.size,
+      duration: rr.duration,
+      status: rr.status,
+      master: rr.master,
+      output: rr.output,
+      error: rr.error,
+    });
+  }
+  saveLocGenReport({
+    success: true,
+    tool: "CSV Localiser",
+    message: message,
+    outputFolder: outputFolder.fsName,
+    rows: locRows,
+    finishedAt: finishedAt,
+    runId: runId,
+  });
+
   return {
     success: true,
-    message: generated + " of " + rowsAttempted + " row(s) generated.",
+    message: message,
     outputFolder: outputFolder.fsName,
     rows: rowReports,
+    runId: runId,
+    finishedAt: finishedAt,
   };
 };

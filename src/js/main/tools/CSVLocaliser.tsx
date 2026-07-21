@@ -36,6 +36,7 @@ import Tooltip from "../Tooltip";
 import Dropdown from "../Dropdown";
 import { alertDialog, promptDialog } from "../Dialog";
 import { showMcItReport, type McReport } from "../McItReportModal";
+import { showLocGenReport, type LocGenReport, type LocGenRow } from "../LocGenReportModal";
 import type { SpecRow } from "../lib/pdfSpecs";
 
 interface Campaign {
@@ -99,6 +100,30 @@ interface TerritoryScan {
 
 const isBridge = () => typeof (window as any).cep !== "undefined";
 const batchKey = (territory: string, pdfName: string) => `${territory}/${pdfName}`;
+
+// Map a csvLocaliserRun result into the shared LocGen report shape so it pops
+// the same modal as Generate/Trott. runId comes from the host so this live
+// popup dedupes against the persisted-report poller (no double-show).
+function csvResultToLocGenReport(res: {
+    message?: string;
+    outputFolder?: string;
+    rows?: CsvLocRow[];
+    runId?: string;
+    finishedAt?: string;
+}, label: string): LocGenReport {
+    const rows: LocGenRow[] = (res.rows || []).map((r) => ({
+        source: "Row " + r.row + (r.campaign ? " · " + r.campaign : ""),
+        artwork: r.artwork,
+        campaign: r.campaign,
+        size: r.size,
+        duration: r.duration,
+        status: r.status,
+        master: r.master,
+        output: r.output,
+        error: r.error,
+    }));
+    return { tool: label, message: res.message, outputFolder: res.outputFolder, rows, runId: res.runId, finishedAt: res.finishedAt };
+}
 
 // csvLocaliserRun writes to <Source Folder>/AE/<paddedBatch> and pads a lone
 // trailing digit (Batch_1 -> Batch_01), so mirror that to find the folder.
@@ -315,6 +340,8 @@ const CSVLocaliserTool = () => {
             if (rows.length) setBatchRows((s) => ({ ...s, [key]: rows }));
             setBatchStatus((s) => ({ ...s, [key]: res.success && problems === 0 ? "done" : "failed" }));
             setNotice(res.success ? `${t.territory} · ${b.batch}: ${res.message || "run finished."}` : res.error || "Something went wrong.");
+            // Inline strip above stays; also pop the shared results modal.
+            if (res.success && rows.length) showLocGenReport(csvResultToLocGenReport(res as any, `CSV Localiser · ${t.territory} · ${b.batch}`));
         } catch (e: any) {
             setBatchStatus((s) => ({ ...s, [key]: "failed" }));
             setNotice(e?.message || "No CEP bridge — open this panel inside After Effects to run it.");
@@ -352,6 +379,7 @@ const CSVLocaliserTool = () => {
                 const rows = (res as { rows?: CsvLocRow[] }).rows || [];
                 const problems = rows.filter((r) => r.status === "no-master" || r.status === "error").length;
                 setNotice((res.message || "Run finished.") + (problems ? ` — ${problems} row(s) had no master match.` : ""));
+                if (rows.length) showLocGenReport(csvResultToLocGenReport(res as any, "CSV Localiser (pasted)"));
             } else {
                 setNotice(res.error || "Something went wrong.");
             }
