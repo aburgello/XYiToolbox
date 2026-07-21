@@ -1806,6 +1806,16 @@ export function scanMastersForBestMatch(mastersRoot: string, campaign: string, s
   const aspectRatioRef = Number(sizeParts[0]) / Number(sizeParts[1]);
   const plRef = aspectRatioRef >= 1 ? "Landscape" : "Portrait";
 
+  // Separator/case-insensitive campaign match: strip everything but letters and
+  // digits so "JungleTunnel" (from a Specs PDF's ARTWORK SELECTION column)
+  // matches a master spelled "JUNGLE_TUNNEL" (or "Jungle Tunnel", "jungletunnel"
+  // …). The literal path.indexOf(campaign) used before only matched when the
+  // CSV happened to use the exact same separators/case as the filename, which
+  // is why scanned campaigns silently found nothing. Everything else (duration,
+  // the Auto-Save/_Archive/_Old/_DEV exclusions, aspect-ratio) is unchanged.
+  const canon = (s: string) => String(s).toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const campaignCanon = canon(campaign);
+
   let best: File | null = null;
   let min = 1000;
 
@@ -1819,7 +1829,7 @@ export function scanMastersForBestMatch(mastersRoot: string, campaign: string, s
         const path = item.fsName;
         if (
           path.slice(-4) === ".aep" &&
-          path.indexOf(campaign) !== -1 &&
+          canon(path).indexOf(campaignCanon) !== -1 &&
           path.indexOf("Auto-Save") === -1 &&
           path.indexOf("_Archive") === -1 &&
           path.indexOf("_Old") === -1 &&

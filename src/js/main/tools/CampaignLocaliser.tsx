@@ -111,7 +111,8 @@ const CampaignLocaliserTool: React.FC<ToolProps> = (_props) => {
                             <div className="cl-trott-card">
                                 <div className="cl-trott-card-title">CSV Localiser</div>
                                 <p className="cl-trott-card-desc">
-                                    Paste CSV data and run against a folder of AEP masters for batch localisation.
+                                    Scan a campaign&rsquo;s Markets folder — reads every territory&rsquo;s Specs PDFs and
+                                    localises against a folder of AEP masters. Paste-CSV still available as a fallback.
                                 </p>
                                 <CSVLocaliserTool />
                             </div>

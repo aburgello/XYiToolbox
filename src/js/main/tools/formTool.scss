@@ -988,3 +988,290 @@
         }
     }
 }
+
+// ── CSV Localiser · scan-first UI ────────────────────────────────────────────
+.specs-tool {
+    .specs-field-label {
+        display: block;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #888;
+        margin: 8px 0 3px;
+    }
+
+    .specs-folders { max-width: 640px; }
+
+    .specs-actions-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 10px;
+    }
+
+    .specs-scan-btn,
+    .specs-run-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 8px 14px;
+        border-radius: 8px;
+        border: 1px solid transparent;
+        background: var(--cat-grad, var(--ov-accent, #3a5a8a));
+        color: #fff;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: filter 0.15s ease, transform 0.1s ease;
+
+        &:hover:not(:disabled) { filter: brightness(1.1); }
+        &:active:not(:disabled) { transform: translateY(1px); }
+        &:disabled { opacity: 0.45; cursor: default; }
+    }
+
+    .specs-run-btn {
+        width: 100%;
+        justify-content: center;
+        margin-top: 12px;
+        padding: 10px 14px;
+        font-size: 13px;
+    }
+
+    .specs-progress { color: #7fb2d6; margin-top: 8px; }
+
+    .specs-results { max-width: 640px; margin-top: 14px; }
+
+    .specs-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 8px;
+    }
+
+    .specs-search {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex: 1;
+        background: #1f1f1f;
+        border: 1px solid #3a3a3a;
+        border-radius: 7px;
+        padding: 5px 9px;
+        color: #888;
+
+        input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: #ddd;
+            font-size: 12px;
+            outline: none;
+            &::placeholder { color: #666; }
+        }
+    }
+
+    .specs-link-btn {
+        background: none;
+        border: none;
+        color: var(--ov-accent, #6aa0d0);
+        font-size: 11px;
+        cursor: pointer;
+        white-space: nowrap;
+        &:hover:not(:disabled) { text-decoration: underline; }
+        &:disabled { opacity: 0.4; cursor: default; }
+    }
+
+    .specs-list {
+        max-height: 340px;
+        overflow-y: auto;
+        border: 1px solid #2e2e2e;
+        border-radius: 8px;
+        background: #191919;
+    }
+
+    .specs-terr {
+        border-bottom: 1px solid #262626;
+        &:last-child { border-bottom: none; }
+        &.is-selected { background: rgba(60, 90, 138, 0.10); }
+        &.is-disabled { opacity: 0.55; }
+    }
+
+    .specs-terr-head {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+    }
+
+    .specs-check {
+        display: flex;
+        background: none;
+        border: none;
+        color: var(--ov-accent, #6aa0d0);
+        cursor: pointer;
+        padding: 6px 4px;
+        &:disabled { color: #444; cursor: default; }
+    }
+
+    .specs-terr-main {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: 1;
+        background: none;
+        border: none;
+        color: #ddd;
+        cursor: pointer;
+        padding: 8px 4px;
+        text-align: left;
+        font-size: 12.5px;
+        &:disabled { cursor: default; }
+
+        .specs-terr-name { font-weight: 600; }
+        > svg:last-child { margin-left: 2px; color: #777; }
+    }
+
+    .specs-pill {
+        margin-left: auto;
+        font-size: 10px;
+        padding: 1px 7px;
+        border-radius: 10px;
+        border: 1px solid transparent;
+
+        &--ok { color: #7fca8f; background: rgba(60, 140, 80, 0.14); border-color: rgba(60, 140, 80, 0.3); }
+        &--warn { color: #d9b56f; background: rgba(150, 110, 40, 0.14); border-color: rgba(150, 110, 40, 0.3); }
+        &--muted { color: #777; background: #232323; border-color: #333; }
+    }
+
+    .specs-terr-body { padding: 2px 10px 10px 30px; }
+
+    .specs-batch { margin-top: 8px; &:first-child { margin-top: 2px; } }
+
+    .specs-batch-head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        color: #bbb;
+        margin-bottom: 4px;
+        flex-wrap: wrap;
+
+        .specs-batch-name { color: #ccc; }
+        .specs-batch-tag {
+            background: #2a2a2a;
+            border: 1px solid #3a3a3a;
+            border-radius: 4px;
+            padding: 0 5px;
+            color: #9ac;
+            font-size: 10px;
+        }
+        .specs-batch-ok { color: #6fae7f; margin-left: auto; }
+        .specs-batch-err { color: #d98c8c; margin-left: auto; }
+    }
+
+    .specs-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 11px;
+
+        th, td { text-align: left; padding: 3px 6px; border-bottom: 1px solid #262626; }
+        th { color: #777; font-weight: 600; text-transform: uppercase; font-size: 9px; letter-spacing: 0.04em; }
+        td { color: #ccc; }
+        td.is-unknown { color: #d98c8c; }
+    }
+
+    .specs-fallback {
+        max-width: 640px;
+        margin-top: 16px;
+        border-top: 1px solid #2a2a2a;
+        padding-top: 10px;
+    }
+
+    .specs-fallback-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: none;
+        border: none;
+        color: #999;
+        font-size: 11.5px;
+        cursor: pointer;
+        &:hover { color: #ccc; }
+    }
+
+    .specs-fallback-body {
+        margin-top: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        align-items: flex-start;
+
+        textarea { width: 100%; max-width: 520px; }
+    }
+}
+
+// ── CSV Localiser · per-batch run button ─────────────────────────────────────
+.specs-tool {
+    .specs-warn { color: #d9b56f; margin: 0 0 8px; }
+
+    .specs-batch-run {
+        margin-left: auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 3px 9px;
+        border-radius: 6px;
+        border: 1px solid var(--ov-accent, #3a5a8a);
+        background: rgba(60, 90, 138, 0.16);
+        color: #bcd6f0;
+        font-size: 10.5px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: filter 0.15s ease, background 0.15s ease;
+
+        &:hover:not(:disabled) { filter: brightness(1.18); }
+        &:disabled { opacity: 0.4; cursor: default; }
+
+        &.is-done { border-color: rgba(60, 140, 80, 0.5); background: rgba(60, 140, 80, 0.16); color: #8fd39f; }
+        &.is-failed { border-color: rgba(180, 80, 80, 0.5); background: rgba(180, 80, 80, 0.16); color: #e0a0a0; }
+
+        .spin { animation: specs-spin 0.8s linear infinite; }
+    }
+}
+
+@keyframes specs-spin {
+    to { transform: rotate(360deg); }
+}
+
+// ── CSV Localiser · campaign folder helper ───────────────────────────────────
+.specs-tool {
+    .specs-detected {
+        margin-left: 6px;
+        font-size: 9px;
+        text-transform: none;
+        letter-spacing: 0;
+        color: #7fca8f;
+        background: rgba(60, 140, 80, 0.14);
+        border: 1px solid rgba(60, 140, 80, 0.3);
+        border-radius: 8px;
+        padding: 0 6px;
+    }
+
+    .specs-campaign-btn {
+        border-color: var(--ov-accent, #3a5a8a);
+        color: var(--ov-accent, #6aa0d0);
+    }
+}
+
+// ── CSV Localiser · campaign dropdown row ────────────────────────────────────
+.specs-tool {
+    .specs-campaign-select {
+        flex: 1;
+        padding: 0;
+        border: none;
+        background: none;
+
+        > * { width: 100%; }
+    }
+}
