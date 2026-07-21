@@ -38,8 +38,16 @@ function defaultTargets() {
       if (/\.tsx?$/.test(f)) out.push(path.join(dir, f));
     }
   }
-  const bundle = path.join(repoRoot, "dist/cep/jsx/index.js");
-  if (fs.existsSync(bundle)) out.push(bundle);
+  // NOTE: the built bundle (dist/cep/jsx/index.js) is deliberately NOT in the
+  // default set. This runs as a PRE-build gate, and at that moment dist holds
+  // the PREVIOUS build's output -- which `rimraf dist/*` deletes moments later.
+  // Auditing it there is doubly wrong: it fails the build over code you already
+  // fixed (a stale bad bundle), and it would pass a stale CLEAN bundle while
+  // the new source is dangerous. The source scan above is authoritative on its
+  // own -- the AST check flags the dangerous shape in source including
+  // parenthesized forms (see header) -- so gating on source blocks a bad build
+  // BEFORE anything is written. The fresh bundle is verified separately after
+  // the build via `yarn audit:jsx:bundle` (belt-and-braces).
   return out;
 }
 
