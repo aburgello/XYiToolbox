@@ -63,7 +63,7 @@ import {
     AlignStartVertical, AlignCenterVertical, AlignEndVertical,
     AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
     AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter,
-    FlipHorizontal, FlipVertical, Shrink, Expand, StretchHorizontal,
+    FlipHorizontal, FlipVertical,
     Eraser, Copy, ClipboardPaste, BookmarkPlus, Trash2, Undo2,
     ArrowRightToLine, ArrowLeftToLine,
 } from "lucide-react";
@@ -80,7 +80,150 @@ interface EasePresetDTO {
     id: string;
     name: string;
     isBuiltIn: boolean;
+    // Already present in the bridge payload -- motionToolsListEasePresets
+    // returns whole EasePreset objects -- just never declared here before.
+    // Optional/defensive: a payload without them still renders (as linear).
+    inInfluence?: number;
+    outInfluence?: number;
 }
+
+// AE temporal ease -> CSS cubic-bezier, derived from the SAME influence values
+// the preset actually applies, so a preview can never drift from the result.
+// A preset is ONE ease shape applied to every target key, so a two-key segment
+// leaves the start key on its OUT ease and arrives at the end key on its IN
+// ease -- exactly cubic-bezier(outInf, 0, 1 - inInf, 1). Preset speed is always
+// 0 (see motionToolsSaveEasePreset's speed normalisation), so both handles are
+// horizontal and y stays 0/1. Sanity: Linear 0/0 -> (0,0,1,1); Standard 33/33
+// -> (0.33,0,0.67,1); Strong 75/75 -> (0.75,0,0.25,1).
+const easeCurve = (p: EasePresetDTO): string => {
+    const clamp01 = (n: number) => (isFinite(n) ? Math.max(0, Math.min(1, n)) : 0);
+    const x1 = clamp01((p.outInfluence ?? 0) / 100);
+    const x2 = 1 - clamp01((p.inInfluence ?? 0) / 100);
+    return "cubic-bezier(" + x1.toFixed(3) + ", 0, " + x2.toFixed(3) + ", 1)";
+};
+
+// A tiny looping demo of what each preset actually does -- a dot crossing a
+// track on that preset's own curve. The idea is lifted from Rebound's animated
+// tool cards, but GENERATED from preset data rather than hand-authored art, so
+// it covers user-saved presets too and stays truthful for free.
+// Pure CSS animation, deliberately not Framer/GSAP: nothing here can stall
+// under CEP's flaky rAF (the bug class that plagued the screen transitions),
+// and the droplet only exists while it's open, so looping costs nothing at
+// rest -- no conflict with this app's "no perpetual motion on always-visible
+// surfaces" rule.
+const EasePreview: React.FC<{ preset: EasePresetDTO }> = ({ preset }) => (
+    <span className="mt-ease-preview" aria-hidden="true">
+        <span className="mt-ease-preview-dot" style={{ animationTimingFunction: easeCurve(preset) }} />
+    </span>
+);
+
+// --- Excite preview ----------------------------------------------------------
+// Same generated-from-real-values idea as EasePreview, but a damped oscillation
+// can't be expressed as one cubic-bezier -- so the ring-out is SAMPLED into a
+// @keyframes rule generated at runtime and injected once per (type, strength)
+// combo (max 20 tiny rules, lazily). The freq/decay constants are copied from
+// motionTools.ts's exciteExpression() -- the preview is a truthful miniature of
+// the exact expression the button will attach, including how the Strength
+// slider changes it. Keep the two formula copies in sync.
+// Still a plain CSS animation once injected (no rAF fragility); dynamic
+// generation is only used because strength is a live slider value.
+const EXCITE_PREVIEW_DUR_S = 1.8; // keep in sync with .mt-excite-preview-dot's animation-duration
+const EXCITE_TARGET_PX = 18;      // travel to the "last keyframe" tick
+const EXCITE_AMP_PX = 8;          // ring-out amplitude (fits the 34px track: 1+6+18+8=33)
+
+const exciteKfInjected: { [name: string]: true } = {};
+function exciteAnimationName(type: "overshoot" | "bounce", strength: number): string {
+    const s = Math.max(1, Math.min(10, Math.round(strength) || 1));
+    const name = "mt-excite-" + type + "-" + s;
+    if (exciteKfInjected[name]) return name;
+
+    // exciteExpression()'s own constants (motionTools.ts) -- do not retune here.
+    const freq = (type === "bounce" ? 1.5 : 2.0) + s * 0.4;
+    const decay = Math.max(1, (type === "bounce" ? 9 : 10) - s * 0.7);
+    const w = freq * Math.PI * 2;
+
+    const travelEnd = 0.18; // fraction of the loop spent travelling to the tick
+    const ringEnd = 0.93;
+    const ringSec = EXCITE_PREVIEW_DUR_S * (ringEnd - travelEnd);
+    const frames: string[] = [
+        // accelerate INTO the last key, like the real keyframed move the
+        // expression rings out of
+        "0% { transform: translateX(0); opacity: 1; animation-timing-function: cubic-bezier(0.6, 0, 1, 1); }",
+        (travelEnd * 100).toFixed(1) + "% { transform: translateX(" + EXCITE_TARGET_PX + "px); animation-timing-function: linear; }",
+    ];
+    const SAMPLES = 26;
+    for (let i = 1; i <= SAMPLES; i++) {
+        const t = (ringSec * i) / SAMPLES;
+        // overshoot: signed sine, swings BOTH sides of the tick;
+        // bounce: abs(sine), pokes past and returns from ONE side -- the same
+        // one-line difference the two expressions have.
+        const osc = type === "bounce" ? Math.abs(Math.sin(t * w)) : Math.sin(t * w);
+        const x = EXCITE_TARGET_PX + EXCITE_AMP_PX * osc * Math.exp(-decay * t);
+        const pct = (travelEnd + (ringEnd - travelEnd) * (i / SAMPLES)) * 100;
+        frames.push(pct.toFixed(2) + "% { transform: translateX(" + x.toFixed(2) + "px); }");
+    }
+    // settle on the tick, fade out there, reappear at the start -- the loop
+    // restart never reads as a teleport
+    frames.push("96% { transform: translateX(" + EXCITE_TARGET_PX + "px); opacity: 1; }");
+    frames.push("98.5% { transform: translateX(" + EXCITE_TARGET_PX + "px); opacity: 0; }");
+    frames.push("98.6% { transform: translateX(0); opacity: 0; }");
+    frames.push("100% { transform: translateX(0); opacity: 1; }");
+
+    let styleEl = document.getElementById("mt-excite-keyframes") as HTMLStyleElement | null;
+    if (!styleEl) {
+        styleEl = document.createElement("style");
+        styleEl.id = "mt-excite-keyframes";
+        document.head.appendChild(styleEl);
+    }
+    // The <style> element outlives a dev-HMR module swap while the injected-set
+    // resets with the module -- re-check the element itself so a swap doesn't
+    // append duplicate (identical) rules.
+    if ((styleEl.textContent || "").indexOf("@keyframes " + name + " ") === -1) {
+        styleEl.appendChild(document.createTextNode("@keyframes " + name + " { " + frames.join(" ") + " }"));
+    }
+    exciteKfInjected[name] = true;
+    return name;
+}
+
+const ExcitePreview: React.FC<{ type: "overshoot" | "bounce"; strength: number }> = ({ type, strength }) => (
+    <span className="mt-excite-preview" aria-hidden="true">
+        <span className="mt-excite-preview-tick" />
+        <span className="mt-excite-preview-dot" style={{ animationName: exciteAnimationName(type, strength) }} />
+    </span>
+);
+
+// --- Fit preview -------------------------------------------------------------
+// A tiny frame with a "photo" (rect + round subject) morphing to each mode's
+// real result. Values are the honest cover/contain/stretch math for a 10x8
+// source in the frame's 22x13 interior (see the SCSS keyframes): Fill crops
+// against the frame's overflow, Fit letterboxes, Stretch squashes the subject
+// circle into an ellipse -- the distortion IS the explanation. Static keyframes
+// in the stylesheet; nothing dynamic per instance beyond the mode class.
+const FitPreview: React.FC<{ mode: "cover" | "contain" | "stretch" }> = ({ mode }) => (
+    <span className={"mt-fit-preview mt-fit-preview--" + mode} aria-hidden="true">
+        <span className="mt-fit-preview-rect">
+            <span className="mt-fit-preview-subject" />
+        </span>
+    </span>
+);
+
+// --- Stagger preview ---------------------------------------------------------
+// Three bars sliding in one after another. The stagger itself is just
+// animation-delay: with an infinite loop, per-bar delays hold as a permanent
+// phase shift, so the cascade repeats without any JS sequencing. Reverse order
+// flips which bar leads -- driven by the same seqReverse state the real
+// Sequence call uses.
+const StaggerPreview: React.FC<{ reverse: boolean }> = ({ reverse }) => (
+    <span className="mt-stagger-preview" aria-hidden="true">
+        {[0, 1, 2].map((i) => (
+            <span
+                key={i}
+                className="mt-stagger-preview-bar"
+                style={{ animationDelay: ((reverse ? 2 - i : i) * 0.22).toFixed(2) + "s" }}
+            />
+        ))}
+    </span>
+);
 
 const TABS: { id: Tab; label: string; Icon: React.ComponentType<{ size?: number }> }[] = [
     { id: "anchor",    label: "Anchor",  Icon: Crosshair },
@@ -407,13 +550,13 @@ const XYToolsDroplet: React.FC = () => {
                                     <div className="mt-section-label">Fit to Composition</div>
                                     <div className="mt-row mt-row--fill">
                                         <button className="mt-text-btn mt-text-btn--grow" onClick={() => run("motionToolsFit", "cover")}>
-                                            <Expand size={13} /> Fill
+                                            <FitPreview mode="cover" /> Fill
                                         </button>
                                         <button className="mt-text-btn mt-text-btn--grow" onClick={() => run("motionToolsFit", "contain")}>
-                                            <Shrink size={13} /> Fit
+                                            <FitPreview mode="contain" /> Fit
                                         </button>
                                         <button className="mt-text-btn mt-text-btn--grow" onClick={() => run("motionToolsFit", "stretch")}>
-                                            <StretchHorizontal size={13} /> Stretch
+                                            <FitPreview mode="stretch" /> Stretch
                                         </button>
                                     </div>
                                     <p className="mt-hint">
@@ -469,7 +612,10 @@ const XYToolsDroplet: React.FC = () => {
 
                             {tab === "sequence" && (
                                 <div className="mt-section">
-                                    <div className="mt-section-label">Stagger in Time</div>
+                                    <div className="mt-section-label">
+                                        Stagger in Time
+                                        <StaggerPreview reverse={seqReverse} />
+                                    </div>
                                     <div className="mt-seq-row">
                                         <label className="mt-field">
                                             <span>Offset</span>
@@ -546,6 +692,7 @@ const XYToolsDroplet: React.FC = () => {
                                             <div key={p.id} className="mt-preset-chip">
                                                 <Tooltip text={"Apply \"" + p.name + "\" to the selected keyframe(s)"}>
                                                     <button className="mt-preset-chip-btn" onClick={() => handleApplyPreset(p.id)}>
+                                                        <EasePreview preset={p} />
                                                         {p.name}
                                                     </button>
                                                 </Tooltip>
@@ -590,8 +737,14 @@ const XYToolsDroplet: React.FC = () => {
                                         <span className="mt-slider-value">{exciteStrength}</span>
                                     </label>
                                     <div className="mt-row mt-row-ease">
-                                        <button className="mt-ease-btn" onClick={() => run("motionToolsExcite", "overshoot", exciteStrength)}>Overshoot</button>
-                                        <button className="mt-ease-btn" onClick={() => run("motionToolsExcite", "bounce", exciteStrength)}>Bounce</button>
+                                        <button className="mt-ease-btn mt-ease-btn--excite" onClick={() => run("motionToolsExcite", "overshoot", exciteStrength)}>
+                                            <ExcitePreview type="overshoot" strength={exciteStrength} />
+                                            Overshoot
+                                        </button>
+                                        <button className="mt-ease-btn mt-ease-btn--excite" onClick={() => run("motionToolsExcite", "bounce", exciteStrength)}>
+                                            <ExcitePreview type="bounce" strength={exciteStrength} />
+                                            Bounce
+                                        </button>
                                         <Tooltip text="Remove expression from the selected properties">
                                             <button className="mt-ease-btn mt-ease-btn--remove" onClick={() => run("motionToolsExciteRemove")}>
                                                 <Eraser size={13} />

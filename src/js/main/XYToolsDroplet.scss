@@ -458,6 +458,9 @@ $mt-surface: #202020;
 }
 
 .mt-preset-chip-btn {
+    display: flex;
+    align-items: center;
+    gap: 7px;
     background: none;
     border: none;
     color: #cfcfcf;
@@ -469,6 +472,189 @@ $mt-surface: #202020;
     transition: color 0.15s ease;
 
     &:hover { color: $mt-accent; }
+}
+
+// --- Ease preset preview -------------------------------------------------
+// A dot crossing a track on the preset's OWN curve (timing function is set
+// inline per chip from the preset's influence values -- see easeCurve() in
+// XYToolsDroplet.tsx). Reading "Soft Ease 15/15" tells you nothing; watching
+// it does.
+//
+// Deliberately plain CSS with a FIXED pixel travel in the keyframe rather than
+// a var()-driven distance: custom properties inside @keyframes are unreliable
+// on this project's chrome74 build target (same class of caution as the
+// documented color-mix()/:has() bans), whereas animation-timing-function set
+// as an inline style on the element is plain, ancient CSS and always applies.
+.mt-ease-preview {
+    position: relative;
+    display: inline-block;
+    flex-shrink: 0;
+    width: 34px;
+    height: 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.07);
+    overflow: hidden;
+}
+
+.mt-ease-preview-dot {
+    position: absolute;
+    top: 1px;
+    left: 1px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: $mt-accent;
+    // 34 track - 6 dot - 2 padding = 26px of travel.
+    animation: mt-ease-run 1.1s infinite alternate;
+}
+
+@keyframes mt-ease-run {
+    from { transform: translateX(0); }
+    to   { transform: translateX(26px); }
+}
+
+// --- Excite preview (Ease tab) ----------------------------------------------
+// Same track/dot language as .mt-ease-preview, but the ring-out keyframes are
+// GENERATED at runtime from the real exciteExpression() freq/decay math (see
+// exciteAnimationName() in the tsx) -- only animation-name arrives inline; all
+// the static animation properties live here. The tick marks "the last
+// keyframe": the dot travels to it, then rings out around it.
+.mt-excite-preview {
+    position: relative;
+    display: inline-block;
+    flex-shrink: 0;
+    width: 34px;
+    height: 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.07);
+    overflow: hidden;
+}
+
+.mt-excite-preview-tick {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 21px; // dot's resting center: 1px inset + 3px radius + 18px travel
+    width: 1px;
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.mt-excite-preview-dot {
+    position: absolute;
+    top: 1px;
+    left: 1px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: $mt-accent;
+    animation-duration: 1.8s; // keep in sync with EXCITE_PREVIEW_DUR_S (tsx)
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+    // animation-name is set inline per (type, strength)
+}
+
+// --- Fit preview (Fit tab) ---------------------------------------------------
+// A frame with a "photo" inside: teal rect + round subject. Each mode's
+// keyframes scale the rect to that mode's honest result for a 10x8 source in
+// the frame's 22x13 interior: cover 2.2/2.2 (overflows -- the frame's
+// overflow:hidden does the real cropping), contain 1.62/1.62 (letterboxed),
+// stretch 2.2/1.62 (exact fill -- the subject circle visibly squashes into an
+// ellipse, which is the whole point of showing it).
+.mt-fit-preview {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 24px;
+    height: 15px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.mt-fit-preview-rect {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 10px;
+    height: 8px;
+    border-radius: 1px;
+    background: rgba(79, 209, 197, 0.28);
+    animation: 2.4s ease-in-out infinite;
+}
+
+.mt-fit-preview-subject {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: $mt-accent;
+}
+
+.mt-fit-preview--cover   .mt-fit-preview-rect { animation-name: mt-fitprev-cover; }
+.mt-fit-preview--contain .mt-fit-preview-rect { animation-name: mt-fitprev-contain; }
+.mt-fit-preview--stretch .mt-fit-preview-rect { animation-name: mt-fitprev-stretch; }
+
+@keyframes mt-fitprev-cover {
+    0%, 22%  { transform: scale(1, 1); }
+    55%, 82% { transform: scale(2.2, 2.2); }
+    100%     { transform: scale(1, 1); }
+}
+@keyframes mt-fitprev-contain {
+    0%, 22%  { transform: scale(1, 1); }
+    55%, 82% { transform: scale(1.62, 1.62); }
+    100%     { transform: scale(1, 1); }
+}
+@keyframes mt-fitprev-stretch {
+    0%, 22%  { transform: scale(1, 1); }
+    55%, 82% { transform: scale(2.2, 1.62); }
+    100%     { transform: scale(1, 1); }
+}
+
+// --- Stagger preview (Time tab) ----------------------------------------------
+// Three bars sliding in one after another; the per-bar phase offset is a plain
+// animation-delay set inline (with an infinite loop, delays persist as a
+// permanent phase shift -- no JS sequencing). Sits at the right edge of the
+// "Stagger in Time" section label (.mt-section-label is already flex).
+.mt-stagger-preview {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+.mt-stagger-preview-bar {
+    width: 12px;
+    height: 3px;
+    border-radius: 999px;
+    background: $mt-accent;
+    // matches the 0% keyframe, so a bar is invisible until its delay elapses
+    opacity: 0;
+    transform: translateX(-7px);
+    animation: mt-stagprev-run 1.7s ease-out infinite;
+}
+
+@keyframes mt-stagprev-run {
+    0%        { transform: translateX(-7px); opacity: 0; }
+    26%       { transform: translateX(0);    opacity: 1; }
+    72%       { transform: translateX(0);    opacity: 1; }
+    88%, 100% { transform: translateX(-7px); opacity: 0; }
+}
+
+// Excite buttons carry a preview + label side by side
+.mt-ease-btn--excite { gap: 7px; }
+
+@media (prefers-reduced-motion: reduce) {
+    .mt-ease-preview-dot { animation: none; transform: translateX(13px); }
+    // !important beats the inline animation-name the tsx sets per strength
+    .mt-excite-preview-dot { animation: none !important; transform: translateX(18px); }
+    .mt-fit-preview-rect { animation: none !important; }
+    // park each mode on its RESULT state, so the preview still explains
+    .mt-fit-preview--cover   .mt-fit-preview-rect { transform: scale(2.2, 2.2); }
+    .mt-fit-preview--contain .mt-fit-preview-rect { transform: scale(1.62, 1.62); }
+    .mt-fit-preview--stretch .mt-fit-preview-rect { transform: scale(2.2, 1.62); }
+    .mt-stagger-preview-bar { animation: none !important; opacity: 1; transform: translateX(0); }
 }
 
 // Only rendered for user-saved presets -- built-ins have no delete control

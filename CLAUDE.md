@@ -625,11 +625,20 @@ selected project items — no file dialogs, no scanning:
   pre-comp layer) — separate, more involved feature, left as a follow-up.
 - **Adjust** (`tools/Adjust.tsx`) — Width/Height/Duration/Frame Rate/
   Aspect Ratio, each a direct one-property change with NO null-parent
-  scaling (unlike Scale Composition) — e.g. adjusting width alone
-  visually stretches layer content rather than scaling it proportionally.
-  **That's the original `XYi_Adj.jsx` tool's actual behavior, not a
+  scaling (unlike Scale Composition). **CORRECTION (2026-07, verified
+  against `adjWidth`/`adjHeight` in tools.ts)**: an earlier version of
+  this bullet claimed adjusting width alone "visually stretches layer
+  content" — wrong. Setting `comp.width`/`comp.height` CROPS or EXTENDS
+  the canvas; layers keep their size and position, nothing stretches.
+  The one field that genuinely distorts is Aspect Ratio (`pixelAspect`),
+  which stretches the RENDERED image horizontally. The still-true core
+  point stands: **nothing here rescales content proportionally, and
+  that's the original `XYi_Adj.jsx` tool's actual behavior, not a
   porting bug** — don't "fix" it to proportionally scale without asking,
   the whole point of this tab vs. Scale Composition is that it doesn't.
+  The tool page's live canvas preview (AdjustPreview) shows exactly this
+  crop-vs-stretch split, generated from the field values + the active
+  comp's real size.
   Duration adjustment recursively extends any layer (including nested
   pre-comps) whose outPoint fell short, up to its own source's natural
   length, ported 1:1 from `XYi_Adj.jsx`'s `adjustLayers()`.

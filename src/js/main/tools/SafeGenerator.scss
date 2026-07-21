@@ -1,0 +1,65 @@
+// =============================================================================
+// src/js/main/tools/SafeGenerator.scss
+// -----------------------------------------------------------------------------
+// Styles for the live safe-zone preview only -- the form itself still comes
+// from formTool.scss like every other form tool. The preview mirrors what the
+// tool actually draws: a 50%-red wash everywhere OUTSIDE the safe area (the
+// ViewSafe matte's visible result), clear inside it. The red surround is the
+// safe rect's own oversized box-shadow clipped by the frame's overflow -- one
+// element, and the shadow tracks the rect's size transition for free.
+// Motion is a one-shot CSS transition when the values change, not a loop --
+// this is a page that stays open while working, not a transient droplet.
+// =============================================================================
+
+.sg-preview-wrap {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 10px 0 4px;
+}
+
+.sg-preview {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 4px;
+    overflow: hidden; // clips the safe rect's red box-shadow to the frame
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.sg-preview-safe {
+    // the clear safe area; everything around it gets the matte's red wash
+    box-shadow: 0 0 0 400px rgba(224, 60, 60, 0.32);
+    border: 1px dashed rgba(255, 255, 255, 0.55);
+    border-radius: 1px;
+    transition: width 0.25s ease, height 0.25s ease;
+    box-sizing: border-box;
+}
+
+// margin/size ate the whole comp (or produced nothing): the tool would draw a
+// zero/negative solid, so the preview goes full red instead of pretending
+.sg-preview--invalid {
+    background: rgba(224, 60, 60, 0.32);
+
+    .sg-preview-safe { display: none; }
+}
+
+.sg-preview-caption {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 10.5px;
+    color: #8a8a8a;
+    line-height: 1.4;
+
+    strong { color: #cfcfcf; font-weight: 600; }
+
+    .sg-preview-warn { color: #e07a7a; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sg-preview-safe { transition: none; }
+}

@@ -575,6 +575,23 @@
         background: transparent;
     }
 
+    // The predicted Output Module template (predictRowTemplate in the tsx) --
+    // tinted in the Deliver orange so the queue's real decision stands out
+    // from the input echo tags around it.
+    .dh-preview-tag--template {
+        color: #fdba74;
+        border-color: rgba(251, 146, 60, 0.35);
+        background: rgba(251, 146, 60, 0.07);
+    }
+
+    // The Mbps cap overrode the size target -- amber leans red as a "your MB
+    // number is not what decides this row anymore" nudge.
+    .dh-preview-tag--capped {
+        color: #fca5a5;
+        border-color: rgba(224, 122, 122, 0.4);
+        background: rgba(224, 122, 122, 0.08);
+    }
+
     // ── Queue bar (below rows list) ───────────────────────────────────────
     .dh-queue-bar {
         display: flex;
@@ -768,4 +785,44 @@
             cursor: pointer;
         }
     }
+}
+
+// --- Render-watch pulse (action bar) -----------------------------------------
+// Shown while the render watch has pending items. Pure CSS pulse, deliberately
+// not Framer: the poll spends its life awaiting a bridge call that BLOCKS for
+// the whole render -- a CSS animation keeps moving through that regardless,
+// which is exactly the "panel is waiting, not dead" signal this exists to give.
+// Loop is justified as live status: it only exists while something is genuinely
+// in flight, same reasoning as a progress spinner.
+.dh-render-watch {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin-left: 10px;
+    padding: 4px 10px;
+    border: 1px solid rgba(251, 146, 60, 0.35);
+    border-radius: 999px;
+    background: rgba(251, 146, 60, 0.08);
+    color: #fdba74;
+    font-size: 10.5px;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.dh-render-watch-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #fb923c;
+    animation: dh-watch-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes dh-watch-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 rgba(251, 146, 60, 0.45); }
+    50%      { opacity: 0.55; transform: scale(0.8); box-shadow: 0 0 0 4px rgba(251, 146, 60, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dh-render-watch-dot { animation: none; }
 }
