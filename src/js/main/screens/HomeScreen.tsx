@@ -22,6 +22,7 @@ import { TOOLS, CATEGORIES, categoryStyleVars, prefetchTool } from "../toolRegis
 import { iconWiggle, cardLift, categoryLift } from "../animations";
 import { useFavorites, favoriteKey } from "../hooks/useFavorites";
 import { useCustomTools } from "../hooks/useCustomTools";
+import { TOOLBOX_VERSION } from "../TeamDroplet";
 import { rankedFuzzySearch, type FuzzyRecord } from "../lib/fuzzySearch";
 import { useTheme } from "../hooks/useTheme";
 import { THEMES } from "../themes";
@@ -266,7 +267,7 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
                             whileTap={{ scale: 0.88 }}
                             transition={{ duration: 0.6, ease: "easeInOut" }}
                         />
-                        <p className="version">Toolbox 2026.07</p>
+                        <p className="version">Toolbox {TOOLBOX_VERSION}</p>
                     </motion.div>
 
                     <div className="home-search">

@@ -32,7 +32,7 @@ import "./TeamDroplet.scss";
 
 // Keep in step with HomeScreen.tsx's "Toolbox {version}" hover text -- this
 // is the value compared against the team folder's toolbox-version.txt.
-export const TOOLBOX_VERSION = "2026.07";
+export const TOOLBOX_VERSION = "2026.678";
 
 // Mirrors team.ts's TeamProfileInfo: a member is a SUBFOLDER of the team
 // folder (Antonio/, Jacqui/, ...); hasProfile says whether that member has

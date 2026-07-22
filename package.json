@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "build:web": "rimraf dist/web && vite build --config vite.web.config.ts && node scripts/flatten-web.cjs",
     "watch": "tsc && vite build --watch true",
     "build": "yarn audit:jsx && rimraf dist/* && tsc -p \"tsconfig-build.json\" && vite build --watch false && yarn audit:jsx:bundle",
     "zxp": "yarn audit:jsx && rimraf dist/* && tsc -p \"tsconfig-build.json\" && cross-env ZXP_PACKAGE=true vite build --watch false && yarn audit:jsx:bundle",

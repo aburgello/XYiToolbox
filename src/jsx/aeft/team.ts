@@ -355,8 +355,29 @@ export const teamSaveProfile = (name: string): ProfileListResult => {
         : "";
     }
 
+    // Count only the keys that actually carry a value, so the header reflects
+    // how much of the setup this snapshot really holds (empty keys = defaults).
+    let savedCount = 0;
+    for (let k = 0; k < PROFILE_KEYS.length; k++) {
+      if (settings[PROFILE_KEYS[k]] !== "") savedCount++;
+    }
+
     const file = new File(memberFolder.fsName + "/" + PROFILE_FILE_NAME);
-    const payload = JSON.stringify({ type: PROFILE_FILE_TYPE, version: 2, name: trimmed, savedAt: new Date().toString(), settings: settings });
+    // Pretty-printed with a `summary`/`count` header at the top for the same
+    // readability reason as the shared library files above.
+    const payload = JSON.stringify(
+      {
+        type: PROFILE_FILE_TYPE,
+        version: 2,
+        name: trimmed,
+        summary: trimmed + "'s setup -- " + savedCount + " of " + PROFILE_KEYS.length + " preferences saved",
+        count: savedCount,
+        savedAt: new Date().toString(),
+        settings: settings,
+      },
+      null,
+      2
+    );
     if (!writeTextFile(file, payload)) return { success: false, error: "Could not write the profile file." };
 
     return teamListProfiles();
@@ -679,10 +700,37 @@ function readSharedFile<T>(fileName: string, expectedType: string): T[] | null {
   }
 }
 
+// Human-readable noun per shared-file type, used to build the plain-English
+// `summary` header so someone opening the raw JSON immediately sees "3 combos
+// shared" without having to count array items by eye.
+function sharedTypeNoun(expectedType: string, count: number): string {
+  const singular =
+    expectedType === SHARED_COMBOS_TYPE ? "combo"
+    : expectedType === SHARED_EXPRESSIONS_TYPE ? "expression"
+    : expectedType === SHARED_TOOLS_TYPE ? "custom tool"
+    : expectedType === SHARED_CAMPAIGNS_TYPE ? "campaign"
+    : "item";
+  return count === 1 ? singular : singular + "s";
+}
+
 function writeSharedFile<T>(fileName: string, expectedType: string, entries: T[]): boolean {
   const root = teamFolder();
   if (!root) return false;
-  return writeTextFile(new File(root.fsName + "/" + fileName), JSON.stringify({ type: expectedType, version: 1, entries: entries }));
+  const count = entries.length;
+  // `count` + `summary` sit ABOVE `entries` (json2.js preserves key insertion
+  // order) so they read as a header/divider at the top of the file. Pretty-
+  // printed (2-space indent) so the whole thing is legible in any text editor,
+  // not one unreadable line. readSharedFile only checks `type` + `entries`, so
+  // the extra header keys are safe to add.
+  const payload = {
+    type: expectedType,
+    version: 1,
+    summary: count + " " + sharedTypeNoun(expectedType, count) + " shared",
+    count: count,
+    updatedAt: new Date().toString(),
+    entries: entries,
+  };
+  return writeTextFile(new File(root.fsName + "/" + fileName), JSON.stringify(payload, null, 2));
 }
 
 function loadLocalExpressions(): ExpressionEntry[] {

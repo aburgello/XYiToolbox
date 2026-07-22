@@ -37,6 +37,7 @@ export const evalES = (script: string, isGlobal = false): Promise<string> => {
 import type { Scripts } from "@esTypes/index";
 import type { EventTS } from "../../../shared/universals";
 import { initializeCEP } from "./init-cep";
+import { isDemoMode, getDemoResult } from "./demoBridge";
 
 type ArgTypes<F extends Function> = F extends (...args: infer A) => any
   ? A
@@ -76,6 +77,19 @@ export const evalTS = <
   ...args: ArgTypes<Func>
 ): Promise<ReturnType<Func>> => {
   return new Promise(function (resolve, reject) {
+    // DEMO MODE (hosted web build, no After Effects). Inert inside a real CEP
+    // panel — isDemoMode() is only true when window.__adobe_cep__ is absent.
+    // See demoBridge.ts for the full rationale.
+    if (isDemoMode()) {
+      const demo = getDemoResult(functionName as string, args as unknown[]);
+      if (demo.handled) {
+        // Small artificial latency so spinners/toasts read as real work.
+        setTimeout(() => resolve(demo.value as ReturnType<Func>), 220);
+        return;
+      }
+      // Not handled: fall through so csi.evalScript throws (no bridge) and the
+      // caller's own mock fallback / error handling runs exactly as today.
+    }
     const formattedArgs = args
       .map((arg) => {
         console.log(JSON.stringify(arg));
