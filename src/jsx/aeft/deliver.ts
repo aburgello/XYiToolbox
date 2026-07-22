@@ -322,7 +322,18 @@ export function makeParentLayerOfAllUnparented(comp: CompItem, newParent: Layer)
   for (let i = 1; i <= comp.numLayers; i++) {
     const cur = comp.layer(i);
     if (cur !== newParent && cur.parent === null) {
-      cur.parent = newParent;
+      // Guard each assignment: setting .parent on a LOCKED layer throws in
+      // ExtendScript (e.g. a locked Frontcard overlay, common in delivery
+      // comps). That used to abort the whole scale mid-loop and orphan the
+      // temporary null in the comp (the "Null N left behind" bug). Skip any
+      // layer that refuses parenting -- it just isn't dragged along by the
+      // null (correct for a fixed locked overlay anyway) instead of failing
+      // the entire operation.
+      try {
+        cur.parent = newParent;
+      } catch (e) {
+        // un-parentable (locked, or otherwise) -- leave it as-is
+      }
     }
   }
 }
@@ -351,31 +362,37 @@ export function scaleCompToFit(comp: CompItem, newWidth: number, newHeight: numb
   const scaleFactor = newRatio > oldRatio ? newWidth / oldWidth : newHeight / oldHeight;
 
   const null3DLayer = comp.layers.addNull();
-  null3DLayer.threeDLayer = true;
-  null3DLayer.position.setValue([0, 0, 0]);
-  makeParentLayerOfAllUnparented(comp, null3DLayer);
+  // try/finally so the temporary null is ALWAYS removed -- even if a step
+  // below throws (locked-layer parenting, a separated-dimensions scale, a
+  // camera-zoom quirk, etc.). A leftover "Null N" in the comp was exactly the
+  // symptom of an un-guarded throw between addNull and remove.
+  try {
+    null3DLayer.threeDLayer = true;
+    null3DLayer.position.setValue([0, 0, 0]);
+    makeParentLayerOfAllUnparented(comp, null3DLayer);
 
-  comp.width = Math.floor(newWidth);
-  comp.height = Math.floor(newHeight);
-  scaleAllCameraZooms(comp, scaleFactor);
+    comp.width = Math.floor(newWidth);
+    comp.height = Math.floor(newHeight);
+    scaleAllCameraZooms(comp, scaleFactor);
 
-  const superParentScale = null3DLayer.scale.value as number[];
-  const superParentPosition = null3DLayer.position.value as number[];
-  superParentScale[0] *= scaleFactor;
-  superParentScale[1] *= scaleFactor;
-  superParentScale[2] *= scaleFactor;
-  null3DLayer.scale.setValue(superParentScale);
+    const superParentScale = null3DLayer.scale.value as number[];
+    const superParentPosition = null3DLayer.position.value as number[];
+    superParentScale[0] *= scaleFactor;
+    superParentScale[1] *= scaleFactor;
+    superParentScale[2] *= scaleFactor;
+    null3DLayer.scale.setValue(superParentScale);
 
-  if (newRatio > oldRatio) {
-    const posHeight = (newWidth / oldWidth) * oldHeight;
-    superParentPosition[1] = -0.5 * (posHeight - newHeight);
-  } else {
-    const posWidth = (newHeight / oldHeight) * oldWidth;
-    superParentPosition[0] = -0.5 * (posWidth - newWidth);
+    if (newRatio > oldRatio) {
+      const posHeight = (newWidth / oldWidth) * oldHeight;
+      superParentPosition[1] = -0.5 * (posHeight - newHeight);
+    } else {
+      const posWidth = (newHeight / oldHeight) * oldWidth;
+      superParentPosition[0] = -0.5 * (posWidth - newWidth);
+    }
+    null3DLayer.position.setValue(superParentPosition);
+  } finally {
+    null3DLayer.remove();
   }
-  null3DLayer.position.setValue(superParentPosition);
-
-  null3DLayer.remove();
 }
 
 // Ported from XYi_DRQR.jsx's processLayers(), reusing onScaleClick's n=1

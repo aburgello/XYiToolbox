@@ -292,6 +292,15 @@ export const ACTIONS: ActionEntry[] = [
         successText: () => "Comp scaled up for preview.",
     },
     {
+        id: "scale-by-name",
+        label: "Scale by Name",
+        description: "Scales the active comp to the size in its name: a bare WxH scales to WxH, and _DOUBLE_RES / _QUAD_RES scales to 2x / 4x that (re-rendering the inner comp at native res on a clean Frontcard+precomp structure). Never adds a suffix — use DRQR to promote a comp to double/quad res.",
+        icon: Tag,
+        group: "qc",
+        run: () => evalTSSafe("scaleCompositionByName"),
+        successText: (r) => r.message || "Comp scaled to its name.",
+    },
+    {
         id: "scale-fit",
         label: "Scale Fit",
         description: "Adds a fit/fill-to-comp expression on each selected layer's Scale (toggle via the added \"Extreme\" checkbox effect).",
