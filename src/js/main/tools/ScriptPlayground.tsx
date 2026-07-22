@@ -77,27 +77,32 @@ const ScriptPlayground: React.FC = () => {
 
     const cancelSave = () => setSaving(false);
 
-    const confirmSave = async () => {
+    // asNew forces a brand-new entry even when a tool is loaded (the "Save as
+    // new" / fork path); otherwise loading a tool + Save updates it in place.
+    const confirmSave = async (asNew = false) => {
         if (!saveName.trim()) {
             setStatus({ type: "error", text: "Name is required to save a tool." });
             return;
         }
+        const updating = editingToolId !== null && !asNew;
         const entry: CustomToolEntry = {
-            id: editingToolId || genId(),
+            id: updating ? (editingToolId as string) : genId(),
             name: saveName.trim(),
             description: saveDescription.trim(),
             code,
             kind: saveKind,
         };
-        const next = editingToolId
-            ? customTools.map((t) => (t.id === editingToolId ? entry : t))
+        const next = updating
+            ? customTools.map((t) => (t.id === entry.id ? entry : t))
             : [...customTools, entry];
         await persistCustomTools(next);
         setEditingToolId(entry.id);
         setSaving(false);
         setStatus({
             type: "success",
-            text: `Saved "${entry.name}" as a ${saveKind === "button" ? "one-click Toolset button" : "My Tools entry"}.`,
+            text: updating
+                ? `Updated "${entry.name}".`
+                : `Saved "${entry.name}" as a ${saveKind === "button" ? "one-click Toolset button" : "My Tools entry"}.`,
         });
     };
 
@@ -135,7 +140,13 @@ const ScriptPlayground: React.FC = () => {
                 <textarea
                     className="sp-textarea"
                     value={code}
-                    onChange={(e) => { setCode(e.target.value); setEditingToolId(null); }}
+                    // Editing does NOT unlink the loaded tool -- that was a bug:
+                    // it flipped "Update Tool…" back to "Save as Tool…" on the
+                    // first keystroke, so iterating on a saved script forced a
+                    // duplicate every time. The link stays; "Update Tool…"
+                    // overwrites in place, and the save form offers "Save as
+                    // new" for when you deliberately want a fork.
+                    onChange={(e) => setCode(e.target.value)}
                     spellCheck={false}
                     placeholder="// Write ExtendScript here…"
                     rows={10}
@@ -203,7 +214,14 @@ const ScriptPlayground: React.FC = () => {
                         </button>
                     </div>
                     <div className="button-row">
-                        <button onClick={confirmSave}><Save size={14} /> Save</button>
+                        <button onClick={() => confirmSave(false)}>
+                            <Save size={14} /> {editingToolId ? "Update" : "Save"}
+                        </button>
+                        {editingToolId && (
+                            <button onClick={() => confirmSave(true)} className="sp-clear-btn" title="Create a separate new tool from this code, leaving the loaded one untouched">
+                                Save as new
+                            </button>
+                        )}
                         <button onClick={cancelSave} className="sp-clear-btn">Cancel</button>
                     </div>
                 </div>

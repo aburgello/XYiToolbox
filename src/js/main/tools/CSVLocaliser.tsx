@@ -148,6 +148,35 @@ const CSVLocaliserTool = () => {
     // Per-batch localiser row results (csvLocaliserRun's structured report),
     // same key -- rendered inline under the batch after a run.
     const [batchRows, setBatchRows] = useState<Record<string, CsvLocRow[]>>({});
+    // Rows the user has DISCARDED from a batch before running, keyed by the
+    // batch key -> a set of row indices (into b.rows). Purpose: a Wrike task
+    // put on hold still shows up in the fetched Specs PDF, so let the user
+    // uncheck those rows and localise only the rest. Purely a frontend filter
+    // -- the excluded rows never reach buildLocaliserCsv, so the host never
+    // sees them.
+    const [excludedRows, setExcludedRows] = useState<Record<string, Set<number>>>({});
+
+    const isRowExcluded = (key: string, idx: number) => !!excludedRows[key]?.has(idx);
+
+    const toggleRowExcluded = (key: string, idx: number) => {
+        setExcludedRows((prev) => {
+            const next = new Set(prev[key] || []);
+            if (next.has(idx)) next.delete(idx);
+            else next.add(idx);
+            return { ...prev, [key]: next };
+        });
+    };
+
+    // Exclude / include EVERY row in a batch at once (header checkbox).
+    const setAllRowsExcluded = (key: string, rowCount: number, excluded: boolean) => {
+        setExcludedRows((prev) => {
+            const next = new Set<number>();
+            if (excluded) for (let i = 0; i < rowCount; i++) next.add(i);
+            return { ...prev, [key]: next };
+        });
+    };
+
+    const includedCount = (key: string, rowCount: number) => rowCount - (excludedRows[key]?.size || 0);
 
     // paste fallback
     const [pasteOpen, setPasteOpen] = useState(false);
@@ -355,11 +384,18 @@ const CSVLocaliserTool = () => {
         }
         setNotice(null);
         const key = batchKey(t.territory, b.pdfName);
+        // Drop any rows the user discarded (e.g. on-hold Wrike tasks still in
+        // the PDF). If they've excluded everything, there's nothing to run.
+        const rowsToRun = b.rows.filter((_, i) => !isRowExcluded(key, i));
+        if (!rowsToRun.length) {
+            setNotice(`${t.territory} · ${b.batch}: every row is excluded — nothing to localise.`);
+            return;
+        }
         setBatchStatus((s) => ({ ...s, [key]: "running" }));
         setBusy(true);
         try {
             const { buildLocaliserCsv } = await import("../lib/pdfSpecs");
-            const csv = buildLocaliserCsv({ territory: t.territory, batch: b.batch, sourceFolder: t.sourceFolder, rows: b.rows });
+            const csv = buildLocaliserCsv({ territory: t.territory, batch: b.batch, sourceFolder: t.sourceFolder, rows: rowsToRun });
             const res = await evalTS("csvLocaliserRun", aepPath, csv, skipExisting);
             if (res === undefined) throw new Error("no bridge");
             const rows = (res.success ? (res as { rows?: CsvLocRow[] }).rows : undefined) || [];
@@ -519,18 +555,24 @@ const CSVLocaliserTool = () => {
                                                 const key = batchKey(t.territory, b.pdfName);
                                                 const st = batchStatus[key];
                                                 const canRun = b.rows.length > 0;
+                                                const incl = includedCount(key, b.rows.length);
+                                                const someExcluded = incl < b.rows.length;
                                                 return (
                                                     <div key={b.pdfName} className="specs-batch">
                                                         <div className="specs-batch-head">
                                                             <FileText size={12} />
                                                             <span className="specs-batch-name">{b.pdfName}</span>
                                                             <span className="specs-batch-tag">{b.batch}</span>
-                                                            {b.error ? <span className="specs-batch-err">{b.error}</span> : <span className="specs-batch-ok">{b.rows.length} rows</span>}
+                                                            {b.error ? <span className="specs-batch-err">{b.error}</span> : (
+                                                                <span className={"specs-batch-ok" + (someExcluded ? " specs-batch-ok--filtered" : "")}>
+                                                                    {someExcluded ? `${incl} of ${b.rows.length} rows` : `${b.rows.length} rows`}
+                                                                </span>
+                                                            )}
                                                             {canRun && (
                                                                 <>
                                                                     <button
                                                                         className={"specs-batch-run" + (st === "done" ? " is-done" : st === "failed" ? " is-failed" : "")}
-                                                                        disabled={busy || !aepPath}
+                                                                        disabled={busy || !aepPath || incl === 0}
                                                                         onClick={() => runBatch(t, b)}
                                                                     >
                                                                         {st === "running" ? (
@@ -539,6 +581,8 @@ const CSVLocaliserTool = () => {
                                                                             <><Check size={12} /> Done · Re-run</>
                                                                         ) : st === "failed" ? (
                                                                             <><PlayCircle size={12} /> Retry</>
+                                                                        ) : someExcluded ? (
+                                                                            <><PlayCircle size={12} /> Localise {incl} row{incl === 1 ? "" : "s"}</>
                                                                         ) : (
                                                                             <><PlayCircle size={12} /> Localise batch</>
                                                                         )}
@@ -558,17 +602,47 @@ const CSVLocaliserTool = () => {
                                                             )}
                                                         </div>
                                                         {b.rows.length > 0 && (
-                                                            <table className="specs-table">
-                                                                <thead><tr><th>Artwork</th><th>Campaign</th><th>Size</th><th>Dur</th></tr></thead>
+                                                            <table className="specs-table specs-table--selectable">
+                                                                <thead>
+                                                                    <tr>
+                                                                        <th className="specs-row-check-col">
+                                                                            <Tooltip text={incl === 0 ? "Include all rows" : "Exclude all rows"}>
+                                                                                <input
+                                                                                    type="checkbox"
+                                                                                    className="specs-row-check"
+                                                                                    checked={incl > 0}
+                                                                                    ref={(el) => { if (el) el.indeterminate = someExcluded && incl > 0; }}
+                                                                                    onChange={() => setAllRowsExcluded(key, b.rows.length, incl > 0)}
+                                                                                    aria-label="Include or exclude all rows"
+                                                                                />
+                                                                            </Tooltip>
+                                                                        </th>
+                                                                        <th>Artwork</th><th>Campaign</th><th>Size</th><th>Dur</th>
+                                                                    </tr>
+                                                                </thead>
                                                                 <tbody>
-                                                                    {b.rows.map((r, i) => (
-                                                                        <tr key={i}>
-                                                                            <td>{r.Artwork}</td>
-                                                                            <td className={r.Campaign === "UNKNOWN" ? "is-unknown" : ""}>{r.Campaign}</td>
-                                                                            <td>{r.Size}</td>
-                                                                            <td>{r.Duration}</td>
-                                                                        </tr>
-                                                                    ))}
+                                                                    {b.rows.map((r, i) => {
+                                                                        const excluded = isRowExcluded(key, i);
+                                                                        return (
+                                                                            <tr key={i} className={excluded ? "specs-row--excluded" : ""}>
+                                                                                <td className="specs-row-check-col">
+                                                                                    <Tooltip text={excluded ? "Excluded — click to include" : "Included — click to exclude (e.g. an on-hold row)"}>
+                                                                                        <input
+                                                                                            type="checkbox"
+                                                                                            className="specs-row-check"
+                                                                                            checked={!excluded}
+                                                                                            onChange={() => toggleRowExcluded(key, i)}
+                                                                                            aria-label={`Include row ${i + 1}`}
+                                                                                        />
+                                                                                    </Tooltip>
+                                                                                </td>
+                                                                                <td>{r.Artwork}</td>
+                                                                                <td className={r.Campaign === "UNKNOWN" ? "is-unknown" : ""}>{r.Campaign}</td>
+                                                                                <td>{r.Size}</td>
+                                                                                <td>{r.Duration}</td>
+                                                                            </tr>
+                                                                        );
+                                                                    })}
                                                                 </tbody>
                                                             </table>
                                                         )}
