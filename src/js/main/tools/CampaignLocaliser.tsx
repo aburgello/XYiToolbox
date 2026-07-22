@@ -5,7 +5,7 @@ import { showLocGenReport, type LocGenReport } from "../LocGenReportModal";
 import { evalTS } from "../../lib/utils/bolt";
 import { sfx } from "../../lib/utils/sfx";
 import StatusIcon from "../StatusIcon";
-import CheckboxToggle from "../CheckboxToggle";
+import SegmentedToggle from "../SegmentedToggle";
 import type { ToolProps } from "../toolRegistry";
 import CSVLocaliserTool from "./CSVLocaliser";
 import "../shared.scss";
@@ -17,6 +17,14 @@ interface StatusMsg {
 }
 
 type Section = "generate" | "trott";
+
+// NOTE: Generate Files / Trott / Trott 2.0 deliberately remember NOTHING and
+// pop their folder dialogs every run. A previous pass added remembered paths
+// here and it was wrong: these folders arrive via native dialogs, so silent
+// reuse is invisible -- clicking Run and having it proceed against last time's
+// folders is worse than one extra dialog. CSV Localiser is the exception that
+// proves the rule: its campaign is an explicit, visible, one-click selection,
+// so restoring it is legible. Don't add path memory back here.
 
 const SECTIONS: { id: Section; icon: React.ComponentType<{ size?: number }>; label: string; desc: string }[] = [
     { id: "generate", icon: FolderInput, label: "Generate Files",      desc: "Generate localised AE variants from the best-matching master AEP." },
@@ -188,7 +196,7 @@ const CampaignLocaliserTool: React.FC<ToolProps> = (_props) => {
                             <div className="cl-trott-card">
                                 <div className="cl-trott-card-title">Trott</div>
                                 <p className="cl-trott-card-desc">
-                                    Uses your manual fields as overrides. Uncheck a box to use the typed value; check it to auto-detect from the filename.
+                                    Semi-automatic — set each field to auto-detect from the PDF filename, or type it in yourself.
                                 </p>
                                 <div className="cl-flow-row">
                                     <span className="cl-flow-badge">Masters</span>
@@ -196,19 +204,33 @@ const CampaignLocaliserTool: React.FC<ToolProps> = (_props) => {
                                     <span className="cl-flow-badge">PDFs</span>
                                 </div>
                                 <div className="loc-field-row">
-                                    <label>Enter Duration Below</label>
+                                    <label>Duration (sec)</label>
                                     <input type="text" value={trotDuration} onChange={(e) => setTrotDuration(e.target.value)} disabled={busy} />
                                 </div>
+                                {/* Auto-detect | Manual toggles replace the old inverted
+                                    checkboxes ("Use X name" CHECKED meant "ignore my typed
+                                    value") -- same booleans go to the backend, the choice
+                                    just reads the right way round now. */}
                                 <div className="loc-field-row">
-                                    <label>Enter DOOH / DINTH</label>
-                                    <input type="text" placeholder="Enter DOOH / DINTH" value={trotArtwork} onChange={(e) => setTrotArtwork(e.target.value)} disabled={busy} />
+                                    <label>DOOH / DINTH</label>
+                                    <SegmentedToggle
+                                        name="trott-artwork"
+                                        value={trotUseArtworkName ? "auto" : "manual"}
+                                        onChange={(v) => setTrotUseArtworkName(v === "auto")}
+                                        options={[{ value: "auto", label: "Auto-detect" }, { value: "manual", label: "Manual" }]}
+                                    />
+                                    <input type="text" placeholder={trotUseArtworkName ? "Detected from each PDF's filename" : "Enter DOOH / DINTH"} value={trotArtwork} onChange={(e) => setTrotArtwork(e.target.value)} disabled={busy || trotUseArtworkName} />
                                 </div>
-                                <CheckboxToggle className="loc-checkbox-row" checked={trotUseArtworkName} onChange={setTrotUseArtworkName} label="Use DOOH / DINTH name" />
                                 <div className="loc-field-row">
-                                    <label>Enter Toolkit Name Below</label>
-                                    <input type="text" placeholder="Enter Campaign Name" value={trotCampaign} onChange={(e) => setTrotCampaign(e.target.value)} disabled={busy} />
+                                    <label>Campaign / Toolkit Name</label>
+                                    <SegmentedToggle
+                                        name="trott-campaign"
+                                        value={trotUseCampaignName ? "auto" : "manual"}
+                                        onChange={(v) => setTrotUseCampaignName(v === "auto")}
+                                        options={[{ value: "auto", label: "Auto-detect" }, { value: "manual", label: "Manual" }]}
+                                    />
+                                    <input type="text" placeholder={trotUseCampaignName ? "Detected from each PDF's filename" : "Enter Campaign Name"} value={trotCampaign} onChange={(e) => setTrotCampaign(e.target.value)} disabled={busy || trotUseCampaignName} />
                                 </div>
-                                <CheckboxToggle className="loc-checkbox-row" checked={trotUseCampaignName} onChange={setTrotUseCampaignName} label="Use Campaign Name" />
                                 <button className="cl-trott-card-btn" disabled={busy} onClick={() => runLocGen("Trott!", () => evalTS("campaignLocaliserTrott", trotDuration, trotArtwork, trotUseArtworkName, trotCampaign, trotUseCampaignName))}>
                                     <Rabbit size={16} /> Run Trott
                                 </button>

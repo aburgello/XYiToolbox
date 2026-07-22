@@ -174,9 +174,33 @@ const CSVLocaliserTool = () => {
         })();
     }, []);
 
+    // Restore the campaign that was selected last time, which brings its
+    // Markets folder (and derived Masters) back with it -- the Markets folder
+    // is the same one all campaign long, so re-picking it every panel open was
+    // pure repetition. Runs once the campaign list is loaded and only if
+    // nothing's been picked in the meantime; a saved name that no longer
+    // matches a campaign restores nothing. Silent: this is a restore, not a
+    // thing that happened, so it doesn't announce itself in the notice line.
+    useEffect(() => {
+        if (campaigns.length === 0 || campaignName) return;
+        (async () => {
+            try {
+                const lastCampaign = await evalTS("csvLocaliserLoadLastCampaign");
+                if (lastCampaign && campaigns.some((c) => c.name === lastCampaign)) {
+                    selectCampaign(lastCampaign, true);
+                }
+            } catch (e) {
+                /* browser preview -- no bridge */
+            }
+        })();
+    }, [campaigns]);
+
     // Selecting a saved campaign (shared with Localised Library) fills Markets
     // from the campaign and derives Masters from its sibling in the same root.
-    const selectCampaign = (name: string) => {
+    // Storing just the NAME keeps the campaign record the single source of
+    // truth for its Markets path -- re-point it in Localised Library and this
+    // follows automatically instead of holding a stale copy.
+    const selectCampaign = (name: string, restoring = false) => {
         const c = campaigns.find((c) => c.name === name);
         if (!c) return;
         setCampaignName(name);
@@ -185,7 +209,10 @@ const CSVLocaliserTool = () => {
         const masters = deriveMastersFromMarkets(c.marketsRoot);
         setMastersAuto(!!masters);
         if (masters) setAepPath(masters);
-        setNotice(masters ? "Markets from campaign; Masters auto-detected from its root." : "Markets set — pick the AEP masters folder below.");
+        if (!restoring) {
+            setNotice(masters ? "Markets from campaign; Masters auto-detected from its root." : "Markets set — pick the AEP masters folder below.");
+            evalTS("csvLocaliserSaveLastCampaign", name).catch(() => {});
+        }
     };
 
     // Add a campaign the same way Localised Library does, so they stay in sync.

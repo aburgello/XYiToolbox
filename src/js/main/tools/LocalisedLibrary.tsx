@@ -956,7 +956,10 @@ const LocalisedLibraryTool = () => {
                                             visibleTerritories.map((t) => {
                                                 const count = countFor(t);
                                                 return (
-                                                    <button key={t} className="ll-terr-row" onClick={() => setSelectedTerritory(t)}>
+                                                    // Zero-component territories stay clickable (they can still be
+                                                    // browsed/populated) but render dimmed, so scanning the list for
+                                                    // "where is there actually work" is instant.
+                                                    <button key={t} className={count > 0 ? "ll-terr-row" : "ll-terr-row ll-terr-row--empty"} onClick={() => setSelectedTerritory(t)}>
                                                         <span className={count > 0 ? "ll-pip filled" : "ll-pip"} />
                                                         <span className="ll-terr-name">
                                                             {t}
