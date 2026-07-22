@@ -1,0 +1,74 @@
+// =============================================================================
+// src/js/main/tools/Adjust.scss
+// -----------------------------------------------------------------------------
+// Styles for the live canvas-resize preview only -- the form itself still
+// comes from formTool.scss. The preview teaches this tool's actual behaviour
+// (verified against tools.ts's adjWidth/adjHeight/adjAspect, not the older
+// comment that claimed "stretches"): Width/Height set comp.width/height
+// directly, which CROPS or EXTENDS the canvas while content keeps its size
+// and position -- nothing rescales. The one field that genuinely distorts is
+// Aspect Ratio (pixelAspect), shown as a horizontal stretch of the content.
+// Motion is a one-shot transition on value change, not a loop.
+// =============================================================================
+
+.adj-preview-wrap {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 12px 0 4px;
+}
+
+// The NEW canvas. overflow:hidden does the real cropping when it shrinks
+// below the content block's size.
+.adj-preview {
+    position: relative;
+    flex-shrink: 0;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.04);
+    overflow: hidden;
+    transition: width 0.25s ease, height 0.25s ease;
+    box-sizing: border-box;
+}
+
+// The content: sized to the ORIGINAL comp, anchored top-left (where AE keeps
+// layer coordinates when the comp resizes), so shrinking the canvas visibly
+// crops the right/bottom edge and growing it exposes empty canvas.
+.adj-preview-content {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(96, 165, 250, 0.28);
+    transform-origin: left center; // pixel-AR stretch grows rightward, like AE renders it
+    transition: width 0.25s ease, height 0.25s ease, transform 0.25s ease;
+    box-sizing: border-box;
+}
+
+.adj-preview-subject {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #60a5fa;
+    flex-shrink: 0;
+}
+
+.adj-preview-caption {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 10.5px;
+    color: #8a8a8a;
+    line-height: 1.4;
+
+    strong { color: #cfcfcf; font-weight: 600; }
+
+    .adj-preview-note { color: #6f6f6f; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .adj-preview,
+    .adj-preview-content { transition: none; }
+}

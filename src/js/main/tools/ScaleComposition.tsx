@@ -36,7 +36,7 @@ const ScaleCompositionTool = () => {
             const result = await fn();
             if (result === undefined) throw new Error("no bridge");
             if (result.success && onResult) onResult(result);
-            setStatus(result.success ? { text: `${label} complete.`, type: "success" } : { text: result.error || "Something went wrong.", type: "error" });
+            setStatus(result.success ? { text: result.message || `${label} complete.`, type: "success" } : { text: result.error || "Something went wrong.", type: "error" });
         } catch (e) {
             setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
         } finally {
@@ -118,9 +118,11 @@ const ScaleCompositionTool = () => {
                 >
                     <ScanSearch size={14} /> Scale Detect
                 </button>
-                <button disabled={busy} onClick={() => run("Scale by Name", () => evalTS("scaleCompositionByName"))}>
-                    <Tag size={14} /> Scale by Name
-                </button>
+                <Tooltip text="Scales the comp to the size its name claims: a bare WxH scales to WxH, and _DOUBLE_RES / _QUAD_RES scales to 2x / 4x that. On a res-suffixed comp with the clean Frontcard+edits-precomp structure it also re-renders the inner comp at native res. Never adds a suffix — use DRQR to promote a comp to double/quad res.">
+                    <button disabled={busy} onClick={() => run("Scale by Name", () => evalTS("scaleCompositionByName"))}>
+                        <Tag size={14} /> Scale by Name
+                    </button>
+                </Tooltip>
                 <button
                     disabled={busy}
                     onClick={() => {

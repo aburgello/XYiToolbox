@@ -2359,6 +2359,42 @@ function csvLocSaveLastPath(path: string): void {
   if (path !== "") app.settings.saveSetting(CSV_LOC_SETTINGS_SECTION, CSV_LOC_LAST_PATH_KEY, path);
 }
 
+// =============================================================================
+// CSV Localiser: last selected CAMPAIGN
+// -----------------------------------------------------------------------------
+// The Markets folder itself was already remembered -- it lives on the campaign
+// record (LocLibCampaigns' {name, marketsRoot}, shared with Localised Library),
+// and picking a campaign fills Markets and derives Masters from its root. The
+// only thing that wasn't sticky was WHICH campaign you had selected, so every
+// panel open started from an empty dropdown and you re-picked the same campaign
+// to get the same Markets folder back.
+//
+// Storing just the campaign NAME (not the path) is deliberate: the campaign
+// record stays the single source of truth for its Markets folder, so if it's
+// ever re-pointed in Localised Library, this follows it automatically instead
+// of holding a stale copy. A name that no longer matches a saved campaign
+// simply restores nothing.
+//
+// Note the deliberate ASYMMETRY with Campaign Localiser's Generate Files /
+// Trott / Trott 2.0, which remember nothing and prompt every run: a campaign
+// is an explicit, visible, one-click selection you can see and change at any
+// time, whereas those tools' folders arrive via native dialogs where silent
+// reuse would be invisible. Don't "for consistency" add path memory there.
+// =============================================================================
+const CSV_LOC_LAST_CAMPAIGN_KEY = "CSVLocLastCampaign";
+
+export const csvLocaliserLoadLastCampaign = (): string | null => {
+  if (app.settings.haveSetting(CSV_LOC_SETTINGS_SECTION, CSV_LOC_LAST_CAMPAIGN_KEY)) {
+    return app.settings.getSetting(CSV_LOC_SETTINGS_SECTION, CSV_LOC_LAST_CAMPAIGN_KEY);
+  }
+  return null;
+};
+
+export const csvLocaliserSaveLastCampaign = (name: string): { success: boolean } => {
+  app.settings.saveSetting(CSV_LOC_SETTINGS_SECTION, CSV_LOC_LAST_CAMPAIGN_KEY, name);
+  return { success: true };
+};
+
 function csvLocTrim(str: string): string {
   return String(str).replace(/^\s+|\s+$/g, "");
 }

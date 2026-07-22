@@ -21,10 +21,12 @@
 }
 
 // ── Big workflow cards ──────────────────────────────
+// Height came down from 440px: the cards were mostly empty middle, and the
+// reclaimed space now hosts the workflow strip below.
 .ls-cards {
     display: flex;
     gap: 12px;
-    height: 440px;
+    height: 300px;
 }
 
 .ls-card {
@@ -240,4 +242,66 @@
             transparent 100%);
         transform-origin: left;
     }
+}
+
+// ── Workflow strip ──────────────────────────────────
+// The localisation pipeline as numbered stages with arrows (order defined in
+// WORKFLOW_STAGES in the tsx) -- reuses .ls-utilities'' bordered-box + floating
+// label shell via the extra .ls-workflow class.
+.ls-flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.ls-stage {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    color: #ddd;
+    border-radius: 999px;
+    padding: 7px 13px 7px 7px;
+    cursor: pointer;
+    font-size: 11px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+
+    &:hover {
+        background: var(--cat-grad, var(--ov-accent, #3a5a8a));
+        border-color: var(--cat-border, transparent);
+        box-shadow: 0 4px 14px var(--cat-glow, rgba(0, 0, 0, 0.35));
+
+        .ls-stage-num { background: rgba(255, 255, 255, 0.18); color: #fff; }
+    }
+
+    svg {
+        flex-shrink: 0;
+        color: var(--cat-icon, #5eead4);
+        transition: color 0.3s ease;
+    }
+}
+
+.ls-stage-num {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: rgba(94, 234, 212, 0.12);
+    color: var(--cat-icon, #5eead4);
+    font-size: 9.5px;
+    font-weight: 700;
+    flex-shrink: 0;
+    transition: background 0.3s ease, color 0.3s ease;
+}
+
+.ls-flow-arrow {
+    color: #555;
+    font-size: 12px;
+    flex-shrink: 0;
+    user-select: none;
 }

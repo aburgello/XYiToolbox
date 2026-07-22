@@ -1,0 +1,63 @@
+// =============================================================================
+// src/js/main/tools/WallTools.scss
+// -----------------------------------------------------------------------------
+// Styles for the live wall-grid preview only -- the form itself still comes
+// from formTool.scss. The preview frame is aspect-matched to the Comp
+// Width/Height fields and divided into the real panel counts; changing any
+// value remounts the grid (React key), replaying a one-shot diagonal cascade
+// of the cells -- entrance-on-change, NOT a loop, since this is a page that
+// stays open while working.
+// =============================================================================
+
+.wt-preview-wrap {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 10px 0 4px;
+}
+
+.wt-preview {
+    display: grid;
+    flex-shrink: 0;
+    gap: 1px;
+    padding: 1px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.04);
+    box-sizing: border-box;
+}
+
+.wt-preview-cell {
+    background: rgba(96, 165, 250, 0.28); // matches formTool's Tools-page accent family
+    border-radius: 1px;
+    animation: wt-cell-in 0.3s ease both; // one-shot; delay set inline per cell
+}
+
+@keyframes wt-cell-in {
+    from { opacity: 0; transform: scale(0.6); }
+    to   { opacity: 1; transform: scale(1); }
+}
+
+.wt-preview-caption {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 10.5px;
+    color: #8a8a8a;
+    line-height: 1.4;
+
+    strong { color: #cfcfcf; font-weight: 600; }
+}
+
+// "-> N panels across" line under the Aspect Ratio field
+.wt-aspect-hint {
+    margin: 2px 0 6px;
+    font-size: 10.5px;
+    color: #8a8a8a;
+
+    strong { color: #cfcfcf; font-weight: 600; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .wt-preview-cell { animation: none; }
+}

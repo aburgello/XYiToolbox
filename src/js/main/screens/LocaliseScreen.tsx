@@ -12,6 +12,7 @@ import { ArrowLeft, FolderInput, BookOpen, FileSignature, Stamp, ClipboardCheck,
 import { TOOLS, categoryStyleVars, type ToolProps } from "../toolRegistry";
 import { ToolErrorBoundary } from "../ToolErrorBoundary";
 import { PaletteTrigger, triggerPalette } from "../CommandPalette";
+import Tooltip from "../Tooltip";
 import { sfx } from "../../lib/utils/sfx";
 import "./LocaliseScreen.scss";
 
@@ -27,16 +28,33 @@ interface UtilityEntry {
     icon: React.ComponentType<{ size?: number }>;
 }
 
-const UTILITY_TOOLS: UtilityEntry[] = [
-    { id: "name-generator",    label: "Name Generator",  icon: FileSignature },
-    { id: "cheeky-dt",        label: "Cheeky DT",       icon: Stamp },
-    { id: "check",            label: "Check",           icon: ClipboardCheck },
-    { id: "edit-generator",   label: "Edit Generator",  icon: Clapperboard },
-    { id: "generate-cue-sheet", label: "Cue Sheet",     icon: FileText },
-    { id: "aep-thief",        label: "AEP Thief",       icon: Copy },
-    { id: "jpeg-loc",         label: "JPEG Loc",        icon: ImageIcon },
-    { id: "pdf-to-csv",       label: "PDF to CSV",      icon: FileSpreadsheet },
+// The localisation pipeline in the order it actually runs at the studio --
+// shown as a numbered workflow strip so a new team member can read the
+// process off the landing instead of decoding an unordered grid of slang
+// names. Each stage's blurb states its ROLE in the pipeline (the registry
+// description stays as the fuller reference; utilities below use it).
+const WORKFLOW_STAGES: (UtilityEntry & { blurb: string })[] = [
+    { id: "pdf-to-csv",         label: "PDF to CSV",   icon: FileSpreadsheet, blurb: "Start here: scan the client PDFs into a Campaign_Data.csv." },
+    { id: "campaign-localiser", label: "Generate",     icon: FolderInput,     blurb: "Generate localised AEPs from the masters (Generate Files / CSV Localiser / Trotting) — same as the Batch Localisation card." },
+    { id: "jpeg-loc",           label: "JPEG Loc",     icon: ImageIcon,       blurb: "Swap in each territory's JPG artwork across the generated AEPs." },
+    { id: "cheeky-dt",          label: "Cheeky DT",    icon: Stamp,           blurb: "Update each Frontcard's details from its filename." },
+    { id: "check",              label: "Check",        icon: ClipboardCheck,  blurb: "QC pass: names, effects, comp details, render check." },
+    { id: "generate-cue-sheet", label: "Cue Sheet",    icon: FileText,        blurb: "Export the cue sheet for handover." },
 ];
+
+// Standalone helpers that support the pipeline but aren't a stage of it.
+const UTILITY_TOOLS: UtilityEntry[] = [
+    { id: "name-generator",   label: "Name Generator", icon: FileSignature },
+    { id: "edit-generator",   label: "Edit Generator", icon: Clapperboard },
+    { id: "aep-thief",        label: "AEP Thief",      icon: Copy },
+];
+
+const toolDescription = (id: string): string =>
+    TOOLS.find((t) => t.id === id)?.description || "";
+
+// One-shot landing cascade per session -- returning from a tool used to
+// replay the full stagger every time (the effect is keyed on [tool]).
+let lsEntranceDone = false;
 
 export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, onSelectTool, onBack }) => {
     const reduced = useReducedMotion();
@@ -61,9 +79,11 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
 
     useEffect(() => {
         if (tool || !landingRef.current) return;
+        if (lsEntranceDone) return; // already cascaded this session -- render static
+        lsEntranceDone = true;
         const ctx = gsap.context(() => {
             const cards = gsap.utils.toArray<HTMLElement>(".ls-card");
-            const gridItems = gsap.utils.toArray<HTMLElement>(".ls-grid-item");
+            const gridItems = gsap.utils.toArray<HTMLElement>(".ls-grid-item, .ls-stage");
             const gridLabel = gsap.utils.toArray<HTMLElement>(".ls-grid-label");
 
             gsap.set([...cards, ...gridLabel, ...gridItems], { opacity: 0, y: 24 });
@@ -197,18 +217,40 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
                         </button>
                     </div>
 
+                    <div className="ls-utilities ls-workflow">
+                        <span className="ls-grid-label">Localisation Workflow</span>
+                        <div className="ls-flow">
+                            {WORKFLOW_STAGES.map(({ id, label, icon: Icon, blurb }, i) => (
+                                <React.Fragment key={id}>
+                                    {i > 0 && <span className="ls-flow-arrow" aria-hidden="true">→</span>}
+                                    <Tooltip text={blurb} delay={500}>
+                                        <button
+                                            className="ls-stage"
+                                            onClick={() => { sfx.click(); handleSelect(id); }}
+                                        >
+                                            <span className="ls-stage-num">{i + 1}</span>
+                                            <Icon size={13} />
+                                            <span>{label}</span>
+                                        </button>
+                                    </Tooltip>
+                                </React.Fragment>
+                            ))}
+                        </div>
+                    </div>
+
                     <div className="ls-utilities">
-                        <span className="ls-grid-label">Utilities</span>
+                        <span className="ls-grid-label">More Utilities</span>
                         <div className="ls-grid">
                             {UTILITY_TOOLS.map(({ id, label, icon: Icon }) => (
-                                <button
-                                    key={id}
-                                    className="ls-grid-item"
-                                    onClick={() => { sfx.click(); handleSelect(id); }}
-                                >
-<Icon size={14} />
-                                <span>{label}</span>
-                                </button>
+                                <Tooltip key={id} text={toolDescription(id)} delay={500}>
+                                    <button
+                                        className="ls-grid-item"
+                                        onClick={() => { sfx.click(); handleSelect(id); }}
+                                    >
+                                        <Icon size={14} />
+                                        <span>{label}</span>
+                                    </button>
+                                </Tooltip>
                             ))}
                         </div>
                     </div>

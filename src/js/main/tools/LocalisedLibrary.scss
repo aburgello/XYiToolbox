@@ -857,3 +857,12 @@
         &.toast-error   { border-color: #7a2e2e; svg:first-child { color: #e07a7a; } }
     }
 }
+
+// Zero-component territories: dimmed at rest so populated rows pop, back to
+// full strength on hover (still perfectly clickable/populatable).
+.ll-terr-row--empty {
+    opacity: 0.45;
+    transition: opacity 0.15s ease;
+
+    &:hover { opacity: 1; }
+}

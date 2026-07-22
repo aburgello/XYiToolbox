@@ -335,20 +335,24 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 6px;
-            background: #2a2a2a;
-            border: 1px solid #444;
-            color: #ddd;
-            border-radius: 6px;
-            padding: 8px 14px;
-            font-size: 11px;
+            gap: 8px;
+            background: linear-gradient(180deg, #2e2e2e 0%, #262626 100%);
+            border: 1px solid #4a4a4a;
+            color: #eee;
+            border-radius: 8px;
+            padding: 13px 14px;
+            font-size: 13px;
+            font-weight: 600;
             cursor: pointer;
-            transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+            transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+
+            svg { width: 16px; height: 16px; }
 
             &:hover:not(:disabled) {
                 background: var(--cat-grad);
                 border-color: var(--cat-border);
-                box-shadow: 0 3px 10px var(--cat-glow);
+                box-shadow: 0 4px 14px var(--cat-glow);
+                transform: translateY(-1px);
             }
 
             &:disabled {
@@ -358,3 +362,8 @@
         }
     }
 }
+
+// The Trott card's Auto-detect | Manual toggles sit between the field label
+// and its input; give them a little air and dim a disabled (auto) input.
+.loc-field-row .segmented-toggle { margin: 4px 0 6px; }
+.loc-field-row input:disabled { opacity: 0.45; }

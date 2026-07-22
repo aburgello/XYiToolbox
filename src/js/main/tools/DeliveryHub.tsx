@@ -70,6 +70,51 @@ function buildMockRows(): RowData[] {
 // this copy only labels the preview) -- keep the two in step.
 const DEFAULT_MBPS = 26;
 
+// --- Template prediction (delivery preview) ----------------------------------
+// The queue's one non-obvious decision: the MB target becomes a bitrate, then
+// rounds DOWN to the nearest prebuilt Output Module template -- so the template
+// a row actually gets is almost never the bitrate you computed. This mirror of
+// deliver.ts's math (deliveryCalcRequiredBitrateMbps + the cap/default
+// precedence + deliveryFindTemplateName's round-down) shows each row's real
+// landing template live in the preview, before Queue runs. ONLY deliver.ts
+// decides the render -- keep this list + the constants in step with its
+// DELIVERY_TEMPLATE_BITRATES_MBPS / DELIVERY_AUDIO_RESERVE_KBPS if they change.
+const TEMPLATE_BITRATES_MBPS = [
+    0.6, 0.8, 1, 1.4, 2, 2.4, 2.8, 3.4, 5, 7, 8, 10, 12, 14, 16, 18, 20, 22,
+    24, 25, 26, 28, 30, 32, 36, 40, 48, 50, 60,
+];
+const AUDIO_RESERVE_KBPS = 192;
+
+function predictRowTemplate(row: RowData): { name: string; capped: boolean } | null {
+    const sizeMB = row.sizeMB !== "" ? parseFloat(row.sizeMB) : null;
+    const maxMbps = row.maxMbps !== "" ? parseFloat(row.maxMbps) : null;
+    // Invalid numbers: the queue will refuse this row anyway -- predict nothing
+    // rather than predict from garbage.
+    if (sizeMB !== null && (isNaN(sizeMB) || sizeMB <= 0)) return null;
+    if (maxMbps !== null && (isNaN(maxMbps) || maxMbps <= 0)) return null;
+
+    let required: number;
+    if (sizeMB !== null) {
+        if (!(row.duration > 0)) return null; // duration unknown -- can't honestly predict
+        let kbps = (sizeMB * 8 * 1000 * 1000) / row.duration / 1000;
+        if (row.includeAudio) kbps -= AUDIO_RESERVE_KBPS;
+        let mbps = kbps / 1000;
+        if (mbps < 0) mbps = 0.1; // same safety floor as deliver.ts
+        required = mbps;
+    } else {
+        required = DEFAULT_MBPS;
+    }
+    const capped = maxMbps !== null && required > maxMbps;
+    const eff = capped ? (maxMbps as number) : required;
+
+    let best: number | null = null;
+    for (const v of TEMPLATE_BITRATES_MBPS) {
+        if (v <= eff && (best === null || v > best)) best = v;
+    }
+    if (best === null) best = TEMPLATE_BITRATES_MBPS[0];
+    return { name: "H264_" + String(best) + "MBPS_MOS", capped };
+}
+
 function getShortLabel(fullName: string): string {
     const match = fullName.match(/([A-Za-z0-9]+)_(\d{2,5}x\d{2,5})/);
     if (match) return match[1] + "_" + match[2];
@@ -348,6 +393,13 @@ const DeliveryHubTool = () => {
     const watchPendingRef = useRef<number[]>([]);
     const watchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const watchDeadlineRef = useRef(0);
+    // State mirror of watchPendingRef's count, purely for the "watching N
+    // renders" pulse in the action bar (the ref itself never re-renders).
+    // The pulse is a pure-CSS animation on purpose: while AE renders, the
+    // poll's evalTS sits awaiting a blocked bridge call for minutes -- the
+    // one window where an indicator that keeps moving regardless is exactly
+    // what tells the artist the panel is waiting, not dead.
+    const [watchingCount, setWatchingCount] = useState(0);
 
     useEffect(() => () => {
         if (watchTimerRef.current) clearTimeout(watchTimerRef.current);
@@ -401,7 +453,11 @@ const DeliveryHubTool = () => {
             // bridge hiccup -- keep the pending list, retry next tick
         }
 
-        if (watchPendingRef.current.length > 0 && Date.now() < watchDeadlineRef.current) {
+        const stillGoing = watchPendingRef.current.length > 0 && Date.now() < watchDeadlineRef.current;
+        // Deadline hit with items still pending = we stop watching, so the
+        // indicator must go dark too rather than pulse a lie.
+        setWatchingCount(stillGoing ? watchPendingRef.current.length : 0);
+        if (stillGoing) {
             watchTimerRef.current = setTimeout(pollRenderWatch, 5000);
         }
     };
@@ -416,6 +472,7 @@ const DeliveryHubTool = () => {
                 .filter((it) => it.status === "queued" || it.status === "rendering")
                 .map((it) => it.index);
             if (watchPendingRef.current.length === 0) return;
+            setWatchingCount(watchPendingRef.current.length);
             watchDeadlineRef.current = Date.now() + 4 * 60 * 60 * 1000;
             if (watchTimerRef.current) clearTimeout(watchTimerRef.current);
             watchTimerRef.current = setTimeout(pollRenderWatch, 5000);
@@ -608,6 +665,16 @@ const DeliveryHubTool = () => {
             {/* ── Action bar ─────────────────────────────────────── */}
             <div className="dh-action-bar">
                 <DeliveryButton busy={deliveryBusy} onClick={runDelivery} />
+
+                {watchingCount > 0 && (
+                    <span
+                        className="dh-render-watch"
+                        title="Renders being watched — you'll get a toast with the real file details as each one lands. The dot keeps pulsing even while AE hogs the bridge mid-render."
+                    >
+                        <span className="dh-render-watch-dot" />
+                        Watching {watchingCount} render{watchingCount > 1 ? "s" : ""}
+                    </span>
+                )}
 
                 <div className="dh-bar-spacer" />
 
@@ -816,6 +883,7 @@ const DeliveryHubTool = () => {
                                                 {group.map((row) => {
                                                     const ext = row.name.match(/\.\w+$/) ? "" : ".mp4";
                                                     const outName = row.name + ext;
+                                                    const predicted = predictRowTemplate(row);
                                                     return (
                                                         <div key={row.id} className="dh-preview-item">
                                                             <span className="dh-preview-file">{outName}</span>
@@ -827,6 +895,15 @@ const DeliveryHubTool = () => {
                                                                     : <span className="dh-preview-tag dh-preview-tag--native">{DEFAULT_MBPS} Mbps</span>}
                                                                 {row.duration > 0 && <span className="dh-preview-tag">{row.duration} sec</span>}
                                                                 <span className={"dh-preview-tag" + (row.fps ? "" : " dh-preview-tag--native")}>{row.fps || row.frameRate} fps</span>
+                                                                {predicted && (
+                                                                    <Tooltip text={predicted.capped
+                                                                        ? "The Mbps cap outranks the size target — the file will likely land below the requested MB."
+                                                                        : "The Output Module template this row will actually get — the required bitrate rounds DOWN to the nearest prebuilt template, never up."}>
+                                                                        <span className={"dh-preview-tag dh-preview-tag--template" + (predicted.capped ? " dh-preview-tag--capped" : "")}>
+                                                                            → {predicted.name}
+                                                                        </span>
+                                                                    </Tooltip>
+                                                                )}
                                                             </span>
                                                         </div>
                                                     );

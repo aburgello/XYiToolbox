@@ -158,6 +158,36 @@ export const saveFromComp = (): SaveFromCompResult => {
 };
 
 // =============================================================================
+// Res-suffix naming convention (set by DRQR, honoured by Rename Main Comp and
+// Scale by Name)
+// -----------------------------------------------------------------------------
+// A Main-comp name carries its DELIVERY size as a "<W>x<H>" token. DRQR may
+// append a render-quality multiplier suffix: "_DOUBLE_RES" means the comp is
+// actually rendered at 2x that nominal size, "_QUAD_RES" at 4x. So a comp
+// named "..._600x300_..._DOUBLE_RES" should be 1200x600 pixels on disk -- the
+// WxH token stays the delivery size, the suffix is the multiplier.
+//
+// Two tools have to respect this or they corrupt the name/size relationship:
+//   - Rename Main Comp rebuilds a comp's name from the project filename, which
+//     would otherwise DROP a trailing _DOUBLE_RES/_QUAD_RES -> we re-append it.
+//   - Scale by Name reads the "<W>x<H>" token; ignoring the suffix would scale
+//     a "_DOUBLE_RES" comp to the bare nominal size, producing an "impostor"
+//     (named double-res, actually single-res) -> we scale to nominal x
+//     multiplier instead.
+// These suffix strings MUST stay identical to the ones drqr() appends (same
+// file, below) -- keep them in one place so they can't drift.
+// =============================================================================
+const RES_QUAD_SUFFIX = "_QUAD_RES";
+const RES_DOUBLE_SUFFIX = "_DOUBLE_RES";
+
+// The res suffix on a comp name, or "" if none (case-insensitive on the token).
+function resSuffixOf(name: string): string {
+  if (new RegExp(RES_QUAD_SUFFIX + "$", "i").test(name)) return RES_QUAD_SUFFIX;
+  if (new RegExp(RES_DOUBLE_SUFFIX + "$", "i").test(name)) return RES_DOUBLE_SUFFIX;
+  return "";
+}
+
+// =============================================================================
 // Rename Main Comp -- ported from XYi_CRename.jsx. Renames every comp inside
 // a "Main" folder to match the currently open project's own filename (plus
 // its "_VNN" version tag, if any). Only renames comps already in the active
@@ -181,8 +211,13 @@ export const renameMainComp = (): Result => {
       const item = app.project.item(i);
       if (item.parentFolder && item.parentFolder.name === "Main") {
         const compName = item.name;
-        const lastToken = String(compName.split("_").slice(-1));
-        item.name = lastToken.length < 3 ? name : name + version;
+        // Preserve a trailing _DOUBLE_RES/_QUAD_RES. Strip it BEFORE the
+        // "is the last token short?" heuristic (otherwise the suffix's own
+        // "RES" token skews that test), then re-append it to the new name.
+        const resSuffix = resSuffixOf(compName);
+        const baseName = resSuffix ? compName.slice(0, compName.length - resSuffix.length) : compName;
+        const lastToken = String(baseName.split("_").slice(-1));
+        item.name = (lastToken.length < 3 ? name : name + version) + resSuffix;
       }
     }
     return { success: true };
@@ -1408,11 +1443,15 @@ export const drqr = (): Result => {
     const width = comp.width;
     const height = comp.height;
 
+    // Suffix strings come from the shared constants (defined near
+    // renameMainComp) so DRQR and the tools that READ the suffix can never
+    // drift. Values are byte-identical to the original literals -- behaviour
+    // unchanged, just single-sourced.
     if (width < 500 && height < 500) {
-      comp.name += "_QUAD_RES";
+      comp.name += RES_QUAD_SUFFIX;
       scaleCompToFit(comp, comp.width * 4, comp.height * 4);
     } else if (width < 1000 && height < 1000) {
-      comp.name += "_DOUBLE_RES";
+      comp.name += RES_DOUBLE_SUFFIX;
       scaleCompToFit(comp, comp.width * 2, comp.height * 2);
     } else {
       app.endUndoGroup();
@@ -2460,14 +2499,89 @@ export const scaleCompositionDetect = (): ScaleDetectResult => {
 // Parses a "...1920x1080..." token out of the active comp's own name and
 // scales to that -- for snapping a comp back to what its filename says it
 // should be after manual resizing drifted it.
-export const scaleCompositionByName = (): Result => {
+// Re-render the single inner "edits" precomp at the target size, so a
+// res-suffixed comp scaled by name is natively sharp double/quad res -- not
+// just its outer canvas scaled up with soft inner content. This is DRQR's
+// sharpening step, but GUARDED to only fire on the clean, known-good
+// structure (see the user-confirmed convention: a Frontcard on top plus ONE
+// edits precomp below it):
+//   - Skips every Frontcard layer (matches DRQR).
+//   - Fires ONLY when exactly one non-Frontcard layer remains AND its source
+//     is a comp. If the structure is anything else (several content layers, a
+//     part-frame element like a corner logo, plain footage), it does NOTHING
+//     and returns false -- resizing the wrong source would blow a part-frame
+//     element up to fullscreen, which is exactly the damage DRQR's own
+//     selectedLayers[1] bug happened to avoid by only ever touching one layer.
+// Returns true if it re-ressed the inner comp, false if it left the structure
+// untouched (caller reports which happened).
+function upresInnerEditsComp(comp: CompItem, targetW: number, targetH: number): boolean {
+  let editsLayer: AVLayer | null = null;
+  let nonFrontcardCount = 0;
+  for (let i = 1; i <= comp.numLayers; i++) {
+    const layer = comp.layer(i);
+    if (layer.name.indexOf("Frontcard") !== -1) continue;
+    nonFrontcardCount++;
+    if (layer instanceof AVLayer && layer.source instanceof CompItem) editsLayer = layer;
+  }
+  if (nonFrontcardCount !== 1 || !editsLayer) return false;
+  // Re-render the edits precomp's own SOURCE at full target size, then reset
+  // the layer to 100% so it fills the frame natively rather than being scaled.
+  scaleCompToFit(editsLayer.source as CompItem, targetW, targetH);
+  editsLayer.scale.setValue([100, 100]);
+  return true;
+}
+
+interface ScaleByNameResult extends Result {
+  message?: string;
+}
+
+export const scaleCompositionByName = (): ScaleByNameResult => {
+  let undoOpen = false;
   try {
     const comp = app.project.activeItem;
     if (!comp || !(comp instanceof CompItem)) return { success: false, error: "Please select or open a composition first." };
     const match = comp.name.match(/(\d+)x(\d+)/);
     if (!match) return { success: false, error: "Comp name doesn't contain a WIDTHxHEIGHT token." };
-    return scaleCompositionExplicit(parseInt(match[1], 10), parseInt(match[2], 10));
+    const nominalW = parseInt(match[1], 10);
+    const nominalH = parseInt(match[2], 10);
+
+    // Scale the comp to the size its NAME claims. A _DOUBLE_RES / _QUAD_RES
+    // name means 2x / 4x the nominal token (so "..._600x300_..._DOUBLE_RES"
+    // -> 1200x600); a bare name scales to nominal. Never ADDS a suffix and
+    // never runs DRQR on a bare comp -- promoting the single-res base comp to
+    // double-res is DRQR's own button, not a silent side effect here.
+    const resSuffix = resSuffixOf(comp.name);
+    const mult = resSuffix === RES_QUAD_SUFFIX ? 4 : resSuffix === RES_DOUBLE_SUFFIX ? 2 : 1;
+    const targetW = nominalW * mult;
+    const targetH = nominalH * mult;
+
+    app.beginUndoGroup("XYi Scale by Name");
+    undoOpen = true;
+
+    scaleCompToFit(comp, targetW, targetH);
+
+    // For a res-suffixed comp, also re-render the inner edits precomp at the
+    // new size so it's natively sharp -- but only on the clean Frontcard+one-
+    // precomp structure (upresInnerEditsComp no-ops otherwise). A bare comp
+    // (mult === 1) never gets this: there's nothing to "double-res".
+    let innerReRessed = false;
+    if (mult > 1) innerReRessed = upresInnerEditsComp(comp, targetW, targetH);
+
+    app.endUndoGroup();
+    undoOpen = false;
+
+    const sizeMsg = targetW + "x" + targetH;
+    let message: string;
+    if (mult === 1) {
+      message = "Scaled to " + sizeMsg + ".";
+    } else if (innerReRessed) {
+      message = "Scaled to " + sizeMsg + " and re-rendered the inner comp at native res.";
+    } else {
+      message = "Scaled to " + sizeMsg + " (outer only — inner isn't a single Frontcard+precomp, so it wasn't re-ressed).";
+    }
+    return { success: true, message };
   } catch (e) {
+    if (undoOpen) app.endUndoGroup();
     return { success: false, error: e.toString() };
   }
 };
