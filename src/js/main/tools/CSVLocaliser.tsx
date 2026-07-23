@@ -12,7 +12,7 @@
 // fallback at the bottom. ExtendScript can't read PDF bytes, so folder walking
 // + PDF parsing happen here; only comp generation crosses the bridge.
 // =============================================================================
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
     FolderSearch,
     FolderPlus,
@@ -28,6 +28,9 @@ import {
     ClipboardPaste,
     RefreshCw,
     Image as ImageIcon,
+    Wand2,
+    Plus,
+    X,
 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { fs, path } from "../../lib/cep/node";
@@ -79,6 +82,62 @@ function deriveMastersFromMarkets(marketsRoot: string): string {
 }
 import "../shared.scss";
 import "./formTool.scss";
+
+// One row in the manual batch builder (the visual alternative to Paste CSV).
+// creative === "__custom__" means "type a name not in the scanned list", held
+// in `custom`.
+interface BuildRow {
+    id: number;
+    artwork: string; // DOOH | DINTH | FOH
+    creative: string;
+    custom: string;
+    width: string;
+    height: string;
+    duration: string;
+}
+
+const CUSTOM_CREATIVE = "__custom__";
+
+// List the campaign's creatives from the masters folder, PANEL-SIDE (fs) so it
+// works regardless of the host, same as the Specs scan reads folders itself.
+// Prefers the clean AE/<Creative> subfolder names; if that structure isn't
+// there, falls back to the creative token parsed out of the master .aep
+// filenames (between the DOOH/DINTH/FOH artwork tag and the WxH size). The
+// builder feeds whichever the user picks straight into csvLocaliserRun's
+// campaign match (a case/separator-insensitive substring), so either form
+// resolves to the right master.
+function scanCreativesFromMasters(aepPath: string): string[] {
+    if (!aepPath) return [];
+    // (a) AE/<Creative> subfolders -- the cleanest source when present.
+    try {
+        const aeDir = path.join(aepPath, "AE");
+        const dirs = (fs.readdirSync(aeDir, { withFileTypes: true }) as any[])
+            .filter((d) => d.isDirectory() && d.name.charAt(0) !== "_")
+            .map((d) => d.name as string);
+        if (dirs.length) return dirs.sort();
+    } catch (e) {
+        /* no AE/ subfolder layout -- fall through to filename parsing */
+    }
+    // (b) parse the creative token out of master filenames, walking a few
+    // levels deep (masters folders are modest; cap depth to stay safe).
+    const found: Record<string, true> = {};
+    const walk = (dir: string, depth: number) => {
+        if (depth > 4) return;
+        let entries: any[] = [];
+        try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return; }
+        for (const en of entries) {
+            if (en.name.charAt(0) === "_") continue;
+            const full = path.join(dir, en.name);
+            if (en.isDirectory()) walk(full, depth + 1);
+            else if (/\.aep$/i.test(en.name)) {
+                const m = en.name.match(/(?:DOOH|DINTH|FOH)_(.+?)_\d+x\d+/i);
+                if (m && m[1]) found[m[1]] = true;
+            }
+        }
+    };
+    walk(aepPath, 0);
+    return Object.keys(found).sort();
+}
 
 interface Batch {
     pdfName: string;
@@ -177,6 +236,87 @@ const CSVLocaliserTool = () => {
     };
 
     const includedCount = (key: string, rowCount: number) => rowCount - (excludedRows[key]?.size || 0);
+
+    // ── manual batch builder ("Build a batch" — the visual alternative to
+    // Paste CSV): pick one territory from the campaign, pick creatives from the
+    // masters, type widths/heights, and it assembles the same [METADATA]/CSV
+    // csvLocaliserRun consumes. One territory at a time, by request.
+    const [buildOpen, setBuildOpen] = useState(false);
+    const [buildTerritory, setBuildTerritory] = useState("");
+    const [buildBatch, setBuildBatch] = useState("Batch_1");
+    const [buildTerritories, setBuildTerritories] = useState<string[]>([]);
+    const [buildCreatives, setBuildCreatives] = useState<string[]>([]);
+    const [buildRows, setBuildRows] = useState<BuildRow[]>([
+        { id: 1, artwork: "DOOH", creative: "", custom: "", width: "", height: "", duration: "" },
+    ]);
+    const buildRowId = useRef(2);
+
+    // Load territories + creatives whenever the builder is open and its inputs
+    // change (campaign switch re-scans). Quiet — no bridge / empty are normal.
+    useEffect(() => {
+        if (!buildOpen) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                if (marketsRoot) {
+                    const terrs: string[] = (await evalTS("scanTerritories", marketsRoot)) || [];
+                    if (cancelled) return;
+                    setBuildTerritories(terrs);
+                    setBuildTerritory((cur) => (cur && terrs.indexOf(cur) !== -1 ? cur : terrs[0] || ""));
+                }
+            } catch (e) { /* no bridge / no territories */ }
+            try {
+                if (aepPath && !cancelled) setBuildCreatives(scanCreativesFromMasters(aepPath));
+            } catch (e) { /* fs unavailable in preview */ }
+        })();
+        return () => { cancelled = true; };
+    }, [buildOpen, marketsRoot, aepPath]);
+
+    const updateBuildRow = (id: number, patch: Partial<BuildRow>) =>
+        setBuildRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+    const addBuildRow = () =>
+        setBuildRows((rs) => [...rs, { id: buildRowId.current++, artwork: "DOOH", creative: "", custom: "", width: "", height: "", duration: "" }]);
+    const removeBuildRow = (id: number) =>
+        setBuildRows((rs) => (rs.length > 1 ? rs.filter((r) => r.id !== id) : rs));
+
+    const buildRowCreative = (r: BuildRow) => (r.creative === CUSTOM_CREATIVE ? r.custom.trim() : r.creative);
+    const buildComplete = buildRows.filter((r) => buildRowCreative(r) && r.width && r.height && r.duration);
+
+    const runBuilder = async () => {
+        if (!aepPath) { setNotice("Pick the AEP masters folder first."); return; }
+        if (!buildTerritory) { setNotice("Pick a territory to build for."); return; }
+        const rows: SpecRow[] = buildComplete.map((r) => ({
+            Artwork: r.artwork || "DOOH",
+            Campaign: buildRowCreative(r),
+            Size: `${parseInt(r.width, 10)}x${parseInt(r.height, 10)}`,
+            Duration: String(parseInt(r.duration, 10)),
+            Country: buildTerritory,
+        }));
+        if (!rows.length) { setNotice("Add at least one complete row (creative, width, height, duration)."); return; }
+
+        setBusy(true);
+        setNotice(null);
+        try {
+            const { buildLocaliserCsv } = await import("../lib/pdfSpecs");
+            const sourceFolder = path.join(marketsRoot, buildTerritory);
+            const batch = buildBatch.trim() || "Batch_1";
+            const csv = buildLocaliserCsv({ territory: buildTerritory, batch, sourceFolder, rows });
+            const res = await evalTS("csvLocaliserRun", aepPath, csv, skipExisting);
+            if (res === undefined) throw new Error("no bridge");
+            if (res.success) {
+                const rrows = (res as { rows?: CsvLocRow[] }).rows || [];
+                const problems = rrows.filter((r) => r.status === "no-master" || r.status === "error").length;
+                setNotice(`${buildTerritory} · ${batch}: ${res.message || "run finished."}` + (problems ? ` — ${problems} row(s) had no master match.` : ""));
+                if (rrows.length) showLocGenReport(csvResultToLocGenReport(res as any, `CSV Localiser (built) · ${buildTerritory} · ${batch}`));
+            } else {
+                setNotice(res.error || "Something went wrong.");
+            }
+        } catch (e: any) {
+            setNotice(e?.message || "No CEP bridge — open this panel inside After Effects to run it.");
+        } finally {
+            setBusy(false);
+        }
+    };
 
     // paste fallback
     const [pasteOpen, setPasteOpen] = useState(false);
@@ -681,6 +821,82 @@ const CSVLocaliserTool = () => {
                     </div>
                 </div>
             )}
+
+            {/* Build-a-batch — visual alternative to Paste CSV */}
+            <div className="specs-fallback specs-build">
+                <button className="specs-fallback-toggle" onClick={() => setBuildOpen((v) => !v)}>
+                    {buildOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                    <Wand2 size={13} /> Build a batch
+                </button>
+                {buildOpen && (
+                    <div className="specs-fallback-body specs-build-body">
+                        <div className="specs-build-meta">
+                            <label className="specs-build-field">
+                                <span>Territory</span>
+                                <Dropdown
+                                    value={buildTerritory}
+                                    onChange={setBuildTerritory}
+                                    options={buildTerritories.map((t) => ({ value: t, label: t }))}
+                                    placeholder="Pick a territory…"
+                                    icon={<MapPin size={12} />}
+                                    emptyMessage="No territories found for this campaign."
+                                />
+                            </label>
+                            <label className="specs-build-field specs-build-field--batch">
+                                <span>Batch</span>
+                                <input type="text" value={buildBatch} onChange={(e) => setBuildBatch(e.target.value)} placeholder="Batch_1" />
+                            </label>
+                        </div>
+
+                        <div className="specs-build-rows">
+                            <div className="specs-build-row specs-build-row--head">
+                                <span>Type</span><span>Creative</span><span>Width</span><span>Height</span><span>Dur</span><span />
+                            </div>
+                            {buildRows.map((r) => (
+                                <div className="specs-build-row" key={r.id}>
+                                    <Dropdown
+                                        className="specs-build-artwork"
+                                        value={r.artwork}
+                                        onChange={(v) => updateBuildRow(r.id, { artwork: v })}
+                                        options={[{ value: "DOOH", label: "DOOH" }, { value: "DINTH", label: "DINTH" }, { value: "FOH", label: "FOH" }]}
+                                    />
+                                    {r.creative === CUSTOM_CREATIVE ? (
+                                        <input
+                                            className="specs-build-custom"
+                                            type="text"
+                                            placeholder="Creative name"
+                                            value={r.custom}
+                                            autoFocus
+                                            onChange={(e) => updateBuildRow(r.id, { custom: e.target.value })}
+                                            onBlur={(e) => { if (!e.target.value.trim()) updateBuildRow(r.id, { creative: "" }); }}
+                                        />
+                                    ) : (
+                                        <Dropdown
+                                            value={r.creative}
+                                            onChange={(v) => updateBuildRow(r.id, { creative: v, custom: "" })}
+                                            options={[...buildCreatives.map((c) => ({ value: c, label: c })), { value: CUSTOM_CREATIVE, label: "＋ Type a creative…" }]}
+                                            placeholder="Pick creative…"
+                                            emptyMessage="No creatives scanned — pick the masters folder, or type one."
+                                        />
+                                    )}
+                                    <input type="number" min="1" placeholder="W" value={r.width} onChange={(e) => updateBuildRow(r.id, { width: e.target.value })} />
+                                    <input type="number" min="1" placeholder="H" value={r.height} onChange={(e) => updateBuildRow(r.id, { height: e.target.value })} />
+                                    <input type="number" min="1" placeholder="sec" value={r.duration} onChange={(e) => updateBuildRow(r.id, { duration: e.target.value })} />
+                                    <button className="specs-build-remove" onClick={() => removeBuildRow(r.id)} disabled={buildRows.length === 1} title="Remove row"><X size={12} /></button>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="specs-build-actions">
+                            <button className="specs-build-add" onClick={addBuildRow}><Plus size={13} /> Add row</button>
+                            <span className="specs-build-count">{buildComplete.length} ready</span>
+                            <button className="specs-build-run" disabled={busy || !aepPath || !buildTerritory || buildComplete.length === 0} onClick={runBuilder}>
+                                <PlayCircle size={14} /> Localise {buildComplete.length || ""} row{buildComplete.length === 1 ? "" : "s"}
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
 
             {/* Paste-CSV fallback */}
             <div className="specs-fallback">

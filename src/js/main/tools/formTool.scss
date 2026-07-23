@@ -1237,6 +1237,136 @@
 
         textarea { width: 100%; max-width: 520px; }
     }
+
+    // ── Build a batch (visual CSV builder) ───────────────────────────────────
+    .specs-build-body { width: 100%; max-width: 640px; gap: 10px; }
+
+    .specs-build-meta {
+        display: flex;
+        gap: 12px;
+        width: 100%;
+        flex-wrap: wrap;
+    }
+
+    .specs-build-field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 180px;
+
+        > span {
+            font-size: 9px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #7a7a7a;
+        }
+
+        input[type="text"] {
+            background: #1e1e1e;
+            border: 1px solid #3a3a3a;
+            border-radius: 6px;
+            color: #ddd;
+            padding: 6px 9px;
+            font-size: 12px;
+            &:focus { outline: none; border-color: var(--cat-border, #4a6a9a); }
+        }
+
+        &--batch { min-width: 120px; max-width: 160px; }
+    }
+
+    .specs-build-rows {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        width: 100%;
+    }
+
+    // Type | Creative | Width | Height | Dur | ✕
+    .specs-build-row {
+        display: grid;
+        grid-template-columns: 90px minmax(120px, 1fr) 66px 66px 66px 26px;
+        gap: 6px;
+        align-items: center;
+
+        > input[type="number"],
+        > .specs-build-custom {
+            background: #1e1e1e;
+            border: 1px solid #3a3a3a;
+            border-radius: 6px;
+            color: #ddd;
+            padding: 6px 8px;
+            font-size: 12px;
+            width: 100%;
+            box-sizing: border-box;
+            &:focus { outline: none; border-color: var(--cat-border, #4a6a9a); }
+        }
+
+        &--head > span {
+            font-size: 8.5px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #6f6f6f;
+            padding-left: 2px;
+        }
+    }
+
+    .specs-build-remove {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 26px;
+        border-radius: 6px;
+        border: 1px solid #383838;
+        background: #242424;
+        color: #999;
+        cursor: pointer;
+        &:hover:not(:disabled) { border-color: #7a3a3a; color: #e08a8a; background: rgba(224, 122, 122, 0.1); }
+        &:disabled { opacity: 0.4; cursor: default; }
+    }
+
+    .specs-build-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        margin-top: 2px;
+    }
+
+    .specs-build-add {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        background: none;
+        border: 1px dashed #4a4a4a;
+        border-radius: 6px;
+        color: #b0b0b0;
+        padding: 5px 10px;
+        font-size: 11px;
+        cursor: pointer;
+        &:hover { border-color: var(--cat-border, #5a7aaa); color: #ddd; }
+    }
+
+    .specs-build-count { font-size: 10.5px; color: #7a7a7a; margin-left: auto; }
+
+    .specs-build-run {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--cat-grad, linear-gradient(135deg, #3a6a9a, #2a5080));
+        border: 1px solid var(--cat-border, #4a6a9a);
+        border-radius: 7px;
+        color: #fff;
+        padding: 7px 14px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: box-shadow 0.15s ease, filter 0.15s ease;
+        &:hover:not(:disabled) { box-shadow: 0 3px 12px var(--cat-glow, rgba(60, 90, 138, 0.4)); }
+        &:disabled { opacity: 0.45; cursor: default; }
+    }
 }
 
 // ── CSV Localiser · per-batch run button ─────────────────────────────────────
