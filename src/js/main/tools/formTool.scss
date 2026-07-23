@@ -1000,14 +1000,29 @@
         margin: 8px 0 3px;
     }
 
-    .specs-folders { max-width: 640px; }
+    .specs-folders {
+        max-width: 640px;
+
+        // The Campaign/Markets/Masters rows use the shared .field-with-button,
+        // which caps at 480px by default. Here they sit directly above the
+        // 640px-wide actions row (Skip existing + Scan Specs), so let them run
+        // the full folder width instead of stopping ~160px short of it.
+        .field-with-button { max-width: none; }
+    }
 
     .specs-actions-row {
         display: flex;
         align-items: center;
-        justify-content: space-between;
         gap: 12px;
         margin-top: 10px;
+
+        // The checkbox keeps its natural width; the primary "Scan Specs"
+        // button grows to fill the rest of the row rather than floating
+        // alone at the right edge with a dead gap in the middle.
+        .specs-scan-btn {
+            flex: 1;
+            justify-content: center;
+        }
     }
 
     .specs-scan-btn,

@@ -6,8 +6,8 @@ import { evalTS } from "../../lib/utils/bolt";
 import { sfx } from "../../lib/utils/sfx";
 import StatusIcon from "../StatusIcon";
 import SegmentedToggle from "../SegmentedToggle";
+import CheckboxToggle from "../CheckboxToggle";
 import type { ToolProps } from "../toolRegistry";
-import CSVLocaliserTool from "./CSVLocaliser";
 import "../shared.scss";
 import "./CampaignLocaliser.scss";
 
@@ -38,9 +38,19 @@ const CampaignLocaliserTool: React.FC<ToolProps> = (_props) => {
 
     const [trotDuration, setTrotDuration] = useState("15");
     const [trotArtwork, setTrotArtwork] = useState("");
-    const [trotUseArtworkName, setTrotUseArtworkName] = useState(false);
+    // "Generate Files" vs "Generate Files (don't replace)" collapsed into one
+    // action + this mode toggle -- it's the only argument that differed.
+    const [skipExisting, setSkipExisting] = useState(true);
+    // Trott 2.0 is the default; the original semi-automatic Trott is behind a
+    // disclosure since it's the rarer fallback. Trott 2.0's own Duration/
+    // Artwork/Campaign params are confirmed DEAD in the backend (they're
+    // underscore-prefixed and never read in campaignLocaliserTrott2 --
+    // it auto-detects everything via Jaccard matching instead), so these
+    // fields are legacy-Trott-only and only render inside that disclosure.
+    const [showLegacyTrott, setShowLegacyTrott] = useState(false);
+    const [trotUseArtworkName, setTrotUseArtworkName] = useState(true);
     const [trotCampaign, setTrotCampaign] = useState("");
-    const [trotUseCampaignName, setTrotUseCampaignName] = useState(false);
+    const [trotUseCampaignName, setTrotUseCampaignName] = useState(true);
 
     // MC It! gets its own runner: it previews first (dry run — identical
     // matching, nothing replaced or saved), then the app-root modal
@@ -159,22 +169,18 @@ const CampaignLocaliserTool: React.FC<ToolProps> = (_props) => {
                                     <span className="cl-flow-badge">CSV File</span>
                                 </div>
                                 <div className="cl-trott-card-spacer" />
-                                <div className="cl-panel-buttons">
-                                    <button disabled={busy} onClick={() => runLocGen("Generate Files", () => evalTS("campaignLocaliserGenerate", false))}>
-                                        <FolderInput size={14} /> Generate Files
-                                    </button>
-                                    <button disabled={busy} onClick={() => runLocGen("Generate Files", () => evalTS("campaignLocaliserGenerate", true))}>
-                                        <FolderCog size={14} /> Generate Files (don&rsquo;t replace)
-                                    </button>
-                                </div>
-                            </div>
-                            <div className="cl-trott-card">
-                                <div className="cl-trott-card-title">CSV Localiser</div>
-                                <p className="cl-trott-card-desc">
-                                    Scan a campaign&rsquo;s Markets folder — reads every territory&rsquo;s Specs PDFs and
-                                    localises against a folder of AEP masters. Paste-CSV still available as a fallback.
-                                </p>
-                                <CSVLocaliserTool />
+                                {/* One button + a toggle, not two near-identical
+                                    buttons. The only difference between them was
+                                    the boolean passed to campaignLocaliserGenerate,
+                                    which is a MODE, not a separate action. */}
+                                <CheckboxToggle
+                                    checked={skipExisting}
+                                    onChange={setSkipExisting}
+                                    label="Skip files that already exist"
+                                />
+                                <button className="cl-trott-card-btn" disabled={busy} onClick={() => runLocGen("Generate Files", () => evalTS("campaignLocaliserGenerate", skipExisting))}>
+                                    <FolderInput size={16} /> Generate Files
+                                </button>
                             </div>
                         </div>
                         <div className="cl-quick-row">
@@ -193,62 +199,75 @@ const CampaignLocaliserTool: React.FC<ToolProps> = (_props) => {
                             &ldquo;AE&rdquo; output folder.
                         </p>
                         <div className="cl-trott-cards">
-                            <div className="cl-trott-card">
-                                <div className="cl-trott-card-title">Trott</div>
-                                <p className="cl-trott-card-desc">
-                                    Semi-automatic — set each field to auto-detect from the PDF filename, or type it in yourself.
-                                </p>
-                                <div className="cl-flow-row">
-                                    <span className="cl-flow-badge">Masters</span>
-                                    <ArrowRight size={14} />
-                                    <span className="cl-flow-badge">PDFs</span>
-                                </div>
-                                <div className="loc-field-row">
-                                    <label>Duration (sec)</label>
-                                    <input type="text" value={trotDuration} onChange={(e) => setTrotDuration(e.target.value)} disabled={busy} />
-                                </div>
-                                {/* Auto-detect | Manual toggles replace the old inverted
-                                    checkboxes ("Use X name" CHECKED meant "ignore my typed
-                                    value") -- same booleans go to the backend, the choice
-                                    just reads the right way round now. */}
-                                <div className="loc-field-row">
-                                    <label>DOOH / DINTH</label>
-                                    <SegmentedToggle
-                                        name="trott-artwork"
-                                        value={trotUseArtworkName ? "auto" : "manual"}
-                                        onChange={(v) => setTrotUseArtworkName(v === "auto")}
-                                        options={[{ value: "auto", label: "Auto-detect" }, { value: "manual", label: "Manual" }]}
-                                    />
-                                    <input type="text" placeholder={trotUseArtworkName ? "Detected from each PDF's filename" : "Enter DOOH / DINTH"} value={trotArtwork} onChange={(e) => setTrotArtwork(e.target.value)} disabled={busy || trotUseArtworkName} />
-                                </div>
-                                <div className="loc-field-row">
-                                    <label>Campaign / Toolkit Name</label>
-                                    <SegmentedToggle
-                                        name="trott-campaign"
-                                        value={trotUseCampaignName ? "auto" : "manual"}
-                                        onChange={(v) => setTrotUseCampaignName(v === "auto")}
-                                        options={[{ value: "auto", label: "Auto-detect" }, { value: "manual", label: "Manual" }]}
-                                    />
-                                    <input type="text" placeholder={trotUseCampaignName ? "Detected from each PDF's filename" : "Enter Campaign Name"} value={trotCampaign} onChange={(e) => setTrotCampaign(e.target.value)} disabled={busy || trotUseCampaignName} />
-                                </div>
-                                <button className="cl-trott-card-btn" disabled={busy} onClick={() => runLocGen("Trott!", () => evalTS("campaignLocaliserTrott", trotDuration, trotArtwork, trotUseArtworkName, trotCampaign, trotUseCampaignName))}>
-                                    <Rabbit size={16} /> Run Trott
-                                </button>
-                            </div>
+                            {/* ONE card, not two. Trott 2.0's Duration/Artwork/
+                                Campaign params are confirmed dead in the backend
+                                (campaignLocaliserTrott2 never reads them -- it
+                                Jaccard-matches everything automatically), so
+                                those fields only make sense for -- and only
+                                render inside -- the legacy Trott disclosure. */}
                             <div className="cl-trott-card">
                                 <div className="cl-trott-card-title">Trott 2.0</div>
                                 <p className="cl-trott-card-desc">
-                                    Fully automatic — Jaccard-matches PDFs to masters using filename analysis.
+                                    Fully automatic — Jaccard-matches PDFs to masters using filename analysis,
+                                    no fields needed.
                                 </p>
                                 <div className="cl-flow-row">
                                     <span className="cl-flow-badge">Masters</span>
                                     <ArrowRight size={14} />
                                     <span className="cl-flow-badge">PDFs</span>
                                 </div>
-                                <div className="cl-trott-card-spacer" />
                                 <button className="cl-trott-card-btn" disabled={busy} onClick={() => runLocGen("Trott 2.0", () => evalTS("campaignLocaliserTrott2", trotDuration, trotArtwork, trotUseArtworkName, trotCampaign, trotUseCampaignName))}>
                                     <Rabbit size={16} /> Run Trott 2.0
                                 </button>
+
+                                {/* Original Trott: the rarer semi-automatic fallback,
+                                    folded away rather than given equal billing. */}
+                                <button
+                                    type="button"
+                                    className="cl-legacy-toggle"
+                                    onClick={() => setShowLegacyTrott((v) => !v)}
+                                >
+                                    {showLegacyTrott ? "▾" : "▸"} Use the original Trott instead
+                                </button>
+                                {showLegacyTrott && (
+                                    <div className="cl-legacy-body">
+                                        <p className="cl-trott-card-desc">
+                                            Semi-automatic — matches by campaign/size/duration rather than filename
+                                            analysis. These fields are only used by the original Trott.
+                                        </p>
+                                        <div className="loc-field-row">
+                                            <label>Duration (sec)</label>
+                                            <input type="text" value={trotDuration} onChange={(e) => setTrotDuration(e.target.value)} disabled={busy} />
+                                        </div>
+                                        {/* Auto-detect | Manual toggles replace the old inverted
+                                            checkboxes ("Use X name" CHECKED meant "ignore my typed
+                                            value") -- same booleans go to the backend, the choice
+                                            just reads the right way round now. */}
+                                        <div className="loc-field-row">
+                                            <label>DOOH / DINTH</label>
+                                            <SegmentedToggle
+                                                name="trott-artwork"
+                                                value={trotUseArtworkName ? "auto" : "manual"}
+                                                onChange={(v) => setTrotUseArtworkName(v === "auto")}
+                                                options={[{ value: "auto", label: "Auto-detect" }, { value: "manual", label: "Manual" }]}
+                                            />
+                                            <input type="text" placeholder={trotUseArtworkName ? "Detected from each PDF's filename" : "Enter DOOH / DINTH"} value={trotArtwork} onChange={(e) => setTrotArtwork(e.target.value)} disabled={busy || trotUseArtworkName} />
+                                        </div>
+                                        <div className="loc-field-row">
+                                            <label>Campaign / Toolkit Name</label>
+                                            <SegmentedToggle
+                                                name="trott-campaign"
+                                                value={trotUseCampaignName ? "auto" : "manual"}
+                                                onChange={(v) => setTrotUseCampaignName(v === "auto")}
+                                                options={[{ value: "auto", label: "Auto-detect" }, { value: "manual", label: "Manual" }]}
+                                            />
+                                            <input type="text" placeholder={trotUseCampaignName ? "Detected from each PDF's filename" : "Enter Campaign Name"} value={trotCampaign} onChange={(e) => setTrotCampaign(e.target.value)} disabled={busy || trotUseCampaignName} />
+                                        </div>
+                                        <button className="cl-trott-card-btn cl-trott-card-btn--legacy" disabled={busy} onClick={() => runLocGen("Trott!", () => evalTS("campaignLocaliserTrott", trotDuration, trotArtwork, trotUseArtworkName, trotCampaign, trotUseCampaignName))}>
+                                            <Rabbit size={16} /> Run original Trott
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                         <div className="cl-quick-row">

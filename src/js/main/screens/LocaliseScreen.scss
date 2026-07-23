@@ -305,3 +305,271 @@
     flex-shrink: 0;
     user-select: none;
 }
+
+// --- Landing v2: journey spine + inline work surface + one support list ----
+// Replaces the old three-way grouping (two big .ls-card tiles + workflow strip
+// + "More Utilities" grid). The .ls-card rules above are intentionally left in
+// place -- nothing renders them now, but they're the styling for the two big
+// tiles if that treatment is ever wanted again.
+
+// A stage/tool that RUNS here rather than navigating: subtle play glyph and a
+// disabled state while the ExtendScript call is in flight.
+.ls-stage-run {
+    opacity: 0.5;
+    margin-left: 1px;
+}
+
+.ls-stage--runnable,
+.ls-grid-item--runnable {
+    &:disabled {
+        opacity: 0.6;
+        cursor: default;
+        background: #2a2a2a;
+        border-color: #444;
+        box-shadow: none;
+    }
+}
+
+// Status line for the run-in-place actions, sitting under the spine.
+.ls-run-status {
+    margin-top: 10px;
+}
+
+// The work surface: CSV Localiser embedded directly on the landing.
+.ls-main {
+    margin-top: 22px;
+}
+
+.ls-main-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+
+    // .ls-grid-label carries its own margin for the grid sections; inside this
+    // flex header it would push the row out of alignment.
+    .ls-grid-label { margin: 0; }
+}
+
+// Trott 2.0 -- prominent, because it's the other half of the daily job, but
+// still a hop (it needs Campaign Localiser's own duration/artwork inputs).
+.ls-trott-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    flex-shrink: 0;
+    background: #2a2a2a;
+    border: 1px solid var(--cat-border, #444);
+    color: #ddd;
+    border-radius: 999px;
+    padding: 7px 14px;
+    font-size: 11px;
+    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    transition: background 0.3s ease, box-shadow 0.3s ease;
+
+    svg { flex-shrink: 0; color: var(--cat-icon, #5eead4); }
+
+    &:hover {
+        background: var(--cat-grad, var(--ov-accent, #3a5a8a));
+        box-shadow: 0 4px 14px var(--cat-glow, rgba(0, 0, 0, 0.35));
+    }
+
+    .ls-card-arrow { position: static; opacity: 0.7; }
+}
+
+// Frames the embedded tool so it reads as a panel section rather than the
+// landing suddenly turning into a form.
+.ls-main-surface {
+    background: rgba(0, 0, 0, 0.16);
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 4px 14px 14px;
+}
+
+// --- Landing v3: three-pane work surface + one flat tools row -------------
+// Supersedes v2's journey spine. The numbered/arrowed "workflow" implied a
+// rigid pipeline nobody follows in order, so the stages are now just tools
+// (see .ls-tool-divider) and the three PRIMARY jobs became panes.
+
+.ls-pane-tabs {
+    display: flex;
+    gap: 4px;
+    background: rgba(0, 0, 0, 0.22);
+    border: 1px solid #333;
+    border-radius: 999px;
+    padding: 4px;
+}
+
+.ls-pane-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: none;
+    border: 1px solid transparent;
+    color: #9a9a9a;
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+
+    svg { flex-shrink: 0; transition: color 0.2s ease; }
+
+    &:hover:not(.active) { color: #ddd; }
+
+    &.active {
+        background: var(--cat-grad, var(--ov-accent, #3a5a8a));
+        border-color: var(--cat-border, transparent);
+        color: #fff;
+        box-shadow: 0 2px 10px var(--cat-glow, rgba(0, 0, 0, 0.35));
+        svg { color: #fff; }
+    }
+}
+
+// A hairline between tools, replacing the old "->" pipeline arrows.
+.ls-tool-divider {
+    width: 1px;
+    align-self: stretch;
+    min-height: 18px;
+    background: #333;
+    flex-shrink: 0;
+}
+
+// --- Landing v4: Localised Library pulled out into its own hero -----------
+// The library was a third co-equal pane between CSV Localiser and Trott &
+// Batch, which flattened the fact that it's a different KIND of job (browse/
+// import existing components, not localise a campaign). It's now a prominent
+// full-width destination card at the top of the landing; the work surface
+// below holds just the two campaign-localisation panes.
+
+.ls-library-hero {
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    text-align: left;
+    padding: 18px 18px 18px 20px;
+    border: 1px solid var(--cat-border, #3d3d3d);
+    border-radius: 14px;
+    background: linear-gradient(135deg,
+        rgba(94, 234, 212, 0.10) 0%,
+        rgba(58, 90, 138, 0.06) 45%,
+        #1e2529 100%);
+    color: #eee;
+    cursor: pointer;
+    box-shadow: 0 3px 14px rgba(0, 0, 0, 0.34);
+    transition: border-color 0.3s ease, box-shadow 0.3s ease,
+        transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+    &:hover {
+        border-color: var(--cat-border, #5eead4);
+        // Override the global `button:hover` blue (#20639b) -- this hero is a
+        // <button>, so without its own hover background that generic rule would
+        // paint it blue, off-brand for the teal Localise section. Keep the
+        // resting teal gradient, just a touch brighter for hover feedback.
+        background: linear-gradient(135deg,
+            rgba(94, 234, 212, 0.20) 0%,
+            rgba(45, 212, 191, 0.10) 45%,
+            #1e2529 100%);
+        box-shadow: 0 10px 30px var(--cat-glow, rgba(0, 0, 0, 0.4)),
+            0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+        transform: translateY(-3px);
+
+        .ls-library-hero-glow { opacity: 0.28; }
+        .ls-library-hero-arrow {
+            opacity: 1;
+            transform: translateX(0);
+        }
+        .ls-library-hero-icon svg { color: #fff; }
+    }
+}
+
+.ls-library-hero-glow {
+    position: absolute;
+    top: -60%;
+    left: -10%;
+    width: 70%;
+    height: 200%;
+    background: radial-gradient(ellipse at center, var(--cat-icon, #5eead4) 0%, transparent 68%);
+    opacity: 0.14;
+    pointer-events: none;
+    filter: blur(26px);
+    transition: opacity 0.4s ease;
+}
+
+.ls-library-hero-icon {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 54px;
+    height: 54px;
+    border-radius: 14px;
+    background: var(--cat-grad, linear-gradient(135deg, #2dd4bf, #3a5a8a));
+    box-shadow: 0 4px 16px var(--cat-glow, rgba(0, 0, 0, 0.35)),
+        inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    z-index: 1;
+
+    svg { color: #fff; transition: color 0.3s ease; }
+}
+
+.ls-library-hero-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+    z-index: 1;
+}
+
+.ls-library-hero-eyebrow {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+    color: var(--cat-icon, #5eead4);
+    opacity: 0.9;
+}
+
+.ls-library-hero-title {
+    font-size: 17px;
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: 0.3px;
+    line-height: 1.15;
+}
+
+.ls-library-hero-desc {
+    font-size: 11px;
+    font-weight: 400;
+    color: #9aa;
+    line-height: 1.4;
+}
+
+.ls-library-hero-arrow {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    color: var(--cat-icon, #5eead4);
+    opacity: 0.55;
+    transform: translateX(-6px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    z-index: 1;
+}
+
+// Groups the two campaign-localisation panes under one clear identity, so the
+// toggle reads as "two views of one job" rather than a flat list of tools.
+.ls-section-caption {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 1.3px;
+    text-transform: uppercase;
+    color: var(--cat-icon, #5eead4);
+    opacity: 0.85;
+    white-space: nowrap;
+}

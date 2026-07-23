@@ -4081,3 +4081,109 @@ saved profile now clears "NO SETUP YET" and applying a colleague's setup
 works. The temporary `debugTrace` field on `teamListProfiles` and the
 in-panel yellow debug readout (`TeamDroplet.tsx`) have both been removed
 now that the fix is verified.
+
+## Localise section: three-pane workspace + flat tools (restructure)
+
+The Localise section had become a catalogue of tools rather than a surface
+for doing the job: the daily driver (CSV Localiser) sat 3 hops deep, 5 of
+11 tools were single-action pages, and the landing ran three competing
+groupings at once (two big cards + a numbered workflow strip + a utilities
+grid).
+
+Final shape, after a round of real-use feedback on the first attempt:
+
+**1. Primary jobs as PANES of one work surface** (`Pane` / `PANES` in
+`LocaliseScreen.tsx`) -- a segmented toggle swaps the surface between the
+campaign-localisation tools. No navigation, no nesting, and switching is a
+toggle. **SUPERSEDED BY v4 (below): this was originally a THREE-pane surface
+(CSV Localiser / Trott & Batch / Localised Library); the Localised Library
+has since been pulled OUT into its own hero -- the surface is now TWO panes
+(CSV Localiser + Trott & Batch), the two halves of "localise a campaign".**
+
+**2. The "Localisation Workflow" strip was removed.** The first pass kept
+it as a numbered spine with `->` arrows; feedback was that it implies a
+rigid pipeline nobody actually works in order. Those stages are just
+tools, so they're now presented as tools: ONE flat `TOOLS_ROW` of plain
+rounded buttons separated by a hairline `.ls-tool-divider` instead of
+arrows, with no step numbers, merged together with what used to be the
+separate "More Utilities" grid.
+
+**3. Run-in-place preserved.** A tool whose whole job is ONE parameterless
+backend call executes on the landing (`TOOLS_ROW[].run` -> shared status
+line) instead of opening a page containing a single button: PDF to CSV
+(`pdfToCsvGenerate`), JPEG Loc (`jpegLoc`), AEP Thief (`copyAep`).
+
+**4. `CampaignLocaliser` de-duplicated** (its own page AND the Batch pane):
+- *Generate Files* was TWO near-identical buttons whose only difference was
+  the boolean passed to `campaignLocaliserGenerate`. That's a mode, not a
+  second action -- now one button + a "Skip files that already exist"
+  `CheckboxToggle`.
+- *Trott* and *Trott 2.0* were two side-by-side cards, but **2.0 always read
+  the same five inputs as v1 while not displaying them** -- it silently
+  depended on fields living in the other card. Merged into ONE card: the
+  shared inputs stated once, **Trott 2.0 as the primary action**, and the
+  original semi-automatic Trott folded behind a `showLegacyTrott`
+  disclosure ("Use the original Trott instead").
+- The embedded `CSVLocaliserTool` was removed from Campaign Localiser --
+  CSV is its own pane now, so keeping it here duplicated it in the same
+  surface.
+
+Deliberate limits (NOT silently degraded):
+- **Edit Generator and Cue Sheet stayed pages.** They look like one-shots
+  (single registry `action`) but aren't: `editGeneratorArrange` takes 6
+  params, `generateCueSheet` takes 3 toggles. Bare buttons would run with
+  defaults and drop the user's options.
+- One-shot tools KEEP their pages registered as a fallback (still reachable
+  via search / Command Palette); the row buttons are a faster route, not a
+  replacement.
+- The old `.ls-card` / `.ls-cards` and `.ls-stage*` SCSS is left in place
+  though nothing renders it now.
+
+Verified in browser preview (v3): 3 pane tabs switching correctly (CSV ->
+Campaign Localiser -> Localised Library all mount), tools row = 8 flat
+buttons with 7 dividers and zero `.ls-flow-arrow`/`.ls-stage-num`
+remaining, Trott section renders ONE card titled "Trott 2.0" with the
+Duration field visible and the legacy disclosure expanding to "Run
+original Trott", no CSV Localiser duplicated inside the Batch pane, and a
+run-in-place tool stays on the landing showing its status. `tsc` +
+`yarn build` clean. Real-AE pass still wanted for the actual
+run-in-place ExtendScript calls.
+
+### v4: Localised Library pulled out into its own hero + Trott default tidy-up
+
+Two direct-feedback follow-ups:
+
+- **Localised Library is no longer a co-equal third pane** -- being
+  sandwiched between the two campaign-localisation tools (a segmented tab
+  between CSV Localiser and Trott & Batch) flattened the fact that it's a
+  different KIND of job (browse/import existing localised components per
+  territory, not localise a campaign from masters). It's now a prominent
+  full-width **hero** (`.ls-library-hero`, "LIBRARY" eyebrow + BookOpen
+  icon badge + description + slide-in arrow) at the TOP of the landing,
+  above the work surface. Clicking it opens the Localised Library
+  full-width via the SAME `handleSelect("localised-library")` tool-render
+  path every other tool page uses (it's a registered `TOOLS` entry) -- so
+  it reads as its own destination, not a tab. The `LocalisedLibraryTool`
+  inline import in `LocaliseScreen.tsx` was removed (it's lazy-loaded via
+  the registry now). The work surface below is now TWO panes, grouped
+  under a "LOCALISE A CAMPAIGN" caption (`.ls-section-caption` in
+  `.ls-main-head`) so the toggle reads as "two views of one job". The GSAP
+  entrance cascade's first tier is now `.ls-library-hero, .ls-main`
+  (the old two big `.ls-card` tiles are gone).
+- **Trott/Generate defaults** (`CampaignLocaliser.tsx`): "Skip files that
+  already exist" now defaults ON (`skipExisting = true`), and the
+  Auto-detect toggles default ON (`trotUseArtworkName`/
+  `trotUseCampaignName = true`). More importantly, the Duration/DOOH-DINTH/
+  Campaign fields were **moved OUT of the Trott 2.0 card and into the
+  legacy Trott disclosure only** -- confirmed against `localise.ts` that
+  `campaignLocaliserTrott2`'s five params are underscore-prefixed and never
+  read (it Jaccard-matches everything automatically), so those fields only
+  ever mattered to the original `campaignLocaliserTrott`. Trott 2.0 now
+  shows just Masters -> PDFs -> Run; the fields appear only when you expand
+  "Use the original Trott instead".
+
+Verified in browser preview (v4): landing shows the LIBRARY hero, a
+two-tab LOCALISE A CAMPAIGN surface (CSV Localiser / Trott & Batch only),
+and the TOOLS row; the hero opens Localised Library full-width and Back
+returns to the landing; Trott 2.0 shows no fields, the legacy disclosure
+reveals them on Auto-detect. `tsc` (both configs) + `yarn build` clean.

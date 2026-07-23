@@ -1,18 +1,23 @@
 // =============================================================================
 // src/js/main/screens/LocaliseScreen.tsx
 // -----------------------------------------------------------------------------
-// Bespoke Localise landing: two big workflow cards (Batch Localisation +
-// Localised Library) + a utility tool grid below, instead of the shared
-// vertical rail. When a tool is selected it renders full-width in place.
+// Bespoke Localise landing: a prominent Localised Library hero (opens
+// full-width), a two-pane "localise a campaign" work surface (CSV Localiser /
+// Trott & Batch), and a flat tools row below, instead of the shared vertical
+// rail. When a tool is selected it renders full-width in place.
 // =============================================================================
 import React, { Suspense, useState, useRef, useEffect } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import gsap from "gsap";
-import { ArrowLeft, FolderInput, BookOpen, FileSignature, Stamp, ClipboardCheck, Clapperboard, FileText, Copy, Image as ImageIcon, FileSpreadsheet } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, FileSignature, Stamp, ClipboardCheck, Clapperboard, FileText, Copy, Image as ImageIcon, FileSpreadsheet, Rabbit, Play } from "lucide-react";
 import { TOOLS, categoryStyleVars, type ToolProps } from "../toolRegistry";
 import { ToolErrorBoundary } from "../ToolErrorBoundary";
 import { PaletteTrigger, triggerPalette } from "../CommandPalette";
 import Tooltip from "../Tooltip";
+import StatusIcon from "../StatusIcon";
+import { evalTS } from "../../lib/utils/bolt";
+import CSVLocaliserTool from "../tools/CSVLocaliser";
+import CampaignLocaliserTool from "../tools/CampaignLocaliser";
 import { sfx } from "../../lib/utils/sfx";
 import "./LocaliseScreen.scss";
 
@@ -28,25 +33,35 @@ interface UtilityEntry {
     icon: React.ComponentType<{ size?: number }>;
 }
 
-// The localisation pipeline in the order it actually runs at the studio --
-// shown as a numbered workflow strip so a new team member can read the
-// process off the landing instead of decoding an unordered grid of slang
-// names. Each stage's blurb states its ROLE in the pipeline (the registry
-// description stays as the fuller reference; utilities below use it).
-const WORKFLOW_STAGES: (UtilityEntry & { blurb: string })[] = [
-    { id: "pdf-to-csv",         label: "PDF to CSV",   icon: FileSpreadsheet, blurb: "Start here: scan the client PDFs into a Campaign_Data.csv." },
-    { id: "campaign-localiser", label: "Generate",     icon: FolderInput,     blurb: "Generate localised AEPs from the masters (Generate Files / CSV Localiser / Trotting) — same as the Batch Localisation card." },
-    { id: "jpeg-loc",           label: "JPEG Loc",     icon: ImageIcon,       blurb: "Swap in each territory's JPG artwork across the generated AEPs." },
-    { id: "cheeky-dt",          label: "Cheeky DT",    icon: Stamp,           blurb: "Update each Frontcard's details from its filename." },
-    { id: "check",              label: "Check",        icon: ClipboardCheck,  blurb: "QC pass: names, effects, comp details, render check." },
-    { id: "generate-cue-sheet", label: "Cue Sheet",    icon: FileText,        blurb: "Export the cue sheet for handover." },
+// The work surface holds the two halves of ONE job -- "localise a campaign":
+// CSV Localiser and Trott/Batch. The Localised Library used to be a third,
+// co-equal pane here, but it's a genuinely different job (browsing/importing
+// existing localised components per territory), and being sandwiched between
+// the two campaign-localisation tools flattened that distinction. It's now
+// pulled out into its own prominent hero above the surface (opens full-width),
+// so it reads as its own first-class destination rather than a middle tab.
+type Pane = "csv" | "batch";
+const PANES: { id: Pane; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
+    { id: "csv",   label: "CSV Localiser", icon: FileSpreadsheet },
+    { id: "batch", label: "Trott & Batch", icon: Rabbit },
 ];
 
-// Standalone helpers that support the pipeline but aren't a stage of it.
-const UTILITY_TOOLS: UtilityEntry[] = [
-    { id: "name-generator",   label: "Name Generator", icon: FileSignature },
-    { id: "edit-generator",   label: "Edit Generator", icon: Clapperboard },
-    { id: "aep-thief",        label: "AEP Thief",      icon: Copy },
+// ONE flat list of tools. Previously this was split into a numbered
+// "Localisation Workflow" strip with -> arrows plus a separate utilities
+// grid, which implied a rigid pipeline nobody actually follows in order.
+// They're just tools, so they're presented as tools -- plain rounded buttons,
+// separated by a divider rather than arrows. `run` marks the ones that are a
+// single parameterless call and so execute in place instead of opening a page
+// whose only content is that button.
+const TOOLS_ROW: (UtilityEntry & { run?: string })[] = [
+    { id: "pdf-to-csv",        label: "PDF to CSV",     icon: FileSpreadsheet, run: "pdfToCsvGenerate" },
+    { id: "jpeg-loc",          label: "JPEG Loc",       icon: ImageIcon,       run: "jpegLoc" },
+    { id: "aep-thief",         label: "AEP Thief",      icon: Copy,            run: "copyAep" },
+    { id: "cheeky-dt",         label: "Cheeky DT",      icon: Stamp },
+    { id: "check",             label: "Check",          icon: ClipboardCheck },
+    { id: "generate-cue-sheet",label: "Cue Sheet",      icon: FileText },
+    { id: "name-generator",    label: "Name Generator", icon: FileSignature },
+    { id: "edit-generator",    label: "Edit Generator", icon: Clapperboard },
 ];
 
 const toolDescription = (id: string): string =>
@@ -62,6 +77,36 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
     const effectiveToolId = parentToolId ?? localToolId;
     const tool = effectiveToolId ? TOOLS.find((t) => t.id === effectiveToolId) : null;
     const landingRef = useRef<HTMLDivElement>(null);
+
+    // Run-in-place state for the parameterless one-shots (see WORKFLOW_STAGES /
+    // SUPPORT_TOOLS `run`): a single status line under the spine, so clicking
+    // "JPEG Loc" does the job right here instead of navigating to a page whose
+    // only content is that same button.
+    const [runningId, setRunningId] = useState<string | null>(null);
+    const [runStatus, setRunStatus] = useState<{ type: "success" | "error"; text: string } | null>(null);
+    const [pane, setPane] = useState<Pane>("csv");
+
+    const runInPlace = async (id: string, label: string, fnName: string) => {
+        setRunningId(id);
+        setRunStatus(null);
+        try {
+            const result = await evalTS(fnName as Parameters<typeof evalTS>[0]);
+            if (result === undefined) throw new Error("no bridge");
+            const r = result as { success?: boolean; message?: string; error?: string };
+            if (r.success) {
+                sfx.success();
+                setRunStatus({ type: "success", text: r.message || `${label} finished.` });
+            } else {
+                sfx.error();
+                setRunStatus({ type: "error", text: r.error || `${label} failed.` });
+            }
+        } catch (e) {
+            sfx.error();
+            setRunStatus({ type: "error", text: "No CEP bridge detected — open this panel inside After Effects." });
+        } finally {
+            setRunningId(null);
+        }
+    };
 
     const handleSelect = (toolId: string) => {
         setLocalToolId(toolId);
@@ -82,7 +127,9 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
         if (lsEntranceDone) return; // already cascaded this session -- render static
         lsEntranceDone = true;
         const ctx = gsap.context(() => {
-            const cards = gsap.utils.toArray<HTMLElement>(".ls-card");
+            // The hero + the work surface are the "cards" tier now (the old two
+            // big .ls-card tiles are gone); tools row cascades after.
+            const cards = gsap.utils.toArray<HTMLElement>(".ls-library-hero, .ls-main");
             const gridItems = gsap.utils.toArray<HTMLElement>(".ls-grid-item, .ls-stage");
             const gridLabel = gsap.utils.toArray<HTMLElement>(".ls-grid-label");
 
@@ -193,66 +240,83 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
 
                 <div className="ls-frame" style={env}>
                     <div className="ls-landing" ref={landingRef}>
-                    <div className="ls-cards">
-                        <button
-                            className="ls-card ls-card--batch"
-                            onClick={() => { sfx.open(); handleSelect("campaign-localiser"); }}
-                        >
-                            <div className="ls-card-glow" />
-                            <div className="ls-card-icon"><FolderInput size={32} /></div>
-                            <span className="ls-card-title">Batch Localisation</span>
-                            <span className="ls-card-desc">Generate Files, CSV Localiser &amp; Trotting</span>
-                            <span className="ls-card-arrow">→</span>
-                        </button>
+                    {/* 1. Localised Library -- its own prominent destination, not a
+                        tab wedged between the two campaign-localisation tools.
+                        Opens full-width like any other tool page. */}
+                    <button
+                        className="ls-library-hero"
+                        onClick={() => { sfx.click(); handleSelect("localised-library"); }}
+                    >
+                        <span className="ls-library-hero-glow" aria-hidden="true" />
+                        <span className="ls-library-hero-icon"><BookOpen size={26} /></span>
+                        <span className="ls-library-hero-text">
+                            <span className="ls-library-hero-eyebrow">Library</span>
+                            <span className="ls-library-hero-title">Localised Library</span>
+                            <span className="ls-library-hero-desc">
+                                Browse &amp; import localised components, per territory.
+                            </span>
+                        </span>
+                        <span className="ls-library-hero-arrow"><ArrowRight size={20} /></span>
+                    </button>
 
-                        <button
-                            className="ls-card ls-card--library"
-                            onClick={() => { sfx.open(); handleSelect("localised-library"); }}
-                        >
-                            <div className="ls-card-glow" />
-                            <div className="ls-card-icon"><BookOpen size={32} /></div>
-                            <span className="ls-card-title">Localised Library</span>
-                            <span className="ls-card-desc">Browse &amp; manage components per territory</span>
-                            <span className="ls-card-arrow">→</span>
-                        </button>
+                    {/* 2. The work surface: the two halves of "localise a
+                        campaign" as panes, switched by a toggle -- no nesting. */}
+                    <div className="ls-main">
+                        <div className="ls-main-head">
+                            <span className="ls-section-caption">Localise a campaign</span>
+                            <div className="ls-pane-tabs" role="tablist">
+                                {PANES.map(({ id, label, icon: Icon }) => (
+                                    <button
+                                        key={id}
+                                        role="tab"
+                                        aria-selected={pane === id}
+                                        className={pane === id ? "ls-pane-tab active" : "ls-pane-tab"}
+                                        onClick={() => { sfx.click(); setPane(id); }}
+                                    >
+                                        <Icon size={13} />
+                                        <span>{label}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="ls-main-surface">
+                            {pane === "csv" && <CSVLocaliserTool />}
+                            {pane === "batch" && <CampaignLocaliserTool />}
+                        </div>
                     </div>
 
-                    <div className="ls-utilities ls-workflow">
-                        <span className="ls-grid-label">Localisation Workflow</span>
-                        <div className="ls-flow">
-                            {WORKFLOW_STAGES.map(({ id, label, icon: Icon, blurb }, i) => (
+                    {/* 3. Tools -- one flat row of plain rounded buttons, split
+                        by a divider rather than the old numbered ->arrow
+                        pipeline (which implied an order nobody works in). */}
+                    <div className="ls-utilities">
+                        <span className="ls-grid-label">Tools</span>
+                        <div className="ls-grid">
+                            {TOOLS_ROW.map(({ id, label, icon: Icon, run }, i) => (
                                 <React.Fragment key={id}>
-                                    {i > 0 && <span className="ls-flow-arrow" aria-hidden="true">→</span>}
-                                    <Tooltip text={blurb} delay={500}>
+                                    {i > 0 && <span className="ls-tool-divider" aria-hidden="true" />}
+                                    <Tooltip text={run ? `${toolDescription(id)} (runs here)` : toolDescription(id)} delay={500}>
                                         <button
-                                            className="ls-stage"
-                                            onClick={() => { sfx.click(); handleSelect(id); }}
+                                            className={run ? "ls-grid-item ls-grid-item--runnable" : "ls-grid-item"}
+                                            disabled={runningId === id}
+                                            onClick={() => {
+                                                if (run) { sfx.click(); runInPlace(id, label, run); }
+                                                else { sfx.click(); handleSelect(id); }
+                                            }}
                                         >
-                                            <span className="ls-stage-num">{i + 1}</span>
-                                            <Icon size={13} />
-                                            <span>{label}</span>
+                                            <Icon size={14} />
+                                            <span>{runningId === id ? "Running…" : label}</span>
+                                            {run && <Play size={9} className="ls-stage-run" />}
                                         </button>
                                     </Tooltip>
                                 </React.Fragment>
                             ))}
                         </div>
-                    </div>
-
-                    <div className="ls-utilities">
-                        <span className="ls-grid-label">More Utilities</span>
-                        <div className="ls-grid">
-                            {UTILITY_TOOLS.map(({ id, label, icon: Icon }) => (
-                                <Tooltip key={id} text={toolDescription(id)} delay={500}>
-                                    <button
-                                        className="ls-grid-item"
-                                        onClick={() => { sfx.click(); handleSelect(id); }}
-                                    >
-                                        <Icon size={14} />
-                                        <span>{label}</span>
-                                    </button>
-                                </Tooltip>
-                            ))}
-                        </div>
+                        {runStatus && (
+                            <div className={`loc-status loc-status-${runStatus.type} ls-run-status`}>
+                                <StatusIcon type={runStatus.type} />
+                                <span>{runStatus.text}</span>
+                            </div>
+                        )}
                     </div>
                 </div>
                 </div>
