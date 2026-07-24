@@ -50,6 +50,7 @@ import {
     Scissors,
     LayoutList,
     Sparkles,
+    Crosshair,
 } from "lucide-react";
 
 // --- Lazy tool imports --------------------------------------------------
@@ -74,6 +75,7 @@ const WallToolsTool         = React.lazy(() => import("./tools/WallTools"));
 const ExtremeTools01Tool    = React.lazy(() => import("./tools/ExtremeTools01"));
 const ExtremeTools02Tool    = React.lazy(() => import("./tools/ExtremeTools02"));
 const LOSToolsTool          = React.lazy(() => import("./tools/LOSTools"));
+const BatchMatchTool        = React.lazy(() => import("./tools/BatchMatch"));
 const MasterToolsTool       = React.lazy(() => import("./tools/MasterTools"));
 const ProjectButtonsTool    = React.lazy(() => import("./tools/ProjectButtons"));
 const TimesheetTrackerTool  = React.lazy(() => import("./tools/TimesheetTracker"));
@@ -118,6 +120,7 @@ const PREFETCH_MAP: Record<string, () => Promise<any>> = {
     "extreme-tools-01":   () => import("./tools/ExtremeTools01"),
     "extreme-tools-02":   () => import("./tools/ExtremeTools02"),
     "los-tools":          () => import("./tools/LOSTools"),
+    "batch-match":        () => import("./tools/BatchMatch"),
     "master-tools":       () => import("./tools/MasterTools"),
     "project-buttons":    () => import("./tools/ProjectButtons"),
     "timesheet-tracker":  () => import("./tools/TimesheetTracker"),
@@ -392,6 +395,15 @@ export const TOOLS: ToolEntry[] = [
         Component: ExtremeTools02Tool,
         actions: ["Adjust From CSV", "Build From CSV"],
         description: "CSV-driven builder/adjuster for the extreme formats.",
+    },
+    {
+        id: "batch-match",
+        label: "Batch Match",
+        categories: ["tools"],
+        icon: Crosshair,
+        Component: BatchMatchTool,
+        actions: ["Capture from selection", "Preview changes"],
+        description: "Copies a property value you've already got right onto the matching layer in every .aep in a folder — verbatim, offset, or scaled proportionally to each file's own comp/source size.",
     },
     {
         id: "los-tools",

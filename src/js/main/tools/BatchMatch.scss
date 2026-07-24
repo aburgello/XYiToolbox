@@ -1,0 +1,229 @@
+// =============================================================================
+// src/js/main/tools/BatchMatch.scss
+// -----------------------------------------------------------------------------
+// Only what formTool.scss doesn't already give this page: the numbered step
+// blocks, the captured-reference card, the axis toggles, and the preview
+// table. Everything else (fields, buttons, .tool-status) is inherited.
+//
+// Category tint comes through var(--cat-*), set on the mounted tool's
+// container by the shell -- never hardcode an accent here.
+// =============================================================================
+.batch-match {
+
+    .bm-step {
+        border: 1px solid #2c2c2c;
+        border-radius: 8px;
+        padding: 10px 12px 12px;
+        margin-bottom: 12px;
+        background: rgba(255, 255, 255, 0.012);
+    }
+
+    .bm-step-head {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #9a9a9a;
+        margin-bottom: 8px;
+    }
+
+    .bm-step-num {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 17px;
+        height: 17px;
+        border-radius: 50%;
+        font-size: 10px;
+        font-weight: 700;
+        color: #111;
+        background: var(--cat-icon, #5eead4);
+    }
+
+    .bm-hint {
+        margin: 5px 0 8px;
+        font-size: 10.5px;
+        line-height: 1.45;
+        color: #7e7e7e;
+
+        em { color: #9a9a9a; font-style: italic; }
+
+        &--inline { margin: 0 0 0 6px; display: inline; }
+
+        &--warn {
+            display: flex;
+            align-items: flex-start;
+            gap: 5px;
+            color: #b98a4e;
+            svg { flex: 0 0 auto; margin-top: 2px; }
+        }
+    }
+
+    // ── captured reference card ──────────────────────────────────────────
+    .bm-reference {
+        margin-top: 9px;
+        padding: 9px 10px;
+        border: 1px solid var(--cat-border, #3a3a3a);
+        border-radius: 6px;
+        // A fixed low alpha, NOT var(--cat-glow) -- that variable is tuned for
+        // hover shadows at 0.35 and reads as a near-solid block at rest (the
+        // exact mistake Localised Library's JPG_PNG row made first time).
+        background: rgba(255, 255, 255, 0.03);
+    }
+
+    .bm-ref-prop {
+        font-size: 12px;
+        font-weight: 600;
+        color: #e6e6e6;
+        margin-bottom: 6px;
+    }
+
+    .bm-ref-line {
+        display: flex;
+        gap: 8px;
+        font-size: 10.5px;
+        line-height: 1.7;
+        color: #b0b0b0;
+    }
+
+    .bm-ref-key {
+        flex: 0 0 46px;
+        color: #6f6f6f;
+        text-transform: uppercase;
+        font-size: 9.5px;
+        letter-spacing: 0.05em;
+    }
+
+    .bm-ref-value { color: var(--cat-icon, #5eead4); font-variant-numeric: tabular-nums; }
+
+    .bm-scope { margin-top: 8px; }
+
+    // ── axis toggles ─────────────────────────────────────────────────────
+    .bm-axes {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        margin: 8px 0;
+        flex-wrap: wrap;
+    }
+
+    .bm-axes-label {
+        font-size: 10.5px;
+        color: #7e7e7e;
+        margin-right: 3px;
+    }
+
+    .bm-axis {
+        width: 30px;
+        padding: 3px 0;
+        font-size: 11px;
+        font-weight: 600;
+        color: #8a8a8a;
+        background: #232323;
+        border: 1px solid #333;
+        border-radius: 5px;
+        cursor: pointer;
+
+        &.is-on {
+            color: #111;
+            background: var(--cat-icon, #5eead4);
+            border-color: var(--cat-icon, #5eead4);
+        }
+    }
+
+    .bm-apply {
+        border-color: var(--cat-border, #3a3a3a) !important;
+        color: #e8e8e8;
+    }
+
+    // ── results ──────────────────────────────────────────────────────────
+    .bm-results { margin-top: 12px; }
+
+    .bm-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 10.5px;
+
+        th {
+            text-align: left;
+            font-weight: 600;
+            font-size: 9.5px;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: #6f6f6f;
+            padding: 4px 5px;
+            border-bottom: 1px solid #2c2c2c;
+        }
+
+        td {
+            padding: 4px 5px;
+            border-bottom: 1px solid #212121;
+            color: #c4c4c4;
+            vertical-align: top;
+        }
+    }
+
+    .bm-check-col { width: 22px; }
+
+    .bm-file { color: #ddd; }
+    .bm-comp { color: #c4c4c4; }
+    .bm-dim { color: #6f6f6f; }
+    .bm-new {
+        color: var(--cat-icon, #5eead4);
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+    }
+    .bm-savedas { color: #b98a4e; }
+
+    .bm-row--done td { opacity: 0.55; }
+
+    .bm-empty {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 9px 10px;
+        font-size: 11px;
+        color: #7e7e7e;
+        border: 1px dashed #2f2f2f;
+        border-radius: 6px;
+    }
+
+    .bm-details {
+        margin-top: 9px;
+
+        summary {
+            cursor: pointer;
+            font-size: 10.5px;
+            color: #7e7e7e;
+            padding: 3px 0;
+            &:hover { color: #a5a5a5; }
+        }
+    }
+
+    .bm-skip-row {
+        display: flex;
+        align-items: baseline;
+        gap: 5px;
+        flex-wrap: wrap;
+        font-size: 10px;
+        line-height: 1.7;
+        padding-left: 4px;
+    }
+
+    .bm-tag {
+        flex: 0 0 auto;
+        padding: 0 4px;
+        border-radius: 3px;
+        font-size: 8.5px;
+        font-weight: 700;
+        text-transform: uppercase;
+
+        &--same { color: #6f9a6f; background: rgba(110, 160, 110, 0.12); }
+        &--skip { color: #9a8a5e; background: rgba(160, 140, 90, 0.12); }
+    }
+
+    .bm-note { color: #6f6f6f; }
+}

@@ -1779,6 +1779,171 @@ function mcItDeriveImageFolder(aepFolder: Folder): string {
   return "";
 }
 
+// The per-project half of MC It!, extracted so it can run against a project
+// that is ALREADY OPEN. Two callers:
+//   1. mcIt() below -- opens each .aep itself, then calls this (unchanged
+//      behaviour; this is a pure extraction, not a rewrite).
+//   2. csvLocaliserRun() (localise.ts) -- the generated working copy is
+//      already open and about to be saved, so the swap happens in that same
+//      session instead of costing a second open/save cycle per file.
+// Does NOT open, save or close anything -- the caller owns the project's
+// lifecycle. `aepFileName` is the filename the resolution token is parsed
+// from (mcItParseFilename finds \d+x\d+ anywhere in it), NOT a path.
+export function mcItApplyToOpenProject(
+  proj: Project,
+  aepFileName: string,
+  imageFiles: File[],
+  dryRun?: boolean
+): McItProjectReport {
+  const parsedAEP = mcItParseFilename(aepFileName);
+  const projReport: McItProjectReport = { aep: aepFileName, resolution: parsedAEP.thirdOne || "", items: [] };
+
+  let footageFolder: FolderItem | null = null;
+  for (let i = 1; i <= proj.numItems; i++) {
+    const item = proj.item(i);
+    if (item instanceof FolderItem && item.name === "Footage") {
+      footageFolder = item;
+      break;
+    }
+  }
+  if (!footageFolder) {
+    projReport.skipped = "No project folder named exactly 'Footage'.";
+    return projReport;
+  }
+
+  // "Artwork" added beyond the original pingLoc list: campaign projects
+  // keep their mechanical PSDs plus the raster poster (a lone
+  // "...MotionPoster_..._OVn.jpg/png") in Footage/Artwork, which neither
+  // MC It! nor JPEG Loc used to scan -- so that JPG never got localised.
+  // Safe to include: only .png/.jpe?g footage items are considered below
+  // (PSDs untouched), and the same-type guard still applies.
+  const targetFolders: FolderItem[] = [];
+  for (let i = 1; i <= footageFolder.numItems; i++) {
+    const item = footageFolder.item(i);
+    if (item instanceof FolderItem && (item.name === "PNG" || item.name === "JPG" || item.name === "JPEG" || item.name === "Images" || item.name === "Artwork")) {
+      targetFolders.push(item);
+    }
+  }
+  if (targetFolders.length === 0) {
+    projReport.skipped = "No PNG/JPG/JPEG/Images/Artwork subfolder inside 'Footage'.";
+    return projReport;
+  }
+
+  for (let tf = 0; tf < targetFolders.length; tf++) {
+    const targetFolder = targetFolders[tf];
+    // Artwork is a MIXED folder (mechanical PSDs, textures, grabs...), so
+    // unlike the dedicated PNG/JPG folders -- where everything is a target
+    // by design -- only items whose filename carries an OV token ("_OV.",
+    // "_OV_", "_OV3.") are considered there. Without this, ANY stray
+    // numbered JPG (e.g. "Sky_Grade_2.jpg") would pass the trailing-number
+    // filter and get silently swapped for a localised poster, because the
+    // fuzzy matcher's accept-threshold is a no-op (inherited 1:1 from
+    // XYi_Detectives.jsx) and never vetoes on name dissimilarity.
+    // Deliberately NOT hasIsolatedOvToken(): that helper rejects "OV3"
+    // (digits after OV), and changing it would alter copy-first decisions
+    // in losOpenForEdit()/jpegLoc(). Scoped to Artwork so re-running on an
+    // already-localised project (footage renamed "..._HU1.png", no OV
+    // left) still re-matches fine in the dedicated folders.
+    const isArtworkFolder = targetFolder.name === "Artwork";
+    for (let j = 1; j <= targetFolder.numItems; j++) {
+      const footageItem = targetFolder.item(j) as FootageItem;
+      if (footageItem.file && /\.(png|jpe?g)$/i.test(footageItem.file.name)) {
+        if (isArtworkFolder && !/(^|[_\s])OV\d*[_\s.]/i.test(footageItem.file.name)) {
+          projReport.items.push({
+            folder: targetFolder.name,
+            name: footageItem.file.name,
+            action: "skipped",
+            reason: "No OV token — not a localisation target.",
+          });
+          continue;
+        }
+        const originalName = footageItem.file.name;
+        const originalExt = mcItGetExt(originalName);
+        const parsedOriginal = mcItParseFilename(originalName);
+
+        // Count how many candidates survive each successive filter, so the
+        // log shows exactly which filter is the wall.
+        let cSameType = 0;
+        let cPlusRes = 0;
+        const resSeenSameType: string[] = [];
+        const validCandidates: File[] = [];
+        for (let k = 0; k < imageFiles.length; k++) {
+          const candidate = imageFiles[k];
+          const candidateExt = mcItGetExt(candidate.name);
+          const parsedCandidate = mcItParseFilename(candidate.name);
+          // ExtendScript BUG (root cause of "sameType=0 with 24 png
+          // candidates on disk"): the engine evaluates `A || B && C`
+          // LEFT-TO-RIGHT as `(A || B) && C`, not standard JS's
+          // `A || (B && C)`. The TS source had correct parentheses, but
+          // Babel strips redundant parens on emit, so the one-line
+          // `ext === ext || (jpgFamily && jpgFamily)` compiled into the
+          // broken form and returned FALSE for png===png. Keep this as
+          // separate statements -- never a mixed ||/&& expression.
+          const origIsJpg = originalExt === "jpg" || originalExt === "jpeg";
+          const candIsJpg = candidateExt === "jpg" || candidateExt === "jpeg";
+          let isSameType = originalExt === candidateExt;
+          if (!isSameType) isSameType = origIsJpg && candIsJpg;
+          if (!isSameType) continue;
+          cSameType++;
+          if (parsedCandidate.thirdOne && resSeenSameType.join(",").indexOf(parsedCandidate.thirdOne) === -1) resSeenSameType.push(parsedCandidate.thirdOne);
+          if (parsedAEP.thirdOne !== parsedCandidate.thirdOne) continue;
+          cPlusRes++;
+          if (parsedOriginal.pngNumber !== parsedCandidate.pngNumber) continue;
+          validCandidates.push(candidate);
+        }
+
+        const bestFile = findBestComponentFile(originalName, validCandidates);
+        if (bestFile) {
+          if (!dryRun) {
+            footageItem.replace(bestFile);
+            $.sleep(500);
+          }
+          projReport.items.push({
+            folder: targetFolder.name,
+            name: originalName,
+            action: "replaced",
+            newName: bestFile.name,
+          });
+        } else {
+          let reason = "No candidate survived the filters.";
+          if (cSameType === 0) reason = "No same-type (" + originalExt + ") candidate in the image folder.";
+          else if (cPlusRes === 0) reason = "No candidate at the AEP's resolution " + (parsedAEP.thirdOne || "?") + " — sizes seen: " + resSeenSameType.join(", ") + ".";
+          else if (validCandidates.length === 0) reason = "No candidate ending in '" + (parsedOriginal.pngNumber || "<none>") + "' at that resolution.";
+          projReport.items.push({
+            folder: targetFolder.name,
+            name: originalName,
+            action: "no-match",
+            reason: reason,
+          });
+        }
+      }
+    }
+  }
+
+  return projReport;
+}
+
+// Count "replaced" entries in a project report -- both callers tally the
+// same way, so the counting rule lives in one place.
+export function mcItCountReplaced(report: McItProjectReport): number {
+  let n = 0;
+  for (let i = 0; i < report.items.length; i++) {
+    if (report.items[i].action === "replaced") n++;
+  }
+  return n;
+}
+
+// Exposed for csvLocaliserRun(), which derives the same
+// <Territory>/AE/<Batch> -> <Territory>/JPG_PNG/<Batch> mapping and gathers
+// the candidate images ONCE for the whole run rather than per generated file.
+export function mcItCollectImages(folder: Folder): File[] {
+  return mcItGetAllImageFiles(folder);
+}
+
+export function mcItDeriveImageFolderFor(aepFolder: Folder): string {
+  return mcItDeriveImageFolder(aepFolder);
+}
+
 // aepFolderPath/imageFolderPath skip the dialogs when the caller already
 // knows them (the CSV Localiser scan UI passes both per batch). With no
 // image path, the standard tree layout is tried first
@@ -1786,7 +1951,13 @@ function mcItDeriveImageFolder(aepFolder: Folder): string {
 // only appears when derivation fails. dryRun walks the identical matching
 // logic but replaces/saves NOTHING -- the report comes back flagged so the
 // modal can offer "Apply".
-export const mcIt = (aepFolderPath?: string, imageFolderPath?: string, dryRun?: boolean): McItResult => {
+// onlyAepsJson: a JSON array of .aep FILENAMES to restrict this run to, sent
+// by the preview modal when the user has unticked some projects. Omitted (or
+// an empty array) means "every .aep in the folder", so every existing caller
+// -- Toolset's card, Campaign Localiser, the CSV Localiser's inline pass --
+// is unaffected. Filenames, not paths: they come straight back from the
+// report the dry run produced for this same folder.
+export const mcIt = (aepFolderPath?: string, imageFolderPath?: string, dryRun?: boolean, onlyAepsJson?: string): McItResult => {
   try {
     let projectFolder: Folder | null = null;
     if (aepFolderPath) {
@@ -1797,8 +1968,24 @@ export const mcIt = (aepFolderPath?: string, imageFolderPath?: string, dryRun?: 
       projectFolder = Folder.selectDialog("Select a folder containing After Effects Project files");
     }
     if (!projectFolder) return { success: false, error: "No project folder selected." };
-    const aepFiles = (projectFolder.getFiles() as (File | Folder)[]).filter((f): f is File => f instanceof File && /\.aep$/i.test(f.name));
+    let aepFiles = (projectFolder.getFiles() as (File | Folder)[]).filter((f): f is File => f instanceof File && /\.aep$/i.test(f.name));
     if (aepFiles.length === 0) return { success: false, error: "No AEP files found in that folder." };
+
+    // Restrict to the projects the user kept ticked in the preview, if any.
+    if (onlyAepsJson) {
+      let only: string[] = [];
+      try { only = JSON.parse(onlyAepsJson) as string[]; } catch (parseErr) { only = []; }
+      if (only.length > 0) {
+        const keep: File[] = [];
+        for (let i = 0; i < aepFiles.length; i++) {
+          for (let j = 0; j < only.length; j++) {
+            if (String(only[j]) === String(aepFiles[i].name)) { keep.push(aepFiles[i]); break; }
+          }
+        }
+        aepFiles = keep;
+        if (aepFiles.length === 0) return { success: false, error: "None of the selected projects were found in that folder." };
+      }
+    }
 
     let imageRootFolder: Folder | null = null;
     if (imageFolderPath) {
@@ -1827,138 +2014,20 @@ export const mcIt = (aepFolderPath?: string, imageFolderPath?: string, dryRun?: 
 
     for (let p = 0; p < aepFiles.length; p++) {
       const aepFile = aepFiles[p];
-      const parsedAEP = mcItParseFilename(aepFile.name);
-      const projReport: McItProjectReport = { aep: aepFile.name, resolution: parsedAEP.thirdOne || "", items: [] };
-      projects.push(projReport);
 
       const proj = app.open(aepFile);
       if (!proj) {
-        projReport.skipped = "Could not open this project.";
+        projects.push({ aep: aepFile.name, resolution: mcItParseFilename(aepFile.name).thirdOne || "", items: [], skipped: "Could not open this project." });
         continue;
       }
 
-      let footageFolder: FolderItem | null = null;
-      for (let i = 1; i <= proj.numItems; i++) {
-        const item = proj.item(i);
-        if (item instanceof FolderItem && item.name === "Footage") {
-          footageFolder = item;
-          break;
-        }
-      }
-      if (!footageFolder) {
-        projReport.skipped = "No project folder named exactly 'Footage'.";
-        continue;
-      }
+      // Identical matching/replacement logic the CSV Localiser's inline pass
+      // uses -- shared, not duplicated (see mcItApplyToOpenProject above).
+      const projReport = mcItApplyToOpenProject(proj, aepFile.name, imageFiles, dryRun);
+      projects.push(projReport);
+      replacedCount += mcItCountReplaced(projReport);
 
-      // "Artwork" added beyond the original pingLoc list: campaign projects
-      // keep their mechanical PSDs plus the raster poster (a lone
-      // "...MotionPoster_..._OVn.jpg/png") in Footage/Artwork, which neither
-      // MC It! nor JPEG Loc used to scan -- so that JPG never got localised.
-      // Safe to include: only .png/.jpe?g footage items are considered below
-      // (PSDs untouched), and the same-type guard still applies.
-      const targetFolders: FolderItem[] = [];
-      for (let i = 1; i <= footageFolder.numItems; i++) {
-        const item = footageFolder.item(i);
-        if (item instanceof FolderItem && (item.name === "PNG" || item.name === "JPG" || item.name === "JPEG" || item.name === "Images" || item.name === "Artwork")) {
-          targetFolders.push(item);
-        }
-      }
-      if (targetFolders.length === 0) {
-        projReport.skipped = "No PNG/JPG/JPEG/Images/Artwork subfolder inside 'Footage'.";
-        continue;
-      }
-
-      for (let tf = 0; tf < targetFolders.length; tf++) {
-        const targetFolder = targetFolders[tf];
-        // Artwork is a MIXED folder (mechanical PSDs, textures, grabs...), so
-        // unlike the dedicated PNG/JPG folders -- where everything is a target
-        // by design -- only items whose filename carries an OV token ("_OV.",
-        // "_OV_", "_OV3.") are considered there. Without this, ANY stray
-        // numbered JPG (e.g. "Sky_Grade_2.jpg") would pass the trailing-number
-        // filter and get silently swapped for a localised poster, because the
-        // fuzzy matcher's accept-threshold is a no-op (inherited 1:1 from
-        // XYi_Detectives.jsx) and never vetoes on name dissimilarity.
-        // Deliberately NOT hasIsolatedOvToken(): that helper rejects "OV3"
-        // (digits after OV), and changing it would alter copy-first decisions
-        // in losOpenForEdit()/jpegLoc(). Scoped to Artwork so re-running on an
-        // already-localised project (footage renamed "..._HU1.png", no OV
-        // left) still re-matches fine in the dedicated folders.
-        const isArtworkFolder = targetFolder.name === "Artwork";
-        for (let j = 1; j <= targetFolder.numItems; j++) {
-          const footageItem = targetFolder.item(j) as FootageItem;
-          if (footageItem.file && /\.(png|jpe?g)$/i.test(footageItem.file.name)) {
-            if (isArtworkFolder && !/(^|[_\s])OV\d*[_\s.]/i.test(footageItem.file.name)) {
-              projReport.items.push({
-                folder: targetFolder.name,
-                name: footageItem.file.name,
-                action: "skipped",
-                reason: "No OV token — not a localisation target.",
-              });
-              continue;
-            }
-            const originalName = footageItem.file.name;
-            const originalExt = mcItGetExt(originalName);
-            const parsedOriginal = mcItParseFilename(originalName);
-
-            // Count how many candidates survive each successive filter, so the
-            // log shows exactly which filter is the wall.
-            let cSameType = 0;
-            let cPlusRes = 0;
-            const resSeenSameType: string[] = [];
-            const validCandidates: File[] = [];
-            for (let k = 0; k < imageFiles.length; k++) {
-              const candidate = imageFiles[k];
-              const candidateExt = mcItGetExt(candidate.name);
-              const parsedCandidate = mcItParseFilename(candidate.name);
-              // ExtendScript BUG (root cause of "sameType=0 with 24 png
-              // candidates on disk"): the engine evaluates `A || B && C`
-              // LEFT-TO-RIGHT as `(A || B) && C`, not standard JS's
-              // `A || (B && C)`. The TS source had correct parentheses, but
-              // Babel strips redundant parens on emit, so the one-line
-              // `ext === ext || (jpgFamily && jpgFamily)` compiled into the
-              // broken form and returned FALSE for png===png. Keep this as
-              // separate statements -- never a mixed ||/&& expression.
-              const origIsJpg = originalExt === "jpg" || originalExt === "jpeg";
-              const candIsJpg = candidateExt === "jpg" || candidateExt === "jpeg";
-              let isSameType = originalExt === candidateExt;
-              if (!isSameType) isSameType = origIsJpg && candIsJpg;
-              if (!isSameType) continue;
-              cSameType++;
-              if (parsedCandidate.thirdOne && resSeenSameType.join(",").indexOf(parsedCandidate.thirdOne) === -1) resSeenSameType.push(parsedCandidate.thirdOne);
-              if (parsedAEP.thirdOne !== parsedCandidate.thirdOne) continue;
-              cPlusRes++;
-              if (parsedOriginal.pngNumber !== parsedCandidate.pngNumber) continue;
-              validCandidates.push(candidate);
-            }
-
-            const bestFile = findBestComponentFile(originalName, validCandidates);
-            if (bestFile) {
-              if (!dryRun) {
-                footageItem.replace(bestFile);
-                $.sleep(500);
-              }
-              replacedCount++;
-              projReport.items.push({
-                folder: targetFolder.name,
-                name: originalName,
-                action: "replaced",
-                newName: bestFile.name,
-              });
-            } else {
-              let reason = "No candidate survived the filters.";
-              if (cSameType === 0) reason = "No same-type (" + originalExt + ") candidate in the image folder.";
-              else if (cPlusRes === 0) reason = "No candidate at the AEP's resolution " + (parsedAEP.thirdOne || "?") + " — sizes seen: " + resSeenSameType.join(", ") + ".";
-              else if (validCandidates.length === 0) reason = "No candidate ending in '" + (parsedOriginal.pngNumber || "<none>") + "' at that resolution.";
-              projReport.items.push({
-                folder: targetFolder.name,
-                name: originalName,
-                action: "no-match",
-                reason: reason,
-              });
-            }
-          }
-        }
-      }
+      if (projReport.skipped) continue;
 
       if (!dryRun) {
         proj.save();

@@ -25,6 +25,11 @@ export interface LocGenRow {
     master?: string;
     output?: string;
     error?: string;
+    // CSV Localiser's inline MC It! pass only (see csvLocaliserRun's runMcIt).
+    // Optional: every other tool feeding this modal simply omits them, and the
+    // row renders exactly as it did before.
+    imagesReplaced?: number;
+    imagesNote?: string; // why nothing was swapped for this row, if applicable
 }
 
 export interface LocGenReport {
@@ -134,6 +139,21 @@ const LocGenReportModal: React.FC<{ report: LocGenReport; onClose: () => void }>
                                     {(r.status === "no-master" || r.status === "no-comp" || r.status === "error") && r.error ? (
                                         <span className="locgen-row-bad"> — {r.error}</span>
                                     ) : null}
+                                    {/* Inline MC It! outcome for this row. 0 is meaningful (the
+                                        pass ran and matched nothing), so test for undefined, not
+                                        falsiness. */}
+                                    {/* nowrap: the row meta wraps mid-word otherwise (the .aep
+                                        filenames force an aggressive break rule), which rendered
+                                        this as "0 imag / es swapped". */}
+                                    {typeof r.imagesReplaced === "number" ? (
+                                        <span
+                                            className={r.imagesReplaced > 0 ? "locgen-row-ok" : "locgen-row-muted"}
+                                            style={{ whiteSpace: "nowrap" }}
+                                        >
+                                            {" "}· {r.imagesReplaced} image{r.imagesReplaced === 1 ? "" : "s"} swapped
+                                        </span>
+                                    ) : null}
+                                    {r.imagesNote ? <span className="locgen-row-muted"> · {r.imagesNote}</span> : null}
                                 </span>
                             </div>
                         </div>

@@ -5,7 +5,7 @@
 // Check, CSV Localiser). Split out of aeft.ts, which is now a thin barrel --
 // see its header comment for context.
 // =============================================================================
-import { CampaignLocaliserResult, TC_COUNTRIES, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, scanMastersForBestMatch } from "./tools";
+import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, scanMastersForBestMatch } from "./tools";
 import { makeParentLayerOfAllUnparented, scaleAllCameraZooms } from "./deliver";
 import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, saveLocGenReport } from "./shared";
 import { loadCampaignsRaw } from "./review";
@@ -2399,6 +2399,114 @@ function csvLocTrim(str: string): string {
   return String(str).replace(/^\s+|\s+$/g, "");
 }
 
+// Latin-1/Latin Extended-A accent folding, keyed by CODE POINT rather than by
+// character literals on purpose: this file compiles down to an ExtendScript
+// .jsx whose source encoding can't be relied on to carry non-ASCII literals
+// intact, so "é" written here could arrive mangled. Code points can't be.
+// Anything not listed (Cyrillic, CJK, emoji) simply gets dropped by
+// csvLocSanitiseSiteToken's A-Z0-9 filter rather than transliterated.
+const CSV_LOC_ACCENT_FOLD: { [code: string]: string } = {
+  "192": "A", "193": "A", "194": "A", "195": "A", "196": "A", "197": "A", "256": "A", "258": "A", "260": "A",
+  "198": "AE",
+  "199": "C", "262": "C", "264": "C", "266": "C", "268": "C",
+  "270": "D", "272": "D",
+  "200": "E", "201": "E", "202": "E", "203": "E", "274": "E", "276": "E", "278": "E", "280": "E", "282": "E",
+  "284": "G", "286": "G", "288": "G", "290": "G",
+  "292": "H", "294": "H",
+  "204": "I", "205": "I", "206": "I", "207": "I", "296": "I", "298": "I", "300": "I", "302": "I", "304": "I",
+  "308": "J",
+  "310": "K",
+  "313": "L", "315": "L", "317": "L", "319": "L", "321": "L",
+  "209": "N", "323": "N", "325": "N", "327": "N",
+  "210": "O", "211": "O", "212": "O", "213": "O", "214": "O", "216": "O", "332": "O", "334": "O", "336": "O",
+  "338": "OE",
+  "340": "R", "342": "R", "344": "R",
+  "346": "S", "348": "S", "350": "S", "352": "S",
+  "354": "T", "356": "T", "358": "T",
+  "217": "U", "218": "U", "219": "U", "220": "U", "360": "U", "362": "U", "364": "U", "366": "U", "368": "U", "370": "U",
+  "372": "W",
+  "221": "Y", "374": "Y", "376": "Y",
+  "377": "Z", "379": "Z", "381": "Z",
+  "223": "SS",
+  "224": "A", "225": "A", "226": "A", "227": "A", "228": "A", "229": "A", "257": "A", "259": "A", "261": "A",
+  "230": "AE",
+  "231": "C", "263": "C", "265": "C", "267": "C", "269": "C",
+  "271": "D", "273": "D",
+  "232": "E", "233": "E", "234": "E", "235": "E", "275": "E", "277": "E", "279": "E", "281": "E", "283": "E",
+  "285": "G", "287": "G", "289": "G", "291": "G",
+  "293": "H", "295": "H",
+  "236": "I", "237": "I", "238": "I", "239": "I", "297": "I", "299": "I", "301": "I", "303": "I", "305": "I",
+  "309": "J",
+  "311": "K",
+  "314": "L", "316": "L", "318": "L", "320": "L", "322": "L",
+  "241": "N", "324": "N", "326": "N", "328": "N",
+  "242": "O", "243": "O", "244": "O", "245": "O", "246": "O", "248": "O", "333": "O", "335": "O", "337": "O",
+  "339": "OE",
+  "341": "R", "343": "R", "345": "R",
+  "347": "S", "349": "S", "351": "S", "353": "S",
+  "355": "T", "357": "T", "359": "T",
+  "249": "U", "250": "U", "251": "U", "252": "U", "361": "U", "363": "U", "365": "U", "367": "U", "369": "U", "371": "U",
+  "373": "W",
+  "253": "Y", "255": "Y", "375": "Y",
+  "378": "Z", "380": "Z", "382": "Z",
+};
+
+// A raw MEDIA SITE NAME off a client PDF ("Gare de l'Est — Quai 3", "Bahnhof
+// Zoo/Süd") is turned into ONE uppercase A-Z0-9 token safe for a filename on
+// any filesystem: accents folded to their base letter, everything else
+// (spaces, punctuation, slashes, dashes, anything non-Latin) dropped rather
+// than replaced -- notably NO underscores, since every downstream tool in this
+// toolbox splits these filenames on "_" and an extra separator inside the site
+// would silently shift their token indices. Capped at 40 chars to keep the
+// already-long generated names inside path limits.
+function csvLocSanitiseSiteToken(raw: string): string {
+  const trimmed = csvLocTrim(raw);
+  if (trimmed === "") return "";
+  let folded = "";
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed.charAt(i);
+    const mapped = CSV_LOC_ACCENT_FOLD[String(trimmed.charCodeAt(i))];
+    folded += mapped ? mapped : ch;
+  }
+  const token = csvLocGuardSiteToken(folded.toUpperCase().replace(/[^A-Z0-9]/g, ""));
+  return token.length > 40 ? token.substring(0, 40) : token;
+}
+
+// Three shapes a site name could sanitise into that would be MISREAD by the
+// filename parsers this toolbox already runs over these names -- every one of
+// them takes the FIRST match in the string, and the site token sits ahead of
+// the real size/version/territory tokens, so a collision wins outright:
+//
+//   "4x3"  -> mcItParseFilename's /\d+x\d+/i reads it as the AEP's resolution,
+//             no image candidate passes the resolution filter, and that file's
+//             inline MC It! swap silently does nothing.
+//   "V2"   -> parseFilenameMeta's /(V\d+)/ reads it as the version instead of
+//             the real _V01, and Cheeky DT stamps it onto the Frontcard.
+//   "SW"   -> parseFilenameMeta's /_([A-Z]{2})(?:_|$)/ reads it as the country
+//             code instead of the real one at the end of the name.
+//
+// Each is defused with the smallest edit that breaks the pattern while leaving
+// the name readable, and NOTHING else is touched -- a token with none of these
+// shapes (the overwhelmingly normal case) comes through byte-identical. The
+// hyphen is chosen deliberately: it can't be confused with "_", which every
+// tool here tokenises these filenames on.
+//
+// Not guarded because they already can't collide: /(\d+)s(?:ec)?/ (duration)
+// and /(\d+x\d+)(?:px)?/ (size, in parseFilenameMeta) are both LOWERCASE with
+// no /i, and this token is uppercase by construction.
+function csvLocGuardSiteToken(token: string): string {
+  if (token === "") return "";
+  // Lookahead, not a captured trailing digit: a consuming match would step
+  // past the digit and leave a second "3X2" inside "4X3X2" unguarded.
+  let guarded = token.replace(/(\d)X(?=\d)/g, "$1-X");
+  guarded = guarded.replace(/V(?=\d)/g, "V-");
+  // Only an EXACTLY-two-letter token can be mistaken for a country code
+  // ("N4" and single letters can't match /^[A-Z]{2}$/), so this is the one
+  // case with nothing internal to break -- it gets qualified instead.
+  if (/^[A-Z]{2}$/.test(guarded)) guarded = "SITE" + guarded;
+  return guarded;
+}
+
 // Zero-pads a trailing single digit so "Batch_1"/"France 2"/"Batch1" become
 // "Batch_01"/"France 02"/"Batch01" -- whatever separator (or none) was
 // already there is left untouched, only a LONE trailing digit gets padded.
@@ -2414,7 +2522,23 @@ function csvLocPadBatchNumber(name: string): string {
 // runs Cheeky DT Check + DRQR automatically on the new comp, removes the
 // original pre-localise master comp, then saves the (already-a-copy)
 // project in place and closes it.
-function csvLocNameGen(myComp: CompItem, width: number, height: number, newCompName: string, plm: "PORTRAIT" | "LANDSCAPE"): void {
+// mcItImages/mcItAepName are the "run MC It! inline" hook. When supplied,
+// the footage swap runs on the project that is ALREADY OPEN, immediately
+// before this function's existing save/close -- so a localised file no
+// longer has to be reopened and resaved by a separate MC It! pass
+// afterwards. Omit them (or pass an empty image list) and this behaves
+// exactly as it always did. The report is handed back via mcItOut so the
+// caller can fold the counts into its own row report.
+function csvLocNameGen(
+  myComp: CompItem,
+  width: number,
+  height: number,
+  newCompName: string,
+  plm: "PORTRAIT" | "LANDSCAPE",
+  mcItImages?: File[],
+  mcItAepName?: string,
+  mcItOut?: McItProjectReport[]
+): void {
   const scanRegV = /V\d\d/;
   const myName = myComp.name;
   const oldWidth = myComp.width;
@@ -2497,6 +2621,27 @@ function csvLocNameGen(myComp: CompItem, width: number, height: number, newCompN
     }
   }
 
+  // Inline MC It! pass -- the whole point of running it here is that the
+  // project is already open and about to be saved anyway, so the swap costs
+  // no extra open/save cycle. Must run BEFORE the save below. Wrapped in its
+  // own try/catch: a footage-matching problem must never lose the
+  // localisation work that has already succeeded on this file.
+  if (mcItImages && mcItImages.length > 0 && mcItAepName) {
+    try {
+      const rep = mcItApplyToOpenProject(app.project, mcItAepName, mcItImages, false);
+      if (mcItOut) mcItOut.push(rep);
+    } catch (mcErr) {
+      if (mcItOut) {
+        mcItOut.push({
+          aep: mcItAepName,
+          resolution: "",
+          items: [],
+          skipped: "MC It! pass failed: " + mcErr.toString(),
+        });
+      }
+    }
+  }
+
   // The project was opened from a working copy already sitting at the
   // correct destination filename (copied from the master before opening),
   // so just save in place -- matches original exactly.
@@ -2516,10 +2661,17 @@ export interface CsvLocRowReport {
   campaign: string;
   size: string;
   duration: string;
+  // Sanitised MEDIA SITE NAME token baked into the output filename, when the
+  // CSV carried one (absent for hand-built batches / pre-Site pasted CSVs).
+  site?: string;
   status: "generated" | "skipped-existing" | "no-master" | "error";
   master?: string; // matched master filename
   output?: string; // written .aep filename
   error?: string;
+  // Inline MC It! pass (see csvLocaliserRun's runMcIt). Absent when the
+  // toggle is off or the row never got as far as generating a file.
+  imagesReplaced?: number;
+  imagesNote?: string; // why nothing was swapped for this row, if applicable
 }
 
 export interface CsvLocResult {
@@ -2530,9 +2682,16 @@ export interface CsvLocResult {
   rows?: CsvLocRowReport[];
   runId?: string;
   finishedAt?: string;
+  // Inline MC It! pass -- all absent/zero when the toggle is off.
+  mcItRan?: boolean;
+  mcItImageFolder?: string;
+  mcItImageCount?: number;
+  mcItReplaced?: number;
+  mcItNote?: string; // set when the pass could not run at all (see setup)
+  mcItProjects?: McItProjectReport[]; // per-file detail, same shape MC It! returns
 }
 
-export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExisting: boolean): CsvLocResult => {
+export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExisting: boolean, runMcIt?: boolean): CsvLocResult => {
   csvLocSaveLastPath(mastersPath);
 
   if (rawCsvText === "") {
@@ -2591,6 +2750,41 @@ export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExi
     outputFolder = picked;
   }
 
+  // --- Inline MC It! setup -------------------------------------------------
+  // Gathered ONCE for the whole run, not per generated file: the candidate
+  // list is identical for every row in a batch, and rescanning the folder
+  // per row would be the expensive part of doing this inline.
+  //
+  // The image folder is DERIVED, never asked for: JPG_PNG sits as a sibling
+  // of AE under the territory root, and both use the same Batch_N naming
+  // (AE/Batch_1 <-> JPG_PNG/Batch_1), which mcItDeriveImageFolderFor()
+  // already resolves including the zero-padding differences between the two
+  // sides. If the layout doesn't match, or the batch folder holds no images,
+  // mcItImages stays empty and localisation proceeds exactly as before --
+  // deliberately NO dialog here, since this runs mid-batch and a modal would
+  // strand the whole run waiting for a click.
+  let mcItImages: File[] = [];
+  let mcItImageFolder = "";
+  let mcItSetupNote = "";
+  if (runMcIt) {
+    try {
+      const derived = mcItDeriveImageFolderFor(outputFolder);
+      if (derived === "") {
+        mcItSetupNote = "No matching JPG_PNG batch folder found next to the AE folder — footage was not swapped.";
+      } else {
+        mcItImageFolder = derived;
+        mcItImages = mcItCollectImages(new Folder(derived));
+        if (mcItImages.length === 0) {
+          mcItSetupNote = "JPG_PNG batch folder found but it holds no PNG/JPG files — footage was not swapped.";
+        }
+      }
+    } catch (mcSetupErr) {
+      mcItSetupNote = "Could not read the JPG_PNG folder: " + mcSetupErr.toString();
+      mcItImages = [];
+    }
+  }
+  const mcItReports: McItProjectReport[] = [];
+
   // Convert the territory name into its country code prefix (e.g. "Spain"
   // -> "ES") -- reuses the already-ported getTerritoryCountryCode() rather
   // than duplicating XYi_Cheeky_InvT_Check.jsx's getCountryCode() a second
@@ -2637,10 +2831,16 @@ export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExi
       const height = Math.floor(Number(sizeArr[1]));
       const size = String(width) + "x" + String(height);
       const duration = csvLocTrim(texLoc[3]) + "sec";
+      // Column 5 (after Country) is the MEDIA SITE NAME the panel carries over
+      // from the Specs PDF. Optional by design: a hand-built batch, or a CSV
+      // pasted from before this column existed, has fewer columns and simply
+      // produces no site token, leaving the filename exactly as it was.
+      const siteToken = texLoc.length > 5 ? csvLocSanitiseSiteToken(texLoc[5]) : "";
       rep.artwork = csvLocTrim(texLoc[0]);
       rep.campaign = campaign;
       rep.size = size;
       rep.duration = duration;
+      if (siteToken !== "") rep.site = siteToken;
 
       const bestMatch = scanMastersForBestMatch(mastersPath, campaign, size, duration);
       if (!bestMatch) {
@@ -2672,7 +2872,11 @@ export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExi
       // above to build the output folder path (<Source Folder>/AE/<Batch
       // Name>), so the file still lands in the right batch folder on
       // disk, it just doesn't repeat the batch name in every filename too.
-      const newCompName = scanFilmTitle + "_" + scanIndo + "_DGTL_" + scanArtworkType + "_" + campaign + "_" + width + "x" + height + "_" + duration + "_" + territoryCode;
+      // Site name (when the CSV carried one) sits directly after the creative
+      // /campaign token and before the size, already sanitised to a single
+      // uppercase A-Z0-9 token by csvLocSanitiseSiteToken.
+      const sitePart = siteToken !== "" ? "_" + siteToken : "";
+      const newCompName = scanFilmTitle + "_" + scanIndo + "_DGTL_" + scanArtworkType + "_" + campaign + sitePart + "_" + width + "x" + height + "_" + duration + "_" + territoryCode;
 
       rep.master = masterName;
 
@@ -2702,9 +2906,40 @@ export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExi
         }
       }
 
-      csvLocNameGen(myComp, width, height, newCompName, plm);
+      // The generated filename carries the size token (newCompName includes
+      // width + "x" + height), which is what mcItParseFilename reads to pick
+      // candidates at the right resolution -- so the swap targets this row's
+      // own size, not the master's.
+      const rowMcItReports: McItProjectReport[] = [];
+      csvLocNameGen(myComp, width, height, newCompName, plm, mcItImages, newCompName + "_V01.aep", rowMcItReports);
       rep.status = "generated";
       rep.output = newCompName + "_V01.aep";
+
+      if (rowMcItReports.length > 0) {
+        const mcRep = rowMcItReports[0];
+        mcItReports.push(mcRep);
+        rep.imagesReplaced = mcItCountReplaced(mcRep);
+        if (mcRep.skipped) {
+          rep.imagesNote = mcRep.skipped;
+        } else if (rep.imagesReplaced === 0) {
+          // Nothing swapped and the project itself was fine -- surface WHY
+          // straight on the row. Without this a zero is indistinguishable
+          // between "no artwork at this size" (normal, the artwork simply
+          // wasn't supplied) and something actually wrong, and diagnosing it
+          // otherwise means going through the folders by hand.
+          let firstReason = "";
+          let considered = 0;
+          for (let mi = 0; mi < mcRep.items.length; mi++) {
+            const it = mcRep.items[mi];
+            if (it.action === "no-match") {
+              considered++;
+              if (firstReason === "") firstReason = it.reason || "";
+            }
+          }
+          if (considered > 0 && firstReason !== "") rep.imagesNote = firstReason;
+          else if (mcRep.items.length === 0) rep.imagesNote = "No PNG/JPG footage items to swap.";
+        }
+      }
     } catch (err) {
       rep.status = "error";
       rep.error = err.toString();
@@ -2715,7 +2950,20 @@ export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExi
   for (let r = 0; r < rowReports.length; r++) {
     if (rowReports[r].status === "generated") generated++;
   }
-  const message = generated + " of " + rowsAttempted + " row(s) generated.";
+
+  let mcItReplacedTotal = 0;
+  for (let r = 0; r < mcItReports.length; r++) {
+    mcItReplacedTotal += mcItCountReplaced(mcItReports[r]);
+  }
+
+  let message = generated + " of " + rowsAttempted + " row(s) generated.";
+  if (runMcIt) {
+    if (mcItImages.length > 0) {
+      message += " MC It! replaced " + mcItReplacedTotal + " image(s) inline.";
+    } else if (mcItSetupNote !== "") {
+      message += " " + mcItSetupNote;
+    }
+  }
   const runId = "" + new Date().getTime();
   const finishedAt = new Date().toString();
 
@@ -2758,5 +3006,11 @@ export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExi
     rows: rowReports,
     runId: runId,
     finishedAt: finishedAt,
+    mcItRan: runMcIt === true && mcItImages.length > 0,
+    mcItImageFolder: mcItImageFolder,
+    mcItImageCount: mcItImages.length,
+    mcItReplaced: mcItReplacedTotal,
+    mcItNote: mcItSetupNote,
+    mcItProjects: mcItReports,
   };
 };

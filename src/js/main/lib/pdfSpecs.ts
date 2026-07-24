@@ -253,6 +253,10 @@ export interface SpecRow {
   Size: string;
   Duration: string;
   Country: string;
+  // MEDIA SITE NAME straight off the PDF -- shown in the specs table so a row
+  // can be tied back to the screen it's for. Informational only: the host's
+  // csvLocaliserRun() reads columns 0-3 positionally and never looks at this.
+  Site: string;
 }
 
 // Mirrors the website CsvPreviewModal's formattedData: keep only rows that
@@ -267,7 +271,8 @@ export function reshapeSpecs(rawSpecs: RawSpec[], territory: string): SpecRow[] 
 
     let artwork = "DOOH";
     if (row.artworkType) {
-      const m = row.artworkType.match(/(DOOH|DINTH|FOH)/i);
+      // DFOH must precede FOH — otherwise a "DFOH" cell matches its FOH tail.
+      const m = row.artworkType.match(/(DOOH|DINTH|DFOH|FOH)/i);
       if (m) artwork = m[0].toUpperCase();
     }
 
@@ -283,6 +288,7 @@ export function reshapeSpecs(rawSpecs: RawSpec[], territory: string): SpecRow[] 
       Size: size,
       Duration: duration,
       Country: territory || "UNKNOWN",
+      Site: row.mediaSiteName ? String(row.mediaSiteName).replace(/\s+/g, " ").trim() : "",
     };
   });
 
@@ -302,10 +308,20 @@ export function reshapeSpecs(rawSpecs: RawSpec[], territory: string): SpecRow[] 
 
 // ─── public: build the [METADATA]/CSV text csvLocaliserRun() parses ───────────
 
-const CSV_HEADERS: (keyof SpecRow)[] = ["Artwork", "Campaign", "Size", "Duration", "Country"];
+// Site is deliberately LAST: csvLocaliserRun() splits each row on commas and
+// reads texLoc[0..3] positionally, so anything appended after Country is
+// carried along for the human reading the CSV without shifting a field the
+// host relies on (a comma inside a site name only ever adds a trailing,
+// ignored element for the same reason).
+const CSV_HEADERS: (keyof SpecRow)[] = ["Artwork", "Campaign", "Size", "Duration", "Country", "Site"];
 
+// csvLocaliserRun() strips quotes before splitting on commas, so a quoted
+// comma would still split a row — commas and newlines are replaced with a
+// space here rather than escaped, so what the host parses always matches what
+// this writes.
 function csvCell(v: string): string {
-  return `"${String(v || "").replace(/"/g, '""')}"`;
+  const flat = String(v || "").replace(/[\r\n,]+/g, " ").replace(/\s+/g, " ").trim();
+  return `"${flat.replace(/"/g, "")}"`;
 }
 
 export function buildLocaliserCsv(opts: {

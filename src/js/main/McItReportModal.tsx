@@ -15,7 +15,7 @@
 // way. The report interfaces mirror McItResult host-side.
 // =============================================================================
 import React, { useEffect, useState } from "react";
-import { Image as ImageIcon, X, CheckCircle2, AlertTriangle, CircleSlash } from "lucide-react";
+import { Image as ImageIcon, X, CheckCircle2, AlertTriangle, CircleSlash, CheckSquare, Square } from "lucide-react";
 import { evalTS } from "../lib/utils/bolt";
 import "./McItReportModal.scss";
 
@@ -113,12 +113,15 @@ export const McItReportHost: React.FC = () => {
     };
 
     // Dry run -> real run, reusing the exact folders the preview scanned (no
-    // dialogs). The fresh report replaces the preview in place.
-    const apply = async () => {
+    // dialogs). `selected` is the list of .aep filenames still ticked in the
+    // preview; the host passes it straight through so an unticked project is
+    // never opened at all (the filtering happens in mcIt(), not by running
+    // everything and discarding results).
+    const apply = async (selected: string[]) => {
         if (!report) return;
         setApplying(true);
         try {
-            const res = await evalTS("mcIt", report.aepFolder || "", report.imageFolder || "", false);
+            const res = await evalTS("mcIt", report.aepFolder || "", report.imageFolder || "", false, JSON.stringify(selected));
             if (res?.success) {
                 const r = res as McReport;
                 shownRunIdRef.current = r.runId || r.finishedAt || "";
@@ -135,7 +138,24 @@ export const McItReportHost: React.FC = () => {
     return <McItReportModal report={report} onClose={close} onApply={report.dryRun ? apply : undefined} applying={applying} />;
 };
 
-const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply?: () => void; applying?: boolean }> = ({ report, onClose, onApply, applying }) => (
+const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply?: (selected: string[]) => void; applying?: boolean }> = ({ report, onClose, onApply, applying }) => {
+    // Which projects are UNticked, keyed by .aep filename. Absent = included,
+    // so a fresh preview starts with everything selected (the previous
+    // behaviour) and unticking is the deliberate act.
+    const [excluded, setExcluded] = useState<Record<string, boolean>>({});
+
+    const projects = report.projects || [];
+    // A project with nothing to replace can't be "applied" either way, so only
+    // ones that would actually change something are selectable.
+    const actionable = projects.filter((p) => !p.skipped && p.items.some((i) => i.action === "replaced"));
+    const isOn = (aep: string) => !excluded[aep];
+    const selected = actionable.filter((p) => isOn(p.aep)).map((p) => p.aep);
+    const selectedReplacements = actionable
+        .filter((p) => isOn(p.aep))
+        .reduce((n, p) => n + p.items.filter((i) => i.action === "replaced").length, 0);
+    const allOn = selected.length === actionable.length;
+
+    return (
     <div className="mcit-overlay" onClick={onClose}>
         <div className="mcit-modal" onClick={(e) => e.stopPropagation()}>
             <div className="mcit-head">
@@ -151,16 +171,41 @@ const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply
                         {report.finishedAt ? <span className="mcit-finished"> · {report.finishedAt}</span> : null}
                     </div>
                 </div>
+                {onApply && actionable.length > 1 && (
+                    <button
+                        className="mcit-selectall"
+                        onClick={() => {
+                            const next: Record<string, boolean> = {};
+                            if (allOn) actionable.forEach((p) => { next[p.aep] = true; });
+                            setExcluded(next);
+                        }}
+                    >
+                        {allOn ? "Deselect all" : "Select all"}
+                    </button>
+                )}
                 <button className="mcit-close" onClick={onClose}><X size={16} /></button>
             </div>
 
             <div className="mcit-body">
-                {(report.projects || []).map((proj) => {
+                {projects.map((proj) => {
                     const replaced = proj.items.filter((i) => i.action === "replaced").length;
                     const misses = proj.items.filter((i) => i.action === "no-match").length;
+                    const selectable = onApply && !proj.skipped && replaced > 0;
+                    const off = selectable && !isOn(proj.aep);
                     return (
-                        <div key={proj.aep} className="mcit-proj">
+                        <div key={proj.aep} className={"mcit-proj" + (off ? " mcit-proj--off" : "")}>
                             <div className="mcit-proj-head">
+                                {selectable && (
+                                    <button
+                                        type="button"
+                                        className="mcit-proj-check"
+                                        onClick={() => setExcluded((prev) => ({ ...prev, [proj.aep]: !prev[proj.aep] }))}
+                                        title={off ? "Skip this project — click to include it" : "Included — click to skip it"}
+                                        aria-label={off ? `Include ${proj.aep}` : `Skip ${proj.aep}`}
+                                    >
+                                        {off ? <Square size={13} /> : <CheckSquare size={13} />}
+                                    </button>
+                                )}
                                 <span className="mcit-proj-name">{proj.aep}</span>
                                 {proj.resolution && <span className="mcit-proj-res">{proj.resolution}</span>}
                                 {proj.skipped ? (
@@ -202,8 +247,12 @@ const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply
                 {onApply ? (
                     <>
                         <button className="mcit-cancel" disabled={applying} onClick={onClose}>Cancel</button>
-                        <button className="mcit-done" disabled={applying} onClick={onApply}>
-                            {applying ? "Applying…" : `Apply — replace ${report.replaced ?? 0} image${(report.replaced ?? 0) === 1 ? "" : "s"}`}
+                        <button className="mcit-done" disabled={applying || selected.length === 0} onClick={() => onApply(selected)}>
+                            {applying
+                                ? "Applying…"
+                                : selected.length === 0
+                                    ? "Nothing selected"
+                                    : `Apply — replace ${selectedReplacements} image${selectedReplacements === 1 ? "" : "s"} in ${selected.length} project${selected.length === 1 ? "" : "s"}`}
                         </button>
                     </>
                 ) : (
@@ -212,6 +261,7 @@ const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply
             </div>
         </div>
     </div>
-);
+    );
+};
 
 export default McItReportModal;

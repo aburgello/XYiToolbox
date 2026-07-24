@@ -3532,6 +3532,43 @@ separate bespoke landing (two big cards + a flat "Utilities" grid), so
 everything below is Tools-only today even though RailScreen itself is
 written generically (keyed by `categoryId`) in case that changes.
 
+## Toolset edit mode: "emphasise" (star) a tool
+Alongside hide/reorder/move/rename, each edit-mode tile has a SECOND badge
+at its top-RIGHT (mirroring the top-left hide minus): a star that flags a
+tool as one the user reaches for constantly. Purely visual -- it never
+filters, moves or reorders anything, so it composes with the other edit-mode
+state instead of competing with it. A starred tool renders in normal mode
+wearing its group accent AT REST (filled `--btn-bg` background, accent
+border, white bold label) instead of only on hover, so a handful of
+constantly-used tools pop out of a dense grid while eye-scanning.
+- The extra ring is an **inset box-shadow, not a thicker border** -- a
+  border-width change would resize the tile and nudge every tile after it in
+  the wrapped row.
+- Persisted per-machine as `"OVToolsetStarred"` (`shell.ts`'s
+  `load/saveStarredToolsetActions`, same tab-separated `app.settings`
+  convention as hidden/order/groups/pinned) and included in team.ts's
+  `PROFILE_KEYS`, so it travels with a member's profile.
+- `unpinLink()` clears an unpinned link's star for the same reason it clears
+  its order/group entries -- nothing to restore to.
+- **The badge's own CSS must be scoped `.action-edit-face .action-star-btn`,
+  not a bare `.action-star-btn`.** Edit tiles sit inside `.action-grid.editing`,
+  and `Toolset.scss`'s `.action-grid button { padding: 8px 14px; gap: 6px;
+  background; color }` rule is MORE specific (0-2-1 vs 0-2-0) -- it won, the
+  badge inherited the grid button's padding, and the 13px star got squeezed
+  out of the fixed 20px circle so the badge shipped visibly EMPTY. The
+  neighbouring hide badge hides the same problem because its dash is a
+  CSS-drawn absolutely-positioned `::after`, not the lucide icon -- which is
+  also why both badges render as a DARK disc with a light glyph rather than
+  the light disc their declarations ask for. The star badge deliberately
+  matches that rendered result (dark disc, grey star, gold when on) rather
+  than its sibling's stated intent.
+- The star badge is hidden on an already-hidden tile (nothing to emphasise),
+  and edit mode previews the emphasis on the tile face itself so starring
+  gives feedback without leaving edit mode.
+- **Not visually verified in a real panel yet** -- typechecks + builds clean
+  and the two new bridge names resolve in `dist/cep/jsx/index.js`, but the
+  look wants a real-AE (or dev-server) glance.
+
 ## RailScreen edit mode: hide tools, move between stages, reorder -- same
 ## long-press system as the Toolset grid
 Per direct request: bring the Toolset grid's long-press "hold until it
@@ -4187,3 +4224,219 @@ two-tab LOCALISE A CAMPAIGN surface (CSV Localiser / Trott & Batch only),
 and the TOOLS row; the hero opens Localised Library full-width and Back
 returns to the landing; Trott 2.0 shows no fields, the legacy disclosure
 reveals them on Auto-detect. `tsc` (both configs) + `yarn build` clean.
+
+## Batch Match (new tool) + three real AE-DOM findings
+
+`tools/BatchMatch.tsx` + `jsx/aeft/batchMatch.ts`, registered under Tools
+(rail stage "Utility"). Built from a real job: a CC Light Sweep's last
+Center keyframe had to be retargeted across a Finland batch. Capture a
+property from the open project (whatever is selected in the Timeline),
+then write a derived value onto the equivalent property across every
+`.aep` in a folder. Two-phase: `batchMatchPreview` (never writes) builds a
+per-row current -> proposed table with checkboxes, `batchMatchApply`
+writes only the ticked ids. Apply goes through `losOpenForEdit()`, so a
+file still carrying an isolated `OV` token is copy-first'd.
+
+**How a property is re-found in another file**: the reference is stored as
+its matchName PATH from the layer down (`["ADBE Effect Parade", "CC Light
+Sweep", "Center"]`, `["ADBE Transform Group", "ADBE Position"]`) and
+re-walked per target. That is what makes it generic across effects and
+transforms rather than one-effect-specific, and matchNames survive AE
+version/UI-language differences where display names don't.
+
+**Transform modes are an explicit user choice, never inferred**: verbatim
+/ scaleSource / scaleComp / offset / multiply, plus an axis mask (write X
+only, etc.). Many properties (an effect's Center, a Position) are in
+SOURCE- or COMP-pixel space, so the same number means a different place in
+a different asset -- in the real batch, `5412.6` on a 3600px-wide PNG had
+to become `3382.9` on a 2250px one. There is no safe way to guess which
+mode is meant.
+
+### Three findings from running this against real projects
+
+1. **A project that has imported a sibling project carries that sibling's
+   ENTIRE `Composition/Main` tree**, inside a folder named `<name>.aep`.
+   "Is this comp under a folder called Main" is therefore NOT enough to
+   identify a file's own deliverable -- on the real batch that rule alone
+   proposed 10 edits where only 3 were genuine (each landscape file wanted
+   to edit its imported copies of the portrait comps). **The rule that
+   works: exclude any comp with an ancestor folder whose name ends
+   `.aep`.** Both filters ship on by default (`requireMainFolder`,
+   `excludeImportedAep`). Any future tool that walks "every comp in the
+   project" across a batch needs this same exclusion.
+2. **Never identify an AE DOM object by `===`.** `bmOccurrenceOf` first
+   compared `parent.property(i) === child` to find a property's index
+   among its siblings; in ExtendScript two accesses to the same property
+   return DIFFERENT wrapper objects, so it never matched, every captured
+   path recorded `occurrence: 1` instead of `0`, and resolution then
+   looked for a nonexistent second copy of every group -- so the tool
+   found nothing in ANY file, including the reference file itself. Use
+   `propertyIndex` (or another value-based identifier). Same family as
+   this file's other "the AE DOM is not a normal JS object graph" traps
+   (`instanceof` against host classes, `.match()` on names). Invisible to
+   `tsc` and to browser preview; only a real-AE run surfaces it.
+3. **`app.open()` and a dirty project: context-dependent, and the PANEL is
+   fine.** Driving AE through AppleScript `DoScript`, `app.open()` silently
+   SAVED the currently-open dirty project to disk -- no dialog, mtime and size
+   changed (reproduced deliberately on copies). That is an artefact of the
+   automation context: `DoScript` suppresses modal dialogs (the same reason a
+   `confirm()` deadlocks under it). **From the panel, where `evalScript` runs
+   with AE's UI live, AE shows its normal "save changes?" prompt** -- confirmed
+   by the studio, who sees that dialog every time they start an MC It! dry run.
+   So no panel tool has ever silently written the user's open project, and
+   none of them force-close it. `batchMatch` briefly did, as a "fix" for the
+   automation-only symptom; that was REVERTED, because force-closing removes
+   the user's chance to save and bins unsaved work. **Do not re-add a
+   defensive close here.** The thing to remember is narrower: any script this
+   repo drives through AppleScript/`DoScript` for testing runs with dialogs
+   suppressed, so it can write files the same code would have prompted about
+   in the panel -- test destructive paths on COPIES.
+
+Verified: `tsc -p tsconfig-build.json` + `yarn build` clean, all four
+bridge names resolve in `dist/cep/jsx/index.js`, and the whole
+capture -> preview path was exercised against the real Finland batch in
+AE 26.2.1 (correct per-size proposals, correct "already at" idempotence,
+`filesWritten: 0`, no mtime changes). **`batchMatchApply` itself has NOT
+been run from the panel UI yet** -- the equivalent writes were done by a
+one-off script, so the apply path and the React page both still want a
+real-panel pass.
+
+## DOOM easter egg (yes, really)
+
+Typing the exact word `doom` into the home search box (same exact-match rule
+as the existing `jacqui` theme egg, `HomeScreen.tsx`) reveals a "RIP AND
+TEAR" card; clicking it mounts `main/DoomEasterEgg.tsx` as a full-panel
+overlay running actual DOOM (shareware episode 1) in WebAssembly. Assets
+live verbatim in `src/js/public/doom/` (Vite's `publicDir`, since `root` is
+`src/js`) -- so they're served at `/doom/` in `yarn dev` AND copied to
+`dist/cep/doom/` on build, with no `copyAssets` entry needed. ~6.5 MB added
+to the ZXP. The engine is Cloudflare's `doom-wasm` (a WASM chocolate-doom),
+obtained prebuilt from the `@nicejsisverycool/tizendoom` npm package -- no
+Emscripten toolchain is needed to build this repo, and the glue was checked
+to contain zero `?.`/`??` so it clears the `chrome74` target.
+
+**Three things that will silently break it if "tidied":**
+1. **The glue is injected as a real `<script>` tag, never eval'd.** It opens
+   with `var Module = typeof Module !== "undefined" ? Module : {}` -- under
+   `new Function(code)()` that `var` is function-local and hoisted, so it
+   sees `undefined`, silently discards our entire config object (canvas,
+   wasm, WAD) and boots into nothing with no error. This is the one place in
+   this app where the CEP production loader's own `new Function` trick (see
+   the ZXP CSS gotcha above) is exactly the wrong tool.
+2. **Nothing is ever fetched by the engine.** The packaged panel is a
+   `file://` page where `fetch()` fails outright, so Emscripten's own asset
+   loading and the reference `FS.createPreloadedFile()` XHR are both
+   unusable. We read the bytes ourselves and inject them: the wasm via
+   `Module.wasmBinary` (short-circuits all of Emscripten's locate/fetch
+   logic) and the WAD/cfg via `FS.writeFile` in `preRun`. Bytes come from
+   Node `fs` (`lib/cep/node.ts`, the same `--enable-nodejs` escape hatch
+   wrikeApi.ts uses for CORS), falling back to `fetch` in browser preview --
+   so unusually for this codebase, the feature IS exercisable in `yarn dev`.
+   **That fallback dispatches on the URL SCHEME, never on "is Node
+   available"** -- shipped that way first and it broke immediately on a real
+   AE install: the panel is a `file://` page once built but an
+   `http://localhost:3000` page under `yarn dev` HMR, and **Node is present
+   in BOTH** (it's the same AE panel either way), so the Node check sent the
+   dev-mode http URL into `fs.readFileSync` and produced a baffling
+   `ENOENT ... open 'http://localhost:3000/doom/...'`. Any future feature
+   choosing between Node fs and fetch in this panel has the same trap: test
+   `location.href` for `file://`, don't test for Node.
+3. **Escape does NOT close the overlay** -- it's DOOM's own menu key. Quit is
+   the X button or Ctrl/Cmd+Shift+Q; every other key is left to the game.
+
+`-window -nogui -nomusic` and deliberately NO `-connect`/`-server`, which is
+what keeps this build's websocket multiplayer code dormant and boots it
+straight to single player.
+
+**LICENSING, flagged not buried**: chocolate-doom is GPL-2.0, so shipping it
+in a signed ZXP is a conveyance carrying a source-availability obligation,
+and extracting DOOM1.WAD from the shareware distribution is arguably outside
+that licence's "complete unmodified package" terms. Fine for an internal
+studio gag; before any client-facing release, swap `doom1.wad` for Freedoom
+Phase 1 (BSD-ish, drop-in -- chocolate-doom accepts it as a valid IWAD, no
+code change) and publish the doom-wasm source offer.
+
+**A SECOND global-scope trap, found only in the real panel**: the glue was
+originally injected as a `<script>` tag (the obvious fix for the `Module`
+adoption problem in note 1). That runs it in TRUE GLOBAL SCOPE, where the
+CEP host already declares `key` lexically as a number -- so the glue's own
+top-level `var key;` threw `Identifier 'key' has already been declared`.
+That's a PARSE-time SyntaxError, so not one line of the 276 KB glue ever
+executed, `script.onerror` never fired (it only covers network failure), and
+the overlay hung on "Loading DOOM..." forever with no visible error. Fixed by
+wrapping the source in `(function(Module){ ... })(window.Module)` -- a `var`
+shadowing a PARAMETER of the same name reuses the parameter's binding, so
+`Module` is still adopted, while every other top-level name becomes
+function-scoped and can no longer collide with the host. **Don't "simplify"
+this back to a script tag.**
+
+**ONE BOOT PER PAGE SESSION (`bootedThisSession`)**: Emscripten has no
+destroy-the-runtime API, so a second boot in one page leaves two runtimes
+fighting over the same `#canvas` and globals, which HARD-CRASHES the CEF
+renderer (observed -- AE's panel died and respawned). This panel mounts React
+twice on cold start (see the GsapScreenTransition dedupe above), so this is a
+reachable path, not a theoretical one. The flag is module-scope on purpose:
+it has to survive remounts, which state/refs wouldn't.
+
+**KEYBOARD: AE swallows keys unless the extension explicitly claims them.**
+First real play-test got mouse input but NO keyboard at all. The panel's other
+keyboard features (search, Cmd+K) work only because AE already routes keys to
+a focused editable field -- a `<canvas>` gets no such treatment, so AE
+consumed every keystroke as its own shortcut. Fixed with CEP's
+`registerKeyEventsInterest` (available and typed in `lib/cep/csinterface`),
+registering each DOOM key across every ctrl/shift/alt combination, since the
+modifier flags describe press-time modifier STATE and DOOM is played with Ctrl
+or Shift held. **`metaKey` is deliberately never claimed** so Cmd+S still
+belongs to AE, and the interest list MUST be released with `"[]"` on unmount
+in its own effect -- otherwise DOOM keeps stealing those keys from AE for the
+rest of the session. Any future panel feature needing real keyboard input
+outside a text field needs this same API.
+
+**...but `registerKeyEventsInterest` ALONE DID NOT WORK on macOS AE** --
+arrows still drove AE's own panel navigation and DOOM received nothing. It's
+kept (harmless, and it's the documented path on Windows) but the thing that
+actually delivers keys is a **focused invisible `<input>`** inside the
+overlay: AE forwards keystrokes to the web view when an EDITABLE FIELD holds
+focus and swallows them as host shortcuts otherwise -- which is precisely why
+the home search box and Cmd+K have always worked. Its keydown events bubble to
+`document`, which is exactly where SDL registered its handlers
+(`specialHTMLTargets[1]` in the glue), so no manual re-dispatch is needed.
+Three constraints on that input: it must stay genuinely focusable
+(`display:none`/`visibility:hidden` can't hold focus -- hence opacity-0 and
+1px), it needs `pointer-events:none` so it can't swallow clicks meant for the
+canvas or the close button, and focus is re-asserted on a 400ms interval
+rather than on every `blur` so it can't get into a focus tug-of-war with a
+real click on the X. **This "focus a hidden input" trick is the general answer
+for any future panel feature needing real keyboard input outside a text
+field** -- prefer it to `registerKeyEventsInterest` on Mac.
+
+**MOUSE**: DOOM's mouse was briefly switched off (`use_mouse 0`) to dodge
+laggy/offset pointer behaviour -- that was a REGRESSION (it removed the only
+input that worked at the time) and is reverted; `use_mouse 1` stands. The
+offset itself is canvas coordinate scaling: SDL renders at a large internal
+resolution (1600x1200 observed) while the canvas is CSS-sized down to the
+panel width. Not yet solved; the game is fully keyboard-playable regardless.
+
+**Debugging this panel for real**: `dist/cep/.debug` exposes CEF remote
+debugging on **port 8860** -- `curl http://127.0.0.1:8860/json/list` gives a
+`webSocketDebuggerUrl`, and a ~15-line Node script (Node 24 has a global
+`WebSocket`) can drive `Runtime.evaluate` / `Page.captureScreenshot` against
+the live panel. That is how all of the above was diagnosed. Two lessons:
+log progress to a FILE via Node `fs` rather than the console, because a
+renderer crash takes the console with it but leaves the file; and remember
+this is the user's live AE session -- a crash-y test interrupts their work.
+
+**Verification status**: `tsc -p tsconfig-build.json` + `yarn build` clean,
+`dist/cep/doom/` confirmed populated with all four assets, `.doom-*` classes
+confirmed in the single bundled stylesheet (cssCodeSplit:false still
+holding), and all four assets confirmed served by the dev server. **The engine IS
+confirmed working inside the real AE panel** -- driven over the debug bridge
+above, chocolate-doom printed its full startup banner, loaded the WAD, and
+rendered E1M1 with the HUD into a canvas in the panel (screenshotted). What
+is NOT yet confirmed is the same thing launched through the component's own
+UI: the one attempt to drive it that way crashed the renderer, most likely
+the double-boot now prevented by `bootedThisSession`. So the remaining
+acceptance test is simply: reload the panel, type `doom`, click the card.
+Note the canvas MUST keep `id="canvas"` -- SDL resolves its event target by
+that exact selector, and a canvas without it dies in `SDL_CreateWindow` with
+a null `addEventListener`.

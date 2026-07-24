@@ -42,7 +42,7 @@ interface UtilityEntry {
 // so it reads as its own first-class destination rather than a middle tab.
 type Pane = "csv" | "batch";
 const PANES: { id: Pane; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
-    { id: "csv",   label: "CSV Localiser", icon: FileSpreadsheet },
+    { id: "csv",   label: "Big Guy Localiser", icon: FileSpreadsheet },
     { id: "batch", label: "Trott & Batch", icon: Rabbit },
 ];
 

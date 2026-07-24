@@ -252,6 +252,11 @@ const TOOLSET_LABELS_KEY = "OVToolsetLabels";
 // namespaces them (a "link:" prefix) only in its own in-memory order/group
 // keys, not here.
 const TOOLSET_PINNED_KEY = "OVToolsetPinned";
+// Action ids the user has STARRED in edit mode -- purely visual emphasis
+// (a brighter, filled tile) so the handful of tools someone reaches for
+// constantly stand out while eye-scanning a dense grid. Independent of
+// hidden/order/group: starring never moves or filters anything.
+const TOOLSET_STARRED_KEY = "OVToolsetStarred";
 
 function loadTabList(key: string): string[] {
   if (app.settings.haveSetting(TOOLSET_SETTINGS_SECTION, key)) {
@@ -291,6 +296,9 @@ export const saveToolsetLabels = (flatPairs: string[]): Result => saveTabList(TO
 
 export const loadPinnedToolsetLinks = (): string[] => loadTabList(TOOLSET_PINNED_KEY);
 export const savePinnedToolsetLinks = (ids: string[]): Result => saveTabList(TOOLSET_PINNED_KEY, ids);
+
+export const loadStarredToolsetActions = (): string[] => loadTabList(TOOLSET_STARRED_KEY);
+export const saveStarredToolsetActions = (ids: string[]): Result => saveTabList(TOOLSET_STARRED_KEY, ids);
 
 // =============================================================================
 // RailScreen personalisation -- the SAME long-press "edit mode" concept as

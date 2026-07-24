@@ -190,3 +190,45 @@
 
 
 .mcit-head .mcit-finished { color: #777; }
+
+// ── per-project include/skip (dry-run preview only) ──────────────────────────
+// The checkbox is a <button> with a lucide icon rather than a native
+// <input type="checkbox">, matching CheckboxToggle.tsx's reasoning: a native
+// checkbox renders as an unstyled OS control in the middle of this fully
+// custom dark modal.
+.mcit-proj-check {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    padding: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--ov-accent, #5eead4);
+    transition: color 0.15s ease;
+
+    &:hover { color: #fff; }
+}
+
+// An unticked project stays fully readable -- it is dimmed, not hidden, so
+// the report still shows what WOULD have happened in it.
+.mcit-proj--off {
+    opacity: 0.42;
+
+    .mcit-proj-check { color: #777; }
+    .mcit-proj-name { text-decoration: line-through; }
+}
+
+.mcit-selectall {
+    flex: 0 0 auto;
+    margin-right: 6px;
+    padding: 3px 8px;
+    font-size: 10.5px;
+    color: #aaa;
+    background: #2a2a2a;
+    border: 1px solid #3a3a3a;
+    border-radius: 5px;
+    cursor: pointer;
+
+    &:hover { color: #fff; border-color: #4a4a4a; }
+}

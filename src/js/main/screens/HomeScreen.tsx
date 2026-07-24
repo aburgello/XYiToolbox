@@ -28,6 +28,7 @@ import { useTheme } from "../hooks/useTheme";
 import { THEMES } from "../themes";
 import ThemePicker from "../ThemePicker";
 import ThemeDecoration from "../ThemeDecoration";
+import DoomEasterEgg from "../DoomEasterEgg";
 import ToolsetTool from "../tools/Toolset";
 import XYToolsDroplet from "../XYToolsDroplet";
 import Tooltip from "../Tooltip";
@@ -138,6 +139,13 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
     // name and won't collide with anything actually searchable.
     const { themeId, setTheme, decoratedThemes, toggleThemeDecoration } = useTheme();
     const isThemeEasterEgg = search.trim().toLowerCase() === "jacqui";
+
+    // Second hidden egg, same exact-match rule as "jacqui" above (so it can't
+    // fire while typing toward a real tool name): typing "doom" offers a
+    // launch card, and launching mounts actual DOOM over the panel. Kept as a
+    // two-step reveal rather than booting on keystroke -- see DoomEasterEgg.tsx.
+    const isDoomEasterEgg = search.trim().toLowerCase() === "doom";
+    const [showDoom, setShowDoom] = useState(false);
     const activeThemeDecoration = decoratedThemes.has(themeId)
         ? THEMES.find((t) => t.id === themeId)
         : undefined;
@@ -424,6 +432,13 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
                         decoratedThemes={decoratedThemes}
                         onToggleDecoration={toggleThemeDecoration}
                     />
+                                    ) : isDoomEasterEgg ? (
+                                        <button className="doom-launch-card" onClick={() => setShowDoom(true)}>
+                                            <span className="doom-launch-title">RIP AND TEAR</span>
+                                            <span className="doom-launch-sub">
+                                                Launch DOOM (shareware E1) inside the toolbox
+                                            </span>
+                                        </button>
                                     ) : searchHits.length === 0 ? (
                                         <p className="hint">No tools match "{search}".</p>
                                     ) : (
@@ -485,6 +500,12 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
 
                 </div>
             </div>
+
+            {/* DOOM easter egg -- also a sibling of .home-screen so it covers
+                the full panel. Unmounting tears the WASM runtime down. */}
+            <AnimatePresence>
+                {showDoom && <DoomEasterEgg onClose={() => setShowDoom(false)} />}
+            </AnimatePresence>
 
             {/* Easter egg overlay -- sibling of .home-screen so it covers the full panel */}
             <AnimatePresence>

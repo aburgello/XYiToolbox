@@ -31,6 +31,8 @@ import {
     Wand2,
     Plus,
     X,
+    RotateCcw,
+    FolderOpen,
 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { fs, path } from "../../lib/cep/node";
@@ -58,6 +60,8 @@ interface CsvLocRow {
     master?: string;
     output?: string;
     error?: string;
+    imagesReplaced?: number; // inline MC It! pass, per row
+    imagesNote?: string;
 }
 
 // The campaign root (e.g. .../INT) holds sibling *_Markets and *_Masters folders
@@ -98,6 +102,9 @@ interface BuildRow {
 
 const CUSTOM_CREATIVE = "__custom__";
 
+// Artwork types offered in both the scanned-row editor and Build-a-batch.
+const ARTWORK_TYPES = ["DOOH", "DINTH", "FOH", "DFOH"];
+
 // List the campaign's creatives from the masters folder, PANEL-SIDE (fs) so it
 // works regardless of the host, same as the Specs scan reads folders itself.
 // Prefers the clean AE/<Creative> subfolder names; if that structure isn't
@@ -130,7 +137,7 @@ function scanCreativesFromMasters(aepPath: string): string[] {
             const full = path.join(dir, en.name);
             if (en.isDirectory()) walk(full, depth + 1);
             else if (/\.aep$/i.test(en.name)) {
-                const m = en.name.match(/(?:DOOH|DINTH|FOH)_(.+?)_\d+x\d+/i);
+                const m = en.name.match(/(?:DOOH|DINTH|DFOH|FOH)_(.+?)_\d+x\d+/i);
                 if (m && m[1]) found[m[1]] = true;
             }
         }
@@ -180,6 +187,8 @@ function csvResultToLocGenReport(res: {
         master: r.master,
         output: r.output,
         error: r.error,
+        imagesReplaced: r.imagesReplaced,
+        imagesNote: r.imagesNote,
     }));
     return { tool: label, message: res.message, outputFolder: res.outputFolder, rows, runId: res.runId, finishedAt: res.finishedAt };
 }
@@ -195,6 +204,31 @@ const CSVLocaliserTool = () => {
     const [mastersAuto, setMastersAuto] = useState(false);
     const [marketsRoot, setMarketsRoot] = useState("");
     const [skipExisting, setSkipExisting] = useState(true);
+    // Inline MC It! -- ON by default. Each generated file is already open and
+    // about to be saved, so swapping its PNG/JPG footage in that same session
+    // costs no extra open/save cycle; running MC It! separately afterwards
+    // reopens and resaves every file for the same result. The image folder is
+    // derived (<Territory>/JPG_PNG/<Batch>, sibling of the AE folder), never
+    // asked for -- see csvLocaliserRun's mcIt setup block.
+    const [runMcIt, setRunMcIt] = useState(true);
+    // Batches whose footage was already swapped by the inline pass this
+    // session (keyed by batchKey). Only used to relabel the standalone MC It!
+    // button as a deliberate RE-run, so it doesn't read as the expected next
+    // step after localising -- a dry run there would list swaps that are
+    // effectively no-ops (MC It! re-matches already-localised footage by
+    // design), which is easy to misread as "the inline pass didn't work".
+    const [mcItInlineDone, setMcItInlineDone] = useState<Record<string, boolean>>({});
+    // Collapsed batch sections, keyed by batchKey. Stores the CLOSED ones, so
+    // the default (absent from the set) stays open -- a territory that only
+    // has one batch behaves exactly as it did before this was added.
+    const [collapsedBatches, setCollapsedBatches] = useState<Set<string>>(new Set());
+    const toggleBatchCollapsed = (key: string) =>
+        setCollapsedBatches((s) => {
+            const next = new Set(s);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+        });
     const [busy, setBusy] = useState(false);
     const [progress, setProgress] = useState<string | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
@@ -236,6 +270,38 @@ const CSVLocaliserTool = () => {
     };
 
     const includedCount = (key: string, rowCount: number) => rowCount - (excludedRows[key]?.size || 0);
+
+    // Per-cell manual edits, keyed by batch key -> row index -> field overrides.
+    // The scanned SpecRow (straight from the PDF parse) is left untouched; this
+    // overlay wins at render AND at run time (see effectiveRow), so a mis-parsed
+    // value — a wrong size, a dropped campaign name — can be corrected in place
+    // without re-scanning, and reverted back to what the PDF said. Same overlay
+    // pattern as excludedRows: the host only ever sees the effective rows.
+    const [editedRows, setEditedRows] = useState<Record<string, Record<number, Partial<SpecRow>>>>({});
+
+    // The row as it will actually be localised: PDF parse + any manual edits.
+    const effectiveRow = (key: string, idx: number, r: SpecRow): SpecRow => ({ ...r, ...(editedRows[key]?.[idx] || {}) });
+
+    const isRowEdited = (key: string, idx: number) => {
+        const patch = editedRows[key]?.[idx];
+        return !!patch && Object.keys(patch).length > 0;
+    };
+
+    const editRowField = (key: string, idx: number, field: keyof SpecRow, value: string) =>
+        setEditedRows((prev) => {
+            const batch = { ...(prev[key] || {}) };
+            batch[idx] = { ...(batch[idx] || {}), [field]: value };
+            return { ...prev, [key]: batch };
+        });
+
+    // Drop every override on one row, snapping it back to the parsed values.
+    const revertRow = (key: string, idx: number) =>
+        setEditedRows((prev) => {
+            if (!prev[key]) return prev;
+            const batch = { ...prev[key] };
+            delete batch[idx];
+            return { ...prev, [key]: batch };
+        });
 
     // ── manual batch builder ("Build a batch" — the visual alternative to
     // Paste CSV): pick one territory from the campaign, pick creatives from the
@@ -291,6 +357,7 @@ const CSVLocaliserTool = () => {
             Size: `${parseInt(r.width, 10)}x${parseInt(r.height, 10)}`,
             Duration: String(parseInt(r.duration, 10)),
             Country: buildTerritory,
+            Site: "", // hand-built rows have no PDF to read a site name from
         }));
         if (!rows.length) { setNotice("Add at least one complete row (creative, width, height, duration)."); return; }
 
@@ -301,7 +368,7 @@ const CSVLocaliserTool = () => {
             const sourceFolder = path.join(marketsRoot, buildTerritory);
             const batch = buildBatch.trim() || "Batch_1";
             const csv = buildLocaliserCsv({ territory: buildTerritory, batch, sourceFolder, rows });
-            const res = await evalTS("csvLocaliserRun", aepPath, csv, skipExisting);
+            const res = await evalTS("csvLocaliserRun", aepPath, csv, skipExisting, runMcIt);
             if (res === undefined) throw new Error("no bridge");
             if (res.success) {
                 const rrows = (res as { rows?: CsvLocRow[] }).rows || [];
@@ -524,9 +591,12 @@ const CSVLocaliserTool = () => {
         }
         setNotice(null);
         const key = batchKey(t.territory, b.pdfName);
-        // Drop any rows the user discarded (e.g. on-hold Wrike tasks still in
-        // the PDF). If they've excluded everything, there's nothing to run.
-        const rowsToRun = b.rows.filter((_, i) => !isRowExcluded(key, i));
+        // Apply any manual cell edits, then drop rows the user discarded (e.g.
+        // on-hold Wrike tasks still in the PDF). If they've excluded everything,
+        // there's nothing to run.
+        const rowsToRun = b.rows
+            .map((r, i) => effectiveRow(key, i, r))
+            .filter((_, i) => !isRowExcluded(key, i));
         if (!rowsToRun.length) {
             setNotice(`${t.territory} · ${b.batch}: every row is excluded — nothing to localise.`);
             return;
@@ -536,11 +606,15 @@ const CSVLocaliserTool = () => {
         try {
             const { buildLocaliserCsv } = await import("../lib/pdfSpecs");
             const csv = buildLocaliserCsv({ territory: t.territory, batch: b.batch, sourceFolder: t.sourceFolder, rows: rowsToRun });
-            const res = await evalTS("csvLocaliserRun", aepPath, csv, skipExisting);
+            const res = await evalTS("csvLocaliserRun", aepPath, csv, skipExisting, runMcIt);
             if (res === undefined) throw new Error("no bridge");
             const rows = (res.success ? (res as { rows?: CsvLocRow[] }).rows : undefined) || [];
             const problems = rows.filter((r) => r.status === "no-master" || r.status === "error").length;
             if (rows.length) setBatchRows((s) => ({ ...s, [key]: rows }));
+            // mcItRan is true only when the pass actually had images to work
+            // with -- a derivation miss leaves it false, so the button keeps
+            // its normal label and stays the right next step.
+            if ((res as { mcItRan?: boolean }).mcItRan) setMcItInlineDone((s) => ({ ...s, [key]: true }));
             setBatchStatus((s) => ({ ...s, [key]: res.success && problems === 0 ? "done" : "failed" }));
             setNotice(res.success ? `${t.territory} · ${b.batch}: ${res.message || "run finished."}` : res.error || "Something went wrong.");
             // Inline strip above stays; also pop the shared results modal.
@@ -572,11 +646,26 @@ const CSVLocaliserTool = () => {
         }
     };
 
+    // Open the territory's Specs folder (where the found batch PDFs live) in
+    // Finder/Explorer so the parse can be sanity-checked against the real PDFs.
+    // Falls back to the territory root if there's no Specs subfolder.
+    const revealTerritory = async (t: TerritoryScan) => {
+        setNotice(null);
+        const target = t.hasSpecs ? path.join(t.sourceFolder, "Masters", "Specs") : t.sourceFolder;
+        try {
+            const res = await evalTS("revealUsefulFolder", target);
+            if (res === undefined) throw new Error("no bridge");
+            if (!res.success) setNotice(res.error || "Couldn't open that folder.");
+        } catch (e: any) {
+            setNotice(e?.message || "No CEP bridge — open this panel inside After Effects.");
+        }
+    };
+
     const runPaste = async () => {
         setNotice(null);
         setBusy(true);
         try {
-            const res = await evalTS("csvLocaliserRun", aepPath, csvText, skipExisting);
+            const res = await evalTS("csvLocaliserRun", aepPath, csvText, skipExisting, runMcIt);
             if (res === undefined) throw new Error("no bridge");
             if (res.success) {
                 const rows = (res as { rows?: CsvLocRow[] }).rows || [];
@@ -653,6 +742,11 @@ const CSVLocaliserTool = () => {
 
                 <div className="specs-actions-row">
                     <CheckboxToggle checked={skipExisting} onChange={setSkipExisting} label="Skip existing files" />
+                    <Tooltip text="Swap each generated file's PNG/JPG footage for the localised versions in the territory's JPG_PNG batch folder, while the file is still open — instead of re-opening every file afterwards with MC It!">
+                        <span>
+                            <CheckboxToggle checked={runMcIt} onChange={setRunMcIt} label="Run MC It! inline" />
+                        </span>
+                    </Tooltip>
                     <button className="specs-scan-btn" disabled={busy || !marketsRoot} onClick={runScan}>
                         {scan ? <RefreshCw size={14} /> : <ScanSearch size={14} />} {scan ? "Re-scan" : "Scan Specs"}
                     </button>
@@ -682,12 +776,19 @@ const CSVLocaliserTool = () => {
                             const statusClass = runnable ? "ok" : t.hasSpecs ? "warn" : "muted";
                             return (
                                 <div key={t.territory} className={"specs-terr" + (runnable ? "" : " is-disabled")}>
-                                    <button className="specs-terr-main" onClick={() => runnable && toggleExpand(t.territory)} disabled={!runnable}>
-                                        <MapPin size={13} />
-                                        <span className="specs-terr-name">{t.territory}</span>
-                                        <span className={"specs-pill specs-pill--" + statusClass}>{status}</span>
-                                        {runnable && (open ? <ChevronDown size={14} /> : <ChevronRight size={14} />)}
-                                    </button>
+                                    <div className="specs-terr-head">
+                                        <button className="specs-terr-main" onClick={() => runnable && toggleExpand(t.territory)} disabled={!runnable}>
+                                            <MapPin size={13} />
+                                            <span className="specs-terr-name">{t.territory}</span>
+                                            <span className={"specs-pill specs-pill--" + statusClass}>{status}</span>
+                                            {runnable && (open ? <ChevronDown size={14} /> : <ChevronRight size={14} />)}
+                                        </button>
+                                        <Tooltip text={t.hasSpecs ? "Open this territory's Specs folder in Finder/Explorer" : "Open this territory's folder in Finder/Explorer"}>
+                                            <button className="specs-terr-reveal" onClick={() => revealTerritory(t)} aria-label={`Open ${t.territory} folder`}>
+                                                <FolderOpen size={14} />
+                                            </button>
+                                        </Tooltip>
+                                    </div>
 
                                     {open && runnable && (
                                         <div className="specs-terr-body">
@@ -697,17 +798,30 @@ const CSVLocaliserTool = () => {
                                                 const canRun = b.rows.length > 0;
                                                 const incl = includedCount(key, b.rows.length);
                                                 const someExcluded = incl < b.rows.length;
+                                                const batchOpen = !collapsedBatches.has(key);
                                                 return (
-                                                    <div key={b.pdfName} className="specs-batch">
+                                                    <div key={b.pdfName} className={"specs-batch" + (batchOpen ? "" : " is-collapsed")}>
                                                         <div className="specs-batch-head">
-                                                            <FileText size={12} />
-                                                            <span className="specs-batch-name">{b.pdfName}</span>
-                                                            <span className="specs-batch-tag">{b.batch}</span>
-                                                            {b.error ? <span className="specs-batch-err">{b.error}</span> : (
-                                                                <span className={"specs-batch-ok" + (someExcluded ? " specs-batch-ok--filtered" : "")}>
-                                                                    {someExcluded ? `${incl} of ${b.rows.length} rows` : `${b.rows.length} rows`}
-                                                                </span>
-                                                            )}
+                                                            {/* Only the label area toggles -- the action buttons to the
+                                                                right are siblings, not children, so clicking Localise or
+                                                                MC It! can never also collapse the section. Same split as
+                                                                .specs-terr-main above. */}
+                                                            <button
+                                                                className="specs-batch-main"
+                                                                onClick={() => toggleBatchCollapsed(key)}
+                                                                aria-expanded={batchOpen}
+                                                                title={batchOpen ? "Collapse this batch" : "Expand this batch"}
+                                                            >
+                                                                {batchOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                                                                <FileText size={12} />
+                                                                <span className="specs-batch-name">{b.pdfName}</span>
+                                                                <span className="specs-batch-tag">{b.batch}</span>
+                                                                {b.error ? <span className="specs-batch-err">{b.error}</span> : (
+                                                                    <span className={"specs-batch-ok" + (someExcluded ? " specs-batch-ok--filtered" : "")}>
+                                                                        {someExcluded ? `${incl} of ${b.rows.length} rows` : `${b.rows.length} rows`}
+                                                                    </span>
+                                                                )}
+                                                            </button>
                                                             {canRun && (
                                                                 <>
                                                                     <button
@@ -729,19 +843,25 @@ const CSVLocaliserTool = () => {
                                                                     </button>
                                                                     {/* Enabled once the batch's AE output exists (pre-scan
                                                                         detection or a completed run this session). */}
-                                                                    <Tooltip text="Swap the placeholder PNG/JPGs in this batch's AEPs for the localised images (previews first)">
+                                                                    <Tooltip
+                                                                        text={
+                                                                            mcItInlineDone[key]
+                                                                                ? "Footage was already swapped during localisation. Run this only to redo the swap — the preview will list matches again, including ones already applied."
+                                                                                : "Swap the placeholder PNG/JPGs in this batch's AEPs for the localised images (previews first)"
+                                                                        }
+                                                                    >
                                                                         <button
                                                                             className="specs-batch-run specs-batch-mcit"
                                                                             disabled={busy || (!b.done && st !== "done")}
                                                                             onClick={() => runBatchMcIt(t, b)}
                                                                         >
-                                                                            <ImageIcon size={12} /> MC It!
+                                                                            <ImageIcon size={12} /> {mcItInlineDone[key] ? "Re-run MC It!" : "MC It!"}
                                                                         </button>
                                                                     </Tooltip>
                                                                 </>
                                                             )}
                                                         </div>
-                                                        {b.rows.length > 0 && (
+                                                        {batchOpen && b.rows.length > 0 && (
                                                             <table className="specs-table specs-table--selectable">
                                                                 <thead>
                                                                     <tr>
@@ -757,14 +877,17 @@ const CSVLocaliserTool = () => {
                                                                                 />
                                                                             </Tooltip>
                                                                         </th>
-                                                                        <th>Artwork</th><th>Campaign</th><th>Size</th><th>Dur</th>
+                                                                        <th>Artwork</th><th>Campaign</th><th>Site</th><th>Size</th><th>Dur</th>
+                                                                        <th className="specs-row-revert-col" />
                                                                     </tr>
                                                                 </thead>
                                                                 <tbody>
                                                                     {b.rows.map((r, i) => {
                                                                         const excluded = isRowExcluded(key, i);
+                                                                        const eff = effectiveRow(key, i, r);
+                                                                        const edited = isRowEdited(key, i);
                                                                         return (
-                                                                            <tr key={i} className={excluded ? "specs-row--excluded" : ""}>
+                                                                            <tr key={i} className={(excluded ? "specs-row--excluded" : "") + (edited ? " specs-row--edited" : "")}>
                                                                                 <td className="specs-row-check-col">
                                                                                     <Tooltip text={excluded ? "Excluded — click to include" : "Included — click to exclude (e.g. an on-hold row)"}>
                                                                                         <input
@@ -776,17 +899,89 @@ const CSVLocaliserTool = () => {
                                                                                         />
                                                                                     </Tooltip>
                                                                                 </td>
-                                                                                <td>{r.Artwork}</td>
-                                                                                <td className={r.Campaign === "UNKNOWN" ? "is-unknown" : ""}>{r.Campaign}</td>
-                                                                                <td>{r.Size}</td>
-                                                                                <td>{r.Duration}</td>
+                                                                                <td className="specs-cell-edit">
+                                                                                    <select
+                                                                                        className="specs-cell-input specs-cell-select"
+                                                                                        value={eff.Artwork}
+                                                                                        disabled={excluded}
+                                                                                        onChange={(e) => editRowField(key, i, "Artwork", e.target.value)}
+                                                                                        aria-label={`Row ${i + 1} artwork`}
+                                                                                    >
+                                                                                        {ARTWORK_TYPES.concat(
+                                                                                            ARTWORK_TYPES.indexOf(eff.Artwork) === -1 ? [eff.Artwork] : []
+                                                                                        ).map((a) => (
+                                                                                            <option key={a} value={a}>{a}</option>
+                                                                                        ))}
+                                                                                    </select>
+                                                                                </td>
+                                                                                <td className={"specs-cell-edit" + (eff.Campaign === "UNKNOWN" ? " is-unknown" : "")}>
+                                                                                    <input
+                                                                                        type="text"
+                                                                                        className="specs-cell-input"
+                                                                                        value={eff.Campaign}
+                                                                                        disabled={excluded}
+                                                                                        onChange={(e) => editRowField(key, i, "Campaign", e.target.value)}
+                                                                                        aria-label={`Row ${i + 1} campaign`}
+                                                                                    />
+                                                                                </td>
+                                                                                {/* MEDIA SITE NAME from the PDF — informational (the host
+                                                                                    never reads it), editable so a mis-parsed name can be
+                                                                                    tidied like every other cell. */}
+                                                                                <td className="specs-cell-edit">
+                                                                                    <Tooltip text={eff.Site || "No MEDIA SITE NAME found in the PDF for this row"}>
+                                                                                        <input
+                                                                                            type="text"
+                                                                                            className="specs-cell-input specs-cell-input--site"
+                                                                                            value={eff.Site || ""}
+                                                                                            disabled={excluded}
+                                                                                            placeholder="—"
+                                                                                            onChange={(e) => editRowField(key, i, "Site", e.target.value)}
+                                                                                            aria-label={`Row ${i + 1} media site name`}
+                                                                                        />
+                                                                                    </Tooltip>
+                                                                                </td>
+                                                                                <td className="specs-cell-edit">
+                                                                                    <input
+                                                                                        type="text"
+                                                                                        className="specs-cell-input specs-cell-input--size"
+                                                                                        value={eff.Size}
+                                                                                        disabled={excluded}
+                                                                                        placeholder="WxH"
+                                                                                        onChange={(e) => editRowField(key, i, "Size", e.target.value)}
+                                                                                        aria-label={`Row ${i + 1} size`}
+                                                                                    />
+                                                                                </td>
+                                                                                <td className="specs-cell-edit">
+                                                                                    <input
+                                                                                        type="text"
+                                                                                        className="specs-cell-input specs-cell-input--dur"
+                                                                                        value={eff.Duration}
+                                                                                        disabled={excluded}
+                                                                                        onChange={(e) => editRowField(key, i, "Duration", e.target.value)}
+                                                                                        aria-label={`Row ${i + 1} duration`}
+                                                                                    />
+                                                                                </td>
+                                                                                <td className="specs-row-revert-col">
+                                                                                    {edited && (
+                                                                                        <Tooltip text="Revert this row to the scanned values">
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                className="specs-row-revert"
+                                                                                                onClick={() => revertRow(key, i)}
+                                                                                                aria-label={`Revert row ${i + 1}`}
+                                                                                            >
+                                                                                                <RotateCcw size={11} />
+                                                                                            </button>
+                                                                                        </Tooltip>
+                                                                                    )}
+                                                                                </td>
                                                                             </tr>
                                                                         );
                                                                     })}
                                                                 </tbody>
                                                             </table>
                                                         )}
-                                                        {batchRows[key] && (
+                                                        {batchOpen && batchRows[key] && (
                                                             <div className="specs-locresult">
                                                                 {(() => {
                                                                     const rows = batchRows[key];
@@ -858,7 +1053,7 @@ const CSVLocaliserTool = () => {
                                         className="specs-build-artwork"
                                         value={r.artwork}
                                         onChange={(v) => updateBuildRow(r.id, { artwork: v })}
-                                        options={[{ value: "DOOH", label: "DOOH" }, { value: "DINTH", label: "DINTH" }, { value: "FOH", label: "FOH" }]}
+                                        options={ARTWORK_TYPES.map((a) => ({ value: a, label: a }))}
                                     />
                                     {r.creative === CUSTOM_CREATIVE ? (
                                         <input

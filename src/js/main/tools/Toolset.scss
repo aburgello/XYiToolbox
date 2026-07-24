@@ -128,6 +128,24 @@
                 box-shadow: 0 3px 10px var(--btn-glow, rgba(0, 0, 0, 0.35));
             }
 
+            // Starred ("emphasise" in edit mode): the same group accent, but
+            // worn at rest instead of only on hover -- filled background,
+            // accent border, brighter label. The extra ring is an INSET
+            // box-shadow, not a thicker border, so a starred tile keeps
+            // exactly the same box size as its neighbours (a border-width
+            // change would nudge every tile after it in the wrapped row).
+            &.starred {
+                background: var(--btn-bg, #2a2a2a);
+                border-color: var(--btn-border, #444);
+                color: #fff;
+                font-weight: 600;
+                box-shadow: inset 0 0 0 1px var(--btn-border, #444), 0 2px 8px var(--btn-glow, rgba(0, 0, 0, 0.3));
+
+                &:hover {
+                    box-shadow: inset 0 0 0 1px var(--btn-border, #444), 0 4px 14px var(--btn-glow, rgba(0, 0, 0, 0.35));
+                }
+            }
+
             // Icon carries its group's accent AT REST (not only on hover) --
             // the resting tint is the "find a section's buttons by colour"
             // scanning cue. --btn-border inherits from the .action-group
@@ -302,6 +320,68 @@
             border-radius: 2px;
             background: currentColor;
         }
+    }
+
+    // Top-RIGHT twin of the hide badge: toggles the "emphasise" flag. Same
+    // circular-badge language so the two read as a pair of tile controls,
+    // but muted (grey outline star) until on, then gold/filled -- the badge
+    // itself has to show its own state, since the effect it controls is only
+    // visible back in normal mode.
+    // NOTE the `.action-edit-face` prefix -- it is load-bearing, not
+    // decoration. Edit tiles live inside `.action-grid.editing`, and this
+    // file's `.action-grid button { padding: 8px 14px; gap: 6px; ... }` rule
+    // is MORE specific (0-2-1) than a bare `.action-star-btn` (0-2-0), so it
+    // won: the badge inherited the grid button's padding, which squeezed the
+    // 12px icon out of the fixed 20px circle and the star rendered EMPTY.
+    // The extra class puts this at 0-3-0, and the resets below are explicit
+    // for the same reason. (The hide badge next to it only ever looked right
+    // because its dash is a CSS-drawn ::after, not the icon.)
+    .action-edit-face .action-star-btn {
+        position: absolute;
+        top: -6px;
+        right: -6px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        min-width: 0;
+        padding: 0;
+        gap: 0;
+        line-height: 0;
+        font-size: 0;
+        border-radius: 50%;
+        // Dark disc + light glyph, matching what the hide badge next to it
+        // ACTUALLY renders as (that rule's own light-disc declarations lose
+        // to the same `.action-grid button` specificity described above) --
+        // the two badges have to read as a pair, so this matches the
+        // rendered result rather than the hide badge's stated intent.
+        border: 1px solid #444;
+        background: #2a2a2a;
+        color: #cfcfcf;
+        cursor: pointer;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+        transition: color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+        z-index: 2;
+
+        svg { fill: none; flex-shrink: 0; }
+
+        &:hover { transform: scale(1.1); color: #e8b437; }
+
+        &.is-starred {
+            color: #e8b437;
+            svg { fill: currentColor; }
+        }
+    }
+
+    // Preview of the emphasis inside edit mode itself, so starring gives
+    // immediate feedback without leaving edit mode to check.
+    .action-edit-item.is-starred .action-edit-face {
+        background: var(--btn-bg, #2a2a2a);
+        border-color: var(--btn-border, #444);
+        color: #fff;
+        font-weight: 600;
+        box-shadow: inset 0 0 0 1px var(--btn-border, #444);
     }
 
     // A group grid highlighted while a tile is dragged over it (drop target),

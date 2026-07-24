@@ -65,6 +65,7 @@ import {
     Terminal,
     LayoutTemplate,
     Sparkles,
+    Star,
 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { showMcItReport, type McReport } from "../McItReportModal";
@@ -881,10 +882,12 @@ const SortableTile: React.FC<{
     groupId: GroupId;
     isHidden: boolean;
     isLink: boolean;
+    isStarred: boolean;
     jiggle: boolean;
     btnStyle: React.CSSProperties;
     onToggleHidden: (id: string) => void;
-}> = ({ action, groupId, isHidden, isLink, jiggle, btnStyle, onToggleHidden }) => {
+    onToggleStarred: (id: string) => void;
+}> = ({ action, groupId, isHidden, isLink, isStarred, jiggle, btnStyle, onToggleHidden, onToggleStarred }) => {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
         id: action.id,
         data: { group: groupId },
@@ -901,7 +904,7 @@ const SortableTile: React.FC<{
         <div
             ref={setNodeRef}
             style={style}
-            className={"action-edit-item" + (isHidden ? " is-hidden" : "") + (jiggle ? " jiggle" : "")}
+            className={"action-edit-item" + (isHidden ? " is-hidden" : "") + (isStarred ? " is-starred" : "") + (jiggle ? " jiggle" : "")}
             {...attributes}
             {...listeners}
         >
@@ -917,6 +920,23 @@ const SortableTile: React.FC<{
                 >
                     {isHidden ? <Plus size={14} /> : <Minus size={14} />}
                 </button>
+                {/* Top-RIGHT twin of the hide badge: marks a tool as one the
+                    user reaches for constantly, which renders it as a filled,
+                    brighter tile in normal mode. Purely visual -- it never
+                    moves, filters or reorders anything, so it composes with
+                    hide/reorder/group rather than competing with them. Not
+                    offered on a hidden tile (nothing to emphasise). */}
+                {!isHidden && (
+                    <button
+                        type="button"
+                        className={"action-star-btn" + (isStarred ? " is-starred" : "")}
+                        title={isStarred ? "Remove emphasis" : "Emphasise (make this tool stand out)"}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); onToggleStarred(action.id); }}
+                    >
+                        <Star size={13} />
+                    </button>
+                )}
             </div>
         </div>
     );
@@ -929,12 +949,14 @@ const SortableGroup: React.FC<{
     btnStyle: React.CSSProperties;
     hiddenSet: Set<string>;
     linkIds: Set<string>;
+    starredSet: Set<string>;
     jiggle: boolean;
     onToggleHidden: (id: string) => void;
+    onToggleStarred: (id: string) => void;
     onRename: (groupId: GroupId, label: string) => void;
     pinnedToolIds: Set<string>;
     onPinTool: (toolId: string, group: GroupId) => void;
-}> = ({ groupId, label, actions, btnStyle, hiddenSet, linkIds, jiggle, onToggleHidden, onRename, pinnedToolIds, onPinTool }) => {
+}> = ({ groupId, label, actions, btnStyle, hiddenSet, linkIds, starredSet, jiggle, onToggleHidden, onToggleStarred, onRename, pinnedToolIds, onPinTool }) => {
     // The whole group grid is a droppable, so a tile can be dropped onto a
     // group's empty space (not only onto another tile) -- this is what lets
     // an empty group still receive a drop.
@@ -960,9 +982,11 @@ const SortableGroup: React.FC<{
                             groupId={groupId}
                             isHidden={hiddenSet.has(action.id)}
                             isLink={linkIds.has(action.id)}
+                            isStarred={starredSet.has(action.id)}
                             jiggle={jiggle}
                             btnStyle={btnStyle}
                             onToggleHidden={onToggleHidden}
+                            onToggleStarred={onToggleStarred}
                         />
                     ))}
                     {/* Outside the sortable item list on purpose -- this tile
@@ -1073,6 +1097,11 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
     const prefersReducedMotion = useReducedMotion();
     const [editMode, setEditMode] = useState(false);
     const [hidden, setHidden] = useState<string[]>([]);
+    // Purely visual emphasis (see the star badge in SortableTile): a starred
+    // action renders as a filled, brighter tile in normal mode so the few
+    // tools someone uses constantly pop out of a dense grid. Never filters
+    // or reorders -- deliberately orthogonal to hidden/order/group.
+    const [starred, setStarred] = useState<string[]>([]);
     const [order, setOrder] = useState<string[]>([]);
     const [groupOverride, setGroupOverride] = useState<Record<string, GroupId>>({});
     const [labelOverride, setLabelOverride] = useState<Record<string, string>>({});
@@ -1107,6 +1136,8 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
                 }
                 const p = await evalTS("loadPinnedToolsetLinks" as any);
                 if (Array.isArray(p)) setPinned(p as string[]);
+                const s = await evalTS("loadStarredToolsetActions" as any);
+                if (Array.isArray(s)) setStarred(s as string[]);
             } catch {
                 /* no bridge (preview) -- defaults are correct */
             }
@@ -1122,6 +1153,7 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
     }, [editMode]);
 
     const hiddenSet = new Set(hidden);
+    const starredSet = new Set(starred);
     const pinnedToolIds = new Set(pinned);
     const linkIds = new Set(pinned.map(linkId));
     const customButtonTools = customTools.filter((t) => t.kind === "button");
@@ -1138,6 +1170,15 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
     const toggleHidden = (id: string) => {
         if (isLinkId(id)) { unpinLink(id); return; }
         persistHidden(hiddenSet.has(id) ? hidden.filter((x) => x !== id) : [...hidden, id]);
+    };
+
+    // Unlike hide, this applies uniformly to every kind of tile (fixed
+    // ACTIONS entry, pinned link, custom button) -- it's just a visual flag
+    // keyed by grid id, with nothing type-specific to reason about.
+    const toggleStarred = (id: string) => {
+        const next = starredSet.has(id) ? starred.filter((x) => x !== id) : [...starred, id];
+        setStarred(next);
+        evalTS("saveStarredToolsetActions" as any, next).catch(() => { /* preview */ });
     };
 
     // Effective group of an action/link/custom button: user override, else
@@ -1247,6 +1288,13 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
         const nextGroups = { ...groupOverride };
         delete nextGroups[id];
         commitLayout(order.filter((x) => x !== id), nextGroups);
+        // Same reasoning as the group/order cleanup above: an unpinned link
+        // has nothing to restore to, so its emphasis flag shouldn't linger.
+        if (starredSet.has(id)) {
+            const nextStarred = starred.filter((x) => x !== id);
+            setStarred(nextStarred);
+            evalTS("saveStarredToolsetActions" as any, nextStarred).catch(() => { /* preview */ });
+        }
     };
 
     const setGroupLabel = (gid: GroupId, label: string) => {
@@ -1384,7 +1432,7 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
                     resting grid has zero extra chrome. */}
                 {editMode && (
                     <div className="toolset-editbar">
-                        <p className="toolset-edit-hint">Drag to reorder within a group · tap − to hide, + to restore.</p>
+                        <p className="toolset-edit-hint">Drag to reorder within a group · tap − to hide, + to restore · tap ★ to emphasise a tool you use constantly.</p>
                         <button className="toolset-done-btn" onClick={() => setEditMode(false)}>
                             <Check size={13} /> Done
                         </button>
@@ -1420,8 +1468,10 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
                                     btnStyle={btnStyle}
                                     hiddenSet={hiddenSet}
                                     linkIds={linkIds}
+                                    starredSet={starredSet}
                                     jiggle={!prefersReducedMotion}
                                     onToggleHidden={toggleHidden}
+                                    onToggleStarred={toggleStarred}
                                     onRename={setGroupLabel}
                                     pinnedToolIds={pinnedToolIds}
                                     onPinTool={pinTool}
@@ -1474,10 +1524,11 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
                                     // droplet is open) differs. pressProps/guardClick add the
                                     // long-press-to-enter-edit-mode gesture without changing a
                                     // normal tap.
+                                    const starredClass = starredSet.has(action.id) ? "starred" : "";
                                     const renderButton = (onClick: () => void, active?: boolean) => (
                                         <motion.button
                                             style={btnStyle}
-                                            className={active ? "active" : undefined}
+                                            className={[active ? "active" : "", starredClass].filter(Boolean).join(" ") || undefined}
                                             variants={buttonLift}
                                             initial={{ opacity: 0, y: 10 }}
                                             animate={{ opacity: 1, y: 0 }}

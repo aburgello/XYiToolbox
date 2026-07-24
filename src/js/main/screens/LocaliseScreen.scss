@@ -452,6 +452,11 @@
     align-items: center;
     gap: 16px;
     width: 100%;
+    // Never let the scan list below compress the hero -- .ls-landing is a
+    // scrolling flex column, so without this the hero (a flex child) shrinks
+    // vertically once the territory list makes the column overflow, collapsing
+    // the eyebrow into the title.
+    flex: 0 0 auto;
     text-align: left;
     padding: 18px 18px 18px 20px;
     border: 1px solid var(--cat-border, #3d3d3d);

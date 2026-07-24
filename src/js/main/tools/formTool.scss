@@ -1000,13 +1000,20 @@
         margin: 8px 0 3px;
     }
 
+    // These sections used to cap at 640px, tuned when the panel was assumed to
+    // be a narrow docked column. Undocked/widened, that left a large dead gap
+    // on the right while the Localised Library hero and the TOOLS grid either
+    // side of them ran the full width -- so the form looked arbitrarily
+    // indented rather than deliberately measured. Now fluid: at narrow widths
+    // nothing changes (the content was already 100% of a container smaller
+    // than the cap); at wide widths the folder paths -- long NAS paths that
+    // were being truncated mid-word -- get the room they actually need.
     .specs-folders {
-        max-width: 640px;
+        max-width: none;
 
         // The Campaign/Markets/Masters rows use the shared .field-with-button,
-        // which caps at 480px by default. Here they sit directly above the
-        // 640px-wide actions row (Skip existing + Scan Specs), so let them run
-        // the full folder width instead of stopping ~160px short of it.
+        // which caps at 480px by default. Here they should run the full
+        // width of this section instead of stopping short of it.
         .field-with-button { max-width: none; }
     }
 
@@ -1055,7 +1062,7 @@
 
     .specs-progress { color: #7fb2d6; margin-top: 8px; }
 
-    .specs-results { max-width: 640px; margin-top: 14px; }
+    .specs-results { max-width: none; margin-top: 14px; }
 
     .specs-toolbar {
         display: flex;
@@ -1147,6 +1154,25 @@
         > svg:last-child { margin-left: 2px; color: #777; }
     }
 
+    // Per-territory "open the Specs folder in Finder/Explorer" button — sits at
+    // the right edge of the territory header so a parse can be eyeballed against
+    // the real PDFs. One per territory (the batches all share one Specs folder).
+    .specs-terr-reveal {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+        padding: 6px;
+        background: none;
+        border: none;
+        border-radius: 4px;
+        color: #888;
+        cursor: pointer;
+        transition: color 0.12s, background 0.12s;
+
+        &:hover { color: var(--cat-icon, #5eead4); background: #242424; }
+    }
+
     .specs-pill {
         margin-left: auto;
         font-size: 10px;
@@ -1186,7 +1212,41 @@
         // reads as a deliberate subset, not the full batch.
         .specs-batch-ok--filtered { color: #d9b86f; }
         .specs-batch-err { color: #d98c8c; margin-left: auto; }
+
+        // Collapse/expand trigger: the label half of the header. Mirrors
+        // .specs-terr-main above (same reset, same "chevron then icon then
+        // label" order) so a batch header reads as the same kind of control as
+        // the territory header it nests under -- including inheriting
+        // .form-tool button's own hover treatment, which the territory row
+        // already takes. flex:1 + min-width:0 lets a long PDF name shrink
+        // rather than pushing the action buttons off the row.
+        .specs-batch-main {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex: 1;
+            min-width: 0;
+            background: none;
+            border: none;
+            color: #bbb;
+            cursor: pointer;
+            padding: 2px 2px;
+            text-align: left;
+            font-size: 11px;
+
+            // margin-left:auto on these pushes them to the button's own right
+            // edge, keeping the count next to the name instead of stranded
+            // against the action buttons.
+            .specs-batch-ok,
+            .specs-batch-err { margin-left: auto; }
+
+            > svg:first-child { color: #777; flex: 0 0 auto; }
+        }
     }
+
+    // Collapsed: the head is all that's left, so drop the gap it reserves for
+    // the table/results that are no longer rendered.
+    .specs-batch.is-collapsed .specs-batch-head { margin-bottom: 0; }
 
     .specs-table {
         width: 100%;
@@ -1224,8 +1284,84 @@
         .specs-row--excluded .specs-row-check-col { text-decoration: none; }
     }
 
+    // Inline-editable cells (CSV Localiser: correct a mis-parsed value straight
+    // in the row). The input reads as plain text at rest — no border, no fill —
+    // so the table doesn't look like a form; hover/focus reveals it's editable.
+    .specs-cell-edit { padding: 1px 3px; }
+
+    .specs-cell-input {
+        width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
+        margin: 0;
+        padding: 2px 4px;
+        font-size: 11px;
+        font-family: inherit;
+        color: #ccc;
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 3px;
+        transition: background 0.12s, border-color 0.12s;
+
+        &:hover:not(:disabled) { border-color: #383838; }
+        &:focus {
+            outline: none;
+            background: #1c1c1c;
+            border-color: var(--cat-icon, #5eead4);
+        }
+        &:disabled { color: #5f5f5f; cursor: default; }
+    }
+
+    // Native select for the Artwork enum — collapse its default chrome so it
+    // matches the text inputs beside it.
+    .specs-cell-select {
+        cursor: pointer;
+        appearance: none;
+        -webkit-appearance: none;
+        padding-right: 4px;
+        option { background: #1c1c1c; color: #ccc; }
+    }
+
+    .specs-cell-input--size { width: 72px; }
+    .specs-cell-input--dur { width: 48px; }
+    // MEDIA SITE NAME — reference data, not something the localiser acts on, so
+    // it sits quieter than the fields that drive the run. Capped so a long site
+    // name scrolls inside its own input instead of stretching the table.
+    .specs-cell-input--site {
+        max-width: 150px;
+        color: #8f8f8f;
+        &::placeholder { color: #4a4a4a; }
+    }
+
+    // A row carrying manual edits gets a faint accent tint + left marker so the
+    // corrected rows stand out from the untouched parsed ones.
+    .specs-row--edited td {
+        background: rgba(94, 234, 212, 0.05);
+    }
+
+    .specs-row-revert-col {
+        width: 24px;
+        text-align: center;
+        padding: 0 2px;
+    }
+
+    .specs-row-revert {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 3px;
+        background: none;
+        border: none;
+        color: #888;
+        cursor: pointer;
+        border-radius: 3px;
+        transition: color 0.12s, background 0.12s;
+
+        &:hover { color: var(--cat-icon, #5eead4); background: #242424; }
+    }
+
     .specs-fallback {
-        max-width: 640px;
+        max-width: none;
         margin-top: 16px;
         border-top: 1px solid #2a2a2a;
         padding-top: 10px;
@@ -1250,11 +1386,14 @@
         gap: 8px;
         align-items: flex-start;
 
-        textarea { width: 100%; max-width: 520px; }
+        // Fluid like the folder rows above -- a pasted CSV block is wide,
+        // rectangular data and benefits from the extra width when the panel
+        // has it (see the .specs-folders note).
+        textarea { width: 100%; max-width: none; }
     }
 
     // ── Build a batch (visual CSV builder) ───────────────────────────────────
-    .specs-build-body { width: 100%; max-width: 640px; gap: 10px; }
+    .specs-build-body { width: 100%; max-width: none; gap: 10px; }
 
     .specs-build-meta {
         display: flex;
