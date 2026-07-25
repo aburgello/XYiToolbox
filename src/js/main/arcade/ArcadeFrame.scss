@@ -1,0 +1,185 @@
+// Chrome for the built-in arcade eggs (ArcadeFrame.tsx).
+//
+// z-index 1800 matches DoomEasterEgg.scss on purpose: above toasts and the
+// video player (1000), below Dialog.tsx (2000) so a real confirm/alert can
+// still appear over a game. See CLAUDE.md's CommandPalette section for this
+// app's full stacking order.
+
+// The reveal card shown in the home search results when a trigger word is
+// typed (rendered by HomeScreen.tsx's ARCADE_GAMES table, styled here so the
+// whole egg lives in one place -- same split DoomEasterEgg.scss uses).
+.arcade-launch-card {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid rgba(45, 212, 191, 0.4);
+    border-radius: 8px;
+    background: linear-gradient(135deg, rgba(45, 212, 191, 0.14), rgba(15, 61, 69, 0.08));
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+        border-color: rgba(45, 212, 191, 0.75);
+        box-shadow: 0 4px 18px rgba(45, 212, 191, 0.2);
+    }
+}
+
+.arcade-launch-title {
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.16em;
+    color: #5eead4;
+}
+
+.arcade-launch-sub {
+    font-size: 11px;
+    color: #999;
+}
+
+.arcade-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    background: rgba(0, 0, 0, 0.92);
+}
+
+.arcade-frame {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 720px;
+    overflow: hidden;
+    border: 1px solid var(--cat-border, #2dd4bf);
+    border-radius: 10px;
+    background: #0a0f11;
+    box-shadow: 0 18px 60px rgba(45, 212, 191, 0.16);
+}
+
+.arcade-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    background: #141a1c;
+}
+
+.arcade-title {
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.18em;
+    color: var(--cat-icon, #5eead4);
+}
+
+.arcade-hint {
+    flex: 1;
+    font-size: 10.5px;
+    color: #888;
+}
+
+.arcade-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 5px;
+    background: #1e1e1e;
+    color: #ccc;
+    cursor: pointer;
+
+    &:hover {
+        border-color: var(--cat-border, #2dd4bf);
+        color: #fff;
+    }
+}
+
+// Holds the game's own 8:5 canvas aspect (5/8 = 62.5%) with the padding-box
+// trick. Deliberately NOT `aspect-ratio`, which is Chrome 88+ while this
+// project targets chrome74 -- same rule that ruled out :has() and color-mix().
+.arcade-stage {
+    position: relative;
+    width: 100%;
+    height: 0;
+    padding-bottom: 62.5%;
+    background: #05090a;
+
+    // DOM-laid-out games (the word puzzle) size to their own content instead
+    // of being pinned to the canvas aspect box.
+    &--fluid {
+        height: auto;
+        padding-bottom: 0;
+    }
+}
+
+// MUST stay genuinely focusable -- display:none / visibility:hidden cannot
+// hold focus, which would defeat the whole keyboard mechanism.
+.arcade-keygrab {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    border: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.arcade-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    outline: none;
+}
+
+// ── TIMELINE (KeyframeSnake.tsx) ─────────────────────────────────────────────
+.ks-hud {
+    position: absolute;
+    top: 8px;
+    left: 10px;
+    right: 10px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    pointer-events: none;
+}
+
+.ks-score { color: #5eead4; font-weight: 700; }
+.ks-best { color: #5a6a6d; }
+
+.ks-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    text-align: center;
+    background: rgba(5, 9, 10, 0.82);
+    pointer-events: none;
+}
+
+.ks-dead {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #fb923c;
+}
+
+.ks-sub {
+    font-size: 11px;
+    color: #9aa;
+}

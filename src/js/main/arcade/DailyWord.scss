@@ -1,0 +1,176 @@
+// Styles for the daily word puzzle (DailyWord.tsx). The frame/overlay chrome
+// and the launch card live in ArcadeFrame.scss.
+
+.dw-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 12px 16px;
+}
+
+.dw-board {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.dw-row {
+    display: flex;
+    gap: 5px;
+}
+
+.dw-tile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    border: 1px solid #2b3438;
+    border-radius: 4px;
+    background: #0b1113;
+    color: #eaeaea;
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    // No transition on colour: the marks appear the instant a guess is
+    // submitted, and a fade here just reads as lag.
+    transition: border-color 0.12s ease;
+
+    &--filled { border-color: #4a585d; }
+    &--correct { background: #2f9e6b; border-color: #2f9e6b; color: #fff; }
+    &--present { background: #b8912f; border-color: #b8912f; color: #fff; }
+    &--absent { background: #1a2225; border-color: #1a2225; color: #7b8a8f; }
+}
+
+.dw-flash {
+    padding: 5px 12px;
+    border-radius: 999px;
+    background: #1e2629;
+    border: 1px solid #33403f;
+    color: #dfe7e6;
+    font-size: 11px;
+}
+
+.dw-result {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+}
+
+.dw-win { color: #5eead4; font-weight: 700; }
+.dw-lose { color: #fb923c; font-weight: 700; }
+
+.dw-posted { color: #6b7c80; font-size: 11px; }
+
+// Quiet inline note for the one case worth surfacing: an untagged machine
+// can't post, so the host refuses rather than guessing a name. Deliberately
+// not an error toast -- nothing has gone wrong with the game.
+.dw-note {
+    font-size: 10.5px;
+    color: #8a949a;
+    text-align: center;
+    max-width: 420px;
+}
+
+.dw-keys {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    width: 100%;
+    max-width: 420px;
+}
+
+.dw-keyrow {
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+}
+
+.dw-key {
+    flex: 1;
+    min-width: 0;
+    padding: 9px 0;
+    border: 1px solid #333f43;
+    border-radius: 4px;
+    background: #1b2427;
+    color: #dbe4e6;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+
+    &:hover { border-color: #4d6167; background: #232e32; }
+
+    &--wide { flex: 1.6; font-size: 10px; }
+    &--correct { background: #2f9e6b; border-color: #2f9e6b; color: #fff; }
+    &--present { background: #b8912f; border-color: #b8912f; color: #fff; }
+    &--absent { background: #121819; border-color: #121819; color: #5c686b; }
+}
+
+.dw-board-list {
+    width: 100%;
+    max-width: 420px;
+    border-top: 1px solid #222b2e;
+    padding-top: 8px;
+}
+
+.dw-board-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: #5eead4;
+    opacity: 0.85;
+    margin-bottom: 6px;
+}
+
+.dw-board-window {
+    margin-left: auto;
+    font-size: 8.5px;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    color: #5b686b;
+}
+
+// Leaderboard grid: name takes the slack, the four stat columns are fixed so
+// the numbers line up in a column rather than drifting with name length.
+.dw-lb-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 2px;
+    font-size: 11px;
+    color: #c3cccf;
+
+    & + & { border-top: 1px solid rgba(255, 255, 255, 0.04); }
+
+    &--head {
+        font-size: 8.5px;
+        font-weight: 700;
+        letter-spacing: 0.7px;
+        text-transform: uppercase;
+        color: #5b686b;
+        border-top: 0;
+    }
+}
+
+.dw-lb-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dw-lb-cell {
+    width: 46px;
+    flex-shrink: 0;
+    text-align: right;
+    color: #8e9a9e;
+}
+
+.dw-lb-streak { color: #5eead4; font-weight: 700; }

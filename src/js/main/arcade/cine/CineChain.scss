@@ -1,0 +1,391 @@
+// Styles for the movie-chain game (CineChain.tsx). Frame chrome and the
+// launch card live in ArcadeFrame.scss.
+//
+// THEMING: accents come from `--ov-accent`, the token the app's theme picker
+// actually sets at the document root (see themes.ts -- it deliberately only
+// overrides --ov-accent and --ov-bg). So this game follows whatever theme the
+// user picked instead of being hardcoded teal. Every use keeps a fallback so
+// it still looks right with no theme set.
+//
+// The colour-mix()-free rule from CLAUDE.md applies: chrome74 target, so
+// tints are plain rgba literals, not derived from the accent at runtime.
+
+.cc-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px 14px;
+    max-height: 76vh;
+    overflow-y: auto;
+}
+
+.cc-boot,
+.cc-fatal {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 22px 0;
+    color: #9aa;
+    font-size: 12px;
+}
+
+.cc-fatal { flex-direction: column; color: #fb923c; }
+
+// ── header row ──────────────────────────────────────────────────────────────
+.cc-status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.cc-turn {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--ov-accent, #5eead4);
+
+    &--over { color: #fb923c; }
+}
+
+.cc-clock {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #c8d3d6;
+    font-variant-numeric: tabular-nums;
+
+    // Only the last five seconds turn red -- a clock that's red the whole time
+    // stops meaning anything.
+    &--low { color: #ff5f47; }
+}
+
+// ── layout: board left, hints right; stacked when the panel is narrow ───────
+// GRID, not flex, and that's the point: the three blocks (board, hints, chain)
+// need DIFFERENT orders at the two breakpoints. Wide, hints sit to the right
+// spanning the full height. Narrow -- which is most docked AE panels, measured
+// at ~490px in preview and ~500px per this project's own design target -- they
+// stack, and the hints must land directly under the search box, NOT after the
+// chain, or they're a scroll away at the moment you need them.
+.cc-layout {
+    display: grid;
+    grid-template-columns: 1fr 200px;
+    grid-template-areas:
+        "main side"
+        "chain side";
+    gap: 12px;
+    align-items: start;
+}
+
+.cc-main {
+    grid-area: main;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+}
+
+.cc-side {
+    grid-area: side;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding: 9px 10px;
+    border: 1px solid #232d30;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.22);
+}
+
+// Below this a 200px side column leaves too little for the board, so the three
+// blocks stack -- board, then hints, then chain.
+@media (max-width: 640px) {
+    .cc-layout {
+        grid-template-columns: 1fr;
+        grid-template-areas: "main" "side" "chain";
+    }
+}
+
+.cc-side-head {
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 1.1px;
+    text-transform: uppercase;
+    color: var(--ov-accent, #5eead4);
+    opacity: 0.85;
+}
+
+.cc-side-note {
+    margin: 0;
+    font-size: 10.5px;
+    line-height: 1.45;
+    color: #6f7d81;
+}
+
+// ── posters ─────────────────────────────────────────────────────────────────
+// Fixed 2:3 boxes so a missing poster leaves a placeholder of the right shape
+// rather than collapsing the row and making the list jump.
+.cc-poster {
+    width: 30px;
+    height: 45px;
+    flex-shrink: 0;
+    object-fit: cover;
+    border-radius: 3px;
+    background: #10181a;
+    display: block;
+
+    &--lg { width: 58px; height: 87px; border-radius: 5px; }
+    &--sm { width: 26px; height: 39px; }
+    &--none { border: 1px dashed #2b3438; }
+}
+
+// ── current film ────────────────────────────────────────────────────────────
+.cc-current {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 9px 11px;
+    border: 1px solid var(--ov-accent, #2dd4bf);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.cc-current-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+
+.cc-current-label {
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--ov-accent, #5eead4);
+    opacity: 0.85;
+}
+
+.cc-current-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1.2;
+}
+
+.cc-current-year { font-size: 11px; color: #7f8f93; }
+
+// ── search ──────────────────────────────────────────────────────────────────
+.cc-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid #33403f;
+    border-radius: 7px;
+    background: #0e1517;
+
+    &:focus-within { border-color: var(--ov-accent, #2dd4bf); }
+
+    svg { flex-shrink: 0; color: var(--ov-accent, #5eead4); }
+
+    input {
+        flex: 1;
+        min-width: 0;
+        border: 0;
+        background: none;
+        color: #eaeaea;
+        font-size: 13px;
+        outline: none;
+
+        &::placeholder { color: #55635f; }
+    }
+}
+
+.cc-message {
+    padding: 6px 10px;
+    border-radius: 6px;
+    background: rgba(251, 146, 60, 0.1);
+    border: 1px solid rgba(251, 146, 60, 0.3);
+    color: #ffb27a;
+    font-size: 11px;
+}
+
+// ── results ─────────────────────────────────────────────────────────────────
+// Capped and self-scrolling. Without this the result list simply grew the
+// panel until the film you're linking FROM and the search box you're typing
+// INTO were both scrolled off the top -- which is precisely the two things you
+// need on screen while the clock runs.
+.cc-results {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    max-height: 208px;
+    overflow-y: auto;
+}
+
+.cc-result {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 5px 8px;
+    border: 1px solid #232d30;
+    border-radius: 6px;
+    background: #121a1c;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+        border-color: var(--ov-accent, #2dd4bf);
+        background: #162224;
+    }
+    &:disabled { opacity: 0.5; cursor: default; }
+}
+
+.cc-result-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 12.5px;
+    color: #e6eef0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cc-result-year { font-size: 10.5px; color: #6f7d81; flex-shrink: 0; }
+.cc-result-enter { font-size: 11px; color: var(--ov-accent, #5eead4); flex-shrink: 0; }
+
+// ── buttons ─────────────────────────────────────────────────────────────────
+.cc-btn,
+.cc-hint-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 11px;
+    border: 1px solid #33403f;
+    border-radius: 6px;
+    background: #161e20;
+    color: #cbd6d8;
+    font-size: 11px;
+    cursor: pointer;
+
+    &:hover { border-color: var(--ov-accent, #2dd4bf); color: #fff; }
+}
+
+.cc-btn--again { align-self: flex-start; }
+
+// ── hint list ───────────────────────────────────────────────────────────────
+.cc-cast {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+.cc-cast-chip {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    padding: 3px 6px;
+    border-radius: 4px;
+    background: #131a1c;
+    font-size: 10.5px;
+    color: #cbd5d7;
+
+    em { font-style: normal; color: #6d7c80; font-size: 8.5px; }
+    b { margin-left: auto; color: #b8912f; font-weight: 700; font-size: 8.5px; }
+}
+
+.cc-cast-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-cast-empty { font-size: 10.5px; color: #fb923c; }
+
+// ── the chain ───────────────────────────────────────────────────────────────
+.cc-chain {
+    grid-area: chain;
+    border-top: 1px solid #1e2629;
+    padding-top: 8px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+// Same reasoning as the results cap: a long chain is the whole point of the
+// game, so it must scroll itself rather than push the board off screen.
+.cc-chain-list {
+    max-height: 190px;
+    overflow-y: auto;
+}
+
+.cc-chain-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 1.1px;
+    text-transform: uppercase;
+    color: var(--ov-accent, #5eead4);
+    opacity: 0.85;
+    margin-bottom: 6px;
+}
+
+.cc-chain-count { margin-left: auto; color: #5b686b; letter-spacing: 0.4px; }
+
+.cc-link {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 4px 2px;
+
+    & + & { border-top: 1px solid rgba(255, 255, 255, 0.04); }
+}
+
+.cc-link-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.cc-link-movie {
+    font-size: 11.5px;
+    color: #dbe4e6;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    em { font-style: normal; color: #6f7d81; font-size: 10px; }
+}
+
+.cc-link-via {
+    font-size: 9.5px;
+    color: #8e9a9e;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    em { font-style: normal; color: #64726f; }
+    &--start { color: #5b686b; font-style: italic; }
+}
+
+.cc-link-p {
+    flex-shrink: 0;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 700;
+
+    // Player 1 wears the user's theme accent; player 2 gets a fixed contrast
+    // colour so the two sides never collide on a warm theme.
+    &--1 { background: rgba(255, 255, 255, 0.1); color: var(--ov-accent, #5eead4); }
+    &--2 { background: rgba(251, 146, 60, 0.16); color: #fb923c; }
+}
+
+.cc-attrib {
+    font-size: 8.5px;
+    color: #4d585b;
+    text-align: center;
+}

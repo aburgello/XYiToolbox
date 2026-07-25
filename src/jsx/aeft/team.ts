@@ -652,10 +652,12 @@ const SHARED_COMBOS_FILE = "shared-combos.json";
 const SHARED_EXPRESSIONS_FILE = "shared-expressions.json";
 const SHARED_TOOLS_FILE = "shared-tools.json";
 const SHARED_CAMPAIGNS_FILE = "shared-campaigns.json";
+const SHARED_WORDGAME_FILE = "shared-wordgame.json";
 const SHARED_COMBOS_TYPE = "xyi-shared-combos";
 const SHARED_EXPRESSIONS_TYPE = "xyi-shared-expressions";
 const SHARED_TOOLS_TYPE = "xyi-shared-tools";
 const SHARED_CAMPAIGNS_TYPE = "xyi-shared-campaigns";
+const SHARED_WORDGAME_TYPE = "xyi-shared-wordgame";
 
 // OV Library campaign: just a name + the masters-root path. Sharing these is
 // safe/useful here specifically because the masters live on the studio NAS at
@@ -687,10 +689,33 @@ interface SharedCustomTool {
   kind: string;
 }
 
+// Shared libraries live in a "misc" SUBFOLDER of the team folder rather than
+// loose at its root -- asked for directly, so the odds and ends (game boards,
+// whatever else gets bolted on) have somewhere to live without cluttering the
+// folder people actually navigate for profiles.
+//
+// MIGRATION, and why reads check two places: the v1 files are already sitting
+// at the team folder ROOT on the studio NAS. Moving the write path alone
+// would silently orphan every combo and expression already shared. So reads
+// prefer misc/ and FALL BACK to the root, writes always go to misc/ -- which
+// means the first time anyone shares anything, that library's content is
+// read from the old location and written to the new one, migrating itself
+// with nothing lost and no manual step. Same legacy-fallback shape
+// teamApplyProfile already uses for the flat profiles/ layout.
+const MISC_DIR = "misc";
+
+function miscFolder(): Folder | null {
+  const root = teamFolder();
+  if (!root) return null;
+  return new Folder(root.fsName + "/" + MISC_DIR);
+}
+
 function readSharedFile<T>(fileName: string, expectedType: string): T[] | null {
   const root = teamFolder();
   if (!root) return null;
-  const content = readTextFile(new File(root.fsName + "/" + fileName));
+  // misc/ first, then the legacy root location.
+  let content = readTextFile(new File(root.fsName + "/" + MISC_DIR + "/" + fileName));
+  if (!content) content = readTextFile(new File(root.fsName + "/" + fileName));
   if (!content) return null;
   try {
     const parsed = JSON.parse(content);
@@ -710,6 +735,7 @@ function sharedTypeNoun(expectedType: string, count: number): string {
     : expectedType === SHARED_EXPRESSIONS_TYPE ? "expression"
     : expectedType === SHARED_TOOLS_TYPE ? "custom tool"
     : expectedType === SHARED_CAMPAIGNS_TYPE ? "campaign"
+    : expectedType === SHARED_WORDGAME_TYPE ? "result"
     : "item";
   return count === 1 ? singular : singular + "s";
 }
@@ -731,7 +757,18 @@ function writeSharedFile<T>(fileName: string, expectedType: string, entries: T[]
     updatedAt: new Date().toString(),
     entries: entries,
   };
-  return writeTextFile(new File(root.fsName + "/" + fileName), JSON.stringify(payload, null, 2));
+  // Always write to misc/, creating it on first use. If the folder can't be
+  // created (permissions, unmounted share), fall back to the root rather than
+  // failing the share outright -- a shared combo landing in the old place is
+  // far better than losing it.
+  const misc = miscFolder();
+  if (misc && !misc.exists) {
+    try { misc.create(); } catch (e) { /* fall through to the root path below */ }
+  }
+  const target = misc && misc.exists
+    ? new File(misc.fsName + "/" + fileName)
+    : new File(root.fsName + "/" + fileName);
+  return writeTextFile(target, JSON.stringify(payload, null, 2));
 }
 
 function loadLocalExpressions(): ExpressionEntry[] {
@@ -986,6 +1023,107 @@ export const teamShareCampaign = (campaignJson: string): Result => {
       return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
     }
     return { success: true, message: 'Shared "' + entry.name + '" with the team.' };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// --- Daily word puzzle: the shared board -----------------------------------
+// The game itself is src/js/main/arcade/DailyWord.tsx; per-machine progress
+// lives in wordGame.ts. Only the TEAM half is here, because it needs this
+// file's Team Folder plumbing (teamFolder/readSharedFile/writeSharedFile are
+// private to this module and duplicating them elsewhere is exactly the drift
+// this codebase has been bitten by before).
+//
+// POSTING IS OPT-IN, PER DAY, BY DESIGN. This board lands on a drive the
+// whole studio can read, so a result must never be published as a side effect
+// of playing -- the frontend only calls this when someone clicks "Share".
+// Same rule (and same reasoning) as sharing a combo or an expression: nothing
+// leaves this machine without a deliberate click.
+//
+// Entries are keyed by day + member, and a repost REPLACES that member's row
+// for that day rather than appending -- otherwise replaying would stack
+// duplicate rows for one person.
+
+interface WordResultEntry {
+  day: string;      // the puzzle's day key, e.g. "2026-07-24"
+  member: string;   // display name, from the machine owner tag
+  guesses: number;  // attempts used; 0 means "didn't get it"
+  solved: boolean;
+  // The poster's streak AT THAT MOMENT. Carried in the row because a streak
+  // is counted on each person's own machine -- the board has no other way to
+  // know it. The leaderboard reads it off each member's most recent row.
+  streak: number;
+  postedAt: string;
+}
+
+/** Read the shared board. Null (not an error) when there's no team folder. */
+export const teamLoadWordBoard = (): { success: boolean; entries?: WordResultEntry[]; error?: string } => {
+  try {
+    if (!teamFolder()) return { success: true, entries: [] };
+    const entries = readSharedFile<WordResultEntry>(SHARED_WORDGAME_FILE, SHARED_WORDGAME_TYPE) || [];
+    return { success: true, entries: entries };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/**
+ * Publish (or replace) THIS machine's result for one day.
+ *
+ * The member name comes from the machine-owner tag rather than being typed:
+ * the station already knows whose it is, and an untagged machine has no
+ * business writing a name into a shared studio file. An unmounted NAS returns
+ * a plain error rather than throwing -- a laptop off the studio network is a
+ * normal state, and the caller shows it as a quiet inline note.
+ */
+export const teamPostWordResult = (resultJson: string): Result => {
+  try {
+    if (!teamFolder()) return { success: false, error: "Team folder not set -- set it in the Team menu on the home screen first." };
+
+    const owner = loadLocalSetting(MACHINE_OWNER_KEY);
+    if (!owner) return { success: false, error: "Tag this machine with your name in the Team menu first, so the board knows who posted." };
+
+    let incoming: WordResultEntry | null = null;
+    try {
+      incoming = JSON.parse(resultJson) as WordResultEntry;
+    } catch (e2) {
+      return { success: false, error: "Could not read the result data." };
+    }
+    if (!incoming || !incoming.day) return { success: false, error: "Result has no day to file it under." };
+    incoming.member = owner;
+    incoming.streak = Number(incoming.streak) || 0;
+    incoming.postedAt = new Date().toString();
+
+    const board = readSharedFile<WordResultEntry>(SHARED_WORDGAME_FILE, SHARED_WORDGAME_TYPE) || [];
+    const kept: WordResultEntry[] = [];
+    for (let i = 0; i < board.length; i++) {
+      const row = board[i];
+      if (!row || !row.day) continue;
+      // Drop this member's existing row for this day (repost replaces), and
+      // keep the file from growing forever -- 30 days is plenty of banter.
+      const sameSlot = row.day === incoming.day && String(row.member).toLowerCase() === owner.toLowerCase();
+      if (!sameSlot) kept.push(row);
+    }
+    kept.push(incoming);
+
+    // Newest first, then trim. Day keys are ISO-ish (YYYY-MM-DD) so a plain
+    // string compare sorts them correctly without parsing dates.
+    kept.sort(function (a, b) { return a.day < b.day ? 1 : a.day > b.day ? -1 : 0; });
+    const trimmed: WordResultEntry[] = [];
+    const seenDays: string[] = [];
+    for (let i = 0; i < kept.length; i++) {
+      if (seenDays.indexOf(kept[i].day) === -1) {
+        if (seenDays.length >= 30) break;
+        seenDays.push(kept[i].day);
+      }
+      trimmed.push(kept[i]);
+    }
+
+    if (!writeSharedFile(SHARED_WORDGAME_FILE, SHARED_WORDGAME_TYPE, trimmed)) {
+      return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
+    }
+    return { success: true, message: "Posted to the team board." };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

@@ -39,3 +39,4 @@ export * from "./batchMatch";
 export * from "./effects";
 export * from "./team";
 export * from "./preflight";
+export * from "./wordGame";

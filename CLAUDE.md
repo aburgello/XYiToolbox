@@ -4356,27 +4356,28 @@ studio gag; before any client-facing release, swap `doom1.wad` for Freedoom
 Phase 1 (BSD-ish, drop-in -- chocolate-doom accepts it as a valid IWAD, no
 code change) and publish the doom-wasm source offer.
 
-**A SECOND global-scope trap, found only in the real panel**: the glue was
-originally injected as a `<script>` tag (the obvious fix for the `Module`
-adoption problem in note 1). That runs it in TRUE GLOBAL SCOPE, where the
-CEP host already declares `key` lexically as a number -- so the glue's own
-top-level `var key;` threw `Identifier 'key' has already been declared`.
-That's a PARSE-time SyntaxError, so not one line of the 276 KB glue ever
-executed, `script.onerror` never fired (it only covers network failure), and
-the overlay hung on "Loading DOOM..." forever with no visible error. Fixed by
-wrapping the source in `(function(Module){ ... })(window.Module)` -- a `var`
-shadowing a PARAMETER of the same name reuses the parameter's binding, so
-`Module` is still adopted, while every other top-level name becomes
-function-scoped and can no longer collide with the host. **Don't "simplify"
-this back to a script tag.**
+**A SECOND global-scope trap, found only in the real panel** (**SUPERSEDED by
+the iframe rework below -- kept because it explains what returns if anyone
+moves the engine back into the panel's page**): the glue was originally
+injected as a `<script>` tag (the obvious fix for the `Module` adoption
+problem in note 1). That runs it in TRUE GLOBAL SCOPE, where the CEP host
+already declares `key` lexically as a number -- so the glue's own top-level
+`var key;` threw `Identifier 'key' has already been declared`. That's a
+PARSE-time SyntaxError, so not one line of the 276 KB glue ever executed,
+`script.onerror` never fired (it only covers network failure), and the
+overlay hung on "Loading DOOM..." forever with no visible error. It was fixed
+by wrapping the source in `(function(Module){ ... })(window.Module)`. **That
+wrapper is now GONE**: inside the iframe the global scope is empty, so a
+plain `<script>` tag is correct again and note 1 above holds literally.
 
-**ONE BOOT PER PAGE SESSION (`bootedThisSession`)**: Emscripten has no
-destroy-the-runtime API, so a second boot in one page leaves two runtimes
-fighting over the same `#canvas` and globals, which HARD-CRASHES the CEF
-renderer (observed -- AE's panel died and respawned). This panel mounts React
-twice on cold start (see the GsapScreenTransition dedupe above), so this is a
-reachable path, not a theoretical one. The flag is module-scope on purpose:
-it has to survive remounts, which state/refs wouldn't.
+**ONE BOOT PER PAGE SESSION (`bootedThisSession`) -- REMOVED, see the iframe
+rework below.** Emscripten has no destroy-the-runtime API, so a second boot
+in ONE PAGE left two runtimes fighting over the same `#canvas` and globals,
+which HARD-CRASHES the CEF renderer (observed -- AE's panel died and
+respawned). That was real, and the module-scope flag was the right patch at
+the time. The iframe removes the cause rather than guarding it: each launch
+gets a fresh realm and closing destroys it, so DOOM is replayable and the
+flag is gone.
 
 **KEYBOARD: AE swallows keys unless the extension explicitly claims them.**
 First real play-test got mouse input but NO keyboard at all. The panel's other
@@ -4399,8 +4400,10 @@ actually delivers keys is a **focused invisible `<input>`** inside the
 overlay: AE forwards keystrokes to the web view when an EDITABLE FIELD holds
 focus and swallows them as host shortcuts otherwise -- which is precisely why
 the home search box and Cmd+K have always worked. Its keydown events bubble to
-`document`, which is exactly where SDL registered its handlers
-(`specialHTMLTargets[1]` in the glue), so no manual re-dispatch is needed.
+the document SDL registered its handlers on (`specialHTMLTargets[1]` in the
+glue), so no manual re-dispatch is needed. **Since the iframe rework that
+input lives INSIDE the iframe's document, not the overlay** -- SDL now binds
+to the iframe's document, so the keystrokes have to arrive and bubble there.
 Three constraints on that input: it must stay genuinely focusable
 (`display:none`/`visibility:hidden` can't hold focus -- hence opacity-0 and
 1px), it needs `pointer-events:none` so it can't swallow clicks meant for the
@@ -4426,17 +4429,373 @@ log progress to a FILE via Node `fs` rather than the console, because a
 renderer crash takes the console with it but leaves the file; and remember
 this is the user's live AE session -- a crash-y test interrupts their work.
 
-**Verification status**: `tsc -p tsconfig-build.json` + `yarn build` clean,
-`dist/cep/doom/` confirmed populated with all four assets, `.doom-*` classes
-confirmed in the single bundled stylesheet (cssCodeSplit:false still
-holding), and all four assets confirmed served by the dev server. **The engine IS
-confirmed working inside the real AE panel** -- driven over the debug bridge
-above, chocolate-doom printed its full startup banner, loaded the WAD, and
-rendered E1M1 with the HUD into a canvas in the panel (screenshotted). What
-is NOT yet confirmed is the same thing launched through the component's own
-UI: the one attempt to drive it that way crashed the renderer, most likely
-the double-boot now prevented by `bootedThisSession`. So the remaining
-acceptance test is simply: reload the panel, type `doom`, click the card.
 Note the canvas MUST keep `id="canvas"` -- SDL resolves its event target by
 that exact selector, and a canvas without it dies in `SDL_CreateWindow` with
 a null `addEventListener`.
+
+### THE ENGINE NOW RUNS IN AN IFRAME (rework -- read this before changing it)
+
+Real-use report: "once I ran doom the rest of the panel was pretty much
+difficult to use." Not cosmetic, and not a mystery -- one root cause produced
+it and the one-boot-per-session limit both:
+
+**Emscripten has no API to destroy a runtime**, so running the engine in the
+panel's OWN page contaminated that page permanently. Confirmed by reading the
+glue: SDL registers **4 keyboard + 6 mouse handlers on `document`** (via
+`JSEvents.registerOrRemoveHandler`) and the glue calls `preventDefault()` in
+12 places. Unmounting the overlay removed the canvas and deleted
+`window.Module`, but those handlers are closures in the engine's own scope --
+nothing detached them, so SDL went on swallowing arrows / Ctrl / Space / Tab /
+Esc / 1-7 / WASD panel-wide for the rest of the session. (The glue does expose
+`JSEvents.removeAllEventListeners`; the old teardown simply never called it.
+`Module["pauseMainLoop"]` IS exported, so that half of the cleanup did work.)
+
+**Fix: the engine runs inside an `<iframe>`** -- its own realm, so its own
+`document`, globals, audio context and wasm heap. Removing the iframe destroys
+all of it, which is exactly the teardown Emscripten refuses to provide. This
+fixes the leaked listeners AND makes DOOM replayable (`bootedThisSession` is
+gone). It also DELETED both global-scope workarounds above: no `new Function`
+wrapper (a plain `<script>` in an empty global scope adopts `window.Module`
+correctly) and no `key` collision (a fresh realm has no host globals).
+
+Mechanics worth keeping:
+- The iframe has **no `src`** -- `about:blank` inherits the parent's origin,
+  which is what lets the parent write into it. Its document is written with
+  `doc.open()/write()/close()` (synchronous; `srcdoc` would mean waiting on a
+  load event). It never loads a URL, so having no useful base URL is fine --
+  the engine is still handed its bytes (note 2 above is unchanged).
+- **Byte arrays are re-created in the iframe's realm** (`new win.Uint8Array`)
+  before being handed over. Typed arrays are realm-tagged; a parent-realm
+  array works in most Emscripten paths but not reliably all of them, and a
+  wrong guess fails deep in the wasm loader with an opaque error.
+- `callMain` is a top-level `function` in the glue and is **not** exported on
+  `Module` in this build -- in the iframe's global scope it lands on the
+  iframe window, so it's read as `win.callMain`. Don't "tidy" it to
+  `Module.callMain`.
+- The Ctrl/Cmd+Shift+Q quit handler is bound to **both** documents: once DOOM
+  is running the keystrokes land inside the iframe, so a parent-only listener
+  would never see them.
+- `.doom-stage` holds DOOM's 320x200 aspect with the **padding-box trick
+  (62.5%), NOT `aspect-ratio`** -- that's Chrome 88+ and this project targets
+  chrome74, same rule that ruled out `:has()` and `color-mix()`.
+
+**WINDOWS: `file://` URL -> fs path needs the leading slash stripped.** Real
+report from a Windows install, clicking the launch card:
+`ENOENT: no such file or directory, open
+'/C:/Users/.../com.xyi.ovlibrary/doom/websockets-doom.wasm'` -- with the files
+plainly present. A Windows file URL is `file:///C:/Users/...`, so
+`slice("file://".length)` leaves `/C:/Users/...`, which fs rejects; macOS is
+`file:///Users/...` -> `/Users/...` and is already correct, which is why the
+macOS studio never saw it. Fixed with `fileUrlToPath()` in DoomEasterEgg.tsx
+(decode percent-escapes, then strip a leading slash ONLY when a drive letter
+follows, so POSIX paths are untouched). **This is a pre-existing trap, not
+specific to DOOM** -- `OVLibrary.tsx` already handles the same drive-letter
+case for its own path->URL direction, and `lib/utils/bolt.ts`'s folder-dialog
+helpers (~lines 357/371) still do a bare
+`decodeURIComponent(x.replace("file://",""))`, so they are likely to have the
+same problem on Windows; not touched here since they're shared plumbing used
+by many tools and the CEP dialog can't be exercised from browser preview.
+
+**Verification status (post-rework)**: `tsc` (both configs) + `yarn build`
+clean; `dist/cep/doom/` confirmed populated with all four assets, all four
+confirmed served by the dev server at the derived `/doom/` path. Driven
+through the component's own UI in browser preview: **boots in ~1s**, engine
+banner + WAD load + `game started` + `emscripten_set_main_loop()` in console,
+single player E1M1. Isolation proven directly -- `window.Module` in the parent
+is `undefined` while the engine runs, an ArrowLeft dispatched at the PARENT
+document is **not** `defaultPrevented` while the same key at the iframe's
+document **is** (i.e. SDL is confined to the iframe, which is the reported bug
+fixed at its root). The real teardown sequence (`pauseMainLoop()` then
+`src="about:blank"`) was run and verified to leave `Module === undefined`, the
+canvas gone and the frame at `about:blank`.
+**Still unconfirmed**: the close -> relaunch round trip, because the
+`AnimatePresence` exit stalls without rAF in the automated preview tab (the
+documented harness artifact) so the unmount never completes there. Nothing
+blocks it in code (the guard flag is removed and the realm provably dies), but
+confirm it in real AE. Also still open from before: the mouse coordinate
+scaling offset, and the ~6.5 MB the assets add to the ZXP (~44% of the
+non-sourcemap build) plus the GPL/shareware licensing question above.
+
+## Arcade eggs: ArcadeFrame + "TIMELINE" (studio-flavoured snake)
+
+A second easter-egg game, and the start of a small shared harness for any
+more. Trigger: typing the exact word `timeline` into the home search box
+reveals a "PUSH THE PLAYHEAD" card; clicking it mounts `arcade/KeyframeSnake.tsx`
+over the panel. Same exact-match rule as `jacqui`/`doom`, so a trigger word
+can never fire while typing toward a real tool name.
+
+**`arcade/ArcadeFrame.tsx` is the reusable half, and it exists for ONE
+reason: AE eats keystrokes before a CEP panel sees them.** That problem is
+game-agnostic, so the solution lives there rather than being copy-pasted:
+`registerKeyEventsInterest` (released with `"[]"` on unmount, or the game
+keeps stealing keys from AE all session) PLUS the focused invisible `<input>`
+that actually delivers keys on macOS AE, re-focused on a 400ms interval. Any
+future game gets both for free by rendering inside it.
+
+**ArcadeFrame is deliberately NOT an iframe.** DOOM needs one because
+Emscripten can't destroy a runtime and therefore contaminates its page (see
+the DOOM section above). A game we wrote ourselves owns its own listeners and
+timers and removes them on unmount, so the realm boundary would buy nothing.
+Don't "unify" the two.
+
+Two implementation choices in `KeyframeSnake.tsx` worth keeping:
+- **The loop is `setInterval`, not `requestAnimationFrame`.** A grid game
+  wants a fixed logical tick anyway, but it ALSO makes the game verifiable in
+  browser preview, which throttles rAF to death in an automated tab (the
+  "Preview harness caveat" above). An rAF loop would be untestable there for
+  exactly the reason DOOM's exit animation is.
+- **Direction input is QUEUED and committed by the tick**, not applied on
+  keydown. Otherwise two fast presses inside one tick (right, then down, while
+  moving up) reverse the snake into its own neck -- the classic snake bug.
+- Live state lives in refs, not React state: the tick runs from an interval
+  and would otherwise capture a stale closure. React state carries only what
+  the chrome re-renders (score, dead, paused).
+
+Escape CLOSES these games -- deliberately unlike DOOM, where Escape is the
+in-game menu key and binding it to quit would make the menu unreachable.
+
+**Cost: ~28 KB of source, versus DOOM's 6.5 MB of assets** -- worth stating
+plainly, since bundle size is the live question for the DOOM egg. Nothing is
+fetched, no licence obligations, no third-party code.
+
+**Adding another game is one entry in `ARCADE_GAMES`** (a table in
+HomeScreen.tsx: trigger word, card title/sub, component) plus the component
+itself. It's a table specifically so the next one isn't another `isXEgg`
+branch threaded through that file. A CHIP-8 player is the obvious next
+candidate -- the emulator is ~200 lines and ROMs are ~1 KB each, but it needs
+public-domain ROMs (CC0 `chip8Archive`) dropped into `src/js/public/`, which
+is a deliberate download decision, not something to add unprompted.
+
+**Verification**: `tsc` (both configs) + `yarn build` clean; `.arcade-*`/
+`.ks-*` classes confirmed in the single bundled stylesheet (cssCodeSplit:false
+still holding). Driven for real in browser preview: card appears on the
+trigger word, canvas mounts at 576x360, board animates between ticks, score
+increments exactly once per pickup, wall collision reports "Ran past the work
+area", Space restarts with score reset to 0 while `best` correctly persists,
+P pauses and freezes the board, and a dead game correctly ignores direction
+input. Pixel-sampled the canvas to confirm all three colours render (teal
+keyframes, white playhead, orange footage). Untested outside preview: whether
+AE actually delivers the keys in the real panel -- that's the same
+macOS-CEP-specific unknown DOOM's keyboard carries, and the one thing browser
+preview structurally cannot answer.
+
+## DAILY: the word puzzle + the team board
+
+The second arcade egg, and the chill one -- asked for as something
+non-skill-based to dip into during a render. Trigger word: `daily`. Five
+letters, six guesses, ONE puzzle a day. Built on `arcade/ArcadeFrame.tsx`
+(which gained a `fluid` prop: DOM-laid-out games size to their content instead
+of the canvas aspect box).
+
+**THE SYNC COSTS NOTHING, AND THAT'S THE DESIGN.** The answer is derived from
+the DATE (`puzzleForDay` in DailyWord.tsx), so every machine in the studio
+independently lands on the same word each day -- no server, no clock sync, no
+coordination. Day math collapses the LOCAL calendar date onto a UTC timestamp
+so the puzzle turns over at local midnight and a DST shift can't produce a 23-
+or 25-hour day that skips or repeats a word. The list is strided by a prime
+coprime with its length (7919 vs 687 words), so consecutive days aren't
+alphabetical neighbours and every word is used before any repeat -- ~1.9 years.
+
+**SUPERSEDED -- posting is now AUTOMATIC, and the leaderboard is always on.**
+The first version hid results behind a "Share with the team" click, on the
+reasoning that a shared drive shouldn't receive anything as a side effect of
+playing. Changed on direct instruction: a word-game score is low stakes, and
+a leaderboard nobody remembers to post to is a dead leaderboard. The tradeoff
+is handled by being OPEN about it rather than by asking -- the panel's hint
+line reads "result posts to the team board", so it is never a surprise. **If
+this ever needs to become opt-in again, the honest fix is a per-member
+toggle, not silence.**
+
+What did NOT change: `teamPostWordResult` still REFUSES to post from an
+untagged machine rather than guessing at a name (surfaced as a quiet inline
+note, not an error toast), reposting REPLACES that member's row for the day
+so replaying can't stack duplicates, and the file is trimmed to 30 days.
+
+**The leaderboard** aggregates the rolling 30-day window per member:
+today's result, current streak, best single round, and total guesses
+(`standingsFrom` in DailyWord.tsx). Sorted by streak, then best round, then
+fewest total guesses -- which rewards showing up rather than one lucky day.
+**Streak is carried IN each posted row and read off that member's most recent
+row, never recomputed from the board**: a streak is counted on each person's
+own machine, which knows which days they actually played, whereas the board
+only sees days they were at their desk -- recomputing would quietly
+under-count anyone who missed a weekend.
+
+**SHARED FILES NOW LIVE IN A `misc/` SUBFOLDER of the team folder** (asked
+for directly, so the odds and ends have somewhere to live without cluttering
+the folder people navigate for profiles). Migration matters here and is
+handled: the v1 files are already at the team folder ROOT on the studio NAS,
+so `readSharedFile` prefers `misc/<name>` and FALLS BACK to the root, while
+`writeSharedFile` always writes to `misc/` (creating it on first use, and
+falling back to the root if it can't be created rather than losing a share).
+Net effect: the first time anyone shares anything, that library is read from
+the old location and written to the new one -- it migrates itself, nothing is
+orphaned, no manual step. Same legacy-fallback shape `teamApplyProfile`
+already uses for the flat `profiles/` layout. **Don't "tidy" the fallback
+away until every studio machine has shared at least once.**
+
+Per-machine progress is `wordGame.ts` (`app.settings` key `WordGameState`,
+one opaque JSON string -- the frontend owns the format, so it can evolve
+without an ExtendScript change, same "opaque strings" reasoning as
+PROFILE_KEYS). Streak only advances on a day actually solved, keyed on
+`lastSolvedDay` so replaying can't inflate it.
+
+**Everything degrades quietly**: no CEP bridge (browser preview), no Team
+Folder, or an unmounted NAS are all NORMAL states -- the game stays fully
+playable, just without persistence or a board. Only an explicit Share click
+ever surfaces a message.
+
+**`arcade/words.ts` is ~690 curated 5-letter words (~5 KB), and guesses are
+deliberately NOT validated against a dictionary** -- any five letters are
+accepted. That would be wrong for a competitive word game but is right for
+this one: a spellchecker rejecting a real word you typed is far more annoying
+than a nonsense guess slipping through, and proper validation would mean
+shipping or downloading a real dictionary. If that's ever wanted, the honest
+fix is a public-domain list (ENABLE/SCOWL) in `src/js/public/`, read the same
+scheme-aware way DoomEasterEgg.tsx reads its assets -- do NOT pad words.ts out
+by hand. **Don't call it Wordle** -- NYT owns the name.
+
+**The on-screen keyboard is not decoration.** AE's key delivery to a CEP panel
+is the flakiest part of this whole area (see ArcadeFrame's header), so
+clicking must always work even if keystrokes never arrive at all.
+
+**Verification**: `tsc -p tsconfig-build.json` + `yarn build` clean (the
+`wordGame.ts` "Cannot find name 'app'" lines under the FRONTEND config are the
+usual ExtendScript ambient-globals noise, same as team.ts/motionTools.ts).
+Played end to end in browser preview against an answer computed INDEPENDENTLY
+in Node from the same formula ("money" for 2026-07-24, day 204, index 339):
+board renders 6x5 with 28 keys, two probe guesses scored EXACTLY as predicted
+including position-sensitive present-vs-correct ("steam" -> absent/absent/
+present/absent/present, "mount" -> correct/correct/absent/present/absent),
+winning via the on-screen keyboard gave five greens and "Got it in 3", key
+colouring propagated correctly, and the no-bridge Share path failed quietly
+("No team folder available from here.") with zero uncaught errors and the game
+still playable. NOT verifiable in preview: the actual NAS round trip (posting
+and another machine reading the board) and whether AE delivers physical
+keystrokes -- the same macOS-CEP unknown every game here carries.
+
+## CHAIN: the movie-linking game (Cine2Nerdle Battle clone) -- SLICE 1
+
+Trigger word `chain`. Link films by a shared **actor, director, writer,
+composer or cinematographer**, 25s per turn, each person usable **3 times**.
+Built as the first slice of a head-to-head battle game; this slice is
+SINGLE-MACHINE (turns alternate between two seats at one keyboard).
+
+**Researched, not guessed** -- the real Cine2Nerdle Battle rules: 25s turns;
+links via cast/writer/director/composer/cinematographer; each linking person
+capped at 3 uses; 3 pre-chosen bans your opponent can't use; lifelines (skip,
+pass back -- 2 passes = draw, buy time, reveal cast list); you lose by running
+out of time; optional gamified win conditions ("play 8 non-MCU sci-fi").
+Sources: cinenerdle2.app/how-to-play?mode=battle, plus ResetEra/RetroGameTalk
+threads describing the mechanics in text (the site itself is a JS app and
+returns nothing to a fetcher).
+
+**Why single-machine FIRST**, when the ask was networked head-to-head: this
+slice exercises the entire turn machine -- whose turn, the per-turn clock, the
+chain, the shared usage tally, losing on time -- with no sync in the way.
+Battle mode then becomes "replace the local turn-swap with two files on the
+Team Folder", on rules already proven. Building lobby + sync + rules at once is
+how all three end up half-working.
+
+**The user's two prototypes (`tmdbChain.ts`, `useGameChannel.ts`, in the
+parent folder) were scrapped**, for concrete reasons worth keeping:
+- `tmdbChain.ts` used `fetch()`. **That dies in the packaged panel** -- a
+  `file://` origin can't do cross-origin fetch. Replaced with Node `https`
+  (`arcade/cine/tmdb.ts`), the same escape hatch `wrikeApi.ts` documents,
+  with a `fetch` fallback ONLY for browser preview. Note the dispatch is on
+  NODE AVAILABILITY, not URL scheme -- the opposite of DoomEasterEgg's rule,
+  deliberately: there the question is which filesystem, here it's purely
+  which transport dodges CORS.
+- It also linked on cast/director/writer only. **Composer and cinematographer
+  are not optional** -- a live spike found Heat -> The Insider links through
+  Dante Spinotti (DoP) as well as Al Pacino, so the prototype would have
+  rejected real moves.
+- `useGameChannel.ts` used Supabase Realtime. **Dropped entirely**: the studio
+  works remotely via Jump, so the PANEL ALWAYS RUNS ON A STUDIO MAC and is
+  never actually off-network. That kills the only reason to add a WebSocket
+  service, a dependency, an anon key in the ZXP, and an RLS question. The Team
+  Folder already does this job.
+
+**TMDB key is committed deliberately** (confirmed): free, rotatable,
+read-only, internal tool, and a ZXP is an extractable zip regardless. Contrast
+`WrikeApiToken`, a real secret in app.settings and excluded from profiles.
+TMDB's terms require the attribution line -- it's rendered in the game; keep it.
+
+**Structure, and keep it this way**: `tmdb.ts` fetches (+ per-session credits
+cache -- credits never change, and it's what keeps a validation under a
+second), `chain.ts` decides (PURE, no React/network -- directly unit-testable,
+which matters because a subtle bug in the 3-use rule makes the game quietly
+unfair rather than visibly broken), `CineChain.tsx` renders.
+
+**Real bug found by testing, fixed**: the opening film silently swapped a
+moment after appearing, because `start()` ran twice on mount -- StrictMode
+double-invokes effects in dev AND this panel is separately known to mount
+React twice on a CEP cold start. Each run picked a different random film and
+burned a TMDB call. Guarded with a `bootedRef` on the MOUNT path only; "New
+chain"/"Try again" still call `start()` directly every time.
+
+**Verification**: `tsc` (both configs) + `yarn build` clean. `chain.ts` unit-
+tested headless against 8 cases -- valid link, no link, already-played, same
+film, 3-use exhaustion falling through to the next usable link, all-links-spent
+(distinct message), purity of `spend`, and **a person credited as BOTH Director
+and Writer deduping to ONE person and ONE usage**. Played end to end in browser
+preview against the live API: TMDB reachable, opening film loads, a real link
+("Passenger" -> "Bad Boys for Life" via Jacob Scipio) grew the chain to 2,
+swapped to Player 2, reset the clock and logged "via Jacob Scipio P1"; an
+invalid film was rejected with the right reason; the clock running out gave
+"Player 2 ran out of time", hid the search box and offered New chain with the
+chain preserved. NOT verified: Node-`https` transport inside the real AE panel
+(preview exercises the fetch fallback) -- low risk, since wrikeApi.ts already
+proves that path, but it's the first thing to check in AE.
+
+### CHAIN polish round: focus, anti-spam, posters, hints-right, theming
+
+Five things from first real use, all fixed:
+
+- **THE KEYBOARD TRAP MADE THE SEARCH BOX UNTYPEABLE** ("the text cursor gets
+  swallowed quickly and I can't type"). ArcadeFrame re-focuses its hidden
+  input every 400ms so AE keeps forwarding keys -- which yanked the caret out
+  of CHAIN's own <input> several times a second. **Fix, and it's the general
+  rule now: the keygrab only needs SOME editable field focused, so it stands
+  down when `document.activeElement` is already an input/textarea/select/
+  contenteditable.** The stage's mousedown handler skips too, since mousedown
+  fires BEFORE focus moves and would otherwise fight the click that's about to
+  focus that field. Any future game with a text field would have hit this.
+- **One attempt per search.** The result list used to survive a rejected
+  guess, so you could click straight down it until something stuck -- a
+  brute-force lottery, not a game. Query and results are now cleared BEFORE
+  the verdict is known, and the in-flight search is cancelled.
+- **Re-focus after a guess had to move into `finally`.** The input carries
+  `disabled={checking}` during the lookup and a disabled field silently
+  refuses focus, so the inline `focus()` calls did nothing; it's now a
+  `setTimeout(...,0)` after `setChecking(false)` re-enables it. Matters under
+  a 25s clock.
+- **Posters everywhere** (current film, results, chain) via TMDB's w92/w154
+  CDN. Fixed 2:3 boxes with a dashed placeholder so a film with no artwork
+  doesn't collapse the row and make the list jump.
+- **Layout is a CSS GRID with named areas, not flex** -- because the three
+  blocks need DIFFERENT orders per breakpoint. Wide: hints in a right-hand
+  column spanning full height, matching where Cine2Nerdle keeps its tools.
+  Narrow (<=640px, which is MOST docked AE panels -- measured 490px in
+  preview, ~500px is this project's stated design target): board, then hints,
+  then chain -- the hints must land under the search box, NOT after the chain,
+  or they're a scroll away exactly when needed. Results and chain are each
+  capped with their own scroll; without that the result list grew the panel
+  until the film you're linking FROM and the box you type INTO were both
+  scrolled off the top.
+- **Themed off `--ov-accent`**, the token themes.ts actually sets, so the game
+  follows the user's chosen theme instead of hardcoded teal (fallbacks kept
+  throughout). Player 2's badge stays a fixed orange so the two sides can't
+  collide on a warm theme.
+
+Verified in preview: caret held by the search box across six 400ms keygrab
+ticks; 6 results each with a poster, cleared to 0 after one guess with the
+caret returned and the box immediately typable again; hints above chain when
+narrow; side panel to the right and top-aligned at 900px wide with 15 hint
+chips. The user's two prototype files were deleted.
+
+**Next slices**, recorded at the bottom of CineChain.tsx: (1) BATTLE via two
+per-player JSON files under `misc/battle/<room>/`, polled ~1s, each side
+writing only its own file (no write contention), clock anchored to the move's
+WRITTEN timestamp so Jump's screen-share latency can't shorten the remote
+player's turn; (2) lifelines; (3) bans; (4) win conditions.
