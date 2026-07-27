@@ -418,7 +418,7 @@ export const CineChainBattle = ({
                             </div>
                         )}
                         <p className="cc-lobby-note">
-                            The clock starts when you're both ready. Nobody loses while you wait.
+                            The clock starts when you're both ready.
                         </p>
                     </div>
                 )}
