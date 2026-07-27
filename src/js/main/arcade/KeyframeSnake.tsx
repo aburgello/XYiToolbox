@@ -4,7 +4,7 @@
 // running past the work area, and making a circular reference.
 //
 // Written from scratch rather than ported, which is the entire point: it costs
-// a few KB instead of DOOM's 6.3 MB, carries no GPL/shareware baggage, and it
+// a few KB instead of an emulator's megabytes, carries no GPL/shareware baggage, and it
 // speaks the studio's own vocabulary. All the genuinely hard parts (getting AE
 // to hand keystrokes to a CEP panel at all) live in ArcadeFrame.tsx.
 //
@@ -15,7 +15,7 @@
 //    anyway -- but it also makes the game verifiable in this project's browser
 //    preview harness, which throttles rAF to death in an automated tab (see
 //    CLAUDE.md's "Preview harness caveat"). An rAF loop would be untestable
-//    there for exactly the same reason DOOM's exit animation is.
+//    there for exactly the same reason any exit animation is.
 //
 // 2. INPUT IS QUEUED, NOT APPLIED IMMEDIATELY. Turning writes into `pending`
 //    and only the tick commits it. Without that, two fast key presses inside

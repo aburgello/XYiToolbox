@@ -1,6 +1,6 @@
-// "CHAIN" -- link films by a shared actor, director, writer, composer or
+// "XYiNERDLE" -- link films by a shared actor, director, writer, composer or
 // cinematographer, against the clock. A Cine2Nerdle Battle clone, built in
-// slices: THIS IS SLICE ONE, single-machine.
+// slices: THIS IS SLICE ONE, single-machine. Trigger word: `xyinerdle`.
 //
 // WHY SINGLE-MACHINE FIRST, when the ask was head-to-head over the network:
 // turns here alternate between two seats played at one keyboard, which
@@ -15,20 +15,59 @@
 // wrikeApi.ts exists) and falls back to `fetch` in browser preview so this is
 // actually testable in `yarn dev`.
 //
-// RULES IMPLEMENTED HERE (from the real game): 25s per turn, links via
-// cast/director/writer/composer/cinematographer, each person usable 3 times,
-// no repeat films, you lose by running out of time. Bans, passes, skips and
-// gamified win conditions are NOT in this slice -- see the note at the bottom
-// of the file for where they'd go.
+// RULES IMPLEMENTED HERE: 25s per turn, links via cast/director/writer/
+// composer/cinematographer, each person usable 3 times, no repeat films, you
+// lose by running out of time. Plus four TOOLS, one use each per player:
+// reveal cast & crew, +7 seconds, skip the turn, and ban the current film
+// (which burns its whole cast/crew to their cap and redraws a new film for the
+// SAME player). Pass-back and gamified win conditions are still not in this
+// slice -- see the note at the bottom of the file.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Search, Loader2, Clock, Users, RotateCcw, Eye } from "lucide-react";
+import { Search, Loader2, Clock, Users, RotateCcw, Eye, Timer, SkipForward, Ban } from "lucide-react";
 import ArcadeFrame from "../ArcadeFrame";
 import { searchMovies, getCredits, randomStartingMovie, posterUrl, type MovieSummary, type MovieCredits } from "./tmdb";
-import { checkMove, spend, usesLeft, MAX_USES_PER_PERSON, type ChainLink, type UsageTally } from "./chain";
+import { checkMove, spend, exhaustAll, usesLeft, MAX_USES_PER_PERSON, type ChainLink, type UsageTally } from "./chain";
+import NerdleMenu, { type MenuChoice } from "./NerdleMenu";
+import CineChainBattle from "./CineChainBattle";
 import "./CineChain.scss";
 
 const TURN_SECONDS = 25;
 const SEARCH_DEBOUNCE_MS = 280;
+/** What the "+7s" tool adds to the clock. */
+const EXTRA_SECONDS = 7;
+
+/**
+ * Cast & crew is FREE for the opening rounds, then costs your one use.
+ *
+ * Counted across the WHOLE GAME, not per player -- so it's a shared grace
+ * period at the start (when nobody has a feel for the chain yet and the
+ * reveal is teaching you the game) that closes for everyone at the same
+ * moment. Per-player free rounds would instead reward whoever happened to
+ * move second.
+ */
+const FREE_CAST_ROUNDS = 5;
+
+/**
+ * The four tools, ONE USE EACH PER PLAYER PER GAME.
+ *
+ * Per-player rather than per-game on purpose: a shared pool would let whoever
+ * moves first strip the board of every tool before their opponent ever gets a
+ * turn. Each side gets their own set, so spending one is a decision about your
+ * own game rather than a race.
+ */
+type ToolId = "cast" | "time" | "skip" | "ban";
+const TOOLS: { id: ToolId; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
+    { id: "cast", label: "Cast & crew", icon: Eye },
+    { id: "time", label: "+7 seconds",  icon: Timer },
+    { id: "skip", label: "Skip turn",   icon: SkipForward },
+    { id: "ban",  label: "Ban film",    icon: Ban },
+];
+
+type ToolState = Record<ToolId, boolean>;
+const FRESH_TOOLS = (): Record<1 | 2, ToolState> => ({
+    1: { cast: false, time: false, skip: false, ban: false },
+    2: { cast: false, time: false, skip: false, ban: false },
+});
 
 // Letters/digits/space/backspace/enter/arrows -- the search box needs real
 // typing, so this claims a lot more from AE than the other games do.
@@ -41,13 +80,48 @@ const KEY_CODES = (() => {
 
 type Phase = "loading" | "playing" | "over";
 
+/**
+ * The menu sits IN FRONT of the game rather than inside it: the board has
+ * enough state of its own without also owning lobby concerns, and mounting
+ * <Game> only after a choice means the opening film isn't fetched until
+ * someone actually commits to playing (the menu is also where an invite gets
+ * accepted, which would otherwise waste a TMDB call every time it's opened).
+ */
 export const CineChain = ({ onClose }: { onClose: () => void }) => {
+    const [choice, setChoice] = useState<MenuChoice | null>(null);
+    if (!choice) {
+        return (
+            <ArcadeFrame title="XYiNerdle" hint="Link films by cast and crew" keyCodes={KEY_CODES} fluid onClose={onClose}>
+                <NerdleMenu onChoose={setChoice} />
+            </ArcadeFrame>
+        );
+    }
+    // Room mode → battle sync; solo mode → single-machine game.
+    if (choice.mode === "room") {
+        return (
+            <CineChainBattle
+                room={choice.room}
+                against={choice.against}
+                seat={choice.seat}
+                onClose={onClose}
+                onQuit={() => setChoice(null)}
+            />
+        );
+    }
+    return <NerdleGame choice={choice} onClose={onClose} onQuit={() => setChoice(null)} />;
+};
+
+const NerdleGame = ({ choice, onClose, onQuit }: { choice: MenuChoice; onClose: () => void; onQuit: () => void }) => {
     const [phase, setPhase] = useState<Phase>("loading");
     const [fatal, setFatal] = useState<string | null>(null);
 
     const [chain, setChain] = useState<ChainLink[]>([]);
     const [current, setCurrent] = useState<MovieCredits | null>(null);
     const [tally, setTally] = useState<UsageTally>({});
+    // Who each ban took out of play. The tally alone can't answer "who's
+    // burned?" -- it's keyed by id and mixes bans with ordinary use.
+    const [bans, setBans] = useState<{ film: string; by: 1 | 2; names: string[] }[]>([]);
+    const [burnedOpen, setBurnedOpen] = useState(true);
     const [player, setPlayer] = useState<1 | 2>(1);
     const [seconds, setSeconds] = useState(TURN_SECONDS);
     const [loser, setLoser] = useState<1 | 2 | null>(null);
@@ -58,6 +132,8 @@ export const CineChain = ({ onClose }: { onClose: () => void }) => {
     const [checking, setChecking] = useState(false);
     const [message, setMessage] = useState<string | null>(null);
     const [showCast, setShowCast] = useState(false);
+    const [tools, setTools] = useState<Record<1 | 2, ToolState>>(FRESH_TOOLS);
+    const [redrawing, setRedrawing] = useState(false);
 
     const inputRef = useRef<HTMLInputElement>(null);
     // Guards against a slow search landing after a newer one (out-of-order
@@ -76,9 +152,12 @@ export const CineChain = ({ onClose }: { onClose: () => void }) => {
             setChain([{ movie: { id: credits.id, title: credits.title, year: credits.year, poster: credits.poster }, via: null, player: null }]);
             setCurrent(credits);
             setTally({});
+            setBans([]);
             setPlayer(1);
             setSeconds(TURN_SECONDS);
             setLoser(null);
+            setTools(FRESH_TOOLS());
+            setShowCast(false);
             setQuery("");
             setResults([]);
             setMessage(null);
@@ -188,6 +267,89 @@ export const CineChain = ({ onClose }: { onClose: () => void }) => {
         }
     }, [checking, current, phase, playedIds, player, tally]);
 
+    // ── tools ───────────────────────────────────────────────────────────────
+    const markUsed = (id: ToolId) =>
+        setTools((t) => ({ ...t, [player]: { ...t[player], [id]: true } }));
+
+    // chain[0] is the opening film, so films-beyond-it is the number of rounds
+    // actually played.
+    const roundsPlayed = Math.max(0, chain.length - 1);
+    const castIsFree = roundsPlayed < FREE_CAST_ROUNDS;
+    const freeCastLeft = Math.max(0, FREE_CAST_ROUNDS - roundsPlayed);
+
+    const useCast = () => {
+        // Free window, or already paid for it -> plain toggle, costs nothing.
+        if (castIsFree || tools[player].cast) { setShowCast((v) => !v); return; }
+        markUsed("cast");
+        setShowCast(true);
+    };
+
+    const useTime = () => {
+        if (tools[player].time || phase !== "playing") return;
+        markUsed("time");
+        setSeconds((s2) => s2 + EXTRA_SECONDS);
+        setMessage(`+${EXTRA_SECONDS} seconds.`);
+    };
+
+    // Hand the turn over untouched -- the chain and the clock reset, but the
+    // film stays, so your opponent inherits the problem you couldn't solve.
+    const useSkip = () => {
+        if (tools[player].skip || phase !== "playing") return;
+        markUsed("skip");
+        setPlayer((p) => (p === 1 ? 2 : 1));
+        setSeconds(TURN_SECONDS);
+        setShowCast(false);
+        setQuery("");
+        setResults([]);
+        setMessage("Turn skipped.");
+        setTimeout(() => inputRef.current?.focus(), 0);
+    };
+
+    /**
+     * BAN: burn this film and take a different one, still on your turn.
+     *
+     * Everyone on the rejected film is pushed to their cap, so the ban is not
+     * a free re-roll -- it permanently removes that whole cast and crew from
+     * the game for BOTH players, including links you might have wanted later.
+     */
+    const useBan = useCallback(async () => {
+        if (!current || tools[player].ban || phase !== "playing" || redrawing) return;
+        markUsed("ban");
+        setRedrawing(true);
+        setMessage(null);
+        setQuery("");
+        setResults([]);
+        searchSeq.current++;
+        const burned = current.people.map((p) => p.id);
+        try {
+            const seed = await randomStartingMovie();
+            const credits = await getCredits(seed.id);
+            setTally((t) => exhaustAll(t, burned));
+            setBans((b) => [...b, { film: current.title, by: player, names: current.people.map((p) => p.name) }]);
+            setChain((c) => [...c, {
+                movie: { id: credits.id, title: credits.title, year: credits.year, poster: credits.poster },
+                via: null,
+                player,
+            }]);
+            setCurrent(credits);
+            setSeconds(TURN_SECONDS);
+            setShowCast(false);
+            setMessage(`Banned "${current.title}" -- its cast and crew are now spent.`);
+        } catch (e: any) {
+            setMessage(e?.message || "Couldn't draw a replacement film.");
+        } finally {
+            setRedrawing(false);
+            setTimeout(() => inputRef.current?.focus(), 0);
+        }
+    }, [current, phase, player, redrawing, tools]);
+
+    const runTool = (id: ToolId) => {
+        if (id === "cast") useCast();
+        else if (id === "time") useTime();
+        else if (id === "skip") useSkip();
+        else useBan();
+    };
+
     // Enter plays the top result -- the whole game is typing under time
     // pressure, so reaching for the mouse to confirm would be the slowest part
     // of every turn.
@@ -200,7 +362,8 @@ export const CineChain = ({ onClose }: { onClose: () => void }) => {
     return (
         <ArcadeFrame
             title="XYiNerdle"
-            hint={"Link by cast, director, writer, composer or cinematographer · each person " + MAX_USES_PER_PERSON + "x max"}
+            hint={(choice.mode === "room" ? "Room " + choice.room + " vs " + choice.against + " · " : "")
+                + "Each person " + MAX_USES_PER_PERSON + "x max"}
             keyCodes={KEY_CODES}
             fluid
             onClose={onClose}
@@ -287,15 +450,33 @@ export const CineChain = ({ onClose }: { onClose: () => void }) => {
 
                             </div>
 
-                            {/* Hints live on the RIGHT, where Cine2Nerdle keeps
-                                them. Kept behind a reveal rather than shown by
-                                default -- a permanently visible cast list is an
-                                answer sheet, not a hint. */}
+                            {/* Tools live on the RIGHT, where Cine2Nerdle keeps
+                                them. One use each, per player -- see TOOLS. */}
                             <aside className="cc-side">
-                                <div className="cc-side-head">Hints</div>
-                                <button className="cc-hint-btn" onClick={() => setShowCast((v) => !v)}>
-                                    <Eye size={12} /> {showCast ? "Hide cast & crew" : "Reveal cast & crew"}
-                                </button>
+                                <div className="cc-side-head">Tools &middot; P{player}</div>
+                                <div className="cc-tools">
+                                    {TOOLS.map(({ id, label, icon: Icon }) => {
+                                        const spent = tools[player][id];
+                                        // Cast stays clickable once bought (so it can be hidden
+                                        // again) and during the free window; the others are
+                                        // genuinely one-shot.
+                                        const free = id === "cast" && castIsFree;
+                                        const disabled = phase !== "playing" || redrawing || (spent && id !== "cast");
+                                        return (
+                                            <button
+                                                key={id}
+                                                className={"cc-tool" + (spent && !free ? " cc-tool--spent" : "") + (free ? " cc-tool--free" : "")}
+                                                disabled={disabled}
+                                                onClick={() => runTool(id)}
+                                            >
+                                                <Icon size={12} />
+                                                <span>{id === "cast" && (spent || free) ? (showCast ? "Hide cast" : "Show cast") : label}</span>
+                                                {free && <b>{freeCastLeft} free</b>}
+                                                {spent && id !== "cast" && <b>used</b>}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
                                 {showCast ? (
                                     <div className="cc-cast">
                                         {linkable.map((p) => (
@@ -310,7 +491,37 @@ export const CineChain = ({ onClose }: { onClose: () => void }) => {
                                         {!linkable.length && <span className="cc-cast-empty">Every link from this film is used up.</span>}
                                     </div>
                                 ) : (
-                                    <p className="cc-side-note">Who you can link through, and how many uses each has left.</p>
+                                    <p className="cc-side-note">
+                                        {castIsFree
+                                            ? `Cast is free for ${freeCastLeft} more round${freeCastLeft === 1 ? "" : "s"}, then one use each per player.`
+                                            : "One use each, per player, per game."}
+                                    </p>
+                                )}
+
+                                {/* A ban burns a whole cast for BOTH players --
+                                    listed here because otherwise you only find
+                                    out by typing a name and being told it's
+                                    spent. */}
+                                {bans.length > 0 && (
+                                    <div className="cc-burned">
+                                        <button
+                                            className="cc-burned-head"
+                                            onClick={() => setBurnedOpen((v) => !v)}
+                                            aria-expanded={burnedOpen}
+                                        >
+                                            <Ban size={11} />
+                                            <span>Burned by bans</span>
+                                            <b>{bans.reduce((n, b) => n + b.names.length, 0)}</b>
+                                        </button>
+                                        {burnedOpen && bans.map((b, i) => (
+                                            <div className="cc-burned-ban" key={i}>
+                                                <div className="cc-burned-film">
+                                                    <em>P{b.by}</em> banned “{b.film}”
+                                                </div>
+                                                <div className="cc-burned-names">{b.names.join(" · ")}</div>
+                                            </div>
+                                        ))}
+                                    </div>
                                 )}
                             </aside>
                             <div className="cc-chain">
@@ -330,9 +541,21 @@ export const CineChain = ({ onClose }: { onClose: () => void }) => {
                                                 <span className="cc-link-via">
                                                     via {l.via.name}
                                                     {l.via.role !== "cast" && <em> · {l.via.role}</em>}
+                                                    {/* CURRENT remaining, not remaining-at-the-time: what
+                                                        matters mid-game is whether this person is still
+                                                        available, since a spent one now blocks ANY film
+                                                        they appear in. */}
+                                                    <b className={"cc-link-uses" + (usesLeft(tally, l.via.id) === 0 ? " cc-link-uses--none" : "")}>
+                                                        {usesLeft(tally, l.via.id) === 0 ? "spent" : usesLeft(tally, l.via.id) + " left"}
+                                                    </b>
                                                 </span>
                                             ) : (
-                                                <span className="cc-link-via cc-link-via--start">opening film</span>
+                                                // No `via` means the film wasn't linked to -- either the
+                                                // game's opening film (nobody played it) or a ban redraw
+                                                // (a player took it). `player` is what tells them apart.
+                                                <span className="cc-link-via cc-link-via--start">
+                                                    {l.player ? "redrawn after ban" : "opening film"}
+                                                </span>
                                             )}
                                         </span>
                                         {l.player && <span className={"cc-link-p cc-link-p--" + l.player}>P{l.player}</span>}

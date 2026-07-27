@@ -12,7 +12,7 @@
 // typed is far more annoying than one that lets a nonsense guess through.
 // If proper validation is ever wanted, the honest fix is a real word list
 // (ENABLE/SCOWL are public domain) dropped in `src/js/public/`, read the same
-// scheme-aware way DoomEasterEgg.tsx reads its assets -- not padding this
+// scheme-aware way bundled assets are read -- not padding this
 // list out by hand.
 //
 // SELECTION RULES used when curating: exactly five letters, no proper nouns,

@@ -1,13 +1,13 @@
 // Chrome for the built-in arcade eggs (ArcadeFrame.tsx).
 //
-// z-index 1800 matches DoomEasterEgg.scss on purpose: above toasts and the
+// z-index 1800 on purpose: above toasts and the
 // video player (1000), below Dialog.tsx (2000) so a real confirm/alert can
 // still appear over a game. See CLAUDE.md's CommandPalette section for this
 // app's full stacking order.
 
 // The reveal card shown in the home search results when a trigger word is
 // typed (rendered by HomeScreen.tsx's ARCADE_GAMES table, styled here so the
-// whole egg lives in one place -- same split DoomEasterEgg.scss uses).
+// whole egg lives in one place).
 .arcade-launch-card {
     display: flex;
     flex-direction: column;

@@ -28,10 +28,7 @@ import { useTheme } from "../hooks/useTheme";
 import { THEMES } from "../themes";
 import ThemePicker from "../ThemePicker";
 import ThemeDecoration from "../ThemeDecoration";
-import DoomEasterEgg from "../DoomEasterEgg";
-import KeyframeSnake from "../arcade/KeyframeSnake";
-import DailyWord from "../arcade/DailyWord";
-import CineChain from "../arcade/cine/CineChain";
+import ArcadeHub from "../arcade/ArcadeHub";
 import ToolsetTool from "../tools/Toolset";
 import XYToolsDroplet from "../XYToolsDroplet";
 import Tooltip from "../Tooltip";
@@ -143,41 +140,15 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
     const { themeId, setTheme, decoratedThemes, toggleThemeDecoration } = useTheme();
     const isThemeEasterEgg = search.trim().toLowerCase() === "jacqui";
 
-    // Second hidden egg, same exact-match rule as "jacqui" above (so it can't
-    // fire while typing toward a real tool name): typing "doom" offers a
-    // launch card, and launching mounts actual DOOM over the panel. Kept as a
-    // two-step reveal rather than booting on keystroke -- see DoomEasterEgg.tsx.
-    const isDoomEasterEgg = search.trim().toLowerCase() === "doom";
-    const [showDoom, setShowDoom] = useState(false);
-
-    // The built-in arcade eggs, as a table rather than another `isXEgg` branch
-    // -- adding one (a CHIP-8 player, say) should be one entry here plus its
-    // component, not another special case threaded through this file. Same
-    // exact-match rule as "jacqui"/"doom" so a trigger word can never fire
-    // while someone types toward a real tool name.
-    const ARCADE_GAMES: { word: string; title: string; sub: string; Game: React.ComponentType<{ onClose: () => void }> }[] = [
-        {
-            word: "timeline",
-            title: "PUSH THE PLAYHEAD",
-            sub: "Keyframes, footage, and two ways to ruin an afternoon",
-            Game: KeyframeSnake,
-        },
-        {
-            word: "daily",
-            title: "FIVE LETTERS, SIX GUESSES",
-            sub: "One word a day — the whole studio gets the same one",
-            Game: DailyWord,
-        },
-        {
-            word: "chain",
-            title: "SIX DEGREES, ON THE CLOCK",
-            sub: "Link films by a shared actor, director, writer, composer or DoP",
-            Game: CineChain,
-        },
-    ];
-    const arcadeHit = ARCADE_GAMES.find((g) => g.word === search.trim().toLowerCase());
-    const [activeGame, setActiveGame] = useState<string | null>(null);
-    const ActiveGame = ARCADE_GAMES.find((g) => g.word === activeGame)?.Game;
+    // ONE DOOR, not one per game. There used to be a trigger word per game
+    // ("timeline", "daily", "xyinerdle", plus "doom"), which meant the games
+    // were only findable by someone who already knew the word -- and nothing
+    // tied them together or surfaced the leaderboards. Typing "arcade" now
+    // opens a single hub that lists every game and its standings; see
+    // arcade/ArcadeHub.tsx. Same exact-match rule as "jacqui" so a trigger can
+    // never fire while someone types toward a real tool name.
+    const isArcade = search.trim().toLowerCase() === "arcade";
+    const [arcadeOpen, setArcadeOpen] = useState(false);
     const activeThemeDecoration = decoratedThemes.has(themeId)
         ? THEMES.find((t) => t.id === themeId)
         : undefined;
@@ -464,17 +435,12 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
                         decoratedThemes={decoratedThemes}
                         onToggleDecoration={toggleThemeDecoration}
                     />
-                                    ) : isDoomEasterEgg ? (
-                                        <button className="doom-launch-card" onClick={() => setShowDoom(true)}>
-                                            <span className="doom-launch-title">RIP AND TEAR</span>
-                                            <span className="doom-launch-sub">
-                                                Launch DOOM (shareware E1) inside the toolbox
+                                    ) : isArcade ? (
+                                        <button className="arcade-launch-card" onClick={() => setArcadeOpen(true)}>
+                                            <span className="arcade-launch-title">THE ARCADE</span>
+                                            <span className="arcade-launch-sub">
+                                                Every game in the toolbox, and who's winning
                                             </span>
-                                        </button>
-                                    ) : arcadeHit ? (
-                                        <button className="arcade-launch-card" onClick={() => setActiveGame(arcadeHit.word)}>
-                                            <span className="arcade-launch-title">{arcadeHit.title}</span>
-                                            <span className="arcade-launch-sub">{arcadeHit.sub}</span>
                                         </button>
                                     ) : searchHits.length === 0 ? (
                                         <p className="hint">No tools match "{search}".</p>
@@ -538,17 +504,11 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
                 </div>
             </div>
 
-            {/* DOOM easter egg -- also a sibling of .home-screen so it covers
-                the full panel. Unmounting tears the WASM runtime down. */}
+            {/* The arcade -- a sibling of .home-screen so it covers the full
+                panel. The hub owns which game is running; unmounting it is all
+                the teardown these games need. */}
             <AnimatePresence>
-                {showDoom && <DoomEasterEgg onClose={() => setShowDoom(false)} />}
-            </AnimatePresence>
-
-            {/* Arcade eggs -- same sibling-of-.home-screen placement as DOOM so
-                they cover the full panel. Unlike DOOM these are plain canvas
-                games we own, so unmounting is all the teardown they need. */}
-            <AnimatePresence>
-                {ActiveGame && <ActiveGame onClose={() => setActiveGame(null)} />}
+                {arcadeOpen && <ArcadeHub onClose={() => setArcadeOpen(false)} />}
             </AnimatePresence>
 
             {/* Easter egg overlay -- sibling of .home-screen so it covers the full panel */}

@@ -32,6 +32,14 @@ export function isDemoMode(): boolean {
 }
 
 const DEMO_MSG = "Simulated in demo mode — open this panel inside After Effects to run it for real.";
+
+/**
+ * Battle rooms in demo mode: `room -> { p1, p2 }`, each the raw JSON string a
+ * player file would hold on the NAS. Module-scope so it survives re-renders
+ * (not a real backing store -- a reload starts a fresh arcade, which is the
+ * right behaviour for a demo).
+ */
+const demoBattleRooms: Record<string, { p1?: string; p2?: string }> = {};
 const ok = (extra?: Record<string, unknown>) => ({ success: true, message: DEMO_MSG, ...extra });
 
 // --- Realistic demo data for calls whose return value drives the UI ----------
@@ -124,10 +132,76 @@ const SHAPED: Record<string, (args: unknown[]) => unknown> = {
     // Team — behave as an unconfigured (no team folder) machine, so the setup
     // UI shows rather than half-populated NAS state.
     teamGetFolder: () => null,
-    teamListProfiles: () => [],
+    teamListProfiles: () => ({
+        success: true,
+        profiles: [
+            { name: "marco", hasProfile: true },
+            { name: "sarah", hasProfile: true },
+            { name: "david", hasProfile: true },
+            { name: "lisa", hasProfile: true },
+        ],
+        folderSet: false,
+        mounted: false,
+    }),
     teamGetMachineState: () => ({ owner: null, liveSync: false, guestBackup: null }),
     teamCheckVersion: () => ({ updateAvailable: false }),
     teamSyncShared: () => ok(),
+
+    // Team — machine owner tag (used by battle boot and menu).
+    loadLocalSetting: (args: unknown[]) => {
+        const key = args[0] as string;
+        if (key === "machineOwner") return "antonio";
+        return null;
+    },
+
+    // Nerdle menu — lobby state.
+    teamNerdleLobby: () => ({
+        success: true,
+        me: "antonio",
+        incoming: [
+            { room: "ABCD", from: "marco", to: "antonio", stamp: "2026-07-25T10:30:00Z" },
+        ],
+        outgoing: [],
+        results: [],
+    }),
+    teamNerdleInvite: (args: unknown[]) => ({
+        success: true,
+        message: `Invited ${args[0]} to room ${args[1]}.`,
+    }),
+    teamLoadWordBoard: () => ({ success: true, board: [] }),
+    teamPostWordResult: () => ({ success: true, message: "Result saved." }),
+
+    // Battle sync -- a REAL in-memory store, keyed by room, holding the same
+    // JSON strings the host would.
+    //
+    // It used to return hand-built objects in the pre-action-log schema
+    // (`moves`/`turnOwner`/`tools`) and throw writes away, which made demo mode
+    // actively misleading: every sync overwrote whatever you'd just done with a
+    // stale fixture, so Ready/skip/ban all looked broken here while being fine
+    // in AE. Storing what's written means the whole two-seat flow -- including
+    // the ready handshake -- can be exercised in the browser.
+    teamBattleRead: (args: unknown[]) => {
+        const room = String(args[0] || "");
+        const store = demoBattleRooms[room] || {};
+        return { success: true, me: "antonio", p1: store.p1 || "", p2: store.p2 || "" };
+    },
+    teamBattleWrite: (args: unknown[]) => {
+        const room = String(args[0] || "");
+        const player = Number(args[1]);
+        const json = String(args[2] || "");
+        const store = demoBattleRooms[room] || (demoBattleRooms[room] = {});
+        if (player === 1) store.p1 = json; else store.p2 = json;
+        return { success: true, message: "Battle state saved." };
+    },
+    /** Drops a demo room so a fresh game doesn't inherit the last one. */
+    teamBattleCleanup: (args: unknown[]) => {
+        delete demoBattleRooms[String(args[0] || "")];
+        return { success: true };
+    },
+    teamBattlePostResult: (args: unknown[]) => ({
+        success: true,
+        message: `${args[1]} beat ${args[2]} (${args[3]} films).`,
+    }),
 
     // Timesheet (lists have their own React mock; these are the extra getters)
     timesheetStartInfo: () => ok({ jobCode: "XY0000", job: "XY0000 — Demo Job", territory: "France", compName: "MainComp", fileName: "demo_project_V01.aep" }),

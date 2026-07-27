@@ -1,17 +1,16 @@
 // Shared shell for the panel's little built-in games (the "arcade" eggs).
 //
-// WHY THIS EXISTS: DOOM (DoomEasterEgg.tsx) had to solve one genuinely hard
-// problem that has nothing to do with DOOM -- **After Effects eats keystrokes
-// before a CEP panel ever sees them**. Any future game hits it identically, so
-// that solution lives here rather than being copy-pasted per game.
+// WHY THIS EXISTS: every game hits one genuinely hard problem that has nothing
+// to do with the game itself -- **After Effects eats keystrokes before a CEP
+// panel ever sees them**. That solution lives here rather than being
+// copy-pasted per game.
 //
-// WHAT THIS IS *NOT*: an iframe. DOOM needs one because Emscripten has no
-// destroy-the-runtime API, so its engine permanently contaminates whatever
-// page it runs in (see DoomEasterEgg.tsx's header for the full story). A game
-// we wrote ourselves has no such problem -- it's plain JS whose listeners and
-// timers we own and remove on unmount -- so it renders straight into this
-// overlay. Don't "unify" the two by forcing our own games through an iframe;
-// the isolation buys nothing here and costs a realm boundary.
+// WHAT THIS IS *NOT*: an iframe. These are games we wrote ourselves -- plain
+// JS whose listeners and timers we own and remove on unmount -- so they render
+// straight into this overlay. An iframe would buy isolation nothing here needs
+// and cost a realm boundary. (A wasm-emulator game WOULD need one, since
+// Emscripten has no destroy-the-runtime API and permanently contaminates its
+// page; there isn't one in the arcade any more.)
 //
 // THE KEYBOARD, which is the whole point of this file:
 //   1. `registerKeyEventsInterest` is CEP's documented way to tell the host
@@ -29,10 +28,9 @@
 //   3. Focus is re-asserted on a slow interval rather than on every blur, so
 //      it can't get into a tug-of-war with a real click on the X.
 //
-// ESCAPE CLOSES THESE GAMES -- deliberately different from DOOM, where Escape
-// is the in-game menu key and binding it to "quit" would make the menu
-// unreachable. Our own games have no such conflict, so Escape is the obvious
-// thing and it works.
+// ESCAPE CLOSES THESE GAMES. Worth stating because it isn't universal: a game
+// that used Escape as its own in-game menu key would need a different quit
+// binding. None of ours do, so Escape is the obvious thing and it works.
 import { useCallback, useEffect, useRef } from "react";
 import { motion } from "motion/react";
 import { X } from "lucide-react";
@@ -142,7 +140,7 @@ export const ArcadeFrame = ({ title, hint, keyCodes, fluid, onClose, children }:
         return () => clearInterval(id);
     }, [focusKeyGrab]);
 
-    // Escape, or Ctrl/Cmd+Shift+Q for parity with DOOM's quit.
+    // Escape, or Ctrl/Cmd+Shift+Q as a second, chord-style quit.
     useEffect(() => {
         const onKeyDown = (e: KeyboardEvent) => {
             const q = e.key.toLowerCase() === "q" && e.shiftKey && (e.metaKey || e.ctrlKey);

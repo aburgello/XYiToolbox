@@ -1,0 +1,198 @@
+// XYiNerdle front menu (NerdleMenu.tsx). Frame chrome lives in
+// ArcadeFrame.scss; the game board's own styles in CineChain.scss.
+//
+// Accents key off `--ov-accent` (the token themes.ts sets) so the menu follows
+// the user's chosen theme, same rule as the board.
+
+.nm-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px 14px;
+    max-height: 76vh;
+    overflow-y: auto;
+}
+
+.nm-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 3px;
+    border: 1px solid #232d30;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.25);
+}
+
+.nm-tab {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: none;
+    color: #93a1a4;
+    font-size: 11px;
+    cursor: pointer;
+
+    &:hover:not(.nm-tab--on) { color: #dfe7e6; }
+
+    &--on {
+        background: rgba(255, 255, 255, 0.06);
+        border-color: var(--ov-accent, #2dd4bf);
+        color: #fff;
+        svg { color: var(--ov-accent, #5eead4); }
+    }
+}
+
+// The primary action -- deliberately the biggest thing on the menu, because
+// solo play is the one path that always works regardless of the NAS.
+.nm-solo {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 11px 13px;
+    border: 1px solid var(--ov-accent, #2dd4bf);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.03);
+    text-align: left;
+    cursor: pointer;
+
+    &:hover { background: rgba(255, 255, 255, 0.06); }
+    svg { flex-shrink: 0; color: var(--ov-accent, #5eead4); }
+}
+
+.nm-solo-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+
+    strong { font-size: 13px; font-weight: 700; color: #fff; }
+    small { font-size: 10.5px; color: #7f8f93; }
+}
+
+.nm-section {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 10px 11px;
+    border: 1px solid #232d30;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.nm-section-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 1.1px;
+    text-transform: uppercase;
+    color: var(--ov-accent, #5eead4);
+    opacity: 0.85;
+    margin-bottom: 3px;
+
+    &--sub { margin-top: 7px; color: #7f8f93; }
+}
+
+.nm-room {
+    margin-left: auto;
+    letter-spacing: 1.6px;
+    color: #cbd6d8;
+    font-size: 9.5px;
+}
+
+.nm-refresh {
+    margin-left: auto;
+    display: inline-flex;
+    padding: 2px 4px;
+    border: 0;
+    border-radius: 4px;
+    background: none;
+    color: #6f7d81;
+    cursor: pointer;
+
+    &:hover { color: #fff; }
+}
+
+.nm-member {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 6px;
+    border-radius: 5px;
+    background: #121a1c;
+
+    &--invite { border: 1px solid rgba(45, 212, 191, 0.35); }
+}
+
+.nm-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.nm-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 11.5px;
+    color: #dbe4e6;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    em { font-style: normal; font-size: 9.5px; color: #6a777a; }
+}
+
+.nm-record { font-size: 11px; color: #8e9a9e; flex-shrink: 0; }
+
+.nm-invite {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border: 1px solid #33403f;
+    border-radius: 5px;
+    background: #161e20;
+    color: #cbd6d8;
+    font-size: 10px;
+    cursor: pointer;
+    flex-shrink: 0;
+
+    &:hover:not(:disabled) { border-color: var(--ov-accent, #2dd4bf); color: #fff; }
+    &:disabled { opacity: 0.45; cursor: default; }
+
+    &--accept { border-color: var(--ov-accent, #2dd4bf); color: #fff; }
+}
+
+.nm-loading {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11px;
+    color: #8a949a;
+    padding: 4px 0;
+}
+
+.nm-note {
+    margin: 0;
+    font-size: 10.5px;
+    line-height: 1.45;
+    color: #7f8f93;
+
+    &--sent { color: #8e9a9e; }
+    &--msg { color: #ffb27a; }
+}
+
+// States plainly that live play isn't wired yet, so nobody discovers it by
+// accepting an invite and finding a local game.
+.nm-foot {
+    margin: 0;
+    font-size: 9px;
+    line-height: 1.4;
+    color: #55625f;
+    text-align: center;
+}

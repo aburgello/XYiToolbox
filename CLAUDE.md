@@ -4794,8 +4794,182 @@ caret returned and the box immediately typable again; hints above chain when
 narrow; side panel to the right and top-aligned at 900px wide with 15 hint
 chips. The user's two prototype files were deleted.
 
-**Next slices**, recorded at the bottom of CineChain.tsx: (1) BATTLE via two
-per-player JSON files under `misc/battle/<room>/`, polled ~1s, each side
-writing only its own file (no write contention), clock anchored to the move's
-WRITTEN timestamp so Jump's screen-share latency can't shorten the remote
-player's turn; (2) lifelines; (3) bans; (4) win conditions.
+### XYiNerdle: rename, tools, and a much bigger starting pool
+
+- **Renamed.** Trigger word `chain` -> **`xyinerdle`**; frame title
+  "XYiNerdle"; launch-card copy "Aaron will never see this coming". The file
+  is still `arcade/cine/CineChain.tsx` -- renaming the module would churn
+  imports for no gain, same reasoning the XYTools rename used (see that
+  section: user-facing strings renamed, internals deliberately left).
+
+- **FOUR TOOLS, one use each PER PLAYER** (`TOOLS` / `FRESH_TOOLS` in
+  CineChain.tsx). Per-player, not per-game, on purpose: a shared pool would
+  let whoever moves first strip every tool before the opponent's first turn.
+  - *Cast & crew* -- reveals the linkable people. Once bought it stays
+    toggleable (hide/show) for that player; it's the only one that isn't
+    strictly one-shot, because paying again to re-read what you already
+    unlocked would just be a tax.
+  - *+7 seconds* -- adds to the running clock.
+  - *Skip turn* -- hands the turn over with the film UNCHANGED, so the
+    opponent inherits the problem you couldn't solve.
+  - *Ban film* -- burns the current film and redraws a new one for the SAME
+    player. Everyone on the rejected film is pushed to their cap via
+    `exhaustAll`, so a ban is NOT a free re-roll: it permanently removes that
+    whole cast and crew from the game for BOTH players, including links you
+    might have wanted later.
+  Spent tools stay visible at reduced opacity rather than disappearing -- you
+  need to see at a glance what you've already burned.
+
+- **Ban redraws are labelled correctly in the chain.** A link with no `via` is
+  either the opening film or a ban redraw; `player` is what distinguishes
+  them ("redrawn after ban" vs "opening film"). Caught in testing -- ban
+  entries were rendering as "opening film".
+
+- **STARTING POOL: `/movie/popular` was the wrong endpoint and it showed.**
+  "Popular" means popular RIGHT NOW, so page 1 came back entirely from the
+  current year (verified: all 20 were 2026) and the same handful kept
+  recurring. Replaced with `/discover/movie?sort_by=vote_count.desc` +
+  `vote_count.gte=1000`, excluding genres 99/10770 (documentary, TV movie --
+  both full of things nobody could chain from). Most-rated is a good proxy for
+  most widely known, and it spans decades instead of months. Drawn from a
+  random page of `POOL_PAGES = 15`, so **~300 films rather than 20**.
+  Verified: 12 consecutive draws gave 12 unique titles across the 1990s-2010s
+  (Titanic, Amelie, Edward Scissorhands, No Country for Old Men, The Godfather
+  Part II). **If starting films ever look repetitive again, check the endpoint
+  before the page count.**
+
+Verified in preview: old `chain` keyword dead and `xyinerdle` live with the
+new card copy; +7s adds to the clock then disables; cast reveal populates and
+relabels to Hide/Show; skip moves P1->P2 with the film unchanged, clock reset
+and a FRESH tool set for P2; ban swapped "The Hunger Games: Mockingjay - Part
+1" for "The Godfather Part II (1974)" keeping the turn with P2, grew the
+chain, reset the clock and spent the tool. `exhaustAll` unit-tested headless
+across 6 cases -- including that a link valid before a ban is rejected after
+it with the right message, that a part-used person is pushed to exactly MAX
+rather than incremented past it, and purity.
+
+### XYiNerdle: free-cast window + the lobby menu
+
+**Cast & crew is free for the first `FREE_CAST_ROUNDS` (5) rounds, then costs
+your one use.** Counted across the WHOLE GAME (chain length), not per player
+-- a shared grace period while nobody has a feel for the chain yet, closing
+for everyone at the same moment. Per-player free rounds would instead reward
+whoever happened to move second. The tool renders `--free` (full strength,
+accent-coloured "N free" badge) rather than `--spent` during the window, and
+the side note counts down.
+
+**`NerdleMenu.tsx` now sits IN FRONT of the game** -- Play / Leaderboard tabs,
+a solo card, the team roster with per-member colours, and invites. The game
+component (`NerdleGame`) only mounts once a choice is made, which also means
+**the opening film isn't fetched until someone commits to playing** -- opening
+the menu used to be worth a wasted TMDB call.
+
+Backend is four functions at the bottom of `team.ts`, on the same shared-file
+plumbing as everything else (so they land in `misc/`, inheriting the NAS-safe
+read/write behaviour): `teamNerdleInvite` (sender taken from the machine-owner
+tag, never typed -- same rule as the word board; one live invite per pair, so
+re-inviting replaces rather than stacks), `teamNerdleLobby` (me + incoming +
+outgoing + results in ONE round trip, because each is a NAS read and the menu
+shows them together), and `teamNerdlePostResult`.
+
+**SCOPE (superseded -- battle has since landed, see the section below).** This
+slice was the LOBBY only: creating a room and inviting someone wrote to the
+Team Folder and showed on their panel, but accepting opened the local two-seat
+game under that room code. **There is no push on a file share**: an invite is a
+row the other panel notices when it looks (on open, or the 15s poll while the
+menu is open). That's the honest ceiling of the Team Folder approach -- fine
+for "fancy a game?", not a doorbell, and still true now that real matches
+work.
+
+Verified in preview: menu renders with both tabs, a generated room code, and
+the correct no-bridge guidance ("tag this machine..."), the game genuinely
+does NOT fetch a film until Play is clicked, the leaderboard shows its empty
+state, and solo start works. The free-cast counter was driven 5 -> 4 -> 3 by
+advancing the chain (via the ban tool, which grows it without needing a valid
+link) with the side note tracking each step.
+
+**Testing note for future sessions**: the restart button is labelled "New
+XYiNerdle", and the 25s clock is real -- a test that does several TMDB
+round-trips mid-turn will lose the game before it can submit. Use the ban tool
+to advance the chain, or buy time with +7s, rather than fighting the clock.
+
+### XYiNerdle: BATTLE (real head-to-head over the Team Folder)
+
+The lobby now leads somewhere. `CineChain.tsx` routes a `{mode:"room"}` choice
+to **`CineChainBattle.tsx`**; solo still mounts `NerdleGame`.
+
+**ONE FILE PER PLAYER** -- `misc/battle/<ROOM>/playerN.json`, each side writing
+ONLY its own file and reading both (`teamBattleRead`/`teamBattleWrite`/
+`teamBattleCleanup` in team.ts). Two writers never touch the same file, so
+there is no locking, no merge conflict, no lost update. Polled every 1.2s.
+
+**EVERY TURN-CHANGING THING IS AN ACTION** (`battle.ts`) -- `seed`/`move`/
+`skip`/`ban`/`time`/`timeout`. The first attempt stored only `moves` and
+inferred the turn from who moved last, which made SKIP (passes the turn, no
+move) and BAN (redraws, keeps the turn, burns a cast) **invisible to the
+opponent** -- the two panels disagreed about whose turn it was and who was
+still available. Both sides now replay the same timestamped log through the
+same pure reducer (`deriveState`) and land on the same state by construction.
+Ordering is by ISO timestamp; actions strictly alternate, so a mis-order would
+need clock skew larger than a whole turn.
+
+**The clock is DERIVED from the shared turn-start stamp**, not counted down
+locally -- a panel opened mid-turn shows the right time, and neither side can
+drift. `extra` (the +7s tool) is shared state for the same reason: added
+locally, the two panels would disagree about when the turn ends and one would
+call a timeout that hadn't happened.
+
+**Four faults from the first attempt, each worth not repeating**: (1) the seat
+was hardcoded to 1, so both players wrote player1.json and player 2 could
+never move -- the seat now arrives as a prop, **INVITER = 1, ACCEPTER = 2**,
+decided in NerdleMenu where we know which end of the invite we're on; (2)
+validation could never pass, because `checkMove` got the previous film as
+`{...,people:[]}` (the chain only stores a MovieRef) so every move was
+rejected as "no shared cast" -- real credits are fetched and cached before
+checking; (3) the turn/tool desync above; (4) BOTH clients posted the result
+on timeout, double-counting the leaderboard -- the loser writes the `timeout`
+action, only the WINNER posts the result. Exactly one writer.
+
+**READY GATE (the fix that makes two machines actually workable).** Player 1
+seeds the film and their 25s clock used to start immediately -- but the
+opponent still has to open the panel, find the invite and accept, comfortably
+more than 25 seconds. **Player 1 timed out and lost to an empty room, every
+time.** Now a `ready` action: nothing is playable and no clock runs until BOTH
+players press "I'm ready", and the SECOND ready is what anchors the first turn
+(the reducer restarts the clock on any action but `time`, so this falls out of
+the existing model rather than being a special case). Pressing Ready twice is a
+no-op -- a second action would re-anchor and hand someone a free refill. The
+lobby shows both seats and who's still missing.
+
+**Two more real bugs found in the same audit:**
+- `teamBattleRead` resolved the room by walking three nested folders checking
+  `Folder.exists` at each level -- exactly what this file's own rule forbids
+  (see the `File.exists` note above). One false negative on the NAS and BOTH
+  panels read empty files and concluded the opponent never arrived. Reads now
+  use a constructed path and let `readTextFile` answer by opening it.
+- The winner posted results to `teamNerdlePostResult`, **which was never
+  defined** -- a silent no-op, so the leaderboard could never fill. Now
+  `teamArcadePost`.
+
+**The demo bridge was stale and actively misleading**: `teamBattleRead` returned
+hand-built objects in the pre-action-log schema (`moves`/`turnOwner`) and
+`teamBattleWrite` threw writes away, so every sync overwrote what you'd just
+done and Ready/skip/ban all looked broken in browser preview while being fine in
+AE. It's now a real in-memory store keyed by room, holding the same JSON strings
+the host would -- the two-seat flow is exercisable without a NAS.
+
+**Verified**: 34 headless assertions across two suites replaying the real
+reducer (the full tomorrow scenario, and the ready handshake specifically --
+including that the later ready anchors regardless of order, and that a 5-minute
+wait can't cost anyone the game), plus a forward audit that all 12 arcade
+`evalTS` names resolve in the built `dist/cep/jsx/index.js`. Ready gate
+confirmed in preview: seat flips to READY, button becomes "Waiting for…", clock
+stays hidden.
+
+**Still unverified against two real machines.** The model is unit-testable by
+design (`deriveState` is pure, no React/network) but nothing here has been run
+with two panels on the same NAS -- that's the one test that matters and it
+needs the office Mac plus a colleague.
+
+**Remaining ideas**: lifelines beyond the current four tools; richer win
+conditions than timeout.

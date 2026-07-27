@@ -48,6 +48,8 @@
 }
 
 .cc-clock {
+    // Anchors the floating "+7s" below, which is positioned against it.
+    position: relative;
     display: inline-flex;
     align-items: center;
     gap: 5px;
@@ -57,8 +59,36 @@
     font-variant-numeric: tabular-nums;
 
     // Only the last five seconds turn red -- a clock that's red the whole time
-    // stops meaning anything.
-    &--low { color: #ff5f47; }
+    // stops meaning anything. The pulse is on the same trigger for the same
+    // reason: it has to mean "now", not "this is a clock".
+    &--low {
+        color: #ff5f47;
+        animation: cc-clock-pulse 1s ease-in-out infinite;
+    }
+}
+
+// The +7s tool's payoff is a number quietly going up, which is easy to miss
+// mid-turn -- this floats the gain off the clock so the purchase is visible.
+.cc-timeboost {
+    position: absolute;
+    right: 0;
+    top: -2px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--ov-accent, #5eead4);
+    pointer-events: none;
+    animation: cc-timeboost-rise 1.1s ease-out forwards;
+}
+
+@keyframes cc-clock-pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50%      { transform: scale(1.09); opacity: 0.75; }
+}
+
+@keyframes cc-timeboost-rise {
+    0%   { opacity: 0; transform: translateY(4px); }
+    22%  { opacity: 1; transform: translateY(-6px); }
+    100% { opacity: 0; transform: translateY(-20px); }
 }
 
 // ── layout: board left, hints right; stacked when the panel is narrow ───────
@@ -140,6 +170,9 @@
 }
 
 // ── current film ────────────────────────────────────────────────────────────
+// Keyed on the film id in the TSX, so this replays whenever the film actually
+// CHANGES -- a ban swapping the card under you, or the opponent's move landing
+// via the poll, both of which otherwise just silently rewrite the text.
 .cc-current {
     display: flex;
     align-items: center;
@@ -148,6 +181,12 @@
     border: 1px solid var(--ov-accent, #2dd4bf);
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.03);
+    animation: cc-current-in 0.4s ease-out;
+}
+
+@keyframes cc-current-in {
+    0%   { opacity: 0; transform: translateY(-6px); border-color: rgba(45, 212, 191, 0.9); box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.18); }
+    100% { opacity: 1; transform: translateY(0); box-shadow: none; }
 }
 
 .cc-current-text {
@@ -275,6 +314,95 @@
 
 .cc-btn--again { align-self: flex-start; }
 
+.cc-over-row { display: flex; gap: 6px; flex-wrap: wrap; }
+
+// ── tools ───────────────────────────────────────────────────────────────────
+.cc-tools {
+    display: grid;
+    // ONE PER ROW. Two columns overflowed the 200px side panel by 7px and
+    // truncated "Show cast" to "Show …": `1fr` is `minmax(auto, 1fr)`, so a
+    // track can't shrink below its content's min-content width -- 98 + 84 + 4
+    // gap = 186 against 179 available, and the surplus spilled outside the
+    // panel. Full-width rows give every label and its badge room instead of
+    // fighting over ~87px. `minmax(0, 1fr)` is belt-and-braces so a longer
+    // label added later clips rather than escaping the panel again.
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+}
+
+.cc-tool {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    border: 1px solid #33403f;
+    border-radius: 5px;
+    background: #161e20;
+    color: #cbd6d8;
+    font-size: 10.5px;
+    text-align: left;
+    cursor: pointer;
+    min-width: 0;                 // let the button shrink inside its track
+    position: relative;
+    overflow: hidden;             // the ripple below is clipped to the button
+    transition: border-color 0.15s ease, color 0.15s ease, transform 0.12s ease, background 0.15s ease;
+
+    svg { flex-shrink: 0; color: var(--ov-accent, #5eead4); }
+    // min-width:0 is what actually lets the ellipsis engage -- without it a
+    // flex item refuses to shrink below its content.
+    span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    b { flex-shrink: 0; margin-left: auto; font-size: 8px; font-weight: 700; color: #6d7c80; }
+
+    &:hover:not(:disabled) {
+        border-color: var(--ov-accent, #2dd4bf);
+        color: #fff;
+        background: #1b2427;
+        transform: translateX(2px);
+    }
+    &:active:not(:disabled) { transform: translateX(2px) scale(0.985); }
+
+    // A spent tool stays legible rather than vanishing -- you need to see at a
+    // glance what you've already burned this game.
+    &--spent { opacity: 0.5; }
+
+    // The opening free-cast window: full strength, with the remaining count in
+    // the accent so it reads as a perk rather than something already spent.
+    &--free {
+        opacity: 1;
+        border-color: rgba(45, 212, 191, 0.4);
+        b { color: var(--ov-accent, #5eead4); }
+    }
+    &:disabled { cursor: default; }
+    &:disabled:not(.cc-tool--spent) { opacity: 0.35; }
+
+    // Fired for ~520ms the moment a tool is spent, so the click has a physical
+    // result even when the effect it buys is off-screen (a skip hands the turn
+    // over, a ban swaps a card further up). Class is dropped by a timer rather
+    // than left on, so re-using a tool can replay it.
+    &--pop {
+        animation: cc-tool-pop 0.42s ease-out;
+        &::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 18% 50%, rgba(45, 212, 191, 0.55), transparent 70%);
+            animation: cc-tool-sweep 0.52s ease-out forwards;
+            pointer-events: none;
+        }
+    }
+}
+
+@keyframes cc-tool-pop {
+    0%   { transform: scale(1); }
+    35%  { transform: scale(1.045); border-color: var(--ov-accent, #2dd4bf); }
+    100% { transform: scale(1); }
+}
+
+@keyframes cc-tool-sweep {
+    0%   { opacity: 0.9; transform: translateX(-30%); }
+    100% { opacity: 0; transform: translateX(30%); }
+}
+
 // ── hint list ───────────────────────────────────────────────────────────────
 .cc-cast {
     display: flex;
@@ -293,6 +421,11 @@
     background: #131a1c;
     font-size: 10.5px;
     color: #cbd5d7;
+    // Staggered reveal: cast is a paid unlock, so it lands as a list being
+    // dealt out rather than a block appearing. Per-chip delay is set inline in
+    // the TSX (custom properties inside @keyframes are unreliable on this
+    // project's chrome74 target -- see CLAUDE.md).
+    animation: cc-cast-in 0.26s ease-out both;
 
     em { font-style: normal; color: #6d7c80; font-size: 8.5px; }
     b { margin-left: auto; color: #b8912f; font-weight: 700; font-size: 8.5px; }
@@ -360,6 +493,22 @@
     em { font-style: normal; color: #6f7d81; font-size: 10px; }
 }
 
+// The per-link usage tag. Sits inline after the person's name so the chain
+// doubles as a running ledger of who's still available.
+.cc-link-uses {
+    margin-left: 5px;
+    padding: 0 4px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.07);
+    color: #b8912f;
+    font-size: 8.5px;
+    font-weight: 700;
+
+    // Spent is the state that actually changes what you can play, so it's the
+    // one that gets a warning colour.
+    &--none { background: rgba(251, 146, 60, 0.16); color: #fb923c; }
+}
+
 .cc-link-via {
     font-size: 9.5px;
     color: #8e9a9e;
@@ -388,4 +537,211 @@
     font-size: 8.5px;
     color: #4d585b;
     text-align: center;
+}
+
+@keyframes cc-cast-in {
+    0%   { opacity: 0; transform: translateX(-6px); }
+    100% { opacity: 1; transform: translateX(0); }
+}
+
+// This is a game, so motion is doing real work here (a spent tool, a swapped
+// film, a clock about to run out) rather than decorating -- but a viewer who
+// has asked the OS for less motion still gets the state, just without the
+// movement. Colour/opacity cues are left alone; only the movement stops.
+@media (prefers-reduced-motion: reduce) {
+    .cc-tool,
+    .cc-tool--pop,
+    .cc-tool--pop::after,
+    .cc-clock--low,
+    .cc-timeboost,
+    .cc-current,
+    .cc-cast-chip {
+        animation: none !important;
+        transition: none !important;
+    }
+    .cc-tool:hover:not(:disabled) { transform: none; }
+}
+
+// ── burned-by-bans list ─────────────────────────────────────────────────────
+// A ban removes a whole cast and crew from play FOR BOTH PLAYERS. Before this
+// existed the only way to discover that was to type a name and be told it was
+// spent, which is a bad way to lose 25 seconds.
+.cc-burned {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-top: 7px;
+    border-top: 1px solid #232d30;
+}
+
+.cc-burned-head {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: #b58b7a;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.9px;
+    text-transform: uppercase;
+    cursor: pointer;
+
+    svg { flex-shrink: 0; }
+    span { flex: 1 1 auto; min-width: 0; text-align: left; }
+    // Total burned, so the header is useful even collapsed.
+    b {
+        flex-shrink: 0;
+        padding: 0 5px;
+        border-radius: 999px;
+        background: rgba(224, 122, 122, 0.14);
+        color: #e09a8a;
+        font-size: 8.5px;
+    }
+    &:hover { color: #d8a795; }
+}
+
+.cc-burned-ban {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 4px 6px;
+    border-radius: 4px;
+    background: rgba(224, 122, 122, 0.07);
+    animation: cc-cast-in 0.26s ease-out both;
+}
+
+.cc-burned-film {
+    font-size: 9.5px;
+    color: #9aa7aa;
+
+    em { font-style: normal; font-weight: 700; color: #cbd5d7; }
+}
+
+// The names themselves: the actual answer to "who can I no longer use?".
+.cc-burned-names {
+    font-size: 9.5px;
+    line-height: 1.45;
+    color: #7d8b8e;
+    text-decoration: line-through;
+    text-decoration-color: rgba(224, 122, 122, 0.5);
+}
+
+// ── ready gate ──────────────────────────────────────────────────────────────
+// Shown until BOTH players press Ready. Replaces a passive "waiting…" banner
+// that sat over a live, draining clock -- which is how player 1 used to lose
+// before the opponent had even accepted the invite.
+.cc-lobby {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 22px 16px 20px;
+    text-align: center;
+}
+
+.cc-lobby-room {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: #5d6d71;
+}
+
+.cc-lobby-seats {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+// One player's chair. Grey until they're ready, then it lights up -- the whole
+// screen is "are we both here yet", so that state is the loudest thing on it.
+.cc-seat {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 176px;
+    padding: 9px 12px;
+    border: 1px solid #2a3639;
+    border-radius: 9px;
+    background: #121a1c;
+    text-align: left;
+    transition: border-color 0.2s ease, background 0.2s ease;
+
+    &--set {
+        border-color: var(--ov-accent, #2dd4bf);
+        background: rgba(45, 212, 191, 0.08);
+
+        .cc-seat-dot { background: var(--ov-accent, #2dd4bf); box-shadow: 0 0 9px var(--ov-accent, #2dd4bf); }
+        .cc-seat-state { color: var(--ov-accent, #5eead4); }
+    }
+}
+
+.cc-seat-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #3d4b4e;
+    flex-shrink: 0;
+    transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.cc-seat-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 12px;
+    font-weight: 700;
+    color: #dbe6e8;
+
+    em { font-style: normal; font-weight: 400; font-size: 9.5px; color: #66757a; margin-left: 4px; }
+}
+
+.cc-seat-state {
+    flex-shrink: 0;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #66757a;
+}
+
+.cc-ready {
+    margin-top: 2px;
+    padding: 10px 26px;
+    border: 1px solid var(--ov-accent, #2dd4bf);
+    border-radius: 9px;
+    background: rgba(45, 212, 191, 0.12);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
+
+    &:hover { background: rgba(45, 212, 191, 0.22); box-shadow: 0 4px 18px rgba(45, 212, 191, 0.22); }
+    &:active { transform: scale(0.98); }
+}
+
+.cc-lobby-wait {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    color: #7f8f93;
+
+    svg { color: var(--ov-accent, #5eead4); }
+}
+
+.cc-lobby-note {
+    margin: 0;
+    max-width: 320px;
+    font-size: 10px;
+    line-height: 1.5;
+    color: #5c696c;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cc-seat, .cc-seat-dot, .cc-ready { transition: none; }
+    .cc-ready:active { transform: none; }
 }

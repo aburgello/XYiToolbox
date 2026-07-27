@@ -9,9 +9,9 @@
 // the bridge is there, `fetch` only as the browser-preview fallback.
 //
 // The fallback is not decoration -- it's what makes this game testable in
-// `yarn dev` at all, the same way DoomEasterEgg.tsx's scheme-aware asset
+// `yarn dev` at all, the same way a scheme-aware asset
 // reader is. Note the DISPATCH IS ON NODE AVAILABILITY here rather than on
-// URL scheme, which is the opposite of DoomEasterEgg's rule -- deliberately:
+// URL scheme, which is the opposite of the asset rule -- deliberately:
 // there the question was "which filesystem am I reading", here it's purely
 // "do I have a transport that isn't subject to CORS".
 //
@@ -144,12 +144,32 @@ export async function getCredits(id: number): Promise<MovieCredits> {
     return out;
 }
 
-/** A well-known film to open on. Popular-list rather than a hardcoded seed so
- *  it varies, and page 1 keeps it to films people have actually heard of. */
+/**
+ * A well-known film to open on.
+ *
+ * NOT `/movie/popular`, which was the first version and was wrong in a way
+ * that showed immediately: "popular" means popular RIGHT NOW, so page 1 came
+ * back entirely from the current year (verified -- every one of the 20 was
+ * 2026) and the same handful kept reappearing.
+ *
+ * `discover` sorted by vote_count DESC is the fix: most-rated ≈ most widely
+ * known, and it spans decades rather than months (verified: 1971-2022 across
+ * sampled pages, with a sane spread from the 70s through the 2010s). Genres
+ * 99/10770 (documentary, TV movie) are excluded -- both are full of things
+ * nobody could chain from -- and a vote floor keeps out obscure entries.
+ *
+ * POOL_PAGES x 20 results = the draw pool. At 15 that's ~300 films rather
+ * than the previous 20, which is what stops the repeats.
+ */
+const POOL_PAGES = 15;
+
 export async function randomStartingMovie(): Promise<MovieSummary> {
-    const d = await get<any>(withKey("/3/movie/popular?page=1"));
+    const page = 1 + Math.floor(Math.random() * POOL_PAGES);
+    const d = await get<any>(withKey(
+        "/3/discover/movie?sort_by=vote_count.desc&vote_count.gte=1000&without_genres=99,10770&include_adult=false&page=" + page
+    ));
     const list = (d.results || []).filter((m: any) => m.release_date);
-    if (!list.length) throw new Error("TMDB returned no popular films to start from.");
+    if (!list.length) throw new Error("TMDB returned no films to start from.");
     const m = list[Math.floor(Math.random() * list.length)];
     return { id: m.id, title: m.title, year: (m.release_date || "").slice(0, 4), poster: m.poster_path || "" };
 }
