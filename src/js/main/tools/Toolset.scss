@@ -15,7 +15,9 @@
 
     .toolset-panel {
         position: relative;
-        border: 1px solid #3a3a3a;
+        // Set only by the OLED surface (themes.ts) -- unset otherwise, so
+        // this falls through to the shipped grey.
+        border: 1px solid var(--tile-panel-border, #3a3a3a);
         border-radius: 8px;
         padding: 4px 16px 16px;
     }
@@ -60,7 +62,7 @@
             top: 50%;
             left: 0;
             right: 0;
-            border-top: 1px solid #2f2f2f;
+            border-top: 1px solid var(--tile-divider, #2f2f2f);
         }
     }
 
@@ -108,8 +110,14 @@
             display: flex;
             align-items: center;
             gap: 6px;
-            background: #2a2a2a;
-            border: 1px solid #444;
+            // --tile-bg/--tile-border are set at :root ONLY by the OLED
+            // surface (themes.ts's applySurface) -- unset on the default
+            // "panel" surface, so these fall through to the shipped greys
+            // and nothing changes for anyone who never opens the picker.
+            background: var(--tile-bg, #2a2a2a);
+            // --btn-edge is the group wrapper's own resting-edge var
+            // (Toolset.tsx), which itself falls back to --tile-border.
+            border: 1px solid var(--btn-edge, var(--tile-border, #444));
             color: #ddd;
             border-radius: 18px;
             padding: 8px 14px;
@@ -122,10 +130,15 @@
             // on this project's chrome74 build target), cycling through a
             // small palette so the grid doesn't read as one flat wall of
             // identical grey buttons.
+            // The inset ring is 0-spread (i.e. invisible) unless the OLED
+            // surface sets --tile-hover-ring -- with no fill difference at
+            // rest, a black tile needs a crisp accent edge on hover to read
+            // as a state change rather than a vague glow.
             &:hover {
                 background: var(--btn-bg, #2a2a2a);
                 border-color: var(--btn-border, #444);
-                box-shadow: 0 3px 10px var(--btn-glow, rgba(0, 0, 0, 0.35));
+                box-shadow: inset 0 0 0 var(--tile-hover-ring, 0) var(--btn-border, transparent),
+                    0 3px 10px var(--btn-glow, rgba(0, 0, 0, 0.35));
             }
 
             // Starred ("emphasise" in edit mode): the same group accent, but
@@ -283,7 +296,7 @@
         height: 20px;
         padding: 0;
         border-radius: 50%;
-        border: 1px solid #1e1e1e;
+        border: 1px solid var(--surface-divider, #1e1e1e);
         background: #f4f4f4;
         color: #e0574f; // red minus
         cursor: pointer;
@@ -356,8 +369,8 @@
         // to the same `.action-grid button` specificity described above) --
         // the two badges have to read as a pair, so this matches the
         // rendered result rather than the hide badge's stated intent.
-        border: 1px solid #444;
-        background: #2a2a2a;
+        border: 1px solid var(--surface-border, #444);
+        background: var(--surface-1, #2a2a2a);
         color: #cfcfcf;
         cursor: pointer;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
@@ -416,7 +429,7 @@
         align-items: center;
         gap: 6px;
         background: transparent;
-        border: 1px dashed #4a4a4a;
+        border: 1px dashed var(--surface-border, #4a4a4a);
         color: #888;
         border-radius: 18px;
         padding: 8px 14px;
@@ -455,8 +468,8 @@
         display: flex;
         align-items: center;
         gap: 6px;
-        background: #2a2a2a;
-        border: 1px solid #444;
+        background: var(--surface-1, #2a2a2a);
+        border: 1px solid var(--surface-border, #444);
         border-radius: 4px;
         padding: 6px 8px;
         font-size: 11px;
@@ -512,8 +525,8 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    background: #1e1e1e;
-    border: 1px solid #444;
+    background: var(--surface-0, #1e1e1e);
+    border: 1px solid var(--surface-border, #444);
     border-radius: 5px;
     padding: 5px 8px;
     margin-bottom: 6px;
@@ -602,7 +615,7 @@
     // CLAUDE.md), and would silently just not apply in the real CEP panel
     // despite working fine in a normal modern-Chrome preview.
     &.swatch-none {
-        background: #333;
+        background: var(--surface-2, #333);
     }
 }
 
@@ -623,8 +636,8 @@
 
     button {
         flex: 1;
-        background: #2a2a2a;
-        border: 1px solid #444;
+        background: var(--surface-1, #2a2a2a);
+        border: 1px solid var(--surface-border, #444);
         color: #ddd;
         border-radius: 5px;
         padding: 6px 0;
@@ -643,7 +656,7 @@
     display: block;
     width: 100%;
     background: none;
-    border: 1px dashed #444;
+    border: 1px dashed var(--surface-border, #444);
     color: #999;
     border-radius: 5px;
     padding: 5px 0;
@@ -665,8 +678,8 @@
     input {
         flex: 1;
         min-width: 0;
-        background: #1e1e1e;
-        border: 1px solid #444;
+        background: var(--surface-0, #1e1e1e);
+        border: 1px solid var(--surface-border, #444);
         border-radius: 4px;
         padding: 5px 6px;
         color: #ddd;
@@ -789,7 +802,7 @@
     display: block;
     width: 100%;
     background: none;
-    border: 1px dashed #444;
+    border: 1px dashed var(--surface-border, #444);
     color: #999;
     border-radius: 5px;
     padding: 5px 0;

@@ -25,7 +25,7 @@
 // down locally, so a panel opened mid-turn shows the right time and neither
 // side can drift.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Search, Loader2, Clock, Users, RotateCcw, Eye, Timer, SkipForward, Ban, Wifi } from "lucide-react";
+import { Search, Loader2, Clock, Users, RotateCcw, Eye, Timer, SkipForward, Ban, Wifi, Swords } from "lucide-react";
 import ArcadeFrame from "./../ArcadeFrame";
 import { evalTS } from "../../../lib/utils/bolt";
 import { searchMovies, getCredits, randomStartingMovie, posterUrl, type MovieSummary } from "./tmdb";
@@ -40,6 +40,26 @@ const SEARCH_DEBOUNCE_MS = 280;
 const FREE_CAST_ROUNDS = 5;
 /** NAS reads are cheap but not free; a turn-based game doesn't need faster. */
 const POLL_MS = 1200;
+/**
+ * How far past zero the clock may run while one of YOUR OWN actions is still
+ * in flight, before the timeout is declared anyway.
+ *
+ * This exists because of a real, reproducible loss: BAN does two TMDB
+ * round-trips (credits for the film being burned, then a replacement film)
+ * before its action can be written, and the turn clock kept draining
+ * underneath. Ban with a few seconds left and you'd time out mid-request --
+ * so the tool that's supposed to rescue a hopeless film handed you the game
+ * instead, and the winner's panel then deleted the room, which is why it read
+ * as "the room just closed for no reason". Picking a film has the same shape
+ * (two credit lookups to validate the link).
+ *
+ * A cap rather than an open-ended hold: a wedged request must not freeze the
+ * match forever. It's generous because the alternative -- losing to your own
+ * network latency -- is far worse than a turn that ran slightly long.
+ */
+const ACTION_GRACE_SECONDS = 20;
+/** Redraw attempts before accepting a film that's already in the chain. */
+const REDRAW_TRIES = 4;
 
 type ToolId = "cast" | "time" | "skip" | "ban";
 const TOOLS: { id: ToolId; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
@@ -68,6 +88,23 @@ const parseFile = (raw: string | undefined): BattlePlayerFile | null => {
 
 const toRef = (m: { id: number; title: string; year: string; poster: string }): MovieRef =>
     ({ id: m.id, title: m.title, year: m.year, poster: m.poster || "" });
+
+/**
+ * A starting/replacement film that isn't already in the chain.
+ *
+ * The draw pool is a few hundred films, so a collision is uncommon but not
+ * rare over a long chain plus bans -- and redrawing INTO a film already played
+ * is a dead end for whoever inherits it (every link from it that mattered is
+ * spent, and it can't be replayed). Bounded retries: a repeat is a poor draw,
+ * not a reason to fail the tool.
+ */
+const drawUnplayed = async (playedIds: number[]) => {
+    let pick = await randomStartingMovie();
+    for (let i = 0; i < REDRAW_TRIES && playedIds.indexOf(pick.id) !== -1; i++) {
+        pick = await randomStartingMovie();
+    }
+    return pick;
+};
 
 export const CineChainBattle = ({
     room, against, seat, onClose, onQuit,
@@ -117,7 +154,12 @@ export const CineChainBattle = ({
     const inputRef = useRef<HTMLInputElement>(null);
     const searchSeq = useRef(0);
     const mineRef = useRef<BattlePlayerFile | null>(null);
+    // `sync` is deliberately stable (the poll installs it once), so it can't
+    // see `state` through its own closure -- it needs the ref to know whether
+    // an empty read would be throwing a live match away.
+    const stateRef = useRef<BattleState | null>(null);
     const bootedRef = useRef(false);
+    const seedingRef = useRef(false);
     const postedRef = useRef(false);
     const timedOutRef = useRef(false);
     // The current film's full credits. The chain only carries a MovieRef, so
@@ -160,11 +202,20 @@ export const CineChainBattle = ({
             if (r.me) setMe(r.me);
             const p1 = parseFile(r.p1);
             const p2 = parseFile(r.p2);
+            // AN EMPTY READ NEVER REPLACES A GAME IN PROGRESS. The winner's
+            // panel deletes the room the moment it records the result, so the
+            // LOSER's next poll read two empty files and threw the finished
+            // match away -- their screen jumped from "you ran out of time"
+            // straight back to the ready lobby, a second after losing. Same
+            // rule the arcade leaderboard already follows: a store that can
+            // only grow cannot legitimately come back empty.
+            if (!p1 && !p2 && stateRef.current && stateRef.current.started) return stateRef.current;
             const own = seat === 1 ? p1 : p2;
             const opp = seat === 1 ? p2 : p1;
             if (own) { mineRef.current = own; setMine(own); }
             setOppSeen(!!opp);
             const st = deriveState(p1, p2);
+            stateRef.current = st;
             setState(st);
             return st;
         } catch (e) {
@@ -174,24 +225,36 @@ export const CineChainBattle = ({
         }
     }, [room, seat]);
 
-    // Player 1 owns the opening film; player 2 waits for it to appear.
     useEffect(() => {
         if (bootedRef.current) return;
         bootedRef.current = true;
         (async () => {
-            const st = await sync();
-            if (seat === 1 && (!st || !st.started)) {
-                try {
-                    const seed = await randomStartingMovie();
-                    await act({ kind: "seed", at: new Date().toISOString(), movie: toRef(seed) });
-                    await sync();
-                } catch (e: any) {
-                    setFatal(e?.message || "Couldn't draw an opening film.");
-                }
-            }
+            await sync();
             setBooting(false);
         })();
-    }, [act, seat, sync]);
+    }, [sync]);
+
+    // Player 1 owns the opening film; player 2 waits for it to appear.
+    //
+    // Its own effect rather than part of boot, because a rematch needs exactly
+    // this again: `reset` leaves the room started-less, and whichever side
+    // pressed it, P1's panel is the one that draws the new opening film.
+    useEffect(() => {
+        if (booting || fatal || seat !== 1) return;
+        if (!state || state.started || seedingRef.current) return;
+        seedingRef.current = true;
+        (async () => {
+            try {
+                const seed = await drawUnplayed([]);
+                await act({ kind: "seed", at: new Date().toISOString(), movie: toRef(seed) });
+                await sync();
+            } catch (e: any) {
+                setFatal(e?.message || "Couldn't draw an opening film.");
+            } finally {
+                seedingRef.current = false;
+            }
+        })();
+    }, [booting, fatal, seat, state, act, sync]);
 
     useEffect(() => {
         const id = setInterval(() => { sync(); }, POLL_MS);
@@ -223,6 +286,12 @@ export const CineChainBattle = ({
         ? secondsLeft(state.turnStart, state.extra, nowTick)
         : TURN_SECONDS;
 
+    // How far past zero this turn has run -- `remaining` clamps at 0, so it
+    // can't answer "how long past?" on its own.
+    const overrun = state && state.turnStart
+        ? Math.floor((nowTick - new Date(state.turnStart).getTime()) / 1000) - TURN_SECONDS - (state.extra || 0)
+        : 0;
+
     // Only the player whose turn it is may declare their own timeout -- one
     // writer, and it can't be raced by the opponent's clock.
     useEffect(() => {
@@ -232,9 +301,15 @@ export const CineChainBattle = ({
         // if a stale clock value is on screen for a frame.
         if (!live) return;
         if (state.turn !== seat || remaining > 0 || timedOutRef.current) return;
+        // NOBODY LOSES TO THEIR OWN NETWORK EITHER. `checking` means a move or
+        // a ban is mid-flight: its action is already on its way and will reset
+        // this clock, so declaring a timeout now discards a turn the player
+        // genuinely took. Held only up to ACTION_GRACE_SECONDS, so a request
+        // that never comes back can't stall the match.
+        if (checking && overrun < ACTION_GRACE_SECONDS) return;
         timedOutRef.current = true;
         act({ kind: "timeout", at: new Date().toISOString() });
-    }, [state, remaining, seat, act, booting, live]);
+    }, [state, remaining, seat, act, booting, live, checking, overrun]);
 
     // Exactly one client records the result: the winner.
     useEffect(() => {
@@ -313,18 +388,26 @@ export const CineChainBattle = ({
             setShowCast(true);
             return;
         }
+        // Every branch below writes an action, so each one holds `checking` for
+        // the round trip -- that's what suspends the timeout (see its effect).
         if (id === "time") {
             if (toolSpent(state, seat, "time")) return;
             setTimeBoost((n) => n + 1);   // floats a "+7s" off the clock
-            await act({ kind: "time", at: new Date().toISOString() });
-            await sync();
+            setChecking(true);
+            try {
+                await act({ kind: "time", at: new Date().toISOString() });
+                await sync();
+            } finally { setChecking(false); }
             return;
         }
         if (id === "skip") {
             if (toolSpent(state, seat, "skip")) return;
-            await act({ kind: "skip", at: new Date().toISOString() });
-            setShowCast(false);
-            await sync();
+            setChecking(true);
+            try {
+                await act({ kind: "skip", at: new Date().toISOString() });
+                setShowCast(false);
+                await sync();
+            } finally { setChecking(false); }
             return;
         }
         // Ban: burn this film's whole cast and crew, redraw, keep the turn.
@@ -334,7 +417,7 @@ export const CineChainBattle = ({
             const cur = creditsRef.current && creditsRef.current.id === state.current.id
                 ? creditsRef.current
                 : await getCredits(state.current.id);
-            const seed = await randomStartingMovie();
+            const seed = await drawUnplayed(state.playedIds);
             await act({
                 kind: "ban", at: new Date().toISOString(),
                 movie: toRef(seed),
@@ -369,6 +452,37 @@ export const CineChainBattle = ({
         if (!state || iAmReady) return;
         await act({ kind: "ready", at: new Date().toISOString() });
         await sync();
+    };
+
+    /**
+     * Play again in the SAME room.
+     *
+     * Either side may press it: `reset` is a line through the shared log (see
+     * battle.ts), so one writer is enough and both panels land on an empty
+     * game. P1's seed effect then draws the new opening film, and both people
+     * press Ready again -- which is correct, a new match shouldn't inherit the
+     * old one's "we're both here" from ten minutes ago.
+     *
+     * Every per-match LOCAL flag has to be cleared by hand here; they live
+     * outside the replayed log precisely because they're this panel's business
+     * (who posted the result, who declared the timeout, whether cast was
+     * bought), and a stale one would silently break the next game.
+     */
+    const rematch = async () => {
+        if (!state || checking) return;
+        setChecking(true);
+        postedRef.current = false;
+        timedOutRef.current = false;
+        creditsRef.current = null;
+        setCastSpent(false);
+        setShowCast(false);
+        setMessage(null);
+        setQuery("");
+        setResults([]);
+        try {
+            await act({ kind: "reset", at: new Date().toISOString() });
+            await sync();
+        } finally { setChecking(false); }
     };
 
     return (
@@ -493,7 +607,13 @@ export const CineChainBattle = ({
                                 )}
 
                                 {over && (
+                                    // Rematch first: it's the common next move,
+                                    // and it's what stops a pair minting a new
+                                    // room (and a second invite) per game.
                                     <div className="cc-over-row">
+                                        <button className="cc-btn cc-btn--go" disabled={checking} onClick={rematch}>
+                                            <Swords size={13} /> Rematch
+                                        </button>
                                         <button className="cc-btn" onClick={onQuit}><RotateCcw size={13} /> Back to menu</button>
                                     </div>
                                 )}

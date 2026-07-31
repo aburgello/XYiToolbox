@@ -1,4 +1,10 @@
-// "DAILY" -- the chill one. A five-letter word, six guesses, one puzzle a day.
+// "WORDMARK" -- the chill one. Five letters, six guesses, one puzzle a day.
+// (A wordmark is a logo made of type; this is a design studio.)
+//
+// The name is DISPLAY-ONLY: the file is still DailyWord.tsx, the game id is
+// still "daily" and the board file is still shared-wordgame.json, because that
+// id is the key every already-posted row on the NAS is filed under. Same
+// partial-rename rule as XYTools and One Sheet.
 //
 // WHY THIS SHAPE: asked for as something non-skill-based to dip into during a
 // render. One puzzle a day means there's no grind and no way to be "behind";
@@ -31,6 +37,7 @@ import { Users } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import ArcadeFrame from "./ArcadeFrame";
 import { WORDS } from "./words";
+import { isRealWord } from "./guessWords";
 import "./DailyWord.scss";
 
 const LEN = 5;
@@ -193,6 +200,8 @@ export const DailyWord = ({ onClose }: { onClose: () => void }) => {
     const [lastSolvedDay, setLastSolvedDay] = useState("");
     const [posted, setPosted] = useState(false);
     const [flash, setFlash] = useState<string | null>(null);
+    // Brief shake on the row being typed when a guess isn't a real word.
+    const [reject, setReject] = useState(false);
     const [board, setBoard] = useState<BoardRow[] | null>(null);
     const [postNote, setPostNote] = useState<string | null>(null);
     const loaded = useRef(false);
@@ -240,7 +249,14 @@ export const DailyWord = ({ onClose }: { onClose: () => void }) => {
     const refreshBoard = useCallback(async () => {
         try {
             const res = await evalTS("teamLoadWordBoard");
-            const entries = (res as { entries?: BoardRow[] })?.entries;
+            const r = res as { entries?: BoardRow[]; read?: boolean } | undefined;
+            // `read === false` means the host could not read the shared file
+            // (unmounted NAS, or AE busy mid-render). Keeping the board we
+            // already have beats replacing it with an empty one -- that is
+            // exactly how the arcade hub's standings went blank until the
+            // panel was reopened. An older host has no flag, so undefined is
+            // trusted.
+            const entries = r && r.read !== false ? r.entries : undefined;
             // Keep the WHOLE window: today's rows and the standings are both
             // derived from it at render time.
             if (entries) setBoard(entries);
@@ -281,6 +297,15 @@ export const DailyWord = ({ onClose }: { onClose: () => void }) => {
                 setPosted(true);
                 setPostNote(null);
                 refreshBoard();
+                // ALSO post to the arcade rack's cross-game store. This board
+                // (shared-wordgame.json) only renders inside this game; the hub
+                // reads teamArcadeScores, so without this line the rack's
+                // Wordmark column stayed permanently empty however many days
+                // were played. Streak, because that's the metric the rack shows
+                // for this machine, and its "best" mode takes the max.
+                if (payload.solved) {
+                    evalTS("teamArcadePost", "daily", payload.streak, "").catch(() => undefined);
+                }
             } else {
                 setPostNote(r.error || "Couldn't post to the team board.");
             }
@@ -301,6 +326,16 @@ export const DailyWord = ({ onClose }: { onClose: () => void }) => {
     const submit = useCallback(() => {
         if (done) return;
         if (current.length !== LEN) { say("Needs five letters."); return; }
+        // Guesses must be real words -- otherwise you can grind the answer out
+        // with gibberish. The list behind isRealWord is deliberately permissive
+        // (see guessWords.ts); it bounces nonsense, not unusual vocabulary.
+        // Costs no guess: the row stays, shakes, and waits for a fix.
+        if (!isRealWord(current)) {
+            say("Not a word I know.");
+            setReject(true);
+            setTimeout(() => setReject(false), 450);
+            return;
+        }
 
         const nextGuesses = [...guesses, current];
         const isWin = current === today.word;
@@ -390,7 +425,7 @@ export const DailyWord = ({ onClose }: { onClose: () => void }) => {
 
     return (
         <ArcadeFrame
-            title="DAILY"
+            title="WORDMARK"
             // States plainly that finishing posts to the board, so an
             // automatic post is never a surprise to whoever's playing.
             hint={`Six guesses · ${today.dayKey}${streak > 0 ? ` · streak ${streak}` : ""} · result posts to the team board`}
@@ -401,7 +436,7 @@ export const DailyWord = ({ onClose }: { onClose: () => void }) => {
             <div className="dw-wrap">
                 <div className="dw-board">
                     {rows.map((r, i) => (
-                        <div className="dw-row" key={i}>
+                        <div className={"dw-row" + (reject && i === guesses.length && !done ? " dw-row--reject" : "")} key={i}>
                             {[0, 1, 2, 3, 4].map((j) => {
                                 const ch = r.letters.charAt(j);
                                 const mark = r.marks ? r.marks[j] : null;

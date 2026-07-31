@@ -19,8 +19,8 @@
         align-items: center;
         gap: 6px;
         max-width: 260px;
-        background: #1f1f1f;
-        border: 1px solid #333;
+        background: var(--surface-0, #1f1f1f);
+        border: 1px solid var(--surface-edge, #333);
         border-radius: 14px;
         padding: 4px 10px 4px 8px;
         color: #ccc;
@@ -99,8 +99,8 @@
         align-items: center;
         gap: 8px;
         max-width: 280px;
-        background: #1f1f1f;
-        border: 1px solid #3a3a3a;
+        background: var(--surface-0, #1f1f1f);
+        border: 1px solid var(--surface-edge, #3a3a3a);
         border-radius: 6px;
         padding-left: 9px;
         margin-bottom: 12px;
@@ -129,8 +129,8 @@
         align-items: center;
         gap: 8px;
         max-width: 280px;
-        background: #1f1f1f;
-        border: 1px solid #3a3a3a;
+        background: var(--surface-0, #1f1f1f);
+        border: 1px solid var(--surface-edge, #3a3a3a);
         border-radius: 6px;
         padding-left: 9px;
         margin-bottom: 12px;
@@ -169,8 +169,8 @@
         width: 100%;
         max-width: 420px;
         height: 80px;
-        background: #222;
-        border: 1px solid #333;
+        background: var(--surface-0, #222);
+        border: 1px solid var(--surface-edge, #333);
         border-radius: 4px;
         color: #bbb;
         font-size: 11px;
@@ -222,8 +222,8 @@
         display: flex;
         align-items: center;
         gap: 9px;
-        background: #1f1f1f;
-        border: 1px solid #2c2c2c;
+        background: var(--surface-0, #1f1f1f);
+        border: 1px solid var(--surface-divider, #2c2c2c);
         border-radius: 6px;
         padding: 8px 10px;
         margin-bottom: 4px;
@@ -231,7 +231,7 @@
         transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
 
         &:hover {
-            background: #262626;
+            background: var(--surface-1, #262626);
             border-color: var(--cat-border, #555);
             transform: translateX(2px);
         }
@@ -322,8 +322,8 @@
         display: flex;
         align-items: center;
         gap: 8px;
-        background: #1f1f1f;
-        border: 1px solid #2c2c2c;
+        background: var(--surface-0, #1f1f1f);
+        border: 1px solid var(--surface-divider, #2c2c2c);
         border-radius: 6px;
         padding: 6px 8px;
 

@@ -403,43 +403,129 @@ export const organiseFolders = (): Result => {
 // =============================================================================
 const FRONTCARD_LANDSCAPE_TEMPLATE = "/Volumes/newmedia/XYi Design/XY016893_XYi_Brand_Guidelines/AE/_Landscape.aep";
 const FRONTCARD_PORTRAIT_TEMPLATE = "/Volumes/newmedia/XYi Design/XY016893_XYi_Brand_Guidelines/AE/_Portrait.aep";
+// The source comp is held off the top of the wrapper by this much, so the
+// Frontcard has time to play before the creative starts.
+const FRONTCARD_LEAD_IN_SECONDS = 5;
+// AE label index 1 is red -- same constant setCompDuration's red-label rule
+// uses. The wrapper is deliberately flagged so the delivery comp stands out
+// from the source comp sitting next to it in the Project panel.
+const FRONTCARD_LABEL_RED = 1;
+
+// Finds a named comp inside an imported .aep's folder tree. Duck-typed on
+// numItems rather than `instanceof FolderItem` -- this file already documents
+// that instanceof against an AE host class isn't reliable (see the
+// motionTools.ts shape-layer note in CLAUDE.md).
+function frontcardFindInFolder(folder: FolderItem, name: string): AVItem | null {
+  for (let i = 1; i <= folder.numItems; i++) {
+    const item = folder.item(i);
+    if (typeof (item as any).numItems === "number") {
+      const nested = frontcardFindInFolder(item as FolderItem, name);
+      if (nested) return nested;
+    } else if (item.name === name) {
+      return item as AVItem;
+    }
+  }
+  return null;
+}
 
 export const frontcard = (): Result => {
+  // Resolve the source comp BEFORE opening an undo group, so the early-out
+  // paths never leave one dangling.
+  let source: CompItem | null = null;
+  const activeItem = app.project.activeItem;
+  if (activeItem instanceof CompItem) {
+    source = activeItem;
+  } else {
+    // Fall back to whatever is selected in the Project panel -- clicking a
+    // panel button can leave no active viewer item.
+    const selection = app.project.selection;
+    for (let i = 0; i < selection.length; i++) {
+      if (selection[i] instanceof CompItem) {
+        source = selection[i] as CompItem;
+        break;
+      }
+    }
+  }
+  if (!source) return { success: false, error: "Select or open a composition first." };
+
   try {
     app.beginUndoGroup("XYi Frontcard");
-    const activeItem = app.project.activeItem;
-    if (!(activeItem instanceof CompItem)) {
-      app.endUndoGroup();
-      return { success: false, error: "Select or open a composition first." };
+
+    // Don't stack a second version tag on an already-versioned comp
+    // (the original always appended, giving "..._V01_V01"). Bump instead, so
+    // the wrapper can't collide by name with the comp it wraps -- several
+    // tools in this codebase look comps up by name.
+    const versionMatch = source.name.match(/_[Vv](\d\d)$/);
+    let newName: string;
+    if (versionMatch) {
+      const next = parseInt(versionMatch[1], 10) + 1;
+      newName = source.name.replace(/_[Vv]\d\d$/, "_V" + (next < 10 ? "0" + next : String(next)));
+    } else {
+      newName = source.name + "_V01";
     }
 
-    const newName = activeItem.name + "_V01";
-    const width = activeItem.width;
-    const height = activeItem.height;
-    const duration = activeItem.duration;
-    const frameRate = activeItem.frameRate;
+    const width = source.width;
+    const height = source.height;
+    const frameRate = source.frameRate;
     const format = width / height > 1.2 ? "Landscape" : "Portrait";
+    const wantedName = format + "_Frontcard";
 
-    app.project.importFile(new ImportOptions(new File(format === "Landscape" ? FRONTCARD_LANDSCAPE_TEMPLATE : FRONTCARD_PORTRAIT_TEMPLATE)));
+    const imported = app.project.importFile(
+      new ImportOptions(new File(format === "Landscape" ? FRONTCARD_LANDSCAPE_TEMPLATE : FRONTCARD_PORTRAIT_TEMPLATE))
+    ) as unknown as Item;
 
-    const newComp = app.project.items.addComp(newName, width, height, 1, duration + 5, frameRate);
-    const compLayer = newComp.layers.add(activeItem);
-    compLayer.startTime = 5;
-
-    for (let i = 1; i <= app.project.numItems; i++) {
-      const item = app.project.item(i);
-      if (item.name === "Portrait_Frontcard" || item.name === "Landscape_Frontcard") {
-        newComp.layers.add(item as AVItem);
+    // Take the Frontcard from THIS import only. The original scanned the whole
+    // project for either orientation's name and added every hit, so a project
+    // that already contained a Frontcard (a previous run, or the other
+    // orientation) ended up with them stacked in the new comp.
+    let frontcardItem: AVItem | null = null;
+    if (imported) {
+      if (typeof (imported as any).numItems === "number") {
+        frontcardItem = frontcardFindInFolder(imported as FolderItem, wantedName);
+      } else if (imported.name === wantedName) {
+        frontcardItem = imported as AVItem;
+      }
+    }
+    if (!frontcardItem) {
+      // Template structure differs from what's expected -- fall back to a
+      // project-wide search, but still only for THIS orientation and only the
+      // first match.
+      for (let i = 1; i <= app.project.numItems; i++) {
+        const item = app.project.item(i);
+        if (item.name === wantedName) {
+          frontcardItem = item as AVItem;
+          break;
+        }
       }
     }
 
+    const newComp = app.project.items.addComp(
+      newName,
+      width,
+      height,
+      1,
+      source.duration + FRONTCARD_LEAD_IN_SECONDS,
+      frameRate
+    );
+    // Same folder as the source comp: AE has no API to set an item's row
+    // position, but with the Project panel on its default Name sort the
+    // "<source>_VNN" name lands the wrapper directly beneath the comp it wraps.
+    newComp.parentFolder = source.parentFolder;
+    newComp.label = FRONTCARD_LABEL_RED;
+
+    const compLayer = newComp.layers.add(source);
     const frameDuration = 1 / frameRate;
-    compLayer.startTime = Math.round(compLayer.startTime / frameDuration) * frameDuration;
+    compLayer.startTime = Math.round(FRONTCARD_LEAD_IN_SECONDS / frameDuration) * frameDuration;
+
+    if (frontcardItem) newComp.layers.add(frontcardItem);
 
     newComp.openInViewer();
+    newComp.selected = true;
 
     app.endUndoGroup();
-    return { success: true };
+    return frontcardItem
+      ? { success: true }
+      : { success: false, error: 'Comp created, but no "' + wantedName + '" was found in the template.' };
   } catch (e) {
     app.endUndoGroup();
     return { success: false, error: e.toString() };
@@ -1728,6 +1814,18 @@ export interface McItItemReport {
   action: "replaced" | "no-match" | "skipped";
   newName?: string; // for "replaced"
   reason?: string; // for "no-match" / "skipped"
+  // Stable per-item id (folder|name) the preview modal keys a MANUAL override
+  // by. Sent back into mcIt()'s overridesJson so the real run replaces exactly
+  // the item the user fixed, without re-deriving anything from the report text.
+  key?: string;
+  // Dry run + "no-match" only: plausible files from the image folder, so the
+  // user can fix a misspelling by hand instead of the item silently being
+  // dropped. Ranked (see mcItRankCandidates) and capped -- a suggestion list,
+  // not a second matcher: nothing here is ever applied automatically.
+  candidates?: { name: string; path: string }[];
+  // true when this replacement came from a user override rather than the
+  // matcher, so the modal (and the run report) can say so.
+  manual?: boolean;
 }
 
 export interface McItProjectReport {
@@ -1779,6 +1877,75 @@ function mcItDeriveImageFolder(aepFolder: Folder): string {
   return "";
 }
 
+// Suggestion list for an item the matcher could NOT place -- shown in the dry
+// run modal so a misspelt/oddly-named file can be fixed by hand.
+//
+// DELIBERATELY NOT findBestComponentFile(): that function answers "which ONE
+// file is the match", exposes no score, and is the load-bearing matcher three
+// tools depend on -- refactoring it to also rank would put real replacement
+// behaviour at risk for a cosmetic list. This is a cheap, self-contained
+// ordering (same extension first, then the AEP's resolution, then the trailing
+// number, then shared name tokens) whose only job is to put the likely file
+// near the top of ~8 options the user reads anyway. Nothing here is ever
+// applied automatically.
+function mcItRankCandidates(originalName: string, parsedAEP: McItParsed, imageFiles: File[], limit: number): { name: string; path: string }[] {
+  const originalExt = mcItGetExt(originalName);
+  const parsedOriginal = mcItParseFilename(originalName);
+
+  function tokensOf(s: string): string[] {
+    const cleaned = String(s || "").toLowerCase().replace(/\.[a-z0-9]{1,5}$/i, "").replace(/[^a-z0-9]+/g, " ");
+    const parts = cleaned.split(" ");
+    const out: string[] = [];
+    for (let i = 0; i < parts.length; i++) {
+      if (parts[i].length > 1) out.push(parts[i]);
+    }
+    return out;
+  }
+  const origTokens = tokensOf(originalName);
+
+  const scored: { name: string; path: string; score: number }[] = [];
+  for (let i = 0; i < imageFiles.length; i++) {
+    const cand = imageFiles[i];
+    const candExt = mcItGetExt(cand.name);
+    const origIsJpg = originalExt === "jpg" || originalExt === "jpeg";
+    const candIsJpg = candExt === "jpg" || candExt === "jpeg";
+    let isSameType = originalExt === candExt;
+    if (!isSameType) isSameType = origIsJpg && candIsJpg;
+    // Cross-type files are never offered: replacing a .png footage item with a
+    // .jpg is the one thing MC It! has always refused outright, and offering it
+    // by hand here would quietly reintroduce it.
+    if (!isSameType) continue;
+
+    const parsedCand = mcItParseFilename(cand.name);
+    let score = 0;
+    if (parsedAEP.thirdOne && parsedCand.thirdOne === parsedAEP.thirdOne) score += 100;
+    if (parsedOriginal.pngNumber && parsedCand.pngNumber === parsedOriginal.pngNumber) score += 40;
+    const candTokens = tokensOf(cand.name);
+    for (let a = 0; a < origTokens.length; a++) {
+      for (let b = 0; b < candTokens.length; b++) {
+        if (origTokens[a] === candTokens[b]) { score += 1; break; }
+      }
+    }
+    scored.push({ name: cand.name, path: cand.fsName, score: score });
+  }
+
+  // Plain insertion sort (small n, and Array.sort's comparator behaviour is
+  // one more thing not worth trusting in this engine).
+  for (let i = 1; i < scored.length; i++) {
+    const cur = scored[i];
+    let j = i - 1;
+    while (j >= 0 && scored[j].score < cur.score) {
+      scored[j + 1] = scored[j];
+      j--;
+    }
+    scored[j + 1] = cur;
+  }
+
+  const out: { name: string; path: string }[] = [];
+  for (let i = 0; i < scored.length && i < limit; i++) out.push({ name: scored[i].name, path: scored[i].path });
+  return out;
+}
+
 // The per-project half of MC It!, extracted so it can run against a project
 // that is ALREADY OPEN. Two callers:
 //   1. mcIt() below -- opens each .aep itself, then calls this (unchanged
@@ -1789,11 +1956,16 @@ function mcItDeriveImageFolder(aepFolder: Folder): string {
 // Does NOT open, save or close anything -- the caller owns the project's
 // lifecycle. `aepFileName` is the filename the resolution token is parsed
 // from (mcItParseFilename finds \d+x\d+ anywhere in it), NOT a path.
+// `overrides` maps an item key (folder + "|" + original filename, the same
+// `key` the report carries) to an absolute image path the USER picked in the
+// preview modal. An override wins over the matcher outright -- that is the
+// point: it exists for the cases the matcher got wrong or couldn't place.
 export function mcItApplyToOpenProject(
   proj: Project,
   aepFileName: string,
   imageFiles: File[],
-  dryRun?: boolean
+  dryRun?: boolean,
+  overrides?: Record<string, string>
 ): McItProjectReport {
   const parsedAEP = mcItParseFilename(aepFileName);
   const projReport: McItProjectReport = { aep: aepFileName, resolution: parsedAEP.thirdOne || "", items: [] };
@@ -1848,12 +2020,47 @@ export function mcItApplyToOpenProject(
     for (let j = 1; j <= targetFolder.numItems; j++) {
       const footageItem = targetFolder.item(j) as FootageItem;
       if (footageItem.file && /\.(png|jpe?g)$/i.test(footageItem.file.name)) {
+        const itemKey = targetFolder.name + "|" + footageItem.file.name;
+        const overridePath = overrides ? overrides[itemKey] : undefined;
+
+        // A manual override bypasses EVERY filter below, including the
+        // Artwork OV-token gate -- the user has looked at this exact item and
+        // named the exact file, which is a stronger signal than any heuristic
+        // here. The one thing it can't bypass is the file not existing.
+        if (overridePath) {
+          const chosen = new File(overridePath);
+          if (!chosen.exists) {
+            projReport.items.push({
+              folder: targetFolder.name,
+              name: footageItem.file.name,
+              action: "no-match",
+              reason: "The file you picked no longer exists: " + overridePath,
+              key: itemKey,
+            });
+            continue;
+          }
+          if (!dryRun) {
+            footageItem.replace(chosen);
+            $.sleep(500);
+          }
+          projReport.items.push({
+            folder: targetFolder.name,
+            name: footageItem.file.name,
+            action: "replaced",
+            newName: chosen.name,
+            manual: true,
+            key: itemKey,
+          });
+          continue;
+        }
+
         if (isArtworkFolder && !/(^|[_\s])OV\d*[_\s.]/i.test(footageItem.file.name)) {
           projReport.items.push({
             folder: targetFolder.name,
             name: footageItem.file.name,
             action: "skipped",
             reason: "No OV token — not a localisation target.",
+            key: itemKey,
           });
           continue;
         }
@@ -1903,6 +2110,7 @@ export function mcItApplyToOpenProject(
             name: originalName,
             action: "replaced",
             newName: bestFile.name,
+            key: itemKey,
           });
         } else {
           let reason = "No candidate survived the filters.";
@@ -1914,6 +2122,11 @@ export function mcItApplyToOpenProject(
             name: originalName,
             action: "no-match",
             reason: reason,
+            key: itemKey,
+            // Only on a dry run: the real run's report is a record of what
+            // happened, and every unmatched item carrying 8 paths would bloat
+            // the persisted JSON for no one to read.
+            candidates: dryRun ? mcItRankCandidates(originalName, parsedAEP, imageFiles, 8) : undefined,
           });
         }
       }
@@ -1957,7 +2170,10 @@ export function mcItDeriveImageFolderFor(aepFolder: Folder): string {
 // -- Toolset's card, Campaign Localiser, the CSV Localiser's inline pass --
 // is unaffected. Filenames, not paths: they come straight back from the
 // report the dry run produced for this same folder.
-export const mcIt = (aepFolderPath?: string, imageFolderPath?: string, dryRun?: boolean, onlyAepsJson?: string): McItResult => {
+// overridesJson: { "<file.aep>": { "<folder>|<original.png>": "/abs/path.png" } }
+// -- the manual fixes the user made in the preview modal for items the matcher
+// couldn't place. Absent for every other caller, so nothing else changes.
+export const mcIt = (aepFolderPath?: string, imageFolderPath?: string, dryRun?: boolean, onlyAepsJson?: string, overridesJson?: string): McItResult => {
   try {
     let projectFolder: Folder | null = null;
     if (aepFolderPath) {
@@ -1985,6 +2201,11 @@ export const mcIt = (aepFolderPath?: string, imageFolderPath?: string, dryRun?: 
         aepFiles = keep;
         if (aepFiles.length === 0) return { success: false, error: "None of the selected projects were found in that folder." };
       }
+    }
+
+    let overrides: Record<string, Record<string, string>> = {};
+    if (overridesJson) {
+      try { overrides = JSON.parse(overridesJson) as Record<string, Record<string, string>>; } catch (ovErr) { overrides = {}; }
     }
 
     let imageRootFolder: Folder | null = null;
@@ -2023,7 +2244,7 @@ export const mcIt = (aepFolderPath?: string, imageFolderPath?: string, dryRun?: 
 
       // Identical matching/replacement logic the CSV Localiser's inline pass
       // uses -- shared, not duplicated (see mcItApplyToOpenProject above).
-      const projReport = mcItApplyToOpenProject(proj, aepFile.name, imageFiles, dryRun);
+      const projReport = mcItApplyToOpenProject(proj, aepFile.name, imageFiles, dryRun, overrides[aepFile.name]);
       projects.push(projReport);
       replacedCount += mcItCountReplaced(projReport);
 
@@ -2072,6 +2293,30 @@ export const mcIt = (aepFolderPath?: string, imageFolderPath?: string, dryRun?: 
     }
 
     return result;
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// "Choose a file…" in the preview modal, for an unmatched item whose right
+// image isn't in the suggestion list at all (a misspelling far enough off, or
+// a file living outside the derived batch folder). Returns the picked path so
+// the modal can add it as an override; a cancel is success:true with no file,
+// not an error.
+export const mcItPickImage = (startFolder?: string): { success: boolean; path?: string; name?: string; error?: string } => {
+  try {
+    let start: Folder | null = null;
+    if (startFolder) {
+      const f = new Folder(startFolder);
+      if (f.exists) start = f;
+    }
+    const picked = start
+      ? start.openDlg("Pick the image to use", undefined, false)
+      : File.openDialog("Pick the image to use");
+    const file = picked instanceof Array ? picked[0] : picked;
+    if (!file) return { success: true };
+    if (!/\.(png|jpe?g)$/i.test(file.name)) return { success: false, error: "Pick a PNG or JPG — got " + file.name };
+    return { success: true, path: file.fsName, name: file.name };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

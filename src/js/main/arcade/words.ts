@@ -5,15 +5,12 @@
 // argument right now is that a game should cost kilobytes. ~500 common words
 // is ~4 KB, needs no download, and carries no licensing question at all.
 //
-// Consequence, and it's deliberate: GUESSES ARE NOT VALIDATED against a
-// dictionary -- any five letters are accepted. That would be wrong for a
-// competitive word game, but this one is explicitly the "chill, three minutes
-// during a render" game, and a spellchecker that rejects a real word you
-// typed is far more annoying than one that lets a nonsense guess through.
-// If proper validation is ever wanted, the honest fix is a real word list
-// (ENABLE/SCOWL are public domain) dropped in `src/js/public/`, read the same
-// scheme-aware way bundled assets are read -- not padding this
-// list out by hand.
+// This file is the ANSWER list only. GUESSES ARE VALIDATED, against the much
+// larger public-domain list in `guessWords.ts` (added later, on request --
+// without it anyone could type gibberish until the letters fell out). Keep the
+// two separate: an answer has to be common and satisfying, a guess only has to
+// be a real word. Every word here must exist in guessWords.ts, or its day is
+// unwinnable -- re-check that if you add one.
 //
 // SELECTION RULES used when curating: exactly five letters, no proper nouns,
 // no plurals-of-a-4-letter-word (they make for unsatisfying answers), nothing

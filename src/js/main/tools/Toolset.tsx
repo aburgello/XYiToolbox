@@ -556,6 +556,29 @@ const PALETTE: { border: string; bg: string; glow: string }[] = [
     { border: "#facc15", bg: "#403a1c", glow: "rgba(250, 204, 21, 0.35)" },
 ];
 
+// A group's accent vars, pointed at the --pal-N-* slots themes.ts publishes
+// at :root, with this PALETTE entry as the literal fallback. Going through
+// the cascade (rather than reading a React value) is what lets the theme
+// picker's "Button borders: theme colour" / OLED choices reach this grid
+// LIVE -- both are mounted on the home screen at the same time, in
+// unrelated subtrees with no props between them. With nothing setting those
+// vars (first paint, or a machine that never opened the picker) the
+// fallbacks mean exactly today's look.
+const groupAccentStyle = (groupIndex: number): React.CSSProperties => {
+    const slot = groupIndex % PALETTE.length;
+    const fallback = PALETTE[slot];
+    return {
+        "--btn-border": `var(--pal-${slot}-border, ${fallback.border})`,
+        "--btn-bg": `var(--pal-${slot}-bg, ${fallback.bg})`,
+        "--btn-glow": `var(--pal-${slot}-glow, ${fallback.glow})`,
+        // The RESTING border only. --pal-N-edge is published solely by the
+        // picker's "Border at rest: group / theme" choice, so with it unset
+        // this collapses to the plain tile border -- today's look. Hover and
+        // starred deliberately don't read this; they stay on --btn-border.
+        "--btn-edge": `var(--pal-${slot}-edge, var(--tile-border, #444))`,
+    } as React.CSSProperties;
+};
+
 
 
 // Droplet content for "Toggle By Label" -- real color swatches instead of
@@ -1416,12 +1439,7 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
     // the cursor across groups). Styled with its CURRENT group's accent.
     const activeAction = activeId ? resolveEntry(activeId) : null;
     const activeGroupIdx = activeAction ? GROUPS.findIndex((g) => g.id === groupOf(activeAction.id)) : -1;
-    const overlayAccent = PALETTE[(activeGroupIdx < 0 ? 0 : activeGroupIdx) % PALETTE.length];
-    const overlayStyle = {
-        "--btn-border": overlayAccent.border,
-        "--btn-bg": overlayAccent.bg,
-        "--btn-glow": overlayAccent.glow,
-    } as React.CSSProperties;
+    const overlayStyle = groupAccentStyle(activeGroupIdx < 0 ? 0 : activeGroupIdx);
 
     return (
         <div className={editMode ? "toolset-grid editing" : "toolset-grid"}>
@@ -1453,12 +1471,7 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
                         onDragEnd={handleDragEnd}
                     >
                         {GROUPS.map((group, groupIndex) => {
-                            const accent = PALETTE[groupIndex % PALETTE.length];
-                            const btnStyle = {
-                                "--btn-border": accent.border,
-                                "--btn-bg": accent.bg,
-                                "--btn-glow": accent.glow,
-                            } as React.CSSProperties;
+                            const btnStyle = groupAccentStyle(groupIndex);
                             return (
                                 <SortableGroup
                                     key={group.id}
@@ -1496,12 +1509,7 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
                     // One accent per group (not per button) -- reinforces which
                     // cluster a button belongs to at a glance, on top of the
                     // section label itself.
-                    const accent = PALETTE[groupIndex % PALETTE.length];
-                    const btnStyle = {
-                        "--btn-border": accent.border,
-                        "--btn-bg": accent.bg,
-                        "--btn-glow": accent.glow,
-                    } as React.CSSProperties;
+                    const btnStyle = groupAccentStyle(groupIndex);
 
                     return (
                         // btnStyle (the --btn-* accent vars) sits on the group

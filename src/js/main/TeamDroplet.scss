@@ -77,7 +77,7 @@
     gap: 4px;
     flex-shrink: 0;
     background: none;
-    border: 1px solid #3a3a3a;
+    border: 1px solid var(--surface-edge, #3a3a3a);
     color: #999;
     border-radius: 6px;
     padding: 4px 8px;
@@ -177,8 +177,8 @@
     display: flex;
     align-items: center;
     gap: 4px;
-    background: #1e1e1e;
-    border: 1px solid #3a3a3a;
+    background: var(--ov-bg, #1e1e1e);
+    border: 1px solid var(--surface-edge, #3a3a3a);
     border-radius: 6px;
     padding: 3px 3px 3px 8px;
 

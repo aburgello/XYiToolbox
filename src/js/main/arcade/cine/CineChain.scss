@@ -309,10 +309,23 @@
     font-size: 11px;
     cursor: pointer;
 
-    &:hover { border-color: var(--ov-accent, #2dd4bf); color: #fff; }
+    // The background is set explicitly on hover to opt out of index.scss's
+    // global `button:hover { background-color: #20639b }` -- without it these
+    // flash flat blue over the arcade's own palette.
+    &:hover { border-color: var(--ov-accent, #2dd4bf); color: #fff; background: #1c2729; }
+    &:disabled { opacity: 0.5; cursor: default; }
+    &:disabled:hover { border-color: #33403f; color: #cbd6d8; background: #161e20; }
 }
 
 .cc-btn--again { align-self: flex-start; }
+
+/** The recommended next action on the game-over row. */
+.cc-btn--go {
+    border-color: var(--ov-accent, #2dd4bf);
+    color: #fff;
+
+    &:hover { background: #1d3230; }
+}
 
 .cc-over-row { display: flex; gap: 6px; flex-wrap: wrap; }
 

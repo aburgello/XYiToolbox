@@ -24,6 +24,7 @@
 //    change always survives to the next tick instead of being overwritten by a
 //    stray press.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { evalTS } from "../../lib/utils/bolt";
 import ArcadeFrame from "./ArcadeFrame";
 
 const COLS = 24;
@@ -82,6 +83,32 @@ export const KeyframeSnake = ({ onClose }: { onClose: () => void }) => {
     const [deadMsg, setDeadMsg] = useState<string | null>(null);
     const [isPaused, setIsPaused] = useState(false);
 
+    // The score as the TICK sees it. `score` is React state read only by the
+    // chrome; the death handler runs inside the interval, where that state is a
+    // stale closure -- same reason every other live value here is a ref.
+    const scoreRef = useRef(0);
+
+    /**
+     * Game over: report the run to the arcade board, then show the message.
+     *
+     * THIS IS WHY THE RACK'S BOARD WAS ALWAYS EMPTY. The hub reads one shared
+     * store (teamArcadeScores) keyed by game id, but for a long time the ONLY
+     * writer was XYiNerdle's head-to-head win -- so "Push the Playhead" could
+     * never have a row no matter how many rounds anyone played.
+     *
+     * A zero-score death posts nothing (walking straight into a wall isn't a
+     * score), and the post is fire-and-forget: an untagged machine, no Team
+     * Folder or an unmounted NAS are all normal states here, and the game must
+     * not stall or complain because the board is unreachable.
+     */
+    const die = useCallback((msg: string) => {
+        dead.current = msg;
+        setDeadMsg(msg);
+        if (scoreRef.current > 0) {
+            evalTS("teamArcadePost", "timeline", scoreRef.current, "").catch(() => undefined);
+        }
+    }, []);
+
     /** Place food on a cell the snake isn't already occupying. */
     const placeFood = useCallback(() => {
         const free: Pt[] = [];
@@ -104,6 +131,7 @@ export const KeyframeSnake = ({ onClose }: { onClose: () => void }) => {
         pending.current = [];
         dead.current = null;
         paused.current = false;
+        scoreRef.current = 0;
         setScore(0);
         setDeadMsg(null);
         setIsPaused(false);
@@ -188,20 +216,19 @@ export const KeyframeSnake = ({ onClose }: { onClose: () => void }) => {
         const ny = head.y + dir.current.y;
 
         if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) {
-            dead.current = "Ran past the work area.";
-            setDeadMsg(dead.current);
+            die("Ran past the work area.");
             return;
         }
         for (let i = 0; i < snake.current.length; i++) {
             if (snake.current[i].x === nx && snake.current[i].y === ny) {
-                dead.current = "Circular reference!";
-                setDeadMsg(dead.current);
+                die("Circular reference!");
                 return;
             }
         }
 
         snake.current = [{ x: nx, y: ny }, ...snake.current];
         if (nx === food.current.x && ny === food.current.y) {
+            scoreRef.current += 1;
             setScore((s) => {
                 const next = s + 1;
                 if (next > bestScore) bestScore = next;

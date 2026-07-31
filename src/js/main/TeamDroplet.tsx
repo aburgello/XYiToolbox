@@ -30,9 +30,35 @@ import { evalTS } from "../lib/utils/bolt";
 import { requestSoftReload } from "./softReload";
 import "./TeamDroplet.scss";
 
-// Keep in step with HomeScreen.tsx's "Toolbox {version}" hover text -- this
-// is the value compared against the team folder's toolbox-version.txt.
-export const TOOLBOX_VERSION = "2026.678";
+// The version THIS build is. Hand-bumped -- nothing in `yarn build`/`yarn
+// zxp` derives it: package.json's version feeds the CEP manifest only (see
+// cep.config.ts) and never reaches the frontend, so this constant and the
+// manifest version are independent on purpose.
+//
+// FORMAT IS LOAD-BEARING: fixed-width YYYYMMDD, no separators. The update
+// check below is a plain STRING compare against the team folder's
+// toolbox-version.txt, so a fixed-width all-digit format is the only shape
+// where "sorts later" and "is later" can't disagree. Anything with a
+// separator or a variable-width field silently mis-orders:
+//   "2026.7" > "2026.678"   (true -- but 678 was meant to be the newer one)
+//   "2026.08" > "2026.678"  (FALSE -- a padded month reads as older)
+//   "2026.10" > "2026.9"    (FALSE -- October reads as older than September)
+// The two legacy values this replaced ("2026.07", then "2026.678") both hit
+// that; a digit outranks "." in ASCII, which is what lets any YYYYMMDD value
+// still register as newer than either of them on machines mid-transition.
+//
+// To bump: set today's date and update toolbox-version.txt on the team
+// folder to the same string. Keep in step with HomeScreen.tsx's
+// "Toolbox {version}" hover text, which renders it via formatVersion().
+export const TOOLBOX_VERSION = "20260730";
+
+// YYYYMMDD -> "2026.07.30" for display only. The raw fixed-width string is
+// what gets compared; this is purely so the panel doesn't show a bare
+// 8-digit number. Anything not matching the expected shape (e.g. a legacy
+// "2026.678" read off an older team folder) is passed through untouched
+// rather than mangled.
+export const formatVersion = (v: string): string =>
+  /^\d{8}$/.test(v) ? v.slice(0, 4) + "." + v.slice(4, 6) + "." + v.slice(6, 8) : v;
 
 // Mirrors team.ts's TeamProfileInfo: a member is a SUBFOLDER of the team
 // folder (Antonio/, Jacqui/, ...); hasProfile says whether that member has
@@ -320,7 +346,7 @@ const TeamDroplet: React.FC = () => {
                     {updateAvailable && (
                         <div className="team-update-banner">
                             <RefreshCw size={12} />
-                            Toolbox {latestVersion} is available — this machine runs {TOOLBOX_VERSION}. Ask for the new installer.
+                            Toolbox {formatVersion(latestVersion)} is available — this machine runs {formatVersion(TOOLBOX_VERSION)}. Ask for the new installer.
                         </div>
                     )}
 

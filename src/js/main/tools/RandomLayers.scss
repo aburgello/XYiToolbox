@@ -35,8 +35,8 @@
 
         input {
             flex: 1;
-            background: #262626;
-            border: 1px solid #444;
+            background: var(--surface-1, #262626);
+            border: 1px solid var(--surface-border, #444);
             border-radius: 3px;
             padding: 4px 6px;
             color: #ddd;
@@ -63,8 +63,8 @@
             align-items: center;
             gap: 6px;
             justify-content: center;
-            background: #2a2a2a;
-            border: 1px solid #444;
+            background: var(--surface-1, #2a2a2a);
+            border: 1px solid var(--surface-border, #444);
             color: #ddd;
             border-radius: 3px;
             padding: 8px 12px;
@@ -95,8 +95,8 @@
         margin-top: 14px;
         padding: 6px 8px;
         border-radius: 4px;
-        background: #2a2a2a;
-        border: 1px solid #444;
+        background: var(--surface-1, #2a2a2a);
+        border: 1px solid var(--surface-border, #444);
         font-size: 11px;
         max-width: 320px;
 

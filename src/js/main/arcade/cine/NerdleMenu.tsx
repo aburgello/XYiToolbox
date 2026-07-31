@@ -57,6 +57,101 @@ const makeRoom = (): string => {
 
 type Tab = "play" | "board";
 
+/** How many matches the board lists. It's a leaderboard, not a match archive. */
+const RECENT_MATCHES = 8;
+
+/**
+ * Who beat whom, per player.
+ *
+ * `rival` is the whole point of the ask: a bare W/L column says how someone is
+ * doing, not who they're doing it against. It's the opponent they've PLAYED
+ * most (not the one they've beaten most) -- a rivalry is defined by how often
+ * you meet, and showing "1–4 vs aaron" is more honest than only surfacing the
+ * matchups someone happens to be winning.
+ *
+ * Pure and exported so it can be checked headlessly -- the same reason
+ * battle.ts's reducer is pure. A wrong tally here is quietly unfair rather
+ * than visibly broken.
+ */
+export interface Rival { name: string; w: number; l: number; }
+export interface Standing {
+    name: string;
+    w: number;
+    l: number;
+    /** Longest chain this player has won with. 0 if they've never won. */
+    best: number;
+    /** Current run of the same outcome, most recent first. */
+    streak: number;
+    streakKind: "W" | "L" | null;
+    rival: Rival | null;
+}
+
+/** Newest first. Stamps are `YYYY-MM-DD HH:MM`, so a string compare is enough. */
+export const sortedResults = (rows: MatchResult[]): MatchResult[] => {
+    const out = rows.filter((r) => r && r.winner && r.loser);
+    out.sort((a, b) => (a.stamp < b.stamp ? 1 : a.stamp > b.stamp ? -1 : 0));
+    return out;
+};
+
+export const standingsFrom = (results: MatchResult[]): Standing[] => {
+    const by: Record<string, Standing> = {};
+    const rivals: Record<string, Record<string, Rival>> = {};
+    const seed = (name: string) => {
+        if (!by[name]) {
+            by[name] = { name, w: 0, l: 0, best: 0, streak: 0, streakKind: null, rival: null };
+            rivals[name] = {};
+        }
+    };
+    const pair = (a: string, b: string): Rival => {
+        if (!rivals[a][b]) rivals[a][b] = { name: b, w: 0, l: 0 };
+        return rivals[a][b];
+    };
+
+    for (const r of results) {
+        seed(r.winner);
+        seed(r.loser);
+        by[r.winner].w++;
+        by[r.loser].l++;
+        if (r.films > by[r.winner].best) by[r.winner].best = r.films;
+        pair(r.winner, r.loser).w++;
+        pair(r.loser, r.winner).l++;
+    }
+
+    // Streaks are counted in a second pass rather than inline: a player's run
+    // only continues while EVERY match since is the same outcome, which the
+    // per-row loop above can't know without tracking whether it's already
+    // broken. Cheap (a leaderboard, not a log) and much easier to read.
+    for (const name of Object.keys(by)) {
+        let streak = 0;
+        let kind: "W" | "L" | null = null;
+        for (const r of results) {
+            const mine = r.winner === name ? "W" : r.loser === name ? "L" : null;
+            if (!mine) continue;
+            if (kind === null) { kind = mine; streak = 1; continue; }
+            if (mine !== kind) break;
+            streak++;
+        }
+        by[name].streak = streak;
+        by[name].streakKind = kind;
+
+        const mine = rivals[name];
+        let top: Rival | null = null;
+        for (const opp of Object.keys(mine)) {
+            const r = mine[opp];
+            if (!top || r.w + r.l > top.w + top.l) top = r;
+        }
+        by[name].rival = top;
+    }
+
+    const out = Object.keys(by).map((k) => by[k]);
+    out.sort((a, b) => b.w - a.w || a.l - b.l || b.best - a.best || a.name.localeCompare(b.name));
+    return out;
+};
+
+// Module scope, so reopening the menu within one panel session doesn't re-run
+// the NAS sweep. Reset naturally on a fresh panel open (new JS realm).
+let sweptThisSession = false;
+
 export const NerdleMenu = ({ onChoose }: { onChoose: (c: MenuChoice) => void }) => {
     const [tab, setTab] = useState<Tab>("play");
     const [roster, setRoster] = useState<string[]>([]);
@@ -64,7 +159,6 @@ export const NerdleMenu = ({ onChoose }: { onChoose: (c: MenuChoice) => void }) 
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
     const [note, setNote] = useState<string | null>(null);
-    const [room] = useState(makeRoom);
 
     const refresh = useCallback(async () => {
         try {
@@ -86,6 +180,19 @@ export const NerdleMenu = ({ onChoose }: { onChoose: (c: MenuChoice) => void }) 
 
     useEffect(() => { refresh(); }, [refresh]);
 
+    // Housekeeping: drop abandoned battle rooms and expired invites. ONCE per
+    // panel session (module-scope guard, same pattern TeamDroplet's version/
+    // sync checks use) -- it enumerates folders on the NAS, so it must not ride
+    // the 15s poll. Silent either way: nobody asked for it, and an unmounted
+    // share is a normal state.
+    useEffect(() => {
+        if (sweptThisSession) return;
+        sweptThisSession = true;
+        evalTS("teamArcadeSweep")
+            .then(() => refresh())
+            .catch(() => undefined);
+    }, [refresh]);
+
     // Poll while the menu is open so an invite that lands mid-look appears
     // without the user hunting for a refresh button. Slow on purpose: this is
     // a NAS read, and nobody needs sub-10s latency on "fancy a game?".
@@ -94,15 +201,36 @@ export const NerdleMenu = ({ onChoose }: { onChoose: (c: MenuChoice) => void }) 
         return () => clearInterval(id);
     }, [refresh]);
 
+    /**
+     * A ROOM CODE IS MINTED PER INVITE, not per menu.
+     *
+     * It used to be one code for the whole time the menu was open, so
+     * challenging two people put both matches in the SAME room folder --
+     * four player files fighting over two seats. It also meant a second
+     * invite to the same person reused a code whose match had already been
+     * played.
+     *
+     * The host has the final say on which room this ends up being: if they
+     * already challenged us, it hands back THEIR room (and seat 2) rather than
+     * opening a rival one, so a pair can only ever have one room going. We
+     * walk straight in either way -- the ready gate is the waiting room, and
+     * bouncing back to a list only invites a second click that mints a second
+     * room.
+     */
     const invite = async (name: string) => {
         setBusy(true);
         setNote(null);
         try {
-            const res = await evalTS("teamNerdleInvite", name, room);
+            const res = await evalTS("teamNerdleInvite", name, makeRoom());
             if (res === undefined) throw new Error("no bridge");
-            const r = res as { success?: boolean; message?: string; error?: string };
-            setNote(r.success ? r.message || "Invited." : r.error || "Couldn't send that invite.");
-            if (r.success) refresh();
+            const r = res as { success?: boolean; room?: string; seat?: number; message?: string; error?: string };
+            if (!r.success) { setNote(r.error || "Couldn't send that invite."); return; }
+            if (r.room) {
+                onChoose({ mode: "room", room: r.room, against: name, seat: r.seat === 2 ? 2 : 1 });
+                return;
+            }
+            setNote(r.message || "Invited.");
+            refresh();
         } catch (e) {
             setNote("No team folder available from here — solo still works.");
         } finally {
@@ -110,20 +238,8 @@ export const NerdleMenu = ({ onChoose }: { onChoose: (c: MenuChoice) => void }) 
         }
     };
 
-    // Win/loss table, newest results first.
-    const standings = (() => {
-        const by: Record<string, { name: string; w: number; l: number }> = {};
-        for (const r of lobby?.results || []) {
-            if (!r || !r.winner) continue;
-            if (!by[r.winner]) by[r.winner] = { name: r.winner, w: 0, l: 0 };
-            if (!by[r.loser]) by[r.loser] = { name: r.loser, w: 0, l: 0 };
-            by[r.winner].w++;
-            by[r.loser].l++;
-        }
-        const out = Object.keys(by).map((k) => by[k]);
-        out.sort((a, b) => b.w - a.w || a.l - b.l || a.name.localeCompare(b.name));
-        return out;
-    })();
+    const results = sortedResults(lobby?.results || []);
+    const standings = standingsFrom(results);
 
     const others = roster.filter((n) => !lobby?.me || n.toLowerCase() !== lobby.me.toLowerCase());
 
@@ -151,7 +267,6 @@ export const NerdleMenu = ({ onChoose }: { onChoose: (c: MenuChoice) => void }) 
                     <div className="nm-section">
                         <div className="nm-section-head">
                             <Users size={12} /> Challenge someone
-                            <span className="nm-room">room {room}</span>
                         </div>
 
                         {loading && <div className="nm-loading"><Loader2 size={14} className="spin" /> Reading the team folder…</div>}
@@ -233,12 +348,47 @@ export const NerdleMenu = ({ onChoose }: { onChoose: (c: MenuChoice) => void }) 
                         <p className="nm-note">No matches recorded yet. Win a head-to-head and it'll show up here.</p>
                     )}
                     {standings.map((s) => (
-                        <div className="nm-member" key={s.name}>
-                            <span className="nm-dot" style={{ background: memberColor(s.name) }} />
-                            <span className="nm-name">{s.name}</span>
-                            <span className="nm-record">{s.w}W · {s.l}L</span>
+                        <div className="nm-stand" key={s.name} style={{ borderLeftColor: memberColor(s.name) }}>
+                            <div className="nm-stand-top">
+                                <span className="nm-dot" style={{ background: memberColor(s.name) }} />
+                                <span className="nm-name">{s.name}</span>
+                                {s.streakKind && s.streak > 1 && (
+                                    <span className={"nm-streak nm-streak--" + s.streakKind.toLowerCase()}>
+                                        {s.streak}{s.streakKind} run
+                                    </span>
+                                )}
+                                <span className="nm-record">{s.w}W · {s.l}L</span>
+                            </div>
+                            <div className="nm-stand-sub">
+                                {s.best > 0 && <span>best chain {s.best}</span>}
+                                {s.rival && (
+                                    <span>
+                                        vs <b style={{ color: memberColor(s.rival.name) }}>{s.rival.name}</b>{" "}
+                                        {s.rival.w}–{s.rival.l}
+                                    </span>
+                                )}
+                            </div>
                         </div>
                     ))}
+
+                    {/* The literal "who beat who": standings tell you how
+                        someone is doing, this tells you what actually
+                        happened, newest first. */}
+                    {!!results.length && (
+                        <>
+                            <div className="nm-section-head nm-section-head--sub">Recent matches</div>
+                            {results.slice(0, RECENT_MATCHES).map((r, i) => (
+                                <div className="nm-match" key={r.stamp + r.winner + r.loser + i}>
+                                    <span className="nm-dot" style={{ background: memberColor(r.winner) }} />
+                                    <span className="nm-match-text">
+                                        <b style={{ color: memberColor(r.winner) }}>{r.winner}</b> beat{" "}
+                                        <b style={{ color: memberColor(r.loser) }}>{r.loser}</b>
+                                    </span>
+                                    <span className="nm-match-meta">{r.films} films · {r.stamp}</span>
+                                </div>
+                            ))}
+                        </>
+                    )}
                 </div>
             )}
 

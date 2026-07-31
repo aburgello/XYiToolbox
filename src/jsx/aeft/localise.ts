@@ -1539,6 +1539,19 @@ export const importLocLibComponentsBatch = (paths: string[]): BatchImportResult 
 // "Folders starting with _ ... are excluded from every scan across this
 // whole toolset, not just this panel"), same maxSearchDepth=4 convention
 // as llFindComponentFiles() above for consistency within this file.
+//
+// AE's own "Adobe After Effects Auto-Save" folder is excluded too (same
+// exclusion review.ts/batchMatch.ts/tools.ts already apply to their own
+// scans). Real bug this fixes: "Save Into Batch Folder..." was injecting
+// components into every auto-save copy sitting next to the real project
+// files and saving them in place -- and each of those saves spawns fresh
+// auto-saves, so the folder kept growing. Auto-saves are AE's own crash
+// backups, never deliverables; nothing should ever write to them.
+function isAutoSaveFolderName(name: string): boolean {
+  const lower = name.toLowerCase();
+  return lower.indexOf("auto-save") !== -1 || lower.indexOf("auto save") !== -1;
+}
+
 function findAepFilesRecursive(folder: Folder, depth: number, maxDepth: number, results: File[]) {
   if (depth > maxDepth) return;
   const items = folder.getFiles();
@@ -1546,6 +1559,7 @@ function findAepFilesRecursive(folder: Folder, depth: number, maxDepth: number, 
     const item = items[i];
     if (item instanceof Folder) {
       if (item.name.charAt(0) === "_") continue;
+      if (isAutoSaveFolderName(item.name)) continue;
       findAepFilesRecursive(item, depth + 1, maxDepth, results);
     } else if (item instanceof File && /\.aep$/i.test(item.name)) {
       results.push(item);

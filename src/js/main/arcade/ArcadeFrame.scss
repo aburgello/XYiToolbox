@@ -70,10 +70,15 @@
     background: #141a1c;
 }
 
+// The game's own name in its title bar, in the same pixel face the cabinets
+// wear (class `.arcade-pixel`, arcadeFont.scss) so walking from the arcade
+// floor into a game doesn't change typeface halfway.
+// Smaller and less tracked than the old system-font version: the pixel face is
+// much wider per character and this bar also carries the hint text.
 .arcade-title {
-    font-weight: 700;
-    font-size: 13px;
-    letter-spacing: 0.18em;
+    flex: 0 0 auto;
+    font-size: 10px;
+    letter-spacing: 0.1em;
     color: var(--cat-icon, #5eead4);
 }
 

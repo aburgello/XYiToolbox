@@ -150,6 +150,8 @@ const PROFILE_KEYS: string[] = [
   "OVFavoriteTools",
   "OVTheme",
   "OVThemeDecorations",
+  "OVThemeSurface",
+  "OVThemeBorders",
   "SfxEnabled",
   "SfxVolume",
   "QuickFxUserEffects",
@@ -653,11 +655,13 @@ const SHARED_EXPRESSIONS_FILE = "shared-expressions.json";
 const SHARED_TOOLS_FILE = "shared-tools.json";
 const SHARED_CAMPAIGNS_FILE = "shared-campaigns.json";
 const SHARED_WORDGAME_FILE = "shared-wordgame.json";
+const SHARED_POSTERGAME_FILE = "shared-postergame.json";
 const SHARED_COMBOS_TYPE = "xyi-shared-combos";
 const SHARED_EXPRESSIONS_TYPE = "xyi-shared-expressions";
 const SHARED_TOOLS_TYPE = "xyi-shared-tools";
 const SHARED_CAMPAIGNS_TYPE = "xyi-shared-campaigns";
 const SHARED_WORDGAME_TYPE = "xyi-shared-wordgame";
+const SHARED_POSTERGAME_TYPE = "xyi-shared-postergame";
 
 // OV Library campaign: just a name + the masters-root path. Sharing these is
 // safe/useful here specifically because the masters live on the studio NAS at
@@ -704,17 +708,81 @@ interface SharedCustomTool {
 // teamApplyProfile already uses for the flat profiles/ layout.
 const MISC_DIR = "misc";
 
+// GAME files get their own subfolder under misc/, so misc/ doesn't end up
+// reading as "the arcade folder" when it's meant to hold whatever odds and
+// ends get bolted on. Same migration shape as misc/ itself: reads walk
+// arcade/ -> misc/ -> root and take the first hit, writes always go to
+// arcade/, so a live board/invite file relocates itself the first time
+// anything writes to it. Nothing to move by hand, nothing orphaned.
+//
+// NOTE: a machine still running an OLDER build only looks in misc/ and the
+// root, so once a file has migrated it stops seeing it. That's fine for what
+// lives here (a rolling 30-day board, ephemeral invites and battle rooms) but
+// don't move a file anyone would miss into a new subfolder without also
+// leaving the read fallback in place on BOTH sides.
+const ARCADE_DIR = MISC_DIR + "/arcade";
+
+// Which shared files belong to the arcade. Kept as one list rather than a flag
+// per call site so adding a game means touching exactly this line.
+function isArcadeFile(fileName: string): boolean {
+  return (
+    fileName === SHARED_WORDGAME_FILE ||
+    fileName === SHARED_POSTERGAME_FILE ||
+    fileName === SHARED_NERDLE_INVITES_FILE ||
+    fileName === SHARED_ARCADE_SCORES_FILE
+  );
+}
+
+// Where a given shared file is WRITTEN. Reads try this first, then the older
+// locations (see readSharedFile).
+function sharedDirFor(fileName: string): string {
+  return isArcadeFile(fileName) ? ARCADE_DIR : MISC_DIR;
+}
+
 function miscFolder(): Folder | null {
   const root = teamFolder();
   if (!root) return null;
   return new Folder(root.fsName + "/" + MISC_DIR);
 }
 
+// Create misc/ (and misc/arcade/ when that's the target) level by level --
+// Folder.create() won't make intermediate levels. Returns the folder if it
+// exists afterwards, else null so the caller can fall back.
+function ensureSharedFolder(dir: string): Folder | null {
+  const root = teamFolder();
+  if (!root) return null;
+  const parts = dir.split("/");
+  let pathSoFar = root.fsName;
+  let folder: Folder | null = null;
+  for (let i = 0; i < parts.length; i++) {
+    pathSoFar = pathSoFar + "/" + parts[i];
+    folder = new Folder(pathSoFar);
+    if (!folder.exists) {
+      try { folder.create(); } catch (e) { return null; }
+    }
+  }
+  return folder && folder.exists ? folder : null;
+}
+
+/**
+ * NULL MEANS "I DID NOT GET THE CONTENTS", NOT "THERE ARE NONE".
+ *
+ * It covers a file that genuinely isn't there yet AND a read that failed --
+ * an unmounted share, a NAS blip, or the panel asking while AE is busy (a
+ * render finishing was the real report). A caller that flattens null to `[]`
+ * hands the UI a legitimately-empty board, which is how a leaderboard full of
+ * rows went blank until the panel was reopened. Callers that hold state must
+ * pass this distinction on (see teamArcadeScores' `read` flag) so the UI can
+ * keep what it already has instead of destroying it on one bad read.
+ */
 function readSharedFile<T>(fileName: string, expectedType: string): T[] | null {
   const root = teamFolder();
   if (!root) return null;
-  // misc/ first, then the legacy root location.
-  let content = readTextFile(new File(root.fsName + "/" + MISC_DIR + "/" + fileName));
+  // Preferred location first (misc/arcade/ for games, misc/ otherwise), then
+  // each older location in turn.
+  const dir = sharedDirFor(fileName);
+  let content = readTextFile(new File(root.fsName + "/" + dir + "/" + fileName));
+  if (!content && dir !== MISC_DIR) content = readTextFile(new File(root.fsName + "/" + MISC_DIR + "/" + fileName));
   if (!content) content = readTextFile(new File(root.fsName + "/" + fileName));
   if (!content) return null;
   try {
@@ -736,8 +804,8 @@ function sharedTypeNoun(expectedType: string, count: number): string {
     : expectedType === SHARED_TOOLS_TYPE ? "custom tool"
     : expectedType === SHARED_CAMPAIGNS_TYPE ? "campaign"
     : expectedType === SHARED_WORDGAME_TYPE ? "result"
+    : expectedType === SHARED_POSTERGAME_TYPE ? "result"
     : expectedType === SHARED_NERDLE_INVITES_TYPE ? "invite"
-    : expectedType === SHARED_NERDLE_RESULTS_TYPE ? "match"
     : "item";
   return count === 1 ? singular : singular + "s";
 }
@@ -759,16 +827,14 @@ function writeSharedFile<T>(fileName: string, expectedType: string, entries: T[]
     updatedAt: new Date().toString(),
     entries: entries,
   };
-  // Always write to misc/, creating it on first use. If the folder can't be
-  // created (permissions, unmounted share), fall back to the root rather than
-  // failing the share outright -- a shared combo landing in the old place is
-  // far better than losing it.
-  const misc = miscFolder();
-  if (misc && !misc.exists) {
-    try { misc.create(); } catch (e) { /* fall through to the root path below */ }
-  }
-  const target = misc && misc.exists
-    ? new File(misc.fsName + "/" + fileName)
+  // Always write to the file's own folder (misc/arcade/ for games, misc/
+  // otherwise), creating it on first use. If it can't be created (permissions,
+  // unmounted share), fall back to the root rather than failing the share
+  // outright -- a shared combo landing in the old place is far better than
+  // losing it.
+  const folder = ensureSharedFolder(sharedDirFor(fileName));
+  const target = folder
+    ? new File(folder.fsName + "/" + fileName)
     : new File(root.fsName + "/" + fileName);
   return writeTextFile(target, JSON.stringify(payload, null, 2));
 }
@@ -1060,11 +1126,13 @@ interface WordResultEntry {
 }
 
 /** Read the shared board. Null (not an error) when there's no team folder. */
-export const teamLoadWordBoard = (): { success: boolean; entries?: WordResultEntry[]; error?: string } => {
+export const teamLoadWordBoard = (): { success: boolean; entries?: WordResultEntry[]; read?: boolean; error?: string } => {
   try {
-    if (!teamFolder()) return { success: true, entries: [] };
-    const entries = readSharedFile<WordResultEntry>(SHARED_WORDGAME_FILE, SHARED_WORDGAME_TYPE) || [];
-    return { success: true, entries: entries };
+    if (!teamFolder()) return { success: true, entries: [], read: false };
+    // `read` distinguishes an empty board from a failed read -- same reason as
+    // teamArcadeScores, so one bad read can't blank a populated board.
+    const entries = readSharedFile<WordResultEntry>(SHARED_WORDGAME_FILE, SHARED_WORDGAME_TYPE);
+    return { success: true, entries: entries || [], read: entries !== null };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -1080,25 +1148,60 @@ export const teamLoadWordBoard = (): { success: boolean; entries?: WordResultEnt
  * normal state, and the caller shows it as a quiet inline note.
  */
 export const teamPostWordResult = (resultJson: string): Result => {
+  const parsed = parseDailyRow(resultJson);
+  if (!parsed.row) return { success: false, error: parsed.error };
+  const row = parsed.row as WordResultEntry;
+  row.streak = Number(row.streak) || 0;
+  return writeDailyBoardRow(SHARED_WORDGAME_FILE, SHARED_WORDGAME_TYPE, row);
+};
+
+// --- shared plumbing for BOTH daily boards -----------------------------------
+// The word board and the poster board differ only in which numbers a row
+// carries; everything around that (owner tagging, replace-this-member's-row-
+// for-this-day, newest-first, 30-day trim) is identical. It lives here once so
+// the two can't drift -- the word version was copied wholesale for the poster
+// game first, which is exactly the duplication this file's own header warns
+// about.
+
+interface DailyBoardRow {
+  day: string;
+  member: string;
+  postedAt: string;
+}
+
+/** JSON in, a row with a day out. Errors are the caller's message verbatim. */
+function parseDailyRow(resultJson: string): { row: DailyBoardRow | null; error: string } {
+  let incoming: DailyBoardRow | null = null;
+  try {
+    incoming = JSON.parse(resultJson) as DailyBoardRow;
+  } catch (e) {
+    return { row: null, error: "Could not read the result data." };
+  }
+  if (!incoming || !incoming.day) return { row: null, error: "Result has no day to file it under." };
+  return { row: incoming, error: "" };
+}
+
+/**
+ * Publish (or replace) THIS machine's row for one day on one board.
+ *
+ * The member name comes from the machine-owner tag rather than being typed:
+ * the station already knows whose it is, and an untagged machine has no
+ * business writing a name into a shared studio file. An unmounted NAS returns
+ * a plain error rather than throwing -- a laptop off the studio network is a
+ * normal state, and the caller shows it as a quiet inline note.
+ */
+function writeDailyBoardRow<T extends DailyBoardRow>(fileName: string, type: string, incoming: T): Result {
   try {
     if (!teamFolder()) return { success: false, error: "Team folder not set -- set it in the Team menu on the home screen first." };
 
     const owner = loadLocalSetting(MACHINE_OWNER_KEY);
     if (!owner) return { success: false, error: "Tag this machine with your name in the Team menu first, so the board knows who posted." };
 
-    let incoming: WordResultEntry | null = null;
-    try {
-      incoming = JSON.parse(resultJson) as WordResultEntry;
-    } catch (e2) {
-      return { success: false, error: "Could not read the result data." };
-    }
-    if (!incoming || !incoming.day) return { success: false, error: "Result has no day to file it under." };
     incoming.member = owner;
-    incoming.streak = Number(incoming.streak) || 0;
     incoming.postedAt = new Date().toString();
 
-    const board = readSharedFile<WordResultEntry>(SHARED_WORDGAME_FILE, SHARED_WORDGAME_TYPE) || [];
-    const kept: WordResultEntry[] = [];
+    const board = readSharedFile<T>(fileName, type) || [];
+    const kept: T[] = [];
     for (let i = 0; i < board.length; i++) {
       const row = board[i];
       if (!row || !row.day) continue;
@@ -1112,7 +1215,7 @@ export const teamPostWordResult = (resultJson: string): Result => {
     // Newest first, then trim. Day keys are ISO-ish (YYYY-MM-DD) so a plain
     // string compare sorts them correctly without parsing dates.
     kept.sort(function (a, b) { return a.day < b.day ? 1 : a.day > b.day ? -1 : 0; });
-    const trimmed: WordResultEntry[] = [];
+    const trimmed: T[] = [];
     const seenDays: string[] = [];
     for (let i = 0; i < kept.length; i++) {
       if (seenDays.indexOf(kept[i].day) === -1) {
@@ -1122,13 +1225,55 @@ export const teamPostWordResult = (resultJson: string): Result => {
       trimmed.push(kept[i]);
     }
 
-    if (!writeSharedFile(SHARED_WORDGAME_FILE, SHARED_WORDGAME_TYPE, trimmed)) {
+    if (!writeSharedFile(fileName, type, trimmed)) {
       return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
     }
     return { success: true, message: "Posted to the team board." };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
+}
+
+// --- Daily poster puzzle: the shared board -----------------------------------
+// The game is src/js/main/arcade/PosterDaily.tsx; per-machine progress lives in
+// wordGame.ts alongside the word puzzle's.
+//
+// The row carries BOTH costs -- guesses AND hints bought -- because that pair
+// is the whole point of this board: getting it in two with the plot handed to
+// you is not the same round as getting it in two cold, and a single number
+// would flatten the difference away.
+
+interface PosterResultEntry extends DailyBoardRow {
+  /** Attempts used. 0 means "didn't get it". */
+  guesses: number;
+  /** Hints bought, whether or not it was solved. */
+  hints: number;
+  solved: boolean;
+  /** Streak AT THAT MOMENT -- counted on the player's own machine, since the
+   *  board only ever sees the days they were at their desk. */
+  streak: number;
+}
+
+/** Read the shared board. Empty (not an error) when there's no team folder. */
+export const teamLoadPosterBoard = (): { success: boolean; entries?: PosterResultEntry[]; read?: boolean; error?: string } => {
+  try {
+    if (!teamFolder()) return { success: true, entries: [], read: false };
+    const entries = readSharedFile<PosterResultEntry>(SHARED_POSTERGAME_FILE, SHARED_POSTERGAME_TYPE);
+    return { success: true, entries: entries || [], read: entries !== null };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+export const teamPostPosterResult = (resultJson: string): Result => {
+  const parsed = parseDailyRow(resultJson);
+  if (!parsed.row) return { success: false, error: parsed.error };
+  const row = parsed.row as PosterResultEntry;
+  row.guesses = Number(row.guesses) || 0;
+  row.hints = Number(row.hints) || 0;
+  row.streak = Number(row.streak) || 0;
+  row.solved = !!row.solved;
+  return writeDailyBoardRow(SHARED_POSTERGAME_FILE, SHARED_POSTERGAME_TYPE, row);
 };
 
 // --- XYiNerdle: lobbies, invites, leaderboard -------------------------------
@@ -1148,9 +1293,18 @@ export const teamPostWordResult = (resultJson: string): Result => {
 // realtime doorbell, and the UI says so rather than pretending.
 
 const SHARED_NERDLE_INVITES_FILE = "xyinerdle-invites.json";
-const SHARED_NERDLE_RESULTS_FILE = "xyinerdle-results.json";
 const SHARED_NERDLE_INVITES_TYPE = "xyi-nerdle-invites";
-const SHARED_NERDLE_RESULTS_TYPE = "xyi-nerdle-results";
+
+// THE RESULTS BOARD HAS NO FILE OF ITS OWN, AND THAT'S THE FIX.
+// `teamNerdleLobby` used to read `xyinerdle-results.json` -- a file NOTHING
+// has ever written. The winner of a battle posts through `teamArcadePost`
+// (see the arcade scoreboard section below), which is the same dead-call
+// family as the old `teamNerdlePostResult`: the write went somewhere real,
+// the read looked somewhere else, so the in-game leaderboard was permanently
+// empty however many matches were played. Results are now DERIVED from the
+// one arcade score store (`nerdleResultsFromScores`), so there is exactly one
+// place a head-to-head result lives. Matches played before this landed are in
+// that store already and will appear.
 
 /** How many invites to keep. Old ones are noise, not history. */
 const NERDLE_INVITE_KEEP = 40;
@@ -1182,8 +1336,26 @@ const nowStamp = (): string => {
  * Post an invite for `to`. The sender is taken from the machine-owner tag
  * rather than typed, same rule as the word-game board: an untagged station has
  * no business writing a name into a shared studio file.
+ *
+ * A PAIR HAS AT MOST ONE ROOM, IN EITHER DIRECTION. The first version deduped
+ * only on (from -> to), so two people who challenged each other -- which is
+ * exactly what happens when both are keen, or when a first attempt looked like
+ * it hadn't landed -- ended up with TWO rooms. Each then saw one incoming and
+ * one outgoing invite, walked into different rooms, and sat waiting for an
+ * opponent who was sitting in the other room doing the same thing.
+ *
+ * So: if they have already challenged ME, this joins THEIR room (returning
+ * seat 2) instead of opening a second one. The caller uses the returned
+ * `room`/`seat` rather than the code it passed in -- never assume the room you
+ * suggested is the room you got.
  */
-export const teamNerdleInvite = (toMember: string, room: string): Result => {
+export const teamNerdleInvite = (toMember: string, room: string): {
+  success: boolean;
+  room?: string;
+  seat?: number;
+  message?: string;
+  error?: string;
+} => {
   try {
     if (!teamFolder()) return { success: false, error: "Team folder not set -- set it in the Team menu on the home screen first." };
     const from = loadLocalSetting(MACHINE_OWNER_KEY);
@@ -1191,23 +1363,45 @@ export const teamNerdleInvite = (toMember: string, room: string): Result => {
     if (!toMember) return { success: false, error: "Pick someone to invite." };
     if (toMember.toLowerCase() === from.toLowerCase()) return { success: false, error: "You can't invite yourself." };
 
+    const meLow = from.toLowerCase();
+    const themLow = toMember.toLowerCase();
     const list = readSharedFile<NerdleInvite>(SHARED_NERDLE_INVITES_FILE, SHARED_NERDLE_INVITES_TYPE) || [];
     const kept: NerdleInvite[] = [];
+    let theirs: NerdleInvite | null = null;
     for (let i = 0; i < list.length; i++) {
       const row = list[i];
       if (!row || !row.room) continue;
-      // One live invite per pair -- re-inviting replaces rather than stacks.
-      const samePair = String(row.from).toLowerCase() === from.toLowerCase() && String(row.to).toLowerCase() === toMember.toLowerCase();
-      if (!samePair) kept.push(row);
+      const f = String(row.from).toLowerCase();
+      const t = String(row.to).toLowerCase();
+      if (f === themLow && t === meLow) {
+        // They asked first. Keep the OLDEST such row (the list is newest-first,
+        // so the last one seen wins) and drop any duplicates.
+        theirs = row;
+        continue;
+      }
+      // Re-inviting the same person replaces rather than stacks.
+      if (f === meLow && t === themLow) continue;
+      kept.push(row);
     }
-    kept.push({ room: room, from: from, to: toMember, createdAt: new Date().toString(), stamp: nowStamp() });
+
+    if (theirs) kept.push(theirs);
+    else kept.push({ room: room, from: from, to: toMember, createdAt: new Date().toString(), stamp: nowStamp() });
+
     kept.sort(function (a, b) { return a.stamp < b.stamp ? 1 : a.stamp > b.stamp ? -1 : 0; });
     const trimmed = kept.length > NERDLE_INVITE_KEEP ? kept.slice(0, NERDLE_INVITE_KEEP) : kept;
 
     if (!writeSharedFile(SHARED_NERDLE_INVITES_FILE, SHARED_NERDLE_INVITES_TYPE, trimmed)) {
       return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
     }
-    return { success: true, message: "Invited " + toMember + " to room " + room + "." };
+    if (theirs) {
+      return {
+        success: true,
+        room: theirs.room,
+        seat: 2,
+        message: toMember + " had already challenged you -- joining their room " + theirs.room + ".",
+      };
+    }
+    return { success: true, room: room, seat: 1, message: "Invited " + toMember + " to room " + room + "." };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -1230,7 +1424,7 @@ export const teamNerdleLobby = (): {
     const me = loadLocalSetting(MACHINE_OWNER_KEY) || "";
     if (!teamFolder()) return { success: true, me: me, incoming: [], outgoing: [], results: [] };
     const invites = readSharedFile<NerdleInvite>(SHARED_NERDLE_INVITES_FILE, SHARED_NERDLE_INVITES_TYPE) || [];
-    const results = readSharedFile<NerdleResult>(SHARED_NERDLE_RESULTS_FILE, SHARED_NERDLE_RESULTS_TYPE) || [];
+    const results = nerdleResultsFromScores();
     const incoming: NerdleInvite[] = [];
     const outgoing: NerdleInvite[] = [];
     const low = me.toLowerCase();
@@ -1273,10 +1467,16 @@ export const teamNerdleLobby = (): {
 //     Now the same `writeTextFile` helper everything else here uses, and each
 //     directory level is created explicitly.
 
-const BATTLE_DIR = "misc/battle";
+// Battle rooms moved under misc/arcade/ with the rest of the game files.
+// LEGACY_BATTLE_DIR is still READ so a match already in progress when this
+// build lands doesn't lose its room mid-game; writes only ever go to the new
+// path. Safe to drop the legacy read once no room predates this change --
+// rooms are ephemeral, so that's about a day.
+const BATTLE_DIR = ARCADE_DIR + "/battle";
+const LEGACY_BATTLE_DIR = MISC_DIR + "/battle";
 
 /**
- * Ensure `misc/battle/<room>/` exists, creating each level in turn.
+ * Ensure `misc/arcade/battle/<room>/` exists, creating each level in turn.
  *
  * Folder.create() is not reliable for nested paths in ExtendScript, so the
  * levels are walked deliberately rather than hoping one call does it.
@@ -1284,7 +1484,12 @@ const BATTLE_DIR = "misc/battle";
 function battleRoomFolder(room: string, create: boolean): Folder | null {
   const root = teamFolder();
   if (!root) return null;
-  const levels = [root.fsName + "/misc", root.fsName + "/" + BATTLE_DIR, root.fsName + "/" + BATTLE_DIR + "/" + room];
+  const levels = [
+    root.fsName + "/" + MISC_DIR,
+    root.fsName + "/" + ARCADE_DIR,
+    root.fsName + "/" + BATTLE_DIR,
+    root.fsName + "/" + BATTLE_DIR + "/" + room,
+  ];
   let folder: Folder | null = null;
   for (let i = 0; i < levels.length; i++) {
     folder = new Folder(levels[i]);
@@ -1323,6 +1528,13 @@ function battlePlayerPath(room: string, player: number): File | null {
   return new File(root.fsName + "/" + BATTLE_DIR + "/" + room + "/player" + player + ".json");
 }
 
+/** Same, at the pre-misc/arcade location -- read-only fallback. */
+function legacyBattlePlayerPath(room: string, player: number): File | null {
+  const root = teamFolder();
+  if (!root) return null;
+  return new File(root.fsName + "/" + LEGACY_BATTLE_DIR + "/" + room + "/player" + player + ".json");
+}
+
 /**
  * Both player files for a room, as RAW JSON STRINGS.
  *
@@ -1344,8 +1556,19 @@ export const teamBattleRead = (room: string): {
     // readTextFile already answers "is it there?" by trying to open it.
     const f1 = battlePlayerPath(room, 1);
     const f2 = battlePlayerPath(room, 2);
-    const p1 = f1 ? readTextFile(f1) : null;
-    const p2 = f2 ? readTextFile(f2) : null;
+    let p1 = f1 ? readTextFile(f1) : null;
+    let p2 = f2 ? readTextFile(f2) : null;
+    // A room started before battle files moved under misc/arcade/ -- read it
+    // where it actually is rather than dropping the match. Per file, since the
+    // two sides can be mid-migration on different builds for a few minutes.
+    if (!p1) {
+      const legacy1 = legacyBattlePlayerPath(room, 1);
+      if (legacy1) p1 = readTextFile(legacy1);
+    }
+    if (!p2) {
+      const legacy2 = legacyBattlePlayerPath(room, 2);
+      if (legacy2) p2 = readTextFile(legacy2);
+    }
     return { success: true, me: me, p1: p1 || "", p2: p2 || "" };
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -1375,19 +1598,138 @@ export const teamBattleWrite = (room: string, player: number, fileJson: string):
  * player files are removed first -- the previous version called remove() on a
  * populated folder and silently did nothing. Best-effort: a leftover room
  * folder is harmless clutter, never a failure worth surfacing.
+ *
+ * THE INVITE GOES TOO. It used to survive the match it created, so the lobby
+ * kept offering "Accept"/"Open room" for a game that was already over --
+ * walking back in either replayed the finished log (a game-over screen for a
+ * match you'd already had) or landed you in a room whose files this function
+ * had just deleted. One room, one match, one invite: they end together.
  */
 export const teamBattleCleanup = (room: string): Result => {
   try {
-    const folder = battleRoomFolder(room, false);
-    if (!folder) return { success: true };
-    const files = folder.getFiles() || [];
-    for (let i = 0; i < files.length; i++) {
-      try { (files[i] as File).remove(); } catch (e) { /* leave it */ }
+    const root = teamFolder();
+    if (!root) return { success: true };
+    try {
+      const invites = readSharedFile<NerdleInvite>(SHARED_NERDLE_INVITES_FILE, SHARED_NERDLE_INVITES_TYPE);
+      if (invites) {
+        const kept: NerdleInvite[] = [];
+        for (let i = 0; i < invites.length; i++) {
+          const row = invites[i];
+          if (row && row.room && String(row.room) !== String(room)) kept.push(row);
+        }
+        if (kept.length !== invites.length) {
+          writeSharedFile(SHARED_NERDLE_INVITES_FILE, SHARED_NERDLE_INVITES_TYPE, kept);
+        }
+      }
+    } catch (e) { /* the room files matter more than the invite row */ }
+    // Both locations: a room that started before battle files moved under
+    // misc/arcade/ would otherwise be left behind forever.
+    const dirs = [BATTLE_DIR, LEGACY_BATTLE_DIR];
+    for (let d = 0; d < dirs.length; d++) {
+      const folder = new Folder(root.fsName + "/" + dirs[d] + "/" + room);
+      let files: (File | Folder)[] = [];
+      try { files = folder.getFiles() || []; } catch (e) { files = []; }
+      for (let i = 0; i < files.length; i++) {
+        try { (files[i] as File).remove(); } catch (e) { /* leave it */ }
+      }
+      try { folder.remove(); } catch (e) { /* leave it */ }
     }
-    try { folder.remove(); } catch (e) { /* leave it */ }
     return { success: true };
   } catch (e) {
     return { success: true };
+  }
+};
+
+// ── Arcade housekeeping ──────────────────────────────────────────────────────
+// teamBattleCleanup only fires when a match actually REACHES a loser AND the
+// winning panel is still open at that moment. Everything else leaked: a room
+// created by an invite nobody accepted, a match abandoned mid-chain, a panel
+// closed before the final action landed. Those room folders sat on the NAS
+// forever, and their invites sat in the list until 40 newer ones displaced
+// them.
+//
+// This is the sweep that actually keeps the folder tidy: anything older than
+// ARCADE_STALE_HOURS goes. A live game touches its player file every turn, so
+// "stale" genuinely means abandoned -- but the window is deliberately much
+// longer than a match (minutes) so an in-progress room can never be swept out
+// from under two people playing.
+const ARCADE_STALE_HOURS = 24;
+
+/** `nowStamp()`'s format for a moment N hours ago -- comparable as a string. */
+function staleCutoffStamp(hours: number): string {
+  const d = new Date(new Date().getTime() - hours * 3600 * 1000);
+  const p = function (n: number) { return n < 10 ? "0" + n : String(n); };
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes());
+}
+
+/** Newest modified time inside a room folder, or 0 if it can't be read. */
+function newestFileTime(folder: Folder): number {
+  let newest = 0;
+  let files: (File | Folder)[] = [];
+  try { files = folder.getFiles() || []; } catch (e) { return 0; }
+  for (let i = 0; i < files.length; i++) {
+    try {
+      const m = (files[i] as File).modified;
+      if (m && m.getTime() > newest) newest = m.getTime();
+    } catch (e) { /* unreadable -- treat as ancient */ }
+  }
+  return newest;
+}
+
+/**
+ * Delete abandoned battle rooms and expired invites. Best-effort and silent:
+ * this is housekeeping, never something to interrupt anyone about, and an
+ * unmounted NAS is a normal state.
+ *
+ * Called once per session from the arcade menu (not per poll) -- it enumerates
+ * folders on a network share, which is not something to do every 15 seconds.
+ */
+export const teamArcadeSweep = (): { success: boolean; roomsRemoved?: number; invitesRemoved?: number; error?: string } => {
+  try {
+    const root = teamFolder();
+    if (!root) return { success: true, roomsRemoved: 0, invitesRemoved: 0 };
+    const cutoffTime = new Date().getTime() - ARCADE_STALE_HOURS * 3600 * 1000;
+
+    let roomsRemoved = 0;
+    const dirs = [BATTLE_DIR, LEGACY_BATTLE_DIR];
+    for (let d = 0; d < dirs.length; d++) {
+      const battle = new Folder(root.fsName + "/" + dirs[d]);
+      let rooms: (File | Folder)[] = [];
+      try { rooms = battle.getFiles() || []; } catch (e) { rooms = []; }
+      for (let r = 0; r < rooms.length; r++) {
+        const room = rooms[r];
+        if (!(room instanceof Folder)) continue;
+        const newest = newestFileTime(room);
+        // newest === 0 means an empty or unreadable room folder -- either way
+        // there's no game in it.
+        if (newest !== 0 && newest > cutoffTime) continue;
+        let files: (File | Folder)[] = [];
+        try { files = room.getFiles() || []; } catch (e) { files = []; }
+        for (let i = 0; i < files.length; i++) {
+          try { (files[i] as File).remove(); } catch (e) { /* leave it */ }
+        }
+        try { if (room.remove()) roomsRemoved++; } catch (e) { /* leave it */ }
+      }
+    }
+
+    // Invites carry their own `stamp` in nowStamp()'s sortable format, so age
+    // is a string compare -- no re-parsing a Date out of a toString().
+    let invitesRemoved = 0;
+    const cutoffStamp = staleCutoffStamp(ARCADE_STALE_HOURS);
+    const list = readSharedFile<NerdleInvite>(SHARED_NERDLE_INVITES_FILE, SHARED_NERDLE_INVITES_TYPE);
+    if (list && list.length > 0) {
+      const kept: NerdleInvite[] = [];
+      for (let i = 0; i < list.length; i++) {
+        const row = list[i];
+        if (row && row.stamp && String(row.stamp) >= cutoffStamp) kept.push(row);
+        else invitesRemoved++;
+      }
+      if (invitesRemoved > 0) writeSharedFile(SHARED_NERDLE_INVITES_FILE, SHARED_NERDLE_INVITES_TYPE, kept);
+    }
+
+    return { success: true, roomsRemoved: roomsRemoved, invitesRemoved: invitesRemoved };
+  } catch (e) {
+    return { success: false, error: e.toString() };
   }
 };
 
@@ -1395,7 +1737,7 @@ export const teamBattleCleanup = (room: string): Result => {
 // Arcade scoreboard -- ONE store for every game, not one per game.
 // -----------------------------------------------------------------------------
 // The arcade hub shows standings for all games together, so scores live in a
-// single `misc/arcade-scores.json` keyed by `game`. Adding a game means posting
+// single `misc/arcade/arcade-scores.json` keyed by `game`. Adding a game means posting
 // with a new game id; no backend change, no new file, no new read on open.
 //
 // FIXES A DEAD CALL: CineChainBattle posted its result to
@@ -1451,6 +1793,38 @@ export const teamArcadePost = (game: string, score: number, versus: string): Res
 };
 
 /**
+ * The head-to-head rows, read back out of the one arcade store.
+ *
+ * A versus row IS a result: the poster is the winner, `versus` is who they
+ * beat, `score` is how long the chain got. This is what `teamNerdleLobby`
+ * serves the in-game leaderboard, replacing a read of a file nobody wrote --
+ * see the note at the top of the XYiNerdle section.
+ *
+ * A plain `function` (not a const arrow) on purpose: it's declared here, next
+ * to the store it reads, but called from `teamNerdleLobby` further up the
+ * file, and only a function declaration hoists.
+ */
+function nerdleResultsFromScores(): NerdleResult[] {
+  const list = readSharedFile<ArcadeScore>(SHARED_ARCADE_SCORES_FILE, SHARED_ARCADE_SCORES_TYPE) || [];
+  const out: NerdleResult[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const row = list[i];
+    if (!row || String(row.game) !== "xyinerdle") continue;
+    // No opponent means it isn't a head-to-head row -- skip rather than
+    // inventing a loser for it.
+    if (!row.versus) continue;
+    out.push({
+      room: "",
+      winner: String(row.name),
+      loser: String(row.versus),
+      films: Number(row.score) || 0,
+      stamp: String(row.stamp || ""),
+    });
+  }
+  return out;
+}
+
+/**
  * Every score plus who this machine is, in ONE round trip -- the hub renders
  * all games' boards together, and each read is a NAS hit.
  *
@@ -1458,12 +1832,16 @@ export const teamArcadePost = (game: string, score: number, versus: string): Res
  * returns success with an empty board rather than an error the hub would have
  * to render as a failure.
  */
-export const teamArcadeScores = (): { success: boolean; me?: string; scores?: ArcadeScore[]; error?: string } => {
+export const teamArcadeScores = (): { success: boolean; me?: string; scores?: ArcadeScore[]; read?: boolean; error?: string } => {
   try {
     const me = loadLocalSetting(MACHINE_OWNER_KEY) || "";
-    if (!teamFolder()) return { success: true, me: me, scores: [] };
-    const list = readSharedFile<ArcadeScore>(SHARED_ARCADE_SCORES_FILE, SHARED_ARCADE_SCORES_TYPE) || [];
-    return { success: true, me: me, scores: list };
+    if (!teamFolder()) return { success: true, me: me, scores: [], read: false };
+    const list = readSharedFile<ArcadeScore>(SHARED_ARCADE_SCORES_FILE, SHARED_ARCADE_SCORES_TYPE);
+    // `read` is the difference between "nobody has played yet" and "I could
+    // not read the file just now" -- see sharedReadFailed's note. Without it
+    // a transient NAS/AE hiccup is served as a legitimately empty board, and
+    // the caller wipes a good one.
+    return { success: true, me: me, scores: list || [], read: list !== null };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

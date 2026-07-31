@@ -29,7 +29,7 @@
         flex: 1;
         min-height: 0;
         margin-top: 8px;
-        border: 1px solid #3a3a3a;
+        border: 1px solid var(--surface-edge, #3a3a3a);
         // Uniform radius on all four corners -- safe now that the tab bar
         // has no per-button fill/seam (see .rh-tab-highlight below), so the
         // two rounded top corners read as one continuous card edge instead
@@ -93,8 +93,8 @@
     .rh-tab-bar {
         position: relative;
         display: flex;
-        background: #212121;
-        border-bottom: 1px solid #2a2a2a;
+        background: var(--surface-0, #212121);
+        border-bottom: 1px solid var(--surface-divider, #2a2a2a);
         flex-shrink: 0;
     }
 
@@ -182,7 +182,7 @@
         align-items: center;
         gap: 8px;
         padding: 9px 14px;
-        border-bottom: 1px solid #272727;
+        border-bottom: 1px solid var(--surface-divider, #272727);
         background: rgba(0, 0, 0, 0.15);
         flex-shrink: 0;
     }
@@ -222,15 +222,15 @@
         width: 28px;
         height: 28px;
         flex-shrink: 0;
-        background: #262626;
-        border: 1px solid #3a3a3a;
+        background: var(--surface-1, #262626);
+        border: 1px solid var(--surface-edge, #3a3a3a);
         border-radius: 4px;
         color: #aaa;
         cursor: pointer;
         transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 
         &:hover:not(:disabled) {
-            background: #303030;
+            background: var(--surface-2, #303030);
             border-color: var(--cat-border, #a78bfa);
             color: #fff;
         }
@@ -292,9 +292,9 @@
     .rv-wrike-box {
         margin: 0 14px 10px;
         flex-shrink: 0;
-        border: 1px solid #2a2a2a;
+        border: 1px solid var(--surface-divider, #2a2a2a);
         border-radius: 5px;
-        background: #1a1a1a;
+        background: var(--surface-0, #1a1a1a);
         overflow: hidden;
     }
 
@@ -304,7 +304,7 @@
         justify-content: space-between;
         padding: 6px 10px;
         background: rgba(0, 0, 0, 0.2);
-        border-bottom: 1px solid #272727;
+        border-bottom: 1px solid var(--surface-divider, #272727);
         color: #999;
         font-size: 11px;
         font-weight: 600;
@@ -314,8 +314,8 @@
         display: flex;
         align-items: center;
         gap: 5px;
-        background: #262626;
-        border: 1px solid #3a3a3a;
+        background: var(--surface-1, #262626);
+        border: 1px solid var(--surface-edge, #3a3a3a);
         color: #ccc;
         border-radius: 4px;
         padding: 3px 8px;
@@ -324,7 +324,7 @@
         transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 
         &:hover {
-            background: #303030;
+            background: var(--surface-2, #303030);
             border-color: var(--cat-border, #a78bfa);
             color: #fff;
         }
@@ -359,15 +359,15 @@
     // Review row card
     .rv-row {
         border-radius: 5px;
-        border: 1px solid #2a2a2a;
-        background: #1f1f1f;
+        border: 1px solid var(--surface-divider, #2a2a2a);
+        background: var(--surface-0, #1f1f1f);
         overflow: hidden;
         transition: border-color 0.15s ease;
 
         &:hover { border-color: #363636; }
 
         // Left accent stripe by status
-        border-left: 3px solid #333;
+        border-left: 3px solid var(--surface-edge, #333);
 
         &.rv-row--approved { border-left-color: #4ade80; }
         &.rv-row--amend    { border-left-color: #fbbf24; }
@@ -432,7 +432,7 @@
         }
         &.rv-status--pending {
             background: rgba(255,255,255,0.04);
-            border-color: #333;
+            border-color: var(--surface-edge, #333);
             color: #555;
         }
     }
@@ -481,8 +481,8 @@
     .rv-note-input {
         width: 100%;
         box-sizing: border-box;
-        background: #181818;
-        border: 1px solid #333;
+        background: var(--surface-0, #181818);
+        border: 1px solid var(--surface-edge, #333);
         border-radius: 4px;
         color: #ddd;
         font-size: 11px;
@@ -517,8 +517,8 @@
         display: flex;
         align-items: center;
         gap: 6px;
-        background: #2a2a2a;
-        border: 1px solid #444;
+        background: var(--surface-1, #2a2a2a);
+        border: 1px solid var(--surface-border, #444);
         border-radius: 4px;
         padding: 6px 8px;
         font-size: 11px;

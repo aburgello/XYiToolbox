@@ -4579,7 +4579,453 @@ AE actually delivers the keys in the real panel -- that's the same
 macOS-CEP-specific unknown DOOM's keyboard carries, and the one thing browser
 preview structurally cannot answer.
 
-## DAILY: the word puzzle + the team board
+## Team folder: game files live in `misc/arcade/`, not loose in `misc/`
+
+`misc/` was becoming "the arcade folder" (word board, XYiNerdle invites/results,
+arcade scores, battle rooms) when it's meant to hold whatever odds and ends get
+bolted on. Games now sit under `misc/arcade/`.
+
+- **`ARCADE_DIR` + `isArcadeFile(name)` + `sharedDirFor(name)`** (`team.ts`) --
+  ONE list decides which shared files are game files, so adding a game means
+  touching exactly that list. `readSharedFile` walks **arcade/ → misc/ → root**
+  and takes the first hit; `writeSharedFile` always writes to the file's own
+  folder. Same self-migrating shape `misc/` itself already used against the
+  legacy root: the first write relocates the file, nothing to move by hand,
+  nothing orphaned. **Don't remove either fallback until every machine has
+  written at least once.**
+- **`ensureSharedFolder(dir)`** creates each level in turn -- `Folder.create()`
+  does not make intermediate levels in ExtendScript (the same reason
+  `battleRoomFolder` already walked its levels by hand).
+- **Battle rooms**: `BATTLE_DIR` is now `misc/arcade/battle`, with
+  `LEGACY_BATTLE_DIR` still READ per-file (`legacyBattlePlayerPath`) so a match
+  already in progress when this build lands doesn't lose its room, and
+  `teamBattleCleanup` sweeping BOTH locations so an old room folder isn't left
+  behind forever. Rooms are ephemeral, so the legacy read can be dropped after
+  about a day.
+- **`teamArcadeSweep()` -- the housekeeping that was missing.**
+  `teamBattleCleanup` only fires when a match actually REACHES a loser AND the
+  winning panel is still open at that moment, so everything else leaked
+  forever: rooms from invites nobody accepted, matches abandoned mid-chain,
+  panels closed before the final action landed (a real one, `battle/RRTE/`,
+  was sitting on the NAS when this was found). The sweep deletes any room
+  folder whose newest file is older than `ARCADE_STALE_HOURS` (24) and drops
+  invites past the same cutoff. A live game touches its player file every
+  turn, so "stale" means abandoned -- and 24h is deliberately far longer than
+  a match (minutes) so an in-progress room can never be swept out from under
+  two people playing. Invite age is a STRING compare on `nowStamp()`'s
+  sortable format, not a re-parsed `Date` out of a `toString()`.
+  Called **once per panel session** from `NerdleMenu` (module-scope
+  `sweptThisSession`, same guard pattern TeamDroplet's version/sync checks
+  use) -- NOT on the 15s lobby poll, since it enumerates folders on a network
+  share. Silent either way: nobody asked for it, and an unmounted NAS is
+  normal.
+- **Known limit, stated rather than designed around**: a machine on an OLDER
+  build only looks in `misc/` and the root, so once a file migrates it stops
+  seeing it. Acceptable for what lives here (a rolling 30-day board, ephemeral
+  invites, live rooms) -- but don't move a file anyone would MISS into a new
+  subfolder without leaving the read fallback on both sides.
+
+## MC It! preview: fix an unmatched image by hand
+
+An item the matcher couldn't place used to be a dead end -- the preview said
+"No candidate ending in '1' at that resolution." and that image just never got
+swapped, even when the right file was sitting in the folder under a slightly
+misspelt name. The dry-run modal can now be corrected before Apply.
+
+- **`mcItRankCandidates`** (`tools.ts`) attaches up to 8 suggestions to every
+  `no-match` item, **dry run only** (the real run's report is a record of what
+  happened; 8 paths per miss would bloat the persisted JSON for no reader).
+  **Deliberately NOT `findBestComponentFile`**: that answers "which ONE file
+  is the match", exposes no score, and is the load-bearing matcher MC It!/LOS
+  Tools/JPEG Loc all depend on -- refactoring it to also rank would risk real
+  replacement behaviour for a cosmetic list. This is a cheap separate ordering
+  (same extension, then the AEP's resolution, then the trailing number, then
+  shared name tokens). Cross-type files are never offered: replacing a .png
+  with a .jpg is the one thing MC It! has always refused, and offering it by
+  hand would quietly reintroduce it.
+- **`mcItPickImage(startFolder)`** is the "Choose a file…" escape hatch for
+  when the right image isn't in the suggestions at all -- starts in the folder
+  the run scanned. A cancel is `success:true` with no path, not an error.
+- **Overrides ride through as `{aep: {itemKey: path}}`** (`mcIt`'s new 5th arg
+  `overridesJson`, and `mcItApplyToOpenProject`'s new optional 5th param).
+  `itemKey` is `folder + "|" + originalName`, carried on each report item as
+  `key` so the modal never re-derives it from the text (reports persisted
+  before this still open -- the frontend falls back to computing the same key).
+  **An override bypasses every filter, including the Artwork OV-token gate** --
+  the user has looked at that exact item and named that exact file, which
+  outranks any heuristic here. The only thing it can't bypass is the file not
+  existing, which comes back as a normal no-match with a clear reason.
+- A project whose ONLY change is a manual fix counts as actionable in the
+  modal, so it gets a checkbox and is included in the Apply run.
+- **Not verifiable in browser preview**: demoBridge treats `mcIt` as a generic
+  action and returns no structured report, so there's no way to render this
+  modal without a real AE run. Typechecks + builds clean and both new bridge
+  names resolve in `dist/cep/jsx/index.js`; the suggestion quality and the
+  override-apply path want a real-AE pass.
+
+## CSV Localiser: rows already built in the AE folder start unticked
+
+Asked for directly, from the real case: open Batch_02 for Croatia when
+`<Territory>/AE/Batch_02` already holds most of that batch's sizes, and only
+the sizes ADDED to the batch since should be ticked to run.
+
+The scan already peeked at that folder for a boolean (`Batch.done`, seeding the
+"Done · Re-run" button). It now keeps the whole `.aep` FILE LIST
+(`Batch.existing`, via `readExistingAeps`) and matches each spec row against it
+(`matchBuiltRows`, exported from `CSVLocaliser.tsx` so it's unit-testable).
+Matched rows are seeded into the existing `excludedRows` overlay, so they start
+unticked and Localise runs only the new ones -- no new run-time mechanism, and
+ticking one back on re-localises it exactly as before.
+
+- **The site is a PREFERENCE, not a requirement -- learned the hard way.** The
+  first version tested each row alone and REQUIRED the row's media-site token in
+  the filename. Against the real Egypt Batch_01 it matched NOTHING: those files
+  are `PP3_INTL_DGTL_DINTH_JUNGLETUNNEL_640x768_15sec_EG_V01.aep`, i.e. no site
+  token at all (built before the Site column existed), while every row carried
+  one. Matching is now BATCH-LEVEL with file claiming (`matchBuiltRows`): pass 1
+  lets site-carrying rows claim a core-matching file that names that site, pass 2
+  gives every remaining row the first unclaimed core match, and **each file can
+  only be claimed once** -- which is what still keeps two rows differing only by
+  screen from both matching one file.
+- **It matches on TOKENS, not by rebuilding the filename.** The generated name
+  is `<FilmTitle>_<INTL|DOM>_DGTL_<Artwork>_<CAMPAIGN>[_SITE]_<WxH>_<dur>sec_<CC>_V01.aep`
+  and the first two tokens come from whichever MASTER `csvLocaliserRun` picks
+  at run time (`scanMastersForBestMatch`) -- the panel can't know them without
+  doing the master scan itself. Campaign + size + duration is what the ROW
+  determines, and is what makes one deliverable different from another inside
+  a batch.
+- **ARTWORK IS NOT PART OF THE CORE (dropped 2026-07, studio instruction:
+  "just match by size and campaign and duration").** It was the wrong kind of
+  check twice over: a Specs PDF is ONE campaign's batch, so the artwork column
+  is effectively constant down it and discriminates nothing between rows -- but
+  `reshapeSpecs` DEFAULTS it to `"DOOH"` whenever the PDF cell doesn't parse, so
+  a batch actually built as DINTH/DFOH read as entirely unbuilt. **Don't re-add
+  it.** A field that can silently default is not a field you can require.
+- **Campaign is matched with TOKEN BOUNDARIES ON THE FILENAME SIDE ONLY**
+  (`tokenised`/`containsAsTokens`), everything else on a strip-all canonical
+  form (`canonName`). Boundaries are load-bearing, not tidiness: on plain
+  substring matching, campaign "HORSE" matches a HORSESHOE file and "FOH"
+  matches "DFOH", marking a row built whose deliverable doesn't exist -- the
+  silent drop this whole feature exists to prevent. **But the boundaries must
+  NOT be required to line up between the two sides**, which is what the first
+  version (`canonTokens`, comparing `_HORSE_` against `_HORSESHOE_`) got wrong:
+  a CSV campaign is spelt however the client wrote it ("JungleTunnel") while the
+  .aep carries the master's spelling ("..._JUNGLE_TUNNEL_..."), so
+  `_JUNGLETUNNEL_` matched nothing and a fully-built Croatia Batch_1 read as
+  entirely unbuilt. Now: separators stripped from BOTH sides, but the occurrence
+  must begin at a token start and end at a token end in the FILENAME.
+  "JUNGLETUNNEL" therefore matches `_JUNGLE_TUNNEL_` while "HORSE" still can't
+  match inside `_HORSESHOE_`. All of these are unit-tested.
+- **Failure is deliberately asymmetric.** The host sanitises the site token
+  with full accent folding (`csvLocSanitiseSiteToken`); the panel only strips
+  to A-Z0-9, so an accented site name reads as NOT built. That's the safe
+  direction -- the row stays ticked, gets localised, and `skipExisting` on the
+  host is the backstop. Never loosen this into a fuzzy match: a false "already
+  built" loses a deliverable silently, a false "new" costs one re-run.
+- **THE BATCH FOLDER IS FOUND LOOSELY, and that was the actual bug in the
+  first real report** (a Denmark Batch_2 whose 12 files were plainly on disk,
+  every row still ticked). `csvLocaliserRun` WRITES to `<Source Folder>/AE/<
+  paddedBatch>` (`Batch_2` -> `Batch_02`) and the panel only ever looked for
+  that exact spelling -- so a folder made by hand, by an older build, or by
+  another localisation tool (`Batch_2`, `batch 2`) was invisible, `existing`
+  came back empty, and nothing could match no matter how good the matcher was.
+  `resolveBatchFolder()` now prefers the padded name then falls back to
+  whichever child of `AE/` canonicalises the same (case, separators and a
+  leading zero all ignored). **Symptom to recognise: NOTHING in a batch reads
+  as built, and the header shows no `N built` -- suspect the folder lookup
+  before the matcher.** (Confirmed by replaying the reported batch's real
+  filenames through `matchBuiltRows` headlessly: 12/14 matched, sites and all.)
+- **Visual**: a built row gets a flat green wash + a solid left rule
+  (`.specs-row--built`, a fixed low-alpha green -- NOT `--cat-glow`, which is
+  hover-tuned and renders near-solid at rest, the same trap the Localised
+  Library JPG_PNG row hit) and reads as "settled", distinct from an excluded
+  row's dim strike-through ("discarded"). A row is usually both, and the two
+  styles compose. The batch header gains `3 new · 9 built`, so a batch that has
+  gained sizes says so without being expanded.
+- **A per-batch "Re-check" button** (`refreshBatchBuilt`) re-reads the folder
+  without a full re-scan, and the same function runs after a successful
+  localise so just-written rows untick themselves. It RE-SEEDS the batch's
+  exclusions from disk rather than preserving manual ticks -- that's what's
+  being asked for, and the alternative silently hides a genuinely missing row.
+- **A long PDF name used to paint over the buttons.** `.specs-batch-name` had
+  no truncation, so it couldn't shrink below its content width and spilled out
+  of `.specs-batch-main` across Localise/Re-check/MC It! -- the flex ITEM
+  shrinks, its CONTENT doesn't. Fixed with `min-width:0` + ellipsis on the name
+  and `overflow:hidden` on the button. Only showed up once the header gained a
+  third button, so **any new control in that header is a regression risk**.
+- **Verified**: `tsc` (both configs) + `yarn build` clean, styles in the
+  bundle, and 16 headless assertions on `matchBuiltRows` -- including the real
+  Egypt Batch_01 (13 rows with sites vs 13 site-less files: all match, each
+  claiming a different file, and one newly-added size correctly the only
+  unbuilt row), the two-sites-one-file cases both ways, and the
+  HORSE-vs-HORSESHOE / FOH-vs-DFOH discrimination.
+
+## CSV Localiser: batches start collapsed, the open one is highlighted
+
+`expandedBatches` (was `collapsedBatches`, i.e. the set is inverted) -- every
+batch now starts CLOSED, because a territory is often several batches deep and
+having every row table open at once made it hard to tell which batch you were
+actually editing. The open one gets `.is-open`: an accent rule down its left
+edge plus a faint wash and a brighter name. **Not an accordion** -- opening a
+second batch doesn't close the first, since comparing two batches' rows is a
+real thing to want, which is why the highlight has to work with two open.
+`runBatch` calls `openBatch(key)` before running: the per-row result lines
+render inside that section, so a run started from a collapsed header would
+otherwise write its results somewhere invisible. The `.is-open` wash uses a
+fixed low alpha, NOT `--cat-glow` (hover-tuned, renders near-solid at rest --
+the same trap the Localised Library JPG_PNG row hit).
+
+## WORDMARK (formerly "DAILY"): guesses are now validated (supersedes the "deliberately not" note)
+
+Asked for directly: without validation you can grind the answer out with
+gibberish. `arcade/guessWords.ts` is a GENERATED list of every five-letter word
+DAILY will accept -- the 5-letter subset of dwyl/english-words' `words_alpha.txt`
+(public domain / Unlicense), 15,921 words, ~93 KB, deduped and sorted.
+Regenerate by re-filtering that file to `/^[a-z]{5}$/`; never hand-edit it.
+
+- **Two lists, on purpose**: `words.ts` stays the small curated ANSWER list (an
+  answer must be common and satisfying), `guessWords.ts` is the permissive
+  GUESS list (a guess only has to be a real word). Every answer was verified
+  present in the guess list when this was generated -- if you add an answer,
+  re-check that, or its day is unwinnable.
+- **Permissive is the design**, so the list keeps its obscure entries: rejecting
+  a real word someone typed is far more annoying than letting an unusual one
+  through. Only outright gibberish bounces.
+- **macOS's `/usr/share/dict/words` was tried first and is unusable here** --
+  it's Webster's-1934-derived and has NO inflected forms, so it rejects
+  "trees", "asked", "moved", "plays". Don't reach for it for this again.
+- A rejected guess costs no turn: the row keeps its letters and shakes
+  (`.dw-row--reject`), with "Not a word I know." in the flash line.
+- Stored as space-separated lines split into a Set lazily on first guess --
+  quoted, comma-separated entries would roughly double the file for nothing.
+
+## The arcade is a GRID OF CABINETS now, not a rack-and-screen picker
+
+Asked for directly: the games were "squished on a list on the left side with
+the leaderboards on the right, and you have to select the game and then click
+play". Both halves of that were real -- one game's scores visible at a time,
+and two clicks to start anything.
+
+`ArcadeHub.tsx`/`.scss` are rewritten around one card per game
+(`.arc-floor` / `.arc-cabinet`): each carries its own lit marquee in its own
+accent, a one-line blurb, who holds it, and its own top 3 -- and **the card
+itself is the play button**, so starting a game is one click and no selection
+state exists at all (`selected` is gone; only `playing` remains).
+
+- **`--arc` is now set PER CARD, not once for the screen.** Four accents on
+  screen at once is most of what makes this read as an arcade rather than a
+  list. The top marquee went back to a fixed teal, since with no selection
+  there's no accent for it to inherit.
+- **The title is the card.** The one-line blurb under each name was removed on
+  request and the name grew into the space: the scoreboard's monospace stack,
+  uppercase, wide tracking, glowing in the machine's own accent, vertically
+  centred in a taller marquee. **No webfont, deliberately** -- CEP can't be
+  relied on to fetch one, the panel ships no custom faces, and base64'ing a
+  display font is real weight plus a licence question for a joke feature. The
+  title WRAPS rather than ellipsising ("PUSH THE PLAYHEAD" doesn't fit a
+  half-width cabinet on one line, and a truncated game name reads as broken
+  where a second line reads as a bigger sign); grid rows stretch, so a two-line
+  title only makes its own row taller and the pair stays level. Centred both
+  ways in the marquee, echoing the room's own ARCADE sign above it.
+- **A `<button>` that is a flex container does NOT stretch its children in
+  Chromium** the way a `<div>` does -- the UA stylesheet centres them. Found
+  from a real screenshot: every child sized to its own text, so each cabinet's
+  marquee background and underline stopped dead at the end of the title (reads
+  exactly like the title is cut off mid-card) and each score rule was a
+  different length. Fixed with an explicit `align-items: stretch` on
+  `.arc-cabinet`. **Any future flex layout inside a `<button>` in this codebase
+  needs the same explicit line** -- it is not the default here even though it is
+  everywhere else.
+- **The card is a `<button>`, so every child is a `<span>`** -- a `<div>` inside
+  a button is invalid markup, and a nested `<button>` (the obvious way to build
+  the "Play" chip) would swallow the card's own click. The Play chip is a span
+  styled as a button that fills with the machine's colour on card hover.
+- **The grid is ALWAYS TWO COLUMNS** (`repeat(2, minmax(0, 1fr))`). It shipped
+  as `auto-fit, minmax(210px, 1fr)` and that was wrong in use: an expanded panel
+  reflowed it to three across and stranded the fourth game alone on its own row.
+  A 2x2 block reads as a set, 3+1 reads as a mistake. `minmax(0, 1fr)` rather
+  than plain `1fr` is what lets a track shrink below its content so a long name
+  truncates instead of widening the grid. Narrow panels keep both columns and
+  just tighten padding/gaps. **A FIFTH GAME ORPHANS ONE AGAIN** -- add them in
+  pairs, or revisit the rule then; don't quietly go back to auto-fit.
+- **Only 3 lines fit on a face** (`CARD_LINES`), with a `+N more` line rather
+  than pretending the board is that short. The full board still lives inside
+  each daily game's own screen.
+- Entrance uses **per-item explicit delays**, not a stagger parent -- this
+  codebase's documented workaround for variant propagation stalling inside an
+  `AnimatePresence` wrapper -- and collapses under `useReducedMotion()`.
+- **`MACHINES` gained One Sheet** (it had been registered in the old file too)
+  and a `blurb` per entry. Adding a game is still one entry here PLUS its
+  `teamArcadePost` call -- see the section below for why the second half isn't
+  optional.
+- **Not visually verified** -- browser automation was unavailable across this
+  whole session. Typechecks + builds clean, and the built stylesheet contains
+  the new classes with no `.arc-machine`/`.arc-rack` left over, but the cabinet
+  faces want a real look.
+
+## The arcade's pixel typeface (embedded, subset, renamed for its licence)
+
+The cabinet names, the ARCADE sign and each game's own title bar are set in a
+pixel face -- `src/js/main/arcade/arcadeFont.scss` defines `@font-face` +
+a `.arcade-pixel` class, applied in `ArcadeHub.tsx` and `ArcadeFrame.tsx`.
+
+- **Embedded as base64, because a `file://` page cannot fetch a webfont.** Same
+  constraint DoomEasterEgg.tsx documents for its own assets. A data: URI is the
+  only delivery that works in both `yarn dev` and an installed ZXP.
+- **Subset to 1.3 KB** (A-Z, 0-9, a little punctuation) from a 113 KB family.
+  **A future game title needing a character outside that set renders in the
+  fallback mono**, so re-subset if that happens. Recipe:
+  `pip3 install fonttools brotli`, then rename the family in the `name` table
+  (see below), then
+  `python3 -m fontTools.subset in.ttf --text="ABC...789 !?.,:'&-+" --flavor=woff2 --no-hinting --desubroutinize`,
+  then base64 the result into the `src:` url.
+- **LICENCE, and the rename is the compliance step, not branding.** The face is
+  Press Start 2P by CodeMan38, SIL OFL 1.1, which declares "Press Start 2P" a
+  RESERVED FONT NAME. A subset is a Modified Version, and the OFL forbids a
+  Modified Version from carrying the reserved name -- so the family is renamed
+  to **"XYi Arcade Pixel"** in both the CSS and the font's own `name` table.
+  **Don't "fix" it back.** The full licence text ships as
+  `src/js/main/arcade/font/OFL.txt` and is copied into the ZXP via
+  `cep.config.ts`'s `copyAssets` -- the OFL requires the licence to travel with
+  the font, so **removing that copyAssets entry makes the ZXP non-compliant**
+  even though the panel still works. `copyAssets` paths are relative to `src/`,
+  not the repo root; a root-relative path silently copies nothing.
+- **Sizes had to come down everywhere it was applied** -- the face is far wider
+  per character than a normal mono and has no weights (synthetic bold just
+  smears the pixel grid). Card titles 11px, ARCADE 13px at a third of its old
+  tracking, game title bars 10px. Font smoothing is off (`-webkit-font-smoothing:
+  none`): antialiasing softens exactly the edges that make it read as pixels.
+- Stylesheets in this project never import each other (each is pulled in by its
+  own component), so this is shared as a **class**, not a Sass mixin/placeholder.
+  Importing the .scss from two components still yields ONE copy of the base64 in
+  the bundle -- verified in the built stylesheet.
+
+## The app has a global `button:hover` that will paint over any custom button
+
+`src/js/index.scss` (the app's base sheet, not a tool's) carries
+`button:hover { background-color: #20639b }` and the same for `:active`. **Any
+`<button>` styled with its own background must set one on `:hover`/`:active`
+too, or that flat blue wins.** Hit for real in the arcade: the cabinet cards
+turned solid blue on hover and their scores became unreadable, and the marquee's
+close/refresh chips had the same leak. `formTool.scss` and `LocaliseScreen.scss`
+each carry their own note about opting out of it -- this is the same rule, and
+it is easy to miss because at REST everything looks correct.
+
+The arcade's fix doubles as the "lit screen" hover it wanted: the card sets an
+explicit background (a radial bloom of its own accent over the base), an outer
+glow in that accent, CRT scanlines from an `::before` that fades in, and a
+one-notch brightening of the title and score text. The accent's translucent
+form is a **precomputed rgba stored per machine** (`glow` in `MACHINES`), not
+derived from the hex -- `color-mix()` is unavailable on this project's chrome74
+target, the same rule Toolset's PALETTE follows.
+
+## The arcade rack's leaderboard: only ONE game was ever posting to it
+
+Reported directly ("played a round of snake, the leaderboard is empty"). Not a
+read bug and not a Team Folder problem -- **nothing was ever written**. The hub
+(`ArcadeHub.tsx`) renders one shared store, `misc/arcade/arcade-scores.json` via
+`teamArcadeScores`, filtered by game id, and for a long time the only caller of
+`teamArcadePost` in the whole app was `CineChainBattle.tsx` on a head-to-head
+win. So "Push the Playhead" and "Wordmark" had rack columns that could never
+fill, however much anyone played. Fixed by giving each game its own post:
+
+- **Push the Playhead** (`KeyframeSnake.tsx`) -- posts the run on death, via a
+  new `die()` that both games-over and reports. Needed a `scoreRef` alongside
+  the `score` state: the death path runs inside the `setInterval` tick, where
+  React state is a stale closure (the same rule the rest of that file's live
+  state already follows). A ZERO-score death posts nothing.
+- **Wordmark** (`DailyWord.tsx`) -- posts its STREAK to the rack on a solved
+  day, on top of its own detailed board file. The two stores are separate on
+  purpose: `shared-wordgame.json` carries the per-day detail the game itself
+  renders, the rack store carries one comparable number per game.
+- **One Sheet** already posted (a cleanliness number on solved days).
+
+**STILL DELIBERATELY NOT POSTING: solo XYiNerdle.** That machine's rack metric
+is Wins and its mode is `"wins"` (count the rows), so a solo run isn't one --
+only a real head-to-head win is. Its board being empty means nobody has won a
+battle yet, not that it's broken.
+
+**Every post is fire-and-forget** (`.catch(() => undefined)`) and the host
+refuses to post from an UNTAGGED machine rather than guessing a name -- so a
+station with no Team Folder, no name tag, or an unmounted NAS silently records
+nothing. That's the intended degradation everywhere else in this app, but it
+does mean "the board is empty" has two causes now: nobody has played, or this
+machine can't post. The hub already shows the "tag this machine" note for the
+second case; **if a new game is added, add its `teamArcadePost` call at the same
+time as its `MACHINES` entry** -- the entry alone gets you a column that stays
+empty forever, which is exactly the bug above.
+
+Rounds played before this landed were never recorded and can't be recovered.
+
+## ONE SHEET: the daily film-poster puzzle (4th arcade machine)
+
+Asked for as a Framed-style poster challenge. One film a day, pixelated, six
+guesses; hints cost and the board records them. `arcade/PosterDaily.tsx` +
+`.scss`, registered as the fourth entry in `ArcadeHub.tsx`'s `MACHINES`
+(accent gold `#fbbf24`).
+
+**NAMES vs IDS -- the rule for every arcade machine.** The rack name and frame
+title are DISPLAY-ONLY; a game's `id` is the key its rows are filed under in
+the shared score files already sitting on the NAS, so renames never touch it.
+"One Sheet" is id `"poster"` (file `PosterDaily.tsx`, board
+`shared-postergame.json`) and **"Wordmark" is id `"daily"`** (file
+`DailyWord.tsx`, board `shared-wordgame.json`) -- both were renamed after
+shipping, for flavour ("Daily Word"/"Poster" read as placeholders next to
+"Push the Playhead"). Same partial-rename call as XYTools: user-facing strings
+only, internals left alone. Renaming an id would orphan every posted row to
+save nothing.
+
+- **THE ANSWER LIST IS GENERATED AND COMMITTED** -- `arcade/films.ts` (600
+  films, ~24 KB) from `scripts/make-poster-films.cjs`, which pulls TMDB
+  `discover?sort_by=vote_count.desc` (the same "most-rated ≈ most widely
+  known, and it spans decades" reasoning `cine/tmdb.ts` documents for the
+  XYiNerdle starting pool -- NOT `/movie/popular`). Committed rather than
+  fetched **because the day's answer has to be a pure function of the date**:
+  `discover`'s ordering drifts as vote counts move, so a live query could hand
+  two people different films on the same day and the board would be
+  meaningless. Never hand-edit it; re-run the script. Same day-math and prime
+  stride as `puzzleForDay` (`posterForDay` here) -- 600 films ≈ 1.6 years
+  before a repeat.
+- **Pixelation is a canvas, not a CSS filter** (CSS has no pixelate): draw the
+  poster into an offscreen canvas the size of the block grid, then blow that
+  back up with `imageSmoothingEnabled = false`. `STAGE_COLUMNS` roughly
+  doubles per guess (7 → 90). We only ever DRAW the cross-origin poster and
+  never read pixels back, so the tainted canvas doesn't matter -- **don't add
+  `getImageData` here** (that's the same trap OV Library's thumbnail accent
+  hit for real).
+- **Three hints, deliberately no cast/director** -- year+runtime+genre,
+  tagline, plot (TMDB `overview`), via a new `getFilmFacts()` in `cine/tmdb.ts`
+  (its own cache, separate from `getCredits` which throws away everything the
+  chain game doesn't link on). A film with no tagline shows "none for this
+  film" and can't be bought, rather than charging for an empty reveal. Hints
+  are frozen once the round ends, or the board would disagree with the screen.
+  Cast/director was ruled out on purpose: for a film anyone knows that isn't a
+  hint, it's the answer.
+- **The board carries guesses AND hints**, which is the whole point -- solving
+  in two with the plot handed to you isn't the same round as solving in two
+  cold. `teamPostPosterResult`/`teamLoadPosterBoard` (team.ts) write
+  `misc/arcade/shared-postergame.json`. It ALSO posts to the hub's cross-game
+  store via `teamArcadePost("poster", clean, "")` on a solved day only, where
+  `clean = 7 - guesses - hints` (higher is better, 6 = first guess cold) so the
+  hub's `mode: "wins"` counts days solved and its max-based detail column
+  means something.
+- **The word board's post logic is now shared** -- `writeDailyBoardRow()` +
+  `parseDailyRow()` in team.ts. The poster board needed the identical
+  owner-tagging / replace-this-member's-row-for-today / 30-day-trim behaviour,
+  and the first cut was a copy of `teamPostWordResult`. `teamPostWordResult`
+  now goes through the same helper; its behaviour is unchanged.
+- Local progress: `posterGameLoadState`/`SaveState` in `wordGame.ts` (key
+  `PosterGameState`), same opaque-JSON-string contract as the word game's.
+- **Verified**: `tsc` (both configs) + `yarn build` clean, all four new bridge
+  names resolve in `dist/cep/jsx/index.js`, styles in the single bundled
+  stylesheet, and 9 headless assertions on the pure logic (same date → same
+  film, consecutive days differ, 600 days → 600 distinct films, pre-epoch
+  dates don't index negatively, streak read off the most recent row, hints as
+  the tie-break). **NOT visually verified** -- the browser-automation
+  extension was unavailable that session, so the pixelation stages, the search
+  flow and the leaderboard layout have only been reasoned about, not seen.
+
+## WORDMARK: the word puzzle + the team board (named "DAILY" when written)
 
 The second arcade egg, and the chill one -- asked for as something
 non-skill-based to dip into during a render. Trigger word: `daily`. Five
@@ -4973,3 +5419,192 @@ needs the office Mac plus a colleague.
 
 **Remaining ideas**: lifelines beyond the current four tools; richer win
 conditions than timeout.
+
+### XYiNerdle's in-game leaderboard read a file nobody wrote
+
+Reported as "the leaderboard within the game panel is not syncing". It wasn't a
+NAS/read problem: **`teamNerdleLobby` read `misc/xyinerdle-results.json`, and
+NOTHING has ever written that file.** The winner of a battle posts through
+`teamArcadePost` into the one arcade score store -- so the write landed
+somewhere real and the read looked somewhere else, and the board stayed empty
+however many matches were played. Exactly the same shape as the earlier dead
+`teamNerdlePostResult` call, which is worth noting: **that fix moved the WRITE
+without moving the READ.** When a shared-file call site changes, grep for the
+other half.
+
+Fix: results are DERIVED from the arcade store (`nerdleResultsFromScores` in
+team.ts -- a versus row IS a result: poster = winner, `versus` = loser, `score`
+= chain length). One place a head-to-head result lives, so the two halves can't
+diverge again. Matches played before this landed are already in that store and
+appear retroactively. The dead `SHARED_NERDLE_RESULTS_FILE`/`_TYPE` constants
+are gone -- **and note they were still referenced by `isArcadeFile` and
+`sharedTypeNoun` after removal, which `tsc -p tsconfig-build.json` did NOT
+catch and `yarn build` happily shipped** (the same "compiles fine, dies in AE"
+family this file already documents for `BATTLE_DIR`). The frontend tsconfig DID
+catch it; run both.
+
+**The board now shows who beat who** (`NerdleMenu.tsx`): per player W/L, best
+chain, a current W/L streak badge, and their RIVAL line ("vs aaron 2–1") --
+the rival is who they've PLAYED most, not who they've beaten most, so a losing
+record against someone still shows. Below the standings, a "Recent matches"
+list (`RECENT_MATCHES = 8`, newest first) spells out "antonio beat aaron · 17
+films" -- standings say how someone is doing, this says what actually happened.
+`standingsFrom`/`sortedResults` are exported, pure and unit-tested headlessly
+(13 assertions: ordering, records, best-chain, both streak directions, rival
+symmetry, loser-only players, malformed rows) for the same reason battle.ts's
+reducer is -- a miscounted tally is quietly unfair rather than visibly broken.
+demoBridge now serves the lobby's `results` from its own arcade-score fixture,
+mirroring the host, so the browser demo shows a populated board.
+
+**The other games' boards were never affected** -- DAILY and One Sheet read
+their own board files, which their own post functions do write.
+
+## A failed shared-file read used to blank a populated leaderboard
+
+Real report: a snake run ended just as a render finished, AE hiccuped, and
+EVERY cabinet's standings on the arcade home screen went empty until the panel
+was closed and reopened. Two independent holes, both on the "an error is
+rendered as data" fault line, and they compounded:
+
+1. **Host: `readSharedFile` returns `null` for BOTH "no file yet" and "I could
+   not read it"**, and every board reader flattened that to `[]` -- so an
+   unmounted share, a NAS blip, or a read attempted while AE was busy was
+   served to the panel as a legitimately empty board. `teamArcadeScores`,
+   `teamLoadWordBoard` and `teamLoadPosterBoard` now return a **`read`
+   boolean** (`entries !== null`) alongside the rows, so the caller can tell
+   the two apart. `readSharedFile`'s own header now states the rule.
+2. **Frontend: `ArcadeHub`'s `refresh()` overwrote good rows with `[]` on
+   EVERY failure path** -- an `evalTS` that resolved `undefined` (busy bridge),
+   a throw, or the empty board above. Leaving a game calls `refresh()`, which
+   is why finishing a run at the wrong moment triggered it, and nothing
+   retries, so it stayed blank until a remount re-read the file.
+
+Fix, and the rule for any future board: **an empty result NEVER replaces rows
+already on screen.** The store is append-only and trimmed, so it cannot
+legitimately go from N rows to none -- an empty answer while we hold rows is a
+failed read. `ArcadeHub` keeps the last good board, marks it `stale`, and says
+so ("Couldn't reach the team folder just now -- showing the last standings I
+read") with a Try again button, rather than silently rendering a lie. It needs
+a `scoresRef` because `refresh` is deliberately stable (empty deps, so the
+mount effect runs once) and can't see `scores` through its own closure.
+DailyWord and PosterDaily got the same `read !== false` guard -- they already
+kept the old board on a THROW, but an empty-`entries` result would still have
+wiped them.
+
+`res === undefined` (no bridge) and `read === false` (host couldn't read) are
+different signals and both mean "don't trust this"; an **undefined `read` is
+trusted**, so an older host that predates the flag still works.
+
+Verified: both tsconfigs, `yarn build`, the flag present in
+`dist/cep/jsx/index.js`, the new classes in the bundled stylesheet. **The
+failure itself is not reproducible on demand** (it needs a busy bridge), so
+the stale path has been reasoned through rather than triggered -- if it ever
+shows the stale note when the NAS is plainly fine, suspect `read` before the
+frontend.
+
+Verified: both tsconfigs, `yarn build`, the derivation present in
+`dist/cep/jsx/index.js` with no live reference to the old filename, and the new
+classes in the single bundled stylesheet. **Not visually verified and not run
+against the NAS** -- the real check is opening the board on a machine that has
+won a battle and seeing the row appear.
+
+## Theme picker gained two dials: surface (panel/OLED) and resting edge
+
+The hidden theme picker (type `jacqui`) used to be one axis -- a theme = an
+accent + a background tint. It now has two modifiers ALONGSIDE that choice,
+both persisted per-machine (`OVThemeSurface` / `OVThemeBorders`, both added to
+team.ts's `PROFILE_KEYS` so they travel with a member's profile) and both
+defaulting to exactly today's look.
+
+- **Surface: Panel | OLED.** OLED drops every SURFACE to true black -- Toolset
+  tiles, category cards, tool-page panels, inputs, list rows. **The theme's own
+  ground tint SURVIVES** (only Default, which has no tint to keep, goes fully
+  black): an earlier cut forced `--ov-bg` to `#000` and the studio's note was
+  that picking OLED then silently cancelled the theme you'd picked. OLED is
+  about the surfaces sitting on the ground, not about erasing the ground.
+- **Border at rest: Neutral | Group | Theme.** Where a button's outline colour
+  comes from BEFORE you touch it. **Hover and starred are deliberately NOT
+  affected and always stay on the group palette** -- that's the "which section
+  is this" cue and it has to survive whatever the resting edge is doing. (The
+  first cut had "theme" repaint the whole group accent; that was wrong, and the
+  correction is the point of this dial.)
+
+**Mechanism, and why it's CSS vars rather than React state**: `themes.ts`'s
+`applyTheme(themeId, surface, edgeMode)` publishes everything at `:root` --
+`--surface-0/-1/-2`, `--surface-border`, `--surface-divider`, the Toolset's
+older `--tile-*` aliases, and six palette slots `--pal-N-border/-bg/-glow/-edge`.
+The picker and the Toolset grid are BOTH mounted on the home screen in
+unrelated subtrees, so a pick has to reach the grid live with no props between
+them; the cascade does that for free.
+- `--pal-N-border/-bg/-glow` are ALWAYS the group's own hue (hover/starred read
+  those). Only `--pal-N-edge` follows the edge dial, and it is left UNSET on
+  "neutral" so `--btn-edge: var(--pal-N-edge, var(--tile-border, #444))` in
+  `Toolset.tsx`'s `groupAccentStyle()` collapses to the plain grey border.
+- Hover fills are re-blended per surface: the shipped `#20403e`-style values
+  are hand-tuned for a `#2a2a2a` tile and read as lit patches on black, so OLED
+  mixes each hue against `#080808` instead. Precomputed in JS -- `color-mix()`
+  is unavailable on this project's chrome74 target.
+- OLED also sets `--tile-hover-ring: 1px`, feeding a 0-spread (i.e. invisible)
+  inset ring in `Toolset.scss`'s hover rule. With no fill difference at rest, a
+  black tile needs a crisp accent edge to read as a state change.
+
+**The surface sweep (~400 sites across 31 stylesheets), done by script.** Every
+neutral-grey `background`/`border` literal in `src/js/main` was rewritten to
+`var(--surface-N, <the original hex>)`, so with the tokens unset nothing
+changes. Rules the script followed, worth keeping if it's ever re-run:
+- Only `background*`/`border*` properties -- a `color: #444` is text and must
+  never become a surface token.
+- Only near-neutral hexes (R/G/B within 8 of each other, max channel <= 0x60),
+  so tinted status colours (`#7a2e2e`, `#2e6b3e`) and accents are left alone.
+- Lines already containing `var(--` are skipped, so nothing gets double-wrapped.
+- **`src/js/main/arcade/**` is deliberately EXCLUDED** -- the arcade commits to
+  its own visual world (see the cabinet/marquee sections above), and blacking
+  its surfaces out would flatten that on purpose-built design.
+- **One manual fix the script couldn't know about**: `Tooltip.scss`'s arrow is
+  a CSS triangle drawn with `border-*-color`, so its colour is the bubble's
+  FILL, not an edge -- it takes `--surface-1`, not `--surface-border`. If
+  another triangle-by-border is ever added, it needs the same treatment.
+
+**Edge weights are three tokens, not one -- and that's the load-bearing part
+of OLED.** The first cut used a flat `#262626` for every border and the real
+panel read as washed out: once a card and its ground are the same black, the
+BORDER is the only thing left saying where the container ends, and it has to
+work on a theme's tinted ground too. So the sweep was re-tiered by the
+ORIGINAL hex (which already encoded how heavy each edge was meant to be):
+`<= 0x2f` -> `--surface-divider` (internal rules), `0x30-0x40` ->
+`--surface-edge` (containers: panels, cards, section boxes), `>= 0x41` ->
+`--surface-border` (elements: tiles, inputs, chips). OLED sets them to
+`#212121 / #424242 / #303030` respectively. **If OLED ever looks flat again,
+raise `--surface-edge` before touching anything else.**
+
+**Three follow-ups from a real-panel look at OLED**, all cheap to revert
+independently:
+1. **Category cards read as HOLES on black.** They were on `--surface-1`
+   (`#000`) sitting on a theme-tinted ground, i.e. DARKER than what they sit
+   on -- the opposite relationship to everything else, and they're the largest
+   masses on the home screen. Now `--surface-2 -> -1` (the "sits above" layer),
+   and each takes its own category accent as a resting edge via
+   **`--surface-cat-edge`, which is an INDIRECTION, not a colour**: OLED sets
+   it at `:root` to the literal string `var(--cat-edge)`, which then resolves
+   in each CARD's own context against the inline vars `categoryStyleVars()`
+   already puts there. One root token, four different edges, no per-card
+   plumbing. (`CATEGORY_COLORS` gained a pre-blended `edge` at 0.5 alpha for
+   this -- same weight as the Toolset's resting edges.)
+2. **Left-aligning `.action-grid` was TRIED AND REVERTED.** The centred
+   wrapped rows leave orphans ("Quick FX" alone on its row) which read as
+   scattered once every tile has a visible outline, but the studio prefers the
+   centring -- `justify-center mx-auto` stays on BOTH the normal and the edit
+   grid (they must match, or entering edit mode reflows every row). Don't
+   "fix" the orphan rows again without asking.
+3. **`--surface-divider` raised `#212121` -> `#2a2a2a`.** It was tuned before
+   the tiles gained resting edges and had become the faintest thing on a
+   screen full of loud outlines.
+
+**Verification status**: `tsc -p tsconfig-build.json` + `yarn build` clean, all
+four bridge names resolve in `dist/cep/jsx/index.js`, and `applyTheme` was
+exercised headlessly against a stub `document` to confirm the token output for
+each combination (defaults leave everything unset; a theme's tint survives
+OLED; the group hues never move with the edge dial). **Not seen in a running
+panel** -- the browser-automation extension was unavailable that session, so
+the sweep in particular wants a real look at a few tool pages, not just the
+home screen.

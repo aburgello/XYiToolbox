@@ -4,7 +4,7 @@
         flex-direction: column;
         gap: 4px;
         max-width: 460px;
-        border: 1px solid #333;
+        border: 1px solid var(--surface-edge, #333);
         border-radius: 4px;
         padding: 6px;
     }
@@ -14,7 +14,7 @@
         align-items: center;
         gap: 8px;
         padding: 4px 2px;
-        border-bottom: 1px solid #2c2c2c;
+        border-bottom: 1px solid var(--surface-divider, #2c2c2c);
 
         &:last-child {
             border-bottom: none;
@@ -67,8 +67,8 @@
 
         input {
             width: 52px;
-            background: #262626;
-            border: 1px solid #444;
+            background: var(--surface-1, #262626);
+            border: 1px solid var(--surface-border, #444);
             color: #ddd;
             border-radius: 3px;
             padding: 4px 6px;
@@ -81,8 +81,8 @@
         max-width: 460px;
         max-height: 220px;
         overflow: auto;
-        background: #222;
-        border: 1px solid #333;
+        background: var(--surface-0, #222);
+        border: 1px solid var(--surface-edge, #333);
         border-radius: 4px;
         padding: 8px;
         font-size: 11px;

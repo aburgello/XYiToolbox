@@ -15,7 +15,7 @@
 // way. The report interfaces mirror McItResult host-side.
 // =============================================================================
 import React, { useEffect, useState } from "react";
-import { Image as ImageIcon, X, CheckCircle2, AlertTriangle, CircleSlash, CheckSquare, Square } from "lucide-react";
+import { Image as ImageIcon, X, CheckCircle2, AlertTriangle, CircleSlash, CheckSquare, Square, Wrench, FolderSearch, Undo2 } from "lucide-react";
 import { evalTS } from "../lib/utils/bolt";
 import "./McItReportModal.scss";
 
@@ -25,7 +25,17 @@ export interface McItemRep {
     action: "replaced" | "no-match" | "skipped";
     newName?: string;
     reason?: string;
+    key?: string; // folder|name — what an override is keyed by (see mcIt())
+    candidates?: { name: string; path: string }[]; // dry run + no-match only
+    manual?: boolean; // this replacement came from a user override
 }
+
+// A manual fix the user made in the preview, keyed aep -> itemKey.
+type Overrides = Record<string, Record<string, { name: string; path: string }>>;
+
+// Reports persisted before item keys existed still open fine — derive the same
+// key the host would have written.
+const itemKey = (it: McItemRep) => it.key || it.folder + "|" + it.name;
 
 export interface McProjectRep {
     aep: string;
@@ -117,11 +127,19 @@ export const McItReportHost: React.FC = () => {
     // preview; the host passes it straight through so an unticked project is
     // never opened at all (the filtering happens in mcIt(), not by running
     // everything and discarding results).
-    const apply = async (selected: string[]) => {
+    const apply = async (selected: string[], overrides: Overrides) => {
         if (!report) return;
         setApplying(true);
         try {
-            const res = await evalTS("mcIt", report.aepFolder || "", report.imageFolder || "", false, JSON.stringify(selected));
+            // Overrides go over as {aep: {itemKey: path}} — the display name is
+            // panel-side only; the host re-reads the file itself.
+            const paths: Record<string, Record<string, string>> = {};
+            Object.keys(overrides).forEach((aep) => {
+                const forAep: Record<string, string> = {};
+                Object.keys(overrides[aep]).forEach((k) => { forAep[k] = overrides[aep][k].path; });
+                if (Object.keys(forAep).length) paths[aep] = forAep;
+            });
+            const res = await evalTS("mcIt", report.aepFolder || "", report.imageFolder || "", false, JSON.stringify(selected), JSON.stringify(paths));
             if (res?.success) {
                 const r = res as McReport;
                 shownRunIdRef.current = r.runId || r.finishedAt || "";
@@ -136,24 +154,59 @@ export const McItReportHost: React.FC = () => {
 
     if (!report) return null;
     return <McItReportModal report={report} onClose={close} onApply={report.dryRun ? apply : undefined} applying={applying} />;
+
 };
 
-const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply?: (selected: string[]) => void; applying?: boolean }> = ({ report, onClose, onApply, applying }) => {
+const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply?: (selected: string[], overrides: Overrides) => void; applying?: boolean }> = ({ report, onClose, onApply, applying }) => {
     // Which projects are UNticked, keyed by .aep filename. Absent = included,
     // so a fresh preview starts with everything selected (the previous
     // behaviour) and unticking is the deliberate act.
     const [excluded, setExcluded] = useState<Record<string, boolean>>({});
+    // Manual fixes for items the matcher couldn't place — see the "Fix" row
+    // rendered under each no-match item below.
+    const [overrides, setOverrides] = useState<Overrides>({});
+    // Which no-match item currently has its candidate list open (aep + key).
+    const [fixing, setFixing] = useState<string | null>(null);
+    const [pickError, setPickError] = useState<string | null>(null);
+
+    const setOverride = (aep: string, key: string, choice: { name: string; path: string } | null) =>
+        setOverrides((prev) => {
+            const forAep = { ...(prev[aep] || {}) };
+            if (choice) forAep[key] = choice;
+            else delete forAep[key];
+            return { ...prev, [aep]: forAep };
+        });
+
+    // Native file picker, for when the right image isn't in the suggestions at
+    // all. Starts in the folder this run scanned so it's one click away.
+    const browseFor = async (aep: string, key: string) => {
+        setPickError(null);
+        try {
+            const res = await evalTS("mcItPickImage", report.imageFolder || "");
+            if (!res?.success) { setPickError(res?.error || "Couldn't open the file picker."); return; }
+            if (!res.path) return; // cancelled
+            setOverride(aep, key, { name: res.name || res.path, path: res.path });
+            setFixing(null);
+        } catch (e) {
+            setPickError("No connection to After Effects — can't open a file picker from here.");
+        }
+    };
 
     const projects = report.projects || [];
+    const ovOf = (aep: string, key: string) => overrides[aep]?.[key];
+    const manualCount = (p: McProjectRep) =>
+        p.items.filter((i) => i.action === "no-match" && ovOf(p.aep, itemKey(i))).length;
     // A project with nothing to replace can't be "applied" either way, so only
-    // ones that would actually change something are selectable.
-    const actionable = projects.filter((p) => !p.skipped && p.items.some((i) => i.action === "replaced"));
+    // ones that would actually change something are selectable — including one
+    // whose ONLY change is a manual fix the user just made.
+    const actionable = projects.filter((p) => !p.skipped && (p.items.some((i) => i.action === "replaced") || manualCount(p) > 0));
     const isOn = (aep: string) => !excluded[aep];
     const selected = actionable.filter((p) => isOn(p.aep)).map((p) => p.aep);
     const selectedReplacements = actionable
         .filter((p) => isOn(p.aep))
-        .reduce((n, p) => n + p.items.filter((i) => i.action === "replaced").length, 0);
+        .reduce((n, p) => n + p.items.filter((i) => i.action === "replaced").length + manualCount(p), 0);
     const allOn = selected.length === actionable.length;
+    const totalManual = projects.reduce((n, p) => n + manualCount(p), 0);
 
     return (
     <div className="mcit-overlay" onClick={onClose}>
@@ -217,21 +270,76 @@ const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply
                                 )}
                             </div>
                             {proj.skipped && <div className="mcit-proj-skip">{proj.skipped}</div>}
-                            {proj.items.map((it, idx) => (
-                                <div key={idx} className={"mcit-item mcit-item--" + it.action}>
-                                    {it.action === "replaced" ? <CheckCircle2 size={13} /> : it.action === "no-match" ? <AlertTriangle size={13} /> : <CircleSlash size={13} />}
+                            {proj.items.map((it, idx) => {
+                                const key = itemKey(it);
+                                const fix = it.action === "no-match" ? ovOf(proj.aep, key) : undefined;
+                                // Manual fixing is only offered while previewing:
+                                // after a real run there is nothing left to apply.
+                                const fixable = !!onApply && it.action === "no-match";
+                                const openId = proj.aep + " " + key;
+                                return (
+                                <div key={idx} className={"mcit-item mcit-item--" + (fix ? "replaced" : it.action)}>
+                                    {fix || it.action === "replaced" ? <CheckCircle2 size={13} /> : it.action === "no-match" ? <AlertTriangle size={13} /> : <CircleSlash size={13} />}
                                     <div className="mcit-item-text">
                                         <span className="mcit-item-name">{it.name}</span>
                                         {it.action === "replaced" && it.newName && (
-                                            <span className="mcit-item-detail">→ {it.newName}</span>
+                                            <span className="mcit-item-detail">→ {it.newName}{it.manual ? " · picked by hand" : ""}</span>
                                         )}
-                                        {it.action !== "replaced" && it.reason && (
+                                        {fix && (
+                                            <span className="mcit-item-detail">
+                                                → {fix.name}
+                                                <span className="mcit-manual-tag">your pick</span>
+                                                <button type="button" className="mcit-fix-undo" onClick={() => setOverride(proj.aep, key, null)} title="Undo this pick">
+                                                    <Undo2 size={11} /> undo
+                                                </button>
+                                            </span>
+                                        )}
+                                        {!fix && it.action !== "replaced" && it.reason && (
                                             <span className="mcit-item-detail">{it.reason}</span>
+                                        )}
+                                        {fixable && !fix && (
+                                            <div className="mcit-fix">
+                                                <button
+                                                    type="button"
+                                                    className="mcit-fix-toggle"
+                                                    onClick={() => setFixing(fixing === openId ? null : openId)}
+                                                    aria-expanded={fixing === openId}
+                                                >
+                                                    <Wrench size={11} /> {fixing === openId ? "Close" : "Pick the right file…"}
+                                                </button>
+                                                {fixing === openId && (
+                                                    <div className="mcit-fix-panel">
+                                                        {it.candidates && it.candidates.length > 0 ? (
+                                                            <>
+                                                                <div className="mcit-fix-hint">Closest files in the image folder — click one to use it:</div>
+                                                                {it.candidates.map((c) => (
+                                                                    <button
+                                                                        key={c.path}
+                                                                        type="button"
+                                                                        className="mcit-fix-cand"
+                                                                        title={c.path}
+                                                                        onClick={() => { setOverride(proj.aep, key, c); setFixing(null); }}
+                                                                    >
+                                                                        {c.name}
+                                                                    </button>
+                                                                ))}
+                                                            </>
+                                                        ) : (
+                                                            <div className="mcit-fix-hint">No same-type images to suggest from that folder.</div>
+                                                        )}
+                                                        <button type="button" className="mcit-fix-browse" onClick={() => browseFor(proj.aep, key)}>
+                                                            <FolderSearch size={11} /> Choose a file…
+                                                        </button>
+                                                        {pickError && <div className="mcit-fix-error">{pickError}</div>}
+                                                    </div>
+                                                )}
+                                            </div>
                                         )}
                                     </div>
                                     <span className="mcit-item-folder">{it.folder}</span>
                                 </div>
-                            ))}
+                                );
+                            })}
                             {!proj.skipped && proj.items.length === 0 && (
                                 <div className="mcit-proj-skip">No PNG/JPG footage items found in its target folders.</div>
                             )}
@@ -247,12 +355,12 @@ const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply
                 {onApply ? (
                     <>
                         <button className="mcit-cancel" disabled={applying} onClick={onClose}>Cancel</button>
-                        <button className="mcit-done" disabled={applying || selected.length === 0} onClick={() => onApply(selected)}>
+                        <button className="mcit-done" disabled={applying || selected.length === 0} onClick={() => onApply(selected, overrides)}>
                             {applying
                                 ? "Applying…"
                                 : selected.length === 0
                                     ? "Nothing selected"
-                                    : `Apply — replace ${selectedReplacements} image${selectedReplacements === 1 ? "" : "s"} in ${selected.length} project${selected.length === 1 ? "" : "s"}`}
+                                    : `Apply — replace ${selectedReplacements} image${selectedReplacements === 1 ? "" : "s"}${totalManual > 0 ? ` (${totalManual} by hand)` : ""} in ${selected.length} project${selected.length === 1 ? "" : "s"}`}
                         </button>
                     </>
                 ) : (

@@ -90,7 +90,7 @@
 
 .shimmer,
 .shimmer-bar {
-    background: linear-gradient(90deg, #2a2a2a 25%, #383838 50%, #2a2a2a 75%);
+    background: linear-gradient(90deg, var(--surface-1, #2a2a2a) 25%, #383838 50%, var(--surface-1, #2a2a2a) 75%);
     background-size: 200% 100%;
     animation: ov-shimmer-sweep 1.4s ease-in-out infinite;
 }
@@ -113,6 +113,6 @@
 // the moment it's opened. Generic, not scoped to one tool's select, since
 // every <select> in the app hits this the same way.
 select option {
-    background: #262626;
+    background: var(--surface-1, #262626);
     color: #ddd;
 }

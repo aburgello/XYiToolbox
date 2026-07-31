@@ -397,6 +397,53 @@ export const saveTheme = (themeId: string): Result => {
   }
 };
 
+// Two modifiers that sit alongside the theme id (see themes.ts): the button
+// surface ("panel" | "oled") and where group border colours come from
+// ("palette" | "theme"). Separate keys rather than packed into OVTheme, so
+// an older build reading OVTheme still gets a plain theme id back.
+const THEME_SURFACE_KEY = "OVThemeSurface";
+const THEME_BORDERS_KEY = "OVThemeBorders";
+
+export const loadThemeSurface = (): Result => {
+  try {
+    const raw = app.settings.haveSetting(TOOLSET_SETTINGS_SECTION, THEME_SURFACE_KEY)
+      ? app.settings.getSetting(TOOLSET_SETTINGS_SECTION, THEME_SURFACE_KEY)
+      : "";
+    return { success: true, message: raw };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+};
+
+export const saveThemeSurface = (surface: string): Result => {
+  try {
+    app.settings.saveSetting(TOOLSET_SETTINGS_SECTION, THEME_SURFACE_KEY, surface);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+};
+
+export const loadThemeBorders = (): Result => {
+  try {
+    const raw = app.settings.haveSetting(TOOLSET_SETTINGS_SECTION, THEME_BORDERS_KEY)
+      ? app.settings.getSetting(TOOLSET_SETTINGS_SECTION, THEME_BORDERS_KEY)
+      : "";
+    return { success: true, message: raw };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+};
+
+export const saveThemeBorders = (mode: string): Result => {
+  try {
+    app.settings.saveSetting(TOOLSET_SETTINGS_SECTION, THEME_BORDERS_KEY, mode);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+};
+
 // Which themes have their background decoration (stars/bubbles/etc, see
 // themes.ts's per-theme motif) switched on -- toggled by double-clicking a
 // theme's name in ThemePicker.tsx. Tab-separated list of theme ids, same

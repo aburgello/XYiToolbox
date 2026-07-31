@@ -180,11 +180,17 @@ export const CATEGORIES: CategoryDef[] = [
 // Gives each category its own hover identity. Applied as CSS custom
 // properties (var(--cat-*)) via inline style. Pre-blended hex values --
 // color-mix() is unsupported on the chrome74 build target.
-export const CATEGORY_COLORS: Record<string, { grad: string; border: string; glow: string; icon: string }> = {
-    localise: { grad: "linear-gradient(135deg, #1c7a76 0%, #0f3d45 100%)", border: "#2dd4bf", glow: "rgba(45, 212, 191, 0.35)",  icon: "#5eead4" },
-    review:   { grad: "linear-gradient(135deg, #6842b0 0%, #2e1a52 100%)", border: "#a78bfa", glow: "rgba(167, 139, 250, 0.35)", icon: "#c4b5fd" },
-    deliver:  { grad: "linear-gradient(135deg, #b3661f 0%, #5c2f0e 100%)", border: "#fb923c", glow: "rgba(251, 146, 60, 0.35)",  icon: "#fdba74" },
-    tools:    { grad: "linear-gradient(135deg, #ad2d67 0%, #4a1530 100%)", border: "#f472b6", glow: "rgba(244, 114, 182, 0.35)", icon: "#f9a8d4" },
+// `edge` is the RESTING border a category card wears on the OLED surface only
+// -- the same 0.5-alpha treatment the Toolset's own resting edges use (see
+// themes.ts's REST_EDGE_ALPHA). It exists because on black those four cards
+// are otherwise the only elements that lost their identity: same colour as
+// each other, and darker than the ground they sit on. Pre-blended rather than
+// derived with color-mix(), per this project's chrome74 target.
+export const CATEGORY_COLORS: Record<string, { grad: string; border: string; glow: string; icon: string; edge: string }> = {
+    localise: { grad: "linear-gradient(135deg, #1c7a76 0%, #0f3d45 100%)", border: "#2dd4bf", glow: "rgba(45, 212, 191, 0.35)",  icon: "#5eead4", edge: "rgba(45, 212, 191, 0.5)" },
+    review:   { grad: "linear-gradient(135deg, #6842b0 0%, #2e1a52 100%)", border: "#a78bfa", glow: "rgba(167, 139, 250, 0.35)", icon: "#c4b5fd", edge: "rgba(167, 139, 250, 0.5)" },
+    deliver:  { grad: "linear-gradient(135deg, #b3661f 0%, #5c2f0e 100%)", border: "#fb923c", glow: "rgba(251, 146, 60, 0.35)",  icon: "#fdba74", edge: "rgba(251, 146, 60, 0.5)" },
+    tools:    { grad: "linear-gradient(135deg, #ad2d67 0%, #4a1530 100%)", border: "#f472b6", glow: "rgba(244, 114, 182, 0.35)", icon: "#f9a8d4", edge: "rgba(244, 114, 182, 0.5)" },
 };
 
 export function categoryStyleVars(categoryId: string | undefined): React.CSSProperties {
@@ -194,6 +200,7 @@ export function categoryStyleVars(categoryId: string | undefined): React.CSSProp
         "--cat-border": c.border,
         "--cat-glow":   c.glow,
         "--cat-icon":   c.icon,
+        "--cat-edge":   c.edge,
     } as React.CSSProperties;
 }
 

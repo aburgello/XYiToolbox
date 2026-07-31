@@ -89,8 +89,8 @@
 
         input[type="text"],
         input[type="number"] {
-            background: #1f1f1f;
-            border: 1px solid #3a3a3a;
+            background: var(--surface-0, #1f1f1f);
+            border: 1px solid var(--surface-edge, #3a3a3a);
             color: #ddd;
             border-radius: 5px;
             padding: 6px 8px;
@@ -181,8 +181,8 @@
         width: 100%;
         max-width: 520px;
         box-sizing: border-box;
-        background: #1f1f1f;
-        border: 1px solid #3a3a3a;
+        background: var(--surface-0, #1f1f1f);
+        border: 1px solid var(--surface-edge, #3a3a3a);
         color: #ddd;
         border-radius: 5px;
         padding: 6px 8px;
@@ -225,8 +225,8 @@
         display: flex;
         align-items: center;
         gap: 6px;
-        background: #262626;
-        border: 1px solid #3a3a3a;
+        background: var(--surface-1, #262626);
+        border: 1px solid var(--surface-edge, #3a3a3a);
         color: #ddd;
         border-radius: 5px;
         padding: 8px 12px;
@@ -261,8 +261,8 @@
         margin-bottom: 16px;
         padding: 6px 8px;
         border-radius: 5px;
-        background: #232323;
-        border: 1px solid #3a3a3a;
+        background: var(--surface-0, #232323);
+        border: 1px solid var(--surface-edge, #3a3a3a);
         font-size: 11px;
         max-width: 420px;
 
@@ -291,8 +291,8 @@
         margin-bottom: 16px;
         padding: 6px 8px;
         border-radius: 5px;
-        background: #232323;
-        border: 1px solid #3a3a3a;
+        background: var(--surface-0, #232323);
+        border: 1px solid var(--surface-edge, #3a3a3a);
         font-size: 11px;
         max-width: 420px;
 
@@ -308,7 +308,7 @@
 
     .divider {
         border: none;
-        border-top: 1px solid #2c2c2c;
+        border-top: 1px solid var(--surface-divider, #2c2c2c);
         margin: 10px 0 12px;
     }
 }
@@ -324,8 +324,8 @@
     .sp-textarea {
         width: 100%;
         box-sizing: border-box;
-        background: #1a1a1a;
-        border: 1px solid #383838;
+        background: var(--surface-0, #1a1a1a);
+        border: 1px solid var(--surface-edge, #383838);
         border-radius: 6px;
         padding: 10px 12px;
         color: #ddd;
@@ -354,8 +354,8 @@
         gap: 8px;
 
         .sp-clear-btn {
-            background: #2a2a2a;
-            border-color: #444;
+            background: var(--surface-1, #2a2a2a);
+            border-color: var(--surface-border, #444);
         }
         .sp-save-btn {
             background: var(--cat-grad, #2a3a4a);
@@ -367,8 +367,8 @@
     // save-as-tool is a deliberate act with two required-to-notice fields
     // (name, kind), not a quick one-tap pick like Toolset's droplets.
     .sp-save-form {
-        background: #1c1c1c;
-        border: 1px solid #333;
+        background: var(--surface-0, #1c1c1c);
+        border: 1px solid var(--surface-edge, #333);
         border-radius: 6px;
         padding: 10px 12px 4px;
         margin-bottom: 10px;
@@ -396,8 +396,8 @@
         display: flex;
         align-items: center;
         gap: 8px;
-        background: #1a1a1a;
-        border: 1px solid #383838;
+        background: var(--surface-0, #1a1a1a);
+        border: 1px solid var(--surface-edge, #383838);
         border-radius: 8px;
         padding: 8px 10px;
         cursor: pointer;
@@ -426,7 +426,7 @@
         width: 14px;
         height: 14px;
         border-radius: 50%;
-        border: 1px solid #4a4a4a;
+        border: 1px solid var(--surface-border, #4a4a4a);
         color: #fff;
     }
     .kind-option.selected .kind-option-check {
@@ -485,8 +485,8 @@
     }
 
     .sp-output {
-        background: #1a1a1a;
-        border: 1px solid #333;
+        background: var(--surface-0, #1a1a1a);
+        border: 1px solid var(--surface-edge, #333);
         border-radius: 6px;
         padding: 10px 12px;
         color: #b0e8b0;
@@ -531,8 +531,8 @@
         display: flex;
         align-items: center;
         gap: 8px;
-        background: #1e1e1e;
-        border: 1px solid #333;
+        background: var(--ov-bg, #1e1e1e);
+        border: 1px solid var(--surface-edge, #333);
         border-radius: 6px;
         padding: 7px 9px;
         transition: border-color 0.2s ease;
@@ -614,8 +614,8 @@
         display: flex;
         align-items: center;
         gap: 6px;
-        background: #1a1a1a;
-        border: 1px solid #383838;
+        background: var(--surface-0, #1a1a1a);
+        border: 1px solid var(--surface-edge, #383838);
         border-radius: 6px;
         padding: 4px 8px;
         flex: 1;
@@ -653,8 +653,8 @@
     }
 
     .eb-entry {
-        background: #1e1e1e;
-        border: 1px solid #333;
+        background: var(--ov-bg, #1e1e1e);
+        border: 1px solid var(--surface-edge, #333);
         border-radius: 6px;
         padding: 8px 10px;
         transition: border-color 0.2s ease;
@@ -751,7 +751,7 @@
         font-family: "SF Mono", "Fira Code", "Consolas", monospace;
         font-size: 11px;
         color: #b0e8b0;
-        background: #161616;
+        background: var(--surface-0, #161616);
         border-radius: 4px;
         padding: 6px 8px;
         margin: 0;
@@ -772,8 +772,8 @@
         gap: 8px;
 
         .eb-cancel-btn {
-            background: #2a2a2a;
-            border-color: #444;
+            background: var(--surface-1, #2a2a2a);
+            border-color: var(--surface-border, #444);
         }
     }
 }
@@ -810,8 +810,8 @@
         display: flex;
         align-items: center;
         gap: 6px;
-        background: #1a1a1a;
-        border: 1px solid #383838;
+        background: var(--surface-0, #1a1a1a);
+        border: 1px solid var(--surface-edge, #383838);
         border-radius: 6px;
         padding: 4px 8px;
 
@@ -834,8 +834,8 @@
     }
 
     .ci-layer {
-        background: #1c1c1c;
-        border: 1px solid #2a2a2a;
+        background: var(--surface-0, #1c1c1c);
+        border: 1px solid var(--surface-divider, #2a2a2a);
         border-radius: 5px;
         padding: 6px 8px;
 
@@ -899,7 +899,7 @@
         gap: 8px;
 
         .rqm-clear-btn {
-            background: #2a2a2a;
+            background: var(--surface-1, #2a2a2a);
             border-color: #5a2e2e;
             color: #e07a7a;
         }
@@ -913,8 +913,8 @@
     }
 
     .rqm-row {
-        background: #1c1c1c;
-        border: 1px solid #2a2a2a;
+        background: var(--surface-0, #1c1c1c);
+        border: 1px solid var(--surface-divider, #2a2a2a);
         border-radius: 6px;
         padding: 8px 10px;
         display: grid;
@@ -977,7 +977,7 @@
             align-items: center;
             justify-content: center;
             background: none;
-            border: 1px solid #333;
+            border: 1px solid var(--surface-edge, #333);
             color: #888;
             padding: 4px;
             border-radius: 4px;
@@ -1076,8 +1076,8 @@
         align-items: center;
         gap: 6px;
         flex: 1;
-        background: #1f1f1f;
-        border: 1px solid #3a3a3a;
+        background: var(--surface-0, #1f1f1f);
+        border: 1px solid var(--surface-edge, #3a3a3a);
         border-radius: 7px;
         padding: 5px 9px;
         color: #888;
@@ -1107,13 +1107,13 @@
     .specs-list {
         max-height: 340px;
         overflow-y: auto;
-        border: 1px solid #2e2e2e;
+        border: 1px solid var(--surface-divider, #2e2e2e);
         border-radius: 8px;
-        background: #191919;
+        background: var(--surface-0, #191919);
     }
 
     .specs-terr {
-        border-bottom: 1px solid #262626;
+        border-bottom: 1px solid var(--surface-divider, #262626);
         &:last-child { border-bottom: none; }
         &.is-selected { background: rgba(60, 90, 138, 0.10); }
         &.is-disabled { opacity: 0.55; }
@@ -1148,7 +1148,15 @@
         padding: 8px 4px;
         text-align: left;
         font-size: 12.5px;
+        border-radius: 6px;
         &:disabled { cursor: default; }
+        // Same opt-out as .specs-batch-main below -- a territory header is a
+        // list row, not an action button, so no gradient/glow/lift.
+        &:hover:not(:disabled) {
+            background: var(--surface-1, #232326);
+            box-shadow: none;
+            transform: none;
+        }
 
         .specs-terr-name { font-weight: 600; }
         > svg:last-child { margin-left: 2px; color: #777; }
@@ -1187,52 +1195,134 @@
 
     .specs-terr-body { padding: 2px 10px 10px 30px; }
 
-    .specs-batch { margin-top: 8px; &:first-child { margin-top: 2px; } }
+    // Each batch is a CARD, not a bare line of text. It used to be an ~20px
+    // row of 11px type with 2px of padding on its click target, which is a
+    // fiddly thing to hit -- and hitting it is the main interaction on this
+    // whole screen. The card gives the row a real edge to aim at, keeps the
+    // action buttons visually attached to the batch they belong to, and makes
+    // "open" something you can see from across the panel.
+    .specs-batch {
+        margin-top: 6px;
+        border-radius: 8px;
+        background: var(--surface-0, #1c1c1e);
+        border: 1px solid var(--surface-divider, #292a2c);
+        // The open card grows an accent bar via an INSET shadow rather than a
+        // thicker/left border: a border-width change would resize the card and
+        // shove every row below it down by a pixel on each expand.
+        box-shadow: inset 0 0 0 0 transparent;
+        transition: background 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
+
+        &:first-child { margin-top: 2px; }
+        &:hover { border-color: #37383b; }
+    }
 
     .specs-batch-head {
         display: flex;
-        align-items: center;
+        align-items: stretch; // so the click target fills the row's height
         gap: 6px;
-        font-size: 11px;
+        padding: 4px;
+        font-size: 11.5px;
         color: #bbb;
-        margin-bottom: 4px;
         flex-wrap: wrap;
 
-        .specs-batch-name { color: #ccc; }
+        // The PDF name is the one unbounded string in this header, and it must
+        // TRUNCATE rather than push. Without min-width:0 + overflow here, a
+        // long name ("Paw Patrol_ The Dino Movie - Motion Outdoor - Egypt
+        // (Batch 1).pdf") can't shrink below its content width, so it spills
+        // out of .specs-batch-main and paints straight over the Localise /
+        // Re-check / MC It! buttons -- the flex item shrinks, its content
+        // doesn't. Seen for real once the header gained a third button.
+        .specs-batch-name {
+            color: #d4d4d4;
+            flex: 1 1 auto;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
         .specs-batch-tag {
-            background: #2a2a2a;
-            border: 1px solid #3a3a3a;
+            background: var(--surface-1, #2a2a2a);
+            border: 1px solid var(--surface-edge, #3a3a3a);
             border-radius: 4px;
-            padding: 0 5px;
+            padding: 1px 6px;
             color: #9ac;
             font-size: 10px;
+            flex: 0 0 auto;
         }
-        .specs-batch-ok { color: #6fae7f; margin-left: auto; }
+        .specs-batch-ok { color: #6fae7f; margin-left: auto; flex: 0 0 auto; white-space: nowrap; }
         // Rows have been filtered down (some excluded) -- amber so "N of M"
         // reads as a deliberate subset, not the full batch.
         .specs-batch-ok--filtered { color: #d9b86f; }
         .specs-batch-err { color: #d98c8c; margin-left: auto; }
+        // "3 new · 9 built" — the answer to "has this batch gained sizes?"
+        // without expanding it. Sits after the row count (which keeps the
+        // margin-left:auto), quiet enough not to compete with it.
+        .specs-batch-built {
+            flex: 0 0 auto;
+            padding: 1px 6px;
+            border-radius: 999px;
+            background: rgba(110, 190, 140, 0.12);
+            color: #8fc3a1;
+            font-size: 9.5px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        // Same chip as ".. built", amber: the rows in "N new" that aren't
+        // actually outstanding work, just the PDF listing something twice.
+        .specs-batch-dup {
+            flex: 0 0 auto;
+            padding: 1px 6px;
+            border-radius: 999px;
+            background: rgba(251, 191, 36, 0.12);
+            color: #d9a62a;
+            font-size: 9.5px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        // Icon-only sibling of the run buttons.
+        .specs-batch-recheck { padding-left: 7px; padding-right: 7px; }
 
         // Collapse/expand trigger: the label half of the header. Mirrors
         // .specs-terr-main above (same reset, same "chevron then icon then
         // label" order) so a batch header reads as the same kind of control as
-        // the territory header it nests under -- including inheriting
-        // .form-tool button's own hover treatment, which the territory row
-        // already takes. flex:1 + min-width:0 lets a long PDF name shrink
-        // rather than pushing the action buttons off the row.
+        // the territory header it nests under. flex:1 + min-width:0 lets a long
+        // PDF name shrink rather than pushing the action buttons off the row.
+        // min-height 30px + real padding is the hit target -- deliberately
+        // generous, since this is the control people click most here.
         .specs-batch-main {
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 7px;
             flex: 1;
             min-width: 0;
+            // Belt and braces with .specs-batch-name's truncation above: even
+            // if some future child forgets to shrink, it gets clipped at the
+            // button's edge instead of overlapping its neighbours.
+            overflow: hidden;
+            min-height: 30px;
             background: none;
-            border: none;
+            border: 1px solid transparent;
+            border-radius: 6px;
             color: #bbb;
             cursor: pointer;
-            padding: 2px 2px;
+            padding: 4px 8px;
             text-align: left;
-            font-size: 11px;
+            font-size: 11.5px;
+
+            // Quiet hover, and an explicit opt-OUT of the generic
+            // `.form-tool button:hover` treatment (category gradient + glow +
+            // translateY). That rule is written for standalone action buttons;
+            // on a full-width list row it paints the whole row in the category
+            // colour and lifts it, which reads as busy while scanning down a
+            // list -- and is indistinguishable from the .is-open highlight,
+            // i.e. hovering looked exactly like "this batch is open". Same
+            // dense-list-rows-don't-lift rule OV Library's render rows follow.
+            &:hover {
+                background: var(--surface-1, #232326);
+                border-color: var(--surface-edge, #34353a);
+                box-shadow: none;
+                transform: none;
+            }
 
             // margin-left:auto on these pushes them to the button's own right
             // edge, keeping the count next to the name instead of stranded
@@ -1244,9 +1334,24 @@
         }
     }
 
-    // Collapsed: the head is all that's left, so drop the gap it reserves for
-    // the table/results that are no longer rendered.
-    .specs-batch.is-collapsed .specs-batch-head { margin-bottom: 0; }
+    // Open batch: every batch starts collapsed, so the one that's open is the
+    // one being edited/localised -- say so clearly enough to spot with two
+    // open at once. Fixed low alpha rather than --cat-glow, which is tuned for
+    // hover shadows and renders as a near-solid block at rest.
+    .specs-batch.is-open {
+        background: rgba(74, 143, 208, 0.045);
+        border-color: var(--cat-border, #4a8fd0);
+        box-shadow: inset 3px 0 0 0 var(--cat-border, #4a8fd0);
+        padding-bottom: 4px;
+
+        .specs-batch-head { padding-left: 6px; }
+        .specs-batch-name { color: #fff; font-weight: 600; }
+        .specs-batch-main > svg:first-child { color: var(--cat-icon, var(--cat-border, #4a8fd0)); }
+    }
+
+    // The table/results sit inside the card, so they need its padding.
+    .specs-batch .specs-table,
+    .specs-batch .specs-locresult { margin-left: 6px; margin-right: 6px; width: auto; }
 
     .specs-table {
         width: 100%;
@@ -1282,6 +1387,24 @@
         }
         // keep the checkbox itself un-struck and clickable
         .specs-row--excluded .specs-row-check-col { text-decoration: none; }
+
+        // ALREADY BUILT: this row's deliverable is already sitting in the
+        // batch's AE folder, so it starts unticked (see alreadyBuiltFile in
+        // CSVLocaliser.tsx). Reads as "settled", NOT as "discarded": a flat
+        // green-grey wash plus a solid left rule, and deliberately no
+        // strike-through of its own -- an excluded row is a decision, a built
+        // row is a fact. When it's both (the normal case) the exclusion's own
+        // strike still applies on top, which is correct.
+        //
+        // Fixed low-alpha green rather than var(--cat-glow): that variable is
+        // tuned for hover shadows and renders near-solid at rest -- the same
+        // trap the Localised Library JPG_PNG row hit.
+        .specs-row--built td {
+            background: rgba(110, 190, 140, 0.07);
+        }
+        .specs-row--built td:first-child {
+            box-shadow: inset 2px 0 0 rgba(110, 190, 140, 0.55);
+        }
     }
 
     // Inline-editable cells (CSV Localiser: correct a mis-parsed value straight
@@ -1306,7 +1429,7 @@
         &:hover:not(:disabled) { border-color: #383838; }
         &:focus {
             outline: none;
-            background: #1c1c1c;
+            background: var(--surface-0, #1c1c1c);
             border-color: var(--cat-icon, #5eead4);
         }
         &:disabled { color: #5f5f5f; cursor: default; }
@@ -1339,6 +1462,40 @@
         background: rgba(94, 234, 212, 0.05);
     }
 
+    // A deliverable the specs PDF lists twice. Amber rather than the green
+    // "built" wash or the red-ish error language: nothing is wrong with the
+    // row, it just can't ever come back built (one filename, one file), and
+    // without the tag that's indistinguishable from a missing deliverable.
+    // Fixed low-alpha values, NOT --cat-glow (hover-tuned, near-solid at rest).
+    .specs-row--dup td {
+        background: rgba(251, 191, 36, 0.05);
+    }
+    .specs-row--dup td:first-child {
+        box-shadow: inset 2px 0 0 rgba(251, 191, 36, 0.5);
+    }
+    // A built row is settled; keep its green marker winning over the amber one
+    // so the pair doesn't fight when a duplicate does happen to claim a file.
+    .specs-row--built.specs-row--dup td:first-child {
+        box-shadow: inset 2px 0 0 rgba(110, 190, 140, 0.55);
+    }
+
+    .specs-row-dup {
+        display: inline-block;
+        vertical-align: middle;
+        margin-left: 4px;
+        padding: 1px 5px;
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        white-space: nowrap;
+        color: #fbbf24;
+        background: rgba(251, 191, 36, 0.12);
+        border: 1px solid rgba(251, 191, 36, 0.3);
+        border-radius: 3px;
+        cursor: default;
+    }
+
     .specs-row-revert-col {
         width: 24px;
         text-align: center;
@@ -1363,7 +1520,7 @@
     .specs-fallback {
         max-width: none;
         margin-top: 16px;
-        border-top: 1px solid #2a2a2a;
+        border-top: 1px solid var(--surface-divider, #2a2a2a);
         padding-top: 10px;
     }
 
@@ -1417,8 +1574,8 @@
         }
 
         input[type="text"] {
-            background: #1e1e1e;
-            border: 1px solid #3a3a3a;
+            background: var(--ov-bg, #1e1e1e);
+            border: 1px solid var(--surface-edge, #3a3a3a);
             border-radius: 6px;
             color: #ddd;
             padding: 6px 9px;
@@ -1445,8 +1602,8 @@
 
         > input[type="number"],
         > .specs-build-custom {
-            background: #1e1e1e;
-            border: 1px solid #3a3a3a;
+            background: var(--ov-bg, #1e1e1e);
+            border: 1px solid var(--surface-edge, #3a3a3a);
             border-radius: 6px;
             color: #ddd;
             padding: 6px 8px;
@@ -1473,8 +1630,8 @@
         width: 24px;
         height: 26px;
         border-radius: 6px;
-        border: 1px solid #383838;
-        background: #242424;
+        border: 1px solid var(--surface-edge, #383838);
+        background: var(--surface-0, #242424);
         color: #999;
         cursor: pointer;
         &:hover:not(:disabled) { border-color: #7a3a3a; color: #e08a8a; background: rgba(224, 122, 122, 0.1); }
@@ -1494,7 +1651,7 @@
         align-items: center;
         gap: 5px;
         background: none;
-        border: 1px dashed #4a4a4a;
+        border: 1px dashed var(--surface-border, #4a4a4a);
         border-radius: 6px;
         color: #b0b0b0;
         padding: 5px 10px;
@@ -1527,17 +1684,21 @@
 .specs-tool {
     .specs-warn { color: #d9b56f; margin: 0 0 8px; }
 
+    // Sized to match .specs-batch-main's 30px hit target so the whole row is
+    // one comfortable band rather than a tall label next to two tiny pills.
     .specs-batch-run {
         margin-left: auto;
         display: inline-flex;
         align-items: center;
+        justify-content: center;
         gap: 5px;
-        padding: 3px 9px;
+        min-height: 30px;
+        padding: 4px 11px;
         border-radius: 6px;
         border: 1px solid var(--ov-accent, #3a5a8a);
         background: rgba(60, 90, 138, 0.16);
         color: #bcd6f0;
-        font-size: 10.5px;
+        font-size: 11px;
         font-weight: 600;
         cursor: pointer;
         transition: filter 0.15s ease, background 0.15s ease;
@@ -1602,8 +1763,8 @@
         margin-top: 6px;
         padding: 6px 8px;
         border-radius: 6px;
-        background: #191919;
-        border: 1px solid #2a2a2a;
+        background: var(--surface-0, #191919);
+        border: 1px solid var(--surface-divider, #2a2a2a);
         font-size: 11px;
     }
     .specs-locresult-line {

@@ -46,8 +46,8 @@
 // into the same clipping bug this replaced.
 .ov-tooltip-bubble {
     position: fixed;
-    background: #2a2a2a;
-    border: 1px solid #444;
+    background: var(--surface-1, #2a2a2a);
+    border: 1px solid var(--surface-border, #444);
     color: #ddd;
     border-radius: 5px;
     padding: 6px 9px;
@@ -101,11 +101,11 @@
 
     &.ov-tooltip-top::after {
         top: 100%;
-        border-top-color: #2a2a2a;
+        border-top-color: var(--surface-1, #2a2a2a); // triangle fill, matches the bubble
     }
 
     &.ov-tooltip-bottom::after {
         bottom: 100%;
-        border-bottom-color: #2a2a2a;
+        border-bottom-color: var(--surface-1, #2a2a2a); // triangle fill, matches the bubble
     }
 }

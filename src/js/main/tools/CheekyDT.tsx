@@ -33,7 +33,7 @@ const FIELDS = [
 ] as const;
 
 const CheekyDTTool = () => {
-    const [fields, setFields] = useState<Record<string, boolean>>({ title: true, artwork: true, version: true, campaign: true, duration: true, territory: true, date: true });
+    const [fields, setFields] = useState<Record<string, boolean>>({ title: false, artwork: false, version: false, campaign: false, duration: false, territory: false, date: false });
     const [territoryEntry, setTerritoryEntry] = useState("OV");
     const [status, setStatus] = useState<StatusMsg | null>(null);
     const [busy, setBusy] = useState(false);

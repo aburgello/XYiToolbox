@@ -14,8 +14,8 @@
     gap: 6px;
     width: 100%;
     min-width: 0;
-    background: #262626;
-    border: 1px solid #3a3a3a;
+    background: var(--surface-1, #262626);
+    border: 1px solid var(--surface-edge, #3a3a3a);
     border-radius: 6px;
     padding: 6px 8px;
     color: #ddd;
@@ -107,7 +107,7 @@
     cursor: pointer;
 
     &.focused {
-        background: #333;
+        background: var(--surface-2, #333);
     }
 
     &.selected {

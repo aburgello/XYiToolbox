@@ -72,7 +72,19 @@ export type BattleAction =
      */
     | { kind: "ban"; at: string; movie: MovieRef; burned: number[]; burnedFilm?: string; burnedNames?: string[] }
     | { kind: "time"; at: string }
-    | { kind: "timeout"; at: string };
+    | { kind: "timeout"; at: string }
+    /**
+     * "Forget everything before this and start again" -- the rematch.
+     *
+     * A room is one match, and a finished one used to be a dead end: the pair
+     * had to go back to the menu and mint a new room to play again, which is
+     * most of how they ended up with rooms scattered on both sides. A reset is
+     * an action like any other precisely so ONE side can write it -- the
+     * reducer below drops every event older than the NEWEST reset, so both
+     * panels converge on the fresh game without anyone having to delete a file
+     * they don't own.
+     */
+    | { kind: "reset"; at: string };
 
 /** One ban, kept for the "who's been burned" list. */
 export interface BanRecord {
@@ -144,10 +156,18 @@ const other = (p: 1 | 2): 1 | 2 => (p === 1 ? 2 : 1);
  * desync here is the kind of bug that only shows up with two real machines.
  */
 export function deriveState(p1: BattlePlayerFile | null, p2: BattlePlayerFile | null): BattleState {
-    const events: { a: BattleAction; by: 1 | 2 }[] = [];
-    if (p1) for (const a of p1.actions) events.push({ a, by: 1 });
-    if (p2) for (const a of p2.actions) events.push({ a, by: 2 });
-    events.sort((x, y) => (x.a.at < y.a.at ? -1 : x.a.at > y.a.at ? 1 : 0));
+    const all: { a: BattleAction; by: 1 | 2 }[] = [];
+    if (p1) for (const a of p1.actions) all.push({ a, by: 1 });
+    if (p2) for (const a of p2.actions) all.push({ a, by: 2 });
+    all.sort((x, y) => (x.a.at < y.a.at ? -1 : x.a.at > y.a.at ? 1 : 0));
+
+    // A rematch is a line drawn through the log: everything at or before the
+    // newest reset is history. Applied here rather than in the loop so the
+    // previous match's `timeout` can't end the new game before it starts (the
+    // loop bails on `loser`, and the old one would still be in the events).
+    let resetAt = "";
+    for (const { a } of all) if (a.kind === "reset" && a.at > resetAt) resetAt = a.at;
+    const events = all.filter(({ a }) => a.kind !== "reset" && (!resetAt || a.at > resetAt));
 
     const st: BattleState = {
         chain: [], current: null, turn: 1, turnStart: "", extra: 0,

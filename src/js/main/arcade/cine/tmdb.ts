@@ -41,7 +41,7 @@ export interface MovieSummary {
 // few MB. `posterUrl` returns "" for a missing path so callers can just check
 // truthiness instead of building a broken <img>.
 const IMAGE_BASE = "https://image.tmdb.org/t/p/";
-export const posterUrl = (path: string, size: "w92" | "w154" | "w185" = "w92"): string =>
+export const posterUrl = (path: string, size: "w92" | "w154" | "w185" | "w500" = "w92"): string =>
     path ? IMAGE_BASE + size + path : "";
 
 export type LinkRole = "cast" | "Director" | "Writer" | "Screenplay" | "Original Music Composer" | "Director of Photography";
@@ -141,6 +141,50 @@ export async function getCredits(id: number): Promise<MovieCredits> {
     }
     const out: MovieCredits = { id: d.id, title: d.title, year: (d.release_date || "").slice(0, 4), poster: d.poster_path || "", people };
     creditsCache[id] = out;
+    return out;
+}
+
+/**
+ * The facts the POSTER game buys hints with (arcade/PosterDaily.tsx).
+ *
+ * Separate from `getCredits` on purpose: that one exists to answer "who links
+ * these two films" and throws away everything else, whereas this wants the
+ * blurb, the tagline and the genres and doesn't care who was in it. Sharing
+ * one shape would mean either fetching cast the poster game never shows or
+ * bloating the chain game's cache with prose.
+ *
+ * Its own cache for the same reason credits are cached -- a hint bought twice
+ * in one session shouldn't be a second round trip.
+ */
+export interface FilmFacts {
+    id: number;
+    title: string;
+    year: string;
+    poster: string;
+    /** "" when TMDB has no tagline for the film, which is common enough to plan for. */
+    tagline: string;
+    overview: string;
+    genres: string[];
+    /** Minutes; 0 when unknown. */
+    runtime: number;
+}
+
+const factsCache: Record<number, FilmFacts> = {};
+
+export async function getFilmFacts(id: number): Promise<FilmFacts> {
+    if (factsCache[id]) return factsCache[id];
+    const d = await get<any>(withKey("/3/movie/" + id));
+    const out: FilmFacts = {
+        id: d.id,
+        title: d.title,
+        year: (d.release_date || "").slice(0, 4),
+        poster: d.poster_path || "",
+        tagline: d.tagline || "",
+        overview: d.overview || "",
+        genres: (d.genres || []).map((g: any) => g.name),
+        runtime: d.runtime || 0,
+    };
+    factsCache[id] = out;
     return out;
 }
 

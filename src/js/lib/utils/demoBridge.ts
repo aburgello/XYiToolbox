@@ -73,6 +73,22 @@ const DEMO_EASE_PRESETS = [
     { id: "builtin-strong", name: "Strong Ease", isBuiltIn: true, inType: 2, outType: 2, inInfluence: 75, inSpeed: 0, outInfluence: 75, outSpeed: 0 },
 ];
 
+// The arcade rack's one cross-game store. Shared by teamArcadeScores AND the
+// Nerdle lobby's results, exactly as the host shares it — a versus row IS a
+// head-to-head result. Several xyinerdle rows so the in-game leaderboard has
+// enough to show records, streaks and a rivalry rather than one lonely line.
+const DEMO_ARCADE_SCORES = [
+    { game: "timeline", name: "turk", score: 31, versus: "", stamp: "2026-07-26 10:02" },
+    { game: "timeline", name: "antonio", score: 24, versus: "", stamp: "2026-07-26 09:40" },
+    { game: "daily", name: "jacqui", score: 7, versus: "", stamp: "2026-07-27 08:15" },
+    { game: "poster", name: "antonio", score: 5, versus: "", stamp: "2026-07-27 08:20" },
+    { game: "xyinerdle", name: "antonio", score: 17, versus: "aaron", stamp: "2026-07-27 09:05" },
+    { game: "xyinerdle", name: "antonio", score: 9, versus: "aaron", stamp: "2026-07-26 17:22" },
+    { game: "xyinerdle", name: "aaron", score: 14, versus: "antonio", stamp: "2026-07-26 11:48" },
+    { game: "xyinerdle", name: "jacqui", score: 21, versus: "turk", stamp: "2026-07-26 09:31" },
+    { game: "xyinerdle", name: "maria", score: 12, versus: "luke", stamp: "2026-07-25 16:11" },
+];
+
 // Functions whose caller reads structured fields off the result. Values here
 // are chosen to render a believable, non-broken demo.
 const SHAPED: Record<string, (args: unknown[]) => unknown> = {
@@ -154,7 +170,9 @@ const SHAPED: Record<string, (args: unknown[]) => unknown> = {
         return null;
     },
 
-    // Nerdle menu — lobby state.
+    // Nerdle menu — lobby state. `results` mirrors the host: they're DERIVED
+    // from the versus rows of the one arcade score store below, not a separate
+    // file (see team.ts's nerdleResultsFromScores).
     teamNerdleLobby: () => ({
         success: true,
         me: "antonio",
@@ -162,14 +180,48 @@ const SHAPED: Record<string, (args: unknown[]) => unknown> = {
             { room: "ABCD", from: "marco", to: "antonio", stamp: "2026-07-25T10:30:00Z" },
         ],
         outgoing: [],
-        results: [],
+        results: DEMO_ARCADE_SCORES
+            .filter((s) => s.game === "xyinerdle" && s.versus)
+            .map((s) => ({ room: "", winner: s.name, loser: s.versus, films: s.score, stamp: s.stamp })),
     }),
+    // Mirrors the host's contract: it answers with the room you actually got,
+    // which is not necessarily the one you suggested (it joins an existing
+    // challenge from that person rather than opening a second room).
     teamNerdleInvite: (args: unknown[]) => ({
         success: true,
+        room: args[1] as string,
+        seat: 1,
         message: `Invited ${args[0]} to room ${args[1]}.`,
     }),
     teamLoadWordBoard: () => ({ success: true, board: [] }),
     teamPostWordResult: () => ({ success: true, message: "Result saved." }),
+
+    // The arcade rack's cross-game board. A fixture so the hub shows what a
+    // populated rack looks like; posts are accepted and dropped (a demo
+    // shouldn't imply it wrote to the studio NAS).
+    teamArcadePost: () => ok(),
+    teamArcadeScores: () => ({
+        success: true,
+        me: "antonio",
+        scores: DEMO_ARCADE_SCORES,
+    }),
+
+    // Poster puzzle. The board gets a small fixture rather than an empty array
+    // so the demo actually shows what the leaderboard looks like -- guesses AND
+    // hints, which is the whole point of this game's scoring. Progress is not
+    // stored (a reload starts today's puzzle fresh), same as the battle rooms
+    // above: right behaviour for a demo.
+    posterGameLoadState: () => "",
+    posterGameSaveState: () => ok(),
+    teamPostPosterResult: () => ({ success: true, message: "Result saved." }),
+    teamLoadPosterBoard: () => ({
+        success: true,
+        entries: [
+            { day: "demo", member: "jacqui", guesses: 2, hints: 0, solved: true, streak: 5 },
+            { day: "demo", member: "antonio", guesses: 4, hints: 1, solved: true, streak: 3 },
+            { day: "demo", member: "turk", guesses: 0, hints: 3, solved: false, streak: 0 },
+        ],
+    }),
 
     // Battle sync -- a REAL in-memory store, keyed by room, holding the same
     // JSON strings the host would.

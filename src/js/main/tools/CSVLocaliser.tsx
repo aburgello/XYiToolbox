@@ -154,6 +154,261 @@ interface Batch {
     // Output folder <Territory>/AE/<paddedBatch> already holds .aep(s) — the
     // batch has been localised before, so seed the button to "Done".
     done?: boolean;
+    // Every .aep filename currently in that output folder. Kept (rather than
+    // just the boolean above) so each ROW can be matched against what's
+    // actually been built — see alreadyBuiltFile(). Empty when the folder
+    // doesn't exist yet.
+    existing?: string[];
+}
+
+// Canonical form for filename matching: uppercase, alphanumerics only. Both
+// sides of every comparison below go through this, so "Batch_01"/"batch 1",
+// "1080x1920"/"1080X1920" and "Jungle-Tunnel"/"JUNGLE_TUNNEL" all line up.
+const canonName = (s: string) => (s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+// Boundary-aware containment, used for the campaign check only.
+//
+// The campaign has to be matched with token boundaries, or "HORSE" happily
+// substring-matches a file built for "HORSESHOE" and "FOH" matches "DFOH",
+// marking a row built when its deliverable doesn't exist -- exactly the silent
+// drop this feature exists to prevent. (Sizes/durations/sites don't need this;
+// they're bounded by their own x/sec/adjacent digits.)
+//
+// But the boundaries can't be required to LINE UP between the two sides. A CSV
+// campaign is written however the client wrote it ("JungleTunnel") while the
+// .aep carries whatever the master was named ("..._JUNGLE_TUNNEL_..."), so a
+// separator-preserving compare ("_JUNGLETUNNEL_" vs "_JUNGLE_TUNNEL_") matches
+// nothing -- which is what made a fully-built Croatia Batch_1 read as entirely
+// unbuilt. So: strip separators from BOTH sides, but require the occurrence to
+// begin at the start of a token and end at the end of one IN THE FILENAME.
+// "JUNGLETUNNEL" then matches "_JUNGLE_TUNNEL_" (starts after "_", ends before
+// "_") while "HORSE" still can't match inside "_HORSESHOE_".
+const tokenised = (s: string) => {
+    const up = (s || "").toUpperCase();
+    let flat = "";
+    const startsToken: boolean[] = [];
+    const endsToken: boolean[] = [];
+    let afterSep = true;
+    for (let i = 0; i < up.length; i++) {
+        const c = up.charAt(i);
+        if (c >= "A" && c <= "Z" || c >= "0" && c <= "9") {
+            flat += c;
+            startsToken.push(afterSep);
+            endsToken.push(false);
+            afterSep = false;
+        } else {
+            if (flat.length) endsToken[flat.length - 1] = true;
+            afterSep = true;
+        }
+    }
+    if (flat.length) endsToken[flat.length - 1] = true;
+    return { flat: flat, startsToken: startsToken, endsToken: endsToken };
+};
+
+type Tokenised = ReturnType<typeof tokenised>;
+
+const containsAsTokens = (hay: Tokenised, needle: string): boolean => {
+    if (!needle) return false;
+    let from = 0;
+    for (;;) {
+        const at = hay.flat.indexOf(needle, from);
+        if (at === -1) return false;
+        if (hay.startsToken[at] && hay.endsToken[at + needle.length - 1]) return true;
+        from = at + 1;
+    }
+};
+
+/**
+ * Which rows of a batch are already localised into its AE folder?
+ * Returns one entry per row: the matching .aep filename, or "".
+ *
+ * WHY THIS IS BATCH-LEVEL AND NOT PER-ROW. The first version tested each row
+ * on its own and REQUIRED the row's media-site token to appear in the
+ * filename. That found nothing at all against the real Egypt Batch_01, whose
+ * files are named `PP3_INTL_DGTL_DINTH_JUNGLETUNNEL_640x768_15sec_EG_V01.aep`
+ * -- no site token, because they were built before the Site column existed.
+ * Sites can't be a hard requirement.
+ *
+ * But sites can't just be dropped either: two rows in a batch can be identical
+ * apart from the screen (same campaign, size and duration, different site), and
+ * ignoring the site would mark BOTH built off one file. So the site is a
+ * PREFERENCE, resolved by claiming files in two passes:
+ *   1. rows carrying a site claim a core-matching file that also names that
+ *      site (the modern, site-stamped filenames);
+ *   2. remaining rows claim any core-matching file still unclaimed.
+ * Each file can only be claimed ONCE, which is what keeps the two-sites/one-file
+ * case honest: the site-stamped row wins it in pass 1, the other row correctly
+ * comes back unbuilt.
+ *
+ * "Core" = campaign + size + duration.
+ *
+ * ARTWORK WAS DROPPED FROM THE CORE (studio instruction: "match by size and
+ * campaign and duration"). It was the wrong kind of check: a Specs PDF is one
+ * campaign's batch, so the artwork column is effectively constant down it and
+ * discriminates nothing between rows -- but reshapeSpecs DEFAULTS it to "DOOH"
+ * whenever the PDF cell doesn't parse, so a batch actually built as DINTH/DFOH
+ * had every row read as unbuilt. Cost of a false "unbuilt" is a re-run; cost of
+ * requiring a field that can silently default is the whole feature not working,
+ * which is what was reported.
+ *
+ * WHY THIS MATCHES ON TOKENS rather than rebuilding the expected filename: the
+ * generated name is
+ *   <FilmTitle>_<INTL|DOM>_DGTL_<Artwork>_<CAMPAIGN>[_SITE]_<WxH>_<dur>sec_<CC>_V01.aep
+ * and its first two tokens come from whichever MASTER csvLocaliserRun matches
+ * at run time (localise.ts, scanMastersForBestMatch) — the panel can't know
+ * them without doing the master scan itself. What the ROW does determine is
+ * artwork, campaign, size and duration, and that combination is exactly what
+ * makes one deliverable different from another within a batch. So: require all
+ * four, as canonical substrings.
+ *
+ * SITE is required too WHEN THE ROW HAS ONE, because two rows in a batch can be
+ * identical apart from the media site (same size, same duration, different
+ * screen) and would otherwise collapse onto one file.
+ *
+ * DELIBERATELY ASYMMETRIC ON FAILURE. The site token is sanitised host-side
+ * with full accent folding (csvLocSanitiseSiteToken); this only strips to
+ * A-Z0-9, so an accented site name ("Gare de l'Est") canonicalises differently
+ * here and the row reads as NOT built. That's the safe direction: the row stays
+ * ticked, gets localised, and the host's own skipExisting check is the
+ * backstop. The reverse mistake — calling something built when it isn't —
+ * would silently drop a deliverable, which is the failure this whole feature
+ * exists to prevent.
+ */
+export function matchBuiltRows(rows: SpecRow[], existing: string[] | undefined): string[] {
+    const out = rows.map(() => "");
+    if (!existing || !existing.length) return out;
+
+    const files = existing.map((f) => ({ name: f, flat: canonName(f), tokens: tokenised(f), claimed: false }));
+
+    const coreMatches = (row: SpecRow, f: typeof files[number]): boolean => {
+        const size = canonName(row.Size);                  // 1080X1920
+        const campaign = canonName(row.Campaign);          // JUNGLETUNNEL
+        if (!size || !campaign) return false;
+        // The host appends "sec" to whatever the CSV carried, so match the
+        // number with the suffix it will have on disk.
+        const dur = canonName(row.Duration);
+        const durToken = dur ? (/SEC$/.test(dur) ? dur : dur + "SEC") : "";
+        if (f.flat.indexOf(size) === -1) return false;
+        if (durToken && f.flat.indexOf(durToken) === -1) return false;
+        if (!containsAsTokens(f.tokens, campaign)) return false;
+        return true;
+    };
+
+    const claim = (i: number, f: typeof files[number]) => {
+        f.claimed = true;
+        out[i] = f.name;
+    };
+
+    // Pass 1 -- site-stamped filenames go to the row that names that site.
+    rows.forEach((row, i) => {
+        const site = canonName(row.Site);
+        if (!site || site.length < 3) return;
+        for (const f of files) {
+            if (f.claimed) continue;
+            if (f.flat.indexOf(site) === -1) continue;
+            if (!coreMatches(row, f)) continue;
+            claim(i, f);
+            return;
+        }
+    });
+
+    // Pass 2 -- everything else takes the first unclaimed core match.
+    rows.forEach((row, i) => {
+        if (out[i]) return;
+        for (const f of files) {
+            if (f.claimed) continue;
+            if (!coreMatches(row, f)) continue;
+            claim(i, f);
+            return;
+        }
+    });
+
+    return out;
+}
+
+/**
+ * Which rows of a batch are exact duplicates of an earlier row?
+ * Returns one entry per row: the index of the first row it duplicates, or -1.
+ *
+ * WHY THIS EXISTS. A specs PDF sometimes lists the same deliverable twice (a
+ * real one: a Ukraine Batch_1 carrying 1080x1920 on two rows). Every field that
+ * decides the output filename is identical, so csvLocaliserRun would write the
+ * SAME file for both -- meaning only one file can ever exist for the pair, and
+ * matchBuiltRows' one-file-one-claim rule correctly leaves the second row
+ * ticked forever. That is right, but it looks EXACTLY like a genuinely missing
+ * deliverable, which is what prompted this tag.
+ *
+ * The key is every field the generated name is built from that the ROW itself
+ * determines -- artwork, campaign, site, size, duration. Two rows differing
+ * only by site are NOT duplicates: they produce different filenames and are the
+ * case matchBuiltRows' pass 1 exists to keep honest.
+ *
+ * Compared on the canonical form (case and separators stripped), the same
+ * spelling-tolerant comparison matchBuiltRows uses -- "Jungle Tunnel" and
+ * "JungleTunnel" on two rows is still one deliverable listed twice.
+ */
+export function duplicateRowOf(rows: SpecRow[]): number[] {
+    const firstSeen: Record<string, number> = {};
+    return rows.map((r, i) => {
+        const key = [r.Artwork, r.Campaign, r.Site || "", r.Size, r.Duration].map(canonName).join("|");
+        // A row too empty to identify (no size or no campaign) is never called a
+        // duplicate -- it hasn't parsed enough to know what it is.
+        if (!canonName(r.Size) || !canonName(r.Campaign)) return -1;
+        if (firstSeen[key] === undefined) {
+            firstSeen[key] = i;
+            return -1;
+        }
+        return firstSeen[key];
+    });
+}
+
+/**
+ * Where a batch's .aep files actually live, or "" if there's no such folder.
+ *
+ * csvLocaliserRun WRITES to <Source Folder>/AE/<paddedBatch> ("Batch_2" ->
+ * "Batch_02"), but a folder made by hand, by an older build, or by one of the
+ * other localisation tools is just as likely to be "Batch_2"/"batch 2". Looking
+ * only for the padded spelling is why a batch that was plainly already built
+ * came back with nothing existing, so every row stayed ticked. So: prefer the
+ * exact padded name, then fall back to whichever child of AE/ canonicalises to
+ * the same thing (case, separators and a leading zero all ignored).
+ */
+function resolveBatchFolder(sourceFolder: string, batch: string): string {
+    const aeDir = path.join(sourceFolder, "AE");
+    const exact = path.join(aeDir, padBatch(batch));
+    try {
+        if (fs.readdirSync(exact)) return exact;
+    } catch (e) {
+        // not there under that spelling — fall through to the loose match
+    }
+    // "Batch_2"/"batch 02"/"BATCH2" all reduce to "BATCH2".
+    const loose = (s: string) => canonName(s).replace(/0+(\d)$/, "$1");
+    const want = loose(batch);
+    try {
+        for (const child of fs.readdirSync(aeDir)) {
+            if (loose(child) !== want) continue;
+            try {
+                fs.readdirSync(path.join(aeDir, child));
+                return path.join(aeDir, child);
+            } catch (e) {
+                // a FILE whose name happens to match — keep looking
+            }
+        }
+    } catch (e) {
+        // no AE folder at all
+    }
+    return "";
+}
+
+/** The .aep files sitting in a batch's output folder right now. */
+function readExistingAeps(sourceFolder: string, batch: string): string[] {
+    const dir = resolveBatchFolder(sourceFolder, batch);
+    if (!dir) return []; // no output folder yet — a brand-new batch
+    try {
+        return fs.readdirSync(dir).filter((f: string) => /\.aep$/i.test(f));
+    } catch (e) {
+        return [];
+    }
 }
 
 interface TerritoryScan {
@@ -218,17 +473,24 @@ const CSVLocaliserTool = () => {
     // effectively no-ops (MC It! re-matches already-localised footage by
     // design), which is easy to misread as "the inline pass didn't work".
     const [mcItInlineDone, setMcItInlineDone] = useState<Record<string, boolean>>({});
-    // Collapsed batch sections, keyed by batchKey. Stores the CLOSED ones, so
-    // the default (absent from the set) stays open -- a territory that only
-    // has one batch behaves exactly as it did before this was added.
-    const [collapsedBatches, setCollapsedBatches] = useState<Set<string>>(new Set());
+    // Batch sections, keyed by batchKey. Stores the OPEN ones, so everything
+    // starts COLLAPSED -- a territory is often several batches deep and having
+    // every row table expanded at once made it hard to tell which batch you
+    // were actually editing. The open one is highlighted (.is-open) for the
+    // same reason. Not an accordion: opening a second batch doesn't close the
+    // first, since comparing two batches' rows is a real thing to want.
+    const [expandedBatches, setExpandedBatches] = useState<Set<string>>(new Set());
     const toggleBatchCollapsed = (key: string) =>
-        setCollapsedBatches((s) => {
+        setExpandedBatches((s) => {
             const next = new Set(s);
             if (next.has(key)) next.delete(key);
             else next.add(key);
             return next;
         });
+    // Open a batch without toggling -- used when a run starts, so its result
+    // lines aren't written into a section the user can't see.
+    const openBatch = (key: string) =>
+        setExpandedBatches((s) => (s.has(key) ? s : new Set(s).add(key)));
     const [busy, setBusy] = useState(false);
     const [progress, setProgress] = useState<string | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
@@ -535,21 +797,19 @@ const CSVLocaliserTool = () => {
                 const batches: Batch[] = [];
                 for (const pdfName of pdfs.sort()) {
                     const batch = batchNameFromFilename(pdfName);
-                    // Already localised? Check <Territory>/AE/<paddedBatch> for .aep output.
-                    let done = false;
-                    try {
-                        const outDir = path.join(sourceFolder, "AE", padBatch(batch));
-                        done = fs.readdirSync(outDir).some((f: string) => /\.aep$/i.test(f));
-                    } catch (e) {
-                        /* no output folder yet */
-                    }
+                    // What's already in <Territory>/AE/<paddedBatch>. The whole
+                    // list, not just "is it empty": rows are matched against it
+                    // below so a batch that has GAINED sizes since it was last
+                    // localised shows only the new ones ticked.
+                    const existing = readExistingAeps(sourceFolder, batch);
+                    const done = existing.length > 0;
                     try {
                         const buf = fs.readFileSync(path.join(specsDir, pdfName));
                         const raw = await parsePdfDeliverySpecs(new Uint8Array(buf));
                         const rows = raw ? reshapeSpecs(raw, territory) : [];
-                        batches.push({ pdfName, batch, rows, done, error: rows.length ? undefined : "No spec rows found." });
+                        batches.push({ pdfName, batch, rows, done, existing, error: rows.length ? undefined : "No spec rows found." });
                     } catch (e: any) {
-                        batches.push({ pdfName, batch, rows: [], done, error: e?.message || "Couldn't read PDF." });
+                        batches.push({ pdfName, batch, rows: [], done, existing, error: e?.message || "Couldn't read PDF." });
                     }
                 }
 
@@ -561,12 +821,25 @@ const CSVLocaliserTool = () => {
             // Seed run-state: any batch whose output folder already holds .aep
             // files shows "Done · Re-run" straight away.
             const seed: Record<string, "done"> = {};
+            // ...and seed the row exclusions: a row whose deliverable is
+            // already sitting in the AE folder starts UNTICKED, so hitting
+            // Localise on a batch that has gained sizes builds only the new
+            // ones instead of re-running the whole batch. Nothing is disabled
+            // -- ticking one back on re-localises it, same as always.
+            const exclSeed: Record<string, Set<number>> = {};
             result.forEach((t) =>
                 t.batches.forEach((b) => {
-                    if (b.done) seed[batchKey(t.territory, b.pdfName)] = "done";
+                    const key = batchKey(t.territory, b.pdfName);
+                    if (b.done) seed[key] = "done";
+                    const built = new Set<number>();
+                    matchBuiltRows(b.rows, b.existing).forEach((f, i) => {
+                        if (f) built.add(i);
+                    });
+                    if (built.size) exclSeed[key] = built;
                 })
             );
             setBatchStatus(seed);
+            setExcludedRows(exclSeed);
             const withRows = result.filter((t) => t.rowCount > 0);
             const rowTotal = withRows.reduce((n, t) => n + t.rowCount, 0);
             setNotice(
@@ -580,6 +853,42 @@ const CSVLocaliserTool = () => {
             setBusy(false);
             setProgress(null);
         }
+    };
+
+    // Re-read one batch's output folder and re-derive which rows are built.
+    // Called after a run so the freshly-written rows untick themselves; also
+    // wired to the per-batch "Re-check" button for when files were added or
+    // deleted in Finder while the panel sat open.
+    //
+    // Manual ticks are NOT preserved: this deliberately re-seeds the batch's
+    // exclusions from what's on disk, because that's what the button (and a
+    // just-finished run) is being asked to report. Any row the user had
+    // unticked by hand that ISN'T built comes back ticked -- surprising once,
+    // versus silently hiding a deliverable that is genuinely missing.
+    const refreshBatchBuilt = (t: TerritoryScan, b: Batch) => {
+        const key = batchKey(t.territory, b.pdfName);
+        const existing = readExistingAeps(t.sourceFolder, b.batch);
+        setScan((prev) =>
+            prev
+                ? prev.map((ts) =>
+                      ts.territory !== t.territory
+                          ? ts
+                          : {
+                                ...ts,
+                                batches: ts.batches.map((bb) =>
+                                    bb.pdfName !== b.pdfName ? bb : { ...bb, existing, done: existing.length > 0 }
+                                ),
+                            }
+                  )
+                : prev
+        );
+        const built = new Set<number>();
+        // Match on the EFFECTIVE rows (PDF parse + any manual cell edits), the
+        // same rows a run would use.
+        matchBuiltRows(b.rows.map((r, i) => effectiveRow(key, i, r)), existing).forEach((f, i) => {
+            if (f) built.add(i);
+        });
+        setExcludedRows((prev) => ({ ...prev, [key]: built }));
     };
 
     // ── run the localiser for ONE batch (one PDF) ─────────────────────────────
@@ -602,6 +911,9 @@ const CSVLocaliserTool = () => {
             return;
         }
         setBatchStatus((s) => ({ ...s, [key]: "running" }));
+        // Batches start collapsed, so make sure the one being run is showing --
+        // its per-row result lines render inside this section.
+        openBatch(key);
         setBusy(true);
         try {
             const { buildLocaliserCsv } = await import("../lib/pdfSpecs");
@@ -616,6 +928,10 @@ const CSVLocaliserTool = () => {
             // its normal label and stays the right next step.
             if ((res as { mcItRan?: boolean }).mcItRan) setMcItInlineDone((s) => ({ ...s, [key]: true }));
             setBatchStatus((s) => ({ ...s, [key]: res.success && problems === 0 ? "done" : "failed" }));
+            // Re-read the output folder so the rows just written now show as
+            // built (and untick themselves). Without this the batch would keep
+            // offering to rebuild what it just built until the next full scan.
+            if (res.success) refreshBatchBuilt(t, b);
             setNotice(res.success ? `${t.territory} · ${b.batch}: ${res.message || "run finished."}` : res.error || "Something went wrong.");
             // Inline strip above stays; also pop the shared results modal.
             if (res.success && rows.length) showLocGenReport(csvResultToLocGenReport(res as any, `CSV Localiser · ${t.territory} · ${b.batch}`));
@@ -634,7 +950,7 @@ const CSVLocaliserTool = () => {
         setNotice(null);
         setBusy(true);
         try {
-            const aepDir = path.join(t.sourceFolder, "AE", padBatch(b.batch));
+            const aepDir = resolveBatchFolder(t.sourceFolder, b.batch) || path.join(t.sourceFolder, "AE", padBatch(b.batch));
             const res = await evalTS("mcIt", aepDir, "", true);
             if (res === undefined) throw new Error("no bridge");
             if (res.success) showMcItReport(res as unknown as McReport);
@@ -798,9 +1114,25 @@ const CSVLocaliserTool = () => {
                                                 const canRun = b.rows.length > 0;
                                                 const incl = includedCount(key, b.rows.length);
                                                 const someExcluded = incl < b.rows.length;
-                                                const batchOpen = !collapsedBatches.has(key);
+                                                // Which rows already exist in the AE folder. Computed
+                                                // per render (a plain substring scan over a handful of
+                                                // filenames) rather than cached -- `existing` only
+                                                // changes on scan/run/Re-check, and this keeps one
+                                                // source of truth for the row tint, the header count
+                                                // and the tooltips.
+                                                const effRows = b.rows.map((r, i) => effectiveRow(key, i, r));
+                                                const builtFor = matchBuiltRows(effRows, b.existing);
+                                                const builtCount = builtFor.filter(Boolean).length;
+                                                // Rows the PDF lists twice -- flagged because they can
+                                                // never read as built (one filename, one file) and would
+                                                // otherwise look like a missing deliverable. Same
+                                                // effective rows as the match above, so correcting a
+                                                // mis-parsed size clears the tag immediately.
+                                                const dupOf = duplicateRowOf(effRows);
+                                                const dupCount = dupOf.filter((d) => d >= 0).length;
+                                                const batchOpen = expandedBatches.has(key);
                                                 return (
-                                                    <div key={b.pdfName} className={"specs-batch" + (batchOpen ? "" : " is-collapsed")}>
+                                                    <div key={b.pdfName} className={"specs-batch" + (batchOpen ? " is-open" : " is-collapsed")}>
                                                         <div className="specs-batch-head">
                                                             {/* Only the label area toggles -- the action buttons to the
                                                                 right are siblings, not children, so clicking Localise or
@@ -812,13 +1144,29 @@ const CSVLocaliserTool = () => {
                                                                 aria-expanded={batchOpen}
                                                                 title={batchOpen ? "Collapse this batch" : "Expand this batch"}
                                                             >
-                                                                {batchOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                                                                <FileText size={12} />
+                                                                {batchOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                                                <FileText size={13} />
                                                                 <span className="specs-batch-name">{b.pdfName}</span>
                                                                 <span className="specs-batch-tag">{b.batch}</span>
                                                                 {b.error ? <span className="specs-batch-err">{b.error}</span> : (
                                                                     <span className={"specs-batch-ok" + (someExcluded ? " specs-batch-ok--filtered" : "")}>
                                                                         {someExcluded ? `${incl} of ${b.rows.length} rows` : `${b.rows.length} rows`}
+                                                                    </span>
+                                                                )}
+                                                                {/* The headline for a batch that has gained sizes:
+                                                                    how many are actually new, without expanding it. */}
+                                                                {builtCount > 0 && (
+                                                                    <span className="specs-batch-built">
+                                                                        {builtCount === b.rows.length
+                                                                            ? "all built"
+                                                                            : `${b.rows.length - builtCount} new · ${builtCount} built`}
+                                                                    </span>
+                                                                )}
+                                                                {/* Says why a collapsed batch's "N new" is bigger than
+                                                                    the number of deliverables actually outstanding. */}
+                                                                {dupCount > 0 && (
+                                                                    <span className="specs-batch-dup">
+                                                                        {dupCount} dup{dupCount === 1 ? "" : "s"}
                                                                     </span>
                                                                 )}
                                                             </button>
@@ -830,17 +1178,30 @@ const CSVLocaliserTool = () => {
                                                                         onClick={() => runBatch(t, b)}
                                                                     >
                                                                         {st === "running" ? (
-                                                                            <><RefreshCw size={12} className="spin" /> Running…</>
+                                                                            <><RefreshCw size={13} className="spin" /> Running…</>
                                                                         ) : st === "done" ? (
-                                                                            <><Check size={12} /> Done · Re-run</>
+                                                                            <><Check size={13} /> Done · Re-run</>
                                                                         ) : st === "failed" ? (
-                                                                            <><PlayCircle size={12} /> Retry</>
+                                                                            <><PlayCircle size={13} /> Retry</>
                                                                         ) : someExcluded ? (
-                                                                            <><PlayCircle size={12} /> Localise {incl} row{incl === 1 ? "" : "s"}</>
+                                                                            <><PlayCircle size={13} /> Localise {incl} row{incl === 1 ? "" : "s"}</>
                                                                         ) : (
-                                                                            <><PlayCircle size={12} /> Localise batch</>
+                                                                            <><PlayCircle size={13} /> Localise batch</>
                                                                         )}
                                                                     </button>
+                                                                    {/* Re-read the AE folder without a full re-scan --
+                                                                        for when files were added/removed in Finder
+                                                                        while the panel sat open. */}
+                                                                    <Tooltip text={`Re-check AE/${padBatch(b.batch)} for files that already exist`}>
+                                                                        <button
+                                                                            className="specs-batch-run specs-batch-recheck"
+                                                                            disabled={busy}
+                                                                            onClick={() => refreshBatchBuilt(t, b)}
+                                                                            aria-label="Re-check which rows are already built"
+                                                                        >
+                                                                            <RotateCcw size={13} />
+                                                                        </button>
+                                                                    </Tooltip>
                                                                     {/* Enabled once the batch's AE output exists (pre-scan
                                                                         detection or a completed run this session). */}
                                                                     <Tooltip
@@ -855,7 +1216,7 @@ const CSVLocaliserTool = () => {
                                                                             disabled={busy || (!b.done && st !== "done")}
                                                                             onClick={() => runBatchMcIt(t, b)}
                                                                         >
-                                                                            <ImageIcon size={12} /> {mcItInlineDone[key] ? "Re-run MC It!" : "MC It!"}
+                                                                            <ImageIcon size={13} /> {mcItInlineDone[key] ? "Re-run MC It!" : "MC It!"}
                                                                         </button>
                                                                     </Tooltip>
                                                                 </>
@@ -886,10 +1247,28 @@ const CSVLocaliserTool = () => {
                                                                         const excluded = isRowExcluded(key, i);
                                                                         const eff = effectiveRow(key, i, r);
                                                                         const edited = isRowEdited(key, i);
+                                                                        // Match on the EFFECTIVE row: correcting a
+                                                                        // mis-parsed size in place should immediately
+                                                                        // re-answer "is this one already built?".
+                                                                        const built = builtFor[i];
+                                                                        const dup = dupOf[i];
                                                                         return (
-                                                                            <tr key={i} className={(excluded ? "specs-row--excluded" : "") + (edited ? " specs-row--edited" : "")}>
+                                                                            <tr
+                                                                                key={i}
+                                                                                className={(excluded ? "specs-row--excluded" : "") + (edited ? " specs-row--edited" : "") + (built ? " specs-row--built" : "") + (dup >= 0 ? " specs-row--dup" : "")}
+                                                                            >
                                                                                 <td className="specs-row-check-col">
-                                                                                    <Tooltip text={excluded ? "Excluded — click to include" : "Included — click to exclude (e.g. an on-hold row)"}>
+                                                                                    <Tooltip
+                                                                                        text={
+                                                                                            built
+                                                                                                ? `Already in AE/${padBatch(b.batch)} as ${built} — unticked so it won't be rebuilt. Tick it to localise it again.`
+                                                                                                : dup >= 0
+                                                                                                ? `Duplicate of row ${dup + 1} — the specs PDF lists this deliverable twice. Both rows produce the same filename, so this one can never read as built. Leave it unticked unless row ${dup + 1} is wrong.`
+                                                                                                : excluded
+                                                                                                ? "Excluded — click to include"
+                                                                                                : "Included — click to exclude (e.g. an on-hold row)"
+                                                                                        }
+                                                                                    >
                                                                                         <input
                                                                                             type="checkbox"
                                                                                             className="specs-row-check"
@@ -950,6 +1329,17 @@ const CSVLocaliserTool = () => {
                                                                                         onChange={(e) => editRowField(key, i, "Size", e.target.value)}
                                                                                         aria-label={`Row ${i + 1} size`}
                                                                                     />
+                                                                                    {/* Sits next to the size because size is
+                                                                                        what's duplicated in practice, and it's
+                                                                                        where the eye already is when the row
+                                                                                        looks wrong. */}
+                                                                                    {dup >= 0 && (
+                                                                                        <Tooltip
+                                                                                            text={`The specs PDF lists this deliverable twice — same artwork, campaign, site, size and duration as row ${dup + 1}. Both rows would build the same file, so only one can exist and this row will always read as unbuilt.`}
+                                                                                        >
+                                                                                            <span className="specs-row-dup">dup of {dup + 1}</span>
+                                                                                        </Tooltip>
+                                                                                    )}
                                                                                 </td>
                                                                                 <td className="specs-cell-edit">
                                                                                     <input

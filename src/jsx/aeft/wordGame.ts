@@ -1,5 +1,10 @@
-// Local (per-machine) state for the daily word puzzle -- see
-// src/js/main/arcade/DailyWord.tsx for the game itself.
+// Local (per-machine) state for the arcade's DAILY puzzles -- the word game
+// (src/js/main/arcade/DailyWord.tsx) and the poster game
+// (src/js/main/arcade/PosterDaily.tsx).
+//
+// One file, one key each. They share this file rather than getting one module
+// apiece because the whole job is "read a string, write a string": two copies
+// of that would be two places to drift.
 //
 // Only TODAY'S progress and a small streak record live here; the puzzle word
 // is not stored, because it isn't secret and isn't per-machine -- both the
@@ -43,6 +48,32 @@ export const wordGameLoadState = (): string => {
 export const wordGameSaveState = (stateJson: string): Result => {
   try {
     app.settings.saveSetting(WG_SETTINGS_SECTION, WG_STATE_KEY, stateJson);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// --- POSTER, the daily film-poster puzzle ------------------------------------
+// Same contract as above, its own key: today's guesses, hints bought, and the
+// streak. The film itself isn't stored for the same reason the word isn't --
+// every machine derives it from the date (PosterDaily.tsx's `posterForDay`).
+const PG_STATE_KEY = "PosterGameState";
+
+export const posterGameLoadState = (): string => {
+  try {
+    if (app.settings.haveSetting(WG_SETTINGS_SECTION, PG_STATE_KEY)) {
+      return app.settings.getSetting(WG_SETTINGS_SECTION, PG_STATE_KEY);
+    }
+  } catch (e) {
+    /* unreadable settings -- a fresh game is the right fallback */
+  }
+  return "";
+};
+
+export const posterGameSaveState = (stateJson: string): Result => {
+  try {
+    app.settings.saveSetting(WG_SETTINGS_SECTION, PG_STATE_KEY, stateJson);
     return { success: true };
   } catch (e) {
     return { success: false, error: e.toString() };

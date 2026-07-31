@@ -110,8 +110,8 @@
     gap: 6px;
     width: 100%;
     box-sizing: border-box;
-    background: #262626;
-    border: 1px solid #444;
+    background: var(--surface-1, #262626);
+    border: 1px solid var(--surface-border, #444);
     color: #ddd;
     border-radius: 6px;
     padding: 6px 8px;
@@ -151,7 +151,7 @@
     cursor: pointer;
     padding: 8px 8px 4px;
     margin-top: 8px;
-    border-top: 1px solid #333;
+    border-top: 1px solid var(--surface-edge, #333);
 
     &:hover { color: #ddd; }
 }

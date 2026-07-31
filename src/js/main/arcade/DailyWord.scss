@@ -20,6 +20,19 @@
     gap: 5px;
 }
 
+// Rejected guess (not a real word): the row shakes and keeps its letters, so
+// it reads as "fix this", not "that cost you a turn".
+.dw-row--reject { animation: dw-shake 0.42s ease; }
+
+@keyframes dw-shake {
+    0%, 100% { transform: translateX(0); }
+    15% { transform: translateX(-6px); }
+    30% { transform: translateX(6px); }
+    45% { transform: translateX(-4px); }
+    60% { transform: translateX(4px); }
+    80% { transform: translateX(-2px); }
+}
+
 .dw-tile {
     display: flex;
     align-items: center;

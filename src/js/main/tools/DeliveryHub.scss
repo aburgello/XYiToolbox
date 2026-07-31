@@ -26,7 +26,7 @@
         flex: 1;
         min-height: 0;
         margin-top: 8px;
-        border: 1px solid #3a3a3a;
+        border: 1px solid var(--surface-edge, #3a3a3a);
         border-radius: 8px;
         overflow: hidden;
     }
@@ -87,7 +87,7 @@
         align-items: center;
         gap: 6px;
         padding: 7px 14px;
-        border-bottom: 1px solid #272727;
+        border-bottom: 1px solid var(--surface-divider, #272727);
         background: rgba(0,0,0,0.18);
         flex-shrink: 0;
     }
@@ -100,7 +100,7 @@
         align-items: center;
         gap: 6px;
         padding: 5px 14px;
-        border-bottom: 1px solid #272727;
+        border-bottom: 1px solid var(--surface-divider, #272727);
         background: rgba(0,0,0,0.06);
         flex-shrink: 0;
     }
@@ -229,15 +229,15 @@
         width: 28px;
         height: 28px;
         flex-shrink: 0;
-        background: #262626;
-        border: 1px solid #3a3a3a;
+        background: var(--surface-1, #262626);
+        border: 1px solid var(--surface-edge, #3a3a3a);
         border-radius: 4px;
         color: #aaa;
         cursor: pointer;
         transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 
         &:hover:not(:disabled) {
-            background: #303030;
+            background: var(--surface-2, #303030);
             border-color: var(--cat-border, #555);
             color: #fff;
         }
@@ -253,7 +253,7 @@
     .dh-bar-divider {
         width: 1px;
         height: 20px;
-        background: #333;
+        background: var(--surface-2, #333);
         flex-shrink: 0;
     }
 
@@ -266,8 +266,8 @@
         width: 40px;
         height: 28px;
         box-sizing: border-box;
-        background: #222;
-        border: 1px solid #383838;
+        background: var(--surface-0, #222);
+        border: 1px solid var(--surface-edge, #383838);
         border-radius: 4px;
         color: #ddd;
         font-size: 11px;
@@ -288,8 +288,8 @@
         width: 36px;
         height: 28px;
         box-sizing: border-box;
-        background: #222;
-        border: 1px solid #2e2e2e;
+        background: var(--surface-0, #222);
+        border: 1px solid var(--surface-divider, #2e2e2e);
         border-radius: 4px;
         color: #888;
         font-size: 11px;
@@ -302,13 +302,13 @@
 
         &.dh-fps-trigger--set {
             color: var(--cat-icon, #fdba74);
-            border-color: #3a3a3a;
+            border-color: var(--surface-edge, #3a3a3a);
         }
     }
 
     // Mbps cap is optional — dimmer placeholder, lighter border
     .dh-spec-input--secondary {
-        border-color: #2e2e2e;
+        border-color: var(--surface-divider, #2e2e2e);
         color: #aaa;
 
         &::placeholder { color: #444; }
@@ -350,8 +350,8 @@
         gap: 8px;
         padding: 5px 8px;
         border-radius: 4px;
-        background: #232323;
-        border: 1px solid #2c2c2c;
+        background: var(--surface-0, #232323);
+        border: 1px solid var(--surface-divider, #2c2c2c);
         transition: border-color 0.15s ease;
         margin-bottom: 6px;
 
@@ -422,8 +422,8 @@
 
         input {
             width: 40px;
-            background: #1a1a1a;
-            border: 1px solid #363636;
+            background: var(--surface-0, #1a1a1a);
+            border: 1px solid var(--surface-edge, #363636);
             border-radius: 3px;
             color: #ddd;
             font-size: 11px;
@@ -444,7 +444,7 @@
         color: #444;
 
         input {
-            border-color: #2c2c2c;
+            border-color: var(--surface-divider, #2c2c2c);
             color: #888;
         }
     }
@@ -502,7 +502,7 @@
         display: flex;
         flex-direction: column;
         padding: 6px 14px 2px;
-        border-top: 1px solid #272727;
+        border-top: 1px solid var(--surface-divider, #272727);
         flex-shrink: 0;
         max-height: 200px;
         overflow-y: auto;
@@ -564,14 +564,14 @@
         font-size: 9px;
         color: #666;
         background: rgba(255,255,255,0.04);
-        border: 1px solid #2c2c2c;
+        border: 1px solid var(--surface-divider, #2c2c2c);
         border-radius: 3px;
         padding: 0 5px;
     }
 
     .dh-preview-tag--native {
         color: #555;
-        border-color: #262626;
+        border-color: var(--surface-divider, #262626);
         background: transparent;
     }
 
@@ -646,8 +646,8 @@
         // A short panel just gives a shorter box, which still scrolls.
         max-height: 60vh;
         overflow-y: auto;
-        background: #191919;
-        border: 1px solid #2c2c2c;
+        background: var(--surface-0, #191919);
+        border: 1px solid var(--surface-divider, #2c2c2c);
         border-radius: 4px;
         padding: 9px 11px;
         font-size: 11px;
@@ -674,8 +674,8 @@
         display: flex;
         align-items: center;
         gap: 6px;
-        background: #2a2a2a;
-        border: 1px solid #444;
+        background: var(--surface-1, #2a2a2a);
+        border: 1px solid var(--surface-border, #444);
         border-radius: 4px;
         padding: 6px 8px;
         font-size: 11px;
@@ -717,8 +717,8 @@
 
         button {
             flex: 1;
-            background: #2a2a2a;
-            border: 1px solid #444;
+            background: var(--surface-1, #2a2a2a);
+            border: 1px solid var(--surface-border, #444);
             color: #ddd;
             border-radius: 4px;
             padding: 5px 0;
@@ -737,7 +737,7 @@
         display: block;
         width: 100%;
         background: none;
-        border: 1px dashed #444;
+        border: 1px dashed var(--surface-border, #444);
         color: #999;
         border-radius: 4px;
         padding: 4px 0;
@@ -758,8 +758,8 @@
 
         input {
             flex: 1;
-            background: #1e1e1e;
-            border: 1px solid #444;
+            background: var(--ov-bg, #1e1e1e);
+            border: 1px solid var(--surface-border, #444);
             border-radius: 4px;
             color: #ddd;
             font-size: 11px;

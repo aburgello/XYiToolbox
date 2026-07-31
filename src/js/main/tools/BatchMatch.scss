@@ -11,7 +11,7 @@
 .batch-match {
 
     .bm-step {
-        border: 1px solid #2c2c2c;
+        border: 1px solid var(--surface-divider, #2c2c2c);
         border-radius: 8px;
         padding: 10px 12px 12px;
         margin-bottom: 12px;
@@ -122,8 +122,8 @@
         font-size: 11px;
         font-weight: 600;
         color: #8a8a8a;
-        background: #232323;
-        border: 1px solid #333;
+        background: var(--surface-0, #232323);
+        border: 1px solid var(--surface-edge, #333);
         border-radius: 5px;
         cursor: pointer;
 
@@ -155,12 +155,12 @@
             text-transform: uppercase;
             color: #6f6f6f;
             padding: 4px 5px;
-            border-bottom: 1px solid #2c2c2c;
+            border-bottom: 1px solid var(--surface-divider, #2c2c2c);
         }
 
         td {
             padding: 4px 5px;
-            border-bottom: 1px solid #212121;
+            border-bottom: 1px solid var(--surface-divider, #212121);
             color: #c4c4c4;
             vertical-align: top;
         }
@@ -187,7 +187,7 @@
         padding: 9px 10px;
         font-size: 11px;
         color: #7e7e7e;
-        border: 1px dashed #2f2f2f;
+        border: 1px dashed var(--surface-divider, #2f2f2f);
         border-radius: 6px;
     }
 

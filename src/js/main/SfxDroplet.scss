@@ -42,7 +42,7 @@
         appearance: none;
         height: 3px;
         border-radius: 2px;
-        background: #3a3a3a;
+        background: var(--surface-2, #3a3a3a);
         cursor: pointer;
 
         &:disabled {
@@ -65,7 +65,7 @@
         }
 
         &:disabled::-webkit-slider-thumb {
-            background: #555;
+            background: var(--surface-2, #555);
             transform: none;
         }
     }

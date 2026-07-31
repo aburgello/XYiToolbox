@@ -33,8 +33,8 @@
     display: flex;
     align-items: center;
     gap: 7px;
-    background: #1e1e1e;
-    border: 1px solid #383838;
+    background: var(--ov-bg, #1e1e1e);
+    border: 1px solid var(--surface-edge, #383838);
     border-radius: 18px;
     padding: 7px 14px 7px 10px;
     color: #ddd;
@@ -78,4 +78,42 @@
 .theme-swatch-decorated {
     color: var(--swatch-accent, #4a9eff);
     opacity: 0.85;
+}
+
+// --- Surface / border-colour modifiers ---------------------------------
+// These compose with the theme rather than being themes themselves (see
+// themes.ts), so they sit below the swatch grid under their own rules
+// rather than as more swatches in it.
+.theme-options {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--surface-divider, #2f2f2f);
+
+    .hint { margin: 5px 0 0; }
+}
+
+.theme-option-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+
+    &:first-child { margin-top: 0; }
+}
+
+.theme-option-label {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #777;
+    min-width: 92px;
+    flex-shrink: 0;
+}
+
+// Only shown when "Theme colour" is picked with no theme active -- the
+// combination is valid but silently falls back to the per-group palette,
+// which would otherwise look like the toggle did nothing.
+.theme-option-warn {
+    color: #e0b34a;
 }

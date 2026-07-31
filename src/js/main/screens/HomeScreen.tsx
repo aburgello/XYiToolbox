@@ -22,7 +22,7 @@ import { TOOLS, CATEGORIES, categoryStyleVars, prefetchTool } from "../toolRegis
 import { iconWiggle, cardLift, categoryLift } from "../animations";
 import { useFavorites, favoriteKey } from "../hooks/useFavorites";
 import { useCustomTools } from "../hooks/useCustomTools";
-import { TOOLBOX_VERSION } from "../TeamDroplet";
+import { TOOLBOX_VERSION, formatVersion } from "../TeamDroplet";
 import { rankedFuzzySearch, type FuzzyRecord } from "../lib/fuzzySearch";
 import { useTheme } from "../hooks/useTheme";
 import { THEMES } from "../themes";
@@ -137,7 +137,16 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
     // tool-name/action search below. Exact match, not a substring match,
     // so it can't accidentally trigger while typing toward some real tool
     // name and won't collide with anything actually searchable.
-    const { themeId, setTheme, decoratedThemes, toggleThemeDecoration } = useTheme();
+    const {
+        themeId,
+        setTheme,
+        surface,
+        setSurface,
+        edgeMode,
+        setEdgeMode,
+        decoratedThemes,
+        toggleThemeDecoration,
+    } = useTheme();
     const isThemeEasterEgg = search.trim().toLowerCase() === "jacqui";
 
     // ONE DOOR, not one per game. There used to be a trigger word per game
@@ -278,7 +287,7 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
                             whileTap={{ scale: 0.88 }}
                             transition={{ duration: 0.6, ease: "easeInOut" }}
                         />
-                        <p className="version">Toolbox {TOOLBOX_VERSION}</p>
+                        <p className="version">v{formatVersion(TOOLBOX_VERSION)}</p>
                     </motion.div>
 
                     <div className="home-search">
@@ -434,6 +443,10 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
                         onPick={setTheme}
                         decoratedThemes={decoratedThemes}
                         onToggleDecoration={toggleThemeDecoration}
+                        surface={surface}
+                        onPickSurface={setSurface}
+                        edgeMode={edgeMode}
+                        onPickEdgeMode={setEdgeMode}
                     />
                                     ) : isArcade ? (
                                         <button className="arcade-launch-card" onClick={() => setArcadeOpen(true)}>

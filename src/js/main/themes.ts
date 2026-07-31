@@ -41,6 +41,80 @@ export interface Theme {
 
 export const DEFAULT_THEME_ID = "default";
 
+// -----------------------------------------------------------------------------
+// Two modifiers that sit ALONGSIDE the theme choice rather than inside it --
+// a theme still means "accent + background tint", these say how the surfaces
+// wear it. Both default to exactly today's look, so a user who never opens
+// the picker sees no change at all.
+//
+//   surface : "panel" = the lifted grey surfaces (#2a2a2a tiles/cards) that
+//                       ship today
+//             "oled"  = every SURFACE drops to true black -- Toolset tiles,
+//                       category cards, tool-page panels, inputs, rows. The
+//                       page GROUND behind them keeps the active theme's own
+//                       tint (only the Default theme, which has no tint to
+//                       keep, goes fully black) -- picking OLED shouldn't
+//                       cost you the theme you picked.
+//
+//   edge    : where a button's border colour comes from AT REST. Hover and
+//             starred are NOT affected by this and always stay on the group
+//             palette -- that's the "which section is this" cue, and it has
+//             to survive whatever the resting edge is doing.
+//               "neutral" = the plain grey edge that ships today
+//               "group"   = that group's own accent, worn at rest
+//               "theme"   = the active theme's accent, uniform across groups
+// -----------------------------------------------------------------------------
+export type Surface = "panel" | "oled";
+export type EdgeMode = "neutral" | "group" | "theme";
+
+export const DEFAULT_SURFACE: Surface = "panel";
+export const DEFAULT_EDGE_MODE: EdgeMode = "neutral";
+
+// The 6 group hues, mirrored from Toolset.tsx's PALETTE. Kept here because
+// applyTheme has to publish them as CSS vars (see PALETTE_SLOTS below);
+// Toolset.tsx still owns the literal fallback values used when nothing has
+// set those vars yet.
+const PALETTE_HUES = ["#2dd4bf", "#a78bfa", "#fb923c", "#f472b6", "#60a5fa", "#facc15"];
+// Hand-tuned hover fills over the grey tile -- NOT a formula (they were
+// picked by eye and are the shipped look), so they're reproduced verbatim
+// rather than recomputed. Only the OLED variants below are derived.
+const PALETTE_BG_PANEL = ["#20403e", "#352b4d", "#43301c", "#40263a", "#233348", "#403a1c"];
+
+export const PALETTE_SLOTS = PALETTE_HUES.length;
+
+// How strongly a resting accent edge reads. Full strength is reserved for
+// hover and starred, so a resting edge has to sit clearly below both or
+// every tile looks permanently hovered.
+const REST_EDGE_ALPHA = 0.5;
+
+// color-mix() is unavailable on this project's chrome74 build target (see
+// CLAUDE.md), so every blended shade in this app is precomputed. These are
+// computed in JS at apply time rather than by hand, since the theme-accent
+// mode can't know its hue in advance.
+function parseHex(hex: string): number[] {
+    const s = hex.replace("#", "");
+    return [parseInt(s.slice(0, 2), 16), parseInt(s.slice(2, 4), 16), parseInt(s.slice(4, 6), 16)];
+}
+
+function mixHex(hex: string, base: string, amount: number): string {
+    const a = parseHex(hex);
+    const b = parseHex(base);
+    const out = a.map((v, i) => Math.round(v * amount + b[i] * (1 - amount)));
+    return "#" + out.map((v) => v.toString(16).padStart(2, "0")).join("");
+}
+
+function rgba(hex: string, alpha: number): string {
+    const c = parseHex(hex);
+    return `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${alpha})`;
+}
+
+// A group's hover fill: the shipped hand-tuned value on the grey surface,
+// and a much lower lift on black -- a fill blended for #2a2a2a reads as a
+// lit patch floating on #000.
+function hoverBg(hex: string, slot: number, surface: Surface): string {
+    return surface === "oled" ? mixHex(hex, "#080808", 0.17) : PALETTE_BG_PANEL[slot];
+}
+
 export const THEMES: Theme[] = [
     { id: "blossom",  name: "Blossom",  accent: "#f472b6", bg: "#241a1f", motif: "stars" },
     { id: "lagoon",   name: "Lagoon",   accent: "#2dd4bf", bg: "#14201f", motif: "bubbles" },
@@ -66,17 +140,125 @@ export const THEMES: Theme[] = [
 let userThemeActive = false;
 export const hasUserTheme = (): boolean => userThemeActive;
 
-export function applyTheme(themeId: string): void {
+export function applyTheme(
+    themeId: string,
+    surface: Surface = DEFAULT_SURFACE,
+    edgeMode: EdgeMode = DEFAULT_EDGE_MODE,
+): void {
     const root = document.documentElement.style;
-    if (!themeId || themeId === DEFAULT_THEME_ID) {
-        userThemeActive = false;
+    const theme = !themeId || themeId === DEFAULT_THEME_ID ? null : THEMES.find((t) => t.id === themeId) || null;
+
+    userThemeActive = !!theme;
+    if (theme) {
+        root.setProperty("--ov-accent", theme.accent);
+        // The theme's own tint SURVIVES OLED. OLED is about the surfaces
+        // sitting on the ground, not about erasing the ground -- blacking
+        // this out too would mean picking OLED silently cancelled the theme.
+        root.setProperty("--ov-bg", theme.bg);
+    } else {
         root.removeProperty("--ov-accent");
-        root.removeProperty("--ov-bg");
-        return;
+        // No theme means no tint to preserve, so OLED goes all the way.
+        if (surface === "oled") {
+            root.setProperty("--ov-bg", "#000000");
+        } else {
+            root.removeProperty("--ov-bg");
+        }
     }
-    const theme = THEMES.find((t) => t.id === themeId);
-    if (!theme) return;
-    userThemeActive = true;
-    root.setProperty("--ov-accent", theme.accent);
-    root.setProperty("--ov-bg", theme.bg);
+
+    applySurface(root, surface);
+    applyPalette(root, surface, edgeMode, theme ? theme.accent : null);
+}
+
+// Surface tokens, read across the app's stylesheets as
+// `var(--surface-N, <the shipped grey>)`. Left UNSET on the panel surface so
+// every one of those falls through to its own literal -- nothing changes for
+// a user who never touches this.
+//
+//   --surface-0       recessed wells (inputs, code blocks, list grounds)
+//   --surface-1       the standard raised surface (tiles, cards, rows)
+//   --surface-2       the layer above that (open dropdowns, hovered rows)
+//   --surface-edge    CONTAINER edges -- panels, cards, section boxes
+//   --surface-border  ELEMENT edges -- tiles, inputs, chips
+//   --surface-divider faint internal rules between sections
+//
+// The --tile-* names are the Toolset grid's older, narrower aliases, kept
+// because that file was tokenised first; they resolve to the same values.
+//
+// **Edge weights are the load-bearing part of OLED, not an afterthought.**
+// The first cut used one flat #262626 for every edge and the studio's read
+// was "everything is washed out": once the fill difference between a card
+// and its ground is gone, the border is the ONLY thing left saying where a
+// container ends, and it has to work on a theme's tinted ground as well as
+// on black. So containers are pushed hardest (--surface-edge), elements sit
+// a step below, and only genuine internal rules stay faint. If OLED ever
+// looks flat again, raise --surface-edge before touching anything else.
+function applySurface(root: CSSStyleDeclaration, surface: Surface): void {
+    const OLED_TOKENS: { [k: string]: string } = {
+        "--surface-0": "#000000",
+        "--surface-1": "#000000",
+        // Not black: this is the layer meant to read as ABOVE --surface-1
+        // (an open dropdown, a hovered row), which needs something to
+        // separate it from the black underneath.
+        "--surface-2": "#101010",
+        "--surface-edge": "#424242",
+        "--surface-border": "#303030",
+        // Raised from #212121 after seeing it for real: the section rules
+        // were tuned before the tiles gained resting edges, and ended up the
+        // faintest thing on a screen full of loud outlines.
+        "--surface-divider": "#2a2a2a",
+        // NOT a colour -- an indirection. Elements that carry their own
+        // category vars (the home screen's four cards) resolve --cat-edge in
+        // their OWN context, so this one root token yields four different
+        // accents. Set only on OLED, so nothing changes on the panel surface.
+        "--surface-cat-edge": "var(--cat-edge)",
+        "--tile-bg": "#000000",
+        "--tile-border": "#303030",
+        "--tile-divider": "#2a2a2a",
+        // The Toolset panel is a container, so it takes the container weight.
+        "--tile-panel-border": "#424242",
+        // With no fill difference at rest, hover needs a crisp edge to read
+        // as a state change rather than just a faint glow.
+        "--tile-hover-ring": "1px",
+    };
+    Object.keys(OLED_TOKENS).forEach((k) => {
+        if (surface === "oled") {
+            root.setProperty(k, OLED_TOKENS[k]);
+        } else {
+            root.removeProperty(k);
+        }
+    });
+}
+
+// Publishes the 6 group accents as CSS vars (--pal-N-border/-bg/-glow/-edge)
+// that Toolset.tsx's per-group inline styles point at. Doing it through the
+// cascade rather than through React state is deliberate: the picker and the
+// Toolset grid are mounted on the home screen AT THE SAME TIME, so a change
+// has to reach the grid live, with no prop threading between two unrelated
+// subtrees.
+//
+// -border/-bg/-glow are the group's own hue ALWAYS -- hover and starred read
+// those, and the edge mode must not touch them. Only -edge (the resting
+// border) varies, and it's left UNSET on "neutral" so the tile falls back to
+// its plain grey border.
+function applyPalette(
+    root: CSSStyleDeclaration,
+    surface: Surface,
+    edgeMode: EdgeMode,
+    accent: string | null,
+): void {
+    for (let i = 0; i < PALETTE_SLOTS; i++) {
+        const hue = PALETTE_HUES[i];
+        root.setProperty(`--pal-${i}-border`, hue);
+        root.setProperty(`--pal-${i}-bg`, hoverBg(hue, i, surface));
+        root.setProperty(`--pal-${i}-glow`, rgba(hue, 0.35));
+
+        // "Theme" with no theme picked has no hue to borrow -- fall back to
+        // the group's own rather than inventing one.
+        const edgeHue = edgeMode === "theme" ? accent || hue : edgeMode === "group" ? hue : null;
+        if (edgeHue) {
+            root.setProperty(`--pal-${i}-edge`, rgba(edgeHue, REST_EDGE_ALPHA));
+        } else {
+            root.removeProperty(`--pal-${i}-edge`);
+        }
+    }
 }

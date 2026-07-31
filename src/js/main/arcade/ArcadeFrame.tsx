@@ -35,6 +35,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { motion } from "motion/react";
 import { X } from "lucide-react";
 import { csi } from "../../lib/utils/bolt";
+import "./arcadeFont.scss";
 import "./ArcadeFrame.scss";
 
 /**
@@ -163,7 +164,7 @@ export const ArcadeFrame = ({ title, hint, keyCodes, fluid, onClose, children }:
         >
             <div className="arcade-frame">
                 <div className="arcade-bar">
-                    <span className="arcade-title">{title}</span>
+                    <span className="arcade-title arcade-pixel">{title}</span>
                     {hint && <span className="arcade-hint">{hint}</span>}
                     <button className="arcade-close" onClick={onClose} title="Quit (Esc)">
                         <X size={16} />

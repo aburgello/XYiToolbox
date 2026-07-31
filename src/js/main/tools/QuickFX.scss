@@ -15,8 +15,8 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    background: #1e1e1e;
-    border: 1px solid #3a3a3a;
+    background: var(--ov-bg, #1e1e1e);
+    border: 1px solid var(--surface-edge, #3a3a3a);
     border-radius: 8px;
     padding: 8px 12px;
     margin-bottom: 14px;
@@ -92,8 +92,8 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    background: #2a2a2a;
-    border: 1px solid #444;
+    background: var(--surface-1, #2a2a2a);
+    border: 1px solid var(--surface-border, #444);
     color: #ddd;
     border-radius: 18px;
     padding: 7px 13px;
@@ -129,7 +129,7 @@
     gap: 8px;
     margin-bottom: 16px;
     padding-bottom: 14px;
-    border-bottom: 1px solid #2c2c2c;
+    border-bottom: 1px solid var(--surface-divider, #2c2c2c);
 }
 
 .qfx-combos-header {
@@ -151,7 +151,7 @@
     align-items: center;
     gap: 5px;
     background: none;
-    border: 1px dashed #555;
+    border: 1px dashed var(--surface-border, #555);
     color: #aaa;
     border-radius: 14px;
     padding: 5px 10px;
@@ -174,8 +174,8 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    background: #1e1e1e;
-    border: 1px solid #3a3a3a;
+    background: var(--ov-bg, #1e1e1e);
+    border: 1px solid var(--surface-edge, #3a3a3a);
     border-radius: 8px;
     padding: 6px 8px;
 
@@ -208,8 +208,8 @@
 .qfx-combo-pill {
     display: flex;
     align-items: stretch;
-    background: #2a2a2a;
-    border: 1px solid #444;
+    background: var(--surface-1, #2a2a2a);
+    border: 1px solid var(--surface-border, #444);
     border-radius: 18px;
     overflow: hidden;
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
@@ -266,7 +266,7 @@
     display: flex;
     align-items: center;
     gap: 4px;
-    background: #1e1e1e;
+    background: var(--ov-bg, #1e1e1e);
     border: 1px solid #facc15;
     border-radius: 18px;
     padding: 4px 4px 4px 10px;
@@ -291,7 +291,7 @@
     gap: 5px;
     margin-top: 14px;
     background: none;
-    border: 1px dashed #3d3d3d;
+    border: 1px dashed var(--surface-edge, #3d3d3d);
     color: #888;
     border-radius: 6px;
     padding: 5px 10px;
@@ -327,8 +327,8 @@
     width: 16px;
     height: 16px;
     padding: 0;
-    background: #3a3a3a;
-    border: 1px solid #555;
+    background: var(--surface-2, #3a3a3a);
+    border: 1px solid var(--surface-border, #555);
     border-radius: 50%;
     color: #bbb;
     cursor: pointer;
@@ -499,7 +499,7 @@
     height: 24px;
     padding: 0;
     background: none;
-    border: 1px solid #3a3a3a;
+    border: 1px solid var(--surface-edge, #3a3a3a);
     border-radius: 6px;
     color: #888;
     cursor: pointer;

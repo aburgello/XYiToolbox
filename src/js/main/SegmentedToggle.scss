@@ -10,8 +10,8 @@
     align-self: flex-start;
     padding: 2px;
     gap: 2px;
-    background: #1f1f1f;
-    border: 1px solid #3a3a3a;
+    background: var(--surface-0, #1f1f1f);
+    border: 1px solid var(--surface-edge, #3a3a3a);
     border-radius: 7px;
     margin-bottom: 10px;
 }

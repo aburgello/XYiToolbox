@@ -1,19 +1,18 @@
-// The arcade cabinet. z-index 1800 matches ArcadeFrame.scss: above toasts and
+// The arcade floor. z-index 1800 matches ArcadeFrame.scss: above toasts and
 // the command palette, since it covers the whole panel.
 //
-// THE IDEA: a cabinet, not a card grid. A lit marquee across the top, a rack of
-// machines down the left, and the selected machine's high-score table filling
-// the screen. The score table is the one loud element and everything else stays
-// quiet around it -- monospace, tabular, rank-first, champion marked. That's a
-// real artifact (an arcade high-score table) rather than decoration, and it's
-// the thing people actually open this for.
+// THE IDEA: a row of cabinets, each lit in its own colour, each showing who's
+// winning it. REPLACES a rack-and-screen layout (machine list left, selected
+// machine's score table right) that read as a picker: one game's scores visible
+// at a time, and two clicks to start anything. Here the whole card is the play
+// button and every board is on show.
 //
-// `--arc` is the selected machine's accent, set inline from MACHINES in the tsx
-// and inherited by the whole screen, so switching machines re-tints everything.
-// Each rack button also sets its own, so the rack shows three colours at once.
-// Plain rgba fallbacks throughout -- no color-mix(), per the chrome74 target.
+// `--arc` is set per CABINET (inline from MACHINES in the tsx), not once for
+// the screen -- four accents are visible at once, which is most of what makes
+// this read as an arcade rather than a list. Plain rgba fallbacks throughout,
+// no color-mix(), per the chrome74 target.
 
-// A system monospace stack: this is a scoreboard, and the tabular alignment is
+// A system monospace stack: these are scoreboards, and the tabular alignment is
 // load-bearing rather than stylistic. No webfont -- CEP can't be relied on to
 // fetch one, and the panel already ships no custom faces.
 $arc-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
@@ -23,7 +22,7 @@ $arc-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
     inset: 0;
     z-index: 1800;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
     padding: 16px;
     background: rgba(4, 7, 8, 0.9);
@@ -34,6 +33,9 @@ $arc-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 .arc-cab {
     width: 100%;
     max-width: 720px;
+    // Sits at the top on a tall panel rather than floating dead centre, but
+    // never sticks to the very edge.
+    margin: auto 0;
     border: 1px solid #223034;
     border-radius: 14px;
     background: #0a0f11;
@@ -42,8 +44,8 @@ $arc-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
 // ── marquee ─────────────────────────────────────────────────────────────────
-// The lit sign over the cabinet. Wide-tracked, centred, and glowing in the
-// selected machine's colour -- this is what replaces a title in the corner.
+// The lit sign over the room. Fixed teal now, not per-game: with four cabinets
+// on screen there's no single selected accent for it to inherit.
 .arc-marquee {
     position: relative;
     display: flex;
@@ -52,28 +54,30 @@ $arc-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
     padding: 13px 12px 12px;
     border-bottom: 1px solid #1c282b;
     background:
-        radial-gradient(120% 180% at 50% -60%, var(--arc, #2dd4bf), transparent 62%),
+        radial-gradient(120% 180% at 50% -60%, #2dd4bf, transparent 62%),
         #0b1113;
-    // Keeps the wash subtle regardless of which accent is live.
     background-blend-mode: soft-light, normal;
-    transition: background 0.35s ease;
 }
 
 .arc-marquee-name {
-    font-family: $arc-mono;
-    font-size: 15px;
-    font-weight: 700;
-    letter-spacing: 0.62em;   // wide tracking is the whole look; note the
-    text-indent: 0.62em;      // indent, or tracking pushes it off-centre
+    // Face comes from .arcade-pixel in the markup (arcadeFont.scss).
+    // SIZES ARE TUNED FOR THE PIXEL FACE, which is far wider per character and
+    // has no weights: the old 15px/0.62em tracking was set for a normal mono
+    // and overflows badly here. Weight is left alone -- synthetic bold on a
+    // pixel font just smears the grid.
+    font-size: 13px;
+    letter-spacing: 0.34em;   // still wide, but note the matching
+    text-indent: 0.34em;      // indent, or tracking pushes it off-centre
     text-transform: uppercase;
     color: #f2fbfa;
-    text-shadow: 0 0 14px var(--arc, #2dd4bf);
+    text-shadow: 0 0 14px #2dd4bf;
 }
 
-.arc-x {
+// Both marquee buttons share a shape; only their position differs.
+.arc-x,
+.arc-refresh {
     position: absolute;
     top: 50%;
-    right: 10px;
     transform: translateY(-50%);
     display: inline-flex;
     align-items: center;
@@ -87,178 +91,280 @@ $arc-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
     cursor: pointer;
     transition: color 0.15s ease, border-color 0.15s ease;
 
-    &:hover { color: #fff; border-color: var(--arc, #2dd4bf); }
+    // Explicit background, for the same reason the cabinet's hover sets one:
+    // the app's base `button:hover { background-color: #20639b }` would
+    // otherwise turn these two into blue chips.
+    &:hover {
+        color: #fff;
+        border-color: #2dd4bf;
+        background: rgba(45, 212, 191, 0.14);
+    }
 }
 
-// ── body: rack + screen ─────────────────────────────────────────────────────
-.arc-body {
+.arc-x { right: 10px; }
+.arc-refresh { right: 40px; }
+
+// ── the floor: one cabinet per game ─────────────────────────────────────────
+// ALWAYS TWO COLUMNS. This was `auto-fit, minmax(210px, 1fr)`, which reflowed
+// to three across on a wide/expanded panel and left the fourth game stranded
+// alone on its own row -- a 2x2 block of cabinets reads as a set, a 3+1 reads
+// as a mistake. `minmax(0, 1fr)` (not plain `1fr`) is what lets a track shrink
+// below its content, so a long champion name truncates instead of forcing the
+// grid wider.
+//
+// NOTE FOR A FIFTH GAME: five cabinets in two columns orphans one again. Add
+// them in pairs, or revisit this rule then -- don't quietly go back to auto-fit.
+.arc-floor {
     display: grid;
-    grid-template-columns: 186px minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    padding: 12px;
 }
 
-// Stack below the panel's usual docked width, where a fixed rack column would
-// leave the score table too narrow to read.
-@media (max-width: 560px) {
-    .arc-body { grid-template-columns: minmax(0, 1fr); }
-    .arc-rack { flex-direction: row !important; overflow-x: auto; border-right: 0 !important; border-bottom: 1px solid #1c282b; }
-    .arc-machine { flex: 1 0 auto; }
+// Very narrow panels: keep the two columns (that's the point above) but stop
+// them wasting width on padding and gaps.
+@media (max-width: 380px) {
+    .arc-floor { gap: 6px; padding: 8px; }
+    .arc-cab-marquee { padding-left: 8px; padding-right: 8px; }
+    .arc-cab-champ { padding-left: 8px; padding-right: 8px; }
+    // The title has to give way first when there's no width to spare.
+    .arc-cab-name { font-size: 9px; letter-spacing: 0.02em; }
+    .arc-scores { margin-left: 7px; margin-right: 7px; }
+    .arc-cab-play { margin-left: 7px; margin-right: 7px; }
 }
 
-.arc-rack {
-    display: flex;
-    flex-direction: column;
-    padding: 8px;
-    gap: 4px;
-    border-right: 1px solid #1c282b;
-    background: #080d0e;
-}
-
-// A machine in the rack. The left edge is its colour -- three accents visible
-// at once, so the rack reads as three different machines rather than a menu.
-.arc-machine {
+// A cabinet. The whole thing is the play button -- hence <button> in the tsx,
+// and hence every child being a <span> (a <div> inside a button is invalid, and
+// nested <button>s would swallow the card's own click).
+.arc-cabinet {
     position: relative;
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    padding: 9px 10px 9px 12px;
-    border: 1px solid transparent;
-    border-radius: 8px;
-    background: transparent;
+    // EXPLICIT, and it is load-bearing: a <button> that is also a flex
+    // container does NOT stretch its children in Chromium the way a <div>
+    // does -- the UA stylesheet centres them. Without this every child sized
+    // to its own text, so the marquee's background and underline stopped dead
+    // at the end of the title (reads exactly like the title is cut off) and
+    // each score rule was a different length. Seen for real in the panel.
+    align-items: stretch;
+    gap: 7px;
+    padding: 0 0 10px;
+    border: 1px solid #1e2a2e;
+    border-radius: 11px;
+    // The faint wash of the machine's own colour is what stops four cards
+    // reading as four identical grey boxes.
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 34%),
+        #0c1214;
     text-align: left;
     cursor: pointer;
-    transition: background 0.16s ease, border-color 0.16s ease;
+    overflow: hidden;
+    transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.14s ease;
 
+    // CRT scanlines, off at rest and lit on hover -- the "screen turns on"
+    // half of the hover state. Absolutely positioned, so it paints ABOVE the
+    // static children (positioned beats non-positioned regardless of z-index);
+    // that's fine and intended at this alpha, but it's why the value has to
+    // stay this low -- raise it and it starts veiling the scores.
     &::before {
         content: "";
         position: absolute;
-        left: 4px;
-        top: 10px;
-        bottom: 10px;
-        width: 2px;
-        border-radius: 2px;
-        background: var(--arc, #2dd4bf);
-        opacity: 0.45;
-        transition: opacity 0.16s ease, top 0.16s ease, bottom 0.16s ease;
+        inset: 0;
+        pointer-events: none;
+        opacity: 0;
+        background: repeating-linear-gradient(
+            to bottom,
+            rgba(0, 0, 0, 0.16) 0px,
+            rgba(0, 0, 0, 0.16) 1px,
+            transparent 1px,
+            transparent 3px
+        );
+        transition: opacity 0.18s ease;
     }
 
-    &:hover { background: rgba(255, 255, 255, 0.03); }
-
-    &--on {
-        background: rgba(255, 255, 255, 0.05);
-        border-color: #24343a;
-
-        &::before { opacity: 1; top: 6px; bottom: 6px; }
-        .arc-machine-name { color: #fff; }
+    // HOVER MUST SET ITS OWN BACKGROUND, and this is not decoration: the app's
+    // base stylesheet (src/js/index.scss) carries a global
+    // `button:hover { background-color: #20639b }`. This card is a <button>, so
+    // without an explicit background here that flat blue paints straight over
+    // the cabinet and the scores become unreadable -- seen for real. `:active`
+    // has the identical global rule, hence the shared selector below.
+    &:hover,
+    &:active {
+        background:
+            // the machine's own colour, blooming from the marquee downwards
+            radial-gradient(125% 85% at 50% -8%, var(--arc-glow, rgba(45, 212, 191, 0.16)), transparent 72%),
+            linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 34%),
+            #0d1517;
     }
+
+    &:hover {
+        border-color: var(--arc, #2dd4bf);
+        // Outer bloom in the machine's colour + the usual depth shadow, so the
+        // whole cabinet reads as switched on rather than just outlined.
+        box-shadow:
+            0 0 24px var(--arc-glow, rgba(45, 212, 191, 0.16)),
+            0 10px 30px rgba(0, 0, 0, 0.5);
+        transform: translateY(-2px);
+
+        &::before { opacity: 1; }
+
+        .arc-cab-play {
+            background: var(--arc, #2dd4bf);
+            color: #05090a;
+            border-color: var(--arc, #2dd4bf);
+        }
+        .arc-cab-marquee::after { opacity: 1; }
+        // The screen coming on: everything on the face steps up a notch rather
+        // than only the border changing.
+        .arc-cab-name { text-shadow: 0 0 20px var(--arc, #2dd4bf), 0 2px 10px rgba(0, 0, 0, 0.8); }
+        .arc-line { color: #dfeaec; }
+        .arc-c-name { color: #f2f8f9; }
+        .arc-blank, .arc-cab-champ-holds, .arc-more { color: #8ba0a4; }
+    }
+
+    &:active { transform: translateY(-1px) scale(0.995); }
+    &:focus-visible { outline: 2px solid var(--arc, #2dd4bf); outline-offset: 2px; }
 }
 
-.arc-machine-name {
-    font-size: 12px;
-    font-weight: 700;
-    color: #c6d4d7;
-    transition: color 0.16s ease;
-}
-
-// Who currently owns the machine -- the reason to care before you click.
-.arc-machine-champ {
-    font-family: $arc-mono;
-    font-size: 8.5px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: #5d6d71;
-}
-
-// ── screen ──────────────────────────────────────────────────────────────────
-.arc-screen {
+// The cabinet's own lit header -- a colour bar with the title on it. The glow
+// under it is a pseudo-element so it can brighten on hover without touching
+// the background stack.
+.arc-cab-marquee {
+    position: relative;
     display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding: 14px 16px 16px;
-    min-width: 0;
-}
-
-.arc-screen-head {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.arc-screen-title {
-    flex: 1 1 auto;
-    min-width: 0;
-    margin: 0;
-    font-size: 19px;
-    font-weight: 800;
-    letter-spacing: -0.015em;
-    color: #fff;
-}
-
-.arc-refresh {
-    flex-shrink: 0;
-    display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 22px;
-    height: 22px;
-    border: 1px solid #2b3a3e;
-    border-radius: 6px;
-    background: transparent;
-    color: #7f9094;
-    cursor: pointer;
+    // The title used to sit above a one-line blurb; with the blurb gone the
+    // marquee is taller and the name is the whole panel -- centred both ways,
+    // like the room's own ARCADE sign above it, so a one-line and a two-line
+    // title look equally deliberate.
+    min-height: 66px;
+    padding: 10px 12px;
+    text-align: center;
+    background:
+        radial-gradient(120% 220% at 50% -80%, var(--arc, #2dd4bf), transparent 60%),
+        #0a1012;
+    background-blend-mode: soft-light, normal;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 
-    &:hover { color: var(--arc, #2dd4bf); border-color: var(--arc, #2dd4bf); }
+    &::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: -1px;
+        height: 2px;
+        background: var(--arc, #2dd4bf);
+        opacity: 0.5;
+        transition: opacity 0.16s ease;
+    }
 }
 
-// ── the high-score table (the signature) ────────────────────────────────────
-.arc-table {
+// THE GAME'S NAME, and it's meant to carry the card on its own now that the
+// description under it is gone.
+//
+// The face is the same monospace stack the scoreboards use, not the panel's UI
+// font -- **no webfont**, deliberately: CEP can't be relied on to fetch one,
+// the panel ships no custom faces, and a base64'd display font is real weight
+// and a real licence question for a joke feature. Uppercase + wide tracking +
+// a glow in the machine's own colour is what does the arcade work here; the
+// letterforms are just the most characterful thing already available.
+//
+// WRAPS rather than truncating. "PUSH THE PLAYHEAD" at this size doesn't fit a
+// half-width cabinet on one line, and an ellipsised game title reads as broken
+// where a second line just reads as a bigger sign. The grid's rows stretch, so
+// a two-line title only makes its own row taller and the pair stays level.
+.arc-cab-name {
+    display: block;
+    // Face comes from .arcade-pixel in the markup (arcadeFont.scss).
+    // 11px is the sweet spot: the glyphs are drawn on an 8px grid, so this
+    // lands close to a whole-pixel multiple and stays crisp, and it leaves
+    // "PUSH THE PLAYHEAD" room to sit on two lines rather than three.
+    font-size: 11px;
+    line-height: 1.55;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #fff;
+    text-shadow:
+        0 0 16px var(--arc, #2dd4bf),
+        0 2px 10px rgba(0, 0, 0, 0.75);
+    // Long single tokens ("XYINERDLE") break rather than overflow the card.
+    overflow-wrap: anywhere;
+}
+
+// Who owns the machine -- the reason to care before you click.
+.arc-cab-champ {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 12px;
+    font-family: $arc-mono;
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--arc, #5eead4);
+
+    svg { flex-shrink: 0; }
+}
+
+.arc-cab-champ-name {
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.arc-cab-champ-holds { color: #5d6d71; }
+
+// ── the score lines ─────────────────────────────────────────────────────────
+.arc-scores {
     display: flex;
     flex-direction: column;
+    margin: 0 10px;
+    padding: 6px 2px 2px;
+    border-top: 1px solid #162024;
     font-family: $arc-mono;
+
     // The rank / name / value grid, shared by the header and every line so the
     // columns line up exactly.
-    .arc-c-rank { width: 26px; flex-shrink: 0; }
+    .arc-c-rank { width: 20px; flex-shrink: 0; }
     .arc-c-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .arc-c-val  { flex-shrink: 0; text-align: right; font-variant-numeric: tabular-nums; }
 }
 
-.arc-table-head {
+.arc-scores-head {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 0 4px 6px;
-    border-bottom: 1px solid #1e2a2e;
-    font-size: 8.5px;
+    gap: 8px;
+    padding: 0 2px 4px;
+    font-size: 8px;
     font-weight: 700;
-    letter-spacing: 0.16em;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: #56666a;
+    color: #4d5c60;
 
-    .arc-c-val { color: var(--arc, #5eead4); opacity: 0.85; }
+    .arc-c-val { color: var(--arc, #5eead4); opacity: 0.8; }
 }
 
 .arc-line {
     display: flex;
     align-items: baseline;
-    gap: 10px;
-    padding: 7px 4px;
-    border-bottom: 1px solid rgba(30, 42, 46, 0.55);
-    font-size: 12.5px;
+    gap: 8px;
+    padding: 3px 2px;
+    font-size: 11.5px;
     color: #b9c8cb;
 
-    .arc-c-rank { color: #4d5c60; font-size: 11px; }
+    .arc-c-rank { color: #455458; font-size: 10px; }
     .arc-c-val { font-weight: 700; color: #e6f2f1; }
     // The versus-game tiebreak, small and after the number it explains.
     .arc-c-val em {
         display: block;
         font-style: normal;
-        font-size: 8.5px;
+        font-size: 8px;
         font-weight: 400;
         color: #5f6f73;
     }
 
-    // Champion: the top line owns the machine, so it wears its colour.
-    // A CLASS, not :first-of-type -- the table head is a div sibling too, so
-    // it takes that selector and the top line never got the accent.
     &--champ {
         .arc-c-rank, .arc-c-val { color: var(--arc, #5eead4); }
     }
@@ -270,53 +376,81 @@ $arc-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
         .arc-c-name { font-weight: 700; }
         .arc-c-rank::after {
             content: "\25B8";
-            margin-left: 3px;
+            margin-left: 2px;
             color: var(--arc, #5eead4);
         }
     }
 }
 
+// Only three lines fit on a face; say how many are behind them rather than
+// pretending the board is that short.
+.arc-more {
+    padding: 3px 2px 0;
+    font-size: 8.5px;
+    letter-spacing: 0.05em;
+    color: #4d5c60;
+}
+
 .arc-blank {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 16px 4px;
-    font-size: 11px;
+    gap: 5px;
+    padding: 7px 2px;
+    font-size: 10px;
     color: #56666a;
 }
 
-// ── play ────────────────────────────────────────────────────────────────────
-.arc-play {
-    margin-top: 2px;
-    padding: 10px 14px;
-    border: 1px solid var(--arc, #2dd4bf);
-    border-radius: 9px;
-    background: rgba(45, 212, 191, 0.08);
-    color: #fff;
-    font-size: 12.5px;
+// The call to action. Reads as a button but ISN'T one (see the tsx) -- it fills
+// with the machine's colour when the card is hovered, so the whole cabinet
+// lights up as one thing.
+.arc-cab-play {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    margin: 2px 10px 0;
+    padding: 7px 10px;
+    border: 1px solid #2a383c;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.02);
+    color: #cfe0e2;
+    font-size: 11.5px;
     font-weight: 700;
-    letter-spacing: 0.01em;
-    cursor: pointer;
-    transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
-
-    &:hover {
-        background: rgba(45, 212, 191, 0.16);
-        box-shadow: 0 4px 18px rgba(45, 212, 191, 0.18);
-    }
-    &:active { transform: scale(0.99); }
+    transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease;
 }
 
 .arc-note {
     margin: 0;
+    padding: 0 14px 14px;
     font-size: 9.5px;
     line-height: 1.5;
     color: #5c696c;
+
+    // Warmer than the guidance note below it: this one means something didn't
+    // work, not "here's how to join in".
+    &--stale { color: #c99a63; }
+}
+
+// Sets its own hover background -- index.scss's global `button:hover` paints
+// any button that doesn't with a flat blue.
+.arc-note-retry {
+    margin-left: 6px;
+    padding: 1px 6px;
+    border: 1px solid #45525a;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.04);
+    color: #d8c3a5;
+    font-size: 9px;
+    cursor: pointer;
+
+    &:hover { background: rgba(255, 255, 255, 0.1); border-color: #6c7b83; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .arc-marquee,
-    .arc-machine,
-    .arc-machine::before,
-    .arc-play { transition: none; }
-    .arc-play:active { transform: none; }
+    .arc-cabinet,
+    .arc-cabinet::before,
+    .arc-cab-play,
+    .arc-cab-marquee::after { transition: none; }
+    .arc-cabinet:hover { transform: none; }
+    .arc-cabinet:active { transform: none; }
 }

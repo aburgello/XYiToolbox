@@ -172,6 +172,42 @@ function renderMeEnsureMp4Folder(batchFolder: Folder): Folder | null {
   return mp4Folder;
 }
 
+// The default Output Module's filename must be built from the COMP NAME,
+// never taken wholesale from `om.file.name`.
+//
+// Real bug this fixes: an Output Module Template can carry a saved
+// "Output To" name of its own, and AE also remembers the last output name
+// used with a template -- so `rqItem.outputModule(1).file` can come back
+// named after a completely unrelated project someone rendered months ago
+// (reported: a "MO2_..._DOUBLE_RES.mov" landing on a "PP3_..._QUAD_RES"
+// comp, while the second Output Module -- which has always built its name
+// from `comp.name` -- was correct). It is NOT stale state anywhere in this
+// panel; it's whatever AE's own template/preset state supplies.
+//
+// What IS worth keeping from AE's assigned name is the part it decides:
+// the extension (which depends on the currently-default template) and any
+// image-sequence frame pattern (`[#####]`) sitting between stem and
+// extension. Everything before that is replaced with the comp name.
+function renderMeOutputFileName(assignedName: string | null, compName: string): string {
+  if (!assignedName) return compName + ".mov";
+
+  const dot = assignedName.lastIndexOf(".");
+  const ext = dot > 0 ? assignedName.substring(dot) : "";
+  const stem = dot > 0 ? assignedName.substring(0, dot) : assignedName;
+
+  // Preserve a trailing sequence pattern such as "_[#####]" -- AE puts it
+  // after the name and before the extension for image sequences, and
+  // dropping it would silently turn a sequence into one overwritten frame.
+  let seq = "";
+  const close = stem.lastIndexOf("]");
+  if (close === stem.length - 1) {
+    const open = stem.lastIndexOf("[");
+    if (open > 0) seq = stem.substring(open - (stem.charAt(open - 1) === "_" ? 1 : 0));
+  }
+
+  return compName + seq + ext;
+}
+
 const RENDER_ME_MP4_TEMPLATE = "H264_16MBPS_MOS";
 
 interface RenderMeResult extends Result {
@@ -205,11 +241,11 @@ export const renderMe = (): RenderMeResult => {
     // folder -- unchanged from before.
     const rqItem = app.project.renderQueue.items.add(comp);
     const om = rqItem.outputModule(1);
-    // Read AE's own just-assigned default filename (comp name + whatever
-    // extension the currently-default Output Module Template produces)
-    // BEFORE overwriting it, so only the FOLDER changes -- the filename/
-    // extension stay exactly what "default" actually means.
-    const defaultFileName = om.file ? om.file.name : comp.name + ".mov";
+    // Keep AE's own extension (and any image-sequence pattern) but ALWAYS
+    // name the file after the comp -- see renderMeOutputFileName() for why
+    // trusting `om.file.name` wholesale produced an unrelated old project's
+    // filename here.
+    const defaultFileName = renderMeOutputFileName(om.file ? decode(om.file.name) : null, comp.name);
     om.file = new File(batchFolder.fsName + "/" + defaultFileName);
 
     // Second output: the studio's standard H264_16MBPS_MOS delivery

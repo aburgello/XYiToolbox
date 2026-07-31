@@ -1,0 +1,48 @@
+// The arcade's pixel typeface, embedded.
+//
+// WHY EMBEDDED AS d09GMgABAAAAAAVIAAwAAAAAD/wAAAT6AAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHCoGYABsEQgKlQyPTAE2AiQDYAtgAAQgBYRIByAbCwwjUnC2IPiLBJuK6jPog7bQV7p5yUBom+2AEApDeWcfH7lm/P/wHXc8fL/f79c+5z3U421EyySThCevDIl6Q2FITTQUCF2m802a+NW+vf9LduaWk8z+UroUtQHCIPEOp97BOkfHpRvMRLQ3xtDioMSDitKpVC6SlQzI0QNRpJEufOOh1gq7b79WzySdQxNvFhqNRuiUwp/Zr4Mvat4J/UJHtIkm3kVKIXqn89gvX23XZcaMGE+JR9e+9ncCtLiSZpqeXV7Tcbh3fGSIBagqp+treRF/6pBO0iOW0pNj23j8hzr4jMILp55WZtwrPGIB+X0UAkhfc5MLZpAgje5jRpfF4006zJrRqZSirpGHwP6FpJwybJx8HNXn6lP1ICxZEZJ18Y2inIKUvAwjEg3L/5wRBmyDScgr5EtAEwCSQA0jaqhFDnktxRiwEiRjXjG75so8qLm0U1VH48ZGpXJpzrXxYK6dnYuVnY25Dg5WDkqelbGt5EvDPGamZbWVwEs5mGaHuSYWop2ioJiWYYoj/3RWag99coMmQImhZDiyeZeTHvRtOkRxWoVPV5b5NYmtehnFFCb2NsGth0cFttyDcA2qGbQJRq87hcDNyAkZrZYPEx4mQ/fAXKOiOtRyLs7EAHK0QQrwN3z3oZTAAayojPqnKKewDWpL19P8FAZ+bnkcVU7J1SKH/Bpb0bBiP6qwdHbeqn4oQ5iVQsqUIbayOWIBj4dICAOpsk7JCBlb/BPMjJUSFaPY4ipcB3QzygTQ/dw1ND9ER1DTafDkQZ3EJetmZYzL2faYxUBtJWmuUyR25qVYhkG6lPcgp7rINO17zeXl8pICSjwYM7xYoLHgrdWbhdN3eR6Kk9ZwkI8wHmndd70MvQm3NB5ovOi0fbL9I9xeMvTDy/Rpf9sbLtWj7oNhTy1USA60BL5MAAGkLUsGIDhDaeJE98rK2ng9jBZDbiBF6hzW4uo+7wvOIb2sk875nFo2NgH7yRscS3KSOrpxmgHQBoM0HsoBxEs6g28nObqPZ/ubqTxe0Ws26MW6aP8mN1+7biv1j+hUvtZLZ3zuzlKkE1eaVdplnk2WvGIPLVm+arre88HGqB6lNAfPeCAPN5Qg1oy+GPB8iYAi+dJAc7GdLpwJj2pxuQFAGo4K1x5Inq75Lf56DLQVseqaPYZNb1JSkmTW7BxKo7Ix8n1Y3PZ6b1h+q255eKNSo7sYZbO3ISUczxwuVr3wXGxrgpmQ1zW7Q5GIurb4u6sDsHM+StkBAT/e72v7VSs3DFWie2JK+D1sl/BWOEgmmA1M4Q8BfEn6MqgHJ0yCxbcAvrtsAQXVp7B3weV68389QiRzVjw9fHROfGuK/B4eh4vvgrenn1t/n/9/sTjUNEpk6eckC2ULcJ//okYurdKHDcvjcnDT+R2EwwD4L0AEgxFtHnF2MnSBok9+MDPWmhm8AMUagX+siS9SrBkdK7EW5SDWKhy+rU0+NkUi+1IxKDQdqCqrqAInNAK4uWOACRUGgWfV3UH9AMQ37SoJe6zE6IRQPeloEpUGpGEkuK+xH4mIUNNWbI7SZeSBN4bcDg6IY2KC6oWoBEsPJTo3EIKQbUUFLhOJBcspT+BQCJWEilTNEyoSRFVLSBtAOGiuPNI5maW0U/gbt5ZWQEVRRabcQvIqLwhDiTFjMKgpKkfIOO8w95BWgZu9ZFalCgA= AND NOT LINKED: the packaged panel is a `file://`
+// page, so it cannot fetch a webfont from Google Fonts or anywhere else -- the
+// same constraint that makes DoomEasterEgg.tsx read its own bytes rather than
+// letting the engine fetch them. A data: URI is the only delivery that works in
+// both the dev server and the installed ZXP.
+//
+// COST: 1.3 KB of font (1.8 KB base64), because it is SUBSET to exactly the
+// characters the arcade uses -- A-Z, 0-9 and a handful of punctuation. The full
+// family is 113 KB. **A new game whose title needs a character outside that set
+// will render it in the fallback face**, so if you add one with, say, an
+// accented letter, re-run the subset (the recipe is in CLAUDE.md).
+//
+// LICENCE -- read before touching this. The face is Press Start 2P by CodeMan38
+// (cody@zone38.net), SIL Open Font License 1.1, whose full text ships beside
+// this file as font/OFL.txt and MUST stay there: the OFL requires the licence
+// to travel with the font, including inside a ZXP.
+//
+// It is renamed to "XYi Arcade Pixel" deliberately and NOT as branding: "Press
+// Start 2P" is a RESERVED FONT NAME under that licence, and a subset is a
+// Modified Version, which the OFL forbids from carrying the reserved name. The
+// rename is what makes shipping this legal, so don't "fix" the family name back
+// to the original -- in the CSS or in the font's own name table.
+@font-face {
+    font-family: "XYi Arcade Pixel";
+    font-style: normal;
+    font-weight: 400;
+    // No font-display: this is a data: URI, so there is no load to swap over.
+    src: url("data:font/woff2;base64,d09GMgABAAAAAAVIAAwAAAAAD/wAAAT6AAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHCoGYABsEQgKlQyPTAE2AiQDYAtgAAQgBYRIByAbCwwjUnC2IPiLBJuK6jPog7bQV7p5yUBom+2AEApDeWcfH7lm/P/wHXc8fL/f79c+5z3U421EyySThCevDIl6Q2FITTQUCF2m802a+NW+vf9LduaWk8z+UroUtQHCIPEOp97BOkfHpRvMRLQ3xtDioMSDitKpVC6SlQzI0QNRpJEufOOh1gq7b79WzySdQxNvFhqNRuiUwp/Zr4Mvat4J/UJHtIkm3kVKIXqn89gvX23XZcaMGE+JR9e+9ncCtLiSZpqeXV7Tcbh3fGSIBagqp+treRF/6pBO0iOW0pNj23j8hzr4jMILp55WZtwrPGIB+X0UAkhfc5MLZpAgje5jRpfF4006zJrRqZSirpGHwP6FpJwybJx8HNXn6lP1ICxZEZJ18Y2inIKUvAwjEg3L/5wRBmyDScgr5EtAEwCSQA0jaqhFDnktxRiwEiRjXjG75so8qLm0U1VH48ZGpXJpzrXxYK6dnYuVnY25Dg5WDkqelbGt5EvDPGamZbWVwEs5mGaHuSYWop2ioJiWYYoj/3RWag99coMmQImhZDiyeZeTHvRtOkRxWoVPV5b5NYmtehnFFCb2NsGth0cFttyDcA2qGbQJRq87hcDNyAkZrZYPEx4mQ/fAXKOiOtRyLs7EAHK0QQrwN3z3oZTAAayojPqnKKewDWpL19P8FAZ+bnkcVU7J1SKH/Bpb0bBiP6qwdHbeqn4oQ5iVQsqUIbayOWIBj4dICAOpsk7JCBlb/BPMjJUSFaPY4ipcB3QzygTQ/dw1ND9ER1DTafDkQZ3EJetmZYzL2faYxUBtJWmuUyR25qVYhkG6lPcgp7rINO17zeXl8pICSjwYM7xYoLHgrdWbhdN3eR6Kk9ZwkI8wHmndd70MvQm3NB5ovOi0fbL9I9xeMvTDy/Rpf9sbLtWj7oNhTy1USA60BL5MAAGkLUsGIDhDaeJE98rK2ng9jBZDbiBF6hzW4uo+7wvOIb2sk875nFo2NgH7yRscS3KSOrpxmgHQBoM0HsoBxEs6g28nObqPZ/ubqTxe0Ws26MW6aP8mN1+7biv1j+hUvtZLZ3zuzlKkE1eaVdplnk2WvGIPLVm+arre88HGqB6lNAfPeCAPN5Qg1oy+GPB8iYAi+dJAc7GdLpwJj2pxuQFAGo4K1x5Inq75Lf56DLQVseqaPYZNb1JSkmTW7BxKo7Ix8n1Y3PZ6b1h+q255eKNSo7sYZbO3ISUczxwuVr3wXGxrgpmQ1zW7Q5GIurb4u6sDsHM+StkBAT/e72v7VSs3DFWie2JK+D1sl/BWOEgmmA1M4Q8BfEn6MqgHJ0yCxbcAvrtsAQXVp7B3weV68389QiRzVjw9fHROfGuK/B4eh4vvgrenn1t/n/9/sTjUNEpk6eckC2ULcJ//okYurdKHDcvjcnDT+R2EwwD4L0AEgxFtHnF2MnSBok9+MDPWmhm8AMUagX+siS9SrBkdK7EW5SDWKhy+rU0+NkUi+1IxKDQdqCqrqAInNAK4uWOACRUGgWfV3UH9AMQ37SoJe6zE6IRQPeloEpUGpGEkuK+xH4mIUNNWbI7SZeSBN4bcDg6IY2KC6oWoBEsPJTo3EIKQbUUFLhOJBcspT+BQCJWEilTNEyoSRFVLSBtAOGiuPNI5maW0U/gbt5ZWQEVRRabcQvIqLwhDiTFjMKgpKkfIOO8w95BWgZu9ZFalCgA=") format("woff2");
+}
+
+// Applied as a CLASS in the markup rather than a Sass placeholder/mixin,
+// because stylesheets in this project never import each other -- each is pulled
+// in by its own component (see any tools/*.tsx). A class is the only sharing
+// mechanism that works across those boundaries, and importing this file from
+// two components still yields ONE copy of the font in the bundle (Vite dedupes
+// by module), where a Sass @import would inline the base64 twice.
+//
+// Smoothing is turned OFF: a pixel face has no curves to antialias, and letting
+// the browser soften it blurs exactly the edges that make it read as pixels.
+.arcade-pixel {
+    font-family: "XYi Arcade Pixel", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    -webkit-font-smoothing: none;
+    // NO letter-spacing here on purpose: every use site sets its own, and a
+    // value here would fight those at equal specificity, leaving the winner to
+    // depend on stylesheet order.
+}

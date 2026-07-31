@@ -149,6 +149,72 @@
 
 .nm-record { font-size: 11px; color: #8e9a9e; flex-shrink: 0; }
 
+// Leaderboard row. Two lines: the record, then who it was against -- the
+// second line is the actual ask ("who beat who"), so it's part of the row
+// rather than something to dig for.
+.nm-stand {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 6px 8px;
+    border-radius: 5px;
+    // The player's own colour as a left rule, so a board scans by person.
+    border-left: 2px solid #8a8a8a;
+    background: #121a1c;
+}
+
+.nm-stand-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.nm-stand-sub {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    padding-left: 16px; // clears the dot, so both lines start together
+    font-size: 9.5px;
+    color: #6f7d81;
+
+    b { font-weight: 700; }
+}
+
+.nm-streak {
+    flex-shrink: 0;
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+
+    &--w { background: rgba(74, 222, 128, 0.14); color: #86efac; }
+    &--l { background: rgba(248, 113, 113, 0.12); color: #fca5a5; }
+}
+
+.nm-match {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.nm-match-text {
+    flex: 1;
+    min-width: 0;
+    font-size: 11px;
+    color: #93a1a4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    b { font-weight: 700; }
+}
+
+.nm-match-meta { flex-shrink: 0; font-size: 9px; color: #5f6c70; }
+
 .nm-invite {
     display: inline-flex;
     align-items: center;

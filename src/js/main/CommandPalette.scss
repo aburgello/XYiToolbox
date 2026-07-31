@@ -19,7 +19,7 @@
     gap: 4px;
     background: rgba(38, 38, 38, 0.55);
     backdrop-filter: blur(4px);
-    border: 1px solid #555;
+    border: 1px solid var(--surface-border, #555);
     border-radius: 10px;
     padding: 3px 8px;
     color: #777;
@@ -69,8 +69,8 @@
     max-height: 70vh;
     display: flex;
     flex-direction: column;
-    background: #262626;
-    border: 1px solid #444;
+    background: var(--surface-1, #262626);
+    border: 1px solid var(--surface-border, #444);
     border-radius: 10px;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
     overflow: hidden;
@@ -82,7 +82,7 @@
     align-items: center;
     gap: 8px;
     padding: 12px 14px;
-    border-bottom: 1px solid #383838;
+    border-bottom: 1px solid var(--surface-edge, #383838);
     color: #888;
     flex-shrink: 0;
 
@@ -98,8 +98,8 @@
 
     .palette-kbd {
         flex-shrink: 0;
-        background: #1e1e1e;
-        border: 1px solid #444;
+        background: var(--ov-bg, #1e1e1e);
+        border: 1px solid var(--surface-border, #444);
         border-radius: 4px;
         padding: 1px 6px;
         font-size: 10px;
@@ -190,7 +190,7 @@
     display: flex;
     gap: 14px;
     padding: 8px 14px;
-    border-top: 1px solid #383838;
+    border-top: 1px solid var(--surface-edge, #383838);
     color: #777;
     font-size: 10px;
     flex-shrink: 0;
@@ -218,7 +218,7 @@
     width: 13px;
     height: 13px;
     border-radius: 50%;
-    border: 2px solid #444;
+    border: 2px solid var(--surface-border, #444);
     border-top-color: var(--ov-accent, #3a5a8a);
     animation: palette-spin 0.7s linear infinite;
 }

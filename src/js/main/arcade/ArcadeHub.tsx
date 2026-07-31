@@ -6,13 +6,14 @@
 // together or showed who was winning. Typing "arcade" now opens this, and
 // adding a game is one entry in MACHINES below.
 //
-// THE SHAPE IS A CABINET SELECT, not a card grid. You pick a machine from the
-// rack on the left and its high-score table fills the screen on the right --
-// which is how you actually choose a game in an arcade, and it gives the
-// leaderboard the whole panel instead of a footnote inside a card. The score
-// table is the one loud element: monospace, rank-first, champion marked. Every
-// game's accent drives the screen it's selected on, so switching machines
-// re-tints the whole right-hand side.
+// THE SHAPE IS A GRID OF CABINETS, one card per game -- REPLACING an earlier
+// rack-and-screen layout (a list of machines down the left, the selected one's
+// score table filling the right). That shape was a picker, not an arcade: every
+// game but one was a name in a narrow column, its scores were invisible until
+// you selected it, and starting a game took two clicks (select, then Play).
+// Now each card carries its own accent, its own champion and its own top three,
+// and THE CARD ITSELF IS THE PLAY BUTTON -- everything is visible at once and
+// nothing needs selecting.
 //
 // SCORING IS PER-GAME, and the difference is real rather than cosmetic:
 //   - "wins"  -- a versus game posts one row per win, so the board COUNTS rows
@@ -21,17 +22,25 @@
 // Ranking a versus game by chain length would crown whoever had one lucky long
 // game over someone who has beaten everyone all month.
 //
+// EVERY GAME MUST POST OR ITS CARD IS DECORATION. The board is one shared store
+// (teamArcadeScores) keyed by game id, and for a long time the ONLY writer was
+// XYiNerdle's head-to-head win -- so two machines had boards that could never
+// fill however much anyone played. Adding a MACHINES entry WITHOUT a matching
+// `teamArcadePost` call in the game itself recreates exactly that bug.
+//
 // The board degrades quietly. No Team Folder, or an unmounted NAS, is a NORMAL
 // state (a laptop away from the studio): the games still play, and the "how do
 // I get on the board" line only appears for someone who hasn't tagged their
 // machine -- it's guidance for the unset, not a permanent caption.
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { motion } from "motion/react";
-import { Loader2, RefreshCw, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { motion, useReducedMotion } from "motion/react";
+import { Crown, Loader2, Play, RefreshCw, X } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import KeyframeSnake from "./KeyframeSnake";
 import DailyWord from "./DailyWord";
+import PosterDaily from "./PosterDaily";
 import CineChain from "./cine/CineChain";
+import "./arcadeFont.scss";
 import "./ArcadeHub.scss";
 
 interface ArcadeScore {
@@ -44,21 +53,35 @@ interface ArcadeScore {
 
 interface Machine {
     id: string;
-    /** Shown on the rack and as the screen's title. */
+    /** Shown on the cabinet's marquee. */
     name: string;
     /** Column header over the numbers -- the noun the score is counted in. */
     metric: string;
     /** See the scoring note in the header. */
     mode: "wins" | "best";
     accent: string;
+    /**
+     * The accent again, pre-blended to a low alpha for the lit-screen hover.
+     * A LITERAL rgba rather than a colour derived from `accent`: this project's
+     * chrome74 build target has no `color-mix()`, so every blended shade in the
+     * app is stored precomputed (same rule as Toolset's PALETTE).
+     */
+    glow: string;
     Game: React.ComponentType<{ onClose: () => void }>;
 }
 
 const MACHINES: Machine[] = [
-    { id: "xyinerdle", name: "XYiNerdle",        metric: "Wins",   mode: "wins", accent: "#2dd4bf", Game: CineChain },
-    { id: "daily",     name: "Daily Word",       metric: "Streak", mode: "best", accent: "#a78bfa", Game: DailyWord },
-    { id: "timeline",  name: "Push the Playhead", metric: "Score",  mode: "best", accent: "#fb923c", Game: KeyframeSnake },
+    // NAMES ARE DISPLAY-ONLY -- the ids are the keys in the shared score files
+    // already on the NAS, so a rename never touches them ("daily" is Wordmark,
+    // "poster" is One Sheet). Renaming an id would orphan every posted row.
+    { id: "poster", name: "One Sheet", metric: "Solved", mode: "wins", accent: "#fbbf24", glow: "rgba(251, 191, 36, 0.16)", Game: PosterDaily },
+    { id: "daily", name: "Wordmark", metric: "Streak", mode: "best", accent: "#a78bfa", glow: "rgba(167, 139, 250, 0.16)", Game: DailyWord },
+    { id: "timeline", name: "Push the Playhead", metric: "Score", mode: "best", accent: "#fb923c", glow: "rgba(251, 146, 60, 0.16)", Game: KeyframeSnake },
+    { id: "xyinerdle", name: "XYiNerdle", metric: "Wins", mode: "wins", accent: "#2dd4bf", glow: "rgba(45, 212, 191, 0.16)", Game: CineChain },
 ];
+
+/** How many lines fit on a cabinet face without it becoming a spreadsheet. */
+const CARD_LINES = 3;
 
 interface Standing {
     name: string;
@@ -80,8 +103,7 @@ function standingsFor(scores: ArcadeScore[], m: Machine): Standing[] {
                 ? { name, value: mine.length, detail: best }
                 : { name, value: best };
         })
-        .sort((a, b) => b.value - a.value || (b.detail || 0) - (a.detail || 0))
-        .slice(0, 8);
+        .sort((a, b) => b.value - a.value || (b.detail || 0) - (a.detail || 0));
 }
 
 export const ArcadeHub = ({ onClose }: { onClose: () => void }) => {
@@ -89,20 +111,59 @@ export const ArcadeHub = ({ onClose }: { onClose: () => void }) => {
     const [me, setMe] = useState("");
     const [loading, setLoading] = useState(true);
     const [tagged, setTagged] = useState(true);
-    const [selected, setSelected] = useState(MACHINES[0].id);
     const [playing, setPlaying] = useState<string | null>(null);
+    // True when the board on screen is the last one we successfully read and a
+    // later refresh couldn't reach the team folder.
+    const [stale, setStale] = useState(false);
+    const reduced = useReducedMotion();
 
+    // `refresh` is stable (empty deps, so the mount effect runs once), which
+    // means it can't read `scores` from its own closure. This ref is how it
+    // knows whether there's anything worth protecting.
+    const scoresRef = useRef<ArcadeScore[] | null>(null);
+    useEffect(() => { scoresRef.current = scores; }, [scores]);
+
+    // A REFRESH MUST NEVER DESTROY A GOOD BOARD.
+    //
+    // Real report: finishing a snake run while a render completed emptied every
+    // cabinet's board until the panel was reopened. Leaving a game calls this,
+    // and it ran straight into a busy bridge -- `evalTS` came back undefined (or
+    // the host's own NAS read failed and, before the `read` flag, reported an
+    // empty board), and every path here overwrote the rows we already had with
+    // `[]`. Nothing retries, so it stayed blank until a remount re-read it.
+    //
+    // The store is append-only and trimmed, so it never legitimately goes from
+    // N rows to none: an empty result when we're already holding rows is a
+    // failed read, full stop. Keep what we have and say so, rather than
+    // rendering a lie.
     const refresh = useCallback(async () => {
         setLoading(true);
         try {
             const res = await evalTS("teamArcadeScores");
-            const r = res as unknown as { success?: boolean; me?: string; scores?: ArcadeScore[] } | undefined;
-            setScores(r?.scores || []);
-            setMe(r?.me || "");
-            setTagged(!!r?.me);
+            const r = res as unknown as { success?: boolean; me?: string; scores?: ArcadeScore[]; read?: boolean } | undefined;
+            // `read === false` is the host saying it couldn't read the file.
+            // `res === undefined` is the bridge itself not answering. An older
+            // host predates the flag, so an undefined `read` is trusted.
+            const usable = !!r && r.success !== false && r.read !== false;
+            if (usable) {
+                setScores(r.scores || []);
+                setMe(r.me || "");
+                setTagged(!!r.me);
+                setStale(false);
+            } else {
+                // Nothing cached yet (first load, browser preview, no team
+                // folder) -- an empty board is the honest thing to show.
+                setScores((prev) => prev || []);
+                if (r && r.me) { setMe(r.me); setTagged(true); }
+                else if (!scoresRef.current) setTagged(false);
+                setStale(!!scoresRef.current?.length);
+            }
         } catch {
-            setScores([]);       // browser preview / no bridge
-            setTagged(false);
+            // No bridge at all. Same rule: only fall back to empty if we have
+            // nothing better to show.
+            setScores((prev) => prev || []);
+            if (!scoresRef.current) setTagged(false);
+            setStale(!!scoresRef.current?.length);
         } finally {
             setLoading(false);
         }
@@ -120,17 +181,17 @@ export const ArcadeHub = ({ onClose }: { onClose: () => void }) => {
         return () => window.removeEventListener("keydown", onKey);
     }, [playing, onClose]);
 
-    const machine = MACHINES.find((m) => m.id === selected) || MACHINES[0];
-    const board = useMemo(() => (scores ? standingsFor(scores, machine) : []), [scores, machine]);
-    const champion = (id: string) => {
-        if (!scores) return null;
-        const m = MACHINES.find((x) => x.id === id)!;
-        return standingsFor(scores, m)[0]?.name || null;
-    };
+    // One pass over the scores for every machine, rather than re-filtering the
+    // whole list inside each card's render.
+    const boards = useMemo(() => {
+        const out: Record<string, Standing[]> = {};
+        for (const m of MACHINES) out[m.id] = scores ? standingsFor(scores, m) : [];
+        return out;
+    }, [scores]);
 
     const Active = MACHINES.find((m) => m.id === playing)?.Game;
-    // Leaving a game returns to the rack and re-reads the board, since the game
-    // may have just posted to it.
+    // Leaving a game returns to the cabinets and re-reads the board, since the
+    // game may have just posted to it.
     if (Active) return <Active onClose={() => { setPlaying(null); refresh(); }} />;
 
     return (
@@ -141,88 +202,118 @@ export const ArcadeHub = ({ onClose }: { onClose: () => void }) => {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.18 }}
         >
-            <div className="arc-cab" style={{ ["--arc" as any]: machine.accent }}>
-                {/* Marquee: the lit sign over a cabinet. Centred and full-width
-                    rather than a title stranded in the top-left corner. */}
+            <div className="arc-cab">
+                {/* Marquee: the lit sign over the room. Its glow is fixed rather
+                    than tinted per game now -- with four cabinets on screen at
+                    once there's no single "selected" accent to inherit. */}
                 <div className="arc-marquee">
-                    <span className="arc-marquee-name">ARCADE</span>
+                    <span className="arc-marquee-name arcade-pixel">ARCADE</span>
+                    <button className="arc-refresh" onClick={refresh} title="Refresh standings">
+                        <RefreshCw size={11} className={loading ? "spin" : ""} />
+                    </button>
                     <button className="arc-x" onClick={onClose} title="Close (Esc)"><X size={13} /></button>
                 </div>
 
-                <div className="arc-body">
-                    <nav className="arc-rack" aria-label="Games">
-                        {MACHINES.map((m) => {
-                            const champ = champion(m.id);
-                            return (
-                                <button
-                                    key={m.id}
-                                    className={"arc-machine" + (m.id === selected ? " arc-machine--on" : "")}
-                                    style={{ ["--arc" as any]: m.accent }}
-                                    onClick={() => setSelected(m.id)}
-                                >
-                                    <span className="arc-machine-name">{m.name}</span>
-                                    <span className="arc-machine-champ">{champ ? `${champ} holds it` : "unclaimed"}</span>
-                                </button>
-                            );
-                        })}
-                    </nav>
+                <div className="arc-floor">
+                    {MACHINES.map((m, i) => {
+                        const board = boards[m.id] || [];
+                        const champ = board[0];
+                        return (
+                            <motion.button
+                                key={m.id}
+                                className="arc-cabinet"
+                                style={{ ["--arc" as any]: m.accent, ["--arc-glow" as any]: m.glow }}
+                                onClick={() => setPlaying(m.id)}
+                                // Per-item explicit delay rather than a stagger
+                                // parent -- this codebase's documented workaround
+                                // for variant propagation stalling inside an
+                                // AnimatePresence wrapper.
+                                initial={reduced ? false : { opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: reduced ? 0 : i * 0.05, duration: 0.22 }}
+                                whileTap={reduced ? undefined : { scale: 0.99 }}
+                                title={`Play ${m.name}`}
+                            >
+                                {/* The cabinet's own lit header. */}
+                                <span className="arc-cab-marquee">
+                                    <span className="arc-cab-name arcade-pixel">{m.name}</span>
+                                </span>
 
-                    <section className="arc-screen" key={machine.id}>
-                        <header className="arc-screen-head">
-                            <h2 className="arc-screen-title">{machine.name}</h2>
-                            <button className="arc-refresh" onClick={refresh} title="Refresh standings">
-                                <RefreshCw size={11} className={loading ? "spin" : ""} />
-                            </button>
-                        </header>
+                                <span className="arc-cab-champ">
+                                    {champ ? (
+                                        <>
+                                            <Crown size={10} />
+                                            <span className="arc-cab-champ-name">{champ.name}</span>
+                                            <span className="arc-cab-champ-holds">holds it</span>
+                                        </>
+                                    ) : (
+                                        <span className="arc-cab-champ-holds">nobody's claimed it yet</span>
+                                    )}
+                                </span>
 
-                        <div className="arc-table">
-                            <div className="arc-table-head">
-                                <span className="arc-c-rank">#</span>
-                                <span className="arc-c-name">Player</span>
-                                <span className="arc-c-val">{machine.metric}</span>
-                            </div>
-
-                            {loading && !scores && (
-                                <div className="arc-blank"><Loader2 size={12} className="spin" /> Reading the board…</div>
-                            )}
-                            {!loading && !board.length && (
-                                <div className="arc-blank">Nobody on the board. Go first.</div>
-                            )}
-
-                            {board.map((row, i) => (
-                                <motion.div
-                                    // Champion is an explicit class, NOT
-                                    // :first-of-type -- the table head is a div
-                                    // too, so it wins that selector and the top
-                                    // line never got its accent.
-                                    className={"arc-line" + (i === 0 ? " arc-line--champ" : "") + (row.name === me ? " arc-line--me" : "")}
-                                    key={row.name}
-                                    initial={{ opacity: 0, x: -6 }}
-                                    animate={{ opacity: 1, x: 0 }}
-                                    transition={{ delay: i * 0.035, duration: 0.2 }}
-                                >
-                                    <span className="arc-c-rank">{String(i + 1).padStart(2, "0")}</span>
-                                    <span className="arc-c-name">{row.name}</span>
-                                    <span className="arc-c-val">
-                                        {row.value}
-                                        {machine.mode === "wins" && row.detail ? <em>{row.detail} best</em> : null}
+                                <span className="arc-scores">
+                                    <span className="arc-scores-head">
+                                        <span className="arc-c-rank">#</span>
+                                        <span className="arc-c-name">Player</span>
+                                        <span className="arc-c-val">{m.metric}</span>
                                     </span>
-                                </motion.div>
-                            ))}
-                        </div>
 
-                        <button className="arc-play" onClick={() => setPlaying(machine.id)}>
-                            Play {machine.name}
-                        </button>
+                                    {loading && !scores && (
+                                        <span className="arc-blank"><Loader2 size={11} className="spin" /> Reading the board…</span>
+                                    )}
+                                    {!loading && !board.length && (
+                                        <span className="arc-blank">Be the first name on it.</span>
+                                    )}
 
-                        {/* Only for someone who can't get on the board yet. */}
-                        {!tagged && (
-                            <p className="arc-note">
-                                Tag this machine with your name in the Team menu to appear here.
-                            </p>
-                        )}
-                    </section>
+                                    {board.slice(0, CARD_LINES).map((row, r) => (
+                                        <span
+                                            // Champion is an explicit class, NOT
+                                            // :first-of-type -- the head is a
+                                            // sibling span too, so it wins that
+                                            // selector and the top line never
+                                            // got its accent.
+                                            className={"arc-line" + (r === 0 ? " arc-line--champ" : "") + (row.name === me ? " arc-line--me" : "")}
+                                            key={row.name}
+                                        >
+                                            <span className="arc-c-rank">{String(r + 1).padStart(2, "0")}</span>
+                                            <span className="arc-c-name">{row.name}</span>
+                                            <span className="arc-c-val">
+                                                {row.value}
+                                                {m.mode === "wins" && row.detail ? <em>{row.detail} best</em> : null}
+                                            </span>
+                                        </span>
+                                    ))}
+                                    {board.length > CARD_LINES && (
+                                        <span className="arc-more">+{board.length - CARD_LINES} more</span>
+                                    )}
+                                </span>
+
+                                {/* Not a nested <button> (invalid inside one, and
+                                    it would eat the card's own click) -- the card
+                                    IS the control, this is its label. */}
+                                <span className="arc-cab-play"><Play size={12} /> Play</span>
+                            </motion.button>
+                        );
+                    })}
                 </div>
+
+                {/* Says the board on screen is the last one we could read,
+                    rather than letting it silently drift out of date. Only
+                    ever shown over real rows -- with nothing cached there's
+                    nothing stale to warn about. */}
+                {stale && (
+                    <p className="arc-note arc-note--stale">
+                        Couldn't reach the team folder just now — showing the last standings I read.
+                        <button className="arc-note-retry" onClick={refresh}>Try again</button>
+                    </p>
+                )}
+
+                {/* Only for someone who can't get on the board yet. */}
+                {!tagged && (
+                    <p className="arc-note">
+                        Tag this machine with your name in the Team menu to appear on these boards.
+                    </p>
+                )}
             </div>
         </motion.div>
     );

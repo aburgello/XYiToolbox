@@ -17,8 +17,8 @@ $mt-surface: #202020;
     box-sizing: border-box;
     // Slightly richer than the plain droplet grey -- a hair of depth so the
     // tool reads as its own surface, not a generic menu.
-    background: linear-gradient(180deg, #242424 0%, #1c1c1c 100%);
-    border-color: #3a3a3a;
+    background: linear-gradient(180deg, var(--surface-0, #242424) 0%, #1c1c1c 100%);
+    border-color: var(--surface-edge, #3a3a3a);
 }
 
 .mt-droplet-body {
@@ -57,8 +57,8 @@ $mt-surface: #202020;
     display: flex;
     gap: 2px;
     padding: 3px;
-    background: #161616;
-    border: 1px solid #303030;
+    background: var(--surface-0, #161616);
+    border: 1px solid var(--surface-edge, #303030);
     border-radius: 9px;
     margin-bottom: 14px;
 }
@@ -181,7 +181,7 @@ $mt-surface: #202020;
     grid-template-columns: repeat(3, 1fr);
     grid-template-rows: repeat(3, 58px);
     width: 100%;
-    border: 1px solid #3d3d3d;
+    border: 1px solid var(--surface-edge, #3d3d3d);
     border-radius: 8px;
     overflow: hidden;
 }
@@ -192,10 +192,10 @@ $mt-surface: #202020;
     justify-content: center;
     width: 100%;
     height: 100%;
-    background: #1c1c1c;
+    background: var(--surface-0, #1c1c1c);
     border: none;
-    border-right: 1px solid #333;
-    border-bottom: 1px solid #333;
+    border-right: 1px solid var(--surface-edge, #333);
+    border-bottom: 1px solid var(--surface-edge, #333);
     cursor: pointer;
     transition: background 0.12s ease;
 
@@ -208,7 +208,7 @@ $mt-surface: #202020;
     }
 
     &--center {
-        background: #1f1f1f;
+        background: var(--surface-0, #1f1f1f);
         .mt-anchor-dot { width: 8px; height: 8px; }
     }
 }
@@ -246,7 +246,7 @@ $mt-surface: #202020;
     height: 34px;
     flex-shrink: 0;
     background: $mt-surface;
-    border: 1px solid #383838;
+    border: 1px solid var(--surface-edge, #383838);
     border-radius: 7px;
     color: #cfcfcf;
     cursor: pointer;
@@ -264,7 +264,7 @@ $mt-surface: #202020;
 .mt-divider {
     width: 1px;
     height: 20px;
-    background: #383838;
+    background: var(--surface-2, #383838);
     margin: 0 3px;
     flex-shrink: 0;
 }
@@ -276,7 +276,7 @@ $mt-surface: #202020;
     justify-content: center;
     gap: 6px;
     background: $mt-surface;
-    border: 1px solid #383838;
+    border: 1px solid var(--surface-edge, #383838);
     border-radius: 7px;
     color: #cfcfcf;
     font-size: 11px;
@@ -327,7 +327,7 @@ $mt-surface: #202020;
     align-items: center;
     justify-content: center;
     background: $mt-surface;
-    border: 1px solid #383838;
+    border: 1px solid var(--surface-edge, #383838);
     border-radius: 7px;
     color: #cfcfcf;
     font-size: 10.5px;
@@ -379,8 +379,8 @@ $mt-surface: #202020;
 
     input {
         width: 62px;
-        background: #191919;
-        border: 1px solid #383838;
+        background: var(--surface-0, #191919);
+        border: 1px solid var(--surface-edge, #383838);
         color: #eee;
         border-radius: 6px;
         padding: 6px 8px;
@@ -418,7 +418,7 @@ $mt-surface: #202020;
     appearance: none;
     height: 5px;
     border-radius: 3px;
-    background: #333;
+    background: var(--surface-2, #333);
     cursor: pointer;
 
     &::-webkit-slider-thumb {
@@ -449,7 +449,7 @@ $mt-surface: #202020;
     display: flex;
     align-items: stretch;
     background: $mt-surface;
-    border: 1px solid #383838;
+    border: 1px solid var(--surface-edge, #383838);
     border-radius: 999px;
     overflow: hidden;
     transition: border-color 0.15s ease;
@@ -667,7 +667,7 @@ $mt-surface: #202020;
     flex-shrink: 0;
     background: none;
     border: none;
-    border-left: 1px solid #333;
+    border-left: 1px solid var(--surface-edge, #333);
     color: #777;
     cursor: pointer;
     transition: color 0.15s ease, background 0.15s ease;
@@ -684,8 +684,8 @@ $mt-surface: #202020;
     input {
         flex: 1;
         min-width: 0;
-        background: #191919;
-        border: 1px solid #383838;
+        background: var(--surface-0, #191919);
+        border: 1px solid var(--surface-edge, #383838);
         color: #eee;
         border-radius: 6px;
         padding: 6px 8px;

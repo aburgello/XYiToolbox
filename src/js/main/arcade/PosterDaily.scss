@@ -1,0 +1,379 @@
+// Styles for the daily poster puzzle (PosterDaily.tsx). The frame/overlay
+// chrome lives in ArcadeFrame.scss; the arcade rack in ArcadeHub.scss.
+//
+// Accent is gold (#fbbf24) -- this game's identity in the rack, distinct from
+// XYiNerdle's teal, DAILY's purple and the snake's orange.
+
+.pd-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 12px 16px;
+    width: 100%;
+}
+
+// Poster beside the controls when there's room, stacked when there isn't --
+// most docked AE panels are ~500px, so the stacked case is the common one and
+// gets the poster first, controls under it (never the other way round: the
+// thing you're looking at has to be above the thing you type into).
+.pd-main {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 14px;
+    width: 100%;
+    max-width: 620px;
+}
+
+.pd-stage {
+    position: relative;
+    width: 200px;
+    flex-shrink: 0;
+}
+
+.pd-canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 5px;
+    border: 1px solid #2b3438;
+    background: #0b1113;
+    // The blocks are the game -- never let the browser smooth them away.
+    image-rendering: pixelated;
+}
+
+.pd-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 0 14px;
+    text-align: center;
+    font-size: 11px;
+    color: #8a949a;
+    background: #0b1113;
+    border-radius: 5px;
+}
+
+// Guesses left, as pips under the poster -- a count that reads at a glance
+// without a number to parse.
+.pd-pips {
+    display: flex;
+    justify-content: center;
+    gap: 5px;
+    margin-top: 7px;
+}
+
+.pd-pip {
+    width: 16px;
+    height: 3px;
+    border-radius: 2px;
+    background: #fbbf24;
+    opacity: 0.85;
+
+    &--spent { background: #2a3236; opacity: 1; }
+}
+
+.pd-play {
+    flex: 1;
+    min-width: 240px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.pd-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.pd-search-icon { color: #5b686b; flex-shrink: 0; }
+.pd-search-spin { color: #fbbf24; flex-shrink: 0; }
+
+.pd-input {
+    flex: 1;
+    min-width: 0;
+    padding: 7px 9px;
+    border: 1px solid #333f43;
+    border-radius: 5px;
+    background: #12191b;
+    color: #eaeaea;
+    font-size: 12px;
+
+    &:focus { outline: none; border-color: #fbbf24; }
+    &::placeholder { color: #5f6b6e; }
+}
+
+.pd-skip {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 7px 9px;
+    border: 1px solid #333f43;
+    border-radius: 5px;
+    background: #1b2427;
+    color: #b9c3c6;
+    font-size: 10.5px;
+    font-weight: 600;
+    cursor: pointer;
+    flex-shrink: 0;
+
+    &:hover { border-color: #fbbf24; color: #fbbf24; }
+}
+
+.pd-results {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid #232c2f;
+    border-radius: 5px;
+    overflow: hidden;
+    max-height: 190px;
+    overflow-y: auto;
+}
+
+.pd-result-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 7px;
+    border: 0;
+    background: #12191b;
+    color: #dbe4e6;
+    font-size: 11.5px;
+    text-align: left;
+    cursor: pointer;
+
+    & + & { border-top: 1px solid rgba(255, 255, 255, 0.04); }
+
+    &:hover { background: #1b2427; }
+
+    // Already guessed: still listed (so it's obvious why it isn't clickable)
+    // but spent.
+    &--spent {
+        opacity: 0.4;
+        cursor: default;
+        text-decoration: line-through;
+        &:hover { background: #12191b; }
+    }
+}
+
+.pd-thumb {
+    width: 24px;
+    height: 36px;
+    object-fit: cover;
+    border-radius: 3px;
+    flex-shrink: 0;
+    background: #0b1113;
+
+    &--none { border: 1px dashed #2f3a3e; }
+}
+
+.pd-result-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pd-result-year { color: #6b7c80; font-size: 10.5px; flex-shrink: 0; }
+
+.pd-guesses {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.pd-guess {
+    padding: 3px 7px;
+    border-radius: 999px;
+    background: #171f22;
+    border: 1px solid #262f33;
+    color: #7f8c90;
+    font-size: 10px;
+    text-decoration: line-through;
+
+    &--skip { text-decoration: none; font-style: italic; }
+}
+
+.pd-hints {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    border-top: 1px solid #222b2e;
+    padding-top: 8px;
+}
+
+.pd-hints-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: #fbbf24;
+    opacity: 0.9;
+}
+
+.pd-hints-note {
+    margin-left: auto;
+    font-size: 8.5px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    text-transform: none;
+    color: #5b686b;
+}
+
+.pd-hint {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px dashed #333f43;
+    border-radius: 5px;
+    background: #12191b;
+    color: #c3cccf;
+    font-size: 11px;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover:not(:disabled) { border-color: #fbbf24; }
+    &:disabled { cursor: default; opacity: 0.5; }
+
+    // Bought: solid border, content in place of the price.
+    &--open {
+        border-style: solid;
+        border-color: #3a4a3f;
+        cursor: default;
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 3px;
+    }
+}
+
+.pd-hint-label {
+    font-weight: 600;
+    color: #dbe4e6;
+    flex-shrink: 0;
+}
+
+.pd-hint-cost {
+    margin-left: auto;
+    font-size: 10px;
+    color: #7f8c90;
+}
+
+.pd-hint-body {
+    color: #a9b4b8;
+    font-size: 11px;
+    line-height: 1.45;
+}
+
+.pd-result {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 8px 10px;
+    border-radius: 5px;
+    background: #12191b;
+    border: 1px solid #263034;
+}
+
+.pd-win { color: #5eead4; font-weight: 700; font-size: 12px; }
+.pd-lose { color: #fb923c; font-weight: 700; font-size: 12px; }
+
+.pd-answer {
+    font-size: 13px;
+    color: #eaeaea;
+    em { color: #7f8c90; font-style: normal; font-size: 11px; }
+}
+
+.pd-tally { font-size: 10.5px; color: #6b7c80; }
+
+// Quiet inline note for the one case worth surfacing: an untagged machine
+// can't post, so the host refuses rather than guessing a name. Not an error
+// toast -- nothing has gone wrong with the game.
+.pd-note {
+    font-size: 10.5px;
+    color: #8a949a;
+}
+
+.pd-board {
+    width: 100%;
+    max-width: 620px;
+    border-top: 1px solid #222b2e;
+    padding-top: 8px;
+}
+
+.pd-board-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: #fbbf24;
+    opacity: 0.85;
+    margin-bottom: 6px;
+}
+
+.pd-board-window {
+    margin-left: auto;
+    font-size: 8.5px;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    color: #5b686b;
+}
+
+// Same grid shape as the word board: the name takes the slack, the stat
+// columns are fixed so numbers line up rather than drifting with name length.
+.pd-lb-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 2px;
+    font-size: 11px;
+    color: #c3cccf;
+
+    & + & { border-top: 1px solid rgba(255, 255, 255, 0.04); }
+
+    &--head {
+        font-size: 8.5px;
+        font-weight: 700;
+        letter-spacing: 0.7px;
+        text-transform: uppercase;
+        color: #5b686b;
+        border-top: 0;
+    }
+}
+
+.pd-lb-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pd-lb-cell {
+    width: 52px;
+    flex-shrink: 0;
+    text-align: right;
+    color: #8e9a9e;
+}
+
+.pd-lb-streak { color: #fbbf24; font-weight: 700; }
+
+.pd-credit {
+    font-size: 9px;
+    color: #4e5a5d;
+    letter-spacing: 0.3px;
+}
