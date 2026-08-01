@@ -248,7 +248,7 @@ export const TOOLS: ToolEntry[] = [
         categories: ["localise"],
         icon: Languages,
         Component: CampaignLocaliserTool,
-        actions: ["Generate Files", "Generate Files (don't replace)", "Trott!", "Trott 2.0"],
+        actions: ["Generate Files", "Generate Files (don't replace)", "Trott 2.0"],
         description: "",
     },
     {
@@ -276,7 +276,7 @@ export const TOOLS: ToolEntry[] = [
         icon: FileSpreadsheet,
         Component: PDFToCSVTool,
         actions: ["PDF to CSV"],
-        description: "Scans a folder of PDFs and writes a Campaign_Data.csv of matched master info — filename scan only, never opens a project.",
+        description: "Scans a folder of PDFs and writes a Campaign_Data_<CC>.csv of matched master info — filename scan only, never opens a project.",
     },
     {
         id: "edit-generator",

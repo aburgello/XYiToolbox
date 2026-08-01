@@ -282,7 +282,7 @@ const PICKERS = new Set<string>([
 // Explicit action verbs that don't match the prefix rules below. All resolve
 // a simulated success so their toast/status reads as done.
 const ACTIONS = new Set<string>([
-    "autoAspectRatio", "c4dLineArt", "campaignLocaliserGenerate", "campaignLocaliserTrott",
+    "autoAspectRatio", "c4dLineArt", "campaignLocaliserGenerate",
     "campaignLocaliserTrott2", "campaignRename", "checkAspectRatioRename", "checkRenderCheck",
     "cheekyDTCheck", "cheekyTCheck", "copyAep", "createComparisonComp", "csvLocaliserRun",
     "detailPreservingScale", "drqr", "editGeneratorArrange", "editMarkers", "editToolsFuseShots",

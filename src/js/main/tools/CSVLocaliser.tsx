@@ -207,6 +207,51 @@ const tokenised = (s: string) => {
 
 type Tokenised = ReturnType<typeof tokenised>;
 
+/**
+ * Is this row's duration present in that filename, under EITHER convention?
+ *
+ * Files on disk carry one of two forms and both have to keep matching, because
+ * nobody is renaming the batches that already exist:
+ *
+ *   old   …_1080x1920_15sec_EG_V01.aep   ->  flat "…1080X192015SECEGV01AEP"
+ *   new   …_1080x1920px_15s_EG_V01.aep   ->  flat "…1080X1920PX15SEGV01AEP"
+ *
+ * Testing for `<digits>S` covers both at once, since "15SEC" itself begins
+ * "15S". The previous version appended "SEC" unconditionally, so every new
+ * -convention file read as unbuilt -- and that failed SILENTLY, by re-running
+ * deliverables that were already finished rather than by raising anything.
+ *
+ * The leading-digit guard is a real fix, not defensiveness: separators are
+ * stripped from `flat`, so a bare substring test lets a 5-second row match a
+ * 15-second file ("15S" contains "5S"). Requiring the character before the
+ * digits to be a non-digit rules that out. This bug predates the convention
+ * change -- the old "SEC" form had it too.
+ */
+const durationPresent = (hay: Tokenised, rawDuration: string): boolean => {
+    const digits = (rawDuration || "").replace(/[^0-9]/g, "");
+    if (!digits) return true;              // no duration on the row = nothing to check
+    let from = 0;
+    for (;;) {
+        const at = hay.flat.indexOf(digits, from);
+        if (at === -1) return false;
+        // Must be the START of a real token in the filename. A plain substring
+        // test cannot work here: separators are stripped from `flat`, so
+        // "1920x858_10sec" collapses to "…85810SEC" and a 5-second row would
+        // match the "5" inside "858". Token starts are the only surviving
+        // boundary information, which is why this takes the Tokenised form
+        // rather than the flat string.
+        if (hay.startsToken[at]) {
+            let end = at;
+            while (end < hay.flat.length && !hay.endsToken[end]) end++;
+            const token = hay.flat.slice(at, end + 1);
+            // Accept BOTH conventions -- "10s" (current) and "10sec" (every
+            // batch already on disk, which nobody is renaming).
+            if (token === digits + "S" || token === digits + "SEC") return true;
+        }
+        from = at + 1;
+    }
+};
+
 const containsAsTokens = (hay: Tokenised, needle: string): boolean => {
     if (!needle) return false;
     let from = 0;
@@ -284,12 +329,8 @@ export function matchBuiltRows(rows: SpecRow[], existing: string[] | undefined):
         const size = canonName(row.Size);                  // 1080X1920
         const campaign = canonName(row.Campaign);          // JUNGLETUNNEL
         if (!size || !campaign) return false;
-        // The host appends "sec" to whatever the CSV carried, so match the
-        // number with the suffix it will have on disk.
-        const dur = canonName(row.Duration);
-        const durToken = dur ? (/SEC$/.test(dur) ? dur : dur + "SEC") : "";
-        if (f.flat.indexOf(size) === -1) return false;
-        if (durToken && f.flat.indexOf(durToken) === -1) return false;
+        if (f.flat.indexOf(size) === -1) return false;     // "…1080X1920PX…" still contains it
+        if (!durationPresent(f.tokens, row.Duration)) return false;
         if (!containsAsTokens(f.tokens, campaign)) return false;
         return true;
     };

@@ -219,7 +219,16 @@ export function findBestComponentFile<T extends { name: string }>(targetName: st
         .replace(/\.aep|_V\d+/gi, "")
         .replace(/([a-z])([A-Z])/g, "$1 $2");
       const tokens = cleanName.toLowerCase().split(/[_\-\s]+/);
-      const stopWords = ["dgtl", "digital", "master", "ov", "en", "the"];
+      // The format keywords come from the inline matchers XYi_Campaign_Trotting2.jsx
+      // and XYi_PDF_to_CSV.jsx carried before both were switched to the shared
+      // Detectives matcher (2026-07-31). They describe the PHYSICAL FORMAT of a
+      // placement, never which creative it is, so leaving them in let two
+      // unrelated campaigns score as similar purely for sharing "30SHEET".
+      const stopWords = [
+        "dgtl", "digital", "master", "ov", "en", "the",
+        "6sheet", "30sheet", "48sheet", "96sheet",
+        "extreme", "horizontal", "square", "quad", "tall", "portrait",
+      ];
       const finalTokens: string[] = [];
       for (let i = 0; i < tokens.length; i++) {
         const token = tokens[i];
@@ -361,4 +370,76 @@ export function findBestComponentFile<T extends { name: string }>(targetName: st
   }
   if (best && bestScore >= ACCEPT_THRESHOLD) return best;
   return best;
+}
+// =============================================================================
+// Deliverable filename construction -- ONE builder, shared by every tool that
+// writes a localised file.
+//
+// The studio changed this convention in the 2026-07-31 script handover
+// (XYi_Campaign_Scanner.jsx). Four things moved at once:
+//
+//   was  <Title>_<INTL|DOM>_DGTL_<Artwork>_<CAMPAIGN>_<WxH>_<N>sec_<CC>
+//   now  <Title>_<INTL|DOM>_<Campaign>_<Artwork>[_<Site>]_<WxH>px_<N>s_<CC>
+//
+// i.e. DGTL dropped, campaign and artwork swapped, an optional media-site
+// token added after the artwork, and "px"/"s" suffixes on size/duration.
+// Campaign also keeps its original casing now (the old scanner upper-cased it).
+//
+// This lived inline at five separate call sites before, which is exactly how
+// they would drift apart the next time the convention moves -- one function
+// instead, so a future change is one edit. nameGeneratorParse() reads BOTH
+// conventions, so files already on disk under the old name keep working; only
+// what we WRITE changes.
+// =============================================================================
+export interface DeliverableNameParts {
+  filmTitle: string;
+  region: string; // "INTL" | "DOM"
+  campaign: string;
+  artworkType: string;
+  site?: string; // omitted/empty for a deliverable with no media site
+  width: number | string;
+  height: number | string;
+  duration: string; // accepts "15", "15s" or "15sec" -- normalised below
+  territory: string;
+}
+
+// Reduce whatever the CSV/parser handed us to bare digits. The spec sheets and
+// the two parsers disagree on this ("15", "15s", "15sec" all occur in real
+// data), and the written name needs exactly one of them.
+export function durationDigits(duration: string): string {
+  const m = String(duration == null ? "" : duration).match(/\d+/);
+  return m ? m[0] : "";
+}
+
+// The form used to MATCH against masters already on disk. Masters are named
+// under the old convention and are not being renamed, so the lookup keeps the
+// "sec" suffix on purpose -- a bare "10" is a substring of "1080x1920" and
+// would false-match a master of a completely different duration.
+export function durationForMasterLookup(duration: string): string {
+  const digits = durationDigits(duration);
+  return digits === "" ? "" : digits + "sec";
+}
+
+export function buildDeliverableName(parts: DeliverableNameParts): string {
+  const rawSite = parts.site == null ? "" : String(parts.site).replace(/^\s+|\s+$/g, "");
+  const sitePart = rawSite === "" ? "" : "_" + rawSite;
+  const digits = durationDigits(parts.duration);
+  return (
+    parts.filmTitle +
+    "_" +
+    parts.region +
+    "_" +
+    parts.campaign +
+    "_" +
+    parts.artworkType +
+    sitePart +
+    "_" +
+    parts.width +
+    "x" +
+    parts.height +
+    "px_" +
+    digits +
+    "s_" +
+    parts.territory
+  );
 }

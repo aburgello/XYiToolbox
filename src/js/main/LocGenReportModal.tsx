@@ -1,8 +1,8 @@
 // =============================================================================
 // src/js/main/LocGenReportModal.tsx
 // -----------------------------------------------------------------------------
-// Results modal for the row-based localisers -- Generate Files, Trott, and
-// Trott 2.0 (campaignLocaliserGenerate / campaignLocaliserTrott[2] in the host).
+// Results modal for the row-based localisers -- Generate Files and Trott 2.0
+// (campaignLocaliserGenerate / campaignLocaliserTrott2 in the host).
 // Same pattern as McItReportModal: mounted ONCE at the app root as
 // <LocGenReportHost/> so it pops over whatever screen is up, and it recovers a
 // run whose live callback was lost (long batch, panel closed) by polling the

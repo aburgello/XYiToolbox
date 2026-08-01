@@ -24,6 +24,10 @@ const NameGeneratorTool = () => {
     const [isInternational, setIsInternational] = useState(true);
     const [artworkType, setArtworkType] = useState("");
     const [campaign, setCampaign] = useState("");
+    // The studio calls this the "Slug Description" on their naming guide; it
+    // is the same token the CSV pipeline carries as "Site". Optional -- a
+    // deliverable with no specific placement simply leaves it blank.
+    const [site, setSite] = useState("");
     const [territory, setTerritory] = useState("");
     const [status, setStatus] = useState<StatusMsg | null>(null);
     const [busy, setBusy] = useState(false);
@@ -80,12 +84,17 @@ const NameGeneratorTool = () => {
             </div>
 
             <div className="field-row">
+                <label htmlFor="ng-site">Slug Description <span className="field-optional">(optional)</span></label>
+                <input id="ng-site" type="text" value={site} onChange={(e) => setSite(e.target.value)} placeholder="e.g. CentroOberhausen" />
+            </div>
+
+            <div className="field-row">
                 <label htmlFor="ng-territory">2 Digit Territory / Version</label>
                 <input id="ng-territory" type="text" value={territory} onChange={(e) => setTerritory(e.target.value)} placeholder="Enter 2 digit territory..." />
             </div>
 
             <div className="button-row">
-                <button disabled={busy} onClick={() => run("Generate Name", () => evalTS("nameGeneratorGenerate", filmTitle, isInternational, artworkType, campaign, territory))}>
+                <button disabled={busy} onClick={() => run("Generate Name", () => evalTS("nameGeneratorGenerate", filmTitle, isInternational, artworkType, campaign, territory, site))}>
                     <Wand2 size={14} /> Generate Name
                 </button>
                 <button
@@ -95,6 +104,7 @@ const NameGeneratorTool = () => {
                             setFilmTitle(r.filmTitle || "");
                             setArtworkType(r.artworkType || "");
                             setCampaign(r.campaign || "");
+                            setSite(r.site || "");
                             setTerritory(r.territory || "");
                             setIsInternational(!!r.isInternational);
                         })

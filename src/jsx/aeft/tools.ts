@@ -7,7 +7,7 @@
 // etc.). Split out of aeft.ts, which is now a thin barrel -- see its header
 // comment for context.
 // =============================================================================
-import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport } from "./shared";
+import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, buildDeliverableName, durationForMasterLookup } from "./shared";
 import { drqrProcessLayers, makeParentLayerOfAllUnparented, scaleAllCameraZooms, scaleCompToFit } from "./deliver";
 
 
@@ -2468,11 +2468,24 @@ export const campaignLocaliserGenerate = (skipExisting: boolean): LocGenResult =
           continue;
         }
         const sizeParts = texLoc[2].replace(/"/g, "").split("x");
-        const campaign = texLoc[1].replace(/"/g, "").toUpperCase();
+        // Campaign keeps the casing the loc file gave it. The old scanner
+        // upper-cased here; XYi_Campaign_Scanner.jsx (2026-07-31) dropped that
+        // to preserve CamelCase, and every downstream comparison in this
+        // codebase canonicalises case anyway, so nothing depends on it.
+        const campaign = texLoc[1].replace(/"/g, "");
         const width = Math.floor(Number(sizeParts[0]));
         const height = Math.floor(Number(sizeParts[1]));
         const size = width + "x" + height;
-        const duration = String(texLoc[3]).replace(/"/g, "") + "sec";
+        // Kept with the "sec" suffix for the MASTER LOOKUP below -- masters
+        // still carry the old naming and scanMastersForBestMatch tests the
+        // duration as a plain substring of the path, where a bare "10" also
+        // matches inside "1080x1920". The written name gets bare digits via
+        // buildDeliverableName().
+        const duration = durationForMasterLookup(String(texLoc[3]).replace(/"/g, ""));
+        // 5th column, added to the loc CSV by XYi_PDF_to_CSV.jsx in the same
+        // handover. Absent in every pre-existing loc file, which is why this
+        // tolerates a short row rather than indexing blindly.
+        const siteToken = texLoc.length > 4 ? texLoc[4].replace(/"/g, "").replace(/^\s+|\s+$/g, "") : "";
         rep.artwork = texLoc[0].replace(/"/g, "");
         rep.campaign = campaign;
         rep.size = size;
@@ -2510,8 +2523,17 @@ export const campaignLocaliserGenerate = (skipExisting: boolean): LocGenResult =
         const locFileNameParts = locFile.name.split("_");
         const scanTerritory = locFileNameParts[locFileNameParts.length - 1].slice(0, 2);
 
-        const newCompName =
-          scanFilmTitle + "_" + scanIndo + "_DGTL_" + scanArtworkType + "_" + campaign + "_" + width + "x" + height + "_" + duration + "_" + scanTerritory;
+        const newCompName = buildDeliverableName({
+          filmTitle: scanFilmTitle,
+          region: scanIndo,
+          campaign: campaign,
+          artworkType: scanArtworkType,
+          site: siteToken,
+          width: width,
+          height: height,
+          duration: duration,
+          territory: scanTerritory,
+        });
         rep.output = newCompName + "_V01.aep";
 
         const outputFile = new File(locFile.parent.fsName + "/" + newCompName + "_V01.aep");

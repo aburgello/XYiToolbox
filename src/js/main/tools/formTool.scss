@@ -87,6 +87,14 @@
             font-size: 11px;
         }
 
+        // Marks a field that can be left blank, so a required one isn't
+        // guessed at. Dimmer than the label it sits inside rather than a
+        // separate line, to keep the form's row rhythm unchanged.
+        .field-optional {
+            color: #6c6c6c;
+            font-style: italic;
+        }
+
         input[type="text"],
         input[type="number"] {
             background: var(--surface-0, #1f1f1f);

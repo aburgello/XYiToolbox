@@ -7,7 +7,7 @@
 // =============================================================================
 import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, scanMastersForBestMatch } from "./tools";
 import { makeParentLayerOfAllUnparented, scaleAllCameraZooms } from "./deliver";
-import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, saveLocGenReport } from "./shared";
+import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, saveLocGenReport, buildDeliverableName, durationForMasterLookup } from "./shared";
 import { loadCampaignsRaw } from "./review";
 
 
@@ -133,36 +133,6 @@ function trotCreateFolderStructure(folderPath: string): void {
   }
 }
 
-// Ported 1:1 from XYi_Campaign_Trotter.jsx's gimme() -- a simpler,
-// non-Jaccard filename tokenizer specific to Trotting Along (v1). Distinct
-// from Trotting Along 2.0's Jaccard-based gimme(), which is its own
-// separate function below -- the two tools genuinely use different
-// matching strategies in the original, not the same logic twice.
-function trotGimmeV1(filename: string): [string, string] {
-  const resolutionRegex = /\d+x\d+px?/i;
-  let secondOne = "";
-  if (filename.indexOf("DOOH") !== -1) secondOne = "DOOH";
-  else if (filename.indexOf("DINTH") !== -1) secondOne = "DINTH";
-  else if (filename.indexOf("DFOH") !== -1) secondOne = "DFOH";
-
-  const parts = filename.split("_");
-  const tokens = parts.filter((p) => p.length > 0);
-
-  const validTokens: string[] = [];
-  for (let j = 0; j < tokens.length; j++) {
-    if (resolutionRegex.test(tokens[j])) break;
-    validTokens.push(tokens[j]);
-  }
-  if (validTokens.length > 0) validTokens.shift();
-
-  const finalTokens = validTokens.filter((t) => t !== secondOne);
-  if (finalTokens.length > 1 && /^[A-Z]{2,4}$/.test(finalTokens[0])) finalTokens.shift();
-  if (finalTokens.length > 1 && /^[A-Z]{2}$/.test(finalTokens[finalTokens.length - 1])) finalTokens.pop();
-
-  const firstOne = finalTokens.join("_").toUpperCase();
-  return [firstOne, secondOne];
-}
-
 // Shared nameGen() logic across Trotting Along / Trotting Along 2.0 --
 // duplicate the matched master comp, rescale via the same null-parent
 // technique as DRQR/Scale Composition/CSV Localiser, propagate into every
@@ -171,9 +141,8 @@ function trotGimmeV1(filename: string): [string, string] {
 // v2's own nameGen() in the originals is v1 removes the ORIGINAL comp by
 // matching its name after the fact, v2 removes `myComp` directly if it
 // still exists -- both ported exactly as their own file has it.
-function trotNameGen(myComp: CompItem, width: number, height: number, newCompName: string, plm: "PORTRAIT" | "LANDSCAPE", pdfFile: File, removeByName: boolean): void {
+function trotNameGen(myComp: CompItem, width: number, height: number, newCompName: string, plm: "PORTRAIT" | "LANDSCAPE", pdfFile: File): void {
   const scanRegV = /V\d\d/;
-  const myName = myComp.name;
   const oldWidth = myComp.width;
   const oldHeight = myComp.height;
   const newComp = myComp.duplicate();
@@ -247,16 +216,10 @@ function trotNameGen(myComp: CompItem, width: number, height: number, newCompNam
     }
   }
 
-  if (removeByName) {
-    for (let i = 1; i <= app.project.numItems; i++) {
-      const item = app.project.item(i);
-      if (item instanceof CompItem && item.parentFolder && item.parentFolder.name === "Main" && item.name === myName) {
-        item.remove();
-      }
-    }
-  } else if (myComp) {
-    myComp.remove();
-  }
+  // Trott 2.0 removes the pre-localise comp directly. (Trott! used to remove
+  // it by NAME instead, which is why this took a flag -- that path went with
+  // Trott! itself.)
+  if (myComp) myComp.remove();
 
   const aeFolderPath = trotFindPDFsFolder(pdfFile.parent);
   trotCreateFolderStructure(aeFolderPath);
@@ -265,121 +228,6 @@ function trotNameGen(myComp: CompItem, width: number, height: number, newCompNam
   app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
   app.newProject();
 }
-
-// Ported 1:1 from XYi_Campaign_Trotter.jsx's campLoc(). **`sartre` from
-// the original's 7-arg signature is dropped here -- confirmed dead in the
-// original body (never referenced anywhere inside campLoc()), and there's
-// no corresponding UI control for it either (TroAlo() just hardcodes
-// `sartre = true` before calling in), so there's nothing for a param to
-// carry.** TroDur/TroArt/TroArtOn/TroCamp/TroCampOn are all real and used.
-// Matches the original exactly: TroAlo() prompts for the Master/loc folder
-// FIRST, then calls campLoc(), which prompts a SECOND time for the PDF
-// folder -- both dialogs happen inside this one function/button click,
-// not a masters-path param collected ahead of time in React.
-export const campaignLocaliserTrott = (troDur: string, troArt: string, troArtOn: boolean, troCamp: string, troCampOn: boolean): LocGenResult => {
-  const mastersPathFolder = Folder.selectDialog("Please select the Master / loc folder to scan");
-  if (!mastersPathFolder) return { success: false, error: "No masters folder selected." };
-  const mastersPath = mastersPathFolder.fsName;
-
-  const folder = Folder.selectDialog("Select a folder containing PDF files");
-  if (folder === null) return { success: false, error: "No PDF folder selected." };
-
-  const pdfFiles = (folder.getFiles("*.pdf") as File[]) || [];
-  const scanTerritory = getTerritoryCountryCode(trotFindTerrFolder(folder)) || "XX";
-  const regex = /\d*[x]\d*/;
-  const rows: LocGenRowReport[] = [];
-  let lastOutFolder = folder.fsName;
-
-  for (let i = 0; i < pdfFiles.length; i++) {
-    const pdfFile = pdfFiles[i];
-    if (!(pdfFile instanceof File) || !pdfFile.name.match(/\.pdf$/i)) continue;
-    const rep: LocGenRowReport = { source: pdfFile.name, artwork: "", campaign: "", size: "", duration: "", status: "error" };
-    rows.push(rep);
-
-    try {
-      const fileName = pdfFile.name;
-      let artworkType = troArt;
-      if (troArtOn) artworkType = trotGimmeV1(fileName)[1];
-
-      let funcCampaign = troCamp;
-      if (troCampOn) funcCampaign = trotGimmeV1(fileName)[0];
-
-      const sizeParts = String(fileName.match(regex)).split("x");
-      const width = Math.floor(Number(sizeParts[0]));
-      const height = Math.floor(Number(sizeParts[1]));
-      const size = String(width) + "x" + String(height);
-      const funcDuration = troDur;
-
-      const pl: "PORTRAIT" | "LANDSCAPE" = width < height ? "PORTRAIT" : "LANDSCAPE";
-      const duration = funcDuration + "sec";
-      rep.artwork = artworkType;
-      rep.campaign = funcCampaign;
-      rep.size = size;
-      rep.duration = duration;
-
-      const bestMatch = scanMastersForBestMatch(mastersPath, funcCampaign, size, duration);
-      if (!bestMatch) {
-        rep.status = "no-master";
-        rep.error = "No master matched " + funcCampaign + " / " + size + " / " + duration + ".";
-        continue;
-      }
-      const textMaster = bestMatch.fsName;
-
-      const linesMaster = textMaster.split("/");
-      let masterName = linesMaster[linesMaster.length - 1];
-      const ratioPattern = /^_(\d+\.\d+)_/;
-      if (ratioPattern.test(masterName)) masterName = masterName.split(ratioPattern)[2];
-      rep.master = masterName;
-
-      const masterSizeMatch = String(masterName.match(regex));
-      const masterSizeParts = masterSizeMatch.split("x");
-      const masterWidth = Math.floor(Number(masterSizeParts[0]));
-      const masterHeight = Math.floor(Number(masterSizeParts[1]));
-      const plm: "PORTRAIT" | "LANDSCAPE" = masterWidth < masterHeight ? "PORTRAIT" : "LANDSCAPE";
-
-      const scanFilmTitle = masterName.split("_")[0];
-      const scanIndo = masterName.split("_")[1];
-
-      const newCompName = scanFilmTitle + "_" + scanIndo + "_DGTL_" + artworkType + "_" + funcCampaign + "_" + width + "x" + height + "_" + duration + "_" + scanTerritory;
-      rep.output = newCompName + "_V01.aep";
-
-      const aeFolder = trotFindPDFsFolder(pdfFile.parent);
-      lastOutFolder = aeFolder;
-      const outputFile = new File(aeFolder + "/" + newCompName + "_V01.aep");
-      if (outputFile.exists) {
-        rep.status = "skipped-existing";
-        continue;
-      }
-
-      const fileToOpen = new File(textMaster);
-      if (!fileToOpen.exists) {
-        rep.error = "Matched master file not found on disk: " + textMaster;
-        continue;
-      }
-
-      const proj = app.open(fileToOpen);
-      let myComp: CompItem | null = null;
-      const masterStem = masterName.split(".")[0].replace(/_V\d+$/, "");
-      for (let j = 1; j <= proj.numItems; j++) {
-        const item = proj.item(j);
-        if (item instanceof CompItem && item.name === masterStem) myComp = item;
-      }
-      if (!myComp) {
-        rep.status = "no-comp";
-        rep.error = "Master opened but comp '" + masterStem + "' not found inside.";
-        continue;
-      }
-
-      trotNameGen(myComp, width, height, newCompName, plm, pdfFile, true);
-      rep.status = "generated";
-    } catch (err) {
-      rep.status = "error";
-      rep.error = err.toString();
-    }
-  }
-
-  return finishLocGenReport("Trott", rows, lastOutFolder);
-};
 
 // Ported from XYi_Campaign_Trotting2.jsx's campLoc()/gimme()/Detective().
 // **TroDur/TroArt/TroArtOn/TroCamp/TroCampOn are accepted but never used**
@@ -413,7 +261,13 @@ function trotFindAllAeps(rootPath: string): File[] {
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       if (item instanceof Folder) {
-        if (item.name !== "_old" && item.name !== "_archive" && item.name.indexOf("Auto-Save") === -1) scanFolder(item);
+        // Lower-cased compare plus "_dev", matching the 2026-07-31 revisions
+        // of XYi_Campaign_Trotting2.jsx / XYi_PDF_to_CSV.jsx. The old
+        // case-SENSITIVE test missed a real "_Old"/"_DEV"/"Auto-Save" folder
+        // spelled any other way, so those got scanned as if they held live
+        // masters.
+        const lowerName = item.name.toLowerCase();
+        if (lowerName !== "_old" && lowerName !== "_archive" && lowerName !== "_dev" && lowerName.indexOf("auto-save") === -1) scanFolder(item);
       } else if (item instanceof File) {
         if (item.name.slice(-4).toLowerCase() === ".aep") aepFiles.push(item);
       }
@@ -474,10 +328,15 @@ function trotGimmeV2(filename: string, masterAeFiles: TrotMasterInfo[]): [string
   return [campName, secondOne, thirdOne];
 };
 
-// Same two-sequential-dialogs shape as campaignLocaliserTrott() above --
-// TroAloTwo() prompts for the Master/loc folder first, then campLoc()
-// prompts for the PDF folder.
-export const campaignLocaliserTrott2 = (_troDur: string, _troArt: string, _troArtOn: boolean, _troCamp: string, _troCampOn: boolean): LocGenResult => {
+// Two sequential folder dialogs, matching TroAloTwo(): the Master/loc folder
+// first, then campLoc() prompts for the PDF folder.
+//
+// Takes NO arguments. It used to carry five (_troDur/_troArt/_troArtOn/
+// _troCamp/_troCampOn) purely because the original toolbox tab shared one set
+// of fields between Trott! and Trott 2.0, and the signatures had to match --
+// this function never read any of them. With Trott! removed there is nothing
+// left to mirror, so they are gone rather than left as permanent dead params.
+export const campaignLocaliserTrott2 = (): LocGenResult => {
   const mastersPathFolder = Folder.selectDialog("Please select the Master / loc folder to scan");
   if (!mastersPathFolder) return { success: false, error: "No masters folder selected." };
   const mastersPath = mastersPathFolder.fsName;
@@ -540,10 +399,19 @@ export const campaignLocaliserTrott2 = (_troDur: string, _troArt: string, _troAr
       const masterHeight = Math.floor(Number(masterSizeParts[1]));
       const plm: "PORTRAIT" | "LANDSCAPE" = masterWidth < masterHeight ? "PORTRAIT" : "LANDSCAPE";
 
-      const scanFilmTitle = masterName.split("_")[0];
-      const scanIndo = masterName.split("_")[1];
-
-      const newCompName = scanFilmTitle + "_" + scanIndo + "_DGTL_" + artworkType + "_" + funcCampaign + "_" + width + "x" + height + "_" + duration + "_" + scanTerritory;
+      // Trott 2.0 no longer REBUILDS the name from parsed fields -- as of
+      // XYi_Campaign_Trotting2.jsx (2026-07-31) it mirrors the client PDF's
+      // own filename, minus the extension and any trailing "_v2" revision tag.
+      // The studio left the old construction commented out in its source
+      // rather than deleting it, so this is a deliberate switch: the PDF
+      // already carries the correct deliverable name, and re-deriving it can
+      // only introduce disagreement.
+      //
+      // This makes Trott 2.0 convention-AGNOSTIC -- whatever the client's PDF
+      // is named is what lands on disk. That is why it needs no
+      // buildDeliverableName() call, unlike Campaign Localiser and CSV
+      // Localiser, which genuinely construct a name out of fields.
+      const newCompName = decode(pdfFile.name).replace(/\.pdf$/i, "").replace(/_v\d+$/i, "");
       rep.output = newCompName + "_V01.aep";
 
       const aeFolder = trotFindPDFsFolder(pdfFile.parent);
@@ -573,7 +441,7 @@ export const campaignLocaliserTrott2 = (_troDur: string, _troArt: string, _troAr
         continue;
       }
 
-      trotNameGen(myComp, width, height, newCompName, plm, pdfFile, false);
+      trotNameGen(myComp, width, height, newCompName, plm, pdfFile);
       rep.status = "generated";
     } catch (err) {
       rep.status = "error";
@@ -615,7 +483,10 @@ export const pdfToCsvGenerate = (): PdfToCsvResult => {
   const processedMasterFiles = trotPreprocessMasters(mastersFolder.fsName);
   const regexForSize = /\d*[x]\d*/;
   const pdfFiles = (pdfFolder.getFiles("*.pdf") as File[]) || [];
-  let csvOutputString = "Artwork:,Campaign:,Size:,Duration:\n";
+  // 5th column added by XYi_PDF_to_CSV.jsx (2026-07-31). The site is read
+  // off the PDF's own filename, which is the only place it exists -- the
+  // masters carry no site at all.
+  let csvOutputString = "Artwork:,Campaign:,Size:,Duration:,Site:\n";
   let count = 0;
 
   for (let i = 0; i < pdfFiles.length; i++) {
@@ -643,7 +514,12 @@ export const pdfToCsvGenerate = (): PdfToCsvResult => {
     const artworkType = matchInfo[1];
     const duration = matchInfo[2];
 
-    csvOutputString += artworkType + "," + funcCampaign + "," + size + "," + duration + "\n";
+    // Duration goes out as bare digits now, matching the studio's own
+    // "strip the letters" step -- the consumers append their own suffix.
+    const durationDigitsOut = durationDigits(String(duration));
+    const parsedForSite = nameGeneratorParse(fileName);
+    const siteOut = parsedForSite.success && parsedForSite.site ? parsedForSite.site : "";
+    csvOutputString += artworkType + "," + funcCampaign + "," + size + "," + durationDigitsOut + "," + siteOut + "\n";
   }
 
   if (count === 0) {
@@ -653,7 +529,12 @@ export const pdfToCsvGenerate = (): PdfToCsvResult => {
 
   const aeFolderPath = pdfCsvFindPDFsFolder(pdfFolder);
   trotCreateFolderStructure(aeFolderPath);
-  const csvFile = new File(aeFolderPath + "/Campaign_Data.csv");
+  // Territory-suffixed filename, so two territories' CSVs can sit in the
+  // same AE folder without one silently overwriting the other. Falls back
+  // to "OV" exactly as the studio's version does when no territory folder
+  // can be resolved.
+  const csvTerritory = getTerritoryCountryCode(trotFindTerrFolder(pdfFolder)) || "OV";
+  const csvFile = new File(aeFolderPath + "/Campaign_Data_" + csvTerritory + ".csv");
   csvFile.encoding = "UTF-8";
   csvFile.open("w");
   csvFile.write(csvOutputString);
@@ -695,9 +576,9 @@ interface JpegLocParsed {
 
 // Ported 1:1 from XYi_jpgLoc.jsx's gimme() -- returns resolution
 // (`thirdOne`) and the trailing number (`pngNumber`), the two tokens the
-// match compares on. NOT the same as trotGimmeV1() (which returns only
-// [firstOne, secondOne] and skips resolution/number), so ported fresh
-// rather than reused.
+// match compares on. Ported fresh rather than shared with the Trott/MC It!
+// filename tokenisers, which return campaign/artwork and skip the resolution
+// and trailing number entirely.
 function jpegLocGimme(filename: string): JpegLocParsed {
   const resolutionRegex = /\d+x\d+px?/i;
   let secondOne = "";
@@ -1773,12 +1654,16 @@ interface NameGeneratorResult extends Result {
   newName?: string;
 }
 
+// `site` is optional and trailing so every existing caller keeps working
+// unchanged -- an omitted site simply produces a name with no site token,
+// which is the correct output for a deliverable that has no media site.
 export const nameGeneratorGenerate = (
   filmTitle: string,
   isInternational: boolean,
   artworkType: string,
   campaign: string,
-  territory: string
+  territory: string,
+  site?: string
 ): NameGeneratorResult => {
   try {
     const sel = app.project.selection;
@@ -1789,7 +1674,17 @@ export const nameGeneratorGenerate = (
     for (let i = 0; i < sel.length; i++) {
       const item = sel[i];
       const indo = isInternational ? "INTL" : "DOM";
-      const newName = filmTitle + "_" + indo + "_DGTL_" + artworkType + "_" + campaign + "_" + item.width + "x" + item.height + "_" + Math.round(item.duration) + "sec_" + territory;
+      const newName = buildDeliverableName({
+        filmTitle: filmTitle,
+        region: indo,
+        campaign: campaign,
+        artworkType: artworkType,
+        site: site,
+        width: item.width,
+        height: item.height,
+        duration: String(Math.round(item.duration)),
+        territory: territory,
+      });
       item.name = newName;
       lastName = newName;
     }
@@ -1808,6 +1703,12 @@ interface NameDetectResult extends Result {
   isInternational?: boolean;
   duration?: string;
   version?: string;
+  // The media-site token, present only in the studio's NEW (non-DGTL)
+  // naming convention -- "..._<Campaign>_<Artwork>_<Site>_<WxH>px_...".
+  // Always "" for a DGTL-era name, which has no site field at all, so a
+  // caller can treat empty as "this name predates sites" without having
+  // to know which convention it is looking at.
+  site?: string;
 }
 
 // Ported from TC_nameBox() in XYi_Cheeky_N_Check.jsx -- reverse-parses a
@@ -1834,7 +1735,13 @@ interface NameDetectResult extends Result {
 function nameGeneratorParse(name: string): NameDetectResult {
   const artworkTypes = ["DOOH", "DFOH", "DINTH", "FOH"];
 
-  let cleanName = name;
+  // decodeURI FIRST, matching the studio's current TC_nameBox: a name that
+  // arrived from a File/Folder object carries percent-escapes ("%20" for a
+  // space), and every token test below would otherwise compare against the
+  // escaped form. Uses the existing shared decode() helper rather than a bare
+  // decodeURI() so a malformed escape returns the string untouched instead of
+  // throwing across the bridge.
+  let cleanName = decode(name);
   const extIndex = cleanName.lastIndexOf(".");
   if (extIndex > 0) cleanName = cleanName.substring(0, extIndex);
 
@@ -1870,6 +1777,7 @@ function nameGeneratorParse(name: string): NameDetectResult {
   // ordering, rather than assuming DGTL is always present.
   let artworkType = "";
   let campaign = "";
+  let site = "";
   if (regionIndex !== -1 && sizeIndex !== -1) {
     const middleParts = parts.slice(regionIndex + 1, sizeIndex);
     let dgtlIndex = -1;
@@ -1889,10 +1797,17 @@ function nameGeneratorParse(name: string): NameDetectResult {
       }
     }
     if (dgtlIndex !== -1) {
+      // DGTL era: "..._DGTL_<Artwork>_<Campaign>_<WxH>_...". No site field
+      // exists in this convention, so `site` stays "".
       const startIndex = awIndex !== -1 && awIndex > dgtlIndex ? awIndex + 1 : dgtlIndex + 1;
       campaign = middleParts.slice(startIndex).join("_");
     } else if (awIndex !== -1) {
+      // Current convention: "..._<Campaign>_<Artwork>_<Site>_<WxH>px_...".
+      // Campaign is everything BEFORE the artwork token, site everything
+      // after it -- so a name with no site simply yields "" here, which is
+      // what keeps this branch correct for both a sited and an unsited name.
       campaign = middleParts.slice(0, awIndex).join("_");
+      site = middleParts.slice(awIndex + 1).join("_");
     } else {
       campaign = middleParts.join("_");
     }
@@ -1928,7 +1843,7 @@ function nameGeneratorParse(name: string): NameDetectResult {
     }
   }
 
-  return { success: true, filmTitle, artworkType, campaign, territory, isInternational: indom === "INTL", duration, version };
+  return { success: true, filmTitle, artworkType, campaign, territory, isInternational: indom === "INTL", duration, version, site };
 }
 
 export const nameGeneratorDetect = (): NameDetectResult => {
@@ -2844,7 +2759,12 @@ export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExi
       const width = Math.floor(Number(sizeArr[0]));
       const height = Math.floor(Number(sizeArr[1]));
       const size = String(width) + "x" + String(height);
-      const duration = csvLocTrim(texLoc[3]) + "sec";
+      // "sec"-suffixed for the master lookup below (masters keep the old
+      // naming); buildDeliverableName() reduces it to bare digits for the
+      // written name. durationForMasterLookup also normalises a cell that
+      // ALREADY said "15sec", which the old concatenation turned into
+      // "15secsec" and silently matched no master at all.
+      const duration = durationForMasterLookup(csvLocTrim(texLoc[3]));
       // Column 5 (after Country) is the MEDIA SITE NAME the panel carries over
       // from the Specs PDF. Optional by design: a hand-built batch, or a CSV
       // pasted from before this column existed, has fewer columns and simply
@@ -2886,11 +2806,23 @@ export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExi
       // above to build the output folder path (<Source Folder>/AE/<Batch
       // Name>), so the file still lands in the right batch folder on
       // disk, it just doesn't repeat the batch name in every filename too.
-      // Site name (when the CSV carried one) sits directly after the creative
-      // /campaign token and before the size, already sanitised to a single
-      // uppercase A-Z0-9 token by csvLocSanitiseSiteToken.
-      const sitePart = siteToken !== "" ? "_" + siteToken : "";
-      const newCompName = scanFilmTitle + "_" + scanIndo + "_DGTL_" + scanArtworkType + "_" + campaign + sitePart + "_" + width + "x" + height + "_" + duration + "_" + territoryCode;
+      // Site name (when the CSV carried one) sits directly after the ARTWORK
+      // token under the current convention, already sanitised to a single
+      // uppercase A-Z0-9 token by csvLocSanitiseSiteToken. That sanitiser
+      // matters more than ever now: the site is a first-class field the
+      // parsers read back, so its guards against "4X3"/"V2"/two-letter
+      // shapes are what stop it being mistaken for a size/version/territory.
+      const newCompName = buildDeliverableName({
+        filmTitle: scanFilmTitle,
+        region: scanIndo,
+        campaign: campaign,
+        artworkType: scanArtworkType,
+        site: siteToken,
+        width: width,
+        height: height,
+        duration: duration,
+        territory: territoryCode,
+      });
 
       rep.master = masterName;
 

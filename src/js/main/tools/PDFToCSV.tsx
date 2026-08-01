@@ -38,7 +38,7 @@ const PDFToCSVTool = () => {
         <div className="form-tool">
             <p className="hint">
                 Scans a folder of PDFs sitting under a <code>PDFs</code> folder, matches each PDF to a master
-                by campaign/size/duration, and writes a <code>Campaign_Data.csv</code> next to the PDFs'
+                by campaign/size/duration, and writes a <code>Campaign_Data_&lt;CC&gt;.csv</code> next to the PDFs'
                 mirrored AE output folder. Never opens any project &mdash; filename scan only.
             </p>
             <div className="button-row">
