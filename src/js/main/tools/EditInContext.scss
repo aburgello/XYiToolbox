@@ -137,22 +137,87 @@
     text-transform: uppercase;
 }
 
-// Drill-in is a SEPARATE hit area from "edit this layer" -- a precomp layer is
+// Drill-in is a SEPARATE hit area from "edit this layer" -- a nested precomp is
 // legitimately both a thing you transform and a thing you look inside, and
-// guessing which one a click meant would be wrong half the time.
+// guessing which one a click meant would be wrong half the time. Labelled, not
+// icon-only: at a glance it has to read as "go in here".
 .eic-drill {
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    width: 28px;
-    border: 1px solid #262626;
+    gap: 5px;
+    padding: 0 9px;
+    border: 1px solid rgba(45, 212, 191, 0.35);
     border-radius: 5px;
-    background: #171717;
+    background: rgba(45, 212, 191, 0.07);
     color: var(--ov-accent, #5eead4);
+    font-size: 10px;
+    font-weight: 700;
     cursor: pointer;
 
-    &:hover { border-color: var(--ov-accent, #2dd4bf); background: #1c1c1c; }
+    &:hover {
+        border-color: var(--ov-accent, #2dd4bf);
+        background: rgba(45, 212, 191, 0.14);
+        color: #fff;
+    }
+}
+
+// TOP-LEVEL DOORWAY ROW. At the root only precomps are listed and their only
+// job is to be entered, so the whole row is one big obvious target rather than
+// a name plus a small button -- there's no second action to disambiguate from.
+.eic-door {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 9px 11px;
+    border: 1px solid rgba(45, 212, 191, 0.3);
+    border-radius: 6px;
+    background: rgba(45, 212, 191, 0.05);
+    color: #e6eef0;
+    font-size: 12.5px;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+        border-color: var(--ov-accent, #2dd4bf);
+        background: rgba(45, 212, 191, 0.12);
+
+        .eic-door-go { color: #fff; }
+    }
+}
+
+.eic-door-icon {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    background: rgba(45, 212, 191, 0.14);
+    color: var(--ov-accent, #5eead4);
+}
+
+.eic-door-name {
+    flex: 1;
+    min-width: 0;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.eic-door-go {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    color: var(--ov-accent, #5eead4);
 }
 
 .eic-empty {

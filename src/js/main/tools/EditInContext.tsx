@@ -121,7 +121,18 @@ const EditInContextTool = () => {
     const [rootId, setRootId] = useState<number | null>(null);
     const [trail, setTrail] = useState<Crumb[]>([]);
     const [layers, setLayers] = useState<LayerInfo[]>([]);
-    const [path, setPath] = useState<number[]>([]);          // layer indices, root -> target
+    // TWO SEPARATE PATHS, and keeping them separate is load-bearing.
+    //   `path`       — the DRILL trail: precomp layer indices from the root down
+    //                  to the comp currently being listed. Only drill/goTo change it.
+    //   `targetPath` — `path` + the index of the layer being edited.
+    // v1 stored one combined path and folded the selected layer into it, so
+    // picking a SECOND layer at the same level built [...previousTarget, new],
+    // one level too deep — the resolver then tried to descend into a layer that
+    // wasn't a precomp and returned "that layer is no longer where it was".
+    // Re-clicking a breadcrumb appeared to fix it only because goTo() reset the
+    // path.
+    const [path, setPath] = useState<number[]>([]);
+    const [targetPath, setTargetPath] = useState<number[] | null>(null);
     const [target, setTarget] = useState<TargetState | null>(null);
     const [loading, setLoading] = useState(false);
     const [step, setStep] = useState("2");
@@ -146,6 +157,7 @@ const EditInContextTool = () => {
         setStatus(null);
         setTarget(null);
         setPath([]);
+        setTargetPath(null);
         const r = await call("editInContextRoot");
         if (!r) { setLoading(false); return; }
         if (!r.success) { say(r.error || "Couldn't read the active comp."); setLoading(false); return; }
@@ -170,6 +182,7 @@ const EditInContextTool = () => {
         setPath((p) => [...p, layer.index]);
         setLayers(l.layers || []);
         setTarget(null);
+        setTargetPath(null);
         setStatus(null);
     };
 
@@ -185,6 +198,7 @@ const EditInContextTool = () => {
         setPath((p) => p.slice(0, level));
         setLayers(l.layers || []);
         setTarget(null);
+        setTargetPath(null);
         setStatus(null);
     };
 
@@ -202,7 +216,9 @@ const EditInContextTool = () => {
             rootScale: r.rootScale, positionKeyed: r.positionKeyed, scaleKeyed: r.scaleKeyed,
             locked: r.locked,
         });
-        setPath(full);
+        // Record the TARGET only -- `path` (the drill trail) must not move, or
+        // the next pick at this level would be resolved one level too deep.
+        setTargetPath(full);
         setStatus(null);
     };
 
@@ -213,8 +229,8 @@ const EditInContextTool = () => {
     };
 
     const nudge = async (kind: string, ax: number, ay: number) => {
-        if (!rootId || !target || path.length === 0) return;
-        const r = await call("editInContextNudge", rootId, JSON.stringify(path), kind, ax, ay, rootSpace);
+        if (!rootId || !target || !targetPath) return;
+        const r = await call("editInContextNudge", rootId, JSON.stringify(targetPath), kind, ax, ay, rootSpace);
         if (!r) return;
         if (!r.success) { say(r.error || "Nudge failed."); return; }
         setTarget((t) => t ? {
@@ -225,19 +241,21 @@ const EditInContextTool = () => {
     };
 
     const reveal = async () => {
-        if (!rootId || path.length === 0) return;
-        const r = await call("editInContextReveal", rootId, JSON.stringify(path));
+        if (!rootId || !targetPath) return;
+        const r = await call("editInContextReveal", rootId, JSON.stringify(targetPath));
         if (r && r.success) say(r.message || "Selected.", "success");
         else if (r) say(r.error || "Couldn't select it.");
     };
 
     const atRoot = trail.length <= 1;
+    // Top level lists precomps ONLY (doorways); deeper levels list everything,
+    // because that's the stuff you can't otherwise reach without navigating.
+    const visible = atRoot ? layers.filter((l) => l.isPrecomp) : layers;
 
     return (
         <div className="form-tool eic-tool">
             <p className="eic-hint">
-                Stay in the comp you're looking at and reach <strong>down</strong> into a precomp. Nudges apply
-                immediately, so you watch the result in context — no diving in and out, no second viewer.
+                Stay in the comp you're looking at and reach <strong>down</strong> into a precomp.
             </p>
 
             <div className="eic-bar">
@@ -265,9 +283,37 @@ const EditInContextTool = () => {
 
             {rootId && (
                 <div className="eic-layers">
-                    {layers.length === 0 && <p className="eic-empty">This comp has no layers.</p>}
-                    {layers.map((l) => {
-                        const isTarget = target !== null && path.length > 0 && path[path.length - 1] === l.index && trail.length - 1 === path.length - 1;
+                    {/* AT THE TOP LEVEL, ONLY PRECOMPS ARE LISTED, and they are
+                        doorways rather than things to edit. Nudging a top-level
+                        layer is just editing the comp you're already in, which
+                        AE does perfectly well on its own -- this tool exists for
+                        what's INSIDE. One level down, everything is listed and
+                        editable, since that's the stuff you can't reach. */}
+                    {atRoot && visible.length === 0 && (
+                        <p className="eic-empty">
+                            No precomps in <strong>{trail[0]?.compName}</strong> — this tool edits layers that live inside one.
+                        </p>
+                    )}
+                    {!atRoot && visible.length === 0 && <p className="eic-empty">This precomp has no layers.</p>}
+
+                    {visible.map((l) => {
+                        // Highlight only when the selected layer is THIS row at
+                        // THIS level: same depth, same drill prefix, same index.
+                        const isTarget = !!targetPath
+                            && targetPath.length === path.length + 1
+                            && targetPath[targetPath.length - 1] === l.index;
+
+                        // Top level: the whole row opens the precomp.
+                        if (atRoot) {
+                            return (
+                                <button className="eic-door" key={l.index} onClick={() => drill(l)}>
+                                    <span className="eic-door-icon"><Layers size={14} /></span>
+                                    <span className="eic-door-name">{l.name}</span>
+                                    <span className="eic-door-go">Open <ChevronRight size={12} /></span>
+                                </button>
+                            );
+                        }
+
                         return (
                             <div className={"eic-layer-row" + (isTarget ? " eic-layer-row--on" : "")} key={l.index}>
                                 <button
@@ -278,11 +324,10 @@ const EditInContextTool = () => {
                                 >
                                     <span className="eic-layer-idx">{l.index}</span>
                                     <span className="eic-layer-name">{l.name}</span>
-                                    {l.isPrecomp && <span className="eic-tag">precomp</span>}
                                 </button>
                                 {l.isPrecomp && (
-                                    <button className="eic-drill" title="Look inside" onClick={() => drill(l)}>
-                                        <Layers size={12} />
+                                    <button className="eic-drill" title={`Look inside ${l.name}`} onClick={() => drill(l)}>
+                                        <Layers size={12} /> Inside
                                     </button>
                                 )}
                             </div>

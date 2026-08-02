@@ -432,7 +432,7 @@ export const TOOLS: ToolEntry[] = [
         icon: Layers,
         Component: EditInContextTool,
         actions: ["Find Parent Comp(s)", "Open Parent Alongside", "Read Selected Layer", "Apply to Layer"],
-        description: "Edit a nested precomp while watching it in its parent. Finds which comps use the active precomp, opens the parent in a second viewer (AE updates it live), and lets you edit a selected layer's scale/position using the numbers as they appear in the parent comp — no mental math about the precomp's own transform.",
+        description: "Edit a layer inside a precomp without leaving the comp you're in.",
     },
     {
         id: "los-tools",
