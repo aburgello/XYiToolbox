@@ -301,13 +301,14 @@ const ReviewSession: React.FC = () => {
     const loadComps = async () => {
         setError(null);
         try {
-            // 1. Import selected comps from the AE Project panel.
-            const result = await evalTS("deliveryChecklistLoadComps");
+            // 1. Import selected items from the AE Project panel — accepts
+            //    both Comps and FootageItems (.mov files are FootageItems).
+            const result = await evalTS("reviewLoadSelectedItems");
             if (!mountedRef.current) return;
             if (result === undefined) throw new Error("no bridge");
             if (!result.success) { setError(result.error || "Something went wrong."); return; }
             const offset = items.length;
-            const fresh: ReviewItem[] = (result.comps || [])
+            const fresh: ReviewItem[] = (result.items || [])
                 .filter((c: any) => !items.some((i) => i.name === c.name))
                 .map((c: any, i: number) => ({
                     id: ++nextId.current,
@@ -331,7 +332,7 @@ const ReviewSession: React.FC = () => {
                 // the AE comp id (from the bridge result) with the matched
                 // .mp4 path.  The bridge comps array is in the SAME order as
                 // `fresh` because the filter preserves it.
-                const allComps: any[] = result.comps || [];
+                const allComps: any[] = result.items || [];
                 const matches: { mp4Path: string; localItemId: number; localItemName: string; reviewId: number }[] = [];
                 for (let fi = 0; fi < fresh.length; fi++) {
                     const reviewItem = fresh[fi];
@@ -459,7 +460,7 @@ const ReviewSession: React.FC = () => {
         <div className="rv-session">
             {/* Toolbar */}
             <div className="rv-toolbar">
-                <Tooltip text={campaign ? "Import selected comps and auto-create comparison comps for any with a matching master .mp4" : "Import comps currently selected in the Project panel"}>
+                <Tooltip text={campaign ? "Import selected items and auto-create comparison comps for any with a matching master .mp4" : "Import items currently selected in the Project panel"}>
                     <motion.button
                         className="rv-load-btn"
                         onClick={loadComps}

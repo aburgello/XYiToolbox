@@ -513,6 +513,68 @@ export const createComparisonComp = (renderPath: string, width: number, height: 
   }
 };
 
+// ── Review Session: load selected items ────────────────────────────────────
+// Purpose-built for the Review Session workflow.  Unlike the Deliver
+// section's deliveryChecklistLoadComps() — which only accepts CompItems —
+// this accepts BOTH CompItems and FootageItems, because imported .mov
+// renders are FootageItems in AE's Project panel, not comps.
+
+interface ReviewLoadResult extends Result {
+  items?: { id: number; name: string; sourcePath: string | null; duration: number; frameRate: number }[];
+}
+
+export const reviewLoadSelectedItems = (): ReviewLoadResult => {
+  try {
+    const sel = app.project.selection;
+    const items: ReviewLoadResult["items"] = [];
+
+    for (var i = 0; i < sel.length; i++) {
+      var item = sel[i];
+      var name = "";
+      var sourcePath: string | null = null;
+      var duration = 0;
+      var frameRate = 0;
+
+      if (item instanceof CompItem) {
+        name = item.name;
+        duration = item.duration;
+        frameRate = item.frameRate;
+        // Walk the comp's layers for a footage source — the .mov this
+        // comp was built from.  Same approach deliveryBuildCompEntry uses.
+        for (var l = 1; l <= item.numLayers; l++) {
+          var layer = item.layer(l);
+          try {
+            var src = (layer as any).source;
+            if (src && src.file && src.file.fsName) {
+              sourcePath = src.file.fsName;
+              break;
+            }
+          } catch (eL) { /* layer has no source */ }
+        }
+      } else if (item instanceof FootageItem) {
+        name = item.name;
+        duration = item.duration;
+        frameRate = item.frameRate;
+        try {
+          if (item.file && item.file.fsName) sourcePath = item.file.fsName;
+        } catch (eF) { /* generated/placeholder footage has no file */ }
+      } else {
+        // FolderItem or unknown — skip.
+        continue;
+      }
+
+      items.push({ id: item.id, name: name, sourcePath: sourcePath, duration: duration, frameRate: frameRate });
+    }
+
+    if (items.length === 0) {
+      return { success: false, error: "Select one or more comps or footage items in the Project panel first." };
+    }
+    return { success: true, items: items };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
 // ── Review Session: enriched comparison comp ──────────────────────────────
 // Built for the Review Session workflow — finds the local render by AE
 // project item ID (no "select exactly one item" step), and layers on
