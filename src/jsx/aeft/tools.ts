@@ -6046,3 +6046,165 @@ export const trueCompDuplicator = (options: {
     return { success: false, error: e.toString() };
   }
 };
+
+// =============================================================================
+// Edit In Context — solve the "edit a nested precomp but watch it in the
+// parent" tedium.  AE updates every open viewer live when you edit a nested
+// comp, so the ONLY friction is getting both comps open and locked without
+// losing your place.  This tool automates that: reverse-lookup which comps
+// use the active precomp (or a selected precomp layer), open the chosen
+// parent in a second viewer, lock the parent's layers so you can't
+// accidentally edit it while working inside the precomp, and sync the
+// playhead so both comps sit at the same time.
+//
+// Non-negotiable safety: this only ever opens comps ALREADY in the open
+// project via openInViewer() (the same read-only UI action as openCompInViewer).
+// It never touches a .aep file, never calls app.open(), never saves anything.
+// Locking a layer flips its `locked` flag — reversible, no file writes.
+// =============================================================================
+
+// The active comp, if any.
+function editInContextActiveComp(): CompItem | null {
+  try {
+    const active = app.project.activeItem;
+    return active instanceof CompItem ? active : null;
+  } catch (e) { return null; }
+}
+
+// Walk every layer of a comp looking for the one whose source is `target`.
+// Returns the layer if found (first match), else null.  Handles the AE DOM
+// wrapper trap: compare via .source and identity of the underlying item
+// (item === target), never `===` on the layer object itself — and remember
+// FootageItem vs CompItem: a precomp layer's source IS the CompItem.
+function editInContextFindLayer(comp: CompItem, target: CompItem): Layer | null {
+  for (let i = 1; i <= comp.numLayers; i++) {
+    const layer = comp.layer(i);
+    try {
+      const src = (layer as any).source;
+      if (src && src === target) return layer;
+    } catch (eL) { /* camera/light/audio has no source */ }
+  }
+  return null;
+}
+
+export interface EditInContextParent {
+  compId: number;
+  compName: string;
+  layerName: string;
+  layerIndex: number;
+  // The layer's own scale/position in the parent — useful context for
+  // "what does this precomp resolve to in the bigger picture".
+  scale: number[] | null;
+  position: number[] | null;
+}
+
+export const editInContextFindParents = (): Result & { parents?: EditInContextParent[]; activeName?: string } => {
+  try {
+    // The "current" comp = the precomp you're editing.  If the user has a
+    // precomp layer selected inside a comp, that's the target instead.
+    let active = editInContextActiveComp();
+    if (!active) return { success: false, error: "Open a composition first." };
+
+    // If exactly one layer is selected and it's a precomp layer, use THAT
+    // as the target (we want the parents of the selected precomp, not the
+    // comp we're currently inside).
+    let target = active;
+    let selLayerName = "";
+    try {
+      const sel = active.selectedLayers;
+      if (sel && sel.length === 1) {
+        const src = (sel[0] as any).source;
+        if (src && src instanceof CompItem) {
+          target = src as CompItem;
+          selLayerName = String(sel[0].name);
+        }
+      }
+    } catch (eSel) { /* ignore selection quirks */ }
+
+    const parents: EditInContextParent[] = [];
+    for (let i = 1; i <= app.project.numItems; i++) {
+      const item = app.project.item(i);
+      if (!(item instanceof CompItem) || item === target) continue;
+      const layer = editInContextFindLayer(item as CompItem, target);
+      if (!layer) continue;
+      let scale: number[] | null = null;
+      let position: number[] | null = null;
+      try {
+        const sp = (layer as any).property("Transform");
+        if (sp) {
+          try { scale = (sp.property("Scale") as Property).value as number[]; } catch (eSc) {}
+          try { position = (sp.property("Position") as Property).value as number[]; } catch (ePo) {}
+        }
+      } catch (eTr) { /* no transform */ }
+      parents.push({
+        compId: (item as CompItem).id,
+        compName: item.name,
+        layerName: String(layer.name),
+        layerIndex: layer.index,
+        scale,
+        position,
+      });
+    }
+
+    return { success: true, parents, activeName: target.name };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// Open the parent and the precomp in separate viewers, lock the parent's
+// layers, and sync the playhead.  Precomp must already exist in the project.
+// precompId === 0 means "use the currently active comp as the precomp" (the
+// normal flow — you're inside the precomp you want to edit).
+export const editInContextOpen = (parentId: number, precompId: number): Result => {
+  try {
+    const parent = app.project.itemByID(parentId);
+    if (!parent || !(parent instanceof CompItem)) return { success: false, error: "Parent comp no longer exists." };
+    let precomp: CompItem | null = null;
+    if (precompId > 0) {
+      const p = app.project.itemByID(precompId);
+      if (p && p instanceof CompItem) precomp = p;
+    } else {
+      precomp = editInContextActiveComp();
+    }
+    if (!precomp || !(precomp instanceof CompItem)) return { success: false, error: "Precomp no longer exists." };
+
+    app.beginUndoGroup("Edit In Context");
+    // Sync playhead: put both at the same time so you're not scrubbing each
+    // separately.  The precomp keeps whatever time it's at; the parent follows.
+    try { parent.time = precomp.time; } catch (eT) {}
+    // Lock every layer in the parent so accidental edits can't land in it
+    // while you work inside the precomp.
+    for (let i = 1; i <= parent.numLayers; i++) {
+      try { (parent.layer(i) as any).locked = true; } catch (eLock) {}
+    }
+    // Open the precomp first (it becomes the active viewer), then the parent
+    // in a second viewer — AE opens each openInViewer() into its own viewer.
+    precomp.openInViewer();
+    parent.openInViewer();
+    app.endUndoGroup();
+    return { success: true, message: "Opened parent + precomp. Parent layers locked — unlock from the panel when done." };
+  } catch (e) {
+    app.endUndoGroup();
+    return { success: false, error: e.toString() };
+  }
+};
+
+// Unlock every layer in the given comp (called when the artist is done
+// editing the precomp and wants to touch the parent again).
+export const editInContextUnlock = (parentId: number): Result => {
+  try {
+    const parent = app.project.itemByID(parentId);
+    if (!parent || !(parent instanceof CompItem)) return { success: false, error: "Parent comp no longer exists." };
+    let unlocked = 0;
+    for (let i = 1; i <= parent.numLayers; i++) {
+      try {
+        const l = parent.layer(i) as any;
+        if (l.locked) { l.locked = false; unlocked++; }
+      } catch (eLock) {}
+    }
+    return { success: true, message: unlocked > 0 ? `Unlocked ${unlocked} layer(s).` : "No locked layers." };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};

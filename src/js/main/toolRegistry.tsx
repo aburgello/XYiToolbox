@@ -77,6 +77,7 @@ const ExtremeTools01Tool    = React.lazy(() => import("./tools/ExtremeTools01"))
 const ExtremeTools02Tool    = React.lazy(() => import("./tools/ExtremeTools02"));
 const LOSToolsTool          = React.lazy(() => import("./tools/LOSTools"));
 const BatchMatchTool        = React.lazy(() => import("./tools/BatchMatch"));
+const EditInContextTool     = React.lazy(() => import("./tools/EditInContext"));
 const NameAuditTool         = React.lazy(() => import("./tools/NameAudit"));
 const MasterToolsTool       = React.lazy(() => import("./tools/MasterTools"));
 const ProjectButtonsTool    = React.lazy(() => import("./tools/ProjectButtons"));
@@ -423,6 +424,15 @@ export const TOOLS: ToolEntry[] = [
         Component: BatchMatchTool,
         actions: ["Capture from selection", "Preview changes"],
         description: "Copies a property value you've already got right onto the matching layer in every .aep in a folder — verbatim, offset, or scaled proportionally to each file's own comp/source size.",
+    },
+    {
+        id: "edit-in-context",
+        label: "Edit In Context",
+        categories: ["tools"],
+        icon: Layers,
+        Component: EditInContextTool,
+        actions: ["Find Parent Comp(s)", "Open Parent + Lock Layers", "Unlock Parent Layers"],
+        description: "Edit a nested precomp while watching it in its parent — finds which comps use the active precomp, opens the parent in a second viewer, locks its layers so edits only land in the precomp, and syncs the playhead.",
     },
     {
         id: "los-tools",

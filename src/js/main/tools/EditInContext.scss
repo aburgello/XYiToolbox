@@ -1,0 +1,64 @@
+// EditInContext.scss — compact tool page additions on top of formTool.scss.
+
+.eic-tool {
+    .eic-hint {
+        font-size: 11px;
+        color: #999;
+        line-height: 1.5;
+        margin: 0 0 10px;
+    }
+
+    .eic-note {
+        font-size: 10px;
+        color: #777;
+        line-height: 1.5;
+        margin: 10px 0 0;
+        border-top: 1px solid var(--surface-divider, #2a2a2a);
+        padding-top: 8px;
+    }
+
+    .eic-caption {
+        font-size: 11px;
+        color: #aaa;
+        margin-bottom: 6px;
+
+        strong { color: #ddd; }
+    }
+
+    .eic-parents {
+        margin: 10px 0 4px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .eic-parent-row {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 8px 10px;
+        border-radius: 5px;
+        border: 1px solid var(--surface-edge, #3a3a3a);
+        background: var(--surface-0, #202020);
+        cursor: pointer;
+        transition: border-color 0.12s ease, background 0.12s ease;
+
+        &:hover { border-color: #4a4a4a; }
+
+        &.selected {
+            border-color: var(--cat-border, #aac4ff);
+            background: rgba(168, 85, 247, 0.08);
+        }
+    }
+
+    .eic-parent-name {
+        font-size: 12px;
+        font-weight: 600;
+        color: #ddd;
+    }
+
+    .eic-parent-meta {
+        font-size: 10px;
+        color: #888;
+    }
+}
