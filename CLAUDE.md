@@ -5608,3 +5608,292 @@ OLED; the group hues never move with the edge dial). **Not seen in a running
 panel** -- the browser-automation extension was unavailable that session, so
 the sweep in particular wants a real look at a few tool pages, not just the
 home screen.
+
+## Naming Audit (new tool) -- which convention is this file actually on?
+
+`tools/NameAudit.tsx` + `.scss`, backend `nameAuditScan` in
+`jsx/aeft/localise.ts`. **Registered under Localise only** (`categories:
+["localise"]`) AND added to `LocaliseScreen.tsx`'s `TOOLS_ROW` -- Localise is a
+bespoke landing, not a master-detail category screen, so **a registry entry
+alone would have left it unreachable from that section**. Any future
+Localise-categorised tool needs both halves.
+
+Built because the studio now runs TWO naming conventions permanently -- masters
+were never renamed (DGTL era) and deliverables generated since the 2026-07-31
+change use the new form -- and nothing could answer "which one is this file
+on?" without reading filenames by eye.
+
+- **It never opens a file.** Everything the convention encodes lives in the
+  NAME, so this is a directory walk feeding `nameGeneratorParse` -- the same
+  pure parser Name Generator, Trott 2.0, PDF to CSV and File Name Check
+  already share. Cost is one tree walk; `scanMastersForBestMatch` already
+  walks the whole masters tree once PER ROW during a localise, so auditing a
+  whole campaign is cheaper than one row of the run it precedes.
+- **The DGTL token IS the convention test**, not something inferred from the
+  other fields -- it's what decides field order in the parser itself.
+- **Two modes ask different questions**: `masters` expects legacy and flags a
+  file the master lookup can't anchor (no region/size/duration token, i.e.
+  invisible to every CSV row forever); `batch` expects the new form and flags
+  anything still on DGTL, plus name collisions.
+- **Underscore folders are NOT blanket-skipped here.** It skips only
+  `Auto-Save`/`_Archive`/`_Old`/`_DEV` -- matching what the real master lookup
+  skips. A master in `_WIP` IS still findable, so flagging it would report a
+  problem that doesn't exist. (This is the same overstatement that had to be
+  corrected in the naming reference document; don't reintroduce it.)
+- **Collisions are scoped PER FOLDER**, and are detected over every scanned
+  record rather than by appending to rows that already had an issue. The first
+  version did the latter and **a collision between two otherwise-clean files
+  was therefore invisible** -- caught by the headless suite, not by review.
+  Same stem in two different creative folders is normal and is not flagged.
+- **Artwork tag is validated.** `parsed.artworkType` is `""` when none of
+  DOOH/DFOH/DINTH/FOH matched, and an unrecognised tag is a real problem, not
+  cosmetic: with no artwork anchor the parser cannot separate campaign from
+  site and silently lumps them into `campaign`. **The authoritative list stays
+  in `nameGeneratorParse`'s own `artworkTypes` array** -- the audit checks the
+  parser's RESULT rather than duplicating that list.
+- **Territory is validated, not just shape-checked.** The parser's own
+  territory test is `/^[A-Z]{2}$/`, so "ZZ"/"QQ" satisfy it --
+  `nameAuditKnownTerritory()` checks against the same `TC_COUNTRIES` table
+  Cheeky T Check and `getTerritoryCountryCode()` already use, rather than a
+  second list. **"OV" is deliberately accepted** in that slot: on a master it
+  legitimately IS the suffix. A master that has wandered into a batch is
+  caught by the separate, more precise OV check instead.
+- **An isolated `OV` token in BATCH mode is flagged** as a probable
+  un-localised master among the deliverables, reusing `hasIsolatedOvToken()`
+  (the same signal `losOpenForEdit()` uses to decide copy-first) rather than
+  re-testing. Confirmed it does not trip on "MOVEOVER".
+- **Nothing on this page is a `<button>` except the two mode buttons**, so it
+  can't trip the global `button:hover` blue documented above.
+
+**Verified**: both tsconfigs + `yarn build` + the precedence audit clean;
+`nameAuditScan` resolves in `dist/cep/jsx/index.js`; `.na-*` classes present in
+the single bundled stylesheet. Driven in browser preview from BOTH routes
+(search and the Localise tools row): both modes render, 0px horizontal overflow
+at a 500px panel width, and a deliberately over-long filename ellipsises with
+its badge still visible. **18 headless assertions run the REAL built bundle**
+(`dist/cep/jsx/index.js` loaded into a `vm` context with stubbed
+`Folder`/`File`/`app` + a `BridgeTalk.appName` stub, since the bundle only
+publishes its namespace when it thinks it's inside AE) -- that technique is
+reusable for any other pure ExtendScript logic in this repo and is the closest
+thing here to actually testing the shipped code.
+
+**Not run against a real folder tree yet** -- the demo bridge serves a fixture,
+so the walk itself (`getFiles()` recursion over a real NAS tree, and how long
+it takes on a big campaign) still wants a real-AE pass.
+
+## Master lookup is now dual-convention and boundary-safe (`durationMatchesPath`)
+
+`scanMastersForBestMatch` (`tools.ts`) matched a master's duration with a bare
+`path.indexOf(duration)`. That had two problems, one live and one latent:
+
+1. **LIVE BUG: it was an unbounded substring test.** `"5sec"` is inside
+   `"15sec"`, so a 5-second row could match a 15-second master. Verified before
+   the fix; the integration test now pins the correct behaviour.
+2. **It only ever matched the `sec` form.** Masters are not renamed today, but
+   if they ever move to the new `<n>s` convention the lookup silently stops
+   finding them, surfacing as "no master matched" rather than anything pointing
+   at this line.
+
+`durationMatchesPath(path, duration)` replaces it: accepts BOTH `10s` and
+`10sec`, and requires the digits not to be preceded by another digit -- which
+is exactly what kills the 5-vs-15 false match.
+
+- **The trailing side is deliberately loose (any non-digit), NOT a required
+  separator.** A real master named `..._10secOV.aep` with no separator must
+  keep matching. This is what makes the change safe: it can only ever REMOVE
+  matches where the duration was preceded by a digit, i.e. matches that were
+  wrong anyway.
+- **An empty duration still means "no constraint"** and matches everything,
+  preserving exactly what `path.indexOf("")` did.
+- **`durationForMasterLookup` was deliberately NOT changed.** Only the matching
+  predicate moved. That keeps the blast radius to one function:
+  `buildDeliverableName` still reduces to bare digits for the written name (so
+  no output filename changes), and `rep.duration` still reads "15sec" in the
+  run report.
+
+**This means a masters rename to the new convention needs NO code change** --
+the lookup already accepts both, including mid-rename when both forms sit on
+disk at once. The remaining work for that day is docs plus the Naming Audit's
+masters-mode "on the NEW convention" flag, which would start firing on every
+renamed master and should become a neutral tally.
+
+**Verified**: 12 assertions on `durationMatchesPath` and 9 end-to-end on
+`scanMastersForBestMatch` (fake masters tree driven through the REAL built
+bundle), covering unchanged legacy behaviour, the fixed false match, renamed
+masters, and a mixed mid-rename tree. Note the harness needs `exists: true` on
+its Folder stub -- `scanMastersForBestMatch` gates on `root.exists`, which is
+the documented safe use of `.exists` (a directory, not a file).
+
+## CSV Localiser: lazy territory scan + per-row master preview (ONE tree walk)
+
+Two changes that belong together, both from the same complaint: the scan did
+far too much work up front, and you only learned a row had no master *during*
+the run.
+
+**1. The scan is lazy now.** `runScan` used to loop EVERY territory and read
+and parse EVERY Specs PDF (plus an output-folder listing per batch) before you
+had opened anything. It now calls `scanTerritories` and stops -- names only.
+`loadTerritory(t)` does the expensive half, once, when a territory is expanded
+(guarded by a new `TerritoryScan.loaded`). Collapsing keeps what was read, so
+reopening is free. **Same eager-to-lazy move Localised Library's JPG_PNG browse
+already made, for the same reason** -- see that section; if a future scan here
+starts feeling slow again, this is the pattern.
+
+**2. `scanMastersForBestMatch` walked the whole tree PER ROW.** A 14-row batch
+walked the NAS 14 times. Split into `buildMastersIndex(root)` (one walk,
+pre-computing canon path / ratio / orientation) and `pickBestMasterFromIndex()`
+(the scoring, extracted verbatim). `scanMastersForBestMatch` is now those two
+composed -- identical contract, identical answer -- and `csvLocaliserRun` builds
+the index ONCE for the whole run instead of per row.
+- **ORDER IS LOAD-BEARING.** The scoring keeps a candidate on `diff <= min`
+  (not `<`), so among equally-good matches the LAST visited wins. `buildMastersIndex`
+  must therefore walk depth-first, recursing at the point a folder is met,
+  exactly as the original fused loop did. Don't "tidy" that into a
+  collect-folders-then-recurse pass; it would silently change which master wins
+  a tie.
+- Verified by the pre-existing 9-assertion `scanMastersForBestMatch` suite
+  passing unchanged across the refactor -- which is precisely why those tests
+  were worth writing.
+
+**3. `csvLocaliserResolveMasters(mastersPath, rowsJson)` -- read-only preview.**
+Builds the index once and scores every row through the SAME
+`pickBestMasterFromIndex` the run uses, so the preview and the real run cannot
+disagree. Opens nothing, writes nothing. Rows arrive as a JSON STRING (nested
+objects don't survive evalTS's source-splice -- see the ease copy/paste round 3
+note). Each row comes back `{master, path}` with `master: null` for no match.
+
+**UI**: a new indicator column, second (right after the checkbox), with three
+deliberately distinct states -- found (green, master filename in the tooltip),
+none (red, "this row would be skipped"), unknown (quiet grey: no masters folder
+set is a NORMAL state, not a warning). Resolution runs once per territory on
+load, again when `aepPath` changes (otherwise open territories sit on "not
+checked" forever), and again from the per-batch **Re-check** button. It resolves
+against the EFFECTIVE rows, so correcting a mis-parsed size in place re-answers
+whether a master exists -- the main reason to correct it.
+
+**The `.specs-*` styles live in `formTool.scss`, NOT `tools/CSVLocaliser.scss`**
+-- that same-named file exists but **nothing imports it**, so anything added
+there is silently dead. Caught by the new rules not appearing in the bundled
+stylesheet. Check the import before adding to a tool's `.scss` here.
+
+**Verification**: both tsconfigs + `yarn build` + the precedence audit clean;
+all five bridge names resolve in `dist/cep/jsx/index.js`; `.specs-master--*` in
+the single bundled stylesheet; thead/tbody cell counts confirmed still equal (8
+and 8) so the new column can't skew the table. 10 new headless assertions on
+the resolver against the REAL built bundle -- including that it agrees with
+`scanMastersForBestMatch` row for row, that `_Archive` is excluded, and that a
+4-row batch drops from 16 `getFiles()` calls to 4.
+
+**NOT exercisable in browser preview, and that predates this change**: the
+scan needs Node `fs`, which `lib/cep/node.ts` stubs to `{}` whenever
+`window.cep` is absent, plus real Specs PDFs and a real masters tree. The
+backend is well covered by the harness; the UI itself needs a real-AE pass.
+
+## Localise landing: rebalanced hierarchy + the setup path
+
+The landing's largest, brightest object was the Localised Library hero -- a
+BROWSE tool -- while the page's actual job (localise a campaign) sat below it
+as a flat grey panel. The eye went to the secondary thing.
+
+**The Library hero is NOT demoted -- that was explicitly ruled out** ("my team
+need to know it's there, it's a big tool"). It keeps first position, full
+width, its icon badge and its arrow. What changed is that it stops *competing*:
+half the vertical bulk (146px -> 74px), a 38px badge instead of 54px, resting
+glow off (hover only), a flat `--surface-1` ground instead of a teal wash, and
+**a single 2px teal left edge** carrying the section identity instead of an
+all-over gradient. Still unmistakable, no longer the loudest thing.
+
+**The three setup fields are now a PATH, not a stack** (`.specs-setup` /
+`.specs-branches` in `formTool.scss`, markup in `CSVLocaliser.tsx`). Markets and
+Masters are not independent inputs -- they are two folders under one job, and
+Markets is usually derived from the campaign, so they branch off it with a rail
+and a status dot each. This is structure encoding something TRUE (the
+derivation), not decoration.
+- **Filled = solid accent dot + solid input border. Missing = hollow dashed dot
+  + dashed input.** An empty REQUIRED folder was previously the lowest-contrast
+  thing in the panel, which matters more now that an unset masters folder is
+  what leaves the new per-row master indicators grey. The Masters branch also
+  carries a one-line "why" when empty.
+- Fixed 22px rail padding, so it holds at a ~500px docked panel.
+- **The rail and dots anchor to the LABEL'S centre, not the row top** -- the
+  row begins above its label (the body has its own gap), so anchoring to the
+  row floated both ~5px high, which is visible at a glance. `$rail-y` in
+  `formTool.scss` is that centre, measured off the rendered label rather than
+  guessed; the dot and elbow are both derived from it, so if the label's size
+  or the body's gap changes, re-measure that ONE number.
+- **The vertical rail is drawn per row as `top: -gap; bottom: 0`, so
+  consecutive rows TILE into one continuous trunk**, with
+  `&:last-child::after` swapping to a fixed height so it stops on the last dot.
+  `:last-child` is fine on chrome74 -- it's `:has()` that isn't. Two earlier
+  versions were wrong: (1) one trunk on the container with `bottom: 50%`, but a
+  percentage can't know where the last dot lands (rows aren't equal height --
+  Masters grows a hint line), so it overshot or stopped short; (2) a per-row
+  stub from just above each dot down to it, which drew short floating segments
+  instead of a trunk and was visibly disconnected. Verified by measuring: the
+  segments tile with a 0px gap, the first starts on the campaign field's bottom
+  edge, and the last ends on the last dot's centre.
+
+**Settings stopped wearing button costumes.** "Skip existing files" and "Run MC
+It! inline" are settings but were rendered as button-shaped objects the same
+height as the primary action, so three things read as three actions. They now
+sit quietly on the left of `.specs-run-row` with the action at the right, and
+**"Scan Specs" went from ~760px wide to 168px** -- width is not the only way to
+say "primary". Relabelled **"Scan territories"**, which is what it now does
+(the scan lists territories; specs are read on expand).
+- Below 560px the row wraps, and the action takes the **whole line** rather
+  than sitting stranded and left-aligned under the toggles. Plain `@media`,
+  never `@container` (chrome74).
+
+### GOTCHA: JSX ATTRIBUTE strings do NOT process backslash escapes
+
+Shipped and caught only from a screenshot: placeholders rendered the literal
+text `…` on screen. In a JS string `"…"` is an escape and produces
+`…`; in a **JSX attribute** (`placeholder="Select a campaign…"`) it is
+taken literally, backslash and all. Template literals in the same file were
+fine, which is why it looked inconsistent.
+
+**Write the real character (`…`, `—`) rather than an escape** -- a real
+character renders correctly in BOTH contexts, so it is never wrong. Worth
+knowing when patching this codebase with a script: emitting `…` to dodge
+shell/encoding trouble silently breaks any JSX attribute it lands in.
+
+**Verified** at both widths by DOM measurement (screenshots were unavailable
+for part of this): 1374px -- hero 74px, action 168px right-aligned, run row on
+one line; 500px -- zero horizontal overflow, hero title not clipped, inputs
+inside their container, action filling the line. Branch state machine confirmed
+by driving the real React onChange: filling Markets flips it to solid teal and
+enables Scan while Masters stays hollow with its hint.
+
+### Tools row: even grid, no dividers, no captions
+
+The wall of 9 pills was a wrapping flex row with a hairline between every item
+and a trailing 9px `Play` glyph on the three run-in-place ones.
+
+- **Dividers removed.** A rule between every item says "these are all equally
+  unrelated" -- noise standing in for structure.
+- **`display: grid` with `repeat(auto-fill, minmax(148px, 1fr))`**, so the wrap
+  is even instead of a ragged last row, and stays even as tools are added.
+  `minmax(0, ...)` semantics plus `min-width: 0` + ellipsis on the label, so a
+  long name truncates rather than widening its track.
+- **The run-in-place marker is a 2px accent LEFT EDGE**, not a trailing glyph:
+  it scans down the grid at a glance instead of having to be found at the end
+  of each label, and echoes the Library hero's own teal edge.
+
+**A labelled version was built and REJECTED** -- grouping the tools under
+"RUNS HERE" / "OPENS A PAGE" captions. Correctly: it explains the team's own
+tools back to them, and this is a 7-person studio that knows what its buttons
+do. **Don't reintroduce explanatory captions here.** The distinction is real
+(it's the `run` flag in `TOOLS_ROW`) but a mark carries it; a sentence is a
+tutorial.
+
+**The Tooltip-in-a-grid trap applies here** and is handled: each grid cell is a
+Tooltip WRAPPER, not the button, and Tooltip's inner span carries
+`flex: 0 0 auto !important` for its own positioning fix -- the same thing that
+broke XYTools' tab bar and anchor grid. `.ls-grid > .ov-tooltip-wrapper` and
+`.ov-tooltip-content` are forced to `display: block; width: 100%`, and the
+button fills them. Verified by measuring: all 9 buttons render at exactly the
+column width (160px at 1374, 207px at 500).
+
+Verified at both widths: 1374px -> 5 even columns, rows of 5 + 4, zero
+dividers, three teal edges; 500px -> 2 even columns, no horizontal overflow, no
+truncation, everything inside the grid.

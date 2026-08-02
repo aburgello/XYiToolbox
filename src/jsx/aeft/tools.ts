@@ -2377,24 +2377,60 @@ export const mcItClearLastReport = (): { success: boolean } => {
 // reimplemented) on the result, removes the old comp, and saves to the
 // new per-market file.
 // =============================================================================
-export function scanMastersForBestMatch(mastersRoot: string, campaign: string, size: string, duration: string): File | null {
-  const sizeParts = size.split("x");
-  const aspectRatioRef = Number(sizeParts[0]) / Number(sizeParts[1]);
-  const plRef = aspectRatioRef >= 1 ? "Landscape" : "Portrait";
+// Does `path` name a master of this duration? Replaces a bare
+// `path.indexOf(duration)`, which had TWO problems:
+//
+//  1. It was an UNBOUNDED substring test, so a 5-second row false-matched a
+//     15-second master ("5sec" is inside "15sec") -- a real bug that existed
+//     for as long as this function has.
+//  2. It only ever matched the "sec" form. Masters are not renamed today, but
+//     if they ever move to the new "<n>s" convention this silently stops
+//     finding them, and the failure looks like "no master matched" rather
+//     than anything pointing here.
+//
+// Accepts BOTH conventions and requires the digits not to be preceded by
+// another digit, which is exactly what kills the 5-vs-15 false match. The
+// TRAILING side is deliberately left loose (any non-digit) rather than
+// requiring a clean separator: a real master named "..._10secOV.aep" with no
+// separator still matches, so this can only ever REMOVE matches where the
+// duration was preceded by a digit -- i.e. matches that were wrong anyway.
+//
+// An empty duration means "no duration constraint" and matches everything,
+// preserving what `path.indexOf("")` did before.
+export function durationMatchesPath(path: string, duration: string): boolean {
+  const digits = String(duration == null ? "" : duration).match(/\d+/);
+  if (!digits) return true;
+  const re = new RegExp("(^|[^0-9])" + digits[0] + "s(ec)?([^0-9]|$)", "i");
+  return re.test(path);
+}
 
-  // Separator/case-insensitive campaign match: strip everything but letters and
-  // digits so "JungleTunnel" (from a Specs PDF's ARTWORK SELECTION column)
-  // matches a master spelled "JUNGLE_TUNNEL" (or "Jungle Tunnel", "jungletunnel"
-  // …). The literal path.indexOf(campaign) used before only matched when the
-  // CSV happened to use the exact same separators/case as the filename, which
-  // is why scanned campaigns silently found nothing. Everything else (duration,
-  // the Auto-Save/_Archive/_Old/_DEV exclusions, aspect-ratio) is unchanged.
-  const canon = (s: string) => String(s).toUpperCase().replace(/[^A-Z0-9]/g, "");
-  const campaignCanon = canon(campaign);
+// One entry per candidate master, built by ONE walk of the tree.
+export interface MasterIndexEntry {
+  file: File;
+  path: string;
+  name: string;
+  canonPath: string;
+  ratio: number;
+  orientation: string;
+}
 
-  let best: File | null = null;
-  let min = 1000;
+function mastersCanon(s: string): string {
+  return String(s).toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
 
+// Walk the masters tree ONCE and pre-compute everything the scoring needs.
+//
+// This exists because `scanMastersForBestMatch` walks the WHOLE tree per call,
+// and a localise run calls it once PER ROW -- a 14-row batch walked the tree 14
+// times. Building the index once and scoring against it in memory is the same
+// answer for a fraction of the network I/O, which matters on the NAS.
+//
+// ORDER IS LOAD-BEARING: the scoring below keeps a candidate on `diff <= min`
+// (not `<`), so among equally-good matches the LAST one wins. This walk must
+// therefore visit files in exactly the order the original single-pass version
+// did -- depth-first, recursing at the point a folder is encountered.
+export function buildMastersIndex(mastersRoot: string): MasterIndexEntry[] {
+  const out: MasterIndexEntry[] = [];
   const walk = (folder: Folder) => {
     const items = folder.getFiles();
     for (let i = 0; i < items.length; i++) {
@@ -2405,35 +2441,67 @@ export function scanMastersForBestMatch(mastersRoot: string, campaign: string, s
         const path = item.fsName;
         if (
           path.slice(-4) === ".aep" &&
-          canon(path).indexOf(campaignCanon) !== -1 &&
           path.indexOf("Auto-Save") === -1 &&
           path.indexOf("_Archive") === -1 &&
           path.indexOf("_Old") === -1 &&
-          path.indexOf("_DEV") === -1 &&
-          path.indexOf(duration) !== -1
+          path.indexOf("_DEV") === -1
         ) {
           const sizeMatch = path.match(/\d+x\d+/);
           if (!sizeMatch) continue;
           const destParts = sizeMatch[0].split("x");
-          const widthDest = Number(destParts[0]);
-          const heightDest = Number(destParts[1]);
-          const aspectRatioDest = widthDest / heightDest;
-          const plDest = aspectRatioDest >= 1 ? "Landscape" : "Portrait";
-          if (plDest === plRef) {
-            const diff = Math.abs(aspectRatioRef - aspectRatioDest);
-            if (diff <= min) {
-              best = item;
-              min = diff;
-            }
-          }
+          const ratio = Number(destParts[0]) / Number(destParts[1]);
+          out.push({
+            file: item,
+            path: path,
+            name: item.name,
+            canonPath: mastersCanon(path),
+            ratio: ratio,
+            orientation: ratio >= 1 ? "Landscape" : "Portrait",
+          });
         }
       }
     }
   };
-
   const root = new Folder(mastersRoot);
   if (root.exists) walk(root);
+  return out;
+}
+
+// The scoring half, extracted verbatim from scanMastersForBestMatch so both the
+// real run and the read-only preview can never disagree about which master wins.
+export function pickBestMasterFromIndex(
+  index: MasterIndexEntry[],
+  campaign: string,
+  size: string,
+  duration: string
+): MasterIndexEntry | null {
+  const sizeParts = size.split("x");
+  const aspectRatioRef = Number(sizeParts[0]) / Number(sizeParts[1]);
+  const plRef = aspectRatioRef >= 1 ? "Landscape" : "Portrait";
+  const campaignCanon = mastersCanon(campaign);
+
+  let best: MasterIndexEntry | null = null;
+  let min = 1000;
+  for (let i = 0; i < index.length; i++) {
+    const e = index[i];
+    if (e.canonPath.indexOf(campaignCanon) === -1) continue;
+    if (!durationMatchesPath(e.path, duration)) continue;
+    if (e.orientation !== plRef) continue;
+    const diff = Math.abs(aspectRatioRef - e.ratio);
+    if (diff <= min) {
+      best = e;
+      min = diff;
+    }
+  }
   return best;
+}
+
+// Unchanged contract: same arguments, same answer, same File back. Now just
+// index-then-score rather than one fused pass, so the two callers below and the
+// batch preview all share one definition of "best master".
+export function scanMastersForBestMatch(mastersRoot: string, campaign: string, size: string, duration: string): File | null {
+  const best = pickBestMasterFromIndex(buildMastersIndex(mastersRoot), campaign, size, duration);
+  return best ? best.file : null;
 }
 
 export interface CampaignLocaliserResult {

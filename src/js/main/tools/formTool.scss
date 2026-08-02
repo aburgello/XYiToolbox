@@ -1786,3 +1786,189 @@
         font-size: 10.5px;
     }
 }
+
+// ── CSV Localiser: per-row master indicator ───────────────────────────────
+// Lives here, NOT in the same-named CSVLocaliser.scss — that file is dead (no
+// component imports it) and every other .specs-* rule is already in this one.
+// Three states that must stay visually distinct: found, none, unknown. The
+// "unknown" grey is deliberately quiet — no masters folder set is a normal
+// state, not a problem, and shouldn't read as a warning down a whole column.
+.specs-row-master-col {
+    width: 22px;
+    text-align: center;
+    padding: 0 2px;
+}
+
+.specs-master {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 0;
+
+    &--ok      { color: #4ade80; }
+    &--none    { color: #f87171; }
+    &--unknown { color: #5a5a5a; }
+}
+
+// An excluded row's indicator shouldn't shout — that row isn't going to run.
+.specs-row--excluded .specs-master { opacity: 0.35; }
+
+// ── CSV Localiser: job setup as a PATH ────────────────────────────────────
+// Markets and Masters aren't three independent fields — they're two folders
+// under one job, Markets usually derived from the campaign. Branching them off
+// the campaign encodes that, and makes "what's still missing" readable without
+// having to notice an empty box. Filled vs hollow dot is the whole read.
+//
+// No color-mix()/:has() anywhere here — chrome74 target, same rule as the rest
+// of this codebase.
+.specs-setup {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.specs-branches {
+    position: relative;
+    // Room for the rail + dot. Fixed, so this holds at a 500px docked panel.
+    padding-left: 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+// The rail and the dot must sit on the LABEL'S optical centre, not the top of
+// the row -- the row starts above its label (the body has its own gap), so
+// anchoring to the row top floated both a few px high. $rail-y is that centre,
+// measured from the rendered label rather than guessed: 10px/normal type, so
+// its centre lands ~15px down. If the label's size or the body's gap changes,
+// re-measure this one number and the dot and elbow follow it.
+$rail-y: 15px;
+$rail-x: -18px;    // dot centre: left -22px + half of 9px
+$rail-gap: 10px;   // exactly the flex gap between rows, so segments tile
+
+.specs-branch {
+    position: relative;
+
+    // The elbow into each row, on the label's centre line.
+    &::before {
+        content: "";
+        position: absolute;
+        left: -17px;
+        top: $rail-y;
+        width: 12px;
+        height: 1px;
+        background: var(--surface-edge, #3a3a3a);
+    }
+
+    // The vertical rail. Each row draws the gap ABOVE it plus its own full
+    // height, so consecutive rows TILE into one continuous trunk running down
+    // from the campaign field -- and the last row stops at its own dot (below).
+    //
+    // Two earlier attempts were wrong and are worth not repeating:
+    //   1. One trunk on the container with `bottom: 50%` -- a percentage can't
+    //      know where the last dot lands (rows aren't equal height; Masters
+    //      grows a hint line), so it overshot or stopped short.
+    //   2. A per-row segment from just above the dot down to the dot -- that
+    //      only drew a short stub by each dot, leaving visibly disconnected
+    //      floating lines rather than a trunk.
+    &::after {
+        content: "";
+        position: absolute;
+        left: $rail-x;
+        top: -$rail-gap;
+        bottom: 0;
+        width: 1px;
+        background: var(--surface-edge, #3a3a3a);
+    }
+
+    // Terminate exactly at the last dot instead of running past it to the
+    // bottom of the final row. `:last-child` is fine on this project's
+    // chrome74 target -- it's `:has()` that isn't.
+    &:last-child::after {
+        bottom: auto;
+        height: $rail-gap + $rail-y;
+    }
+}
+
+.specs-branch-dot {
+    position: absolute;
+    left: -22px;
+    // Centre the 9px dot on the same line: 15 - (9 / 2).
+    top: $rail-y - 4.5px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    box-sizing: border-box;
+    // Above the rail, so the rail doesn't show through a hollow dot.
+    z-index: 1;
+}
+
+// Set = solid accent. Missing = hollow, so an unfilled required folder is the
+// one thing on the row that reads as incomplete rather than merely empty.
+.specs-branch.is-set .specs-branch-dot {
+    background: var(--cat-icon, #2dd4bf);
+    border: 1px solid var(--cat-icon, #2dd4bf);
+}
+
+.specs-branch.is-empty .specs-branch-dot {
+    background: transparent;
+    border: 1px dashed #6b6b6b;
+}
+
+.specs-branch-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+// An empty required field should not be the quietest thing on screen.
+.specs-branch.is-empty .field-row input {
+    border-style: dashed;
+    border-color: #5a5a5a;
+}
+
+.specs-branch-why {
+    font-size: 10px;
+    color: #8a8a8a;
+    line-height: 1.4;
+}
+
+// ── settings vs action ────────────────────────────────────────────────────
+// These are different KINDS of control and no longer share a shape: the
+// toggles sit quietly on the left, the action is a normal-width button that
+// doesn't need half the panel to say it's primary.
+.specs-run-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    margin-top: 2px;
+}
+
+.specs-options {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    // Takes the slack so the action sits at the right-hand end.
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.specs-tool .specs-scan-btn {
+    flex: 0 0 auto;
+    min-width: 168px;
+    justify-content: center;
+}
+
+// Docked panels are narrow (~500px is this project's design target). Below the
+// point where the run row wraps, the action would otherwise sit stranded and
+// left-aligned under the toggles, reading as less important than they are.
+// Give it the whole line instead. Plain @media, NOT @container — chrome74.
+@media (max-width: 560px) {
+    .specs-tool .specs-scan-btn {
+        flex: 1 1 100%;
+        width: 100%;
+    }
+}

@@ -200,6 +200,84 @@ const SHAPED: Record<string, (args: unknown[]) => unknown> = {
     // populated rack looks like; posts are accepted and dropped (a demo
     // shouldn't imply it wrote to the studio NAS).
     teamArcadePost: () => ok(),
+    // Naming Audit -- a deliberately MIXED fixture: real-shaped names from both
+    // conventions plus the three failure modes the audit exists to surface, so
+    // the report layout can be judged in preview without a NAS or AE.
+    // Resolve rows to masters. Deliberately MIXED so the preview shows all
+    // three indicator states: most rows match, one deliberately doesn't.
+    csvLocaliserResolveMasters: (args: unknown[]) => {
+        let rows: { campaign?: string; size?: string; duration?: string }[] = [];
+        try {
+            rows = JSON.parse(String(args[1] || "[]"));
+        } catch (e) {
+            rows = [];
+        }
+        return {
+            success: true,
+            indexed: 29,
+            rows: rows.map((r, i) => {
+                // Every 4th row finds nothing, so the "no master" state is visible.
+                if (i % 4 === 3) return { master: null, path: null };
+                const camp = (r.campaign || "CAMPAIGN").replace(/[^A-Za-z0-9]/g, "");
+                const size = (r.size || "1920x1080").replace("px", "");
+                const dur = String(r.duration || "10").replace(/[^0-9]/g, "");
+                const name = `ODY_INTL_DGTL_DOOH_${camp.toUpperCase()}_${size}_${dur}sec_OV.aep`;
+                return { master: name, path: `/Volumes/newmedia/XY1234_Masters/AE/${camp}/${name}` };
+            }),
+        };
+    },
+
+    nameAuditScan: (args: unknown[]) => {
+        const mode = String(args[0] || "batch");
+        return {
+        success: true,
+        root: mode === "masters" ? "/Volumes/newmedia/XY1234_ODYSSEY/Masters/AE" : "/Volumes/newmedia/XY1234_ODYSSEY/FR/AE/Batch_02",
+        mode,
+        scanned: 14,
+        newCount: mode === "masters" ? 1 : 9,
+        legacyCount: mode === "masters" ? 12 : 4,
+        unknownCount: 1,
+        issueCount: mode === "masters" ? 2 : 6,
+        truncated: false,
+        rows:
+            mode === "masters"
+                ? [
+                      {
+                          name: "ODY_HORSE_LOS_1920x858_10sec_OV.aep",
+                          folder: "HORSE",
+                          convention: "unknown",
+                          issues: ["No INTL/DOM token -- the parser can't find where the film title ends"],
+                      },
+                      {
+                          name: "ODY_INTL_DGTL_DOOH_HORSE_1920x858_OV.aep",
+                          folder: "HORSE",
+                          convention: "legacy",
+                          issues: ["No duration token"],
+                      },
+                  ]
+                : [
+                      {
+                          name: "ODY_INTL_DGTL_DOOH_JUNGLETUNNEL_1080x1920_15sec_FR_V01.aep",
+                          folder: "",
+                          convention: "legacy",
+                          issues: ["Still on the OLD (DGTL) convention -- deliverables should use the new form"],
+                      },
+                      {
+                          name: "ODY_INTL_JUNGLETUNNEL_DOOH_1080x1920px_15s.aep",
+                          folder: "",
+                          convention: "new",
+                          issues: ["No territory code"],
+                      },
+                      {
+                          name: "ODY_INTL_JUNGLETUNNEL_DOOH_Piccadilly_1080x1920px_15s_FR.aep",
+                          folder: "",
+                          convention: "new",
+                          issues: ["Another file in this folder canonicalises to the same name"],
+                      },
+                  ],
+        };
+    },
+
     teamArcadeScores: () => ({
         success: true,
         me: "antonio",

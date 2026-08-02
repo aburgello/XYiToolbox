@@ -9,7 +9,7 @@
 import React, { Suspense, useState, useRef, useEffect } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import gsap from "gsap";
-import { ArrowLeft, ArrowRight, BookOpen, FileSignature, Stamp, ClipboardCheck, Clapperboard, FileText, Copy, Image as ImageIcon, FileSpreadsheet, Rabbit, Play } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, FileSignature, Stamp, ClipboardCheck, Clapperboard, FileText, Copy, Image as ImageIcon, FileSpreadsheet, Rabbit, ScanSearch } from "lucide-react";
 import { TOOLS, categoryStyleVars, type ToolProps } from "../toolRegistry";
 import { ToolErrorBoundary } from "../ToolErrorBoundary";
 import { PaletteTrigger, triggerPalette } from "../CommandPalette";
@@ -59,6 +59,7 @@ const TOOLS_ROW: (UtilityEntry & { run?: string })[] = [
     { id: "aep-thief",         label: "AEP Thief",      icon: Copy,            run: "copyAep" },
     { id: "cheeky-dt",         label: "Cheeky DT",      icon: Stamp },
     { id: "check",             label: "Check",          icon: ClipboardCheck },
+    { id: "name-audit",        label: "Naming Audit",   icon: ScanSearch },
     { id: "generate-cue-sheet",label: "Cue Sheet",      icon: FileText },
     { id: "name-generator",    label: "Name Generator", icon: FileSignature },
     { id: "edit-generator",    label: "Edit Generator", icon: Clapperboard },
@@ -248,7 +249,7 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
                         onClick={() => { sfx.click(); handleSelect("localised-library"); }}
                     >
                         <span className="ls-library-hero-glow" aria-hidden="true" />
-                        <span className="ls-library-hero-icon"><BookOpen size={26} /></span>
+                        <span className="ls-library-hero-icon"><BookOpen size={19} /></span>
                         <span className="ls-library-hero-text">
                             <span className="ls-library-hero-eyebrow">Library</span>
                             <span className="ls-library-hero-title">Localised Library</span>
@@ -291,24 +292,20 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
                     <div className="ls-utilities">
                         <span className="ls-grid-label">Tools</span>
                         <div className="ls-grid">
-                            {TOOLS_ROW.map(({ id, label, icon: Icon, run }, i) => (
-                                <React.Fragment key={id}>
-                                    {i > 0 && <span className="ls-tool-divider" aria-hidden="true" />}
-                                    <Tooltip text={run ? `${toolDescription(id)} (runs here)` : toolDescription(id)} delay={500}>
-                                        <button
-                                            className={run ? "ls-grid-item ls-grid-item--runnable" : "ls-grid-item"}
-                                            disabled={runningId === id}
-                                            onClick={() => {
-                                                if (run) { sfx.click(); runInPlace(id, label, run); }
-                                                else { sfx.click(); handleSelect(id); }
-                                            }}
-                                        >
-                                            <Icon size={14} />
-                                            <span>{runningId === id ? "Running…" : label}</span>
-                                            {run && <Play size={9} className="ls-stage-run" />}
-                                        </button>
-                                    </Tooltip>
-                                </React.Fragment>
+                            {TOOLS_ROW.map(({ id, label, icon: Icon, run }) => (
+                                <Tooltip key={id} text={run ? `${toolDescription(id)} (runs here)` : toolDescription(id)} delay={500}>
+                                    <button
+                                        className={run ? "ls-grid-item ls-grid-item--runnable" : "ls-grid-item"}
+                                        disabled={runningId === id}
+                                        onClick={() => {
+                                            if (run) { sfx.click(); runInPlace(id, label, run); }
+                                            else { sfx.click(); handleSelect(id); }
+                                        }}
+                                    >
+                                        <Icon size={14} />
+                                        <span>{runningId === id ? "Running…" : label}</span>
+                                    </button>
+                                </Tooltip>
                             ))}
                         </div>
                         {runStatus && (

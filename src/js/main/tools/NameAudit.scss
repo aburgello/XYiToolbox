@@ -1,0 +1,187 @@
+// =============================================================================
+// src/js/main/tools/NameAudit.scss
+// -----------------------------------------------------------------------------
+// Every background/border here goes through the --surface-* tokens (with the
+// pre-token literal as the fallback) so the OLED surface dial reaches this
+// page too -- see CLAUDE.md's theme-picker section for the tiering rule
+// (divider = internal rules, edge = containers, border = elements).
+//
+// NOTE: no element here is a <button>, deliberately -- a row is a report line,
+// not an action, so this page never trips the global `button:hover` blue
+// documented in CLAUDE.md.
+// =============================================================================
+
+.na-report {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.na-root {
+    font-size: 10px;
+    color: #888;
+    // A real path has no spaces to wrap at, so it must be allowed to break
+    // mid-token or it pushes the panel wide.
+    overflow-wrap: anywhere;
+    margin-bottom: 8px;
+}
+
+.na-tallies {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.na-tally {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--surface-border, #444);
+    background: var(--surface-2, #2a2a2a);
+    color: #bbb;
+
+    b {
+        color: #fff;
+        font-weight: 700;
+    }
+}
+
+// Fixed low-alpha tints, NOT --cat-glow: that var is tuned for hover shadow
+// strength and renders near-solid at rest (the trap the Localised Library
+// JPG_PNG row hit for real).
+.na-tally--new {
+    border-color: rgba(45, 212, 191, 0.45);
+    background: rgba(45, 212, 191, 0.08);
+}
+
+.na-tally--legacy {
+    border-color: rgba(251, 146, 60, 0.45);
+    background: rgba(251, 146, 60, 0.08);
+}
+
+.na-tally--unknown {
+    border-color: rgba(248, 113, 113, 0.45);
+    background: rgba(248, 113, 113, 0.08);
+}
+
+.na-clean {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: #6ee7b7;
+    padding: 10px;
+    border: 1px solid var(--surface-edge, #3a3a3a);
+    border-radius: 6px;
+    background: var(--surface-1, #232323);
+}
+
+.na-list-head {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #999;
+    margin-bottom: 6px;
+}
+
+.na-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    // Its own scroll region, so a long report can't grow the panel past the
+    // buttons that produced it.
+    max-height: 340px;
+    overflow-y: auto;
+}
+
+.na-row {
+    border: 1px solid var(--surface-edge, #3a3a3a);
+    border-radius: 6px;
+    background: var(--surface-1, #232323);
+    padding: 8px 10px;
+}
+
+.na-row-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.na-row-name {
+    // minmax(0)-equivalent for flex: without min-width:0 the track can't
+    // shrink below content and the ellipsis never engages.
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    color: #eee;
+    font-weight: 600;
+}
+
+.na-badge {
+    flex-shrink: 0;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--surface-border, #444);
+    color: #ccc;
+}
+
+.na-badge--new {
+    border-color: rgba(45, 212, 191, 0.5);
+    color: #5eead4;
+}
+
+.na-badge--legacy {
+    border-color: rgba(251, 146, 60, 0.5);
+    color: #fdba74;
+}
+
+.na-badge--unknown {
+    border-color: rgba(248, 113, 113, 0.5);
+    color: #fca5a5;
+}
+
+.na-row-folder {
+    font-size: 10px;
+    color: #777;
+    margin-top: 2px;
+    overflow-wrap: anywhere;
+}
+
+.na-issues {
+    list-style: none;
+    margin: 6px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+
+    li {
+        display: flex;
+        align-items: flex-start;
+        gap: 5px;
+        font-size: 10px;
+        line-height: 1.4;
+        color: #d0a05a;
+
+        svg {
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+    }
+}
+
+.na-truncated {
+    font-size: 10px;
+    color: #888;
+    margin-top: 6px;
+}

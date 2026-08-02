@@ -33,6 +33,9 @@ import {
     X,
     RotateCcw,
     FolderOpen,
+    FileCheck,
+    FileX,
+    Circle,
 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { fs, path } from "../../lib/cep/node";
@@ -458,6 +461,19 @@ interface TerritoryScan {
     batches: Batch[];
     rowCount: number;
     hasSpecs: boolean;
+    // Specs PDFs are read PER TERRITORY, on expand -- not up front. The scan
+    // button used to parse every PDF under every territory before you had
+    // looked at anything, which on the NAS is most of the wait, for work you
+    // may never open. Same eager-to-lazy move Localised Library's JPG_PNG
+    // browse already made, for the same reason.
+    loaded: boolean;
+}
+
+// Which master each row resolves to, from the read-only preview. A null master
+// means nothing matched -- that row would come back "no-master" on a real run.
+interface ResolvedMaster {
+    master: string | null;
+    path: string | null;
 }
 
 const isBridge = () => typeof (window as any).cep !== "undefined";
@@ -537,6 +553,14 @@ const CSVLocaliserTool = () => {
     const [notice, setNotice] = useState<string | null>(null);
 
     const [scan, setScan] = useState<TerritoryScan[] | null>(null);
+
+    // Territories whose specs are being read right now (one spinner each).
+
+    const [loadingTerr, setLoadingTerr] = useState<Set<string>>(new Set());
+
+    // batchKey -> per-row resolved master, from the read-only preview.
+
+    const [masters, setMasters] = useState<Record<string, ResolvedMaster[]>>({});
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
     const [search, setSearch] = useState("");
     // Per-batch run state, keyed by `${territory}/${pdfName}`.
@@ -818,81 +842,154 @@ const CSVLocaliserTool = () => {
         }
         setBusy(true);
         setScan(null);
+        setMasters({});
         try {
-            const { parsePdfDeliverySpecs, reshapeSpecs, batchNameFromFilename } = await import("../lib/pdfSpecs");
             const territories: string[] = (await evalTS("scanTerritories", marketsRoot)) || [];
-            const result: TerritoryScan[] = [];
-
-            for (const territory of territories) {
-                setProgress(`Reading ${territory}…`);
-                const sourceFolder = path.join(marketsRoot, territory);
-                const specsDir = path.join(sourceFolder, "Masters", "Specs");
-                let pdfs: string[] = [];
-                let hasSpecs = true;
-                try {
-                    pdfs = fs.readdirSync(specsDir).filter((f: string) => /\.pdf$/i.test(f));
-                } catch (e) {
-                    hasSpecs = false;
-                }
-
-                const batches: Batch[] = [];
-                for (const pdfName of pdfs.sort()) {
-                    const batch = batchNameFromFilename(pdfName);
-                    // What's already in <Territory>/AE/<paddedBatch>. The whole
-                    // list, not just "is it empty": rows are matched against it
-                    // below so a batch that has GAINED sizes since it was last
-                    // localised shows only the new ones ticked.
-                    const existing = readExistingAeps(sourceFolder, batch);
-                    const done = existing.length > 0;
-                    try {
-                        const buf = fs.readFileSync(path.join(specsDir, pdfName));
-                        const raw = await parsePdfDeliverySpecs(new Uint8Array(buf));
-                        const rows = raw ? reshapeSpecs(raw, territory) : [];
-                        batches.push({ pdfName, batch, rows, done, existing, error: rows.length ? undefined : "No spec rows found." });
-                    } catch (e: any) {
-                        batches.push({ pdfName, batch, rows: [], done, existing, error: e?.message || "Couldn't read PDF." });
-                    }
-                }
-
-                const rowCount = batches.reduce((n, b) => n + b.rows.length, 0);
-                result.push({ territory, sourceFolder, batches, rowCount, hasSpecs });
-            }
-
-            setScan(result);
-            // Seed run-state: any batch whose output folder already holds .aep
-            // files shows "Done · Re-run" straight away.
-            const seed: Record<string, "done"> = {};
-            // ...and seed the row exclusions: a row whose deliverable is
-            // already sitting in the AE folder starts UNTICKED, so hitting
-            // Localise on a batch that has gained sizes builds only the new
-            // ones instead of re-running the whole batch. Nothing is disabled
-            // -- ticking one back on re-localises it, same as always.
-            const exclSeed: Record<string, Set<number>> = {};
-            result.forEach((t) =>
-                t.batches.forEach((b) => {
-                    const key = batchKey(t.territory, b.pdfName);
-                    if (b.done) seed[key] = "done";
-                    const built = new Set<number>();
-                    matchBuiltRows(b.rows, b.existing).forEach((f, i) => {
-                        if (f) built.add(i);
-                    });
-                    if (built.size) exclSeed[key] = built;
-                })
+            // Names only. Nothing inside a territory is read until it is
+            // expanded -- see loadTerritory.
+            setScan(
+                territories.map((territory) => ({
+                    territory,
+                    sourceFolder: path.join(marketsRoot, territory),
+                    batches: [],
+                    rowCount: 0,
+                    hasSpecs: true,
+                    loaded: false,
+                }))
             );
-            setBatchStatus(seed);
-            setExcludedRows(exclSeed);
-            const withRows = result.filter((t) => t.rowCount > 0);
-            const rowTotal = withRows.reduce((n, t) => n + t.rowCount, 0);
+            setBatchStatus({});
+            setExcludedRows({});
             setNotice(
-                withRows.length
-                    ? `Found ${rowTotal} rows across ${withRows.length} territor${withRows.length === 1 ? "y" : "ies"}.`
-                    : "No Masters/Specs PDFs with rows found under any territory."
+                territories.length
+                    ? `${territories.length} territor${territories.length === 1 ? "y" : "ies"} — open one to read its specs.`
+                    : "No territories found under that Markets folder."
             );
         } catch (e: any) {
             setNotice(e?.message || "Scan failed.");
         } finally {
             setBusy(false);
             setProgress(null);
+        }
+    };
+
+    // Picking (or changing) the masters folder after territories are already
+    // open must re-answer their indicators -- otherwise they sit on "not
+    // checked" until the territory is collapsed and reopened.
+    useEffect(() => {
+        if (!aepPath || !scan) return;
+        const loaded = scan.filter((t) => t.loaded && t.rowCount > 0);
+        if (!loaded.length) return;
+        loaded.forEach((t) => resolveMastersFor(t.territory, t.batches));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [aepPath]);
+
+    // Read ONE territory's Specs PDFs. This is the expensive half of what the
+    // scan button used to do for every territory at once, now paid only for a
+    // territory actually opened, and only once (guarded by `loaded`).
+    const loadTerritory = async (t: TerritoryScan) => {
+        if (t.loaded || loadingTerr.has(t.territory)) return;
+        setLoadingTerr((prev) => new Set(prev).add(t.territory));
+        setProgress(`Reading ${t.territory}…`);
+        try {
+            const { parsePdfDeliverySpecs, reshapeSpecs, batchNameFromFilename } = await import("../lib/pdfSpecs");
+            const specsDir = path.join(t.sourceFolder, "Masters", "Specs");
+            let pdfs: string[] = [];
+            let hasSpecs = true;
+            try {
+                pdfs = fs.readdirSync(specsDir).filter((f: string) => /\.pdf$/i.test(f));
+            } catch (e) {
+                hasSpecs = false;
+            }
+
+            const batches: Batch[] = [];
+            for (const pdfName of pdfs.sort()) {
+                const batch = batchNameFromFilename(pdfName);
+                const existing = readExistingAeps(t.sourceFolder, batch);
+                const done = existing.length > 0;
+                try {
+                    const buf = fs.readFileSync(path.join(specsDir, pdfName));
+                    const raw = await parsePdfDeliverySpecs(new Uint8Array(buf));
+                    const rows = raw ? reshapeSpecs(raw, t.territory) : [];
+                    batches.push({ pdfName, batch, rows, done, existing, error: rows.length ? undefined : "No spec rows found." });
+                } catch (e: any) {
+                    batches.push({ pdfName, batch, rows: [], done, existing, error: e?.message || "Couldn't read PDF." });
+                }
+            }
+            const rowCount = batches.reduce((n, b) => n + b.rows.length, 0);
+
+            setScan((prev) =>
+                prev
+                    ? prev.map((ts) =>
+                          ts.territory === t.territory ? { ...ts, batches, rowCount, hasSpecs, loaded: true } : ts
+                      )
+                    : prev
+            );
+
+            // Seed run-state + row exclusions for THIS territory only, by the
+            // same rules the whole-scan version used.
+            const seed: Record<string, "done"> = {};
+            const exclSeed: Record<string, Set<number>> = {};
+            batches.forEach((b) => {
+                const key = batchKey(t.territory, b.pdfName);
+                if (b.done) seed[key] = "done";
+                const built = new Set<number>();
+                matchBuiltRows(b.rows, b.existing).forEach((f, i) => {
+                    if (f) built.add(i);
+                });
+                if (built.size) exclSeed[key] = built;
+            });
+            setBatchStatus((prev) => ({ ...prev, ...seed }));
+            setExcludedRows((prev) => ({ ...prev, ...exclSeed }));
+
+            resolveMastersFor(t.territory, batches);
+        } catch (e: any) {
+            setNotice(e?.message || `Couldn't read ${t.territory}.`);
+        } finally {
+            setLoadingTerr((prev) => {
+                const next = new Set(prev);
+                next.delete(t.territory);
+                return next;
+            });
+            setProgress(null);
+        }
+    };
+
+    // One bridge call per territory: the host walks the masters tree ONCE and
+    // scores every row against that index, using the same picker the real run
+    // uses -- so what this shows and what localising actually does cannot
+    // disagree. Best-effort throughout: no masters folder set, no bridge, or a
+    // failure simply leaves the indicators neutral rather than raising
+    // anything, because this is a preview nobody asked for by clicking.
+    const resolveMastersFor = async (territory: string, batches: Batch[]) => {
+        if (!aepPath || !isBridge()) return;
+        const flat: { key: string; index: number; campaign: string; size: string; duration: string }[] = [];
+        batches.forEach((b) => {
+            const key = batchKey(territory, b.pdfName);
+            b.rows.forEach((r, i) => {
+                // EFFECTIVE row, not the raw PDF parse: correcting a mis-read
+                // size in place should re-answer "does this find a master?",
+                // which is the main reason to correct it at all.
+                const eff = effectiveRow(key, i, r);
+                flat.push({ key, index: i, campaign: eff.Campaign, size: eff.Size, duration: eff.Duration });
+            });
+        });
+        if (!flat.length) return;
+        try {
+            const payload = flat.map((f) => ({ campaign: f.campaign, size: f.size, duration: f.duration }));
+            const res = await evalTS("csvLocaliserResolveMasters", aepPath, JSON.stringify(payload));
+            if (res === undefined || !res.success) return;
+            const resolved = (res as { rows?: ResolvedMaster[] }).rows || [];
+            setMasters((prev) => {
+                const next: Record<string, ResolvedMaster[]> = { ...prev };
+                flat.forEach((f, n) => {
+                    const arr = (next[f.key] || []).slice();
+                    arr[f.index] = resolved[n] || { master: null, path: null };
+                    next[f.key] = arr;
+                });
+                return next;
+            });
+        } catch (e) {
+            /* preview only -- never interrupt the scan for it */
         }
     };
 
@@ -930,6 +1027,10 @@ const CSVLocaliserTool = () => {
             if (f) built.add(i);
         });
         setExcludedRows((prev) => ({ ...prev, [key]: built }));
+        // Re-answer the master indicators for this batch too -- Re-check is
+        // the natural "I've changed something, look again" button, and after a
+        // row edit the previous answer is stale.
+        resolveMastersFor(t.territory, [b]);
     };
 
     // ── run the localiser for ONE batch (one PDF) ─────────────────────────────
@@ -1039,12 +1140,17 @@ const CSVLocaliserTool = () => {
         }
     };
 
-    const toggleExpand = (t: string) =>
+    // Expanding is what pays for a territory's specs -- the scan itself only
+    // listed names. Collapsing keeps whatever was read, so re-opening is free.
+    const toggleExpand = (t: string) => {
+        const terr = scan?.find((x) => x.territory === t);
+        if (terr && !expanded.has(t) && !terr.loaded) void loadTerritory(terr);
         setExpanded((s) => {
             const n = new Set(s);
             n.has(t) ? n.delete(t) : n.add(t);
             return n;
         });
+    };
 
     const filtered = useMemo(() => {
         const q = search.trim().toLowerCase();
@@ -1054,58 +1160,91 @@ const CSVLocaliserTool = () => {
     return (
         <div className="form-tool specs-tool">
             {/* Folders */}
-            <div className="specs-folders">
-                <label className="specs-field-label">Campaign</label>
-                <div className="field-with-button">
-                    <div className="field-row specs-campaign-select">
-                        <Dropdown
-                            icon={<Library size={13} />}
-                            value={campaignName}
-                            onChange={selectCampaign}
-                            options={campaigns.map((c) => ({ value: c.name, label: c.name }))}
-                            placeholder="Select a campaign…"
-                            emptyMessage="No campaigns yet — add one with the + button."
-                            disabled={busy}
-                        />
+            {/* Job setup, rendered as a PATH rather than three lookalike
+                fields. Markets and Masters are not independent inputs -- they
+                are two folders under one job, and Markets is usually derived
+                from the campaign. Branching them off the campaign says that,
+                and makes "what is still missing" readable at a glance instead
+                of requiring you to notice an empty box. */}
+            <div className="specs-setup">
+                <div className="specs-setup-root">
+                    <label className="specs-field-label">Campaign</label>
+                    <div className="field-with-button">
+                        <div className="field-row specs-campaign-select">
+                            <Dropdown
+                                icon={<Library size={13} />}
+                                value={campaignName}
+                                onChange={selectCampaign}
+                                options={campaigns.map((c) => ({ value: c.name, label: c.name }))}
+                                placeholder="Select a campaign…"
+                                emptyMessage="No campaigns yet — add one with the + button."
+                                disabled={busy}
+                            />
+                        </div>
+                        <Tooltip text="Add a campaign (pick its Markets folder)">
+                            <button className="icon-btn specs-campaign-btn" disabled={busy} onClick={addCampaign}><FolderPlus size={14} /></button>
+                        </Tooltip>
                     </div>
-                    <Tooltip text="Add a campaign (pick its Markets folder)">
-                        <button className="icon-btn specs-campaign-btn" disabled={busy} onClick={addCampaign}><FolderPlus size={14} /></button>
-                    </Tooltip>
                 </div>
 
-                <label className="specs-field-label">
-                    Markets folder {campaignName && marketsRoot && <span className="specs-detected">from campaign</span>}
-                </label>
-                <div className="field-with-button">
-                    <div className="field-row">
-                        <input type="text" value={marketsRoot} onChange={(e) => setMarketsRoot(e.target.value)} placeholder="The campaign's Markets (territories) folder…" />
+                <div className="specs-branches">
+                    <div className={"specs-branch" + (marketsRoot ? " is-set" : " is-empty")}>
+                        <span className="specs-branch-dot" aria-hidden="true" />
+                        <div className="specs-branch-body">
+                            <label className="specs-field-label">
+                                Markets
+                                {campaignName && marketsRoot && <span className="specs-detected">from campaign</span>}
+                            </label>
+                            <div className="field-with-button">
+                                <div className="field-row">
+                                    <input type="text" value={marketsRoot} onChange={(e) => setMarketsRoot(e.target.value)} placeholder="Where the territories live…" />
+                                </div>
+                                <Tooltip text="Browse for the Markets folder">
+                                    <button className="icon-btn" disabled={busy} onClick={browseMarkets}><FolderSearch size={14} /></button>
+                                </Tooltip>
+                            </div>
+                        </div>
                     </div>
-                    <Tooltip text="Browse for the Markets folder">
-                        <button className="icon-btn" disabled={busy} onClick={browseMarkets}><FolderSearch size={14} /></button>
-                    </Tooltip>
+
+                    <div className={"specs-branch" + (aepPath ? " is-set" : " is-empty")}>
+                        <span className="specs-branch-dot" aria-hidden="true" />
+                        <div className="specs-branch-body">
+                            <label className="specs-field-label">
+                                Masters
+                                {mastersAuto && aepPath && <span className="specs-detected">auto-detected</span>}
+                            </label>
+                            <div className="field-with-button">
+                                <div className="field-row">
+                                    <input type="text" value={aepPath} onChange={(e) => { setAepPath(e.target.value); setMastersAuto(false); }} placeholder="The AEPs to localise from…" />
+                                </div>
+                                <Tooltip text="Browse for the AEP masters folder">
+                                    <button className="icon-btn" disabled={busy} onClick={browseAep}><FolderSearch size={14} /></button>
+                                </Tooltip>
+                            </div>
+                            {!aepPath && (
+                                <span className="specs-branch-why">
+                                    Needed to run, and to check which master each row would use.
+                                </span>
+                            )}
+                        </div>
+                    </div>
                 </div>
 
-                <label className="specs-field-label">
-                    AEP masters folder {mastersAuto && aepPath && <span className="specs-detected">auto-detected</span>}
-                </label>
-                <div className="field-with-button">
-                    <div className="field-row">
-                        <input type="text" value={aepPath} onChange={(e) => { setAepPath(e.target.value); setMastersAuto(false); }} placeholder="Folder of master AEPs to localise from…" />
+                {/* Settings and the action are different KINDS of control, so
+                    they no longer share a shape -- the two toggles sit quietly
+                    on their own line rather than wearing button costumes next
+                    to the primary action. */}
+                <div className="specs-run-row">
+                    <div className="specs-options">
+                        <CheckboxToggle checked={skipExisting} onChange={setSkipExisting} label="Skip existing files" />
+                        <Tooltip text="Swap each generated file's PNG/JPG footage for the localised versions in the territory's JPG_PNG batch folder, while the file is still open — instead of re-opening every file afterwards with MC It!">
+                            <span>
+                                <CheckboxToggle checked={runMcIt} onChange={setRunMcIt} label="Run MC It! inline" />
+                            </span>
+                        </Tooltip>
                     </div>
-                    <Tooltip text="Browse for the AEP masters folder">
-                        <button className="icon-btn" disabled={busy} onClick={browseAep}><FolderSearch size={14} /></button>
-                    </Tooltip>
-                </div>
-
-                <div className="specs-actions-row">
-                    <CheckboxToggle checked={skipExisting} onChange={setSkipExisting} label="Skip existing files" />
-                    <Tooltip text="Swap each generated file's PNG/JPG footage for the localised versions in the territory's JPG_PNG batch folder, while the file is still open — instead of re-opening every file afterwards with MC It!">
-                        <span>
-                            <CheckboxToggle checked={runMcIt} onChange={setRunMcIt} label="Run MC It! inline" />
-                        </span>
-                    </Tooltip>
                     <button className="specs-scan-btn" disabled={busy || !marketsRoot} onClick={runScan}>
-                        {scan ? <RefreshCw size={14} /> : <ScanSearch size={14} />} {scan ? "Re-scan" : "Scan Specs"}
+                        {scan ? <RefreshCw size={14} /> : <ScanSearch size={14} />} {scan ? "Re-scan" : "Scan territories"}
                     </button>
                 </div>
             </div>
@@ -1127,10 +1266,21 @@ const CSVLocaliserTool = () => {
                     <div className="specs-list">
                         {filtered.map((t) => {
                             const open = expanded.has(t.territory);
-                            const runnable = t.rowCount > 0;
+                            const loading = loadingTerr.has(t.territory);
+                            // Before a territory is read we have no idea what is in it,
+                            // so it must stay clickable -- clicking is what reads it.
+                            const runnable = !t.loaded || t.rowCount > 0;
                             const batchCount = t.batches.filter((b) => b.rows.length).length;
-                            const status = runnable ? `${batchCount} batch${batchCount === 1 ? "" : "es"} · ${t.rowCount} rows` : t.hasSpecs ? "no rows" : "no Specs";
-                            const statusClass = runnable ? "ok" : t.hasSpecs ? "warn" : "muted";
+                            const status = loading
+                                ? "reading…"
+                                : !t.loaded
+                                ? "open to read"
+                                : t.rowCount > 0
+                                ? `${batchCount} batch${batchCount === 1 ? "" : "es"} · ${t.rowCount} rows`
+                                : t.hasSpecs
+                                ? "no rows"
+                                : "no Specs";
+                            const statusClass = loading ? "muted" : !t.loaded ? "muted" : t.rowCount > 0 ? "ok" : t.hasSpecs ? "warn" : "muted";
                             return (
                                 <div key={t.territory} className={"specs-terr" + (runnable ? "" : " is-disabled")}>
                                     <div className="specs-terr-head">
@@ -1147,7 +1297,7 @@ const CSVLocaliserTool = () => {
                                         </Tooltip>
                                     </div>
 
-                                    {open && runnable && (
+                                    {open && t.loaded && t.rowCount > 0 && (
                                         <div className="specs-terr-body">
                                             {t.batches.map((b) => {
                                                 const key = batchKey(t.territory, b.pdfName);
@@ -1280,6 +1430,7 @@ const CSVLocaliserTool = () => {
                                                                             </Tooltip>
                                                                         </th>
                                                                         <th>Artwork</th><th>Campaign</th><th>Site</th><th>Size</th><th>Dur</th>
+                                                                        <th className="specs-row-master-col" />
                                                                         <th className="specs-row-revert-col" />
                                                                     </tr>
                                                                 </thead>
@@ -1318,6 +1469,46 @@ const CSVLocaliserTool = () => {
                                                                                             aria-label={`Include row ${i + 1}`}
                                                                                         />
                                                                                     </Tooltip>
+                                                                                </td>
+                                                                                <td className="specs-row-master-col">
+                                                                                    {(() => {
+                                                                                        // Three genuinely different states, and they must not
+                                                                                        // look alike: no masters folder set (we cannot know),
+                                                                                        // a master found (name in the tooltip), nothing found
+                                                                                        // (this row would come back "no-master" on a run).
+                                                                                        if (!aepPath) {
+                                                                                            return (
+                                                                                                <Tooltip text="Pick the AEP masters folder above to check which master each row would use.">
+                                                                                                    <span className="specs-master specs-master--unknown">
+                                                                                                        <Circle size={11} />
+                                                                                                    </span>
+                                                                                                </Tooltip>
+                                                                                            );
+                                                                                        }
+                                                                                        const res = masters[key]?.[i];
+                                                                                        if (!res) {
+                                                                                            return (
+                                                                                                <Tooltip text="Not checked yet.">
+                                                                                                    <span className="specs-master specs-master--unknown">
+                                                                                                        <Circle size={11} />
+                                                                                                    </span>
+                                                                                                </Tooltip>
+                                                                                            );
+                                                                                        }
+                                                                                        return res.master ? (
+                                                                                            <Tooltip text={`Master found: ${res.master}`}>
+                                                                                                <span className="specs-master specs-master--ok">
+                                                                                                    <FileCheck size={12} />
+                                                                                                </span>
+                                                                                            </Tooltip>
+                                                                                        ) : (
+                                                                                            <Tooltip text={`No master matches ${eff.Campaign || "this campaign"} at ${eff.Size || "this size"} / ${eff.Duration || "this duration"}. This row would be skipped.`}>
+                                                                                                <span className="specs-master specs-master--none">
+                                                                                                    <FileX size={12} />
+                                                                                                </span>
+                                                                                            </Tooltip>
+                                                                                        );
+                                                                                    })()}
                                                                                 </td>
                                                                                 <td className="specs-cell-edit">
                                                                                     <select

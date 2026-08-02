@@ -5,7 +5,7 @@
 // Check, CSV Localiser). Split out of aeft.ts, which is now a thin barrel --
 // see its header comment for context.
 // =============================================================================
-import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, scanMastersForBestMatch } from "./tools";
+import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, buildMastersIndex, pickBestMasterFromIndex, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, scanMastersForBestMatch } from "./tools";
 import { makeParentLayerOfAllUnparented, scaleAllCameraZooms } from "./deliver";
 import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, saveLocGenReport, buildDeliverableName, durationForMasterLookup } from "./shared";
 import { loadCampaignsRaw } from "./review";
@@ -2622,6 +2622,10 @@ export interface CsvLocResult {
 
 export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExisting: boolean, runMcIt?: boolean): CsvLocResult => {
   csvLocSaveLastPath(mastersPath);
+  // ONE walk of the masters tree for the whole run. This used to be a full
+  // tree walk PER ROW (scanMastersForBestMatch), so a 14-row batch walked the
+  // NAS 14 times; the scoring is unchanged, only how often we read the disk.
+  const mastersIndex = buildMastersIndex(mastersPath);
 
   if (rawCsvText === "") {
     return { success: false, error: "No CSV data pasted." };
@@ -2776,7 +2780,7 @@ export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExi
       rep.duration = duration;
       if (siteToken !== "") rep.site = siteToken;
 
-      const bestMatch = scanMastersForBestMatch(mastersPath, campaign, size, duration);
+      const bestMatch = pickBestMasterFromIndex(mastersIndex, campaign, size, duration);
       if (!bestMatch) {
         // Previously a silent `continue` -- the invisible failure mode.
         rep.status = "no-master";
@@ -2959,4 +2963,283 @@ export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExi
     mcItNote: mcItSetupNote,
     mcItProjects: mcItReports,
   };
+};
+// =============================================================================
+// Naming Audit -- read-only convention check over a folder tree.
+// -----------------------------------------------------------------------------
+// The studio runs TWO naming conventions at once and will indefinitely:
+// masters were never renamed (DGTL era, "..._<dur>sec_<TT>.aep"), while
+// deliverables generated since 2026-07-31 use the new form
+// ("..._<Site>_<W>x<H>px_<dur>s_<TT>"). Both must keep working, and until
+// now nothing could answer "which convention is this file on?" without
+// someone reading filenames by eye.
+//
+// This NEVER OPENS A FILE. Everything the convention encodes lives in the
+// name, so this is a directory walk feeding nameGeneratorParse() -- the same
+// pure parser Name Generator, Trott 2.0, PDF to CSV and File Name Check
+// already share. One pass over a tree costs roughly what ONE row of a
+// localise run already costs (scanMastersForBestMatch walks the whole masters
+// tree once per row), so auditing a campaign is cheaper than the run itself.
+//
+// Two modes, because the two folders are being asked different questions:
+//   - "masters": these SHOULD be legacy. Flag anything the master lookup
+//     can't anchor (no region token, no size token, no duration), because
+//     that master is invisible to every CSV row forever.
+//   - "batch":   these SHOULD be new. Flag files still on the old convention
+//     and flag names that collide once separators are ignored.
+// =============================================================================
+
+interface NameAuditRow {
+  name: string;
+  folder: string;
+  convention: string;
+  issues: string[];
+}
+
+interface NameAuditResult extends Result {
+  root?: string;
+  mode?: string;
+  scanned?: number;
+  newCount?: number;
+  legacyCount?: number;
+  unknownCount?: number;
+  issueCount?: number;
+  truncated?: boolean;
+  rows?: NameAuditRow[];
+}
+
+var NAME_AUDIT_MAX_ROWS = 1000;
+
+// Same skip list the master lookup itself uses, so the audit's idea of
+// "in scope" matches what the real scan will actually see. Deliberately NOT
+// the blanket "every underscore-prefixed folder" rule -- a master in _WIP IS
+// still findable by scanMastersForBestMatch, so flagging it here would be
+// reporting a problem that doesn't exist.
+function nameAuditSkipFolder(folderName: string): boolean {
+  const n = decode(folderName).toUpperCase();
+  return n === "AUTO-SAVE" || n === "_ARCHIVE" || n === "_OLD" || n === "_DEV";
+}
+
+// Strip separators so "JUNGLE_TUNNEL" and "JungleTunnel" collide the way the
+// CSV Localiser's own matcher already treats them.
+function nameAuditCanon(name: string): string {
+  let s = decode(name).toUpperCase();
+  const dot = s.lastIndexOf(".");
+  if (dot > 0) s = s.substring(0, dot);
+  return s.replace(/[^A-Z0-9]/g, "");
+}
+
+// Is this two-letter token a REAL territory code? The parser's own territory
+// test is only a SHAPE check (/^[A-Z]{2}$/), so "ZZ" and "QQ" satisfy it --
+// this validates against the same TC_COUNTRIES table Cheeky T Check and
+// getTerritoryCountryCode() already use, rather than a second list.
+//
+// "OV" is deliberately accepted here: on a MASTER it legitimately occupies
+// the territory slot (it is the master suffix, not a country). A master that
+// has wandered into a batch folder is caught by the separate OV check below,
+// which is the more precise signal for that case.
+function nameAuditKnownTerritory(code: string): boolean {
+  const up = code.toUpperCase();
+  if (up === "OV") return true;
+  for (let i = 0; i < TC_COUNTRIES.length; i++) {
+    if (TC_COUNTRIES[i].code.toUpperCase() === up) return true;
+  }
+  return false;
+}
+
+function nameAuditWalk(folder: Folder, rel: string, all: NameAuditRow[], mode: string): void {
+  let items: File[] | Folder[];
+  try {
+    items = folder.getFiles();
+  } catch (e) {
+    return;
+  }
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (item instanceof Folder) {
+      if (nameAuditSkipFolder(item.name)) continue;
+      const nextRel = rel === "" ? decode(item.name) : rel + "/" + decode(item.name);
+      nameAuditWalk(item as Folder, nextRel, all, mode);
+      continue;
+    }
+    const fileName = decode(item.name);
+    if (!/\.aep$/i.test(fileName)) continue;
+
+    const parsed = nameGeneratorParse(fileName);
+    const issues: string[] = [];
+
+    // The two anchors nameGeneratorParse needs to read anything at all.
+    // Without them, no downstream tool can match this file to a spec row.
+    const stem = fileName.replace(/\.aep$/i, "");
+    const hasRegion = !!parsed.filmTitle;
+    const hasSize = /_\d+x\d+(px)?(_|$)/i.test(stem);
+
+    if (!hasRegion) issues.push("No INTL/DOM token -- the parser can't find where the film title ends");
+    if (!hasSize) issues.push("No <width>x<height> token");
+    // The artwork tag is what separates campaign from site in the new
+    // convention (and campaign from everything else in the old one) -- with an
+    // unrecognised tag the parser can't tell those fields apart, so it lumps
+    // them together silently. `parsed.artworkType` is "" when none of the four
+    // matched; the authoritative list lives in nameGeneratorParse's own
+    // `artworkTypes` array, which is the only place it should be defined.
+    if (!parsed.artworkType) {
+      issues.push("No recognised artwork tag (expected DOOH, DFOH, DINTH or FOH) -- campaign and site can't be told apart");
+    }
+    if (!parsed.duration) issues.push("No duration token");
+    if (!parsed.territory) {
+      issues.push("No territory code");
+    } else if (!nameAuditKnownTerritory(parsed.territory)) {
+      issues.push("Territory \"" + parsed.territory + "\" is not a known territory code");
+    }
+
+    // The DGTL token is what decides field order, so its presence IS the
+    // convention -- not something inferred from the other fields.
+    let convention = "unknown";
+    if (hasRegion && hasSize) {
+      convention = /_DGTL_/i.test(fileName) ? "legacy" : "new";
+    }
+
+    if (mode === "batch" && convention === "legacy") {
+      issues.push("Still on the OLD (DGTL) convention -- deliverables should use the new form");
+    }
+    // An isolated OV token in a BATCH folder means a pristine master has
+    // wandered in among the deliverables -- the same signal losOpenForEdit()
+    // uses to decide copy-first, reused here rather than re-tested.
+    if (mode === "batch" && hasIsolatedOvToken(fileName)) {
+      issues.push("Carries an isolated OV token -- this looks like an un-localised MASTER, not a deliverable");
+    }
+    if (mode === "masters" && convention === "new") {
+      issues.push("On the NEW convention -- masters were never renamed, so check this is really a master");
+    }
+
+    all.push({ name: fileName, folder: rel, convention: convention, issues: issues });
+  }
+}
+
+// Two deliverables that canonicalise the same are the silent-overwrite case,
+// so it is worth naming even though each parses fine on its own. Scoped PER
+// FOLDER -- the same stem in two different creative folders is normal and
+// must not be flagged. Runs over every scanned record, not just records that
+// already had an issue: a collision between two otherwise-clean files is
+// exactly the case worth catching, and an earlier version that only appended
+// to existing rows could never surface it.
+function nameAuditFlagCollisions(all: NameAuditRow[]): void {
+  const countByKey: { [key: string]: number } = {};
+  for (let i = 0; i < all.length; i++) {
+    const key = all[i].folder + " " + nameAuditCanon(all[i].name);
+    countByKey[key] = (countByKey[key] || 0) + 1;
+  }
+  for (let j = 0; j < all.length; j++) {
+    const key = all[j].folder + " " + nameAuditCanon(all[j].name);
+    if (countByKey[key] > 1) {
+      all[j].issues.push("Another file in this folder canonicalises to the same name");
+    }
+  }
+}
+
+// mode: "masters" | "batch". Pops its own folder dialog, same as every other
+// folder-scanning tool here. Read-only: getFiles() and string parsing, no
+// app.open(), nothing written.
+export const nameAuditScan = (mode: string): NameAuditResult => {
+  try {
+    const label =
+      mode === "masters"
+        ? "Select the MASTERS root to audit"
+        : "Select the batch / AE folder to audit";
+    const root = Folder.selectDialog(label);
+    if (!root) return { success: false, error: "Cancelled." };
+
+    const all: NameAuditRow[] = [];
+    nameAuditWalk(root, "", all, mode);
+
+    if (all.length === 0) {
+      return {
+        success: false,
+        error: "No .aep files found in that folder (subfolders included).",
+      };
+    }
+
+    nameAuditFlagCollisions(all);
+
+    let legacyCount = 0;
+    let newCount = 0;
+    let unknownCount = 0;
+    let issueCount = 0;
+    const rows: NameAuditRow[] = [];
+    for (let i = 0; i < all.length; i++) {
+      const rec = all[i];
+      if (rec.convention === "legacy") legacyCount++;
+      else if (rec.convention === "new") newCount++;
+      else unknownCount++;
+      if (rec.issues.length > 0) {
+        issueCount++;
+        if (rows.length < NAME_AUDIT_MAX_ROWS) rows.push(rec);
+      }
+    }
+
+    return {
+      success: true,
+      root: root.fsName,
+      mode: mode,
+      scanned: all.length,
+      legacyCount: legacyCount,
+      newCount: newCount,
+      unknownCount: unknownCount,
+      issueCount: issueCount,
+      truncated: issueCount > rows.length,
+      rows: rows,
+    };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+
+// =============================================================================
+// Read-only master preview for the CSV Localiser -- answers "which master will
+// each of these rows use?" BEFORE anything is written.
+//
+// Same index and same scoring the real run uses (pickBestMasterFromIndex), so
+// the preview cannot disagree with what localising actually does. ONE walk of
+// the masters tree for the whole batch, however many rows.
+//
+// Opens nothing, writes nothing. `rows` arrives as a JSON STRING because
+// evalTS splices JSON.stringify'd args into the eval'd source and nested
+// objects do not survive that -- a single string does (see CLAUDE.md's ease
+// copy/paste round 3).
+// =============================================================================
+interface ResolvedMasterRow {
+  master: string | null;
+  path: string | null;
+}
+
+interface CsvLocResolveResult extends Result {
+  indexed?: number;
+  rows?: ResolvedMasterRow[];
+}
+
+export const csvLocaliserResolveMasters = (mastersPath: string, rowsJson: string): CsvLocResolveResult => {
+  try {
+    if (!mastersPath) return { success: false, error: "No masters folder set." };
+    let parsed: { campaign: string; size: string; duration: string }[];
+    try {
+      parsed = JSON.parse(rowsJson);
+    } catch (e) {
+      return { success: false, error: "Could not read the rows payload." };
+    }
+    if (!parsed || !parsed.length) return { success: true, indexed: 0, rows: [] };
+
+    const index = buildMastersIndex(mastersPath);
+    const out: ResolvedMasterRow[] = [];
+    for (let i = 0; i < parsed.length; i++) {
+      const r = parsed[i];
+      // durationMatchesPath normalises to bare digits internally, so a cell
+      // saying "15", "15s" or "15sec" all resolve the same way the run does.
+      const best = pickBestMasterFromIndex(index, r.campaign || "", r.size || "", r.duration || "");
+      out.push({ master: best ? best.name : null, path: best ? best.path : null });
+    }
+    return { success: true, indexed: index.length, rows: out };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
 };

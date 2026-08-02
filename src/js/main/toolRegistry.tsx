@@ -51,6 +51,7 @@ import {
     LayoutList,
     Sparkles,
     Crosshair,
+    ScanSearch,
 } from "lucide-react";
 
 // --- Lazy tool imports --------------------------------------------------
@@ -76,6 +77,7 @@ const ExtremeTools01Tool    = React.lazy(() => import("./tools/ExtremeTools01"))
 const ExtremeTools02Tool    = React.lazy(() => import("./tools/ExtremeTools02"));
 const LOSToolsTool          = React.lazy(() => import("./tools/LOSTools"));
 const BatchMatchTool        = React.lazy(() => import("./tools/BatchMatch"));
+const NameAuditTool         = React.lazy(() => import("./tools/NameAudit"));
 const MasterToolsTool       = React.lazy(() => import("./tools/MasterTools"));
 const ProjectButtonsTool    = React.lazy(() => import("./tools/ProjectButtons"));
 const TimesheetTrackerTool  = React.lazy(() => import("./tools/TimesheetTracker"));
@@ -121,6 +123,7 @@ const PREFETCH_MAP: Record<string, () => Promise<any>> = {
     "extreme-tools-02":   () => import("./tools/ExtremeTools02"),
     "los-tools":          () => import("./tools/LOSTools"),
     "batch-match":        () => import("./tools/BatchMatch"),
+    "name-audit":         () => import("./tools/NameAudit"),
     "master-tools":       () => import("./tools/MasterTools"),
     "project-buttons":    () => import("./tools/ProjectButtons"),
     "timesheet-tracker":  () => import("./tools/TimesheetTracker"),
@@ -402,6 +405,15 @@ export const TOOLS: ToolEntry[] = [
         Component: ExtremeTools02Tool,
         actions: ["Adjust From CSV", "Build From CSV"],
         description: "CSV-driven builder/adjuster for the extreme formats.",
+    },
+    {
+        id: "name-audit",
+        label: "Naming Audit",
+        categories: ["localise"],
+        icon: ScanSearch,
+        Component: NameAuditTool,
+        actions: ["Audit a Masters root", "Audit a batch / AE folder"],
+        description: "Checks a folder tree's filenames against the studio convention — what's on the new form, what's still on the old DGTL one, and what can't be parsed.",
     },
     {
         id: "batch-match",

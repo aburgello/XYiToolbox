@@ -151,16 +151,42 @@
     display: none;
 }
 
+// A real grid, not a wrapping flex row. Wrapping left whatever didn't fit on
+// a short, ragged last row that read as an accident; even columns make the
+// wrap look intentional and stay even as tools are added. minmax(0, …) rather
+// than a bare 1fr so a long label truncates instead of widening the track.
 .ls-grid {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
     gap: 8px;
+}
+
+// Each grid cell is a Tooltip wrapper, not the button itself. Tooltip's inner
+// span carries `flex: 0 0 auto !important` (needed for its own positioning
+// fix), which is exactly the trap documented for XYTools -- so the wrapper and
+// its content are forced to fill the cell here, and the button fills them.
+.ls-grid > .ov-tooltip-wrapper,
+.ls-grid .ov-tooltip-content {
+    display: block;
+    width: 100%;
+    min-width: 0;
 }
 
 .ls-grid-item {
     display: flex;
     align-items: center;
     gap: 7px;
+    width: 100%;
+    min-width: 0;
+    text-align: left;
+    // A long label truncates rather than stretching its column.
+    span {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
     background: var(--surface-1, #2a2a2a);
     border: 1px solid var(--surface-border, #444);
     color: #ddd;
@@ -321,6 +347,8 @@
 
 .ls-stage--runnable,
 .ls-grid-item--runnable {
+    border-left: 2px solid var(--cat-icon, #2dd4bf);
+
     &:disabled {
         opacity: 0.6;
         cursor: default;
@@ -391,7 +419,10 @@
 // --- Landing v3: three-pane work surface + one flat tools row -------------
 // Supersedes v2's journey spine. The numbered/arrowed "workflow" implied a
 // rigid pipeline nobody follows in order, so the stages are now just tools
-// (see .ls-tool-divider) and the three PRIMARY jobs became panes.
+// (see .ls-grid) and the three PRIMARY jobs became panes. The hairline
+// dividers that briefly replaced those arrows are gone too -- a rule between
+// every item said "these are all equally unrelated", which is noise standing
+// in for structure; an even grid does the job without adding anything.
 
 .ls-pane-tabs {
     display: flex;
@@ -429,15 +460,6 @@
     }
 }
 
-// A hairline between tools, replacing the old "->" pipeline arrows.
-.ls-tool-divider {
-    width: 1px;
-    align-self: stretch;
-    min-height: 18px;
-    background: var(--surface-2, #333);
-    flex-shrink: 0;
-}
-
 // --- Landing v4: Localised Library pulled out into its own hero -----------
 // The library was a third co-equal pane between CSV Localiser and Trott &
 // Batch, which flattened the fact that it's a different KIND of job (browse/
@@ -458,16 +480,17 @@
     // the eyebrow into the title.
     flex: 0 0 auto;
     text-align: left;
-    padding: 18px 18px 18px 20px;
-    border: 1px solid var(--cat-border, #3d3d3d);
-    border-radius: 14px;
-    background: linear-gradient(135deg,
-        rgba(94, 234, 212, 0.10) 0%,
-        rgba(58, 90, 138, 0.06) 45%,
-        #1e2529 100%);
+    padding: 12px 16px;
+    border: 1px solid var(--surface-edge, #333);
+    border-radius: 12px;
+    background: var(--surface-1, #1c1f21);
     color: #eee;
     cursor: pointer;
-    box-shadow: 0 3px 14px rgba(0, 0, 0, 0.34);
+    box-shadow: none;
+    // A single teal edge keeps it unmistakably the Localise section's tool
+    // without lighting the whole card. Cheaper than a glow and reads at a
+    // glance, which is what "my team need to know it's there" actually needs.
+    border-left: 2px solid var(--cat-icon, #2dd4bf);
     transition: border-color 0.3s ease, box-shadow 0.3s ease,
         transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 
@@ -478,12 +501,11 @@
         // paint it blue, off-brand for the teal Localise section. Keep the
         // resting teal gradient, just a touch brighter for hover feedback.
         background: linear-gradient(135deg,
-            rgba(94, 234, 212, 0.20) 0%,
-            rgba(45, 212, 191, 0.10) 45%,
+            rgba(94, 234, 212, 0.14) 0%,
+            rgba(45, 212, 191, 0.07) 45%,
             #1e2529 100%);
-        box-shadow: 0 10px 30px var(--cat-glow, rgba(0, 0, 0, 0.4)),
-            0 0 0 1px rgba(255, 255, 255, 0.06) inset;
-        transform: translateY(-3px);
+        box-shadow: 0 8px 24px var(--cat-glow, rgba(0, 0, 0, 0.4));
+        transform: translateY(-2px);
 
         .ls-library-hero-glow { opacity: 0.28; }
         .ls-library-hero-arrow {
@@ -501,7 +523,7 @@
     width: 70%;
     height: 200%;
     background: radial-gradient(ellipse at center, var(--cat-icon, #5eead4) 0%, transparent 68%);
-    opacity: 0.14;
+    opacity: 0;
     pointer-events: none;
     filter: blur(26px);
     transition: opacity 0.4s ease;
@@ -512,9 +534,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 54px;
-    height: 54px;
-    border-radius: 14px;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
     background: var(--cat-grad, linear-gradient(135deg, #2dd4bf, #3a5a8a));
     box-shadow: 0 4px 16px var(--cat-glow, rgba(0, 0, 0, 0.35)),
         inset 0 1px 0 rgba(255, 255, 255, 0.18);
