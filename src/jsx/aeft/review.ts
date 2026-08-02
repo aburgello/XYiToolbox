@@ -792,54 +792,7 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     //       even if every enrichment step fails.
     var enrichNotes: string[] = [];
 
-    // 7. Center divider — a thin 4px solid at 50% opacity, full height.
-    //    Uses comp.layers.addSolid(color, name, w, h, pixelAspect) — the
-    //    LAYER-level API every other tool in this codebase uses.  (The first
-    //    version used app.project.items.addSolid(name, w, h, pixelAspect,
-    //    dur) which is a different items-level API that silently didn't
-    //    create the layer in real AE.)
-    try {
-      var dividerLayer = comp.layers.addSolid([1, 1, 1], "--- divider ---", 4, compH, 1);
-      (dividerLayer.property("Transform")!.property("Position") as Property).setValue([compW / 2, compH / 2]);
-      try { (dividerLayer.property("Transform")!.property("Opacity") as Property).setValue(50); } catch (eOp) {}
-      enrichNotes.push("divider:ok");
-    } catch (eD) {
-      enrichNotes.push("divider:FAIL " + eD.toString());
-    }
-
-    // 8. "MASTER" / "LOCAL" labels — text + backing bar, bottom corners.
-    var labelOpacity = 60;
-    var labelSize = srcH < 500 ? 18 : 24;
-    var addLabel = function (side: string, text: string, centerX: number): boolean {
-      try {
-        // Backing bar via comp.layers.addSolid (proven layer-level API).
-        var barLayer = comp.layers.addSolid([0.1, 0.1, 0.1], side + " label bg", halfW, labelSize, 1);
-        (barLayer.property("Transform")!.property("Position") as Property).setValue([centerX, compH - labelSize / 2 - 6]);
-        try { (barLayer.property("Transform")!.property("Opacity") as Property).setValue(labelOpacity); } catch (eOp) {}
-        var textLayer = comp.layers.addText(text);
-        if (textLayer) {
-          textLayer.name = side + " label text";
-          var tp = textLayer.property("Source Text") as Property;
-          if (tp) {
-            var doc = tp.value;
-            doc.resetCharStyle();
-            doc.fontSize = srcH < 500 ? 14 : 18;
-            doc.fillColor = [1, 1, 1];
-            doc.applyStroke = false;
-            tp.setValue(doc);
-          }
-          (textLayer.property("Transform")!.property("Position") as Property).setValue([centerX, compH - labelSize / 2 - 6]);
-          try { (textLayer.property("Transform")!.property("Opacity") as Property).setValue(labelOpacity + 15); } catch (eOp) {}
-        }
-        return true;
-      } catch (eL) {
-        return false;
-      }
-    };
-    enrichNotes.push("master-label:" + (addLabel("MASTER", "MASTER", halfW / 2) ? "ok" : "FAIL"));
-    enrichNotes.push("local-label:" + (addLabel("LOCAL", "LOCAL", halfW + halfW / 2) ? "ok" : "FAIL"));
-
-    // 9. Difference matte — the local render over the MASTER's half with
+    // 7. Difference matte — the local render over the MASTER's half with
     //     Difference blending.  BlendingMode is a Types-for-Adobe ambient
     //     enum, NOT necessarily a real ExtendScript runtime global (same
     //     trap as `instanceof AVItem`, documented in CLAUDE.md) — so the
@@ -864,7 +817,7 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
       enrichNotes.push("diff:FAIL " + eDiff.toString());
     }
 
-    // 10. Timecode overlay — best-effort source TC on both main renders.
+    // 8. Timecode overlay — best-effort source TC on both main renders.
     var tcSize = srcH < 500 ? 12 : 16;
     var addTimecode = function (layer: AVLayer): boolean {
       try {
