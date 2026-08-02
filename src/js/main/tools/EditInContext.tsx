@@ -24,10 +24,10 @@
 // =============================================================================
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-    ArrowLeft, ArrowRight, ArrowUp, ArrowDown, RotateCcw, RotateCw,
-    Plus, Minus, ChevronRight, Layers, Crosshair, RefreshCw, Loader2, Lock,
+    ArrowLeft, ArrowRight, ArrowUp, ArrowDown,
+    Plus, Minus, ChevronRight, Layers, Crosshair, RefreshCw, Loader2, Lock, Keyboard,
 } from "lucide-react";
-import { evalTS } from "../../lib/utils/bolt";
+import { evalTS, csi } from "../../lib/utils/bolt";
 import StatusIcon from "../StatusIcon";
 import CheckboxToggle from "../CheckboxToggle";
 import "../shared.scss";
@@ -135,10 +135,49 @@ const EditInContextTool = () => {
     const [targetPath, setTargetPath] = useState<number[] | null>(null);
     const [target, setTarget] = useState<TargetState | null>(null);
     const [loading, setLoading] = useState(false);
-    const [step, setStep] = useState("2");
+    // A STEP PER PROPERTY. These are different units -- 2px is a nudge, 2% is a
+    // shove, 2deg is somewhere between -- so one shared field can't serve all
+    // three. Defaults are tuned so a single click feels like the same size of
+    // change in each.
+    const [stepPos, setStepPos] = useState("2");
+    const [stepScale, setStepScale] = useState("0.5");
     const [rootSpace, setRootSpace] = useState(true);
 
     const say = (text: string, type: "success" | "error" = "error") => setStatus({ text, type });
+
+    // ── arrow-key nudging, deliberately OPT-IN ──────────────────────────────
+    // AE binds the arrow keys to "nudge the selected layer in the comp", so a
+    // panel that grabbed them permanently would quietly break that for the rest
+    // of the session. Instead the pad is armed by clicking it and released the
+    // moment focus leaves, so the artist decides when the panel owns the arrows.
+    //
+    // Two mechanisms, both needed (see ArcadeFrame's header): CEP's
+    // registerKeyEventsInterest tells the host to route these combos to the
+    // extension, and a FOCUSED editable field is what actually gets keystrokes
+    // delivered on macOS AE. Hence the invisible input.
+    const keyGrabRef = useRef<HTMLInputElement>(null);
+    const [armed, setArmed] = useState(false);
+
+    const arrowInterest = () => {
+        const out: Array<Record<string, unknown>> = [];
+        const codes = [37, 38, 39, 40];
+        for (let i = 0; i < codes.length; i++) {
+            out.push({ keyCode: codes[i], shiftKey: false });
+            out.push({ keyCode: codes[i], shiftKey: true });
+        }
+        return JSON.stringify(out);
+    };
+
+    const claimArrows = () => {
+        try { csi.registerKeyEventsInterest(arrowInterest()); } catch (e) { /* no host in preview */ }
+        setArmed(true);
+    };
+    const releaseArrows = () => {
+        try { csi.registerKeyEventsInterest("[]"); } catch (e) { /* nothing to release */ }
+        setArmed(false);
+    };
+    // Never leave AE without its arrow keys if the tool unmounts while armed.
+    useEffect(() => () => { try { csi.registerKeyEventsInterest("[]"); } catch (e) {} }, []);
 
     const call = useCallback(async (fn: string, ...args: unknown[]) => {
         try {
@@ -222,8 +261,8 @@ const EditInContextTool = () => {
         setStatus(null);
     };
 
-    const amount = (shift: boolean) => {
-        const n = parseFloat(step);
+    const amount = (raw: string, shift: boolean) => {
+        const n = parseFloat(raw);
         const base = isNaN(n) || n === 0 ? 1 : n;
         return shift ? base * 10 : base;     // Shift = 10x, matching AE's own arrow-key convention
     };
@@ -358,29 +397,54 @@ const EditInContextTool = () => {
                         {!atRoot && <span className="eic-readout-root">looks like <b>{fmt2(target.rootScale)}</b> in {trail[0].compName}</span>}
                     </div>
 
-                    <div className="eic-step">
-                        <label>Step</label>
-                        <input type="text" value={step} onChange={(e) => setStep(e.target.value)} />
-                        <span className="eic-step-note">Shift = ×10</span>
-                    </div>
-
                     <div className="eic-group">
-                        <span className="eic-group-label">Position{target.positionKeyed ? " · animated" : ""}</span>
-                        <div className="eic-pad">
-                            <NudgeButton title="Left" disabled={target.locked} onStep={(s) => nudge("position", -amount(s), 0)}><ArrowLeft size={14} /></NudgeButton>
-                            <NudgeButton title="Up" disabled={target.locked} onStep={(s) => nudge("position", 0, -amount(s))}><ArrowUp size={14} /></NudgeButton>
-                            <NudgeButton title="Down" disabled={target.locked} onStep={(s) => nudge("position", 0, amount(s))}><ArrowDown size={14} /></NudgeButton>
-                            <NudgeButton title="Right" disabled={target.locked} onStep={(s) => nudge("position", amount(s), 0)}><ArrowRight size={14} /></NudgeButton>
+                        <span className="eic-group-label">
+                            Position{target.positionKeyed ? " · animated" : ""}
+                            <input className="eic-step-in" type="text" value={stepPos} onChange={(e) => setStepPos(e.target.value)} title="Step in pixels" />
+                            <em>px</em>
+                        </span>
+                        <div
+                            className={"eic-pad eic-pad--armable" + (armed ? " eic-pad--armed" : "")}
+                            onMouseDown={() => { if (!target.locked) keyGrabRef.current?.focus(); }}
+                        >
+                            {/* Genuinely focusable and genuinely invisible: display:none
+                                and visibility:hidden cannot hold focus, which is the
+                                whole mechanism. */}
+                            <input
+                                ref={keyGrabRef}
+                                className="eic-keygrab"
+                                aria-label="Arrow-key nudge"
+                                readOnly
+                                onFocus={claimArrows}
+                                onBlur={releaseArrows}
+                                onKeyDown={(e) => {
+                                    const step = amount(stepPos, e.shiftKey);
+                                    if (e.key === "ArrowLeft") { e.preventDefault(); nudge("position", -step, 0); }
+                                    else if (e.key === "ArrowRight") { e.preventDefault(); nudge("position", step, 0); }
+                                    else if (e.key === "ArrowUp") { e.preventDefault(); nudge("position", 0, -step); }
+                                    else if (e.key === "ArrowDown") { e.preventDefault(); nudge("position", 0, step); }
+                                }}
+                            />
+                            <NudgeButton title="Left" disabled={target.locked} onStep={(s) => nudge("position", -amount(stepPos, s), 0)}><ArrowLeft size={14} /></NudgeButton>
+                            <NudgeButton title="Up" disabled={target.locked} onStep={(s) => nudge("position", 0, -amount(stepPos, s))}><ArrowUp size={14} /></NudgeButton>
+                            <NudgeButton title="Down" disabled={target.locked} onStep={(s) => nudge("position", 0, amount(stepPos, s))}><ArrowDown size={14} /></NudgeButton>
+                            <NudgeButton title="Right" disabled={target.locked} onStep={(s) => nudge("position", amount(stepPos, s), 0)}><ArrowRight size={14} /></NudgeButton>
                         </div>
+                        <span className={"eic-armed-note" + (armed ? " eic-armed-note--on" : "")}>
+                            <Keyboard size={10} />
+                            {armed ? "Arrow keys are nudging this layer — click away to give them back to AE" : "Click the arrows to use your keyboard"}
+                        </span>
                     </div>
 
                     <div className="eic-group">
-                        <span className="eic-group-label">Scale{target.scaleKeyed ? " · animated" : ""}</span>
+                        <span className="eic-group-label">
+                            Scale{target.scaleKeyed ? " · animated" : ""}
+                            <input className="eic-step-in" type="text" value={stepScale} onChange={(e) => setStepScale(e.target.value)} title="Step in percent" />
+                            <em>%</em>
+                        </span>
                         <div className="eic-pad">
-                            <NudgeButton title="Smaller" disabled={target.locked} onStep={(s) => nudge("scale", -amount(s), -amount(s))}><Minus size={14} /></NudgeButton>
-                            <NudgeButton title="Bigger" disabled={target.locked} onStep={(s) => nudge("scale", amount(s), amount(s))}><Plus size={14} /></NudgeButton>
-                            <NudgeButton title="Rotate CCW" disabled={target.locked} onStep={(s) => nudge("rotation", -amount(s), 0)}><RotateCcw size={14} /></NudgeButton>
-                            <NudgeButton title="Rotate CW" disabled={target.locked} onStep={(s) => nudge("rotation", amount(s), 0)}><RotateCw size={14} /></NudgeButton>
+                            <NudgeButton title="Smaller" disabled={target.locked} onStep={(s) => nudge("scale", -amount(stepScale, s), -amount(stepScale, s))}><Minus size={14} /></NudgeButton>
+                            <NudgeButton title="Bigger" disabled={target.locked} onStep={(s) => nudge("scale", amount(stepScale, s), amount(stepScale, s))}><Plus size={14} /></NudgeButton>
                         </div>
                     </div>
 

@@ -274,28 +274,6 @@
 // judging by eye -- gets the accent.
 .eic-readout-root b { color: var(--ov-accent, #5eead4); }
 
-.eic-step {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-
-    label { font-size: 10.5px; color: #8e9a9e; }
-
-    input {
-        width: 58px;
-        background: #1f1f1f;
-        border: 1px solid #3a3a3a;
-        color: #ddd;
-        border-radius: 5px;
-        padding: 4px 7px;
-        font-size: 12px;
-        box-sizing: border-box;
-
-        &:focus { outline: none; border-color: var(--ov-accent, #2dd4bf); }
-    }
-}
-
-.eic-step-note { font-size: 9.5px; color: #5f6c70; }
 
 .eic-group {
     display: flex;
@@ -303,18 +281,89 @@
     gap: 4px;
 }
 
+// The label row doubles as the group's step control -- each property is in a
+// different unit, so the number lives next to the buttons it governs rather
+// than in one shared field that can only be right for one of them.
 .eic-group-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: 8.5px;
     font-weight: 700;
     letter-spacing: 1px;
     text-transform: uppercase;
     color: var(--ov-accent, #5eead4);
     opacity: 0.85;
+
+    em {
+        font-style: normal;
+        font-weight: 600;
+        letter-spacing: 0.3px;
+        color: #6f7d81;
+    }
+}
+
+.eic-step-in {
+    margin-left: auto;
+    width: 46px;
+    background: #1f1f1f;
+    border: 1px solid #3a3a3a;
+    color: #ddd;
+    border-radius: 4px;
+    padding: 2px 5px;
+    font-size: 11px;
+    text-align: right;
+    letter-spacing: 0;
+    box-sizing: border-box;
+
+    &:focus { outline: none; border-color: var(--ov-accent, #2dd4bf); }
 }
 
 .eic-pad {
     display: flex;
     gap: 4px;
+    position: relative;
+}
+
+// ARMED STATE. Claiming the arrow keys takes them away from AE, so it has to be
+// visible at a glance whether the panel currently owns them -- an invisible
+// mode that silently changes what your keyboard does would be worse than no
+// keyboard support at all.
+.eic-pad--armable {
+    padding: 3px;
+    margin: -3px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+}
+
+.eic-pad--armed {
+    border-color: var(--ov-accent, #2dd4bf);
+    background: rgba(45, 212, 191, 0.06);
+}
+
+// Must stay genuinely focusable: display:none / visibility:hidden cannot hold
+// focus, and focus is what actually gets keystrokes delivered in AE.
+.eic-keygrab {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    border: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.eic-armed-note {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 9.5px;
+    line-height: 1.3;
+    color: #5f6c70;
+
+    &--on { color: var(--ov-accent, #5eead4); }
 }
 
 .eic-nudge {
