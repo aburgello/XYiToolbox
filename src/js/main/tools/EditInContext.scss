@@ -355,15 +355,32 @@
     pointer-events: none;
 }
 
-.eic-armed-note {
-    display: flex;
+// An explicit toggle, not a hidden click-the-pad gesture. Claiming the arrows
+// takes them away from AE, so both arming and the current state have to be
+// obvious -- and the previous version armed on a gesture that could never work,
+// because clicking an arrow moved focus to that button and disarmed it.
+.eic-armbtn {
+    align-self: flex-start;
+    display: inline-flex;
     align-items: center;
-    gap: 4px;
-    font-size: 9.5px;
-    line-height: 1.3;
-    color: #5f6c70;
+    gap: 5px;
+    padding: 4px 9px;
+    border: 1px solid #33403f;
+    border-radius: 5px;
+    background: #161e20;
+    color: #8e9a9e;
+    font-size: 10px;
+    cursor: pointer;
 
-    &--on { color: var(--ov-accent, #5eead4); }
+    &:hover:not(:disabled) { border-color: var(--ov-accent, #2dd4bf); color: #fff; }
+    &:disabled { opacity: 0.35; cursor: default; }
+
+    &--on {
+        border-color: var(--ov-accent, #2dd4bf);
+        background: rgba(45, 212, 191, 0.12);
+        color: var(--ov-accent, #5eead4);
+        font-weight: 700;
+    }
 }
 
 .eic-nudge {

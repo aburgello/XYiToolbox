@@ -102,6 +102,10 @@ const NudgeButton: React.FC<{
             title={title}
             disabled={disabled}
             onMouseDown={(e) => {
+                // Do NOT let the button take focus: focus is what keeps the
+                // keygrab input alive, and stealing it disarms the arrow keys
+                // the instant you click an arrow.
+                e.preventDefault();
                 const shift = e.shiftKey;      // captured at press; a hold keeps using it
                 fire(shift);
                 holdRef.current = setTimeout(() => {
@@ -403,10 +407,7 @@ const EditInContextTool = () => {
                             <input className="eic-step-in" type="text" value={stepPos} onChange={(e) => setStepPos(e.target.value)} title="Step in pixels" />
                             <em>px</em>
                         </span>
-                        <div
-                            className={"eic-pad eic-pad--armable" + (armed ? " eic-pad--armed" : "")}
-                            onMouseDown={() => { if (!target.locked) keyGrabRef.current?.focus(); }}
-                        >
+                        <div className={"eic-pad eic-pad--armable" + (armed ? " eic-pad--armed" : "")}>
                             {/* Genuinely focusable and genuinely invisible: display:none
                                 and visibility:hidden cannot hold focus, which is the
                                 whole mechanism. */}
@@ -430,10 +431,16 @@ const EditInContextTool = () => {
                             <NudgeButton title="Down" disabled={target.locked} onStep={(s) => nudge("position", 0, amount(stepPos, s))}><ArrowDown size={14} /></NudgeButton>
                             <NudgeButton title="Right" disabled={target.locked} onStep={(s) => nudge("position", amount(stepPos, s), 0)}><ArrowRight size={14} /></NudgeButton>
                         </div>
-                        <span className={"eic-armed-note" + (armed ? " eic-armed-note--on" : "")}>
-                            <Keyboard size={10} />
-                            {armed ? "Arrow keys are nudging this layer — click away to give them back to AE" : "Click the arrows to use your keyboard"}
-                        </span>
+                        <button
+                            type="button"
+                            className={"eic-armbtn" + (armed ? " eic-armbtn--on" : "")}
+                            disabled={target.locked}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => { if (armed) { keyGrabRef.current?.blur(); } else { keyGrabRef.current?.focus(); } }}
+                        >
+                            <Keyboard size={11} />
+                            {armed ? "Arrow keys ON — AE won't get them until you turn this off" : "Use arrow keys"}
+                        </button>
                     </div>
 
                     <div className="eic-group">
