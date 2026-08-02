@@ -6152,10 +6152,11 @@ export const editInContextFindParents = (): Result & { parents?: EditInContextPa
   }
 };
 
-// Open the parent and the precomp in separate viewers, lock the parent's
-// layers, and sync the playhead.  Precomp must already exist in the project.
-// precompId === 0 means "use the currently active comp as the precomp" (the
-// normal flow — you're inside the precomp you want to edit).
+// Open the parent and the active precomp in separate viewers and sync the
+// playhead, so the artist can see both side by side and watch the parent
+// update live as they edit inside the precomp.  AE does the live update
+// natively once both are open — this just removes the setup friction.
+// (precompId === 0 = "use the currently active comp", the normal flow.)
 export const editInContextOpen = (parentId: number, precompId: number): Result => {
   try {
     const parent = app.project.itemByID(parentId);
@@ -6170,41 +6171,173 @@ export const editInContextOpen = (parentId: number, precompId: number): Result =
     if (!precomp || !(precomp instanceof CompItem)) return { success: false, error: "Precomp no longer exists." };
 
     app.beginUndoGroup("Edit In Context");
-    // Sync playhead: put both at the same time so you're not scrubbing each
-    // separately.  The precomp keeps whatever time it's at; the parent follows.
+    // Sync playhead: the precomp keeps whatever time it's at; the parent
+    // follows, so both sit at the same frame without separate scrubbing.
     try { parent.time = precomp.time; } catch (eT) {}
-    // Lock every layer in the parent so accidental edits can't land in it
-    // while you work inside the precomp.
-    for (let i = 1; i <= parent.numLayers; i++) {
-      try { (parent.layer(i) as any).locked = true; } catch (eLock) {}
-    }
     // Open the precomp first (it becomes the active viewer), then the parent
     // in a second viewer — AE opens each openInViewer() into its own viewer.
     precomp.openInViewer();
     parent.openInViewer();
     app.endUndoGroup();
-    return { success: true, message: "Opened parent + precomp. Parent layers locked — unlock from the panel when done." };
+    return { success: true, message: "Opened parent + precomp side by side. Drag the second viewer next to the first — AE remembers the layout, and updates it live as you edit." };
   } catch (e) {
     app.endUndoGroup();
     return { success: false, error: e.toString() };
   }
 };
 
-// Unlock every layer in the given comp (called when the artist is done
-// editing the precomp and wants to touch the parent again).
-export const editInContextUnlock = (parentId: number): Result => {
+// ── Layer read/apply in PARENT space ───────────────────────────────────────
+// The core feature: select a layer inside the precomp, and edit its scale
+// and position using the numbers AS THEY APPEAR IN THE PARENT COMP — no
+// mental math about the precomp's own scale/position.
+//
+// The conversion uses AE's own transform methods on the PRECOMP LAYER (the
+// layer inside the parent whose source is the precomp):
+//   precompLayer.toComp([x,y])    → a point in PRECOMP space → PARENT space
+//   precompLayer.fromComp([x,y])  → PARENT space → PRECOMP space
+// A layer's Position is ALREADY in its own comp's space, so one call on the
+// precomp layer maps it to the parent directly — no chaining through the
+// inner layer's own toComp (which would treat the position as source-space,
+// i.e. wrong).  Types-for-Adobe doesn't declare toComp/fromComp, so they're
+// called via `any`.
+
+function editInContextSelectedLayer(comp: CompItem): Layer | null {
+  try {
+    const sel = comp.selectedLayers;
+    if (!sel || sel.length !== 1) return null;
+    return sel[0];
+  } catch (e) { return null; }
+}
+
+// Returns the layer currently selected inside the ACTIVE comp, converted to
+// the given parent comp's space.  If the active comp itself is the parent
+// (no nesting), the values are returned unchanged.
+export const editInContextReadLayer = (parentId: number): Result & {
+  layerName?: string;
+  // Scale/position as they appear in the PARENT comp (percent / px).
+  parentScale?: number[];
+  parentPosition?: number[];
+  // The layer's raw values in its own comp.
+  localScale?: number[];
+  localPosition?: number[];
+} => {
   try {
     const parent = app.project.itemByID(parentId);
     if (!parent || !(parent instanceof CompItem)) return { success: false, error: "Parent comp no longer exists." };
-    let unlocked = 0;
-    for (let i = 1; i <= parent.numLayers; i++) {
-      try {
-        const l = parent.layer(i) as any;
-        if (l.locked) { l.locked = false; unlocked++; }
-      } catch (eLock) {}
-    }
-    return { success: true, message: unlocked > 0 ? `Unlocked ${unlocked} layer(s).` : "No locked layers." };
+    const active = editInContextActiveComp();
+    if (!active) return { success: false, error: "Open the precomp you want to edit first." };
+
+    const layer = editInContextSelectedLayer(active);
+    if (!layer) return { success: false, error: "Select exactly one layer inside the precomp." };
+
+    const lName = String(layer.name);
+    let localScale: number[] | null = null;
+    let localPosition: number[] | null = null;
+    try {
+      const t = (layer as any).property("Transform");
+      if (t) {
+        try { localScale = (t.property("Scale") as Property).value as number[]; } catch (eSc) {}
+        try { localPosition = (t.property("Position") as Property).value as number[]; } catch (ePo) {}
+      }
+    } catch (eTr) {}
+
+    // Convert the layer's position into the parent comp's space.
+    let parentPosition: number[] | null = localPosition ? localPosition.slice() : null;
+    try {
+      if (localPosition && active !== parent) {
+        const precompLayer = editInContextFindLayer(parent as CompItem, active as CompItem);
+        if (precompLayer && (precompLayer as any).toComp) {
+          const inParent = (precompLayer as any).toComp([localPosition[0], localPosition[1]]);
+          parentPosition = [inParent[0], inParent[1]];
+        }
+      }
+    } catch (eConv) { /* fall back to local values */ }
+
+    // Convert the layer's scale into parent space: multiply by the precomp
+    // layer's own scale factor (percent/100).  Rotation would also matter
+    // for true compositing, but for the scale readout the per-axis product
+    // is the useful number.
+    let parentScale: number[] | null = localScale ? localScale.slice() : null;
+    try {
+      if (localScale && active !== parent) {
+        const precompLayer = editInContextFindLayer(parent as CompItem, active as CompItem);
+        if (precompLayer) {
+          const ps = ((precompLayer as any).property("Transform").property("Scale") as Property).value as number[];
+          if (ps && ps.length >= 2) {
+            parentScale = [localScale[0] * (ps[0] / 100), localScale[1] * (ps[1] / 100)];
+          }
+        }
+      }
+    } catch (eSc) { /* fall back */ }
+
+    return {
+      success: true,
+      layerName: lName,
+      parentScale: parentScale || undefined,
+      parentPosition: parentPosition || undefined,
+      localScale: localScale || undefined,
+      localPosition: localPosition || undefined,
+    };
   } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// Write scale/position to the selected layer, given values expressed in the
+// PARENT comp's space.  Converts back to the layer's local space via the
+// precomp layer's transform, so the numbers the user typed land correctly.
+export const editInContextApplyLayer = (parentId: number, parentScale: number[], parentPosition: number[]): Result => {
+  try {
+    const parent = app.project.itemByID(parentId);
+    if (!parent || !(parent instanceof CompItem)) return { success: false, error: "Parent comp no longer exists." };
+    const active = editInContextActiveComp();
+    if (!active) return { success: false, error: "Open the precomp you want to edit first." };
+    const layer = editInContextSelectedLayer(active);
+    if (!layer) return { success: false, error: "Select exactly one layer inside the precomp." };
+
+    const t = (layer as any).property("Transform");
+    if (!t) return { success: false, error: "That layer has no Transform properties." };
+
+    app.beginUndoGroup("Edit In Context");
+    try {
+      // Scale: divide the desired parent-space scale by the precomp layer's
+      // own scale factor.
+      let localScale = parentScale.slice();
+      try {
+        if (active !== parent) {
+          const precompLayer = editInContextFindLayer(parent as CompItem, active as CompItem);
+          if (precompLayer) {
+            const ps = ((precompLayer as any).property("Transform").property("Scale") as Property).value as number[];
+            if (ps && ps.length >= 2) {
+              localScale = [parentScale[0] * (100 / ps[0]), parentScale[1] * (100 / ps[1])];
+            }
+          }
+        }
+      } catch (eSc) { /* use unadjusted */ }
+      (t.property("Scale") as Property).setValue(localScale);
+
+      // Position: convert parent-space → precomp-space via the precomp
+      // layer's fromComp.  The layer's Position lives in precomp space, so
+      // this is the single conversion needed — no chaining through the inner
+      // layer's own fromComp.
+      let localPos: number[] = parentPosition.slice();
+      try {
+        if (active !== parent) {
+          const precompLayer = editInContextFindLayer(parent as CompItem, active as CompItem);
+          if (precompLayer && (precompLayer as any).fromComp) {
+            const inPrecomp = (precompLayer as any).fromComp([parentPosition[0], parentPosition[1]]);
+            localPos = [inPrecomp[0], inPrecomp[1]];
+          }
+        }
+      } catch (eConv) { /* use unadjusted */ }
+      (t.property("Position") as Property).setValue(localPos);
+    } finally {
+      app.endUndoGroup();
+    }
+
+    return { success: true, message: "Applied scale + position to \"" + String(layer.name) + "\"." };
+  } catch (e) {
+    app.endUndoGroup();
     return { success: false, error: e.toString() };
   }
 };
