@@ -849,21 +849,30 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
       enrichNotes.push("diff:FAIL " + eDiff.toString());
     }
 
-    // 8. Timecode overlay — best-effort source TC on both main renders.
+    // 8. Timecode overlay — the Timecode effect on each main render, with its
+    //    Display Format set to FRAMES (option 2) so it shows frame numbers
+    //    (0, 1, 2, ...) rather than SMPTE 00:00:00:00.
+    //
+    //    Each property is set in its OWN try/catch.  The first version grouped
+    //    them in one block: the very first setValue ("Timecode Source") threw,
+    //    the whole block aborted before ever reaching "Display Format", and
+    //    the effect stayed at its default SMPTE display — which is exactly the
+    //    symptom reported.  Guarding each property independently guarantees
+    //    the Display Format change lands even if an earlier property name
+    //    differs on a given AE version.
     var tcSize = srcH < 500 ? 12 : 16;
     var addTimecode = function (layer: AVLayer): boolean {
       try {
         var effectsGroup = layer.property("Effects");
-        if (!effectsGroup) return true;
+        if (!effectsGroup) return false;
         var tc = (effectsGroup as any).addProperty("ADBE Timecode");
-        if (tc) {
-          tc.property("Timecode Source")!.setValue(2);  // Layer Source
-          tc.property("Display Format")!.setValue(2);   // Frames (frame numbers, not 00:00:00:00)
-          tc.property("Starting Frame")!.setValue(0);
-          tc.property("Position")!.setValue([0, 0]);
-          tc.property("Size")!.setValue(tcSize);
-          tc.property("Opacity")!.setValue(55);
-        }
+        if (!tc) return false;
+        // Display Format: 1 = Timecode, 2 = Frames (the user's "2nd option").
+        try { tc.property("Display Format")!.setValue(2); } catch (eDF) { /* older AE naming */ }
+        try { tc.property("Timecode Source")!.setValue(2); } catch (eTS) { /* default is fine */ }
+        try { tc.property("Starting Frame")!.setValue(0); } catch (eSF) { /* default */ }
+        try { tc.property("Text Size")!.setValue(tcSize); } catch (eSZ) { /* default */ }
+        try { tc.property("Opacity")!.setValue(55); } catch (eOp) { /* default */ }
         return true;
       } catch (eTc) { return false; }
     };

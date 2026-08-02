@@ -30,14 +30,12 @@ import {
     Film,
     Columns2,
     Layers,
-    Play,
 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { sfx } from "../../lib/utils/sfx";
 import { usePersistentState } from "../../lib/utils/usePersistentState";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
-import ReviewPlayer from "./ReviewPlayer";
 import "../shared.scss";
 import "./ReviewHub.scss";
 
@@ -55,10 +53,9 @@ const ARTWORK_TYPES = ["DOOH", "DFOH", "DINTH", "FOH"];
 
 function truncateNameAtArtwork(fullName: string): string {
     // Split into underscore tokens; find the first token that IS an artwork
-    // type (exact, case-insensitive) and keep everything through it.  This
-    // avoids a substring match like "_DINTH" landing inside "_DINTHING_".
+    // type (exact, case-insensitive).  This avoids a substring match like
+    // "_DINTH" landing inside "_DINTHING_".
     const tokens = fullName.split("_");
-    let keep = 0;
     let found = -1;
     for (let i = 0; i < tokens.length; i++) {
         const t = tokens[i].toUpperCase();
@@ -66,12 +63,13 @@ function truncateNameAtArtwork(fullName: string): string {
             if (t === ARTWORK_TYPES[a]) { found = i; break; }
         }
         if (found !== -1) break;
-        keep++;
     }
     if (found === -1) return fullName;
-    // Rejoin tokens up to and including the artwork type, restore the rest
-    // as an ellipsis.  Rebuild from the original tokens to preserve case.
-    return tokens.slice(0, found + 1).join("_") + "…";
+    // Keep everything AFTER the artwork type — the distinguishing part
+    // (creative / size / duration / territory).  The campaign prefix before
+    // the artwork type is repetitive across a session and is what was
+    // overflowing the buttons, so it's dropped.
+    return tokens.slice(found + 1).join("_");
 }
 
 // ---------------------------------------------------------------------------
@@ -169,8 +167,7 @@ const ReviewRow: React.FC<{
     onRemove: () => void;
     onOpenComp: (compId: number) => void;
     onToggleDiff: (compId: number) => void;
-    onPreview: (item: ReviewItem) => void;
-}> = ({ item, batchIndex, matchedMp4, onChange, onRemove, onOpenComp, onToggleDiff, onPreview }) => {
+}> = ({ item, batchIndex, matchedMp4, onChange, onRemove, onOpenComp, onToggleDiff }) => {
     const reduced = useReducedMotion();
     return (
         <motion.div
@@ -186,19 +183,6 @@ const ReviewRow: React.FC<{
                     name stays in the tooltip. */}
                 <Tooltip text={item.name}>
                     <span className="rv-row-name">{truncateNameAtArtwork(item.name)}</span>
-                </Tooltip>
-
-                {/* In-panel preview — opens the synced master/local player
-                    with live diff for this row. */}
-                <Tooltip text="Preview in panel (synced master + local + diff)">
-                    <motion.button
-                        className="rv-preview-btn"
-                        onClick={() => onPreview(item)}
-                        whileHover={reduced ? {} : { scale: 1.1 }}
-                        whileTap={reduced ? {} : { scale: 0.92 }}
-                    >
-                        <Play size={10} />
-                    </motion.button>
                 </Tooltip>
 
                 {/* Matched .mp4 render — click to play the master in the OS
@@ -320,8 +304,6 @@ const ReviewSession: React.FC = () => {
     // buildMastersIndex + pickBestMasterFromIndex pipeline (campaign +
     // size + duration + aspect-ratio scoring).
     const [itemMatches, setItemMatches] = useState<Record<string, string> | null>(null);
-    // The row currently open in the in-panel synced player, if any.
-    const [previewItem, setPreviewItem] = useState<ReviewItem | null>(null);
     const toastId = useRef(0);
     const nextId = useRef(items.reduce((max, i) => Math.max(max, i.id), 0));
     // Mounted guard — flipped to false on unmount so async operations
@@ -507,22 +489,6 @@ const ReviewSession: React.FC = () => {
     // Open the in-panel synced player for a row.  Needs both the master .mp4
     // (from itemMatches) and the local .mov (the item's sourcePath).  Scrubs
     // also jump the AE comparison comp to the same frame via reviewJumpComp.
-    const handlePreview = (item: ReviewItem) => {
-        const mp4 = itemMatches?.[item.name] || null;
-        if (!mp4 || !item.sourcePath) {
-            pushToast("Preview needs both a matched master and a local render path.", "error");
-            return;
-        }
-        setPreviewItem(item);
-    };
-
-    const handlePlayerScrub = async (frame: number) => {
-        if (!previewItem?.comparisonCompId) return;
-        try {
-            await evalTS("reviewJumpComp", previewItem.comparisonCompId, frame);
-        } catch { /* bridge hiccup — ignore, comp just won't follow */ }
-    };
-
     const handleToggleDiff = async (compId: number) => {
         try {
             const result = await evalTS("reviewToggleDiff", compId);
@@ -693,18 +659,6 @@ const ReviewSession: React.FC = () => {
                 )}
             </AnimatePresence>
 
-            {/* In-panel synced player — shown for the row the user chose to
-                preview.  Master + local play together with a live diff; the
-                AE comparison comp follows scrubs via reviewJumpComp. */}
-            {previewItem && itemMatches?.[previewItem.name] && previewItem.sourcePath && (
-                <ReviewPlayer
-                    masterPath={itemMatches[previewItem.name]}
-                    localPath={previewItem.sourcePath}
-                    compFrameRate={previewItem.comparisonFps || 25}
-                    onScrub={handlePlayerScrub}
-                />
-            )}
-
             {/* Row list */}
             <div className="rv-list">
                 {items.length === 0 ? (
@@ -736,7 +690,6 @@ const ReviewSession: React.FC = () => {
                                     onRemove={() => removeItem(item.id)}
                                     onOpenComp={handleOpenComp}
                                     onToggleDiff={handleToggleDiff}
-                                    onPreview={handlePreview}
                                 />
                             );
                         })}
