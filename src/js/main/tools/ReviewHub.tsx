@@ -149,24 +149,31 @@ const ReviewRow: React.FC<{
                     <span className="rv-row-name">{item.name}</span>
                 </Tooltip>
 
-                {/* Matched .mp4 render — shown when the active campaign has
-                    a render whose filename stem matches this item's source
-                    .mov. Same stem-matching convention OV Library uses. */}
+                {/* Matched .mp4 render — click to play the master in the OS
+                    player for a quick sanity check. */}
                 {matchedMp4 && (
-                    <Tooltip text={matchedMp4}>
-                        <span className="rv-mp4-match" title={matchedMp4}>
+                    <Tooltip text={`Play master: ${matchedMp4}`}>
+                        <motion.button
+                            className="rv-mp4-match"
+                            onClick={async () => {
+                                try { await evalTS("playFile", matchedMp4); }
+                                catch { /* no bridge — ignore */ }
+                            }}
+                            whileHover={reduced ? {} : { scale: 1.15 }}
+                            whileTap={reduced ? {} : { scale: 0.9 }}
+                        >
                             <Film size={10} />
-                        </span>
+                        </motion.button>
                     </Tooltip>
                 )}
 
-                {/* Comparison comp — auto-created when imported with a
-                    matched .mp4.  Click to open in AE's viewer. */}
-                {item.comparisonCompName && (
-                    <Tooltip text={`Open comparison comp "${item.comparisonCompName}"`}>
+                {/* Comparison comp — auto-created side-by-side QC comp.
+                    Click to open in AE's viewer. */}
+                {item.comparisonCompName && item.comparisonCompId && (
+                    <Tooltip text={`Open "${item.comparisonCompName}" in AE viewer`}>
                         <motion.button
                             className="rv-comp-btn"
-                            onClick={() => item.comparisonCompId && onOpenComp(item.comparisonCompId)}
+                            onClick={() => onOpenComp(item.comparisonCompId!)}
                             whileHover={reduced ? {} : { scale: 1.08 }}
                             whileTap={reduced ? {} : { scale: 0.94 }}
                         >
@@ -341,30 +348,36 @@ const ReviewSession: React.FC = () => {
                         const compResult = await evalTS("createReviewComparisons", JSON.stringify(compMatches));
                         if (!mountedRef.current) return;
                         const results: any[] = (compResult as any)?.results || [];
-                        setItems((prev) => prev.map((item) => {
-                            const match = compMatches.find((m) => m.reviewId === item.id);
-                            if (!match) return item;
-                            const idx = compMatches.indexOf(match);
-                            const compInfo = (idx >= 0 && results.length > idx) ? results[idx] : null;
-                            if (compInfo && compInfo.success && compInfo.compName) {
-                                return { ...item, comparisonCompName: compInfo.compName, comparisonCompId: compInfo.compId };
+                        // Zip results with compMatches by index — the backend
+                        // iterates the input in order and returns results in
+                        // the same order, so results[i] ↔ compMatches[i].
+                        const stampByReviewId: Record<number, { compName: string; compId: number }> = {};
+                        for (let ri = 0; ri < results.length && ri < compMatches.length; ri++) {
+                            if (results[ri] && results[ri].success && results[ri].compName) {
+                                stampByReviewId[compMatches[ri].reviewId] = {
+                                    compName: results[ri].compName,
+                                    compId: results[ri].compId,
+                                };
                             }
-                            return item;
-                        }));
-                        const succeeded = results.filter((r: any) => r.success).length;
-                        if (succeeded > 0) {
-                            pushToast(`${fresh.length} item${fresh.length > 1 ? "s" : ""} added, ${succeeded} comparison comp${succeeded > 1 ? "s" : ""} created.`);
-                            sfx.bop();
-                        } else {
-                            pushToast(`${fresh.length} item${fresh.length > 1 ? "s" : ""} added (comparison comps failed — check the master renders are still on disk).`);
                         }
+                        if (Object.keys(stampByReviewId).length > 0) {
+                            setItems((prev) => prev.map((item) => {
+                                const stamp = stampByReviewId[item.id];
+                                return stamp
+                                    ? { ...item, comparisonCompName: stamp.compName, comparisonCompId: stamp.compId }
+                                    : item;
+                            }));
+                        }
+                        const succeeded = Object.keys(stampByReviewId).length;
+                        pushToast(`${fresh.length} item${fresh.length > 1 ? "s" : ""} added, ${succeeded} comparison comp${succeeded > 1 ? "s" : ""} created.`);
+                        sfx.bop();
                     } catch {
                         pushToast(`${fresh.length} item${fresh.length > 1 ? "s" : ""} added.  Comparison comps could not be created.`);
                     }
                 } else {
                     const matchCount = Object.keys(matchedMp4s).length;
                     if (matchCount > 0) {
-                        pushToast(`${fresh.length} item${fresh.length > 1 ? "s" : ""} added, ${matchCount} matched to master renders.`);
+                        pushToast(`${fresh.length} item${fresh.length > 1 ? "s" : ""} added, ${matchCount} matched to master renders (but comp creation skipped).`);
                     } else {
                         pushToast(`${fresh.length} item${fresh.length > 1 ? "s" : ""} added (no matching master renders found in this campaign).`);
                     }
