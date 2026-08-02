@@ -704,6 +704,10 @@ export const reviewLoadSelectedItems = (): ReviewLoadResult => {
 interface ReviewComparisonResult extends Result {
   compName?: string;
   compId?: number;
+  // Diagnostics: "divider:ok | master-label:ok | local-label:ok | diff:no-blend ... | tc-master:FAIL ..."
+  // lets the UI (and a debugging session) see which enrichment steps actually
+  // ran on the real AE install instead of failing silently.
+  enrichNotes?: string;
 }
 
 export const createReviewComparison = (mp4Path: string, localItemId: number, localItemName: string): ReviewComparisonResult => {
@@ -781,27 +785,30 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     localLayer.name = "LOCAL (imported render)";
 
     // 7-10. The enrichment block — divider, labels, difference matte,
-    //       timecode overlay.  Deliberately wrapped in ONE try/catch: these
-    //       are nice-to-haves layered on top of the core side-by-side comp,
-    //       and a failure in any of them (addText/addSolid/effect quirks on
-    //       a given AE version) must NEVER turn a successfully-created comp
-    //       into a reported failure — that's what was silently dropping the
-    //       purple chip: the comp existed in AE, the function returned
-    //       {success:false}, and the row never got stamped.  The comp's core
-    //       (master + local, correctly sized) is already in place above, so
-    //       the comp is useful even if every enrichment step fails.
+    //       timecode overlay.  EACH step is independently guarded so one
+    //       failure never kills the rest, and each appends to `notes` so the
+    //       caller can see what actually happened.  The core comp (master +
+    //       local, correctly sized) is already in place above, so it's useful
+    //       even if every enrichment step fails.
+    var enrichNotes: string[] = [];
+
+    // 7. Center divider — a thin 4px solid at 50% opacity, full height.
     try {
-      // 7. Center divider — a thin 4px solid at 50% opacity, full height.
       var dividerSolid = app.project.items.addSolid("divider", 4, compH, 1, dur);
       var dividerLayer = comp.layers.add(dividerSolid);
       (dividerLayer.property("Transform")!.property("Position") as Property).setValue([compW / 2, compH / 2]);
       dividerLayer.name = "--- divider ---";
       try { (dividerLayer.property("Transform")!.property("Opacity") as Property).setValue(50); } catch (eOp) {}
+      enrichNotes.push("divider:ok");
+    } catch (eD) {
+      enrichNotes.push("divider:FAIL " + eD.toString());
+    }
 
-      // 8. "MASTER" / "LOCAL" labels — text + backing bar, bottom corners.
-      var labelOpacity = 60;
-      var labelSize = srcH < 500 ? 18 : 24;
-      var addLabel = function (side: string, text: string, centerX: number) {
+    // 8. "MASTER" / "LOCAL" labels — text + backing bar, bottom corners.
+    var labelOpacity = 60;
+    var labelSize = srcH < 500 ? 18 : 24;
+    var addLabel = function (side: string, text: string, centerX: number): boolean {
+      try {
         var bar = app.project.items.addSolid(side + "_label_bg", halfW, labelSize, 1, dur);
         var barLayer = comp.layers.add(bar);
         barLayer.name = side + " label bg";
@@ -822,42 +829,55 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
           (textLayer.property("Transform")!.property("Position") as Property).setValue([centerX, compH - labelSize / 2 - 6]);
           try { (textLayer.property("Transform")!.property("Opacity") as Property).setValue(labelOpacity + 15); } catch (eOp) {}
         }
-      };
-      addLabel("MASTER", "MASTER", halfW / 2);
-      addLabel("LOCAL", "LOCAL", halfW + halfW / 2);
+        return true;
+      } catch (eL) {
+        return false;
+      }
+    };
+    enrichNotes.push("master-label:" + (addLabel("MASTER", "MASTER", halfW / 2) ? "ok" : "FAIL"));
+    enrichNotes.push("local-label:" + (addLabel("LOCAL", "LOCAL", halfW + halfW / 2) ? "ok" : "FAIL"));
 
-      // 9. Difference matte — the local render over the MASTER's half with
-      //     Difference blending.  Any pixel where the localised render
-      //     differs from the master lights up on the left.
+    // 9. Difference matte — the local render over the MASTER's half with
+    //     Difference blending.  BlendingMode is a Types-for-Adobe ambient
+    //     enum, NOT necessarily a real ExtendScript runtime global (same
+    //     trap as `instanceof AVItem`, documented in CLAUDE.md) — so the
+    //     whole step is guarded and the layer is still useful even if the
+    //     blend mode can't be set.
+    try {
       var diffLayer = comp.layers.add(localItem);
       fitLayerIntoBox(diffLayer, halfW, compH, halfW / 2, compH / 2);
-      diffLayer.blendingMode = BlendingMode.DIFFERENCE;
       diffLayer.name = "DIFF (local over master)";
+      try {
+        diffLayer.blendingMode = BlendingMode.DIFFERENCE;
+        enrichNotes.push("diff:ok");
+      } catch (eBlend) {
+        enrichNotes.push("diff:no-blend " + eBlend.toString());
+      }
       try { (diffLayer.property("Transform")!.property("Opacity") as Property).setValue(100); } catch (eOp) {}
-
-      // 10. Timecode overlay — best-effort source TC on both main renders.
-      var tcSize = srcH < 500 ? 12 : 16;
-      var addTimecode = function (layer: AVLayer) {
-        try {
-          var effectsGroup = layer.property("Effects");
-          if (!effectsGroup) return;
-          var tc = (effectsGroup as any).addProperty("ADBE Timecode");
-          if (tc) {
-            tc.property("Timecode Source")!.setValue(2);  // Layer Source
-            tc.property("Display Format")!.setValue(1);   // Timecode
-            tc.property("Starting Frame")!.setValue(0);
-            tc.property("Position")!.setValue([0, 0]);
-            tc.property("Size")!.setValue(tcSize);
-            tc.property("Opacity")!.setValue(55);
-          }
-        } catch (eTc) { /* Timecode effect not available — keep the comp without it */ }
-      };
-      addTimecode(masterLayer);
-      addTimecode(localLayer);
-    } catch (enrichErr) {
-      // Enrichment failed but the comp itself is fine — swallow and report
-      // success so the row gets its purple chip.
+    } catch (eDiff) {
+      enrichNotes.push("diff:FAIL " + eDiff.toString());
     }
+
+    // 10. Timecode overlay — best-effort source TC on both main renders.
+    var tcSize = srcH < 500 ? 12 : 16;
+    var addTimecode = function (layer: AVLayer): boolean {
+      try {
+        var effectsGroup = layer.property("Effects");
+        if (!effectsGroup) return true;
+        var tc = (effectsGroup as any).addProperty("ADBE Timecode");
+        if (tc) {
+          tc.property("Timecode Source")!.setValue(2);  // Layer Source
+          tc.property("Display Format")!.setValue(1);   // Timecode
+          tc.property("Starting Frame")!.setValue(0);
+          tc.property("Position")!.setValue([0, 0]);
+          tc.property("Size")!.setValue(tcSize);
+          tc.property("Opacity")!.setValue(55);
+        }
+        return true;
+      } catch (eTc) { return false; }
+    };
+    enrichNotes.push("tc-master:" + (addTimecode(masterLayer) ? "ok" : "FAIL"));
+    enrichNotes.push("tc-local:" + (addTimecode(localLayer) ? "ok" : "FAIL"));
 
     // Don't auto-open — avoids an immediate frame-buffer allocation in AE
     // (this comp is three full layers: master, local, difference matte).
@@ -866,7 +886,7 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     // clicks the purple comparison chip in the review row to open one at a
     // time via focusReviewComp().
     app.endUndoGroup();
-    return { success: true, compName: finalName, compId: comp.id };
+    return { success: true, compName: finalName, compId: comp.id, enrichNotes: enrichNotes.join(" | ") };
   } catch (e) {
     app.endUndoGroup();
     return { success: false, error: e.toString() };

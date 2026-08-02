@@ -76,6 +76,7 @@ interface ReviewItem {
     // render on the right, difference matte, labels, timecode overlay).
     comparisonCompName?: string;
     comparisonCompId?: number;
+    comparisonEnrich?: string;
 }
 
 interface Toast {
@@ -170,7 +171,7 @@ const ReviewRow: React.FC<{
                 {/* Comparison comp — auto-created side-by-side QC comp.
                     Click to open in AE's viewer. */}
                 {item.comparisonCompName && item.comparisonCompId && (
-                    <Tooltip text={`Open "${item.comparisonCompName}" in AE viewer`}>
+                    <Tooltip text={item.comparisonEnrich ? `${item.comparisonCompName}\n${item.comparisonEnrich}` : `Open "${item.comparisonCompName}" in AE viewer`}>
                         <motion.button
                             className="rv-comp-btn"
                             onClick={() => onOpenComp(item.comparisonCompId!)}
@@ -351,7 +352,7 @@ const ReviewSession: React.FC = () => {
                         // Zip results with compMatches by index — the backend
                         // iterates the input in order and returns results in
                         // the same order, so results[i] ↔ compMatches[i].
-                        const stampByReviewId: Record<number, { compName: string; compId: number }> = {};
+                        const stampByReviewId: Record<number, { compName: string; compId: number; enrich?: string }> = {};
                         for (let ri = 0; ri < results.length && ri < compMatches.length; ri++) {
                             // Key off the comp's actual presence (compId +
                             // compName), NOT the success flag — the backend can
@@ -363,6 +364,7 @@ const ReviewSession: React.FC = () => {
                                 stampByReviewId[compMatches[ri].reviewId] = {
                                     compName: results[ri].compName,
                                     compId: results[ri].compId,
+                                    enrich: results[ri].enrichNotes || "",
                                 };
                             }
                         }
@@ -370,7 +372,7 @@ const ReviewSession: React.FC = () => {
                             setItems((prev) => prev.map((item) => {
                                 const stamp = stampByReviewId[item.id];
                                 return stamp
-                                    ? { ...item, comparisonCompName: stamp.compName, comparisonCompId: stamp.compId }
+                                    ? { ...item, comparisonCompName: stamp.compName, comparisonCompId: stamp.compId, comparisonEnrich: stamp.enrich }
                                     : item;
                             }));
                         }
