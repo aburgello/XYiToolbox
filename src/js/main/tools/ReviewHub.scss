@@ -482,6 +482,26 @@
         &:hover { color: #e07a7a; }
     }
 
+    // In-panel preview play button — opens the synced master/local player
+    // with live diff for this row.
+    .rv-preview-btn {
+        display: flex;
+        align-items: center;
+        flex-shrink: 0;
+        background: rgba(251, 191, 36, 0.1);
+        border: 1px solid rgba(251, 191, 36, 0.28);
+        color: #fbbf24;
+        border-radius: 4px;
+        padding: 2px 5px;
+        cursor: pointer;
+        transition: background 0.12s ease, border-color 0.12s ease;
+
+        &:hover {
+            background: rgba(251, 191, 36, 0.2);
+            border-color: rgba(251, 191, 36, 0.5);
+        }
+    }
+
     // Clickable green filmstrip icon — the matched master .mp4.  Click
     // plays it in the OS player for a quick sanity check.
     .rv-mp4-match {
@@ -529,6 +549,44 @@
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+    }
+
+    // Diff toggle — small layered-layers icon next to the Compare chip.
+    .rv-diff-btn {
+        display: flex;
+        align-items: center;
+        background: rgba(74, 222, 128, 0.1);
+        border: 1px solid rgba(74, 222, 128, 0.28);
+        color: #4ade80;
+        border-radius: 4px;
+        padding: 2px 5px;
+        cursor: pointer;
+        flex-shrink: 0;
+        transition: background 0.12s ease, border-color 0.12s ease;
+
+        &:hover {
+            background: rgba(74, 222, 128, 0.2);
+            border-color: rgba(74, 222, 128, 0.5);
+        }
+    }
+
+    // Prev/Next — subtle chevron buttons in the toolbar.
+    .rv-step-btn {
+        display: flex;
+        align-items: center;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: #aaa;
+        border-radius: 4px;
+        padding: 4px 7px;
+        cursor: pointer;
+        flex-shrink: 0;
+        transition: background 0.12s ease, color 0.12s ease;
+
+        &:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #ddd;
+        }
     }
 
     // Note textarea

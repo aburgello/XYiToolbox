@@ -22,18 +22,22 @@ import {
     CheckCircle2,
     AlertTriangle,
     ChevronDown,
+    ChevronLeft,
     ChevronRight,
     X,
     Pencil,
     Copy,
     Film,
     Columns2,
+    Layers,
+    Play,
 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { sfx } from "../../lib/utils/sfx";
 import { usePersistentState } from "../../lib/utils/usePersistentState";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
+import ReviewPlayer from "./ReviewPlayer";
 import "../shared.scss";
 import "./ReviewHub.scss";
 
@@ -106,6 +110,7 @@ interface ReviewItem {
     comparisonCompName?: string;
     comparisonCompId?: number;
     comparisonEnrich?: string;
+    comparisonFps?: number;
 }
 
 interface Toast {
@@ -163,7 +168,9 @@ const ReviewRow: React.FC<{
     onChange: (patch: Partial<ReviewItem>) => void;
     onRemove: () => void;
     onOpenComp: (compId: number) => void;
-}> = ({ item, batchIndex, matchedMp4, onChange, onRemove, onOpenComp }) => {
+    onToggleDiff: (compId: number) => void;
+    onPreview: (item: ReviewItem) => void;
+}> = ({ item, batchIndex, matchedMp4, onChange, onRemove, onOpenComp, onToggleDiff, onPreview }) => {
     const reduced = useReducedMotion();
     return (
         <motion.div
@@ -179,6 +186,19 @@ const ReviewRow: React.FC<{
                     name stays in the tooltip. */}
                 <Tooltip text={item.name}>
                     <span className="rv-row-name">{truncateNameAtArtwork(item.name)}</span>
+                </Tooltip>
+
+                {/* In-panel preview — opens the synced master/local player
+                    with live diff for this row. */}
+                <Tooltip text="Preview in panel (synced master + local + diff)">
+                    <motion.button
+                        className="rv-preview-btn"
+                        onClick={() => onPreview(item)}
+                        whileHover={reduced ? {} : { scale: 1.1 }}
+                        whileTap={reduced ? {} : { scale: 0.92 }}
+                    >
+                        <Play size={10} />
+                    </motion.button>
                 </Tooltip>
 
                 {/* Matched .mp4 render — click to play the master in the OS
@@ -211,6 +231,22 @@ const ReviewRow: React.FC<{
                         >
                             <Columns2 size={11} />
                             <span className="rv-comp-label">Compare</span>
+                        </motion.button>
+                    </Tooltip>
+                )}
+
+                {/* Diff toggle — flips the DIFF layer's visibility in the
+                    comparison comp from the panel, so the artist doesn't have
+                    to hunt the timeline checkbox. */}
+                {item.comparisonCompId && (
+                    <Tooltip text="Toggle the DIFF (difference) layer">
+                        <motion.button
+                            className="rv-diff-btn"
+                            onClick={() => onToggleDiff(item.comparisonCompId!)}
+                            whileHover={reduced ? {} : { scale: 1.1 }}
+                            whileTap={reduced ? {} : { scale: 0.92 }}
+                        >
+                            <Layers size={11} />
                         </motion.button>
                     </Tooltip>
                 )}
@@ -284,6 +320,8 @@ const ReviewSession: React.FC = () => {
     // buildMastersIndex + pickBestMasterFromIndex pipeline (campaign +
     // size + duration + aspect-ratio scoring).
     const [itemMatches, setItemMatches] = useState<Record<string, string> | null>(null);
+    // The row currently open in the in-panel synced player, if any.
+    const [previewItem, setPreviewItem] = useState<ReviewItem | null>(null);
     const toastId = useRef(0);
     const nextId = useRef(items.reduce((max, i) => Math.max(max, i.id), 0));
     // Mounted guard — flipped to false on unmount so async operations
@@ -383,7 +421,7 @@ const ReviewSession: React.FC = () => {
                         // Zip results with compMatches by index — the backend
                         // iterates the input in order and returns results in
                         // the same order, so results[i] ↔ compMatches[i].
-                        const stampByReviewId: Record<number, { compName: string; compId: number; enrich?: string }> = {};
+                        const stampByReviewId: Record<number, { compName: string; compId: number; enrich?: string; fps?: number }> = {};
                         for (let ri = 0; ri < results.length && ri < compMatches.length; ri++) {
                             // Key off the comp's actual presence (compId +
                             // compName), NOT the success flag — the backend can
@@ -396,6 +434,7 @@ const ReviewSession: React.FC = () => {
                                     compName: results[ri].compName,
                                     compId: results[ri].compId,
                                     enrich: results[ri].enrichNotes || "",
+                                    fps: results[ri].compFps,
                                 };
                             }
                         }
@@ -403,7 +442,7 @@ const ReviewSession: React.FC = () => {
                             setItems((prev) => prev.map((item) => {
                                 const stamp = stampByReviewId[item.id];
                                 return stamp
-                                    ? { ...item, comparisonCompName: stamp.compName, comparisonCompId: stamp.compId, comparisonEnrich: stamp.enrich }
+                                    ? { ...item, comparisonCompName: stamp.compName, comparisonCompId: stamp.compId, comparisonEnrich: stamp.enrich, comparisonFps: stamp.fps }
                                     : item;
                             }));
                         }
@@ -439,11 +478,60 @@ const ReviewSession: React.FC = () => {
     const clearAll = () => { setItems([]); setError(null); };
 
     const handleOpenComp = async (compId: number) => {
+        lastOpenedCompIdRef.current = compId;
         try {
             const result = await evalTS("focusReviewComp", compId);
             if (!mountedRef.current) return;
             if (result === undefined) throw new Error("no bridge");
             if (!result.success) pushToast(result.error || "Could not open comp.", "error");
+        } catch {
+            pushToast("No CEP bridge — open inside After Effects.", "error");
+        }
+    };
+
+    // Step through the session's comparison comps: Prev/Next opens the
+    // previous/next item that has a comparison comp, for the approve-
+    // approve-approve review pass.
+    const handleStepComp = async (dir: 1 | -1) => {
+        const withComps = items.filter((i) => i.comparisonCompId);
+        if (withComps.length === 0) { pushToast("No comparison comps in this session.", "error"); return; }
+        const currentIndex = withComps.findIndex((i) => i.comparisonCompId === (lastOpenedCompIdRef.current ?? -1));
+        const nextIndex = (currentIndex === -1 ? 0 : (currentIndex + dir + withComps.length) % withComps.length);
+        const target = withComps[nextIndex];
+        if (!target.comparisonCompId) return;
+        lastOpenedCompIdRef.current = target.comparisonCompId;
+        await handleOpenComp(target.comparisonCompId);
+    };
+    const lastOpenedCompIdRef = useRef<number | null>(null);
+
+    // Open the in-panel synced player for a row.  Needs both the master .mp4
+    // (from itemMatches) and the local .mov (the item's sourcePath).  Scrubs
+    // also jump the AE comparison comp to the same frame via reviewJumpComp.
+    const handlePreview = (item: ReviewItem) => {
+        const mp4 = itemMatches?.[item.name] || null;
+        if (!mp4 || !item.sourcePath) {
+            pushToast("Preview needs both a matched master and a local render path.", "error");
+            return;
+        }
+        setPreviewItem(item);
+    };
+
+    const handlePlayerScrub = async (frame: number) => {
+        if (!previewItem?.comparisonCompId) return;
+        try {
+            await evalTS("reviewJumpComp", previewItem.comparisonCompId, frame);
+        } catch { /* bridge hiccup — ignore, comp just won't follow */ }
+    };
+
+    const handleToggleDiff = async (compId: number) => {
+        try {
+            const result = await evalTS("reviewToggleDiff", compId);
+            if (!mountedRef.current) return;
+            if (result === undefined) throw new Error("no bridge");
+            pushToast(result.success
+                ? (result.visible ? "Difference view on." : "Difference view off.")
+                : (result.error || "Could not toggle diff."),
+                result.success ? "success" : "error");
         } catch {
             pushToast("No CEP bridge — open inside After Effects.", "error");
         }
@@ -474,17 +562,40 @@ const ReviewSession: React.FC = () => {
     // (timesheetCopyToClipboard) writes the text to a temp file with
     // File.write(), which uses the system ANSI codepage and mangles the 🔶
     // surrogate pair before it reaches the clipboard — the "jumbled emoji"
-    // bug.  In the browser the exact JS string survives intact, so try that
-    // first; only fall back to the bridge if the browser clipboard is
-    // unavailable (it needs a user-gesture context which the CEP panel has,
-    // since this runs from a button click).
+    // bug.  In the browser the exact JS string survives intact, so copy here.
+    //
+    // navigator.clipboard.writeText needs a SECURE context, which a file://
+    // CEP panel is not — so it's not the primary path.  The reliable browser
+    // trick on file:// is a hidden textarea + document.execCommand("copy"):
+    // it copies the exact JS string (emoji intact) synchronously, works
+    // without a secure context, and runs from this button's click gesture.
+    // The bridge is a last resort only.
     const copyWrikeText = async () => {
         try {
-            await navigator.clipboard.writeText(wrikeText);
-            pushToast("Copied to clipboard.", "success");
-            return;
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(wrikeText);
+                pushToast("Copied to clipboard.", "success");
+                return;
+            }
         } catch {
-            /* browser clipboard unavailable — fall through to the bridge */
+            /* fall through to textarea */
+        }
+        try {
+            const ta = document.createElement("textarea");
+            ta.value = wrikeText;
+            ta.style.position = "fixed";
+            ta.style.opacity = "0";
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            const ok = document.execCommand("copy");
+            document.body.removeChild(ta);
+            if (ok) {
+                pushToast("Copied to clipboard.", "success");
+                return;
+            }
+        } catch {
+            /* fall through to bridge */
         }
         try {
             const result = await evalTS("timesheetCopyToClipboard", wrikeText);
@@ -509,6 +620,33 @@ const ReviewSession: React.FC = () => {
                         <ListPlus size={14} /> {campaign ? "Import & Compare" : "Import Selected"}
                     </motion.button>
                 </Tooltip>
+
+                {/* Prev / Next — step through the session's comparison comps
+                    without returning to the list between each one. */}
+                {items.some((i) => i.comparisonCompId) && (
+                    <>
+                        <Tooltip text="Previous comparison comp">
+                            <motion.button
+                                className="rv-step-btn"
+                                onClick={() => handleStepComp(-1)}
+                                whileHover={reduced ? {} : { scale: 1.05 }}
+                                whileTap={reduced ? {} : { scale: 0.95 }}
+                            >
+                                <ChevronLeft size={13} />
+                            </motion.button>
+                        </Tooltip>
+                        <Tooltip text="Next comparison comp">
+                            <motion.button
+                                className="rv-step-btn"
+                                onClick={() => handleStepComp(1)}
+                                whileHover={reduced ? {} : { scale: 1.05 }}
+                                whileTap={reduced ? {} : { scale: 0.95 }}
+                            >
+                                <ChevronRight size={13} />
+                            </motion.button>
+                        </Tooltip>
+                    </>
+                )}
 
                 <div className="rv-bar-spacer" />
 
@@ -555,6 +693,18 @@ const ReviewSession: React.FC = () => {
                 )}
             </AnimatePresence>
 
+            {/* In-panel synced player — shown for the row the user chose to
+                preview.  Master + local play together with a live diff; the
+                AE comparison comp follows scrubs via reviewJumpComp. */}
+            {previewItem && itemMatches?.[previewItem.name] && previewItem.sourcePath && (
+                <ReviewPlayer
+                    masterPath={itemMatches[previewItem.name]}
+                    localPath={previewItem.sourcePath}
+                    compFrameRate={previewItem.comparisonFps || 25}
+                    onScrub={handlePlayerScrub}
+                />
+            )}
+
             {/* Row list */}
             <div className="rv-list">
                 {items.length === 0 ? (
@@ -585,6 +735,8 @@ const ReviewSession: React.FC = () => {
                                     onChange={(patch) => updateItem(item.id, patch)}
                                     onRemove={() => removeItem(item.id)}
                                     onOpenComp={handleOpenComp}
+                                    onToggleDiff={handleToggleDiff}
+                                    onPreview={handlePreview}
                                 />
                             );
                         })}

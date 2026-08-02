@@ -715,6 +715,10 @@ function reviewFindOrCreateFolder(name: string): FolderItem {
 interface ReviewComparisonResult extends Result {
   compName?: string;
   compId?: number;
+  // The comparison comp's actual frame rate — read from the master footage
+  // (23.976, 25, 30, etc.), so the in-panel player's frame math matches the
+  // AE comp instead of assuming 25.
+  compFps?: number;
   // Diagnostics: "divider:ok | master-label:ok | local-label:ok | diff:no-blend ... | tc-master:FAIL ..."
   // lets the UI (and a debugging session) see which enrichment steps actually
   // ran on the real AE install instead of failing silently.
@@ -873,7 +877,7 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     // clicks the purple comparison chip in the review row to open one at a
     // time via focusReviewComp().
     app.endUndoGroup();
-    return { success: true, compName: finalName, compId: comp.id, enrichNotes: enrichNotes.join(" | ") };
+    return { success: true, compName: finalName, compId: comp.id, compFps: fps, enrichNotes: enrichNotes.join(" | ") };
   } catch (e) {
     app.endUndoGroup();
     return { success: false, error: e.toString() };
@@ -891,6 +895,49 @@ export const focusReviewComp = (compId: number): Result => {
       return { success: false, error: "That comparison comp no longer exists — it may have been deleted." };
     }
     comp.openInViewer();
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// Toggle the DIFF layer's visibility inside a comparison comp.  The diff
+// matte is created hidden (enabled = false); this flips it on/off so the
+// artist can reveal it from the panel without hunting the timeline checkbox.
+// Returns the new state (true = visible) so the UI can reflect it.
+export const reviewToggleDiff = (compId: number): Result & { visible?: boolean } => {
+  try {
+    var comp = app.project.itemByID(compId);
+    if (!comp || !(comp instanceof CompItem)) {
+      return { success: false, error: "That comparison comp no longer exists — it may have been deleted." };
+    }
+    for (var l = 1; l <= comp.numLayers; l++) {
+      var layer = comp.layer(l);
+      if (String(layer.name).indexOf("DIFF") === 0) {
+        var next = layer.enabled ? false : true;
+        layer.enabled = next;
+        // Mirror to the video switch so the eyeball follows the toggle.
+        try { layer.video = next; } catch (eVideo) {}
+        return { success: true, visible: next };
+      }
+    }
+    return { success: false, error: "No DIFF layer found in that comparison comp." };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// Move a comparison comp's playhead to a specific frame.  Called when the
+// artist clicks a frame in the in-panel video preview, so the AE comp and
+// the panel preview agree on the exact frame being reviewed.
+export const reviewJumpComp = (compId: number, frame: number): Result => {
+  try {
+    var comp = app.project.itemByID(compId);
+    if (!comp || !(comp instanceof CompItem)) {
+      return { success: false, error: "That comparison comp no longer exists — it may have been deleted." };
+    }
+    var time = frame / comp.frameRate;
+    comp.time = time;
     return { success: true };
   } catch (e) {
     return { success: false, error: e.toString() };

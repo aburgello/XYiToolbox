@@ -1,0 +1,129 @@
+// ReviewPlayer.scss — in-panel synced video player for Review Session.
+// Compact, dark, mirrors the app's panel styling.  Sized to fit inside the
+// ~500px-wide panel without overwhelming the row list below it.
+
+.rv-player {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: var(--surface-0, #161616);
+    border: 1px solid var(--surface-border, #333);
+    border-radius: 6px;
+    padding: 8px;
+    margin: 6px 14px;
+
+    // Side-by-side track
+    .rv-player-track {
+        display: flex;
+        gap: 6px;
+    }
+
+    .rv-player-side {
+        flex: 1;
+        min-width: 0;
+        position: relative;
+
+        video {
+            width: 100%;
+            height: 120px;
+            object-fit: contain;
+            background: #000;
+            border-radius: 4px;
+            display: block;
+        }
+    }
+
+    // Tags — tiny labels above each view
+    .rv-player-tag {
+        display: block;
+        font-size: 9px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #888;
+        margin-bottom: 2px;
+        padding-left: 2px;
+
+        &--master { color: #c084fc; }
+        &--local  { color: #4ade80; }
+        &--diff   { color: #fbbf24; }
+    }
+
+    // Diff canvas
+    .rv-player-diff {
+        position: relative;
+
+        .rv-player-canvas {
+            width: 100%;
+            height: 100px;
+            object-fit: contain;
+            background: #111;
+            border-radius: 4px;
+            display: block;
+        }
+    }
+
+    .rv-player-diff-note {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        font-size: 10px;
+        color: #fbbf24;
+        background: rgba(0, 0, 0, 0.55);
+        border-radius: 4px;
+        padding: 4px;
+        text-align: center;
+    }
+
+    // Transport
+    .rv-player-controls {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+
+    .rv-player-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: #ccc;
+        border-radius: 4px;
+        width: 26px;
+        height: 24px;
+        cursor: pointer;
+        transition: background 0.12s ease;
+
+        &:hover { background: rgba(255, 255, 255, 0.14); }
+    }
+
+    .rv-player-play {
+        width: 34px;
+        background: rgba(168, 85, 247, 0.2);
+        border-color: rgba(168, 85, 247, 0.4);
+        color: #fff;
+    }
+
+    .rv-rotate-flip {
+        transform: rotate(180deg);
+    }
+
+    .rv-player-time {
+        margin-left: auto;
+        font-size: 10px;
+        color: #777;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .rv-player-err {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 10px;
+        color: #f87171;
+        padding: 2px 2px 0;
+    }
+}
