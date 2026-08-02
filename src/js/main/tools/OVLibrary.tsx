@@ -658,12 +658,16 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
     const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
     const [loadingVariants, setLoadingVariants] = useState(false);
 
-    const [filters, setFilters] = useState<Record<OrientationKey, boolean>>({
+    // Default orientation filters to Landscape-only when a creative is
+    // selected — the studio's most common deliverable.  Picking a creative
+    // resets to this; the user can toggle other orientations on per session.
+    const DEFAULT_FILTERS: Record<OrientationKey, boolean> = {
         LANDSCAPE: true,
-        PORTRAIT: true,
-        SQUARE: true,
-        QUAD: true,
-    });
+        PORTRAIT: false,
+        SQUARE: false,
+        QUAD: false,
+    };
+    const [filters, setFilters] = useState<Record<OrientationKey, boolean>>({ ...DEFAULT_FILTERS });
 
     const [usingMock, setUsingMock] = useState(false);
     const [toasts, setToasts] = useState<Toast[]>([]);
@@ -1057,7 +1061,13 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
                                 previewSrc={thumbOverrides[name] || creativePreviews[name]}
                                 selected={name === selectedCreative}
                                 hasCustomThumbnail={!!thumbOverrides[name]}
-                                onSelect={() => setSelectedCreative(name)}
+                                onSelect={() => {
+                                    // Reset to the default (Landscape-only)
+                                    // when switching creatives, so each one
+                                    // starts from the same clean state.
+                                    setFilters({ ...DEFAULT_FILTERS });
+                                    setSelectedCreative(name);
+                                }}
                                 onSetCustomThumbnail={handleSetCustomThumbnail}
                                 onClearCustomThumbnail={handleClearCustomThumbnail}
                             />

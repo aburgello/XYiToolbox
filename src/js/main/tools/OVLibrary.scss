@@ -327,15 +327,16 @@
 
     .creatives-grid {
         display: flex;
-        gap: 8px;
-        overflow-x: auto;
-        padding: 2px 0 6px;
-        scroll-snap-type: x mandatory;
-        -webkit-overflow-scrolling: touch;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 10px;
+        // Wide enough that cards breathe and centre rather than hugging the
+        // left edge in a single horizontal scroll row.  A wrap grid uses the
+        // full panel width, and justify-center keeps a short row centred.
+        padding: 6px 0 8px;
 
         & > * {
             flex-shrink: 0;
-            scroll-snap-align: start;
         }
 
         .loading-row,
@@ -352,7 +353,9 @@
     .creative-card {
         display: flex;
         flex-direction: column;
-        width: 130px;
+        // Wider cards now that the grid wraps-and-centres (4-5 max per
+        // campaign) instead of squeezing into a horizontal scroll row.
+        width: 150px;
         flex-shrink: 0;
         background: var(--surface-0, #202020);
         // Falls back to the fixed accent everywhere --card-accent hasn't
