@@ -159,31 +159,48 @@ const StatusToggle: React.FC<{ status: ReviewStatus; onChange: (s: ReviewStatus)
 // ---------------------------------------------------------------------------
 // Single review row
 // ---------------------------------------------------------------------------
+// Shorten a full master path to just its filename (no folder, no extension)
+// for the "vs <master>" second line in each row.
+function masterDisplayName(masterPath: string): string {
+    const seg = masterPath.replace(/\\/g, "/").split("/").pop() || masterPath;
+    const dot = seg.lastIndexOf(".");
+    return dot === -1 ? seg : seg.substring(0, dot);
+}
+
 const ReviewRow: React.FC<{
     item: ReviewItem;
     batchIndex: number;
     matchedMp4: string | null;
+    isOpen: boolean;
     onChange: (patch: Partial<ReviewItem>) => void;
     onRemove: () => void;
     onOpenComp: (compId: number) => void;
     onToggleDiff: (compId: number) => void;
-}> = ({ item, batchIndex, matchedMp4, onChange, onRemove, onOpenComp, onToggleDiff }) => {
+}> = ({ item, batchIndex, matchedMp4, isOpen, onChange, onRemove, onOpenComp, onToggleDiff }) => {
     const reduced = useReducedMotion();
     return (
         <motion.div
-            className={`rv-row rv-row--${item.status}`}
+            className={`rv-row rv-row--${item.status}${isOpen ? " rv-row--open" : ""}`}
             initial={{ opacity: 0, x: -10, y: -4 }}
             animate={{ opacity: 1, x: 0, y: 0 }}
             transition={{ duration: 0.25, delay: reduced ? 0 : batchIndex * 0.06, ease: [0.22, 1, 0.36, 1] }}
             layout
         >
             <div className="rv-row-main">
-                {/* Comp name — truncated after the artwork-type token so a
-                    long .mov name doesn't overflow the row's buttons.  Full
-                    name stays in the tooltip. */}
-                <Tooltip text={item.name}>
-                    <span className="rv-row-name">{truncateNameAtArtwork(item.name)}</span>
-                </Tooltip>
+                {/* Name block — truncated local name on line one, and the
+                    master it's paired against on line two so the pairing is
+                    visible at a glance instead of on hover. */}
+                <span className="rv-row-name-block">
+                    <Tooltip text={item.name}>
+                        <span className="rv-row-name">{truncateNameAtArtwork(item.name)}</span>
+                    </Tooltip>
+                    {matchedMp4 && (
+                        <span className="rv-row-master" title={matchedMp4}>
+                            <span className="rv-row-master-label">vs</span>
+                            <span className="rv-row-master-name">{masterDisplayName(matchedMp4)}</span>
+                        </span>
+                    )}
+                </span>
 
                 {/* Matched .mp4 render — click to play the master in the OS
                     player for a quick sanity check. */}
@@ -299,6 +316,9 @@ const ReviewSession: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [toasts, setToasts] = useState<Toast[]>([]);
     const [batchKey, setBatchKey] = useState(0);
+    // The comparison comp currently open in AE — drives the "open now" row
+    // highlight so Prev/Next navigation always shows where you are.
+    const [lastOpenedCompId, setLastOpenedCompId] = useState<number | null>(null);
     // Per-item mp4 matches — name → mp4Path, populated by the backend's
     // reviewMatchToMaster() which reuses the Localise section's proven
     // buildMastersIndex + pickBestMasterFromIndex pipeline (campaign +
@@ -460,7 +480,7 @@ const ReviewSession: React.FC = () => {
     const clearAll = () => { setItems([]); setError(null); };
 
     const handleOpenComp = async (compId: number) => {
-        lastOpenedCompIdRef.current = compId;
+        setLastOpenedCompId(compId);
         try {
             const result = await evalTS("focusReviewComp", compId);
             if (!mountedRef.current) return;
@@ -477,18 +497,14 @@ const ReviewSession: React.FC = () => {
     const handleStepComp = async (dir: 1 | -1) => {
         const withComps = items.filter((i) => i.comparisonCompId);
         if (withComps.length === 0) { pushToast("No comparison comps in this session.", "error"); return; }
-        const currentIndex = withComps.findIndex((i) => i.comparisonCompId === (lastOpenedCompIdRef.current ?? -1));
+        const currentIndex = withComps.findIndex((i) => i.comparisonCompId === (lastOpenedCompId ?? -1));
         const nextIndex = (currentIndex === -1 ? 0 : (currentIndex + dir + withComps.length) % withComps.length);
         const target = withComps[nextIndex];
         if (!target.comparisonCompId) return;
-        lastOpenedCompIdRef.current = target.comparisonCompId;
+        setLastOpenedCompId(target.comparisonCompId);
         await handleOpenComp(target.comparisonCompId);
     };
-    const lastOpenedCompIdRef = useRef<number | null>(null);
 
-    // Open the in-panel synced player for a row.  Needs both the master .mp4
-    // (from itemMatches) and the local .mov (the item's sourcePath).  Scrubs
-    // also jump the AE comparison comp to the same frame via reviewJumpComp.
     const handleToggleDiff = async (compId: number) => {
         try {
             const result = await evalTS("reviewToggleDiff", compId);
@@ -680,12 +696,14 @@ const ReviewSession: React.FC = () => {
                     <div key={batchKey} className="rv-list">
                         {items.map((item, i) => {
                             const matchedMp4 = itemMatches?.[item.name] || null;
+                            const isOpen = item.comparisonCompId != null && item.comparisonCompId === lastOpenedCompId;
                             return (
                                 <ReviewRow
                                     key={`${item.id}-${batchKey}`}
                                     item={item}
                                     batchIndex={i - item.batchOffset}
                                     matchedMp4={matchedMp4}
+                                    isOpen={isOpen}
                                     onChange={(patch) => updateItem(item.id, patch)}
                                     onRemove={() => removeItem(item.id)}
                                     onOpenComp={handleOpenComp}

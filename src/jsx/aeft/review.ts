@@ -860,7 +860,10 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     //    symptom reported.  Guarding each property independently guarantees
     //    the Display Format change lands even if an earlier property name
     //    differs on a given AE version.
-    var tcSize = srcH < 500 ? 12 : 16;
+    // Text Size and Opacity tuned for a visible burn-in counter, not the
+    // effect's faint small default.  srcH<500 (small formats) get a smaller
+    // but still legible size; anything larger gets a clear 30px.
+    var tcSize = srcH < 500 ? 22 : 30;
     var addTimecode = function (layer: AVLayer): boolean {
       try {
         var effectsGroup = layer.property("Effects");
@@ -872,7 +875,7 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
         try { tc.property("Timecode Source")!.setValue(2); } catch (eTS) { /* default is fine */ }
         try { tc.property("Starting Frame")!.setValue(0); } catch (eSF) { /* default */ }
         try { tc.property("Text Size")!.setValue(tcSize); } catch (eSZ) { /* default */ }
-        try { tc.property("Opacity")!.setValue(55); } catch (eOp) { /* default */ }
+        try { tc.property("Opacity")!.setValue(100); } catch (eOp) { /* default */ }
         return true;
       } catch (eTc) { return false; }
     };

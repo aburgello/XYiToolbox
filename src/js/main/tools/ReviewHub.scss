@@ -280,10 +280,10 @@
     .rv-list {
         flex: 1;
         overflow-y: auto;
-        padding: 8px 14px;
+        padding: 10px 14px;
         display: flex;
         flex-direction: column;
-        gap: 4px;
+        gap: 8px;
     }
 
     // ── Wrike-format export ────────────────────────────────────────────────
@@ -365,15 +365,17 @@
         line-height: 1.4;
     }
 
-    // Review row card
+    // Review row card — tall enough to read comfortably.  Sessions max out at
+    // ~15 rows, so vertical space is plentiful and each row gets room to
+    // breathe instead of being a cramped single line.
     .rv-row {
-        border-radius: 5px;
+        border-radius: 6px;
         border: 1px solid var(--surface-divider, #2a2a2a);
         background: var(--surface-0, #1f1f1f);
         overflow: hidden;
-        transition: border-color 0.15s ease;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
 
-        &:hover { border-color: #363636; }
+        &:hover { border-color: #3c3c3c; }
 
         // Left accent stripe by status
         border-left: 3px solid var(--surface-edge, #333);
@@ -381,19 +383,27 @@
         &.rv-row--approved { border-left-color: #4ade80; }
         &.rv-row--amend    { border-left-color: #fbbf24; }
         &.rv-row--pending  { border-left-color: #3a3a3a; }
+
+        // "Open now" — this row's comparison comp is the one currently open
+        // in AE (driven by Prev/Next and the Compare chip).  Glow so the
+        // review position is always obvious while stepping through.
+        &.rv-row--open {
+            border-color: rgba(168, 85, 247, 0.55);
+            box-shadow: 0 0 0 1px rgba(168, 85, 247, 0.35), 0 2px 12px rgba(168, 85, 247, 0.12);
+        }
     }
 
     .rv-row-main {
         display: flex;
         align-items: center;
-        gap: 8px;
-        padding: 6px 8px;
+        gap: 10px;
+        padding: 10px 10px;
 
-        // .rv-row-name and the status toggle are both wrapped in <Tooltip>
-        // now (a portaled <span>, not the labeled element itself, as the
-        // actual flex item) -- re-apply the grow/truncate-vs-fixed-width
-        // intent one level up so the name still eats the row's remaining
-        // space and the status pill still holds its own width.
+        // .rv-row-name (wrapped in the name block below) and the status
+        // toggle are wrapped in <Tooltip> (a portaled <span>, not the labeled
+        // element itself, as the actual flex item) -- re-apply the
+        // grow/truncate-vs-fixed-width intent one level up so the name block
+        // eats the row's remaining space and the status pill holds its own.
         > span:first-child {
             flex: 1;
             min-width: 0;
@@ -403,29 +413,64 @@
         }
     }
 
-    .rv-row-name {
+    // Name block — two lines: the local render's truncated name, and (when a
+    // master is matched) a muted second line naming the master it's compared
+    // against.  The pairing is visible at a glance instead of on hover.
+    .rv-row-name-block {
         flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .rv-row-name {
         min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-        font-size: 11px;
+        font-size: 12.5px;
+        line-height: 1.2;
+        color: #ddd;
+    }
+
+    .rv-row-master {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 10.5px;
+        color: #7a7a7a;
+
+        .rv-row-master-label {
+            flex-shrink: 0;
+            color: #4a4a4a;
+            letter-spacing: 0.04em;
+        }
+
+        .rv-row-master-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
     }
 
     // Status pill toggle
     .rv-status {
         display: flex;
         align-items: center;
-        gap: 4px;
-        font-size: 10px;
+        gap: 5px;
+        font-size: 11px;
         font-weight: 600;
-        padding: 3px 8px;
-        border-radius: 10px;
+        padding: 6px 10px;
+        border-radius: 12px;
         border: 1px solid transparent;
         cursor: pointer;
         white-space: nowrap;
         flex-shrink: 0;
-        min-width: 80px;
+        min-width: 92px;
         justify-content: center;
         transition: opacity 0.15s ease;
 
@@ -455,8 +500,8 @@
         border: none;
         color: #555;
         cursor: pointer;
-        padding: 3px 4px;
-        border-radius: 3px;
+        padding: 6px 6px;
+        border-radius: 5px;
         transition: color 0.15s ease, background 0.15s ease;
         flex-shrink: 0;
 
@@ -474,12 +519,12 @@
         border: none;
         color: #444;
         cursor: pointer;
-        padding: 3px;
-        border-radius: 3px;
+        padding: 6px;
+        border-radius: 5px;
         flex-shrink: 0;
-        transition: color 0.15s ease;
+        transition: color 0.15s ease, background 0.15s ease;
 
-        &:hover { color: #e07a7a; }
+        &:hover { color: #e07a7a; background: rgba(224,122,122,0.08); }
     }
 
     // Clickable green filmstrip icon — the matched master .mp4.  Click
@@ -506,14 +551,14 @@
     .rv-comp-btn {
         display: flex;
         align-items: center;
-        gap: 4px;
+        gap: 5px;
         background: rgba(168, 85, 247, 0.12);
         border: 1px solid rgba(168, 85, 247, 0.28);
         color: #c084fc;
-        border-radius: 4px;
-        padding: 2px 6px;
+        border-radius: 5px;
+        padding: 6px 10px;
         cursor: pointer;
-        font-size: 10px;
+        font-size: 11px;
         line-height: 1;
         flex-shrink: 0;
         transition: background 0.12s ease, border-color 0.12s ease;
@@ -538,8 +583,8 @@
         background: rgba(74, 222, 128, 0.1);
         border: 1px solid rgba(74, 222, 128, 0.28);
         color: #4ade80;
-        border-radius: 4px;
-        padding: 2px 5px;
+        border-radius: 5px;
+        padding: 6px 8px;
         cursor: pointer;
         flex-shrink: 0;
         transition: background 0.12s ease, border-color 0.12s ease;
@@ -571,7 +616,7 @@
 
     // Note textarea
     .rv-note-area {
-        padding: 0 10px 8px 12px;
+        padding: 0 12px 10px 12px;
     }
 
     .rv-note-input {
