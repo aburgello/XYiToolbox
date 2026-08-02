@@ -240,10 +240,11 @@ const ReviewSession: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [toasts, setToasts] = useState<Toast[]>([]);
     const [batchKey, setBatchKey] = useState(0);
-    // Campaign-wide render map: stem (lowercase) → mp4 path. Built once per
-    // campaign via scanAllRenders(), then each imported .mov is matched
-    // against it by its own filename stem.
-    const [renderMap, setRenderMap] = useState<Record<string, string> | null>(null);
+    // Per-item mp4 matches — name → mp4Path, populated by the backend's
+    // reviewMatchToMaster() which reuses the Localise section's proven
+    // buildMastersIndex + pickBestMasterFromIndex pipeline (campaign +
+    // size + duration + aspect-ratio scoring).
+    const [itemMatches, setItemMatches] = useState<Record<string, string> | null>(null);
     const toastId = useRef(0);
     const nextId = useRef(items.reduce((max, i) => Math.max(max, i.id), 0));
     // Mounted guard — flipped to false on unmount so async operations
@@ -266,36 +267,6 @@ const ReviewSession: React.FC = () => {
             if (mountedRef.current) setToasts((t) => t.filter((x) => x.id !== id));
         }, 3500);
         toastTimersRef.current.push(timer);
-    };
-
-    // Rebuild the campaign-wide render map whenever the active campaign
-    // changes, so imported .mov files can be matched against .mp4 renders
-    // by identical filename stem (the same convention OV Library uses).
-    useEffect(() => {
-        if (!campaign) { setRenderMap(null); return; }
-        let cancelled = false;
-        (async () => {
-            try {
-                const renders: { stem: string; path: string }[] = await evalTS("scanAllRenders", campaign.mastersRoot);
-                if (cancelled) return;
-                const map: Record<string, string> = {};
-                for (const r of renders || []) map[r.stem.toLowerCase()] = r.path;
-                setRenderMap(map);
-            } catch {
-                if (!cancelled) setRenderMap(null);
-            }
-        })();
-        return () => { cancelled = true; };
-    }, [campaign]);
-
-    // Extract a filename stem from a path (or plain name), lowercased, for
-    // lookup in the render map.
-    const stemFromPath = (path: string): string => {
-        // Last segment after any / or \
-        const seg = path.replace(/\\/g, "/").split("/").pop() || path;
-        // Strip extension
-        const dot = seg.lastIndexOf(".");
-        return dot === -1 ? seg.toLowerCase() : seg.substring(0, dot).toLowerCase();
     };
 
     const loadComps = async () => {
@@ -321,60 +292,60 @@ const ReviewSession: React.FC = () => {
                 }));
             setItems((prev) => [...prev, ...fresh]);
             setBatchKey((k) => k + 1);
-            if (fresh.length === 0) { pushToast("No new comps to add.", "error"); return; }
+            if (fresh.length === 0) { pushToast("No new items to add.", "error"); return; }
 
-            // 2. If a campaign is active and we have a render map, auto-create
-            //    enriched comparison comps for every item whose source .mov has
-            //    a matching .mp4 in the campaign.  Items without a match just
-            //    stay as plain review rows.
-            if (campaign && renderMap) {
-                // Match each imported item against the render map and pair
-                // the AE comp id (from the bridge result) with the matched
-                // .mp4 path.  The bridge comps array is in the SAME order as
-                // `fresh` because the filter preserves it.
-                const allComps: any[] = result.items || [];
-                const matches: { mp4Path: string; localItemId: number; localItemName: string; reviewId: number }[] = [];
-                for (let fi = 0; fi < fresh.length; fi++) {
-                    const reviewItem = fresh[fi];
-                    // Find the corresponding bridge comp entry to get the
-                    // AE item id.  Name match is safe here — nothing was
-                    // renamed between the bridge call and this loop, and the
-                    // filter above already deduplicates by name.
-                    const compEntry = allComps.find((c: any) => c.name === reviewItem.name);
-                    if (!compEntry) continue;
-                    // Match by stem, same two-tier lookup the row rendering
-                    // uses: source .mov path first, then comp name as fallback.
-                    let mp4Path: string | null = null;
-                    if (reviewItem.sourcePath) mp4Path = renderMap[stemFromPath(reviewItem.sourcePath)] || null;
-                    if (!mp4Path) mp4Path = renderMap[reviewItem.name.toLowerCase()] || null;
-                    if (mp4Path) {
-                        matches.push({
-                            mp4Path,
-                            localItemId: compEntry.id,
-                            localItemName: reviewItem.name,
-                            reviewId: reviewItem.id,
-                        });
+            // 2. If a campaign is active, match every imported item against
+            //    the campaign's master .mp4 renders using the Localise
+            //    section's proven buildMastersIndex + pickBestMasterFromIndex
+            //    pipeline — campaign + size + duration + aspect-ratio scoring.
+            //    Items without a match just stay as plain review rows.
+            if (campaign) {
+                // Build the payload for the backend: each item's name and
+                // source path so the matcher can extract tokens from the
+                // filename.
+                const matchPayload = fresh.map((item) => ({ name: item.name, sourcePath: item.sourcePath }));
+                let matchedMp4s: Record<string, string> = {};
+                try {
+                    const matchResult = await evalTS("reviewMatchToMaster", campaign.mastersRoot, JSON.stringify(matchPayload));
+                    if (!mountedRef.current) return;
+                    const matchedItems: any[] = (matchResult as any)?.items || [];
+                    for (const mi of matchedItems) {
+                        if (mi.mp4Path) matchedMp4s[mi.name] = mi.mp4Path;
                     }
+                    setItemMatches(matchedMp4s);
+                } catch {
+                    // Matching failed — items are still imported, just without
+                    // matches.  Don't abort the import.
                 }
 
-                if (matches.length > 0) {
+                // 3. For every matched item, auto-create enriched comparison
+                //    comps.  The AE item ids from the bridge result are paired
+                //    with the matched .mp4 paths.
+                const allBridgeItems: any[] = result.items || [];
+                const compMatches: { mp4Path: string; localItemId: number; localItemName: string; reviewId: number }[] = [];
+                for (const reviewItem of fresh) {
+                    const mp4Path = matchedMp4s[reviewItem.name];
+                    if (!mp4Path) continue;
+                    const bridgeEntry = allBridgeItems.find((c: any) => c.name === reviewItem.name);
+                    if (!bridgeEntry) continue;
+                    compMatches.push({
+                        mp4Path,
+                        localItemId: bridgeEntry.id,
+                        localItemName: reviewItem.name,
+                        reviewId: reviewItem.id,
+                    });
+                }
+
+                if (compMatches.length > 0) {
                     try {
-                        const compResult = await evalTS("createReviewComparisons", JSON.stringify(matches));
+                        const compResult = await evalTS("createReviewComparisons", JSON.stringify(compMatches));
                         if (!mountedRef.current) return;
                         const results: any[] = (compResult as any)?.results || [];
-                        // Stamp each review item with its comparison comp info.
                         setItems((prev) => prev.map((item) => {
-                            const match = matches.find((m) => m.reviewId === item.id);
+                            const match = compMatches.find((m) => m.reviewId === item.id);
                             if (!match) return item;
-                            const r = results.find((res: any) =>
-                                res.localItemId === match.localItemId || res.compName?.endsWith(item.name.replace(/[\\\/:*?"<>|]/g, "-"))
-                            );
-                            // Map result back by position — if the results
-                            // array aligns with the matches array (same order,
-                            // same count), use positional lookup as fallback.
-                            const idx = matches.indexOf(match);
-                            const fallback = (idx >= 0 && results.length > idx) ? results[idx] : null;
-                            const compInfo = r || fallback;
+                            const idx = compMatches.indexOf(match);
+                            const compInfo = (idx >= 0 && results.length > idx) ? results[idx] : null;
                             if (compInfo && compInfo.success && compInfo.compName) {
                                 return { ...item, comparisonCompName: compInfo.compName, comparisonCompId: compInfo.compId };
                             }
@@ -382,21 +353,24 @@ const ReviewSession: React.FC = () => {
                         }));
                         const succeeded = results.filter((r: any) => r.success).length;
                         if (succeeded > 0) {
-                            pushToast(`${fresh.length} comp${fresh.length > 1 ? "s" : ""} added, ${succeeded} comparison comp${succeeded > 1 ? "s" : ""} created.`);
+                            pushToast(`${fresh.length} item${fresh.length > 1 ? "s" : ""} added, ${succeeded} comparison comp${succeeded > 1 ? "s" : ""} created.`);
                             sfx.bop();
                         } else {
-                            pushToast(`${fresh.length} comp${fresh.length > 1 ? "s" : ""} added (comparison comps failed — check the master renders are still on disk).`);
+                            pushToast(`${fresh.length} item${fresh.length > 1 ? "s" : ""} added (comparison comps failed — check the master renders are still on disk).`);
                         }
                     } catch {
-                        // Comparison comp creation failed — items are still
-                        // imported, just without comps.  Don't abort the import.
-                        pushToast(`${fresh.length} comp${fresh.length > 1 ? "s" : ""} added.  Comparison comps could not be created.`);
+                        pushToast(`${fresh.length} item${fresh.length > 1 ? "s" : ""} added.  Comparison comps could not be created.`);
                     }
                 } else {
-                    pushToast(`${fresh.length} comp${fresh.length > 1 ? "s" : ""} added (no matching .mp4 renders to compare against).`);
+                    const matchCount = Object.keys(matchedMp4s).length;
+                    if (matchCount > 0) {
+                        pushToast(`${fresh.length} item${fresh.length > 1 ? "s" : ""} added, ${matchCount} matched to master renders.`);
+                    } else {
+                        pushToast(`${fresh.length} item${fresh.length > 1 ? "s" : ""} added (no matching master renders found in this campaign).`);
+                    }
                 }
             } else {
-                pushToast(`${fresh.length} comp${fresh.length > 1 ? "s" : ""} added.`);
+                pushToast(`${fresh.length} item${fresh.length > 1 ? "s" : ""} added.`);
                 sfx.bop();
             }
         } catch {
@@ -428,11 +402,9 @@ const ReviewSession: React.FC = () => {
     const pendingCount  = items.filter((i) => i.status === "pending").length;
 
     // Count how many items have a matching .mp4 render in the active campaign.
-    const matchedCount = items.filter((item) => {
-        if (!renderMap) return false;
-        if (item.sourcePath && renderMap[stemFromPath(item.sourcePath)]) return true;
-        return renderMap[item.name.toLowerCase()] || false;
-    }).length;
+    const matchedCount = itemMatches
+        ? items.filter((item) => itemMatches[item.name]).length
+        : 0;
 
     // Wrike-format export: every "To Amend" item WITH a note, each as the
     // source .mov's full path followed by an orange-diamond-prefixed note
@@ -526,31 +498,17 @@ const ReviewSession: React.FC = () => {
                         >
                             <MessageSquareDiff size={22} />
                         </motion.div>
-                        <span>Select comps in the Project panel, then Import</span>
+                        <span>Select items in the Project panel, then Import</span>
                         {campaign ? (
-                            <span className="rv-empty-hint">.mov files will be matched to .mp4 renders in "{campaign.name}" by filename stem</span>
+                            <span className="rv-empty-hint">Imported items will be matched to master renders in "{campaign.name}" using campaign, size, duration, and aspect ratio</span>
                         ) : (
-                            <span className="rv-empty-hint">Select a campaign in the OV Library tab to auto-match .mp4 renders</span>
+                            <span className="rv-empty-hint">Select a campaign in the OV Library tab to auto-match master renders</span>
                         )}
                     </div>
                 ) : (
                     <div key={batchKey} className="rv-list">
                         {items.map((item, i) => {
-                            // Match this item against the campaign's render map
-                            // by identical filename stem — same convention OV
-                            // Library uses for master↔render pairing.
-                            let matchedMp4: string | null = null;
-                            if (renderMap) {
-                                // Try the source .mov path first, then the
-                                // comp name as a fallback (for comps whose
-                                // source isn't a separate footage file).
-                                if (item.sourcePath) {
-                                    matchedMp4 = renderMap[stemFromPath(item.sourcePath)] || null;
-                                }
-                                if (!matchedMp4) {
-                                    matchedMp4 = renderMap[item.name.toLowerCase()] || null;
-                                }
-                            }
+                            const matchedMp4 = itemMatches?.[item.name] || null;
                             return (
                                 <ReviewRow
                                     key={`${item.id}-${batchKey}`}

@@ -4,6 +4,7 @@
 // now a thin barrel -- see its header comment for context.
 // =============================================================================
 import { Result, SETTINGS_SECTION, decode } from "./shared";
+import { buildMastersIndex, pickBestMasterFromIndex } from "./tools";
 
 
 
@@ -394,6 +395,114 @@ export const scanAllRenders = (mastersRoot: string): RenderEntry[] => {
   if (mp4Folder && mp4Folder.exists) addVideos(findAllFiles(mp4Folder));
 
   return out;
+};
+
+// ── Review Session: match local .mov files to master .mp4 renders ────────
+// Reuses the same master-lookup pipeline the Localise tools already use:
+//   buildMastersIndex()  — one walk of the AE/ tree, campaign/size/duration
+//                          pre-computed per .aep
+//   pickBestMasterFromIndex() — campaign + duration + orientation + closest
+//                               aspect-ratio scoring
+// That pipeline handles territory-code vs OV, dual naming conventions
+// (DGTL vs new), format keywords, and everything else the studio's real
+// filenames actually contain — none of which a flat stem match covers.
+//
+// Takes a JSON array of {name, sourcePath?} (the localised items the user
+// selected in the Project panel) and returns the same array with mp4Path
+// set for each item that matched a master render.
+
+interface ReviewMatchEntry {
+  name: string;
+  sourcePath: string | null;
+  mp4Path: string | null;
+  masterStem: string | null;
+}
+
+export const reviewMatchToMaster = (mastersRoot: string, itemsJson: string): Result & { items?: ReviewMatchEntry[] } => {
+  try {
+    var items: { name: string; sourcePath: string | null }[] = JSON.parse(itemsJson);
+    if (!items || items.length === 0) return { success: false, error: "No items to match." };
+
+    // 1. Build the masters index — one walk, reused by every item.
+    var index = buildMastersIndex(mastersRoot);
+    if (!index || index.length === 0) return { success: false, error: "No masters found under " + mastersRoot + "/AE/." };
+
+    // 2. Build the render map — every video file under Renders/ and _mp4/,
+    //    keyed by lowercase stem so we can look up the .mp4 from the master
+    //    .aep's own stem.
+    var renders = scanAllRenders(mastersRoot);
+    var renderMap: { [stem: string]: string } = {};
+    for (var ri = 0; ri < renders.length; ri++) {
+      renderMap[renders[ri].stem.toLowerCase()] = renders[ri].path;
+    }
+
+    // 3. For each local item: extract size + duration from its filename,
+    //    try each filename token as a campaign, and score through the
+    //    existing pickBestMasterFromIndex.
+    var out: ReviewMatchEntry[] = [];
+
+    for (var ii = 0; ii < items.length; ii++) {
+      var item = items[ii];
+      // Use the source filename (from disk) if available, else the AE
+      // item name.  The source filename carries the real convention tokens.
+      var rawName = item.sourcePath || item.name;
+      // Strip path and extension to get the bare filename.
+      var lastSlash = Math.max(rawName.lastIndexOf("/"), rawName.lastIndexOf("\\"));
+      var fileName = lastSlash >= 0 ? rawName.substring(lastSlash + 1) : rawName;
+      var dotIdx = fileName.lastIndexOf(".");
+      var stem = dotIdx >= 0 ? fileName.substring(0, dotIdx) : fileName;
+
+      // Extract size: _<W>x<H>_  (same pattern parseMasterFilename uses)
+      var sizeMatch = stem.match(/_(\d+)x(\d+)_/);
+      var size = sizeMatch ? (sizeMatch[1] + "x" + sizeMatch[2]) : "";
+
+      // Extract duration: _<N>sec_ or _<N>s_  (durationMatchesPath handles both)
+      var durMatch = stem.match(/_(\d+)(sec|s)_/i);
+      var duration = durMatch ? (durMatch[1] + durMatch[2].toLowerCase()) : "";
+
+      // Extract campaign: try every underscore-delimited token that
+      // isn't purely numeric, a known format keyword, or a two-letter
+      // territory code.  pickBestMasterFromIndex matches campaign as a
+      // substring of the master's canonPath, so whichever token is the
+      // real creative name will hit and the rest will miss harmlessly.
+      var tokens = stem.split("_");
+      var mp4Path: string | null = null;
+      var masterStem: string | null = null;
+
+      for (var ti = 0; ti < tokens.length; ti++) {
+        var token = tokens[ti];
+        // Skip tokens that can't possibly be a creative name.
+        if (!token) continue;
+        if (/^\d+$/.test(token)) continue;                          // all digits
+        if (/^\d+x\d+$/i.test(token)) continue;                     // WxH
+        if (/^\d+(sec|s)$/i.test(token)) continue;                  // duration
+        if (/^[A-Z]{2}$/.test(token)) continue;                     // territory code
+        if (token === "OV") continue;                                // master suffix
+        if (token === "DGTL" || token === "INTL" || token === "DOM") continue;  // fixed convention tokens
+        if (token === "DOOH" || token === "DFOH" || token === "DINTH" || token === "FOH") continue;  // artwork types
+
+        var match = pickBestMasterFromIndex(index, token, size, duration);
+        if (match) {
+          // The master .aep's own stem (name without .aep) IS the stem
+          // of the matching .mp4 render — identical filename, extension
+          // aside.  This is the OV Library convention.
+          var aepStem = match.name.replace(/\.aep$/i, "").toLowerCase();
+          var found = renderMap[aepStem];
+          if (found) {
+            mp4Path = found;
+            masterStem = aepStem;
+            break;
+          }
+        }
+      }
+
+      out.push({ name: item.name, sourcePath: item.sourcePath, mp4Path: mp4Path, masterStem: masterStem });
+    }
+
+    return { success: true, items: out };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
 };
 
 // --- File actions -- import only, never open; reveal/play never touch the
