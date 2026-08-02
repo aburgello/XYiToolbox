@@ -1,112 +1,272 @@
-// EditInContext.scss — compact tool page additions on top of formTool.scss.
+// Edit In Context (EditInContext.tsx). Accents key off `--ov-accent`, the
+// token themes.ts sets, so this follows the user's chosen theme.
 
 .eic-tool {
     .eic-hint {
-        font-size: 11px;
         color: #999;
-        line-height: 1.5;
         margin: 0 0 10px;
-    }
-
-    .eic-note {
-        font-size: 10px;
-        color: #777;
         line-height: 1.5;
-        margin: 10px 0 0;
-        border-top: 1px solid var(--surface-divider, #2a2a2a);
-        padding-top: 8px;
+        max-width: 460px;
+        font-size: 11.5px;
     }
+}
 
-    .eic-caption {
-        font-size: 11px;
-        color: #aaa;
-        margin-bottom: 6px;
+// ── breadcrumb bar ───────────────────────────────────────────────────────────
+.eic-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border: 1px solid #2f2f2f;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.18);
+    margin-bottom: 8px;
+}
 
-        strong { color: #ddd; }
+.eic-crumbs {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+}
+
+.eic-crumb {
+    padding: 2px 6px;
+    border: 0;
+    border-radius: 4px;
+    background: none;
+    color: #9aa5a8;
+    font-size: 11px;
+    cursor: pointer;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    &:hover { color: #fff; background: rgba(255, 255, 255, 0.06); }
+
+    // The level currently being listed.
+    &--on { color: var(--ov-accent, #5eead4); font-weight: 700; }
+}
+
+.eic-crumb-sep { color: #4d585b; flex-shrink: 0; }
+
+.eic-refresh {
+    flex-shrink: 0;
+    display: inline-flex;
+    padding: 3px;
+    border: 0;
+    border-radius: 4px;
+    background: none;
+    color: #6f7d81;
+    cursor: pointer;
+
+    &:hover { color: #fff; }
+}
+
+// ── layer list ───────────────────────────────────────────────────────────────
+// Capped and self-scrolling: a busy comp would otherwise push the editor below
+// the fold, and the editor is the one thing that has to stay on screen.
+.eic-layers {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 240px;
+    overflow-y: auto;
+    margin-bottom: 10px;
+}
+
+.eic-layer-row {
+    display: flex;
+    align-items: stretch;
+    gap: 3px;
+
+    // The layer currently loaded into the editor below.
+    &--on .eic-layer-main {
+        border-color: var(--ov-accent, #2dd4bf);
+        background: rgba(255, 255, 255, 0.05);
     }
+}
 
-    .eic-parents {
-        margin: 10px 0 4px;
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-    }
+.eic-layer-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    border: 1px solid #262626;
+    border-radius: 5px;
+    background: #171717;
+    color: #dbe4e6;
+    font-size: 11.5px;
+    text-align: left;
+    cursor: pointer;
 
-    .eic-parent-row {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-        padding: 8px 10px;
-        border-radius: 5px;
-        border: 1px solid var(--surface-edge, #3a3a3a);
-        background: var(--surface-0, #202020);
-        cursor: pointer;
-        transition: border-color 0.12s ease, background 0.12s ease;
+    &:hover:not(:disabled) { border-color: #3d4a4d; background: #1c1c1c; }
+    &:disabled { opacity: 0.4; cursor: default; }
+}
 
-        &:hover { border-color: #4a4a4a; }
+.eic-layer-idx {
+    flex-shrink: 0;
+    min-width: 16px;
+    color: #5f6c70;
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+}
 
-        &.selected {
-            border-color: var(--cat-border, #aac4ff);
-            background: rgba(168, 85, 247, 0.08);
-        }
-    }
+.eic-layer-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 
-    .eic-parent-name {
-        font-size: 12px;
-        font-weight: 600;
+.eic-tag {
+    flex-shrink: 0;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.07);
+    color: #8e9a9e;
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+// Drill-in is a SEPARATE hit area from "edit this layer" -- a precomp layer is
+// legitimately both a thing you transform and a thing you look inside, and
+// guessing which one a click meant would be wrong half the time.
+.eic-drill {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    border: 1px solid #262626;
+    border-radius: 5px;
+    background: #171717;
+    color: var(--ov-accent, #5eead4);
+    cursor: pointer;
+
+    &:hover { border-color: var(--ov-accent, #2dd4bf); background: #1c1c1c; }
+}
+
+.eic-empty {
+    margin: 6px 0;
+    font-size: 11px;
+    color: #6f7d81;
+}
+
+// ── the editor ───────────────────────────────────────────────────────────────
+.eic-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 11px;
+    border: 1px solid var(--ov-accent, #2dd4bf);
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.eic-editor-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.eic-editor-title { font-size: 13px; font-weight: 700; color: #fff; }
+.eic-editor-sub { font-size: 10.5px; color: #7f8f93; }
+
+.eic-locked {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: rgba(251, 146, 60, 0.16);
+    color: #fb923c;
+    font-size: 9px;
+    font-weight: 700;
+}
+
+.eic-readout {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    font-size: 10.5px;
+    color: #7f8f93;
+    font-variant-numeric: tabular-nums;
+
+    b { color: #cbd5d7; font-weight: 600; }
+}
+
+// The "what it looks like upstairs" number -- the one the artist is actually
+// judging by eye -- gets the accent.
+.eic-readout-root b { color: var(--ov-accent, #5eead4); }
+
+.eic-step {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    label { font-size: 10.5px; color: #8e9a9e; }
+
+    input {
+        width: 58px;
+        background: #1f1f1f;
+        border: 1px solid #3a3a3a;
         color: #ddd;
-    }
-
-    .eic-parent-meta {
-        font-size: 10px;
-        color: #888;
-    }
-
-    // Layer read/apply section
-    .eic-layer {
-        margin-top: 10px;
-        padding: 10px;
         border-radius: 5px;
-        border: 1px solid var(--surface-edge, #3a3a3a);
-        background: var(--surface-0, #202020);
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-    }
-
-    .eic-layer-head {
+        padding: 4px 7px;
         font-size: 12px;
-        color: #ccc;
+        box-sizing: border-box;
 
-        strong { color: #fff; }
+        &:focus { outline: none; border-color: var(--ov-accent, #2dd4bf); }
     }
+}
 
-    .eic-layer-meta {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-        font-size: 10px;
-        color: #888;
-    }
+.eic-step-note { font-size: 9.5px; color: #5f6c70; }
 
-    .eic-field-row {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
+.eic-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
 
-        label {
-            font-size: 10px;
-            color: #aaa;
-        }
-    }
+.eic-group-label {
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--ov-accent, #5eead4);
+    opacity: 0.85;
+}
 
-    .eic-two {
-        display: flex;
-        gap: 6px;
+.eic-pad {
+    display: flex;
+    gap: 4px;
+}
 
-        input {
-            flex: 1;
-            min-width: 0;
-        }
-    }
+.eic-nudge {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 7px 0;
+    border: 1px solid #33403f;
+    border-radius: 5px;
+    background: #161e20;
+    color: #cbd6d8;
+    cursor: pointer;
+    // No transition: a hold-to-repeat button firing every 100ms with a
+    // transition on it reads as smeared rather than responsive.
+
+    &:hover:not(:disabled) { border-color: var(--ov-accent, #2dd4bf); color: #fff; }
+    &:active:not(:disabled) { background: #1d2729; }
+    &:disabled { opacity: 0.35; cursor: default; }
 }
