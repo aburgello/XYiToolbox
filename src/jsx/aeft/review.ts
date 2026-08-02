@@ -773,32 +773,36 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     // 5. Place master on the LEFT half.
     var masterLayer = comp.layers.add(masterFootage);
     fitLayerIntoBox(masterLayer, halfW, compH, halfW / 2, compH / 2);
+    masterLayer.name = "MASTER (.mp4)";
 
     // 6. Place local render on the RIGHT half.
     var localLayer = comp.layers.add(localItem);
     fitLayerIntoBox(localLayer, halfW, compH, halfW + halfW / 2, compH / 2);
+    localLayer.name = "LOCAL (imported render)";
 
-    // 7. Center divider — a thin 2px solid spanning the full height.
-    var dividerSolid = app.project.items.addSolid("divider", 2, compH, 1, dur);
+    // 7. Center divider — a thin 4px solid spanning the full height at 50%
+    //    opacity for clear separation between the two halves.
+    var dividerSolid = app.project.items.addSolid("divider", 4, compH, 1, dur);
     var dividerLayer = comp.layers.add(dividerSolid);
     (dividerLayer.property("Transform")!.property("Position") as Property).setValue([compW / 2, compH / 2]);
-    // Drop opacity to 25% so it's present but never distracting.
+    dividerLayer.name = "--- divider ---";
     try {
-      (dividerLayer.property("Transform")!.property("Opacity") as Property).setValue(25);
+      (dividerLayer.property("Transform")!.property("Opacity") as Property).setValue(50);
     } catch (eOp) { /* older AE, opacity lives elsewhere */ }
 
     // 8. "MASTER" / "LOCAL" labels — small text layers, bottom corners,
-    //    low opacity so they never compete with the content.
-    var labelOpacity = 40;
+    //    60-75% opacity so they're visible but never compete with content.
+    var labelOpacity = 60;
     var labelSize = srcH < 500 ? 18 : 24;
     // MASTER label — bottom-left of the left half.
-    var masterLabelSolid = app.project.items.addSolid("MASTER", halfW, labelSize, 1, dur);
+    var masterLabelSolid = app.project.items.addSolid("MASTER_label_bg", halfW, labelSize, 1, dur);
     var masterLabelLayer = comp.layers.add(masterLabelSolid);
+    masterLabelLayer.name = "MASTER label bg";
     (masterLabelLayer.property("Transform")!.property("Position") as Property).setValue([halfW / 2, compH - labelSize / 2 - 6]);
     try { (masterLabelLayer.property("Transform")!.property("Opacity") as Property).setValue(labelOpacity); } catch (eOp) {}
-    // Create a text layer on top that actually says "MASTER".
     var masterTextLayer = comp.layers.addText("MASTER");
     if (masterTextLayer) {
+      masterTextLayer.name = "MASTER label text";
       var masterTextProp = masterTextLayer.property("Source Text") as Property;
       if (masterTextProp) {
         var masterTextDoc = masterTextProp.value;
@@ -813,12 +817,14 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     }
 
     // LOCAL label — bottom-right of the right half.
-    var localLabelSolid = app.project.items.addSolid("LOCAL", halfW, labelSize, 1, dur);
+    var localLabelSolid = app.project.items.addSolid("LOCAL_label_bg", halfW, labelSize, 1, dur);
     var localLabelLayer = comp.layers.add(localLabelSolid);
+    localLabelLayer.name = "LOCAL label bg";
     (localLabelLayer.property("Transform")!.property("Position") as Property).setValue([halfW + halfW / 2, compH - labelSize / 2 - 6]);
     try { (localLabelLayer.property("Transform")!.property("Opacity") as Property).setValue(labelOpacity); } catch (eOp) {}
     var localTextLayer = comp.layers.addText("LOCAL");
     if (localTextLayer) {
+      localTextLayer.name = "LOCAL label text";
       var localTextProp = localTextLayer.property("Source Text") as Property;
       if (localTextProp) {
         var localTextDoc = localTextProp.value;
@@ -832,12 +838,14 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
       try { (localTextLayer.property("Transform")!.property("Opacity") as Property).setValue(labelOpacity + 15); } catch (eOp) {}
     }
 
-    // 9. Difference matte — a third track above both renders, blended with
-    //    Difference so any pixel-level drift between master and local lights
-    //    up without requiring the artist to flick between two windows.
+    // 9. Difference matte — the local render placed over the MASTER's half
+    //    (left side) with Difference blending.  Any pixel where the localised
+    //    render differs from the master lights up on the left; the clean
+    //    local render is still visible on the right for reference.
     var diffLayer = comp.layers.add(localItem);
-    fitLayerIntoBox(diffLayer, halfW, compH, halfW + halfW / 2, compH / 2);
+    fitLayerIntoBox(diffLayer, halfW, compH, halfW / 2, compH / 2);
     diffLayer.blendingMode = BlendingMode.DIFFERENCE;
+    diffLayer.name = "DIFF (local over master)";
     try { (diffLayer.property("Transform")!.property("Opacity") as Property).setValue(100); } catch (eOp) {}
 
     // 10. Timecode overlay — burnt-in source TC on each main render so
