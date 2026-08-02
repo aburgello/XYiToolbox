@@ -353,7 +353,13 @@ const ReviewSession: React.FC = () => {
                         // the same order, so results[i] ↔ compMatches[i].
                         const stampByReviewId: Record<number, { compName: string; compId: number }> = {};
                         for (let ri = 0; ri < results.length && ri < compMatches.length; ri++) {
-                            if (results[ri] && results[ri].success && results[ri].compName) {
+                            // Key off the comp's actual presence (compId +
+                            // compName), NOT the success flag — the backend can
+                            // create the comp and still report a non-success if
+                            // an enrichment step hiccuped.  If the comp exists,
+                            // the row should get its purple chip so it's
+                            // openable.
+                            if (results[ri] && results[ri].compId && results[ri].compName) {
                                 stampByReviewId[compMatches[ri].reviewId] = {
                                     compName: results[ri].compName,
                                     compId: results[ri].compId,

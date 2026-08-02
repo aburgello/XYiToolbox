@@ -780,96 +780,84 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     fitLayerIntoBox(localLayer, halfW, compH, halfW + halfW / 2, compH / 2);
     localLayer.name = "LOCAL (imported render)";
 
-    // 7. Center divider — a thin 4px solid spanning the full height at 50%
-    //    opacity for clear separation between the two halves.
-    var dividerSolid = app.project.items.addSolid("divider", 4, compH, 1, dur);
-    var dividerLayer = comp.layers.add(dividerSolid);
-    (dividerLayer.property("Transform")!.property("Position") as Property).setValue([compW / 2, compH / 2]);
-    dividerLayer.name = "--- divider ---";
+    // 7-10. The enrichment block — divider, labels, difference matte,
+    //       timecode overlay.  Deliberately wrapped in ONE try/catch: these
+    //       are nice-to-haves layered on top of the core side-by-side comp,
+    //       and a failure in any of them (addText/addSolid/effect quirks on
+    //       a given AE version) must NEVER turn a successfully-created comp
+    //       into a reported failure — that's what was silently dropping the
+    //       purple chip: the comp existed in AE, the function returned
+    //       {success:false}, and the row never got stamped.  The comp's core
+    //       (master + local, correctly sized) is already in place above, so
+    //       the comp is useful even if every enrichment step fails.
     try {
-      (dividerLayer.property("Transform")!.property("Opacity") as Property).setValue(50);
-    } catch (eOp) { /* older AE, opacity lives elsewhere */ }
+      // 7. Center divider — a thin 4px solid at 50% opacity, full height.
+      var dividerSolid = app.project.items.addSolid("divider", 4, compH, 1, dur);
+      var dividerLayer = comp.layers.add(dividerSolid);
+      (dividerLayer.property("Transform")!.property("Position") as Property).setValue([compW / 2, compH / 2]);
+      dividerLayer.name = "--- divider ---";
+      try { (dividerLayer.property("Transform")!.property("Opacity") as Property).setValue(50); } catch (eOp) {}
 
-    // 8. "MASTER" / "LOCAL" labels — small text layers, bottom corners,
-    //    60-75% opacity so they're visible but never compete with content.
-    var labelOpacity = 60;
-    var labelSize = srcH < 500 ? 18 : 24;
-    // MASTER label — bottom-left of the left half.
-    var masterLabelSolid = app.project.items.addSolid("MASTER_label_bg", halfW, labelSize, 1, dur);
-    var masterLabelLayer = comp.layers.add(masterLabelSolid);
-    masterLabelLayer.name = "MASTER label bg";
-    (masterLabelLayer.property("Transform")!.property("Position") as Property).setValue([halfW / 2, compH - labelSize / 2 - 6]);
-    try { (masterLabelLayer.property("Transform")!.property("Opacity") as Property).setValue(labelOpacity); } catch (eOp) {}
-    var masterTextLayer = comp.layers.addText("MASTER");
-    if (masterTextLayer) {
-      masterTextLayer.name = "MASTER label text";
-      var masterTextProp = masterTextLayer.property("Source Text") as Property;
-      if (masterTextProp) {
-        var masterTextDoc = masterTextProp.value;
-        masterTextDoc.resetCharStyle();
-        masterTextDoc.fontSize = srcH < 500 ? 14 : 18;
-        masterTextDoc.fillColor = [1, 1, 1];
-        masterTextDoc.applyStroke = false;
-        masterTextProp.setValue(masterTextDoc);
-      }
-      (masterTextLayer.property("Transform")!.property("Position") as Property).setValue([halfW / 2, compH - labelSize / 2 - 6]);
-      try { (masterTextLayer.property("Transform")!.property("Opacity") as Property).setValue(labelOpacity + 15); } catch (eOp) {}
-    }
-
-    // LOCAL label — bottom-right of the right half.
-    var localLabelSolid = app.project.items.addSolid("LOCAL_label_bg", halfW, labelSize, 1, dur);
-    var localLabelLayer = comp.layers.add(localLabelSolid);
-    localLabelLayer.name = "LOCAL label bg";
-    (localLabelLayer.property("Transform")!.property("Position") as Property).setValue([halfW + halfW / 2, compH - labelSize / 2 - 6]);
-    try { (localLabelLayer.property("Transform")!.property("Opacity") as Property).setValue(labelOpacity); } catch (eOp) {}
-    var localTextLayer = comp.layers.addText("LOCAL");
-    if (localTextLayer) {
-      localTextLayer.name = "LOCAL label text";
-      var localTextProp = localTextLayer.property("Source Text") as Property;
-      if (localTextProp) {
-        var localTextDoc = localTextProp.value;
-        localTextDoc.resetCharStyle();
-        localTextDoc.fontSize = srcH < 500 ? 14 : 18;
-        localTextDoc.fillColor = [1, 1, 1];
-        localTextDoc.applyStroke = false;
-        localTextProp.setValue(localTextDoc);
-      }
-      (localTextLayer.property("Transform")!.property("Position") as Property).setValue([halfW + halfW / 2, compH - labelSize / 2 - 6]);
-      try { (localTextLayer.property("Transform")!.property("Opacity") as Property).setValue(labelOpacity + 15); } catch (eOp) {}
-    }
-
-    // 9. Difference matte — the local render placed over the MASTER's half
-    //    (left side) with Difference blending.  Any pixel where the localised
-    //    render differs from the master lights up on the left; the clean
-    //    local render is still visible on the right for reference.
-    var diffLayer = comp.layers.add(localItem);
-    fitLayerIntoBox(diffLayer, halfW, compH, halfW / 2, compH / 2);
-    diffLayer.blendingMode = BlendingMode.DIFFERENCE;
-    diffLayer.name = "DIFF (local over master)";
-    try { (diffLayer.property("Transform")!.property("Opacity") as Property).setValue(100); } catch (eOp) {}
-
-    // 10. Timecode overlay — burnt-in source TC on each main render so
-    //     frame references in Wrike notes are exact.  Best-effort: if the
-    //     effect isn't available on this AE install the comp is still useful.
-    var tcOpacity = 55;
-    var tcSize = srcH < 500 ? 12 : 16;
-    var addTimecode = function (layer: AVLayer) {
-      try {
-        var effectsGroup = layer.property("Effects");
-        if (!effectsGroup) return;
-        var tc = (effectsGroup as any).addProperty("ADBE Timecode");
-        if (tc) {
-          tc.property("Timecode Source")!.setValue(2);  // Layer Source
-          tc.property("Display Format")!.setValue(1);   // Timecode
-          tc.property("Starting Frame")!.setValue(0);
-          tc.property("Position")!.setValue([0, 0]);
-          tc.property("Size")!.setValue(tcSize);
-          tc.property("Opacity")!.setValue(tcOpacity);
+      // 8. "MASTER" / "LOCAL" labels — text + backing bar, bottom corners.
+      var labelOpacity = 60;
+      var labelSize = srcH < 500 ? 18 : 24;
+      var addLabel = function (side: string, text: string, centerX: number) {
+        var bar = app.project.items.addSolid(side + "_label_bg", halfW, labelSize, 1, dur);
+        var barLayer = comp.layers.add(bar);
+        barLayer.name = side + " label bg";
+        (barLayer.property("Transform")!.property("Position") as Property).setValue([centerX, compH - labelSize / 2 - 6]);
+        try { (barLayer.property("Transform")!.property("Opacity") as Property).setValue(labelOpacity); } catch (eOp) {}
+        var textLayer = comp.layers.addText(text);
+        if (textLayer) {
+          textLayer.name = side + " label text";
+          var tp = textLayer.property("Source Text") as Property;
+          if (tp) {
+            var doc = tp.value;
+            doc.resetCharStyle();
+            doc.fontSize = srcH < 500 ? 14 : 18;
+            doc.fillColor = [1, 1, 1];
+            doc.applyStroke = false;
+            tp.setValue(doc);
+          }
+          (textLayer.property("Transform")!.property("Position") as Property).setValue([centerX, compH - labelSize / 2 - 6]);
+          try { (textLayer.property("Transform")!.property("Opacity") as Property).setValue(labelOpacity + 15); } catch (eOp) {}
         }
-      } catch (eTc) { /* Timecode effect not available — keep the comp without it */ }
-    };
-    addTimecode(masterLayer);
-    addTimecode(localLayer);
+      };
+      addLabel("MASTER", "MASTER", halfW / 2);
+      addLabel("LOCAL", "LOCAL", halfW + halfW / 2);
+
+      // 9. Difference matte — the local render over the MASTER's half with
+      //     Difference blending.  Any pixel where the localised render
+      //     differs from the master lights up on the left.
+      var diffLayer = comp.layers.add(localItem);
+      fitLayerIntoBox(diffLayer, halfW, compH, halfW / 2, compH / 2);
+      diffLayer.blendingMode = BlendingMode.DIFFERENCE;
+      diffLayer.name = "DIFF (local over master)";
+      try { (diffLayer.property("Transform")!.property("Opacity") as Property).setValue(100); } catch (eOp) {}
+
+      // 10. Timecode overlay — best-effort source TC on both main renders.
+      var tcSize = srcH < 500 ? 12 : 16;
+      var addTimecode = function (layer: AVLayer) {
+        try {
+          var effectsGroup = layer.property("Effects");
+          if (!effectsGroup) return;
+          var tc = (effectsGroup as any).addProperty("ADBE Timecode");
+          if (tc) {
+            tc.property("Timecode Source")!.setValue(2);  // Layer Source
+            tc.property("Display Format")!.setValue(1);   // Timecode
+            tc.property("Starting Frame")!.setValue(0);
+            tc.property("Position")!.setValue([0, 0]);
+            tc.property("Size")!.setValue(tcSize);
+            tc.property("Opacity")!.setValue(55);
+          }
+        } catch (eTc) { /* Timecode effect not available — keep the comp without it */ }
+      };
+      addTimecode(masterLayer);
+      addTimecode(localLayer);
+    } catch (enrichErr) {
+      // Enrichment failed but the comp itself is fine — swallow and report
+      // success so the row gets its purple chip.
+    }
 
     // Don't auto-open — avoids an immediate frame-buffer allocation in AE
     // (this comp is three full layers: master, local, difference matte).
