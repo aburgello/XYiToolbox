@@ -701,6 +701,17 @@ export const reviewLoadSelectedItems = (): ReviewLoadResult => {
 // Returns { success, compName?, compId? } so the React side can store the
 // comp reference and let the user jump back to it later.
 
+// Find a folder at the project root by name, or create it if it doesn't
+// exist — the same find-or-create pattern Organise Folders (tools.ts) uses,
+// so running this repeatedly never stacks duplicate folders.
+function reviewFindOrCreateFolder(name: string): FolderItem {
+  for (var i = 1; i <= app.project.numItems; i++) {
+    var it = app.project.item(i);
+    if (it instanceof FolderItem && it.name === name && it.parentFolder === app.project.rootFolder) return it;
+  }
+  return app.project.items.addFolder(name);
+}
+
 interface ReviewComparisonResult extends Result {
   compName?: string;
   compId?: number;
@@ -732,6 +743,11 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     } catch (impErr) {
       return { success: false, error: "Could not import master render: " + impErr.toString() };
     }
+    // Auto-file the imported OV master into an "OV" project folder so a
+    // review session doesn't scatter every master render loose in the root.
+    try {
+      masterFootage.parentFolder = reviewFindOrCreateFolder("OV");
+    } catch (eFolder) { /* folder move is best-effort — never fail the import */ }
 
     // 3. Determine comp dimensions from the master's source.  Capped at a
     //    max total width to keep frame-buffer memory inside what AE can
@@ -773,6 +789,11 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     app.beginUndoGroup("Review: Compare \"" + localItemName + "\"");
 
     var comp = app.project.items.addComp(finalName, compW, compH, 1, dur, fps);
+    // Auto-file the comparison comp into a "Comparison" project folder so
+    // review sessions don't clutter the root with every Compare_* comp.
+    try {
+      comp.parentFolder = reviewFindOrCreateFolder("Comparison");
+    } catch (eFolder) { /* folder move is best-effort — never fail the comp */ }
 
     // 5. Place master on the LEFT half.
     var masterLayer = comp.layers.add(masterFootage);
