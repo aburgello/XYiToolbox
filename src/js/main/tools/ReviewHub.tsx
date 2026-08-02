@@ -189,7 +189,10 @@ const ReviewRow: React.FC<{
             <div className="rv-row-main">
                 {/* Name block — truncated local name on line one, and the
                     master it's paired against on line two so the pairing is
-                    visible at a glance instead of on hover. */}
+                    visible at a glance instead of on hover.  The green film
+                    icon sits right beside the master name — it plays that
+                    master in the OS player, so it lives where the master is
+                    shown, not out in the action row. */}
                 <span className="rv-row-name-block">
                     <Tooltip text={item.name}>
                         <span className="rv-row-name">{truncateNameAtArtwork(item.name)}</span>
@@ -198,27 +201,22 @@ const ReviewRow: React.FC<{
                         <span className="rv-row-master" title={matchedMp4}>
                             <span className="rv-row-master-label">vs</span>
                             <span className="rv-row-master-name">{masterDisplayName(matchedMp4)}</span>
+                            <Tooltip text={`Play master: ${matchedMp4}`}>
+                                <motion.button
+                                    className="rv-mp4-match"
+                                    onClick={async () => {
+                                        try { await evalTS("playFile", matchedMp4); }
+                                        catch { /* no bridge — ignore */ }
+                                    }}
+                                    whileHover={reduced ? {} : { scale: 1.2 }}
+                                    whileTap={reduced ? {} : { scale: 0.9 }}
+                                >
+                                    <Film size={10} />
+                                </motion.button>
+                            </Tooltip>
                         </span>
                     )}
                 </span>
-
-                {/* Matched .mp4 render — click to play the master in the OS
-                    player for a quick sanity check. */}
-                {matchedMp4 && (
-                    <Tooltip text={`Play master: ${matchedMp4}`}>
-                        <motion.button
-                            className="rv-mp4-match"
-                            onClick={async () => {
-                                try { await evalTS("playFile", matchedMp4); }
-                                catch { /* no bridge — ignore */ }
-                            }}
-                            whileHover={reduced ? {} : { scale: 1.15 }}
-                            whileTap={reduced ? {} : { scale: 0.9 }}
-                        >
-                            <Film size={10} />
-                        </motion.button>
-                    </Tooltip>
-                )}
 
                 {/* Comparison comp — auto-created side-by-side QC comp.
                     Click to open in AE's viewer. */}

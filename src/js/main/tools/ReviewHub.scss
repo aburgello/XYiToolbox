@@ -437,11 +437,8 @@
     .rv-row-master {
         display: flex;
         align-items: center;
-        gap: 4px;
+        gap: 5px;
         min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
         font-size: 10.5px;
         color: #7a7a7a;
 
@@ -451,9 +448,30 @@
             letter-spacing: 0.04em;
         }
 
+        // The master name truncates; the play icon beside it stays put.
         .rv-row-master-name {
+            min-width: 0;
             overflow: hidden;
             text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        // Green film icon that plays the master — compact, sits inline with
+        // the master name, doesn't inherit the row-master's muted colour.
+        .rv-mp4-match {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            background: none;
+            border: none;
+            color: #4ade80;
+            opacity: 0.9;
+            cursor: pointer;
+            padding: 1px 2px;
+            border-radius: 3px;
+            transition: opacity 0.12s ease, background 0.12s ease;
+
+            &:hover { opacity: 1; background: rgba(74, 222, 128, 0.12); }
         }
     }
 
@@ -525,24 +543,6 @@
         transition: color 0.15s ease, background 0.15s ease;
 
         &:hover { color: #e07a7a; background: rgba(224,122,122,0.08); }
-    }
-
-    // Clickable green filmstrip icon — the matched master .mp4.  Click
-    // plays it in the OS player for a quick sanity check.
-    .rv-mp4-match {
-        display: flex;
-        align-items: center;
-        flex-shrink: 0;
-        background: none;
-        border: none;
-        color: #4ade80;
-        opacity: 0.85;
-        cursor: pointer;
-        padding: 2px;
-        border-radius: 3px;
-        transition: opacity 0.12s ease, background 0.12s ease;
-
-        &:hover { opacity: 1; background: rgba(74, 222, 128, 0.12); }
     }
 
     // Comparison comp chip — clickable pill that re-opens the auto-created
