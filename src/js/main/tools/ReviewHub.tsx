@@ -41,6 +41,35 @@ import "./ReviewHub.scss";
 // It already manages its own state and CEP bridge calls.
 const OVLibraryTool = React.lazy(() => import("./OVLibrary"));
 
+// The artwork-type tokens from the studio's filename convention — DOOH,
+// DFOH, DINTH, FOH — defined here (kept in step with nameGeneratorParse's
+// artworkTypes in localise.ts).  Review rows truncate a .mov name at the
+// first artwork-type token so a long filename like
+// "PP3_INTL_DGTL_DOOH_PLAYMOREHUB_640x1560_15sec_ES" displays as
+// "PP3_INTL_DGTL_DOOH…" instead of overflowing the row's buttons.
+const ARTWORK_TYPES = ["DOOH", "DFOH", "DINTH", "FOH"];
+
+function truncateNameAtArtwork(fullName: string): string {
+    // Split into underscore tokens; find the first token that IS an artwork
+    // type (exact, case-insensitive) and keep everything through it.  This
+    // avoids a substring match like "_DINTH" landing inside "_DINTHING_".
+    const tokens = fullName.split("_");
+    let keep = 0;
+    let found = -1;
+    for (let i = 0; i < tokens.length; i++) {
+        const t = tokens[i].toUpperCase();
+        for (let a = 0; a < ARTWORK_TYPES.length; a++) {
+            if (t === ARTWORK_TYPES[a]) { found = i; break; }
+        }
+        if (found !== -1) break;
+        keep++;
+    }
+    if (found === -1) return fullName;
+    // Rejoin tokens up to and including the artwork type, restore the rest
+    // as an ellipsis.  Rebuild from the original tokens to preserve case.
+    return tokens.slice(0, found + 1).join("_") + "…";
+}
+
 // ---------------------------------------------------------------------------
 // Shared campaign context — OV Library owns the picker, Review Session
 // reads the active campaign to find matching .mp4 renders.
@@ -145,9 +174,11 @@ const ReviewRow: React.FC<{
             layout
         >
             <div className="rv-row-main">
-                {/* Comp name */}
+                {/* Comp name — truncated after the artwork-type token so a
+                    long .mov name doesn't overflow the row's buttons.  Full
+                    name stays in the tooltip. */}
                 <Tooltip text={item.name}>
-                    <span className="rv-row-name">{item.name}</span>
+                    <span className="rv-row-name">{truncateNameAtArtwork(item.name)}</span>
                 </Tooltip>
 
                 {/* Matched .mp4 render — click to play the master in the OS
@@ -439,7 +470,22 @@ const ReviewSession: React.FC = () => {
         .map((i) => (i.sourcePath || i.name) + "\n🔶 " + i.note.trim())
         .join("\n\n");
 
+    // Copy straight from the browser.  The ExtendScript clipboard path
+    // (timesheetCopyToClipboard) writes the text to a temp file with
+    // File.write(), which uses the system ANSI codepage and mangles the 🔶
+    // surrogate pair before it reaches the clipboard — the "jumbled emoji"
+    // bug.  In the browser the exact JS string survives intact, so try that
+    // first; only fall back to the bridge if the browser clipboard is
+    // unavailable (it needs a user-gesture context which the CEP panel has,
+    // since this runs from a button click).
     const copyWrikeText = async () => {
+        try {
+            await navigator.clipboard.writeText(wrikeText);
+            pushToast("Copied to clipboard.", "success");
+            return;
+        } catch {
+            /* browser clipboard unavailable — fall through to the bridge */
+        }
         try {
             const result = await evalTS("timesheetCopyToClipboard", wrikeText);
             if (result === undefined) throw new Error("no bridge");

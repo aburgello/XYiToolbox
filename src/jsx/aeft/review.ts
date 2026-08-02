@@ -825,11 +825,18 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
       diffLayer.name = "DIFF (local over master)";
       // Starts hidden — the artist toggles it on (eyeball in the timeline)
       // when they want to see the difference pass, rather than it washing
-      // over the master half on open.
-      try { diffLayer.video = false; } catch (eVideo) {}
+      // over the master half on open.  Set BOTH the video switch (eyeball)
+      // AND enabled=false (the same disable trick makeTextless uses) because
+      // video alone silently failed to stick on a freshly-added layer in real
+      // AE.  enabled=false greys the layer out AND stops it rendering, which
+      // is exactly the "hidden by default" behaviour wanted; the artist turns
+      // the layer back on via its checkbox when they want the diff pass.
+      var diffHidden = false;
+      try { diffLayer.video = false; diffHidden = true; } catch (eVideo) {}
+      try { diffLayer.enabled = false; } catch (eEnabled) {}
       try {
         diffLayer.blendingMode = BlendingMode.DIFFERENCE;
-        enrichNotes.push("diff:ok");
+        enrichNotes.push("diff:ok" + (diffHidden ? " hidden" : ""));
       } catch (eBlend) {
         enrichNotes.push("diff:no-blend " + eBlend.toString());
       }
