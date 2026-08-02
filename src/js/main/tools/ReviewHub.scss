@@ -255,6 +255,7 @@
         &.rv-count--approved { background: rgba(74,222,128,0.1); color: #4ade80; }
         &.rv-count--amend    { background: rgba(251,191,36,0.1);  color: #fbbf24; }
         &.rv-count--pending  { background: rgba(255,255,255,0.05); color: #666; }
+        &.rv-count--mp4      { background: rgba(74,222,128,0.08); color: #4ade80; }
     }
 
     // ── Error banner ──────────────────────────────────────────────────────
@@ -354,6 +355,14 @@
         font-size: 11px;
         pointer-events: none;
         padding-bottom: 40px;
+    }
+
+    .rv-empty-hint {
+        color: #444;
+        font-size: 10px;
+        max-width: 280px;
+        text-align: center;
+        line-height: 1.4;
     }
 
     // Review row card
@@ -471,6 +480,48 @@
         transition: color 0.15s ease;
 
         &:hover { color: #e07a7a; }
+    }
+
+    // Tiny green filmstrip icon showing this row's source .mov has a
+    // matching .mp4 render in the campaign (matched by identical filename
+    // stem, same convention OV Library uses for master↔render pairing).
+    .rv-mp4-match {
+        display: flex;
+        align-items: center;
+        flex-shrink: 0;
+        color: #4ade80;
+        opacity: 0.85;
+    }
+
+    // Comparison comp chip — clickable pill that re-opens the auto-created
+    // side-by-side comp in AE's viewer.  Only visible on rows that had a
+    // matching .mp4 and had a comp created during import.
+    .rv-comp-btn {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        background: rgba(168, 85, 247, 0.12);
+        border: 1px solid rgba(168, 85, 247, 0.28);
+        color: #c084fc;
+        border-radius: 4px;
+        padding: 2px 6px;
+        cursor: pointer;
+        font-size: 10px;
+        line-height: 1;
+        flex-shrink: 0;
+        transition: background 0.12s ease, border-color 0.12s ease;
+
+        &:hover {
+            background: rgba(168, 85, 247, 0.2);
+            border-color: rgba(168, 85, 247, 0.45);
+        }
+    }
+
+    .rv-comp-label {
+        max-width: 140px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     // Note textarea

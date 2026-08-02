@@ -628,9 +628,14 @@ interface Props {
     // in a category master-detail list or Localise's tool list alongside
     // several other tools where the plainer toolbar fits better.
     hero?: boolean;
+    // Called whenever the selected campaign changes, so a parent (e.g.
+    // ReviewHub) can share it with sibling tabs that also need the
+    // campaign context — the Review Session tab uses this to find
+    // matching .mp4 renders for imported .mov files.
+    onCampaignChange?: (campaign: Campaign | null) => void;
 }
 
-const OVLibraryTool: React.FC<Props> = ({ hero = false }) => {
+const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
     useHostTheme();
 
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -712,6 +717,12 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false }) => {
         }
         refreshCreatives(selectedCampaign);
     }, [selectedCampaign]);
+
+    // Report campaign changes upward so sibling tabs (Review Session) can
+    // share the campaign context without duplicating the picker.
+    useEffect(() => {
+        onCampaignChange?.(selectedCampaign);
+    }, [selectedCampaign, onCampaignChange]);
 
     const refreshCreatives = async (camp: Campaign) => {
         setLoadingCreatives(true);

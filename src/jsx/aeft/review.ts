@@ -363,6 +363,39 @@ export const scanRendersForCreative = (mastersRoot: string, creative: string): R
   return out;
 };
 
+// Campaign-wide render scan — every video file across every creative, one
+// flat {stem, path}[] map. Used by the Review Session tab to match imported
+// .mov files against their .mp4 renders regardless of which creative each
+// belongs to. No stem filter — the caller builds its own lookup map from
+// this and keys whatever stems it needs against it.
+export const scanAllRenders = (mastersRoot: string): RenderEntry[] => {
+  const out: RenderEntry[] = [];
+  const seen: { [path: string]: boolean } = {};
+
+  const addVideos = function (files: File[]) {
+    for (let i = 0; i < files.length; i++) {
+      const fName = files[i].name;
+      if (!isVideoFile(fName)) continue;
+      const dot = fName.lastIndexOf(".");
+      const fStem = dot === -1 ? fName : fName.substring(0, dot);
+      const path = files[i].fsName;
+      if (seen[path]) continue;
+      seen[path] = true;
+      out.push({ stem: fStem, path: path });
+    }
+  };
+
+  // 1. Renders/ — all creatives, unfiltered.
+  const rendersFolder = new Folder(mastersRoot + "/Renders");
+  if (rendersFolder.exists) addVideos(findAllFiles(rendersFolder));
+
+  // 2. Support/Motion_Components/_mp4 — campaign-wide flat folder.
+  const mp4Folder = findMotionComponentsMp4Folder(mastersRoot);
+  if (mp4Folder && mp4Folder.exists) addVideos(findAllFiles(mp4Folder));
+
+  return out;
+};
+
 // --- File actions -- import only, never open; reveal/play never touch the
 // source file's contents. ---
 export const importFile = (filePath: string): Result => {
@@ -478,4 +511,236 @@ export const createComparisonComp = (renderPath: string, width: number, height: 
     app.endUndoGroup();
     return { success: false, error: e.toString() };
   }
+};
+
+// ── Review Session: enriched comparison comp ──────────────────────────────
+// Built for the Review Session workflow — finds the local render by AE
+// project item ID (no "select exactly one item" step), and layers on
+// everything useful for frame-accurate QC in one comp.
+//
+// What it adds over the basic createComparisonComp():
+//   1. Finds local by ID     — no manual selection step
+//   2. "MASTER"/"LOCAL"      — small text labels, bottom corners
+//   3. Center divider         — thin rule between the two halves
+//   4. Difference matte       — third track on top, Difference blending,
+//                               pixel-level deltas light up instantly
+//   5. Timecode overlay       — burnt-in source TC on both sides
+//   6. Meaningful naming      — "Compare_<localName>"
+//
+// Returns { success, compName?, compId? } so the React side can store the
+// comp reference and let the user jump back to it later.
+
+interface ReviewComparisonResult extends Result {
+  compName?: string;
+  compId?: number;
+}
+
+export const createReviewComparison = (mp4Path: string, localItemId: number, localItemName: string): ReviewComparisonResult => {
+  try {
+    // 1. Find the local item in the project.
+    const localItem = app.project.itemByID(localItemId);
+    if (!localItem) {
+      return { success: false, error: "Local render no longer in the project (item " + localItemId + ").  Re-import the list." };
+    }
+    if (!(localItem instanceof CompItem) && !(localItem instanceof FootageItem)) {
+      return { success: false, error: "\"" + localItemName + "\" is not a comp or footage item." };
+    }
+
+    // 2. Import the master .mp4 — read-only, same safety rule as every other
+    //    import in this codebase.
+    const f = new File(mp4Path);
+    if (!f.exists) return { success: false, error: "Master render no longer exists:\n" + mp4Path };
+
+    var masterFootage: AVItem;
+    try {
+      masterFootage = app.project.importFile(new ImportOptions(f)) as AVItem;
+    } catch (impErr) {
+      return { success: false, error: "Could not import master render: " + impErr.toString() };
+    }
+
+    // 3. Determine comp dimensions from the master's source.  Capped at a
+    //    max total width to keep frame-buffer memory inside what AE can
+    //    allocate reliably — the side-by-side comp is three full layers
+    //    (master, local, difference matte), each ~ (compW × compH × 4) bytes,
+    //    so a 5760px-wide source doubled to 11520px can push past 200 MB per
+    //    frame.  Capping at 3840 gives reliable behaviour for the common case
+    //    (≤1920px sources fit at 1:1) and proportionally scales anything
+    //    wider.
+    var MAX_COMP_W = 3840;
+    var srcW = masterFootage.width || 1920;
+    var srcH = masterFootage.height || 1080;
+    var rawCompW = srcW * 2;
+    var scaleFactor = rawCompW > MAX_COMP_W ? (MAX_COMP_W / rawCompW) : 1;
+    var compW = Math.round(rawCompW * scaleFactor);
+    var compH = Math.round(srcH * scaleFactor);
+    var halfW = Math.round(compW / 2);
+    var fps = masterFootage.frameRate > 0 ? masterFootage.frameRate : 25;
+    var dur = Math.max(masterFootage.duration || 0, localItem.duration || 0) || 10;
+
+    // 4. Create the comparison comp.
+    var stem = localItemName.replace(/_[Vv]\d+$/, "").replace(/[\\\/:*?"<>|]/g, "-");
+    var compName = "Compare_" + stem;
+    // Deduplicate: if a comp with that name already exists, append _2, _3, …
+    var finalName = compName;
+    var dupIdx = 1;
+    var dedupGuard = 0;
+    while (dedupGuard++ < 50) {
+      var collision = false;
+      for (var ci = 1; ci <= app.project.numItems; ci++) {
+        var existing = app.project.item(ci);
+        if (existing && existing.name === finalName) { collision = true; break; }
+      }
+      if (!collision) break;
+      dupIdx++;
+      finalName = compName + "_" + dupIdx;
+    }
+
+    app.beginUndoGroup("Review: Compare \"" + localItemName + "\"");
+
+    var comp = app.project.items.addComp(finalName, compW, compH, 1, dur, fps);
+
+    // 5. Place master on the LEFT half.
+    var masterLayer = comp.layers.add(masterFootage);
+    fitLayerIntoBox(masterLayer, halfW, compH, halfW / 2, compH / 2);
+
+    // 6. Place local render on the RIGHT half.
+    var localLayer = comp.layers.add(localItem);
+    fitLayerIntoBox(localLayer, halfW, compH, halfW + halfW / 2, compH / 2);
+
+    // 7. Center divider — a thin 2px solid spanning the full height.
+    var dividerSolid = app.project.items.addSolid("divider", 2, compH, 1, dur);
+    var dividerLayer = comp.layers.add(dividerSolid);
+    (dividerLayer.property("Transform")!.property("Position") as Property).setValue([compW / 2, compH / 2]);
+    // Drop opacity to 25% so it's present but never distracting.
+    try {
+      (dividerLayer.property("Transform")!.property("Opacity") as Property).setValue(25);
+    } catch (eOp) { /* older AE, opacity lives elsewhere */ }
+
+    // 8. "MASTER" / "LOCAL" labels — small text layers, bottom corners,
+    //    low opacity so they never compete with the content.
+    var labelOpacity = 40;
+    var labelSize = srcH < 500 ? 18 : 24;
+    // MASTER label — bottom-left of the left half.
+    var masterLabelSolid = app.project.items.addSolid("MASTER", halfW, labelSize, 1, dur);
+    var masterLabelLayer = comp.layers.add(masterLabelSolid);
+    (masterLabelLayer.property("Transform")!.property("Position") as Property).setValue([halfW / 2, compH - labelSize / 2 - 6]);
+    try { (masterLabelLayer.property("Transform")!.property("Opacity") as Property).setValue(labelOpacity); } catch (eOp) {}
+    // Create a text layer on top that actually says "MASTER".
+    var masterTextLayer = comp.layers.addText("MASTER");
+    if (masterTextLayer) {
+      var masterTextProp = masterTextLayer.property("Source Text") as Property;
+      if (masterTextProp) {
+        var masterTextDoc = masterTextProp.value;
+        masterTextDoc.resetCharStyle();
+        masterTextDoc.fontSize = srcH < 500 ? 14 : 18;
+        masterTextDoc.fillColor = [1, 1, 1];
+        masterTextDoc.applyStroke = false;
+        masterTextProp.setValue(masterTextDoc);
+      }
+      (masterTextLayer.property("Transform")!.property("Position") as Property).setValue([halfW / 2, compH - labelSize / 2 - 6]);
+      try { (masterTextLayer.property("Transform")!.property("Opacity") as Property).setValue(labelOpacity + 15); } catch (eOp) {}
+    }
+
+    // LOCAL label — bottom-right of the right half.
+    var localLabelSolid = app.project.items.addSolid("LOCAL", halfW, labelSize, 1, dur);
+    var localLabelLayer = comp.layers.add(localLabelSolid);
+    (localLabelLayer.property("Transform")!.property("Position") as Property).setValue([halfW + halfW / 2, compH - labelSize / 2 - 6]);
+    try { (localLabelLayer.property("Transform")!.property("Opacity") as Property).setValue(labelOpacity); } catch (eOp) {}
+    var localTextLayer = comp.layers.addText("LOCAL");
+    if (localTextLayer) {
+      var localTextProp = localTextLayer.property("Source Text") as Property;
+      if (localTextProp) {
+        var localTextDoc = localTextProp.value;
+        localTextDoc.resetCharStyle();
+        localTextDoc.fontSize = srcH < 500 ? 14 : 18;
+        localTextDoc.fillColor = [1, 1, 1];
+        localTextDoc.applyStroke = false;
+        localTextProp.setValue(localTextDoc);
+      }
+      (localTextLayer.property("Transform")!.property("Position") as Property).setValue([halfW + halfW / 2, compH - labelSize / 2 - 6]);
+      try { (localTextLayer.property("Transform")!.property("Opacity") as Property).setValue(labelOpacity + 15); } catch (eOp) {}
+    }
+
+    // 9. Difference matte — a third track above both renders, blended with
+    //    Difference so any pixel-level drift between master and local lights
+    //    up without requiring the artist to flick between two windows.
+    var diffLayer = comp.layers.add(localItem);
+    fitLayerIntoBox(diffLayer, halfW, compH, halfW + halfW / 2, compH / 2);
+    diffLayer.blendingMode = BlendingMode.DIFFERENCE;
+    try { (diffLayer.property("Transform")!.property("Opacity") as Property).setValue(100); } catch (eOp) {}
+
+    // 10. Timecode overlay — burnt-in source TC on each main render so
+    //     frame references in Wrike notes are exact.  Best-effort: if the
+    //     effect isn't available on this AE install the comp is still useful.
+    var tcOpacity = 55;
+    var tcSize = srcH < 500 ? 12 : 16;
+    var addTimecode = function (layer: AVLayer) {
+      try {
+        var effectsGroup = layer.property("Effects");
+        if (!effectsGroup) return;
+        var tc = (effectsGroup as any).addProperty("ADBE Timecode");
+        if (tc) {
+          tc.property("Timecode Source")!.setValue(2);  // Layer Source
+          tc.property("Display Format")!.setValue(1);   // Timecode
+          tc.property("Starting Frame")!.setValue(0);
+          tc.property("Position")!.setValue([0, 0]);
+          tc.property("Size")!.setValue(tcSize);
+          tc.property("Opacity")!.setValue(tcOpacity);
+        }
+      } catch (eTc) { /* Timecode effect not available — keep the comp without it */ }
+    };
+    addTimecode(masterLayer);
+    addTimecode(localLayer);
+
+    // Don't auto-open — avoids an immediate frame-buffer allocation in AE
+    // (this comp is three full layers: master, local, difference matte).
+    // In a batch import several of these can be created at once, and
+    // opening them all would spike memory for no good reason.  The artist
+    // clicks the purple comparison chip in the review row to open one at a
+    // time via focusReviewComp().
+    app.endUndoGroup();
+    return { success: true, compName: finalName, compId: comp.id };
+  } catch (e) {
+    app.endUndoGroup();
+    return { success: false, error: e.toString() };
+  }
+};
+
+// Open a comparison comp in the viewer.  createReviewComparison deliberately
+// does NOT auto-open (to avoid the three-layer frame-buffer allocation across
+// a batch), so this is the only path that opens one — called when the artist
+// clicks the purple comparison chip on a review row.
+export const focusReviewComp = (compId: number): Result => {
+  try {
+    var comp = app.project.itemByID(compId);
+    if (!comp || !(comp instanceof CompItem)) {
+      return { success: false, error: "That comparison comp no longer exists — it may have been deleted." };
+    }
+    comp.openInViewer();
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// Batch version — takes JSON arrays so the frontend makes one evalTS round-
+// trip for all the comparison comps at once rather than one per item.
+// matchesJson: '[{"mp4Path":"...","localItemId":1,"localItemName":"..."}, ...]'
+export const createReviewComparisons = (matchesJson: string): ReviewComparisonResult & { results?: ReviewComparisonResult[] } => {
+  var matches: { mp4Path: string; localItemId: number; localItemName: string }[];
+  try {
+    matches = JSON.parse(matchesJson);
+  } catch (eParse) {
+    return { success: false, error: "Could not read the comparison list." };
+  }
+  if (!matches || matches.length === 0) {
+    return { success: false, error: "No items to compare." };
+  }
+
+  var results: ReviewComparisonResult[] = [];
+  for (var i = 0; i < matches.length; i++) {
+    var m = matches[i];
+    results.push(createReviewComparison(m.mp4Path, m.localItemId, m.localItemName));
+  }
+  return { success: true, results: results };
 };
