@@ -328,11 +328,10 @@
     .creatives-grid {
         display: flex;
         flex-wrap: wrap;
-        justify-content: center;
         gap: 10px;
-        // Wide enough that cards breathe and centre rather than hugging the
-        // left edge in a single horizontal scroll row.  A wrap grid uses the
-        // full panel width, and justify-center keeps a short row centred.
+        // Cards grow to fill their row (flex-grow: 1), so with 4-5 creatives
+        // there's no dead space at the sides — every row spans the full panel
+        // width and the last partial row stretches too.
         padding: 6px 0 8px;
 
         & > * {
@@ -353,9 +352,12 @@
     .creative-card {
         display: flex;
         flex-direction: column;
-        // Wider cards now that the grid wraps-and-centres (4-5 max per
-        // campaign) instead of squeezing into a horizontal scroll row.
-        width: 150px;
+        // Grow to fill the row: flex-basis 0 + flex-grow 1 makes every card
+        // on a row share the full width equally, so 3 cards fill the row
+        // edge-to-edge instead of leaving gaps.  min-width keeps a lone card
+        // from shrinking to nothing on a very full row.
+        flex: 1 1 0;
+        min-width: 140px;
         flex-shrink: 0;
         background: var(--surface-0, #202020);
         // Falls back to the fixed accent everywhere --card-accent hasn't
