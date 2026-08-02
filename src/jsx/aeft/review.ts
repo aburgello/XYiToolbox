@@ -793,11 +793,14 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     var enrichNotes: string[] = [];
 
     // 7. Center divider — a thin 4px solid at 50% opacity, full height.
+    //    Uses comp.layers.addSolid(color, name, w, h, pixelAspect) — the
+    //    LAYER-level API every other tool in this codebase uses.  (The first
+    //    version used app.project.items.addSolid(name, w, h, pixelAspect,
+    //    dur) which is a different items-level API that silently didn't
+    //    create the layer in real AE.)
     try {
-      var dividerSolid = app.project.items.addSolid("divider", 4, compH, 1, dur);
-      var dividerLayer = comp.layers.add(dividerSolid);
+      var dividerLayer = comp.layers.addSolid([1, 1, 1], "--- divider ---", 4, compH, 1);
       (dividerLayer.property("Transform")!.property("Position") as Property).setValue([compW / 2, compH / 2]);
-      dividerLayer.name = "--- divider ---";
       try { (dividerLayer.property("Transform")!.property("Opacity") as Property).setValue(50); } catch (eOp) {}
       enrichNotes.push("divider:ok");
     } catch (eD) {
@@ -809,9 +812,8 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     var labelSize = srcH < 500 ? 18 : 24;
     var addLabel = function (side: string, text: string, centerX: number): boolean {
       try {
-        var bar = app.project.items.addSolid(side + "_label_bg", halfW, labelSize, 1, dur);
-        var barLayer = comp.layers.add(bar);
-        barLayer.name = side + " label bg";
+        // Backing bar via comp.layers.addSolid (proven layer-level API).
+        var barLayer = comp.layers.addSolid([0.1, 0.1, 0.1], side + " label bg", halfW, labelSize, 1);
         (barLayer.property("Transform")!.property("Position") as Property).setValue([centerX, compH - labelSize / 2 - 6]);
         try { (barLayer.property("Transform")!.property("Opacity") as Property).setValue(labelOpacity); } catch (eOp) {}
         var textLayer = comp.layers.addText(text);
@@ -847,6 +849,10 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
       var diffLayer = comp.layers.add(localItem);
       fitLayerIntoBox(diffLayer, halfW, compH, halfW / 2, compH / 2);
       diffLayer.name = "DIFF (local over master)";
+      // Starts hidden — the artist toggles it on (eyeball in the timeline)
+      // when they want to see the difference pass, rather than it washing
+      // over the master half on open.
+      try { diffLayer.video = false; } catch (eVideo) {}
       try {
         diffLayer.blendingMode = BlendingMode.DIFFERENCE;
         enrichNotes.push("diff:ok");
@@ -867,7 +873,7 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
         var tc = (effectsGroup as any).addProperty("ADBE Timecode");
         if (tc) {
           tc.property("Timecode Source")!.setValue(2);  // Layer Source
-          tc.property("Display Format")!.setValue(1);   // Timecode
+          tc.property("Display Format")!.setValue(2);   // Frames (frame numbers, not 00:00:00:00)
           tc.property("Starting Frame")!.setValue(0);
           tc.property("Position")!.setValue([0, 0]);
           tc.property("Size")!.setValue(tcSize);

@@ -179,7 +179,7 @@ const ReviewRow: React.FC<{
                             whileTap={reduced ? {} : { scale: 0.94 }}
                         >
                             <Columns2 size={11} />
-                            <span className="rv-comp-label">{item.comparisonCompName}</span>
+                            <span className="rv-comp-label">Compare</span>
                         </motion.button>
                     </Tooltip>
                 )}
