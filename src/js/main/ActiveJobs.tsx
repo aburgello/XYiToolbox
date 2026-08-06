@@ -72,7 +72,6 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
     // filter rather than an auth question -- every member can read the whole
     // studio's Wrike, so the feed returns everything and we narrow it here.
     const [owner, setOwner] = useState("");
-    const [mineOnly, setMineOnly] = useState(true);
     // Clicking a batch opens it here rather than jumping straight to Localise:
     // the useful first question is "what is actually in this job", and the
     // subtask names answer it without leaving home.
@@ -111,16 +110,20 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
 
     useEffect(() => {
         let cancelled = false;
+        // Resolved before the fetch: the Worker filters by member, so asking
+        // before we know who this machine is would return nothing.
+        let who = "";
         (async () => {
             try {
                 const state = await evalTS("teamGetMachineState");
                 if (!cancelled && state && (state as { owner?: string }).owner) {
-                    setOwner((state as { owner: string }).owner);
+                    who = (state as { owner: string }).owner;
+                    setOwner(who);
                 }
             } catch (e) {
                 /* untagged machine or no bridge -- "mine" simply matches nothing */
             }
-            const res = await fetchJobs();
+            const res = await fetchJobs(who);
             if (cancelled) return;
             setJobs(res.jobs);
             setJobsMock(res.mock);
@@ -135,7 +138,7 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
         e.stopPropagation();
         setBusy(true);
         try {
-            const res = await refreshJobs();
+            const res = await refreshJobs(owner);
             setJobs(res.jobs);
             setJobsMock(res.mock);
             setJobsError(res.error);
@@ -154,10 +157,15 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
 
     const built = snapshot ? snapshot.jobs.filter((j) => j.built < j.total) : [];
     const allJobs = jobs || [];
-    const mine = owner ? allJobs.filter((j) => j.assignee === owner) : [];
-    // An untagged machine has no "me", so showing an empty list would read as
-    // "no work" rather than "we don't know who you are". Fall back to all.
-    const shown = mineOnly && owner && mine.length > 0 ? mine : allJobs;
+    // YOURS ONLY -- no "everyone" toggle. The whole point of the card is a
+    // short, glanceable list of what you personally have to build; the feed
+    // returns the studio's jobs only because filtering server-side would need
+    // per-user auth we deliberately avoided.
+    //
+    // An untagged machine can't answer "mine", so it says so rather than
+    // showing an empty list, which would read as "no work" instead of "we
+    // don't know who you are".
+    const shown = owner ? allJobs.filter((j) => j.assignee === owner) : [];
     const openCount = shown.filter((j) => (j.subtasksDone ?? 0) < (j.subtaskCount ?? 0)).length;
 
     return (
@@ -178,8 +186,10 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
                 </span>
                 <span className="active-jobs-title">Active Jobs</span>
                 <span className="active-jobs-count">
-                    {shown.length === 0
-                        ? "Nothing assigned"
+                    {!owner
+                        ? "Machine not tagged"
+                        : shown.length === 0
+                        ? "Nothing assigned to you"
                         : `${shown.length} job${shown.length === 1 ? "" : "s"}${openCount ? ` · ${openCount} to build` : ""}`}
                 </span>
                 {jobsMock && (
@@ -210,23 +220,15 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
                         exit={{ height: 0, opacity: 0 }}
                         transition={{ duration: 0.18, ease: "easeOut" }}
                     >
-                        {owner && mine.length > 0 && (
-                            <div className="active-jobs-filter">
-                                <button
-                                    type="button"
-                                    className={mineOnly ? "active-jobs-chip is-on" : "active-jobs-chip"}
-                                    onClick={() => setMineOnly((v) => !v)}
-                                >
-                                    {mineOnly ? `Assigned to ${owner}` : "Everyone"}
-                                </button>
-                                <span className="active-jobs-filter-hint">
-                                    {mineOnly ? `${allJobs.length - mine.length} more across the team` : `${mine.length} yours`}
-                                </span>
-                            </div>
-                        )}
-
-                        {shown.length === 0 ? (
-                            <p className="active-jobs-empty">No active jobs in the feed.</p>
+                        {!owner ? (
+                            <p className="active-jobs-empty">
+                                This machine isn't tagged with a member name, so there's no "you" to filter by. Tag it
+                                from the Team menu and your jobs will appear here.
+                            </p>
+                        ) : shown.length === 0 ? (
+                            <p className="active-jobs-empty">
+                                Nothing in the feed is assigned to {owner}.
+                            </p>
                         ) : (
                             <ul className="active-jobs-list">
                                 {shown.map((job) => {

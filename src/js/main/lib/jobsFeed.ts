@@ -108,6 +108,7 @@ const MOCK_JOBS: WrikeJob[] = [
 ];
 
 let cache: JobsFeedResult | null = null;
+let cacheMember = "";
 
 export async function loadJobsFeedConfig(): Promise<FeedConfig | null> {
     try {
@@ -160,12 +161,15 @@ function normalise(rows: any[]): WrikeJob[] {
     return out.filter((j) => j.title !== "");
 }
 
-export async function fetchJobs(force = false): Promise<JobsFeedResult> {
-    if (cache && !force) return cache;
+export async function fetchJobs(member: string, force = false): Promise<JobsFeedResult> {
+    // Keyed by member: switching the machine's tag must not serve the previous
+    // person's jobs out of cache.
+    if (cache && cacheMember === member && !force) return cache;
 
     const cfg = await loadJobsFeedConfig();
     if (!cfg) {
         cache = { jobs: MOCK_JOBS, fetchedAt: Date.now(), mock: true };
+        cacheMember = member;
         return cache;
     }
 
@@ -173,7 +177,12 @@ export async function fetchJobs(force = false): Promise<JobsFeedResult> {
         // No credentials/cookies: the key is the gate, and sending credentials
         // cross-origin would force the Worker into a stricter CORS contract for
         // no benefit.
-        const res = await fetch(cfg.url, {
+        // The Worker filters by member so the payload stays small. It is a
+        // convenience, not a security boundary -- the key holder could ask for
+        // anyone -- but it keeps the panel from downloading the studio's whole
+        // board to show one person's rows.
+        const sep = cfg.url.indexOf("?") === -1 ? "?" : "&";
+        const res = await fetch(`${cfg.url}${sep}member=${encodeURIComponent(member)}`, {
             method: "GET",
             headers: { "X-Panel-Key": cfg.key },
             credentials: "omit",
@@ -199,8 +208,8 @@ export async function fetchJobs(force = false): Promise<JobsFeedResult> {
     }
 }
 
-export function refreshJobs(): Promise<JobsFeedResult> {
-    return fetchJobs(true);
+export function refreshJobs(member: string): Promise<JobsFeedResult> {
+    return fetchJobs(member, true);
 }
 
 // Splits "FID - IT - ARTWALL GALLERIA - Batch 2" into its parts. The title is a

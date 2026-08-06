@@ -6646,3 +6646,51 @@ modal's styles present in the single bundled stylesheet; the icon's background
 confirmed GONE and the bare colour present; no banned CSS in the new block; and
 the parse behaviour above driven through the real built bundle.
 **Not seen in a running panel.**
+
+### Active Jobs, fourth pass: yours only, and a real API route (2026-08-06)
+
+**The "everyone" toggle is gone.** The card exists to be a short, glanceable
+list of what YOU have to build; an all-team view is clutter. The feed still
+returns the studio's jobs only because filtering server-side by identity would
+need per-user auth we deliberately avoided — so the narrowing is a filter, not
+a permission. An untagged machine now says "Machine not tagged" and explains
+how to fix it, rather than showing an empty list that reads as "no work".
+
+**The Worker route is implemented** (`/api/panel/jobs` in TimeHub's
+`worker/index.js`), NOT deployed.
+
+- **Its own route, not a reuse of `/api/jobs-feed`.** Correcting an earlier
+  reading of mine: `public.tasks` is the TIMESHEET table (job_number,
+  time_spent, day_of_week), not a job list, and that route gates on a browser
+  session cookie. The real source is **`wrike_tasks_cache.task_data`** — raw
+  Wrike task JSON, kept current by the app and the webhook — so this costs one
+  Supabase query and no Wrike API budget.
+- **Auth is a shared `X-Panel-Key`.** Acceptable only because the route is
+  read-only and returns what every member can already read in Wrike. CORS is
+  `*` because a CEP panel's origin is `null` and cannot be allow-listed by
+  name; no credentials are sent, and the key is the actual gate.
+- **`subTaskIds` gives IDs, not names.** Subtasks are cached as tasks in their
+  own right, so names are resolved from the same rows — no second query, no
+  Wrike call. Which also means **subtasks must be skipped as top-level jobs**
+  (`superTaskIds.length > 0`), or every deliverable would list as a job beside
+  its parent.
+- Member name → Wrike user id via `profiles`, accepting first name OR full
+  name: the panel tags machines with a display name and forcing two naming
+  schemes to stay in step would break quietly.
+- An unmatched member returns **404 `unknown_member`**, never `[]` — an empty
+  list would read as "no work" when the truth is "that name matched nobody".
+- Sorted by `updatedDate`: most jobs carry no due date at all, which is the
+  same thing TimeHub's own Profile.jsx notes about its rows.
+
+**Verified**: `wrangler deploy --dry-run` clean, and 10 assertions driving the
+REAL `handlePanelJobs` out of `worker/index.js` with a stubbed `fetch` — wrong
+key 401s, unknown member 404s, only the caller's jobs return, Completed is
+excluded, subtasks do not appear as jobs, newest first, subtask names resolve
+from cache, `subtasks_done` counts correctly, and full-name tagging works as
+well as first-name. Panel side: both tsconfigs + `yarn build` + precedence
+audit clean, and the feed cache is keyed by member so re-tagging a machine
+cannot serve the previous person's jobs.
+
+**NOT DEPLOYED and not switched on.** The panel still shows sample data until
+`JobsFeedConfig` is set. To go live: `npx wrangler secret put PANEL_KEY`,
+deploy, then save `{url, key}` into that setting.
