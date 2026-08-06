@@ -35,6 +35,15 @@ export interface WrikeJob {
     // Deliverables under the task. May be absent -- see MOCK note below.
     subtaskCount?: number;
     subtasksDone?: number;
+    // The subtask NAMES are the point: they are deliverable filenames in the
+    // studio convention, so the modal can parse them into localiser rows.
+    subtasks?: WrikeSubtask[];
+}
+
+export interface WrikeSubtask {
+    id: string;
+    name: string;
+    status: string;
 }
 
 export interface JobsFeedResult {
@@ -55,12 +64,47 @@ interface FeedConfig {
 // Sample data so the card can be built and judged before the Worker route
 // exists. Shaped exactly like the real payload, and drawn from real job titles
 // so the layout is tested against realistic lengths rather than "Job 1".
+// Subtask names are taken VERBATIM from real Wrike tasks, including the
+// ARTWALL ones that parse badly (empty campaign, no duration) -- the modal has
+// to show that honestly rather than being demoed on names that all parse
+// cleanly.
 const MOCK_JOBS: WrikeJob[] = [
-    { id: "m1", title: "FID - IT - ARTWALL GALLERIA - Batch 2", assignee: "Antonio", status: "In Progress", updatedAt: new Date(Date.now() - 36e5).toISOString(), subtaskCount: 3, subtasksDone: 0 },
-    { id: "m2", title: "FID - TW - DINTH - Batch 1", assignee: "Antonio", status: "Backlog", updatedAt: new Date(Date.now() - 7 * 36e5).toISOString(), subtaskCount: 9, subtasksDone: 2 },
-    { id: "m3", title: "FID - SE - DOOH - Batch 1", assignee: "Antonio", status: "Backlog", updatedAt: new Date(Date.now() - 26 * 36e5).toISOString(), subtaskCount: 4, subtasksDone: 4 },
-    { id: "m4", title: "PPD - FR - DOOH - Batch 3", assignee: "Jacqui", status: "In Progress", updatedAt: new Date(Date.now() - 3 * 36e5).toISOString(), subtaskCount: 6, subtasksDone: 1 },
-    { id: "m5", title: "PPD - DE - DINTH - Batch 1", assignee: "Aaron", status: "Backlog", updatedAt: new Date(Date.now() - 50 * 36e5).toISOString(), subtaskCount: 12, subtasksDone: 0 },
+    {
+        id: "m1", title: "FID - IT - ARTWALL GALLERIA - Batch 2", assignee: "Antonio",
+        status: "In Progress", updatedAt: new Date(Date.now() - 36e5).toISOString(),
+        subtaskCount: 3, subtasksDone: 0,
+        subtasks: [
+            { id: "s1", name: "FID_INTL_DOOH_ARTWORK_PIKASSO_ARTWALL_GALLERIA_FIRENZE_CEILING_9600x1440px_IT", status: "Backlog" },
+            { id: "s2", name: "FID_INTL_DOOH_ARTWORK_PIKASSO_ARTWALL_GALLERIA_FIRENZE_LEFT_9600x768px_IT", status: "Backlog" },
+            { id: "s3", name: "FID_INTL_DOOH_ARTWORK_PIKASSO_ARTWALL_GALLERIA_FIRENZE_RIGHT_9600x768px_IT", status: "Backlog" },
+        ],
+    },
+    {
+        id: "m2", title: "FID - TW - DINTH - Batch 1", assignee: "Antonio",
+        status: "Backlog", updatedAt: new Date(Date.now() - 7 * 36e5).toISOString(),
+        subtaskCount: 4, subtasksDone: 1,
+        subtasks: [
+            { id: "s4", name: "FID_INTL_Trio_DINTH_ShowtimeCinemasTPED_1920x1080px_30s_TW", status: "Completed" },
+            { id: "s5", name: "FID_INTL_Trio_DINTH_ShowtimeCinemasTPED_768x1280px_30s_TW", status: "Backlog" },
+            { id: "s6", name: "FID_INTL_PortalToParadise_DINTH_ShowtimeCinemasTPED_1080x1920px_30s_TW", status: "Backlog" },
+            { id: "s7", name: "FID_INTL_Trio_DINTH_InTheatreFoyerScreen_512x1280px_30s_TW", status: "Backlog" },
+        ],
+    },
+    {
+        id: "m3", title: "FID - SE - DOOH - Batch 1", assignee: "Antonio",
+        status: "Backlog", updatedAt: new Date(Date.now() - 26 * 36e5).toISOString(),
+        subtaskCount: 2, subtasksDone: 2,
+        subtasks: [
+            { id: "s8", name: "FID_INTL_Bracelet_DOOH_1920x1080px_15s_SE", status: "Completed" },
+            { id: "s9", name: "FID_INTL_Bracelet_DOOH_1080x1920px_15s_SE", status: "Completed" },
+        ],
+    },
+    {
+        id: "m4", title: "PPD - FR - DOOH - Batch 3", assignee: "Jacqui",
+        status: "In Progress", updatedAt: new Date(Date.now() - 3 * 36e5).toISOString(),
+        subtaskCount: 1, subtasksDone: 0,
+        subtasks: [{ id: "s10", name: "PPD_INTL_DinoRescue_DOOH_1920x1080px_20s_FR", status: "Backlog" }],
+    },
 ];
 
 let cache: JobsFeedResult | null = null;
@@ -104,6 +148,13 @@ function normalise(rows: any[]): WrikeJob[] {
             permalink: r.permalink ? String(r.permalink) : undefined,
             subtaskCount: typeof r.subtask_count === "number" ? r.subtask_count : undefined,
             subtasksDone: typeof r.subtasks_done === "number" ? r.subtasks_done : undefined,
+            subtasks: r.subtasks instanceof Array
+                ? r.subtasks.map((st: any, n: number) => ({
+                      id: String(st?.id ?? n),
+                      name: String(st?.name ?? st?.title ?? "").trim(),
+                      status: String(st?.status ?? "").trim(),
+                  })).filter((st: WrikeSubtask) => st.name !== "")
+                : undefined,
         });
     }
     return out.filter((j) => j.title !== "");

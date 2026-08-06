@@ -6601,3 +6601,48 @@ centring rule confirmed to name all three selectors in the bundled CSS; and 6
 assertions on `parseJobTitle` against the real title format, including no
 batch token, no territory, a hyphenated job name, and a title with no
 separators at all. **Not seen in a running panel.**
+
+### Active Jobs, third pass: bare icon + subtask modal (2026-08-06)
+
+**The icon was the only thing on the home screen with a filled background.** The
+category cards colour their icon and stop there, so a solid chip read as a
+foreign object. Now a bare icon in the fixed Wrike green (#3fb774) — matching
+`.wrike-launch-button`'s existing reasoning for a full-width non-category
+button, which turned out to already exist in main.scss for the unhooked Wrike
+Tasks page and is the house pattern for this exact shape.
+
+**Clicking a batch now opens a modal of its subtasks parsed into localiser
+rows** rather than jumping to Localise. The useful first question is "what is
+actually in this job", and the subtask names answer it without leaving home.
+
+- `parseDeliverableNames(namesJson)` — a new bridge export wrapping
+  `nameGeneratorParse`, the SAME parser Name Generator, Trott 2.0, PDF to CSV,
+  File Name Check and Naming Audit share. Nothing about the convention is
+  reimplemented frontend-side. **One call for N names**: each bridge round-trip
+  costs far more than the parse. Argument is a JSON STRING in, array out —
+  nested arrays-of-objects do not survive the trip IN, but returns are a proper
+  serialisation round-trip.
+- **Size is read off the filename in the modal, not from the parser.**
+  `nameGeneratorParse` returns filmTitle/artwork/campaign/territory/duration/
+  version/site and NO size — worth knowing, because an earlier debugging pass
+  printed `r.width`/`r.height` and read the resulting `undefined` as a parse
+  failure when the fields simply do not exist.
+- **The modal shows gaps honestly.** Verified against the real bundle with real
+  subtask names: `FID_INTL_Trio_DINTH_ShowtimeCinemasTPED_1920x1080px_30s_TW`
+  parses complete, while
+  `FID_INTL_DOOH_ARTWORK_PIKASSO_ARTWALL_GALLERIA_FIRENZE_CEILING_9600x1440px_IT`
+  yields **campaign "" and no duration** (it is a still, and everything between
+  the artwork tag and the size is absorbed into `site`). Those rows are tinted
+  amber, not red — the subtask is not wrong, it just does not carry everything
+  on its own — and the modal states plainly that the specs PDF is still the
+  input a run reads. A screen that showed blanks as if they were fine would
+  send someone to localise against a campaign of "".
+- Mock subtask names are VERBATIM from real Wrike tasks, deliberately including
+  the ones that parse badly. Demoing this on names that all parse cleanly would
+  hide the entire point of the screen.
+
+**Verified**: both tsconfigs + `yarn build` + precedence audit clean; the
+modal's styles present in the single bundled stylesheet; the icon's background
+confirmed GONE and the bare colour present; no banned CSS in the new block; and
+the parse behaviour above driven through the real built bundle.
+**Not seen in a running panel.**

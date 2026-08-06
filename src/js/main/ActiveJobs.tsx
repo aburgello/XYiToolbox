@@ -24,6 +24,7 @@ import { Briefcase, ChevronDown, ChevronRight, MapPin, RefreshCw } from "lucide-
 import { evalTS } from "../lib/utils/bolt";
 import Tooltip from "./Tooltip";
 import { fetchJobs, refreshJobs, parseJobTitle, type WrikeJob } from "./lib/jobsFeed";
+import ActiveJobModal from "./ActiveJobModal";
 
 interface ActiveJob {
     territory: string;
@@ -72,6 +73,10 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
     // studio's Wrike, so the feed returns everything and we narrow it here.
     const [owner, setOwner] = useState("");
     const [mineOnly, setMineOnly] = useState(true);
+    // Clicking a batch opens it here rather than jumping straight to Localise:
+    // the useful first question is "what is actually in this job", and the
+    // subtask names answer it without leaving home.
+    const [openJob, setOpenJob] = useState<WrikeJob | null>(null);
     // Collapsed by default. The four category cards are the home screen's
     // primary navigation and this must not compete with them -- as a standing
     // open panel it read as a permanent slab of text under the nav. As a
@@ -234,7 +239,7 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
                                             <button
                                                 type="button"
                                                 className="active-jobs-row"
-                                                onClick={onOpen}
+                                                onClick={() => setOpenJob(job)}
                                                 title={job.title}
                                             >
                                                 <MapPin size={12} className="active-jobs-pin" />
@@ -281,6 +286,16 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
                     </motion.div>
                 )}
             </AnimatePresence>
+            {openJob && (
+                <ActiveJobModal
+                    job={openJob}
+                    onClose={() => setOpenJob(null)}
+                    onOpenLocaliser={() => {
+                        setOpenJob(null);
+                        onOpen();
+                    }}
+                />
+            )}
         </motion.div>
     );
 };

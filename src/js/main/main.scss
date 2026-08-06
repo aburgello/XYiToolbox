@@ -1171,16 +1171,15 @@ $content-max-width: 900px;
     }
 }
 
+// Bare icon, no filled chip. Nothing else on the home screen carries a solid
+// background behind an icon -- the category cards colour theirs and stop there
+// -- so a filled square read as a foreign object. Fixed Wrike green rather than
+// a --cat-* colour, matching .wrike-launch-button's reasoning above: this isn't
+// tied to a campaign phase.
 .active-jobs-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
+    display: inline-flex;
     flex-shrink: 0;
-    border-radius: 6px;
-    background: var(--ov-accent, #3a5a8a);
-    color: #fff;
+    color: #3fb774;
 }
 
 .active-jobs-title {
@@ -1405,4 +1404,221 @@ $content-max-width: 900px;
     flex-shrink: 0;
     color: #5a5a5a;
     transition: color 0.15s ease;
+}
+
+// ── Active Job modal ─────────────────────────────────────────────────────────
+// A Wrike job's subtasks parsed into localiser-shaped rows. Follows the same
+// dim + blur overlay pattern as .mcit-overlay and .specs-modal-overlay rather
+// than inventing a third modal look. z-index 1500: above toasts (1000), below
+// Dialog (2000), so a confirm raised from here still wins.
+.ajm-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(8, 8, 10, 0.74);
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+}
+
+.ajm {
+    width: 100%;
+    max-width: 860px;
+    max-height: 86vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface-0, #1c1c1e);
+    border: 1px solid var(--surface-edge, #3a3a3a);
+    border-radius: 12px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+    overflow: hidden;
+}
+
+.ajm-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--surface-divider, #2a2a2a);
+}
+
+.ajm-head-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+}
+
+.ajm-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #eee;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ajm-sub {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.ajm-chip {
+    padding: 1px 6px;
+    border: 1px solid var(--surface-edge, #3a3a3a);
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 600;
+    color: #9a9a9a;
+}
+
+.ajm-assignee {
+    font-size: 10px;
+    color: #6f6f6f;
+}
+
+.ajm-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    padding: 0;
+    // index.scss's global button:hover/:active paints any <button> blue.
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: #999;
+    cursor: pointer;
+
+    &:hover,
+    &:active {
+        background: rgba(255, 255, 255, 0.08);
+        border-color: var(--surface-edge, #3a3a3a);
+        color: #ddd;
+    }
+}
+
+.ajm-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: auto;
+    padding: 10px 14px 14px;
+}
+
+.ajm-note {
+    margin: 6px 0;
+    font-size: 11px;
+    color: #7d7d7d;
+}
+
+.ajm-summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 2px 0 10px;
+    font-size: 11px;
+    color: #b8b8b8;
+}
+
+.ajm-ok { color: #4ade80; flex-shrink: 0; }
+.ajm-warn { color: #f59e0b; flex-shrink: 0; }
+
+.ajm-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+
+    th {
+        text-align: left;
+        padding: 4px 8px;
+        border-bottom: 1px solid var(--surface-divider, #2a2a2a);
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        color: #7a7a7a;
+    }
+
+    td {
+        padding: 5px 8px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        color: #cfcfcf;
+        white-space: nowrap;
+    }
+}
+
+// A row missing something a localise needs. Amber, not red: the subtask is not
+// WRONG, it just doesn't carry everything on its own.
+.ajm-row--gap td { background: rgba(245, 158, 11, 0.05); }
+
+.ajm-missing {
+    color: #d9a441;
+    font-style: italic;
+}
+
+// Site absorbs every unrecognised token, so it is the one field that can run
+// very long -- ellipsise it rather than let it set the table width.
+.ajm-site {
+    max-width: 230px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ajm-status { color: #8a8a8a; }
+
+.ajm-foot {
+    margin: 10px 0 0;
+    font-size: 10px;
+    line-height: 1.5;
+    color: #7a7a7a;
+}
+
+.ajm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 10px 14px;
+    border-top: 1px solid var(--surface-divider, #2a2a2a);
+    flex-shrink: 0;
+}
+
+.ajm-btn {
+    padding: 6px 12px;
+    background: transparent;
+    border: 1px solid var(--surface-edge, #3a3a3a);
+    border-radius: 6px;
+    color: #ccc;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+
+    &:hover,
+    &:active {
+        background: rgba(255, 255, 255, 0.06);
+        border-color: #4a4a4a;
+        color: #eee;
+    }
+
+    &--primary {
+        background: var(--ov-accent, #3a5a8a);
+        border-color: transparent;
+        color: #fff;
+
+        &:hover,
+        &:active {
+            background: var(--ov-accent, #3a5a8a);
+            border-color: transparent;
+            color: #fff;
+            filter: brightness(1.15);
+        }
+    }
 }

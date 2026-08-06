@@ -2721,6 +2721,33 @@ export interface CsvLocResult {
 // member can already see in Wrike), but "low stakes" is not "publish it".
 // It is also NOT a Wrike token: the Worker holds those and the panel never
 // sees one.
+// Parses a batch of deliverable filenames in one bridge call, so the Active
+// Jobs modal can turn a Wrike task's subtask names into localiser rows.
+//
+// Wraps nameGeneratorParse -- the SAME parser Name Generator, Trott 2.0, PDF to
+// CSV, File Name Check and Naming Audit share -- rather than reimplementing the
+// convention frontend-side. One parser, one answer.
+//
+// Takes a JSON STRING and returns an array: evalTS splices JSON.stringify'd
+// args into eval'd source and nested arrays-of-objects do not survive the trip
+// IN, but return values are a proper serialisation round-trip and are safe.
+// One call for N names rather than N calls, because each bridge round-trip
+// costs far more than the parse does.
+export const parseDeliverableNames = (namesJson: string): NameDetectResult[] => {
+  const out: NameDetectResult[] = [];
+  let names: string[];
+  try {
+    names = JSON.parse(namesJson);
+  } catch (e) {
+    return out;
+  }
+  if (!names || !names.length) return out;
+  for (let i = 0; i < names.length; i++) {
+    out.push(nameGeneratorParse(String(names[i])));
+  }
+  return out;
+};
+
 const JOBS_FEED_KEY = "JobsFeedConfig";
 
 export const saveJobsFeedConfig = (json: string): Result => {
