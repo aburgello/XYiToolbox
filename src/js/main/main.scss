@@ -1035,69 +1035,121 @@ $content-max-width: 900px;
     }
 }
 // ── Active Jobs (home) ───────────────────────────────────────────────────────
-// Full-width card under the four category cards. Sits on the same --surface-2/
-// -1 gradient they use, so it reads as part of that group rather than as a
-// panel bolted underneath. Deliberately quieter than the cards: they are the
-// primary navigation, this is a status list you scan and click through.
+// A full-width BUTTON in the same family as the four category cards above it,
+// not a standing panel. As an always-open card it read as a permanent slab of
+// text under the primary navigation; closed, it joins the row and only spends
+// vertical space when asked to.
 //
-// No perpetual animation, no color-mix/:has/aspect-ratio/clamp -- chrome74.
+// Same --surface-2/-1 gradient and edge as .category-card so it belongs to that
+// group, with the same hover treatment driven by --ov-accent (it has no single
+// category identity of its own, so it borrows the theme accent rather than a
+// --cat-* set).
+//
+// No perpetual animation, and no color-mix/:has/aspect-ratio/clamp -- chrome74.
 .active-jobs {
     margin-top: 10px;
-    background: linear-gradient(180deg, var(--surface-2, #292929) 0%, var(--surface-1, #232323) 100%);
-    border: 1px solid var(--surface-edge, #3d3d3d);
-    border-radius: 8px;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-    overflow: hidden;
 }
 
-.active-jobs-head {
+.active-jobs-toggle {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--surface-divider, #2a2a2a);
+    gap: 9px;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 12px 14px;
+    background: linear-gradient(180deg, var(--surface-2, #292929) 0%, var(--surface-1, #232323) 100%);
+    border: 1px solid var(--surface-cat-edge, var(--surface-edge, #3d3d3d));
+    border-radius: 8px;
+    color: #ddd;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+
+    // index.scss's global button:hover/:active paints any <button> blue, so
+    // both states are re-declared -- matching how .category-card lifts.
+    &:hover,
+    &:active {
+        border-color: var(--ov-accent, #4a7ab5);
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+    }
+
+    // Square off the join when the list is showing, so button + body read as
+    // one object rather than two stacked ones.
+    &.is-open {
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+        border-bottom-color: transparent;
+    }
+
+    &.is-open .active-jobs-caret {
+        transform: rotate(180deg);
+    }
 }
 
 .active-jobs-icon {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 22px;
-    height: 22px;
+    width: 24px;
+    height: 24px;
     flex-shrink: 0;
-    border-radius: 5px;
+    border-radius: 6px;
     background: var(--ov-accent, #3a5a8a);
     color: #fff;
 }
 
 .active-jobs-title {
-    margin: 0;
     font-size: 12px;
     font-weight: 700;
     color: #e8e8e8;
     letter-spacing: 0.2px;
+    flex-shrink: 0;
 }
 
 .active-jobs-count {
     font-size: 10px;
+    font-weight: 500;
     color: #9a9a9a;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .active-jobs-spacer { flex: 1; }
 
-// Staleness is stated, not hidden -- see the file header.
+// Staleness is stated, never hidden -- see ActiveJobs.tsx's header.
 .active-jobs-age {
     display: inline-flex;
     align-items: center;
     gap: 4px;
     font-size: 10px;
+    font-weight: 500;
     color: #6f6f6f;
     white-space: nowrap;
 }
 
+.active-jobs-caret {
+    flex-shrink: 0;
+    color: #7a7a7a;
+    transition: transform 0.18s ease;
+}
+
+.active-jobs-body {
+    // AnimatePresence animates height, so this must clip during the transition.
+    overflow: hidden;
+    background: var(--surface-1, #232323);
+    border: 1px solid var(--surface-edge, #3d3d3d);
+    border-top: none;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
 .active-jobs-empty {
     margin: 0;
-    padding: 12px;
+    padding: 12px 14px;
     font-size: 11px;
     color: #7d7d7d;
 }
@@ -1105,7 +1157,7 @@ $content-max-width: 900px;
 .active-jobs-list {
     list-style: none;
     margin: 0;
-    padding: 4px;
+    padding: 5px;
 }
 
 .active-jobs-row {
@@ -1113,14 +1165,14 @@ $content-max-width: 900px;
     align-items: center;
     gap: 9px;
     width: 100%;
+    box-sizing: border-box;
     padding: 7px 8px;
-    // index.scss's global button:hover/:active would paint this blue, so both
-    // states are re-declared.
     background: transparent;
     border: 1px solid transparent;
     border-radius: 6px;
     color: #ccc;
     font-size: 11px;
+    font-weight: 500;
     text-align: left;
     cursor: pointer;
     transition: background 0.15s ease, border-color 0.15s ease;
@@ -1143,8 +1195,8 @@ $content-max-width: 900px;
 .active-jobs-terr {
     font-weight: 600;
     color: #e2e2e2;
-    // Fixed column so the batch chips and bars line up down the list instead
-    // of stepping in and out with each territory's name length.
+    // Fixed column so batch chips and bars line up down the list instead of
+    // stepping in and out with each territory name's length.
     width: 104px;
     flex-shrink: 0;
     overflow: hidden;

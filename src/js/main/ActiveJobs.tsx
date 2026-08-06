@@ -19,8 +19,8 @@
 // rest of the always-visible home screen (CLAUDE.md §3).
 // =============================================================================
 import React, { useCallback, useEffect, useState } from "react";
-import { motion } from "motion/react";
-import { Briefcase, ChevronRight, MapPin, RefreshCw } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { Briefcase, ChevronDown, ChevronRight, MapPin, RefreshCw } from "lucide-react";
 import { evalTS } from "../lib/utils/bolt";
 import Tooltip from "./Tooltip";
 
@@ -58,6 +58,17 @@ interface Props {
 export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
     const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
     const [loaded, setLoaded] = useState(false);
+    // Collapsed by default. The four category cards are the home screen's
+    // primary navigation and this must not compete with them -- as a standing
+    // open panel it read as a permanent slab of text under the nav. As a
+    // closed button it joins that row and only spends space when asked to.
+    //
+    // Declared with the other hooks, ABOVE the early returns below: this
+    // component returns null until the snapshot loads, so a useState placed
+    // after those returns would change the hook COUNT between renders and
+    // React would throw "rendered fewer hooks than expected" the moment a
+    // snapshot arrived.
+    const [open, setOpen] = useState(false);
 
     const load = useCallback(async () => {
         try {
@@ -89,70 +100,88 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
     const totalLeft = outstanding.reduce((n, j) => n + (j.total - j.built), 0);
 
     return (
-        <motion.section
+        <motion.div
             className="active-jobs"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ type: "spring", stiffness: 300, damping: 26, delay: 0.28 }}
-            aria-label="Active jobs"
         >
-            <header className="active-jobs-head">
+            <button
+                type="button"
+                className={open ? "active-jobs-toggle is-open" : "active-jobs-toggle"}
+                onClick={() => setOpen((v) => !v)}
+                aria-expanded={open}
+            >
                 <span className="active-jobs-icon">
-                    <Briefcase size={15} />
+                    <Briefcase size={16} />
                 </span>
-                <h3 className="active-jobs-title">Active Jobs</h3>
-                {totalLeft > 0 && (
+                <span className="active-jobs-title">Active Jobs</span>
+                {totalLeft > 0 ? (
                     <span className="active-jobs-count">
-                        {totalLeft} deliverable{totalLeft === 1 ? "" : "s"} outstanding
+                        {outstanding.length} batch{outstanding.length === 1 ? "" : "es"} · {totalLeft} deliverable
+                        {totalLeft === 1 ? "" : "s"} to build
                     </span>
+                ) : (
+                    <span className="active-jobs-count">Nothing outstanding</span>
                 )}
                 <span className="active-jobs-spacer" />
-                <Tooltip text="Numbers are from the last specs scan — open Localise and re-scan to refresh">
+                <Tooltip text="From the last specs scan — open Localise and re-scan to refresh">
                     <span className="active-jobs-age">
                         <RefreshCw size={10} /> {relativeAge(snapshot.capturedAt)}
                     </span>
                 </Tooltip>
-            </header>
+                <ChevronDown size={15} className="active-jobs-caret" />
+            </button>
 
-            {outstanding.length === 0 ? (
-                <p className="active-jobs-empty">
-                    Everything in the last scan is built. Nothing outstanding.
-                </p>
-            ) : (
-                <ul className="active-jobs-list">
-                    {outstanding.map((job) => {
-                        const left = job.total - job.built;
-                        const pct = job.total > 0 ? Math.round((job.built / job.total) * 100) : 0;
-                        return (
-                            <li key={`${job.territory}/${job.pdfName}`}>
-                                <button
-                                    type="button"
-                                    className="active-jobs-row"
-                                    onClick={onOpen}
-                                    title={job.pdfName}
-                                >
-                                    <MapPin size={12} className="active-jobs-pin" />
-                                    <span className="active-jobs-terr">{job.territory}</span>
-                                    <span className="active-jobs-batch">{job.batch}</span>
-                                    {/* Progress is a bar, not a number: the useful
-                                        question at a glance is "how much of this is
-                                        left", which a length answers faster than a
-                                        percentage does. */}
-                                    <span className="active-jobs-bar" aria-hidden="true">
-                                        <span className="active-jobs-bar-fill" style={{ width: `${pct}%` }} />
-                                    </span>
-                                    <span className="active-jobs-left">
-                                        {left} left
-                                        <span className="active-jobs-of"> / {job.total}</span>
-                                    </span>
-                                    <ChevronRight size={13} className="active-jobs-chev" />
-                                </button>
-                            </li>
-                        );
-                    })}
-                </ul>
-            )}
-        </motion.section>
+            <AnimatePresence initial={false}>
+                {open && (
+                    <motion.div
+                        className="active-jobs-body"
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.18, ease: "easeOut" }}
+                    >
+                        {outstanding.length === 0 ? (
+                            <p className="active-jobs-empty">
+                                Everything in the last scan is built.
+                            </p>
+                        ) : (
+                            <ul className="active-jobs-list">
+                                {outstanding.map((job) => {
+                                    const left = job.total - job.built;
+                                    const pct = job.total > 0 ? Math.round((job.built / job.total) * 100) : 0;
+                                    return (
+                                        <li key={`${job.territory}/${job.pdfName}`}>
+                                            <button
+                                                type="button"
+                                                className="active-jobs-row"
+                                                onClick={onOpen}
+                                                title={job.pdfName}
+                                            >
+                                                <MapPin size={12} className="active-jobs-pin" />
+                                                <span className="active-jobs-terr">{job.territory}</span>
+                                                <span className="active-jobs-batch">{job.batch}</span>
+                                                {/* A bar, not a percentage: "how much is
+                                                    left" reads faster as a length. */}
+                                                <span className="active-jobs-bar" aria-hidden="true">
+                                                    <span className="active-jobs-bar-fill" style={{ width: `${pct}%` }} />
+                                                </span>
+                                                <span className="active-jobs-left">
+                                                    {left} left
+                                                    <span className="active-jobs-of"> / {job.total}</span>
+                                                </span>
+                                                <ChevronRight size={13} className="active-jobs-chev" />
+                                            </button>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        )}
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </motion.div>
     );
 };
 
