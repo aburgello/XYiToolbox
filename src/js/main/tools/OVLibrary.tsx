@@ -64,6 +64,57 @@ interface RenderEntry {
 
 type OrientationKey = "LANDSCAPE" | "PORTRAIT" | "SQUARE" | "QUAD";
 const ORIENTATION_ORDER: OrientationKey[] = ["LANDSCAPE", "PORTRAIT", "SQUARE", "QUAD"];
+
+// Fallback only — used when a creative has no parseable masters at all, so
+// the chips show *something* sensible rather than all-off. A creative with
+// masters gets its filters from pickDefaultFilters() below instead.
+const DEFAULT_FILTERS: Record<OrientationKey, boolean> = {
+    LANDSCAPE: true,
+    PORTRAIT: true,
+    SQUARE: false,
+    QUAD: false,
+};
+
+// Below this many masters, showing every orientation at once is comfortable;
+// at or above it the grid gets long enough that one orientation is the more
+// useful landing state.
+const ORIENTATION_AUTO_THRESHOLD = 8;
+
+// Picks the opening orientation chips for a creative from what it actually
+// contains, rather than a fixed guess:
+//
+//   under 8 masters  -> every orientation the creative HAS is on. (A fixed
+//                       Landscape+Portrait default left a square-only or
+//                       QUAD-only creative looking empty, which reads as a
+//                       scan failure rather than a filter.)
+//   8 or more        -> only the single most numerous orientation.
+//
+// The "8 or more" case picks the largest group across ALL orientations, not
+// just Landscape vs Portrait. In practice that is always Landscape or
+// Portrait, but a QUAD-heavy creative would otherwise open on a handful of
+// stray landscapes and hide the 30 masters actually in it.
+// Ties go to ORIENTATION_ORDER, so a dead heat opens on Landscape.
+function pickDefaultFilters(recs: MasterRecord[]): Record<OrientationKey, boolean> {
+    const counts: Record<OrientationKey, number> = { LANDSCAPE: 0, PORTRAIT: 0, SQUARE: 0, QUAD: 0 };
+    let total = 0;
+    for (const rec of recs) {
+        const key = rec.orientation as OrientationKey;
+        if (counts[key] === undefined) continue;
+        counts[key]++;
+        total++;
+    }
+    if (total === 0) return { ...DEFAULT_FILTERS };
+
+    const on: Record<OrientationKey, boolean> = { LANDSCAPE: false, PORTRAIT: false, SQUARE: false, QUAD: false };
+    if (total < ORIENTATION_AUTO_THRESHOLD) {
+        for (const key of ORIENTATION_ORDER) on[key] = counts[key] > 0;
+        return on;
+    }
+    let best: OrientationKey = ORIENTATION_ORDER[0];
+    for (const key of ORIENTATION_ORDER) if (counts[key] > counts[best]) best = key;
+    on[best] = true;
+    return on;
+}
 const ORIENTATION_ICON: Record<OrientationKey, React.ComponentType<{ size?: number }>> = {
     LANDSCAPE: RectangleHorizontal,
     PORTRAIT: RectangleVertical,
@@ -672,17 +723,9 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
     const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
     const [loadingVariants, setLoadingVariants] = useState(false);
 
-    // Default orientation filters when a creative is selected. Landscape AND
-    // Portrait — between them they cover almost every real deliverable, and
-    // Portrait-only was the common case that looked like an empty creative.
-    // Picking a creative resets to this; the user can toggle Square/QUAD on
-    // per session.
-    const DEFAULT_FILTERS: Record<OrientationKey, boolean> = {
-        LANDSCAPE: true,
-        PORTRAIT: true,
-        SQUARE: false,
-        QUAD: false,
-    };
+    // Recomputed from the creative's own masters each time one is selected —
+    // see pickDefaultFilters(). DEFAULT_FILTERS is just the pre-selection
+    // resting state.
     const [filters, setFilters] = useState<Record<OrientationKey, boolean>>({ ...DEFAULT_FILTERS });
 
     const [usingMock, setUsingMock] = useState(false);
@@ -818,6 +861,10 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
                 for (const r of renders || []) map[r.stem] = r.path;
                 setRecords(recs || []);
                 setRenderMap(map);
+                // Set the chips from the masters we just got back, not when
+                // the creative was clicked — at click time `recs` hasn't been
+                // scanned yet, so there is nothing to count.
+                setFilters(pickDefaultFilters(recs || []));
             } finally {
                 setLoadingVariants(false);
             }
@@ -1102,10 +1149,11 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
                                 selected={name === selectedCreative}
                                 hasCustomThumbnail={!!thumbOverrides[name]}
                                 onSelect={() => {
-                                    // Reset to the default (Landscape-only)
-                                    // when switching creatives, so each one
-                                    // starts from the same clean state.
-                                    setFilters({ ...DEFAULT_FILTERS });
+                                    // No filter reset here on purpose: the
+                                    // scan effect sets the chips from this
+                                    // creative's own masters once they land.
+                                    // Resetting here too would flash a
+                                    // different set for a frame first.
                                     setSelectedCreative(name);
                                 }}
                                 onSetCustomThumbnail={handleSetCustomThumbnail}

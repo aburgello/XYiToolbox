@@ -5899,3 +5899,43 @@ precedence audit clean, and 7 headless assertions against the REAL built
 bundle (`dist/cep/jsx/index.js` in a `vm` with a stubbed `app.settings`)
 covering the fresh-machine default, add-order, the last-added fallback, the
 round-trip, and both remove cases. **Not yet seen in a running panel.**
+
+## OV Library orientation chips adapt to the creative (2026-08-06)
+
+Replaces the fixed default (Landscape-only, then briefly Landscape+Portrait)
+with `pickDefaultFilters()` — module-scope and pure, so it is testable without
+mounting the component:
+
+    under 8 masters  -> every orientation the creative HAS is on
+    8 or more        -> only the most numerous orientation
+
+**Two deliberate generalisations of the rule as asked for** ("under 8 show
+both, else landscape or portrait whichever has more"):
+
+1. The small case turns on every orientation *present*, not literally
+   Landscape+Portrait. A fixed L+P default leaves a square-only or QUAD-only
+   creative showing "No masters match the current filters", which reads as a
+   failed scan rather than a filter state. Same reason the empty-`recs` case
+   falls back to L+P rather than all-off.
+2. The large case picks the biggest group across ALL four orientations, not
+   just Landscape vs Portrait. A QUAD-heavy creative would otherwise open on a
+   couple of stray landscapes and hide the 30 masters actually in it. In
+   practice the winner is always Landscape or Portrait, so this is invisible
+   in the normal case.
+
+Ties go to `ORIENTATION_ORDER`, so a dead heat opens on Landscape.
+
+**Where it is called matters.** `setFilters` moved OUT of the creative card's
+`onSelect` and INTO the scan effect, right after `setRecords`. At click time
+the masters have not been scanned yet, so there is nothing to count — the old
+call site could only ever apply a fixed guess. Leaving both in place would
+also flash one chip set for a frame before the real one landed.
+
+**Verified**: frontend tsconfig clean on the file, `yarn build` + precedence
+audit clean, and 13 assertions over the rule (both threshold boundaries at 7
+and 8, single-orientation creatives, square/QUAD-only, the dead heat, the
+QUAD-heavy case, and empty). That harness mirrors the helper rather than
+importing it — it pins the RULE, not the shipped bytes. **Not yet seen in a
+running panel.** Expected against the real Fiducia folder: PortalToParadise
+(9 masters, 6L/2P/1SQ) opens Landscape-only; Bracelet and Trio (4 each, 2L/2P)
+open on both.
