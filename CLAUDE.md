@@ -305,9 +305,18 @@ error. Naming Audit's `masters` mode therefore flags neither convention.
 - **Use `grep -a` / `rg --text` on `src/jsx`.** `localise.ts` contains a literal
   NUL byte, so grep treats it as binary and silently skips it — this produced
   two false "dead call" positives in the 2026-08 audit.
-- **Run BOTH tsconfigs.** `tsc -p tsconfig-build.json` misses errors the
-  frontend config catches. It also does **not** catch undefined ExtendScript
-  globals — a bare `BATTLE_DIR` typo once shipped into a build.
+- **Run BOTH tsconfigs** — but know what they do NOT cover. `tsconfig.json`
+  sets `exclude: ["./src/jsx"]` and the build config extends it, so
+  **`tsc -p tsconfig-build.json` type-checks ZERO files under `src/jsx`**
+  (`--listFiles | grep -c src/jsx` is 0). `yarn build` runs that config, so the
+  gate never checks the ExtendScript backend at all. The frontend config drags
+  `src/jsx` in transitively but types it against DOM `File`/`Folder`, giving
+  ~2000 baseline errors that bury real ones. Net effect: a wrong property on an
+  ExtendScript object compiles and ships — `bestMatch.fsName` on a
+  `MasterIndexEntry` broke every matched row of `csvLocaliserRun` for months.
+  **Assume nothing in `src/jsx` is type-checked; exercise it headlessly against
+  the built bundle instead.** Neither config catches undefined ExtendScript
+  globals either — a bare `BATTLE_DIR` typo once shipped into a build.
 - `yarn build` and `yarn zxp` are **gated** by
   `scripts/audit-jsx-precedence.cjs` (source before, bundle after). Fix what it
   flags; don't bypass it.

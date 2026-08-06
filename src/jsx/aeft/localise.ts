@@ -2873,7 +2873,20 @@ export const csvLocaliserRun = (
         rep.error = "No master matched this campaign/size/duration in " + mastersPath;
         continue;
       }
-      const textMaster = bestMatch.fsName;
+      // `.path`, NOT `.fsName`. pickBestMasterFromIndex returns a
+      // MasterIndexEntry -- file/path/name/canonPath/ratio/orientation -- and
+      // there is no fsName on it, so this read was `undefined` and the next
+      // line threw "TypeError: undefined is not an object".
+      // buildMastersIndex sets `path` FROM `item.fsName`, so this is the same
+      // string the original code meant to read.
+      //
+      // PREDATES the duration-multiples work: it arrived when this call site
+      // moved from scanMastersForBestMatch (which returns a real File, hence
+      // .fsName) to the shared index. Every row that matched a master has
+      // thrown here ever since -- invisible only because a row with NO master
+      // short-circuits above this line, so batches that missed everything
+      // reported "no master" and never reached it.
+      const textMaster = bestMatch.path;
 
       const linesMaster = textMaster.split("/");
       let masterName = linesMaster[linesMaster.length - 1];

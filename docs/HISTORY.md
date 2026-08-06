@@ -6226,3 +6226,59 @@ ZXP); and the six `.specs-tool …` selectors the modal depends on confirmed to
 exist in that exact scoped form, which is what the added class re-establishes.
 One check initially read FAIL — the assertion was wrong (the checkbox rule is
 scoped a level deeper, under `.specs-table--selectable`), not the code.
+
+## `bestMatch.fsName` — csvLocaliserRun never wrote a file (2026-08-06)
+
+Surfaced by the first real duration-multiple run: `Row 1 · TRIO 1920x1080 30sec
+— TypeError: undefined is not an object`.
+
+**Not the multiples code.** `pickBestMasterFromIndex` returns a
+`MasterIndexEntry` (`file` / `path` / `name` / `canonPath` / `ratio` /
+`orientation`). There is **no `fsName`** on it, so `bestMatch.fsName` was
+`undefined` and `textMaster.split("/")` on the next line threw. Fixed to
+`bestMatch.path`, which `buildMastersIndex` sets FROM `item.fsName` — the same
+string the code always meant.
+
+**This has been broken for every matched row since `ee86aed`**, when this call
+site moved from `scanMastersForBestMatch` (returns a real `File`, hence
+`.fsName`) to the shared index. `campaignLocaliserGenerate` (localise.ts:388)
+still uses `scanMastersForBestMatch` and its `.fsName` is CORRECT — do not
+"align" the two.
+
+It stayed invisible because **a row with no master short-circuits above that
+line**: a batch where nothing matched reported a tidy list of "no master" and
+never reached the bug. It took a row that DID resolve a master to reach it, and
+duration multiples were the first thing to produce one.
+
+### Why neither tsconfig caught it
+
+`tsc -p tsconfig-build.json --listFiles | grep -c src/jsx` is **0**.
+`tsconfig.json` sets `"exclude": ["./src/jsx"]` and the build config extends it,
+so **the entire ExtendScript backend is outside the build gate's type-check.**
+`yarn build` runs that config, so nothing in `src/jsx` is ever checked by it.
+The frontend config pulls `src/jsx` in transitively (via
+`src/js/lib/utils/aeft.ts`) and DOES type it — but against DOM lib types, where
+`File`/`Folder`/`app` are the wrong shapes, producing ~2000 baseline errors that
+bury any real one.
+
+Confirmed the compiler rejects this pattern normally: a 3-line probe with the
+same shape errors `TS2551: Property 'fsName' does not exist`. So this is purely
+a config-coverage gap, not a TypeScript limitation. **CLAUDE.md §6's "run BOTH
+tsconfigs" does not do what it implies for `src/jsx`.** Left as-is rather than
+changed unilaterally — including `src/jsx` in the build config would surface a
+large error backlog that wants its own pass.
+
+**Verified**: the REAL built bundle driven through `csvLocaliserRun` in a `vm`
+with a stubbed AE object model (Comp/Layer/Folder/File), one 30sec row against
+a masters tree holding only a 15sec cut:
+
+    without opt-in -> status "no-master" (unchanged behaviour)
+    with {"0":2}   -> copies the 15sec master to
+                      …_1920x1080px_30s_TW_V01.aep
+                      delivery comp duration 30 (was 15), work area 30,
+                      layers: Frontcard@0, creative@0, creative@15
+
+i.e. the Frontcard untouched at the top and the creative laid twice end to end,
+which is the whole feature. Fixture notes for next time: CSV metadata is
+`Key: value` lines INSIDE a `[METADATA]`/`[/METADATA]` block — get either half
+wrong and rows read as malformed.
