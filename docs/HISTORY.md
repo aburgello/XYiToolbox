@@ -1109,6 +1109,8 @@ during development — not assumed)
   e.g. `ODY_INTL_DGTL_DOOH_HORSE_LOS_1920x858_10sec_OV.aep`. The comp
   inside the file is named identically to the filename stem — confirmed
   across a real ~29-file campaign folder.
+  **Superseded 2026-08-06 — masters now come in both forms.** See "Masters
+  moved to the new convention too" below; `parseMasterFilename` reads both.
 - Renders: `<mastersRoot>/Renders/<Creative>/` mirrors the `AE/` tree; a
   render is matched to a master by identical filename stem (extension
   aside). **This pairing convention is UNVERIFIED against a real render
@@ -5800,3 +5802,68 @@ column width (160px at 1374, 207px at 500).
 Verified at both widths: 1374px -> 5 even columns, rows of 5 + 4, zero
 dividers, three teal edges; 500px -> 2 even columns, no horizontal overflow, no
 truncation, everything inside the grid.
+
+## Masters moved to the new convention too (2026-08-06)
+
+The 2026-07-31 handover note was read as "deliverables change, masters stay on
+DGTL". That was wrong: **all masters from now on use the new form as well.**
+Real example, straight off the studio share:
+
+```
+FID_INTL_PortalToParadise_DOOH_1920x858px_15s_OV.mp4
+FID_INTL_PortalToParadise_DOOH_844x2382px_15s_OV.mp4
+```
+
+i.e. no site token in practice, `_OV` still the master suffix, `px` on the size
+and the short `s` on the duration. Existing masters were never renamed, so a
+campaign folder now legitimately holds **both** forms and every master parser
+has to read both, forever.
+
+**What was actually broken — one parser.**
+
+- `parseMasterFilename` (`jsx/aeft/review.ts`, OV Library's master scan) was
+  `/^(.*)_(\d+)x(\d+)_(\d+)sec(.*)$/i`. A new-form master returned `null`, and
+  `scanMastersForCreative` **skips a null with no error and no count** — the
+  file simply wasn't in the library. Now
+  `/^(.*)_(\d+)x(\d+)(?:px)?_(\d+)(?:sec|s)(.*)$/i`. The token REORDER
+  (campaign/artwork swap, optional site) needed nothing: it all lands in group
+  1, which OV Library only uses as an opaque grouping key. `duration` is still
+  normalised to `"10sec"` so the sort key and every stored/displayed value are
+  unchanged.
+- Knock-on that would have been mystifying: `scanRendersForCreative`'s
+  `Support/Motion_Components/_mp4` branch filters mp4s by master stem, so a
+  dropped master also silently lost its preview video.
+
+**What was already fine — do not "fix" these again.**
+
+- `durationMatchesPath` (`tools.ts`) was made both-convention-aware when it was
+  written (`(^|[^0-9])<digits>s(ec)?([^0-9]|$)`), so the CSV/localise master
+  lookup and `pickBestMasterFromIndex` already find new-form masters.
+  `durationForMasterLookup`'s `"sec"` suffix is NOT a convention assumption —
+  it exists so a bare `"10"` can't match the `10` inside `1080x1920`. Its
+  comment said otherwise and has been corrected.
+- `nameGeneratorParse` reads both by design.
+- The loose `/(\d+)x(\d+)/` in `checkAspectRatioRename` and the Trott image
+  pairing match `1920x858px` unchanged.
+
+**One behaviour change beyond the parser:** Naming Audit's `masters` mode used
+to flag a new-convention file as "check this is really a master". That was only
+true while masters were frozen on DGTL; it would now fire on every correctly
+named master. Removed — masters mode flags neither convention, and the check
+that still matters there is the anchor check (no region/size/duration token
+means the master lookup can never find the file at all). `batch` mode still
+flags legacy, unchanged.
+
+**Verified**: `tsc -p tsconfig-build.json` clean; `yarn build` + the precedence
+audit clean; OVLibrary.tsx clean under the frontend config too (that config
+reports ~2000 pre-existing errors from resolving DOM `File`/`Folder` over the
+ExtendScript ones — baseline noise, not from this change). The **real built
+bundle** (`dist/cep/jsx/index.js` in a `vm` with stubbed `Folder`/`File`/`app`
++ `BridgeTalk.appName`, the technique from the Naming Audit entry) was driven
+over a folder mixing the four `PortalToParadise` names above with a legacy
+`..._1920x1080_15sec_OV.aep` and a junk `NotAMaster.aep`: all five real masters
+parse with correct w/h/duration/orientation, the junk file is still dropped,
+and the render stem pairs. Note the namespace attaches to `$["com.xyi.toolbox"]`
+in that harness, not to the sandbox global. **Confirmed in a running panel**
+against a real campaign folder (2026-08-06). A new-convention row was added to
+OVLibrary.tsx's `MOCK_RECORDS` so browser preview exercises a mixed folder.

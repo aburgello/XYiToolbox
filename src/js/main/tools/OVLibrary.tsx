@@ -121,6 +121,16 @@ const MOCK_RECORDS: Record<string, MasterRecord[]> = {
             originalName: "ODY_INTL_DGTL_DOOH_HELMET_LOS_3840x586_10sec_OV.aep",
             aepPath: "/mock/odyssey/AE/HELMET/ODY_INTL_DGTL_DOOH_HELMET_LOS_3840x586_10sec_OV.aep",
         },
+        // A master on the NEW convention ("…x…px_10s"), which is what every
+        // master written from 2026-08 onward looks like. Kept alongside the
+        // legacy rows on purpose: a real campaign folder now holds both, and
+        // parseMasterFilename() has to group them together.
+        {
+            group: "ODY_INTL_Helmet_DOOH_LOS", width: 1080, height: 1920, duration: "10sec", suffix: "_OV",
+            orientation: "PORTRAIT", stem: "ODY_INTL_Helmet_DOOH_LOS_1080x1920px_10s_OV",
+            originalName: "ODY_INTL_Helmet_DOOH_LOS_1080x1920px_10s_OV.aep",
+            aepPath: "/mock/odyssey/AE/HELMET/ODY_INTL_Helmet_DOOH_LOS_1080x1920px_10s_OV.aep",
+        },
     ],
     GUTTERS: [],
 };

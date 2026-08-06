@@ -10,6 +10,7 @@
     "build": "yarn audit:jsx && rimraf dist/* && tsc -p \"tsconfig-build.json\" && vite build --watch false && yarn audit:jsx:bundle",
     "zxp": "yarn audit:jsx && rimraf dist/* && tsc -p \"tsconfig-build.json\" && cross-env ZXP_PACKAGE=true vite build --watch false && yarn audit:jsx:bundle",
     "zip": "yarn audit:jsx && rimraf dist/* && tsc -p \"tsconfig-build.json\" && cross-env ZIP_PACKAGE=true vite build --watch false && yarn audit:jsx:bundle",
+    "release": "bash scripts/publish-to-team.sh",
     "audit:jsx": "node scripts/audit-jsx-precedence.cjs",
     "audit:jsx:bundle": "node scripts/audit-jsx-precedence.cjs dist/cep/jsx/index.js",
     "serve": "cross-env SERVE_PANEL=true vite preview",

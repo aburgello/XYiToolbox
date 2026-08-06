@@ -623,10 +623,12 @@ export const teamDeleteProfile = (memberName: string): ProfileListResult => {
 };
 
 // --- Version nudge ---------------------------------------------------------
-// <team>/toolbox-version.txt holds the newest distributed version string
-// (same year.month format as TOOLBOX_VERSION, e.g. "2026.08") -- updated by
-// hand when a new ZXP goes out. Comparison happens frontend-side against
-// its own TOOLBOX_VERSION constant.
+// <team>/toolbox-version.txt holds the newest distributed version string,
+// written by `yarn release`. Same fixed-width YYYYMMDD shape as
+// TOOLBOX_VERSION, e.g. "20260804" -- NOT a dotted form: "2026.08" string-
+// compares as older than "20260804" ('.' < '0'), so the nudge would never
+// fire. Comparison happens frontend-side against the TOOLBOX_VERSION
+// constant compiled into the bundle.
 interface VersionResult extends Result {
   latest?: string;
 }

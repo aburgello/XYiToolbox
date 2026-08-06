@@ -235,7 +235,15 @@ function detectOrientation(fileName: string, w: number, h: number): string {
 
 function parseMasterFilename(fileName: string): MasterRecord | null {
   const nameNoExt = fileName.replace(/\.aep$/i, "");
-  const pattern = /^(.*)_(\d+)x(\d+)_(\d+)sec(.*)$/i;
+  // Reads BOTH naming conventions, same as nameGeneratorParse() does:
+  //   legacy   …_1920x858_10sec_OV        (masters written before 2026-07-31)
+  //   current  …_1920x858px_10s_FR        (everything written since)
+  // The "px" and the short "s" are the only two shape differences that reach
+  // this parser -- the token REORDER (campaign/artwork swap, optional site)
+  // all lands inside group 1, which OV Library only ever uses as an opaque
+  // grouping key. `duration` is still normalised to the "10sec" form so the
+  // sort key below and every stored/displayed value stay unchanged.
+  const pattern = /^(.*)_(\d+)x(\d+)(?:px)?_(\d+)(?:sec|s)(.*)$/i;
   const m = nameNoExt.match(pattern);
   if (!m) return null;
   const w = parseInt(m[2], 10);

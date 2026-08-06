@@ -3108,9 +3108,15 @@ function nameAuditWalk(folder: Folder, rel: string, all: NameAuditRow[], mode: s
     if (mode === "batch" && hasIsolatedOvToken(fileName)) {
       issues.push("Carries an isolated OV token -- this looks like an un-localised MASTER, not a deliverable");
     }
-    if (mode === "masters" && convention === "new") {
-      issues.push("On the NEW convention -- masters were never renamed, so check this is really a master");
-    }
+    // MASTERS mode deliberately does NOT flag either convention. Masters
+    // written from 2026-08 onward use the new form, and the ones already on
+    // disk were never renamed, so both are permanently valid here and the
+    // legacy/new counts are reporting only. (This used to flag "new" as a
+    // probable stray deliverable -- that was true only while masters were
+    // frozen on DGTL, and it now fires on every correctly-named new master.)
+    // The masters-mode question that still matters is the anchor check above:
+    // no region/size/duration token means the master lookup can never find
+    // this file, whichever convention it is on.
 
     all.push({ name: fileName, folder: rel, convention: convention, issues: issues });
   }

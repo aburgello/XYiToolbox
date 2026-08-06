@@ -279,9 +279,20 @@ Naming Audit, which skips only `Auto-Save`/`_Archive`/`_Old`/`_DEV`.
   keyframe. Presets store influence only.
 
 **Naming conventions** (confirmed against real studio folders):
-`<mastersRoot>/AE/<Creative>/…_<W>x<H>_<Dur>sec<suffix>.aep`, with the comp
-inside named identically to the filename stem. Renders mirror the tree under
-`Renders/`, paired by identical stem. QUAD is a keyword token, not a ratio.
+`<mastersRoot>/AE/<Creative>/<stem>.aep`, with the comp inside named identically
+to the filename stem. Renders mirror the tree under `Renders/`, paired by
+identical stem. QUAD is a keyword token, not a ratio.
+
+**Masters are on BOTH conventions, permanently.** Everything already on disk
+keeps the legacy `…_1920x858_10sec_OV` form (masters were never renamed);
+everything written from 2026-08 onward uses the new
+`…_1920x858px_15s_OV` form. **Any parser that reads a master filename must
+accept both** — size with or without `px`, duration as `s` or `sec`.
+`nameGeneratorParse` (`localise.ts`), `durationMatchesPath` (`tools.ts`) and
+`parseMasterFilename` (`review.ts`, OV Library) all do; a new one must too.
+A master that fails to parse is **silently dropped, not reported** — the
+symptom is a file missing from OV Library or "no master matched", never an
+error. Naming Audit's `masters` mode therefore flags neither convention.
 
 ---
 
@@ -359,8 +370,15 @@ real id `"find-and-replace"`, so that prefetch silently no-ops;
 `GsapScreenTransition.scss` is imported by nothing, so the live transition
 wrapper ships without its `will-change` hint.
 
-**`cep.config.ts`:** the panel id stays `com.xyi.ovlibrary` even though the
-product is "XYi Toolbox" — a stable id means installs update in place instead of
-orphaning a stale Extensions-menu entry. `zxp.org` must contain no space (it is
+**`cep.config.ts`:** the panel id is `com.xyi.toolbox`, renamed from
+`com.xyi.ovlibrary` (OV Library is one tool inside the toolbox, not the
+product). The id is CEP's identity key: changing it registers a *new*
+extension rather than updating in place, so any machine still holding a
+`com.xyi.ovlibrary` folder shows two identical "XYi Toolbox" entries under
+Window > Extensions until the old one is deleted. Don't rename it again
+casually — settings survive (they live in AE's `app.settings`, sections
+`XYiToolbox` / `ExpressionsBank`, not keyed to the id) but saved AE
+workspaces reference the panel by id, so every user has to re-add the panel
+and re-save their workspace. `zxp.org` must contain no space (it is
 spliced unquoted into a shell command). `TOOLBOX_VERSION` lives in
 `TeamDroplet.tsx` and is `YYYYMMDD`.

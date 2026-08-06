@@ -3,7 +3,11 @@ import { version } from "./package.json";
 
 const config: CEP_Config = {
   version,
-  id: "com.xyi.ovlibrary", // kept as-is so the existing registered extension just updates in place
+  // Renamed from "com.xyi.ovlibrary" -- OV Library is one tool inside the
+  // toolbox, not the product. A changed id registers as a *new* extension, so
+  // the old com.xyi.ovlibrary folder must be removed or AE lists two identical
+  // "XYi Toolbox" entries under Window > Extensions.
+  id: "com.xyi.toolbox",
   displayName: "XYi Toolbox",
   symlink: "local",
   port: 3000,

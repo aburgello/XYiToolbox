@@ -411,10 +411,13 @@ export function durationDigits(duration: string): string {
   return m ? m[0] : "";
 }
 
-// The form used to MATCH against masters already on disk. Masters are named
-// under the old convention and are not being renamed, so the lookup keeps the
-// "sec" suffix on purpose -- a bare "10" is a substring of "1080x1920" and
-// would false-match a master of a completely different duration.
+// The form used to MATCH against masters already on disk. Masters now come in
+// BOTH forms -- the ones already on disk were never renamed ("_10sec_"), and
+// everything written from 2026-08 onward uses the new "_10s_" -- so the "sec"
+// here is NOT a convention assumption: durationMatchesPath() reduces this to
+// bare digits and matches "s" or "sec" either way. The suffix is kept purely
+// so a caller that string-compares this value can't have a bare "10"
+// false-match the "10" inside "1080x1920".
 export function durationForMasterLookup(duration: string): string {
   const digits = durationDigits(duration);
   return digits === "" ? "" : digits + "sec";

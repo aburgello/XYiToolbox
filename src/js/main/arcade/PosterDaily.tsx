@@ -28,11 +28,20 @@
 // back, so the canvas being tainted doesn't matter.
 //
 // HINTS COST, AND THE BOARD SAYS SO. Three of them (facts -> tagline ->
-// plot), bought in any order, each recorded. That's the point of this game's
-// leaderboard: solving it in two with the plot handed to you is not the same
-// round as solving it in two cold, so the board carries guesses AND hints
-// rather than flattening them into one number. Deliberately NO director/cast
-// hint -- for a film anyone knows that isn't a hint, it's the answer.
+// premise), bought in any order, each recorded. That's the point of this
+// game's leaderboard: solving it in two with the premise handed to you is not
+// the same round as solving it in two cold, so the board carries guesses AND
+// hints rather than flattening them into one number. Deliberately NO
+// director/cast hint -- for a film anyone knows that isn't a hint, it's the
+// answer.
+//
+// THE PREMISE HINT IS REDACTED, and that's the whole hint. TMDB's raw
+// `overview` is a synopsis, not a nudge: it names the protagonist, the place
+// and usually the title itself, so buying it ended the round rather than
+// narrowing it. `redactPlot` cuts it to the opening sentence or two and masks
+// every proper noun (see the function). Tune the redactor if it over-masks;
+// don't hand the raw `overview` back to the hint -- if a hint is worth a
+// column on the board, the player should still be guessing after it.
 //
 // EVERYTHING DEGRADES QUIETLY, same as every other game here: no CEP bridge
 // (browser preview), no Team Folder, or an unmounted NAS are NORMAL states.
@@ -81,6 +90,93 @@ interface HintDef {
     body: (f: FilmFacts) => string | null;
 }
 
+const MASK = "███";
+
+/**
+ * Capitalised words that are NOT names, so masking them would only make the
+ * sentence unreadable without hiding anything. Sentence-initial words are
+ * already spared by position, so this is only about mid-sentence ones.
+ */
+const NOT_A_NAME: Record<string, number> = {
+    I: 1, A: 1, An: 1, The: 1, But: 1, And: 1, When: 1, After: 1, While: 1, As: 1,
+    In: 1, On: 1, At: 1, To: 1, Of: 1, For: 1, His: 1, Her: 1, Their: 1, It: 1,
+    Monday: 1, Tuesday: 1, Wednesday: 1, Thursday: 1, Friday: 1, Saturday: 1, Sunday: 1,
+    Christmas: 1, Halloween: 1,
+};
+
+/** Title words too generic to be worth masking on their own. */
+const TITLE_NOISE: Record<string, number> = {
+    the: 1, a: 1, an: 1, of: 1, and: 1, or: 1, in: 1, on: 1, to: 1, for: 1,
+    from: 1, at: 1, by: 1, with: 1, part: 1, ii: 1, iii: 1, iv: 1,
+};
+
+/** Enough prose to be a hint; a six-word opener usually isn't. */
+const PLOT_MIN_CHARS = 90;
+const PLOT_MAX_SENTENCES = 2;
+
+/**
+ * Turn TMDB's synopsis into a premise.
+ *
+ * Two separate cuts, both needed:
+ *
+ * 1. LENGTH. The raw blurb walks the entire plot including the turn. One
+ *    sentence is the hint; a second is only added when the first is too short
+ *    to say anything.
+ * 2. PROPER NOUNS. Every mid-sentence capitalised word is masked, plus every
+ *    non-trivial word of the title wherever it appears (titles are frequently
+ *    lower-case inside the blurb, e.g. "the matrix has you"). This is the cut
+ *    that matters -- "Rick" or "Gotham" is the answer, not a clue.
+ *
+ * Masking is deliberately blunt: a place or an organisation lands in the mask
+ * too. That's the intended trade -- an over-masked line is still a playable
+ * hint, an under-masked one is the answer.
+ */
+export const redactPlot = (overview: string, title: string): string => {
+    if (!overview) return "";
+
+    // Sentence split on terminal punctuation followed by a space. An initial
+    // ("Dr. Ryan") splits early; harmless, because a too-short first sentence
+    // just pulls the next one in.
+    const parts = overview.split(/(?<=[.!?])\s+/);
+    let text = "";
+    for (let i = 0; i < parts.length && i < PLOT_MAX_SENTENCES; i++) {
+        text = text ? text + " " + parts[i] : parts[i];
+        if (text.length >= PLOT_MIN_CHARS) break;
+    }
+
+    const titleWords: Record<string, number> = {};
+    const rawTitleWords = title.toLowerCase().split(/[^a-z0-9']+/);
+    for (let i = 0; i < rawTitleWords.length; i++) {
+        const w = rawTitleWords[i];
+        if (w.length >= 3 && !TITLE_NOISE[w]) titleWords[w] = 1;
+    }
+
+    let sentenceStart = true;
+    const out = text.replace(/[A-Za-z][A-Za-z'’.-]*/g, (word, offset: number) => {
+        const atStart = sentenceStart;
+        sentenceStart = false;
+        // The next word starts a sentence if this one ended with terminal
+        // punctuation (checked on the ORIGINAL text, since the match itself may
+        // swallow a trailing dot).
+        const after = text.slice(offset + word.length, offset + word.length + 2);
+        if (/^[.!?]/.test(after) || /[.!?]$/.test(word)) sentenceStart = true;
+
+        const bare = word.replace(/[^A-Za-z'’]/g, "");
+        if (!bare) return word;
+        if (titleWords[bare.toLowerCase()]) return MASK;
+        if (atStart) return word;
+        if (NOT_A_NAME[bare]) return word;
+        if (/^[A-Z]/.test(bare) && bare.length > 1) return MASK;
+        return word;
+    });
+
+    // Collapse "███ ███ ███" runs -- three masks in a row read as noise, one
+    // reads as a redacted name. Only spaces are eaten, never punctuation: the
+    // comma after a masked place name is what keeps the rest of the sentence
+    // parseable.
+    return out.replace(new RegExp("(?:" + MASK + " )+" + MASK, "g"), MASK).replace(/\s+/g, " ").trim();
+};
+
 /** Vague to near-giveaway, top to bottom. */
 const HINTS: HintDef[] = [
     {
@@ -95,7 +191,9 @@ const HINTS: HintDef[] = [
         },
     },
     { id: "tagline", label: "Tagline", body: (f) => f.tagline || null },
-    { id: "plot", label: "Plot", body: (f) => f.overview || null },
+    // Id stays "plot": it's persisted in saved state and counted on the shared
+    // board, so renaming it would orphan every row already filed under it.
+    { id: "plot", label: "Premise (names hidden)", body: (f) => redactPlot(f.overview, f.title) || null },
 ];
 
 interface SavedState {
@@ -562,9 +660,12 @@ export const PosterDaily = ({ onClose }: { onClose: () => void }) => {
                                                     onClick={() => guess(m)}
                                                     title={spent ? "Already guessed" : undefined}
                                                 >
-                                                    {m.poster
-                                                        ? <img src={posterUrl(m.poster, "w92")} alt="" className="pd-thumb" />
-                                                        : <span className="pd-thumb pd-thumb--none" />}
+                                                    {/* NO POSTER THUMBNAIL HERE, deliberately. The
+                                                        search list used to show one per result, which
+                                                        handed the player the answer: type a hunch, and
+                                                        a 24px thumb of the same artwork sitting on
+                                                        screen next to the pixelated one confirms it
+                                                        without spending a guess. Titles only. */}
                                                     <span className="pd-result-title">{m.title}</span>
                                                     <span className="pd-result-year">{m.year}</span>
                                                 </button>

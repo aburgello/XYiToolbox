@@ -140,7 +140,10 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 5px 7px;
+    // Was 5px when each row carried a 36px poster thumb. The thumbs are gone
+    // (they gave the answer away -- see PosterDaily.tsx), so the padding does
+    // the row height on its own now.
+    padding: 7px 8px;
     border: 0;
     background: #12191b;
     color: #dbe4e6;
@@ -160,17 +163,6 @@
         text-decoration: line-through;
         &:hover { background: #12191b; }
     }
-}
-
-.pd-thumb {
-    width: 24px;
-    height: 36px;
-    object-fit: cover;
-    border-radius: 3px;
-    flex-shrink: 0;
-    background: #0b1113;
-
-    &--none { border: 1px dashed #2f3a3e; }
 }
 
 .pd-result-title {
