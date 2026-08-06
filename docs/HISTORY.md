@@ -6199,8 +6199,30 @@ Sharp edge hit while building this: adding the footer put it AFTER
 sibling of the modal inside the overlay. `tsc` was happy. Verified by reading
 the emitted structure back rather than trusting the JSX to be balanced.
 
-**Verified**: frontend tsconfig + `yarn build` + precedence audit clean, and
-all seven new classes confirmed present in the SINGLE bundled stylesheet (this
-project sets `cssCodeSplit: false`, so a missing class here is the failure mode
-that only shows up from an installed ZXP). **Not seen in a running panel** —
-layout and the blur want one look at a real docked panel.
+### The portal ate the table's styling (same day, immediately after)
+
+First run in a real panel rendered the table as raw native inputs — white
+boxes, no header. **Every `.specs-table` / `.specs-cell-*` / `.specs-row-*`
+rule is NESTED under `.specs-tool` in formTool.scss**, and portalling to
+`<body>` puts the modal outside the tool root, so not one of them matched.
+
+Fix: the overlay carries **`className="specs-modal-overlay specs-tool"`**.
+`.specs-tool` declares no properties of its own — it is purely a scoping
+wrapper of nested rules — so adding it to a `position: fixed` overlay restores
+the whole cascade and changes no layout.
+
+**This is the general hazard with portals in this codebase, not a one-off.**
+Anything moved to `<body>` leaves behind every ancestor-scoped rule AND the
+category tint. The same portal also now copies `--cat-grad/-border/-glow/-icon`
+off the tool root via `getComputedStyle` (`portalCatVars()`), which is the rule
+CLAUDE.md already states for Dialog and DragOverlay. Consumers all have
+`var(--cat-x, fallback)` so a miss degrades to the theme accent rather than to
+nothing, which is exactly why this would otherwise go unnoticed.
+
+**Verified**: frontend tsconfig + `yarn build` + precedence audit clean; the
+modal classes present in the SINGLE bundled stylesheet (`cssCodeSplit: false`,
+so a missing class is the failure mode that only shows up from an installed
+ZXP); and the six `.specs-tool …` selectors the modal depends on confirmed to
+exist in that exact scoped form, which is what the added class re-establishes.
+One check initially read FAIL — the assertion was wrong (the checkbox rule is
+scoped a level deeper, under `.specs-table--selectable`), not the code.

@@ -556,6 +556,29 @@ const CSVLocaliserTool = () => {
     // lines aren't written into a section the user can't see.
     const openBatch = (key: string) =>
         setExpandedBatches((s) => (s.has(key) ? s : new Set(s).add(key)));
+    // The tool's own root, used only to read the category tint back off it for
+    // portalled content.
+    const toolRootRef = useRef<HTMLDivElement>(null);
+
+    // categoryStyleVars() sets --cat-* as an inline style on an ANCESTOR of
+    // this tool (see main.tsx / ToolScreen), so they cascade normally into the
+    // tool but NOT into anything portalled to <body>. Read the resolved values
+    // back off the tool root and hand them to the portal. Every consumer has a
+    // var(--cat-x, fallback), so a miss degrades to the theme accent rather
+    // than to nothing — but the tint is the point, so copy it properly.
+    const portalCatVars = (): React.CSSProperties => {
+        const el = toolRootRef.current;
+        if (!el || typeof getComputedStyle !== "function") return {};
+        const cs = getComputedStyle(el);
+        const out: Record<string, string> = {};
+        const names = ["--cat-grad", "--cat-border", "--cat-glow", "--cat-icon"];
+        for (const n of names) {
+            const v = cs.getPropertyValue(n);
+            if (v && v.trim() !== "") out[n] = v.trim();
+        }
+        return out as React.CSSProperties;
+    };
+
     const collapseBatch = (key: string) =>
         setExpandedBatches((s) => {
             if (!s.has(key)) return s;
@@ -1227,7 +1250,7 @@ const CSVLocaliserTool = () => {
     }, [scan, search]);
 
     return (
-        <div className="form-tool specs-tool">
+        <div className="form-tool specs-tool" ref={toolRootRef}>
             {/* Folders */}
             {/* Job setup, rendered as a PATH rather than three lookalike
                 fields. Markets and Masters are not independent inputs -- they
@@ -1495,7 +1518,19 @@ const CSVLocaliserTool = () => {
                                                             over b/key/builtFor/dupOf exactly as before. */}
                                                         {batchOpen && createPortal(
                                                             <div
-                                                                className="specs-modal-overlay"
+                                                                // `specs-tool` is NOT decorative here. Every
+                                                                // .specs-table / .specs-cell-* rule is NESTED under
+                                                                // .specs-tool in formTool.scss, and portalling to
+                                                                // <body> puts this outside the tool root — so without
+                                                                // it the table renders as unstyled native inputs.
+                                                                // .specs-tool declares no properties of its own, only
+                                                                // nested rules, so adding it to a fixed overlay is
+                                                                // safe.
+                                                                className="specs-modal-overlay specs-tool"
+                                                                // Category tint is an inline style on an ANCESTOR of
+                                                                // the tool, so it cascades to the tool but not to a
+                                                                // portal. Copied across explicitly (CLAUDE.md).
+                                                                style={portalCatVars()}
                                                                 onClick={() => collapseBatch(key)}
                                                                 role="presentation"
                                                             >
