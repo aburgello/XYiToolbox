@@ -48,9 +48,9 @@ interface Props {
 }
 
 export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
-    // Only the star badge on result cards lives here now -- the list itself
-    // renders in Toolset's Favourites group.
-    const { favoriteIds, toggleFavorite } = useFavorites(TOOLS);
+    // The star badge on result cards, plus the show/hide switch for the
+    // Favourites group Toolset renders further down this same screen.
+    const { favoriteIds, toggleFavorite, boxOpen, toggleFavoritesBox } = useFavorites(TOOLS);
     const [foldersOpen, setFoldersOpen] = useState(false);
     const [folders, setFolders] = useState<{ label: string; path: string }[] | null>(null);
 
@@ -328,11 +328,19 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
                                     </Tooltip>
                                 )}
                             </div>
-                            {/* The Favorites star/chip row that used to live here
-                                moved into Toolset as its own gold group -- see
-                                .action-group--favourites in Toolset.tsx. Starring
-                                itself is unchanged: the star badge on a search
-                                result card below is still how tools get added. */}
+                            {/* The favourites CHIP ROW that used to drop from here
+                                is now Toolset's gold Favourites group. This button
+                                kept its place and its meaning -- it shows/hides that
+                                group. Starring is unchanged: the star badge on a
+                                search result card below is still how tools get in. */}
+                            <Tooltip text={boxOpen ? "Hide the Favourites group" : "Show the Favourites group"}>
+                                <button
+                                    className={boxOpen ? "favorites-toggle active" : "favorites-toggle"}
+                                    onClick={toggleFavoritesBox}
+                                >
+                                    <Star size={14} fill={boxOpen ? "currentColor" : "none"} />
+                                </button>
+                            </Tooltip>
                             <Tooltip text="Useful Folders">
                                 <button
                                     className={foldersOpen ? "favorites-toggle active" : "favorites-toggle"}

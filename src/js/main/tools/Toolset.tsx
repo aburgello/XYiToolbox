@@ -56,6 +56,7 @@ import {
     FileEdit,
     Globe,
     ToggleLeft,
+    Moon,
     Timer,
     Ban,
     Minus,
@@ -80,6 +81,7 @@ import { iconWiggle, buttonLift } from "../animations";
 import { TOOLS } from "../toolRegistry";
 import { useCustomTools, type CustomToolEntry } from "../hooks/useCustomTools";
 import { useFavorites, favoriteKey } from "../hooks/useFavorites";
+import { DARKEN_DEFAULTS } from "../lib/darkenDefaults";
 import type { Screen } from "../main";
 import turkGif from "../../assets/happy_shock_2.gif";
 import "../shared.scss";
@@ -422,6 +424,26 @@ export const ACTIONS: ActionEntry[] = [
         group: "naming",
         run: () => evalTSSafe("locIt"),
         successText: (result) => result.message || "Done.",
+    },
+    {
+        // The no-questions-asked version of the Darken tool: pool scrim, studio
+        // standard values, straight in behind the selected layer. Same defaults
+        // and same behaviour as that page's own "Quick Darken" button -- both
+        // read DARKEN_DEFAULTS. Open the full tool for a band style or to tune
+        // opacity/feather.
+        id: "quick-darken",
+        label: "Quick Darken",
+        description: "Darkening at standard values.",
+        icon: Moon,
+        group: "transform",
+        run: () => evalTSSafe(
+            "generateDarken",
+            DARKEN_DEFAULTS.style,
+            DARKEN_DEFAULTS.opacity,
+            DARKEN_DEFAULTS.feather,
+            DARKEN_DEFAULTS.coverage,
+        ),
+        successText: (r) => r.message || "Darkening layer added.",
     },
     {
         id: "toggle-by-label",
@@ -1119,10 +1141,10 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
     //                    into a different group than its ACTIONS default.
     //   - labelOverride: groupId -> renamed label.
     const prefersReducedMotion = useReducedMotion();
-    // Read-only here: starring/unstarring still happens from the home screen's
-    // search results (the star badge on a result card). This surface just
-    // gives what's already starred somewhere prominent to land.
-    const { favoriteEntries } = useFavorites(TOOLS);
+    // Read-only here: starring happens from the home screen's search results,
+    // and so does the show/hide switch for this group (the star button beside
+    // the search box).
+    const { favoriteEntries, boxOpen: favouritesBoxOpen } = useFavorites(TOOLS);
     const [editMode, setEditMode] = useState(false);
     const [hidden, setHidden] = useState<string[]>([]);
     // Purely visual emphasis (see the star badge in SortableTile): a starred
@@ -1514,7 +1536,7 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
                     from useFavorites (starred in search), has no drag order,
                     no hide/rename, and no presence in edit mode -- edit mode
                     reorders the grid, and there's nothing here to reorder. */}
-                {favoriteEntries.length > 0 && (
+                {favouritesBoxOpen && favoriteEntries.length > 0 && (
                     <div className="action-group action-group--favourites">
                         <div className="action-group-divider">
                             <h3 className="action-group-label">Favourites</h3>

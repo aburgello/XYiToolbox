@@ -668,11 +668,7 @@ const XYToolsDroplet: React.FC = () => {
                                             </button>
                                         </Tooltip>
                                     </div>
-                                    <p className="mt-hint">
-                                        Adds eased Opacity keys without clearing any you already have. Fades to
-                                        the layer's current Opacity, not blindly to 100. "Both" always uses the
-                                        layer In/Out points.
-                                    </p>
+                                    <p className="mt-hint">Fades the selected layers' opacity up or down.</p>
 
                                     <div className="mt-section-label mt-section-label--sub">Keyframes · Trim</div>
                                     <div className="mt-row mt-row--fill">

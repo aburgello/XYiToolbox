@@ -188,6 +188,11 @@ export const saveToolOrder = (categoryId: string, toolIds: string[]): Result => 
 // =============================================================================
 const FAVORITES_SETTINGS_SECTION = "XYiToolbox";
 const FAVORITES_KEY = "OVFavoriteTools";
+// Whether Toolset's gold Favourites group is shown. Separate from the list
+// itself: someone can keep favourites starred (they still drive the star
+// badge in search) while choosing not to give them a box in the grid.
+// Defaults to shown when the setting has never been written.
+const FAVORITES_BOX_KEY = "OVFavoritesBoxOpen";
 
 function loadFavoriteToolsRaw(): string[] {
   if (app.settings.haveSetting(FAVORITES_SETTINGS_SECTION, FAVORITES_KEY)) {
@@ -204,6 +209,23 @@ function loadFavoriteToolsRaw(): string[] {
 // {success, error} shape would add here.
 export const loadFavoriteTools = (): string[] => {
   return loadFavoriteToolsRaw();
+};
+
+// Plain boolean, no Result wrapper -- same reasoning as loadFavoriteTools.
+export const loadFavoritesBoxOpen = (): boolean => {
+  if (app.settings.haveSetting(FAVORITES_SETTINGS_SECTION, FAVORITES_BOX_KEY)) {
+    return app.settings.getSetting(FAVORITES_SETTINGS_SECTION, FAVORITES_BOX_KEY) !== "0";
+  }
+  return true;
+};
+
+export const saveFavoritesBoxOpen = (open: boolean): Result => {
+  try {
+    app.settings.saveSetting(FAVORITES_SETTINGS_SECTION, FAVORITES_BOX_KEY, open ? "1" : "0");
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
 };
 
 export const saveFavoriteTools = (toolIds: string[]): Result => {

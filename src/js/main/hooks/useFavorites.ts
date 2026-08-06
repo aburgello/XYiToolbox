@@ -31,9 +31,20 @@ let store: string[] = [];
 const subscribers = new Set<(ids: string[]) => void>();
 let loadStarted = false;
 
+// Whether Toolset shows its Favourites group. Shared the same way and for the
+// same reason as the list: the star button that toggles it lives on the home
+// screen, the box it toggles lives in Toolset, and both are mounted at once.
+let boxOpenStore = true;
+const boxSubscribers = new Set<(open: boolean) => void>();
+
 function publish(next: string[]) {
     store = next;
     subscribers.forEach((fn) => fn(next));
+}
+
+function publishBoxOpen(next: boolean) {
+    boxOpenStore = next;
+    boxSubscribers.forEach((fn) => fn(next));
 }
 
 /** One-shot load, whichever consumer mounts first. */
@@ -48,22 +59,42 @@ function ensureLoaded() {
             // No bridge or genuine failure -- empty favorites is a fine default.
         }
     })();
+    (async () => {
+        try {
+            const open = await evalTS("loadFavoritesBoxOpen" as any);
+            if (typeof open === "boolean") publishBoxOpen(open);
+        } catch {
+            // No bridge -- defaults to shown.
+        }
+    })();
 }
 
 export function useFavorites(allTools: ToolEntry[]) {
     const [favoriteIds, setFavoriteIds] = useState<string[]>(store);
+    const [boxOpen, setBoxOpen] = useState<boolean>(boxOpenStore);
 
     useEffect(() => {
         // useState setters are stable, so this identity is safe as a set key.
         subscribers.add(setFavoriteIds);
+        boxSubscribers.add(setBoxOpen);
         ensureLoaded();
         // A consumer mounting after the load already resolved would otherwise
         // sit on the empty initial snapshot forever.
         if (store !== favoriteIds) setFavoriteIds(store);
+        if (boxOpenStore !== boxOpen) setBoxOpen(boxOpenStore);
         return () => {
             subscribers.delete(setFavoriteIds);
+            boxSubscribers.delete(setBoxOpen);
         };
     }, []);
+
+    const toggleFavoritesBox = () => {
+        const next = !boxOpenStore;
+        publishBoxOpen(next);
+        evalTS("saveFavoritesBoxOpen" as any, next).catch(() => {
+            // Failed save only means the choice won't survive a restart.
+        });
+    };
 
     const toggleFavorite = (toolId: string, action?: string) => {
         const key = favoriteKey(toolId, action);
@@ -91,5 +122,5 @@ export function useFavorites(allTools: ToolEntry[]) {
         // catching.
         .filter((e): e is { tool: ToolEntry; action: string | undefined } => !!e);
 
-    return { favoriteIds, favoriteEntries, toggleFavorite };
+    return { favoriteIds, favoriteEntries, toggleFavorite, boxOpen, toggleFavoritesBox };
 }

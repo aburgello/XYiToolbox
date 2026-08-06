@@ -22,10 +22,11 @@
 // or no bridge in browser preview, are normal states -- not errors).
 // =============================================================================
 import React, { useEffect, useState } from "react";
-import { Moon } from "lucide-react";
+import { Moon, Zap } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import StatusIcon from "../StatusIcon";
 import SegmentedToggle from "../SegmentedToggle";
+import { DARKEN_DEFAULTS } from "../lib/darkenDefaults";
 import "../shared.scss";
 import "./formTool.scss";
 import "./Darken.scss";
@@ -111,10 +112,10 @@ const DarkenPreview: React.FC<{
 };
 
 const DarkenTool = () => {
-    const [style, setStyle] = useState("pool");
-    const [opacity, setOpacity] = useState("55");
-    const [feather, setFeather] = useState("200");
-    const [coverage, setCoverage] = useState("38");
+    const [style, setStyle] = useState<string>(DARKEN_DEFAULTS.style);
+    const [opacity, setOpacity] = useState(String(DARKEN_DEFAULTS.opacity));
+    const [feather, setFeather] = useState(String(DARKEN_DEFAULTS.feather));
+    const [coverage, setCoverage] = useState(String(DARKEN_DEFAULTS.coverage));
     const [status, setStatus] = useState<StatusMsg | null>(null);
     const [busy, setBusy] = useState(false);
     const [compDims, setCompDims] = useState<CompDims | null>(null);
@@ -132,16 +133,21 @@ const DarkenTool = () => {
         })();
     }, []);
 
-    const generate = async () => {
+    // Quick Darken deliberately ignores whatever is currently in the controls
+    // and sends DARKEN_DEFAULTS -- it's the same one-click action as Toolset's
+    // "Quick Darken" tile, so it has to behave identically wherever it's fired
+    // from. Tweaking the fields then hitting Quick Darken silently using those
+    // tweaked values would make the two surfaces disagree.
+    const generate = async (quick = false) => {
         setStatus(null);
         setBusy(true);
         try {
             const result = await evalTS(
                 "generateDarken",
-                style,
-                parseFloat(opacity) || 0,
-                parseFloat(feather) || 0,
-                parseFloat(coverage) || 0,
+                quick ? DARKEN_DEFAULTS.style : style,
+                quick ? DARKEN_DEFAULTS.opacity : parseFloat(opacity) || 0,
+                quick ? DARKEN_DEFAULTS.feather : parseFloat(feather) || 0,
+                quick ? DARKEN_DEFAULTS.coverage : parseFloat(coverage) || 0,
             );
             if (result === undefined) throw new Error("no bridge");
             setStatus(
@@ -191,15 +197,15 @@ const DarkenTool = () => {
             )}
 
             <div className="button-row">
-                <button disabled={busy} onClick={generate}>
+                <button disabled={busy} onClick={() => generate(false)}>
                     <Moon size={14} /> Generate Darkening Layer
+                </button>
+                <button disabled={busy} onClick={() => generate(true)}>
+                    <Zap size={14} /> Quick Darken
                 </button>
             </div>
 
-            <p className="hint">
-                Select the CTA first — the scrim drops in directly behind it, and Pool sizes
-                itself to that layer. With nothing selected it goes to the top of the stack.
-            </p>
+            <p className="hint">Select the CTA first — the scrim goes in behind it.</p>
 
             {status && (
                 <div className={`tool-status tool-status-${status.type}`}>

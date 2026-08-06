@@ -41,9 +41,14 @@
         margin: 0;
     }
 
+    // 13px here + 8px (half the 16px divider box) puts 21px above each rule
+    // line, matching the 21px below it (the divider's other 8px half + its own
+    // 13px margin-bottom). Same 42px total between one group's last row and the
+    // next group's first row as before -- just split evenly, so a lone wrapped
+    // orphan row no longer looks like it has a hole under it.
     .action-group {
         &:not(:first-child) {
-            margin-top: 18px;
+            margin-top: 13px;
         }
     }
 
@@ -71,7 +76,8 @@
     // rule only shows through *after* the label, not on both sides.
     .action-group-divider {
         position: relative;
-        margin: 0 0 8px;
+        // Pairs with .action-group's 13px margin-top -- see the note there.
+        margin: 0 0 13px;
 
         &::before {
             content: "";
