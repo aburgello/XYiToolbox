@@ -5,7 +5,7 @@
 // Check, CSV Localiser). Split out of aeft.ts, which is now a thin barrel --
 // see its header comment for context.
 // =============================================================================
-import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, buildMastersIndex, pickBestMasterFromIndex, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, scanMastersForBestMatch } from "./tools";
+import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, MAX_DURATION_MULTIPLE, buildMastersIndex, pickBestMasterFromIndex, pickMultipleMasterFromIndex, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, scanMastersForBestMatch } from "./tools";
 import { makeParentLayerOfAllUnparented, scaleAllCameraZooms } from "./deliver";
 import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, saveLocGenReport, buildDeliverableName, durationForMasterLookup } from "./shared";
 import { loadCampaignsRaw } from "./review";
@@ -2466,7 +2466,8 @@ function csvLocNameGen(
   plm: "PORTRAIT" | "LANDSCAPE",
   mcItImages?: File[],
   mcItAepName?: string,
-  mcItOut?: McItProjectReport[]
+  mcItOut?: McItProjectReport[],
+  repeatFactor?: number
 ): void {
   const scanRegV = /V\d\d/;
   const myName = myComp.name;
@@ -2510,16 +2511,50 @@ function csvLocNameGen(
     if (item instanceof CompItem && item.parentFolder && item.parentFolder.name === "Main" && scanRegV.test(item.name)) {
       item.width = width;
       item.height = height;
+      // Index of the creative layer (the Precomp holding all the edits).
+      // Captured by INDEX, never by holding the layer object to compare
+      // later: two accesses of the same AE DOM object return different
+      // wrappers, so === would silently never match.
+      let creativeLayerIndex = 0;
       for (let j = 1; j <= item.numLayers; j++) {
         const layer = item.layer(j) as AVLayer;
         if (layer.name === myComp.name) {
           layer.replaceSource(newComp, false);
+          creativeLayerIndex = j;
         } else if (plm === "PORTRAIT") {
           layer.scale.setValue([(100 / 1920) * height, (100 / 1920) * height]);
         } else if (plm === "LANDSCAPE") {
           layer.scale.setValue([(100 / 1080) * height, (100 / 1080) * height]);
         }
         layer.position.setValue([width / 2, height / 2]);
+      }
+
+      // --- duration multiples ---------------------------------------------
+      // Only reached for a row the user explicitly opted in to (see
+      // csvLocaliserRun's multiplesJson). This delivery comp is always
+      // Frontcard + the Precomp holding all the edits, so the ONLY thing
+      // touched is that second layer: it is laid end to end `repeatFactor`
+      // times and the comp stretched to suit. The Frontcard is untouched.
+      if (repeatFactor && repeatFactor > 1 && creativeLayerIndex > 0) {
+        const creative = item.layer(creativeLayerIndex) as AVLayer;
+        // The creative's own length, not the comp's -- the comp may already
+        // be longer or shorter than the layer sitting in it.
+        const span = creative.outPoint - creative.inPoint;
+        const baseStart = creative.startTime;
+        if (span > 0) {
+          // Stretch the comp FIRST. A layer placed past the old end is legal
+          // but invisible, so leaving the comp short would silently drop
+          // every repeat after the first.
+          item.duration = span * repeatFactor;
+          for (let k = 1; k < repeatFactor; k++) {
+            const dup = creative.duplicate() as AVLayer;
+            dup.startTime = baseStart + span * k;
+          }
+          // Without this the work area still covers only the first pass and
+          // a render comes back the original length.
+          item.workAreaStart = 0;
+          item.workAreaDuration = item.duration;
+        }
       }
     }
   }
@@ -2601,6 +2636,11 @@ export interface CsvLocRowReport {
   // toggle is off or the row never got as far as generating a file.
   imagesReplaced?: number;
   imagesNote?: string; // why nothing was swapped for this row, if applicable
+  // Set when the row was built from a shorter master repeated to length
+  // (opted in per row). Worth surfacing: the output is NOT a straight
+  // localise of a same-duration master, and someone reading the report later
+  // needs to know which rows were assembled this way.
+  multipleNote?: string;
 }
 
 export interface CsvLocResult {
@@ -2620,8 +2660,35 @@ export interface CsvLocResult {
   mcItProjects?: McItProjectReport[]; // per-file detail, same shape MC It! returns
 }
 
-export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExisting: boolean, runMcIt?: boolean): CsvLocResult => {
+// `multiplesJson` is a JSON STRING (never a nested object -- evalTS splices
+// args into eval'd source and nested shapes don't survive) holding the DATA-ROW
+// indices, 0-based and in CSV order, the user explicitly opted in to building
+// from a duration multiple: e.g. "[0,3]".
+//
+// Only the indices travel, not the factor. The factor is recomputed here by
+// the same pickMultipleMasterFromIndex the preview used, so there is exactly
+// one place that decides "15sec x2" and the panel can never disagree with what
+// the run actually does.
+export const csvLocaliserRun = (
+  mastersPath: string,
+  rawCsvText: string,
+  skipExisting: boolean,
+  runMcIt?: boolean,
+  multiplesJson?: string
+): CsvLocResult => {
   csvLocSaveLastPath(mastersPath);
+  const multipleRows: { [index: string]: boolean } = {};
+  if (multiplesJson) {
+    try {
+      const parsedMultiples = JSON.parse(multiplesJson);
+      if (parsedMultiples && parsedMultiples.length) {
+        for (let mi = 0; mi < parsedMultiples.length; mi++) multipleRows[String(parsedMultiples[mi])] = true;
+      }
+    } catch (e) {
+      // A malformed opt-in list must not take the whole run down: fall back to
+      // "nothing opted in", which is the pre-existing behaviour.
+    }
+  }
   // ONE walk of the masters tree for the whole run. This used to be a full
   // tree walk PER ROW (scanMastersForBestMatch), so a 14-row batch walked the
   // NAS 14 times; the scoring is unchanged, only how often we read the disk.
@@ -2780,7 +2847,21 @@ export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExi
       rep.duration = duration;
       if (siteToken !== "") rep.site = siteToken;
 
-      const bestMatch = pickBestMasterFromIndex(mastersIndex, campaign, size, duration);
+      let bestMatch = pickBestMasterFromIndex(mastersIndex, campaign, size, duration);
+      // How many times the creative layer is laid end to end in the delivery
+      // comp. 1 = the normal path, untouched.
+      let repeatFactor = 1;
+      if (!bestMatch && multipleRows[String(rowsAttempted - 1)]) {
+        // This row has no same-duration master and the user explicitly opted
+        // in to building it from a shorter one. Same finder the preview used,
+        // so the factor shown in the panel is the factor built here.
+        const mult = pickMultipleMasterFromIndex(mastersIndex, campaign, size, duration, MAX_DURATION_MULTIPLE);
+        if (mult) {
+          bestMatch = mult.entry;
+          repeatFactor = mult.factor;
+          rep.multipleNote = "Built from the " + mult.sourceDuration + " master, repeated " + mult.factor + "x";
+        }
+      }
       if (!bestMatch) {
         // Previously a silent `continue` -- the invisible failure mode.
         rep.status = "no-master";
@@ -2861,7 +2942,7 @@ export const csvLocaliserRun = (mastersPath: string, rawCsvText: string, skipExi
       // candidates at the right resolution -- so the swap targets this row's
       // own size, not the master's.
       const rowMcItReports: McItProjectReport[] = [];
-      csvLocNameGen(myComp, width, height, newCompName, plm, mcItImages, newCompName + "_V01.aep", rowMcItReports);
+      csvLocNameGen(myComp, width, height, newCompName, plm, mcItImages, newCompName + "_V01.aep", rowMcItReports, repeatFactor);
       rep.status = "generated";
       rep.output = newCompName + "_V01.aep";
 
@@ -3217,6 +3298,12 @@ export const nameAuditScan = (mode: string): NameAuditResult => {
 interface ResolvedMasterRow {
   master: string | null;
   path: string | null;
+  // Only present when there is NO exact-duration master but one exists whose
+  // duration divides this row's exactly (30sec <- 15sec x2). Purely an offer:
+  // the run ignores it unless the row is opted in.
+  multipleMaster?: string;
+  multipleFactor?: number;
+  multipleDuration?: string;
 }
 
 interface CsvLocResolveResult extends Result {
@@ -3242,7 +3329,23 @@ export const csvLocaliserResolveMasters = (mastersPath: string, rowsJson: string
       // durationMatchesPath normalises to bare digits internally, so a cell
       // saying "15", "15s" or "15sec" all resolve the same way the run does.
       const best = pickBestMasterFromIndex(index, r.campaign || "", r.size || "", r.duration || "");
-      out.push({ master: best ? best.name : null, path: best ? best.path : null });
+      if (best) {
+        out.push({ master: best.name, path: best.path });
+        continue;
+      }
+      // No exact match -- is this duration a clean multiple of one we have?
+      const mult = pickMultipleMasterFromIndex(index, r.campaign || "", r.size || "", r.duration || "", MAX_DURATION_MULTIPLE);
+      if (mult) {
+        out.push({
+          master: null,
+          path: null,
+          multipleMaster: mult.entry.name,
+          multipleFactor: mult.factor,
+          multipleDuration: mult.sourceDuration,
+        });
+      } else {
+        out.push({ master: null, path: null });
+      }
     }
     return { success: true, indexed: index.length, rows: out };
   } catch (e) {

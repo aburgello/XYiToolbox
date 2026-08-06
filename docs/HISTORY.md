@@ -6081,3 +6081,70 @@ Incidental finding, NOT fixed: the share holds two copies of that file,
 `<team>/misc/shared-campaigns.json` (2 entries, current). Consistent with the
 documented `arcade/ -> misc/ -> root` fallback chain, but worth knowing the
 root copy is behind.
+
+## Specs table header misalignment + duration multiples (2026-08-06)
+
+### The header bug (CSV Localiser specs table)
+
+Headers read ARTWORK / CAMPAIGN / SITE / SIZE / DUR one column LEFT of the data
+they name. Not a CSS problem: the `<thead>` declared
+`check, Artwork…Dur, master, revert` while `<tbody>` emits
+`check, master, Artwork…Dur, revert`. **The cell COUNT matched**, which is
+exactly why it looked like a styling issue and survived this long. master-col
+moved to second in the header. If a column is ever added, add it in BOTH lists
+in the same position.
+
+### Duration multiples (new)
+
+A 30sec deliverable with no 30sec master, where a 15sec (or 10sec) master
+exists, used to be a dead red row. It can now be built by laying the creative
+end to end. **Opt-in per row — never automatic.**
+
+- `pickMultipleMasterFromIndex` (`tools.ts`) finds the candidate.
+  **Smallest factor first**, so 30sec prefers 15sec×2 over 10sec×3 — fewer
+  repeats means the longest real cut. Exact integer division only, capped at
+  **4×** (`MAX_DURATION_MULTIPLE`); 20sec is not offered for a 30sec slot,
+  because there is no sane way to play something one and a half times.
+- The preview (`csvLocaliserResolveMasters`) returns the candidate; the run
+  receives only the opted-in ROW INDICES and recomputes the factor with the
+  same function, so the panel and the run cannot disagree about "×2".
+- **Index re-mapping is the sharp edge.** Excluded rows never reach the CSV, so
+  a table index of 5 can be CSV index 3. `runBatch` re-indexes against the
+  filtered list; getting this wrong would build the WRONG row from a multiple,
+  silently and plausibly.
+- The build itself (`csvLocNameGen`): the delivery comp is always Frontcard +
+  the Precomp holding all the edits, so **only that second layer is touched**
+  (confirmed with the studio). Comp duration is set FIRST — a layer past the
+  old end is legal but invisible, so a short comp would silently drop every
+  repeat after the first — then the creative layer is duplicated and offset by
+  its own span. Work area is reset to the new duration or a render comes back
+  the original length. The creative layer is tracked by INDEX, never by
+  holding the layer object (two accesses of one AE object return different
+  wrappers, so `===` never matches).
+- UI: an amber `Repeat` BUTTON carrying "2×" — deliberately neither the green
+  "found" nor the red "missing" icon, because it is an offer needing a
+  decision. Filled when chosen. `.specs-row-master-col` widened 22px -> 46px
+  to fit the badge, and the button re-declares `:hover`/`:active` against
+  index.scss's global blue.
+
+**`csvLocNameGen` and the Trott/campaign-localiser nameGen contain a
+BYTE-IDENTICAL 66-line block** (localise.ts ~150-215 vs ~2478-2543) — verified
+with `diff`, which is why a text-match edit hit two sites and the change had to
+be applied by line range. Only the CSV Localiser copy has the multiples logic.
+If duration multiples are ever wanted in Campaign Localiser, that block is the
+place, and the two should probably be extracted first.
+
+Reminder that cost time here: **`grep` silently reports nothing on
+`localise.ts`** (literal NUL byte -> treated as binary). It reads as "my edit
+didn't apply". Use `grep -a`.
+
+**Verified**: both tsconfigs + `yarn build` + precedence audit clean. 11
+assertions against the REAL built bundle driving `csvLocaliserResolveMasters`
+over a fake masters tree (prefers ×2 over ×3, exact match wins outright, the
+4× cap, non-divisors, per-size, per-campaign, unknown campaign). Two initially
+"failed" and were MY FIXTURE's fault — a file in the wrong creative folder
+matched the neighbouring campaign, because campaign matching is a substring
+test over the whole path. Worth knowing when writing masters fixtures.
+**The AE-side build (comp stretch + layer duplication) has NOT been run in
+real AE** — it cannot be exercised headlessly. That is the part to test on a
+copy first.

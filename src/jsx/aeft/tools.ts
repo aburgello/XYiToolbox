@@ -2496,6 +2496,47 @@ export function pickBestMasterFromIndex(
   return best;
 }
 
+// A deliverable whose duration has no master of its own, but IS an exact
+// integer multiple of one that exists -- a 30sec slot filled by playing the
+// 15sec master twice, or the 10sec three times. The studio does this by hand
+// today; this only FINDS the candidate, it never selects it (that is an
+// explicit per-row opt-in in the panel).
+//
+// Smallest factor first, so 30sec prefers 15sec x2 over 10sec x3: fewer
+// repeats means the longest available cut of the actual creative.
+//
+// Exact division only. A 20sec master is not a candidate for a 30sec slot at
+// 1.5x -- there is no sane automatic way to play something one and a half
+// times, and offering it would be worse than offering nothing.
+export const MAX_DURATION_MULTIPLE = 4;
+
+export interface MultipleMasterMatch {
+  entry: MasterIndexEntry;
+  factor: number;
+  sourceDuration: string; // the master's own duration, e.g. "15sec"
+}
+
+export function pickMultipleMasterFromIndex(
+  index: MasterIndexEntry[],
+  campaign: string,
+  size: string,
+  duration: string,
+  maxFactor: number
+): MultipleMasterMatch | null {
+  const digits = String(duration == null ? "" : duration).match(/\d+/);
+  if (!digits) return null;
+  const target = parseInt(digits[0], 10);
+  if (!target || target <= 0) return null;
+  const cap = maxFactor && maxFactor > 1 ? maxFactor : MAX_DURATION_MULTIPLE;
+  for (let f = 2; f <= cap; f++) {
+    if (target % f !== 0) continue;
+    const sub = String(target / f) + "sec";
+    const m = pickBestMasterFromIndex(index, campaign, size, sub);
+    if (m) return { entry: m, factor: f, sourceDuration: sub };
+  }
+  return null;
+}
+
 // Unchanged contract: same arguments, same answer, same File back. Now just
 // index-then-score rather than one fused pass, so the two callers below and the
 // batch preview all share one definition of "best master".
