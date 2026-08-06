@@ -151,8 +151,12 @@ $content-max-width: 900px;
     // above them. Without this, a wide/floating panel lets the button grid
     // sprawl edge-to-edge while the header/search stay narrow and centered,
     // so the two halves of the home screen visually fight each other.
+    // .active-jobs belongs here too: it sits directly under .category-row and
+    // must share its width, or it sprawls edge-to-edge while the cards above
+    // stay centred -- which is exactly what it did when first added.
     .toolset-grid,
-    .category-row {
+    .category-row,
+    .active-jobs {
         max-width: $content-max-width;
         margin-left: auto;
         margin-right: auto;
