@@ -6121,11 +6121,24 @@ end to end. **Opt-in per row — never automatic.**
   the original length. The creative layer is tracked by INDEX, never by
   holding the layer object (two accesses of one AE object return different
   wrappers, so `===` never matches).
-- UI: an amber `Repeat` BUTTON carrying "2×" — deliberately neither the green
-  "found" nor the red "missing" icon, because it is an offer needing a
-  decision. Filled when chosen. `.specs-row-master-col` widened 22px -> 46px
-  to fit the badge, and the button re-declares `:hover`/`:active` against
+- UI: its OWN column immediately after Dur (`.specs-row-mult-col`, 34px),
+  because that is the field it modifies — it started life inside the master
+  status column, which read as unintuitive and conflated a status with a
+  control. Text only, no icon: "2×" is faster to read than any glyph at this
+  size and costs less width. Amber, deliberately neither the green "found" nor
+  the red "missing" of `.specs-master`, because it is an offer awaiting a
+  decision; filled once chosen. Re-declares `:hover`/`:active` against
   index.scss's global blue.
+- **The control CYCLES rather than toggles**: off -> 2× -> 3× -> off, driven by
+  the factors the host said exist for that row. A 30sec row with both a 15sec
+  and a 10sec master offers both; one with only a 15sec master offers 2× and
+  nothing else. A stored factor that no longer exists restarts at the first
+  option rather than sticking. This is why the resolver returns a LIST
+  (`multipleMasterOptions`) and not just the best candidate, and why the run
+  receives the chosen factor per row (`{"0":2,"3":3}`) rather than a set of
+  indices — the user's pick has to travel, but it is still re-validated
+  host-side (`multipleMasterForFactor`), falling back to "no master" if that
+  factor stopped resolving.
 
 **`csvLocNameGen` and the Trott/campaign-localiser nameGen contain a
 BYTE-IDENTICAL 66-line block** (localise.ts ~150-215 vs ~2478-2543) — verified

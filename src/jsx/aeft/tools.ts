@@ -2516,23 +2516,46 @@ export interface MultipleMasterMatch {
   sourceDuration: string; // the master's own duration, e.g. "15sec"
 }
 
-export function pickMultipleMasterFromIndex(
+// EVERY viable factor, ascending, so the panel can cycle 2x -> 3x -> off for a
+// 30sec row that has both a 15sec and a 10sec master. Ascending order matters:
+// the first entry is the fewest repeats, i.e. the longest real cut, and is
+// what the UI offers first.
+export function multipleMasterOptions(
   index: MasterIndexEntry[],
   campaign: string,
   size: string,
   duration: string,
   maxFactor: number
-): MultipleMasterMatch | null {
+): MultipleMasterMatch[] {
+  const out: MultipleMasterMatch[] = [];
   const digits = String(duration == null ? "" : duration).match(/\d+/);
-  if (!digits) return null;
+  if (!digits) return out;
   const target = parseInt(digits[0], 10);
-  if (!target || target <= 0) return null;
+  if (!target || target <= 0) return out;
   const cap = maxFactor && maxFactor > 1 ? maxFactor : MAX_DURATION_MULTIPLE;
   for (let f = 2; f <= cap; f++) {
     if (target % f !== 0) continue;
     const sub = String(target / f) + "sec";
     const m = pickBestMasterFromIndex(index, campaign, size, sub);
-    if (m) return { entry: m, factor: f, sourceDuration: sub };
+    if (m) out.push({ entry: m, factor: f, sourceDuration: sub });
+  }
+  return out;
+}
+
+// The one option matching a factor the user explicitly chose, or null if that
+// factor is no longer available (masters can change between the preview and
+// the run). Never silently substitutes a different factor -- the row falls
+// back to "no master", which is honest.
+export function multipleMasterForFactor(
+  index: MasterIndexEntry[],
+  campaign: string,
+  size: string,
+  duration: string,
+  factor: number
+): MultipleMasterMatch | null {
+  const options = multipleMasterOptions(index, campaign, size, duration, MAX_DURATION_MULTIPLE);
+  for (let i = 0; i < options.length; i++) {
+    if (options[i].factor === factor) return options[i];
   }
   return null;
 }

@@ -1794,11 +1794,18 @@
 // "unknown" grey is deliberately quiet — no masters folder set is a normal
 // state, not a problem, and shouldn't read as a warning down a whole column.
 .specs-row-master-col {
-    // Wider than the old 22px: the duration-multiple state is a button
-    // carrying a "2×" badge, not a bare icon, and 22px clipped it.
-    width: 46px;
+    width: 22px;
     text-align: center;
     padding: 0 2px;
+}
+
+// Duration multiple, immediately after Dur. Narrow: the control is text only
+// ("2×"), no icon, so the column costs almost nothing in a panel this width.
+.specs-row-mult-col {
+    width: 34px;
+    text-align: center;
+    padding: 0 2px;
+    color: #6a6a6a;
 }
 
 .specs-master {
@@ -1811,52 +1818,52 @@
     &--none    { color: #f87171; }
     &--unknown { color: #5a5a5a; }
 
-    // Amber, deliberately NOT green or red: a duration multiple is neither
-    // "found" nor "missing", it's an offer that needs a decision.
-    &--mult {
-        gap: 2px;
-        padding: 1px 3px;
-        border: 1px solid #f59e0b;
-        border-radius: 3px;
-        // index.scss's global button:hover/:active paints any <button> blue,
-        // so both states are re-declared here.
-        background: transparent;
-        color: #f59e0b;
-        cursor: pointer;
-        line-height: 1;
+}
+
+// Duration-multiple control. Amber, deliberately NOT the green "found" or red
+// "missing" of .specs-master: this is neither, it's an offer awaiting a
+// decision. Text only -- "2×" reads faster than any icon at this size, and
+// cycles 2× -> 3× -> off for a row that has more than one option.
+.specs-mult {
+    min-width: 26px;
+    padding: 1px 4px;
+    border: 1px solid #f59e0b;
+    border-radius: 3px;
+    // index.scss's global button:hover/:active paints any <button> blue, so
+    // both states are re-declared here.
+    background: transparent;
+    color: #f59e0b;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.4;
+    letter-spacing: 0.2px;
+    cursor: pointer;
+
+    &:hover,
+    &:active {
+        background: rgba(245, 158, 11, 0.18);
+        color: #fbbf24;
+    }
+
+    // Chosen: filled, so a decision already made reads differently from an
+    // outstanding one at a glance down the column.
+    &.is-on {
+        background: #f59e0b;
+        border-color: #f59e0b;
+        color: #1a1a1a;
 
         &:hover,
         &:active {
-            background: rgba(245, 158, 11, 0.18);
-            color: #fbbf24;
-        }
-
-        // Chosen: filled, so an opted-in row reads as a decision already made
-        // rather than an outstanding one, at a glance down the column.
-        &.is-on {
-            background: #f59e0b;
-            border-color: #f59e0b;
+            background: #fbbf24;
+            border-color: #fbbf24;
             color: #1a1a1a;
-
-            &:hover,
-            &:active {
-                background: #fbbf24;
-                border-color: #fbbf24;
-                color: #1a1a1a;
-            }
-        }
-
-        &:disabled {
-            opacity: 0.35;
-            cursor: default;
         }
     }
-}
 
-.specs-master-x {
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.2px;
+    &:disabled {
+        opacity: 0.35;
+        cursor: default;
+    }
 }
 
 // An excluded row's indicator shouldn't shout — that row isn't going to run.

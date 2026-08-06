@@ -5,7 +5,7 @@
 // Check, CSV Localiser). Split out of aeft.ts, which is now a thin barrel --
 // see its header comment for context.
 // =============================================================================
-import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, MAX_DURATION_MULTIPLE, buildMastersIndex, pickBestMasterFromIndex, pickMultipleMasterFromIndex, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, scanMastersForBestMatch } from "./tools";
+import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, MAX_DURATION_MULTIPLE, buildMastersIndex, pickBestMasterFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, scanMastersForBestMatch } from "./tools";
 import { makeParentLayerOfAllUnparented, scaleAllCameraZooms } from "./deliver";
 import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, saveLocGenReport, buildDeliverableName, durationForMasterLookup } from "./shared";
 import { loadCampaignsRaw } from "./review";
@@ -2661,14 +2661,15 @@ export interface CsvLocResult {
 }
 
 // `multiplesJson` is a JSON STRING (never a nested object -- evalTS splices
-// args into eval'd source and nested shapes don't survive) holding the DATA-ROW
-// indices, 0-based and in CSV order, the user explicitly opted in to building
-// from a duration multiple: e.g. "[0,3]".
+// args into eval'd source and nested shapes don't survive) mapping DATA-ROW
+// index, 0-based and in CSV order, to the multiple the user CHOSE for it:
+// e.g. {"0":2,"3":3}. A flat object of scalars, which is the shape that
+// survives the bridge.
 //
-// Only the indices travel, not the factor. The factor is recomputed here by
-// the same pickMultipleMasterFromIndex the preview used, so there is exactly
-// one place that decides "15sec x2" and the panel can never disagree with what
-// the run actually does.
+// The factor is the user's explicit choice (they cycle 2x/3x per row), so it
+// travels rather than being recomputed. It is still re-validated against the
+// masters index here: if that factor no longer resolves, the row falls back to
+// "no master" rather than quietly building a different length.
 export const csvLocaliserRun = (
   mastersPath: string,
   rawCsvText: string,
@@ -2677,12 +2678,16 @@ export const csvLocaliserRun = (
   multiplesJson?: string
 ): CsvLocResult => {
   csvLocSaveLastPath(mastersPath);
-  const multipleRows: { [index: string]: boolean } = {};
+  const multipleRows: { [index: string]: number } = {};
   if (multiplesJson) {
     try {
       const parsedMultiples = JSON.parse(multiplesJson);
-      if (parsedMultiples && parsedMultiples.length) {
-        for (let mi = 0; mi < parsedMultiples.length; mi++) multipleRows[String(parsedMultiples[mi])] = true;
+      if (parsedMultiples) {
+        for (const mk in parsedMultiples) {
+          if (!parsedMultiples.hasOwnProperty(mk)) continue;
+          const f = parseInt(String(parsedMultiples[mk]), 10);
+          if (f > 1) multipleRows[String(mk)] = f;
+        }
       }
     } catch (e) {
       // A malformed opt-in list must not take the whole run down: fall back to
@@ -2851,11 +2856,11 @@ export const csvLocaliserRun = (
       // How many times the creative layer is laid end to end in the delivery
       // comp. 1 = the normal path, untouched.
       let repeatFactor = 1;
-      if (!bestMatch && multipleRows[String(rowsAttempted - 1)]) {
-        // This row has no same-duration master and the user explicitly opted
-        // in to building it from a shorter one. Same finder the preview used,
-        // so the factor shown in the panel is the factor built here.
-        const mult = pickMultipleMasterFromIndex(mastersIndex, campaign, size, duration, MAX_DURATION_MULTIPLE);
+      const chosenFactor = multipleRows[String(rowsAttempted - 1)];
+      if (!bestMatch && chosenFactor) {
+        // No same-duration master, and the user explicitly chose to build this
+        // row from a shorter one at THIS factor. Re-validated, never guessed.
+        const mult = multipleMasterForFactor(mastersIndex, campaign, size, duration, chosenFactor);
         if (mult) {
           bestMatch = mult.entry;
           repeatFactor = mult.factor;
@@ -3298,12 +3303,11 @@ export const nameAuditScan = (mode: string): NameAuditResult => {
 interface ResolvedMasterRow {
   master: string | null;
   path: string | null;
-  // Only present when there is NO exact-duration master but one exists whose
-  // duration divides this row's exactly (30sec <- 15sec x2). Purely an offer:
-  // the run ignores it unless the row is opted in.
-  multipleMaster?: string;
-  multipleFactor?: number;
-  multipleDuration?: string;
+  // Every factor that divides this row's duration exactly and HAS a master,
+  // ascending (2x before 3x). Only populated when there is no exact-duration
+  // master. Purely an offer -- the run ignores it unless the row is opted in
+  // to a specific factor. A LIST because the panel cycles 2x -> 3x -> off.
+  multiples?: { factor: number; duration: string; master: string }[];
 }
 
 interface CsvLocResolveResult extends Result {
@@ -3334,15 +3338,13 @@ export const csvLocaliserResolveMasters = (mastersPath: string, rowsJson: string
         continue;
       }
       // No exact match -- is this duration a clean multiple of one we have?
-      const mult = pickMultipleMasterFromIndex(index, r.campaign || "", r.size || "", r.duration || "", MAX_DURATION_MULTIPLE);
-      if (mult) {
-        out.push({
-          master: null,
-          path: null,
-          multipleMaster: mult.entry.name,
-          multipleFactor: mult.factor,
-          multipleDuration: mult.sourceDuration,
-        });
+      const opts = multipleMasterOptions(index, r.campaign || "", r.size || "", r.duration || "", MAX_DURATION_MULTIPLE);
+      if (opts.length > 0) {
+        const listed: { factor: number; duration: string; master: string }[] = [];
+        for (let oi = 0; oi < opts.length; oi++) {
+          listed.push({ factor: opts[oi].factor, duration: opts[oi].sourceDuration, master: opts[oi].entry.name });
+        }
+        out.push({ master: null, path: null, multiples: listed });
       } else {
         out.push({ master: null, path: null });
       }

@@ -36,7 +36,7 @@ import {
     FileCheck,
     FileX,
     Circle,
-    Repeat,
+
 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { fs, path } from "../../lib/cep/node";
@@ -475,13 +475,12 @@ interface TerritoryScan {
 interface ResolvedMaster {
     master: string | null;
     path: string | null;
-    // Present only when there is no same-duration master but one exists whose
-    // duration divides this row's exactly (a 30s slot from the 15s master
-    // played twice). An OFFER — nothing is built this way unless the row is
-    // opted in. See pickMultipleMasterFromIndex in jsx/aeft/tools.ts.
-    multipleMaster?: string;
-    multipleFactor?: number;
-    multipleDuration?: string;
+    // Every factor that divides this row's duration exactly AND has a master,
+    // ascending — so a 30s row with both a 15s and a 10s master offers 2× then
+    // 3×, and the control can cycle between them. Populated only when there is
+    // no same-duration master. An OFFER: nothing is built this way unless the
+    // row is opted in. See multipleMasterOptions in jsx/aeft/tools.ts.
+    multiples?: { factor: number; duration: string; master: string }[];
 }
 
 const isBridge = () => typeof (window as any).cep !== "undefined";
@@ -586,21 +585,29 @@ const CSVLocaliserTool = () => {
 
     const isRowExcluded = (key: string, idx: number) => !!excludedRows[key]?.has(idx);
 
-    // Rows the user has explicitly opted in to building from a shorter master
-    // repeated to length, keyed the same way as excludedRows (batch key -> row
-    // indices into b.rows). Opt-in only: a row with a candidate does nothing
-    // until it is in here, so a run can never silently substitute a different
-    // duration than the specs asked for.
-    const [multipleRows, setMultipleRows] = useState<Record<string, Set<number>>>({});
+    // The multiple each row is explicitly opted in to: batch key -> row index
+    // -> factor (2, 3, …). Absent means off, which is the default for every
+    // row — a run can never substitute a different duration than the specs
+    // asked for unless someone clicked.
+    const [multipleRows, setMultipleRows] = useState<Record<string, Record<number, number>>>({});
 
-    const isRowMultiple = (key: string, idx: number) => !!multipleRows[key]?.has(idx);
+    const rowMultiple = (key: string, idx: number) => multipleRows[key]?.[idx] || 0;
 
-    const toggleRowMultiple = (key: string, idx: number) => {
+    // Cycles off -> first available factor -> next -> … -> off. Driven by the
+    // factors the HOST said exist for this row, so a 30s row with both a 15s
+    // and a 10s master offers 2× then 3×, while one with only a 15s master
+    // offers 2× and nothing else.
+    const cycleRowMultiple = (key: string, idx: number, available: number[]) => {
         setMultipleRows((prev) => {
-            const next = new Set(prev[key] || []);
-            if (next.has(idx)) next.delete(idx);
-            else next.add(idx);
-            return { ...prev, [key]: next };
+            const current = prev[key]?.[idx] || 0;
+            const at = available.indexOf(current);
+            // -1 (off, or a factor that no longer exists) restarts at the
+            // first option; past the end wraps back to off.
+            const nextFactor = at === -1 ? available[0] : at + 1 < available.length ? available[at + 1] : 0;
+            const forKey = { ...(prev[key] || {}) };
+            if (nextFactor) forKey[idx] = nextFactor;
+            else delete forKey[idx];
+            return { ...prev, [key]: forKey };
         });
     };
 
@@ -1078,11 +1085,12 @@ const CSVLocaliserTool = () => {
         // never reach the CSV — so a table index of 5 can be CSV index 3.
         // Re-index against the filtered list or the opt-in lands on the wrong
         // deliverable, which would build the wrong row from a multiple.
-        const multiplesForRun: number[] = [];
+        const multiplesForRun: Record<number, number> = {};
         let csvIndex = 0;
         b.rows.forEach((_, i) => {
             if (isRowExcluded(key, i)) return;
-            if (isRowMultiple(key, i)) multiplesForRun.push(csvIndex);
+            const f = rowMultiple(key, i);
+            if (f > 1) multiplesForRun[csvIndex] = f;
             csvIndex++;
         });
         if (!rowsToRun.length) {
@@ -1474,6 +1482,10 @@ const CSVLocaliserTool = () => {
                                                                             data it names. */}
                                                                         <th className="specs-row-master-col" />
                                                                         <th>Artwork</th><th>Campaign</th><th>Site</th><th>Size</th><th>Dur</th>
+                                                                        {/* Duration multiple — sits next to Dur because that
+                                                                            is what it modifies. Header is a bare × so the
+                                                                            column stays narrow. */}
+                                                                        <th className="specs-row-mult-col">×</th>
                                                                         <th className="specs-row-revert-col" />
                                                                     </tr>
                                                                 </thead>
@@ -1547,36 +1559,20 @@ const CSVLocaliserTool = () => {
                                                                                                 </Tooltip>
                                                                                             );
                                                                                         }
-                                                                                        // No same-duration master, but its duration
-                                                                                        // divides this row's exactly — offer it. A
-                                                                                        // BUTTON, not an icon: this is the one state
-                                                                                        // here you can act on, and it must be a
-                                                                                        // deliberate click, never a default.
-                                                                                        if (res.multipleFactor && res.multipleMaster) {
-                                                                                            const on = isRowMultiple(key, i);
-                                                                                            return (
-                                                                                                <Tooltip
-                                                                                                    text={
-                                                                                                        on
-                                                                                                            ? `Will build ${eff.Duration} from the ${res.multipleDuration} master played ${res.multipleFactor}× (${res.multipleMaster}). Click to turn off.`
-                                                                                                            : `No ${eff.Duration} master, but ${res.multipleDuration} divides it exactly. Click to build this row from ${res.multipleMaster} played ${res.multipleFactor}×.`
-                                                                                                    }
-                                                                                                >
-                                                                                                    <button
-                                                                                                        type="button"
-                                                                                                        className={on ? "specs-master specs-master--mult is-on" : "specs-master specs-master--mult"}
-                                                                                                        disabled={excluded}
-                                                                                                        onClick={() => toggleRowMultiple(key, i)}
-                                                                                                        aria-label={`Row ${i + 1}: build from a ${res.multipleDuration} master repeated ${res.multipleFactor} times`}
-                                                                                                    >
-                                                                                                        <Repeat size={12} />
-                                                                                                        <span className="specs-master-x">{res.multipleFactor}×</span>
-                                                                                                    </button>
-                                                                                                </Tooltip>
-                                                                                            );
-                                                                                        }
+                                                                                        // A row with no exact master may still be
+                                                                                        // buildable from a multiple — but that offer
+                                                                                        // lives in its own column after Dur, next to
+                                                                                        // the duration it's about. This column stays
+                                                                                        // a pure status icon.
+                                                                                        const canMultiply = !!res.multiples?.length;
                                                                                         return (
-                                                                                            <Tooltip text={`No master matches ${eff.Campaign || "this campaign"} at ${eff.Size || "this size"} / ${eff.Duration || "this duration"}. This row would be skipped.`}>
+                                                                                            <Tooltip
+                                                                                                text={
+                                                                                                    canMultiply
+                                                                                                        ? `No ${eff.Duration} master for ${eff.Campaign || "this campaign"} at ${eff.Size || "this size"} — but it can be built from a shorter one. See the ×  column.`
+                                                                                                        : `No master matches ${eff.Campaign || "this campaign"} at ${eff.Size || "this size"} / ${eff.Duration || "this duration"}. This row would be skipped.`
+                                                                                                }
+                                                                                            >
                                                                                                 <span className="specs-master specs-master--none">
                                                                                                     <FileX size={12} />
                                                                                                 </span>
@@ -1656,6 +1652,41 @@ const CSVLocaliserTool = () => {
                                                                                         onChange={(e) => editRowField(key, i, "Duration", e.target.value)}
                                                                                         aria-label={`Row ${i + 1} duration`}
                                                                                     />
+                                                                                </td>
+                                                                                <td className="specs-row-mult-col">
+                                                                                    {(() => {
+                                                                                        const res = masters[key]?.[i];
+                                                                                        const opts = res?.multiples || [];
+                                                                                        // Nothing to offer: an exact master exists,
+                                                                                        // or no duration divides this one. Render an
+                                                                                        // empty cell rather than a dead control.
+                                                                                        if (!opts.length) return null;
+                                                                                        const factors = opts.map((o) => o.factor);
+                                                                                        const chosen = rowMultiple(key, i);
+                                                                                        const active = opts.find((o) => o.factor === chosen);
+                                                                                        const nextAt = factors.indexOf(chosen);
+                                                                                        const nextFactor =
+                                                                                            nextAt === -1 ? factors[0] : nextAt + 1 < factors.length ? factors[nextAt + 1] : 0;
+                                                                                        return (
+                                                                                            <Tooltip
+                                                                                                text={
+                                                                                                    active
+                                                                                                        ? `Building ${eff.Duration} from the ${active.duration} master played ${active.factor}× (${active.master}). Click for ${nextFactor ? nextFactor + "×" : "off"}.`
+                                                                                                        : `No ${eff.Duration} master. Click to build it from a shorter one played ${factors.join("× or ")}×.`
+                                                                                                }
+                                                                                            >
+                                                                                                <button
+                                                                                                    type="button"
+                                                                                                    className={active ? "specs-mult is-on" : "specs-mult"}
+                                                                                                    disabled={excluded}
+                                                                                                    onClick={() => cycleRowMultiple(key, i, factors)}
+                                                                                                    aria-label={`Row ${i + 1}: duration multiple, currently ${chosen ? chosen + "×" : "off"}`}
+                                                                                                >
+                                                                                                    {chosen ? `${chosen}×` : `${factors[0]}×?`}
+                                                                                                </button>
+                                                                                            </Tooltip>
+                                                                                        );
+                                                                                    })()}
                                                                                 </td>
                                                                                 <td className="specs-row-revert-col">
                                                                                     {edited && (
