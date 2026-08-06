@@ -248,7 +248,16 @@ export const ActiveJobModal: React.FC<Props> = ({ job, onClose, onOpenLocaliser 
                             });
                             setPendingBatch({
                                 territory: parts.territory || "",
-                                batch: parts.batch || "Batch_1",
+                                // Wrike titles carry the batch as free text ("Batch 2"),
+                                // but this string becomes an output FOLDER name: the CSV's
+                                // "Batch:" line is read by csvLocaliserRun and joined onto
+                                // the AE folder path (localise.ts). Left as-is it would
+                                // create "AE/Batch 02" beside the studio's existing
+                                // "Batch_01" folders -- a parallel naming convention
+                                // rather than the next batch in the series. Whitespace
+                                // only; the trailing number is zero-padded downstream by
+                                // csvLocPadBatchNumber, so nothing here should touch it.
+                                batch: parts.batch.trim().replace(/\s+/g, "_") || "Batch_1",
                                 rows: handoffRows,
                                 jobTitle: job.title,
                                 skipped: rows
