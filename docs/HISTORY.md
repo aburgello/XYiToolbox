@@ -6487,3 +6487,58 @@ still absent, `Renders/<creative>` movs still picked up, the `_mp4` folder still
 filtered to that creative's own stems, `scanAllRenders` still spanning every
 creative, and a campaign with no `_mp4` folder still returning its renders with
 the miss cached (2 -> 0 calls).
+
+## Active Jobs card on the home screen (2026-08-06)
+
+A full-width card under the four category cards: what still needs localising,
+one row per territory/batch, click to open Localise. Proposed as a Wrike
+integration; built without Wrike, because the panel already knows the answer.
+
+**Why no Wrike.** The specs scan already walks each territory, parses the PDFs
+and computes which rows are built. "Territories with unbuilt rows" IS the
+active-jobs list. Wrike would add assignee/status/upload-path, but needs an
+auth story that does not exist in CEP: TimeHub (the studio's separate React
+platform) proxies Wrike through a Cloudflare Worker holding the OAuth token,
+using same-origin cookies — none of which survives a CEP panel's file:// origin.
+For a team of 7 that plumbing is not worth it. If the Wrike layer is ever
+wanted, the cheap shape is something writing `<team>/active-jobs.json` from a
+machine that already has access; the card reads a snapshot either way, so its
+source can change without the UI changing.
+
+**It never scans.** A specs scan walks territory folders and parses every PDF —
+on the home screen that would make the panel's first view the slowest thing in
+it. CSV Localiser publishes a snapshot (`OVActiveJobs`) whenever it scans, runs
+or re-checks; the card reads it. Hence the header states WHEN it was captured:
+a card quietly showing week-old numbers as if live is worse than one that
+admits its age.
+
+**Numbers come from `matchBuiltRows`** — the same function that tints the rows
+and unticks the built ones in the specs table — so the card cannot disagree
+with the tool. The snapshot is written from state already in memory; nothing
+extra is read from disk.
+
+- **Renders nothing until a scan exists.** A fresh machine's home screen is
+  byte-identical to before. Once scanned it persists, because "0 outstanding"
+  is real information.
+- Per-machine, NOT in `PROFILE_KEYS` — scan state like usage history.
+- One-shot entrance only (CLAUDE.md §3: nothing on the always-visible home
+  screen animates perpetually). Progress is a bar rather than a percentage:
+  "how much is left" reads faster as a length.
+- The row is a `<button>` with its own background, so `:hover`/`:active` are
+  re-declared against index.scss's global blue.
+
+**On the VibeCurb skills** (reviewed in the scratchpad, not installed): the
+visual ones mandate 9-12 chrome74-banned features each — `color-mix()`,
+`:has()`, `aspect-ratio`, `clamp()`, `@property` — so they cannot ship here.
+What was worth taking is `visual-redesign`'s Sacred/Slop discipline: JS logic
+(state, effects, handlers, data flow) is untouchable, only the visual layer
+moves. This card was built that way — purely additive, no existing behaviour
+altered — and the same rule is what makes the snapshot reuse `matchBuiltRows`
+rather than recomputing "built" a second way.
+
+**Verified**: both tsconfigs + `yarn build` + precedence audit clean; the card's
+styles present in the SINGLE bundled stylesheet (`cssCodeSplit: false`, so a
+missing class only shows up from an installed ZXP); `saveActiveJobs`/
+`loadActiveJobs` resolve in the ExtendScript bundle; and the card's CSS block
+confirmed free of banned features. **Not seen in a running panel** — it needs a
+real specs scan to have anything to show.

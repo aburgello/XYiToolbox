@@ -35,6 +35,7 @@ import Tooltip from "../Tooltip";
 import TimeTrackerDroplet from "../TimeTrackerDroplet";
 import SfxDroplet from "../SfxDroplet";
 import TeamDroplet from "../TeamDroplet";
+import ActiveJobs from "../ActiveJobs";
 import { sfx } from "../../lib/utils/sfx";
 import logo from "../../assets/xyi-logo.png";
 import easterEggGif from "../../assets/easter-egg.gif";
@@ -513,6 +514,11 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
                             );
                         })}
                     </div>
+
+                    {/* Full width, directly under the four category cards. Renders
+                        nothing at all until a specs scan has been done, so a fresh
+                        machine's home screen is unchanged. */}
+                    <ActiveJobs onOpen={() => onNavigate({ type: "category", categoryId: "localise" })} />
 
                 </div>
             </div>

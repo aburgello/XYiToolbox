@@ -632,6 +632,7 @@ const CSVLocaliserTool = () => {
 
     const isRowExcluded = (key: string, idx: number) => !!excludedRows[key]?.has(idx);
 
+
     // The multiple each row is explicitly opted in to: batch key -> row index
     // -> factor (2, 3, …). Absent means off, which is the default for every
     // row — a run can never substitute a different duration than the specs
@@ -700,6 +701,50 @@ const CSVLocaliserTool = () => {
             batch[idx] = { ...(batch[idx] || {}), [field]: value };
             return { ...prev, [key]: batch };
         });
+
+    // ── Active Jobs snapshot for the home screen ──────────────────────────
+    // Published whenever the scan changes (a fresh scan, a run, a Re-check).
+    // This deliberately re-uses matchBuiltRows — the SAME function that tints
+    // the rows and unticks the built ones — so the home card can never
+    // disagree with what this table shows. Nothing extra is read from disk:
+    // every input here is already in memory by the time this runs.
+    //
+    // Fire-and-forget: the snapshot is a convenience, and failing to write it
+    // must never interrupt a scan.
+    useEffect(() => {
+        if (!scan) return;
+        const jobs: {
+            territory: string;
+            batch: string;
+            pdfName: string;
+            sourceFolder: string;
+            total: number;
+            built: number;
+        }[] = [];
+        scan.forEach((t) => {
+            t.batches.forEach((b) => {
+                if (!b.rows.length) return;
+                const key = batchKey(t.territory, b.pdfName);
+                const effRows = b.rows.map((r, i) => effectiveRow(key, i, r));
+                const built = matchBuiltRows(effRows, b.existing).filter(Boolean).length;
+                jobs.push({
+                    territory: t.territory,
+                    batch: b.batch,
+                    pdfName: b.pdfName,
+                    sourceFolder: t.sourceFolder,
+                    total: b.rows.length,
+                    built,
+                });
+            });
+        });
+        try {
+            Promise.resolve(
+                evalTS("saveActiveJobs", JSON.stringify({ capturedAt: Date.now(), jobs }))
+            ).catch(() => {});
+        } catch (e) {
+            /* no bridge — browser preview */
+        }
+    }, [scan, editedRows]);
 
     // Drop every override on one row, snapping it back to the parsed values.
     const revertRow = (key: string, idx: number) =>

@@ -2695,6 +2695,45 @@ export interface CsvLocResult {
 // travels rather than being recomputed. It is still re-validated against the
 // masters index here: if that factor no longer resolves, the row falls back to
 // "no master" rather than quietly building a different length.
+// =============================================================================
+// Active Jobs summary (home screen card)
+// -----------------------------------------------------------------------------
+// A tiny snapshot of "what still needs localising", written by CSV Localiser
+// whenever it scans, runs or re-checks, and read by the home screen.
+//
+// The home screen must NOT scan for this. A specs scan walks territory folders
+// and parses every PDF; doing that on every home render would make the panel's
+// first screen the slowest thing in it. So the scan writes what it already
+// knows and home just reads the result -- which is also why the card shows
+// WHEN it was captured rather than pretending to be live.
+//
+// Per-machine, deliberately NOT in team.ts's PROFILE_KEYS: this is scan state
+// like usage history, not a preference worth carrying to someone else's setup.
+// Stored as JSON because it is a real structure, which CLAUDE.md's persistence
+// rule allows for exactly this case.
+// =============================================================================
+const ACTIVE_JOBS_KEY = "OVActiveJobs";
+
+export const saveActiveJobs = (json: string): Result => {
+  try {
+    app.settings.saveSetting(SETTINGS_SECTION, ACTIVE_JOBS_KEY, json == null ? "" : String(json));
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// Returns "" when nothing has been scanned yet -- the card shows its empty
+// state rather than an error.
+export const loadActiveJobs = (): string => {
+  try {
+    if (!app.settings.haveSetting(SETTINGS_SECTION, ACTIVE_JOBS_KEY)) return "";
+    return app.settings.getSetting(SETTINGS_SECTION, ACTIVE_JOBS_KEY) || "";
+  } catch (e) {
+    return "";
+  }
+};
+
 export const csvLocaliserRun = (
   mastersPath: string,
   rawCsvText: string,
