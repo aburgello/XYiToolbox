@@ -196,6 +196,21 @@ export async function fetchJobs(member: string, force = false): Promise<JobsFeed
             };
             return cache;
         }
+        // A 200 of text/html means the request fell through to the SPA -- the
+        // route is not deployed. Caught explicitly because res.json() would
+        // otherwise throw on the HTML and land in the catch below, reporting a
+        // network failure for what is really a missing deployment.
+        const contentType = res.headers.get("content-type") || "";
+        if (contentType.indexOf("json") === -1) {
+            cache = {
+                jobs: MOCK_JOBS,
+                fetchedAt: Date.now(),
+                mock: true,
+                error: "That URL returned the website, not the feed — the /api/panel/jobs route isn't deployed yet.",
+            };
+            cacheMember = member;
+            return cache;
+        }
         const data = await res.json();
         const jobs = normalise(data instanceof Array ? data : (data && data.jobs) || []);
         cache = { jobs, fetchedAt: Date.now(), mock: false };
