@@ -5939,3 +5939,43 @@ importing it — it pins the RULE, not the shipped bytes. **Not yet seen in a
 running panel.** Expected against the real Fiducia folder: PortalToParadise
 (9 masters, 6L/2P/1SQ) opens Landscape-only; Bracelet and Trio (4 each, 2L/2P)
 open on both.
+
+## OV Library creatives grid: the full-width orphan card (2026-08-06)
+
+A campaign with 6 creatives rendered five normal cards and one card the width
+of the entire panel. Reported against Forgotten Island; TRIO was the orphan.
+
+**Cause was the deliberate "fill the row" rule**, not a wrap bug.
+`.creatives-grid` was `display: flex; flex-wrap: wrap` with cards at
+`flex: 1 1 0`, which makes every card ON A LINE share that line's width
+equally. That is exactly what you want for a full row and exactly what you do
+not want for a line holding one leftover card: it gets 100% of the width. The
+old comment even documented the last row stretching as intended — it had only
+ever been seen with 3-5 creatives, where the last row is also the only row.
+
+**Now CSS grid, `repeat(auto-fill, minmax(170px, 1fr))`.**
+
+- **auto-FILL, never auto-fit.** auto-fit collapses the empty tracks on a short
+  final row and the surviving items stretch across them — i.e. it reintroduces
+  precisely this bug. auto-fill keeps the empty tracks, so a leftover card
+  stays one column wide. If anyone "tidies" this to auto-fit, the banner card
+  comes straight back.
+- 170px min was chosen to reproduce the card width five-across at the usual
+  docked width, so the common case looks unchanged.
+- `.creative-card` lost `flex: 1 1 0` / `flex-shrink: 0` (meaningless on a grid
+  item) and gained **`min-width: 0`**. A grid item's default `min-width: auto`
+  sizes to content, which would let a long creative name force its track wider
+  instead of ellipsising — PORTAL_TO_PARADISE is already truncated in the UI.
+- `.loading-row` / `.empty-row` get `grid-column: 1 / -1`; they are prose, not
+  cards, and would otherwise sit in one 170px column.
+- Incidental win: this drops a flex `gap` dependency (Chrome 84, the open
+  question in CLAUDE.md §3) for a grid `gap` (Chrome 66, safely under the
+  chrome74 target).
+
+**Verified**: `yarn build` + precedence audit clean, and the file adds no
+banned CSS (`minmax()` is a grid function, Chrome 57 — NOT the banned `min()`/
+`max()` math functions; the two `aspect-ratio` hits in this file are the
+pre-existing violations already listed in CLAUDE.md). **The layout itself has
+not been re-seen in a running panel** — the fix is structural rather than
+tuned, but the 170px figure is a judgement call and wants one look at a real
+docked panel.

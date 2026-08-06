@@ -326,20 +326,33 @@
     }
 
     .creatives-grid {
-        display: flex;
-        flex-wrap: wrap;
+        // GRID, not flex-wrap. Under flex the cards were `flex: 1 1 0`, which
+        // makes every card on a line share that line's width equally — great
+        // for a full row, but a row holding ONE leftover card gave that card
+        // the entire width. Six creatives rendered as five normal cards and
+        // one enormous banner.
+        //
+        // auto-FILL (never auto-fit): auto-fit COLLAPSES the empty tracks on a
+        // short last row and the surviving cards stretch across them, which is
+        // the exact bug again. auto-fill keeps the empty tracks, so a leftover
+        // card stays one column wide and the rest of the row is simply empty.
+        //
+        // 170px min ≈ the card width five-across produced at the usual docked
+        // width, so the normal case looks unchanged; narrower panels just drop
+        // a column instead of squashing every card.
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
         gap: 10px;
-        // Cards grow to fill their row (flex-grow: 1), so with 4-5 creatives
-        // there's no dead space at the sides — every row spans the full panel
-        // width and the last partial row stretches too.
+        // (grid gap is Chrome 66, comfortably under the chrome74 target —
+        // unlike flex gap, which is 84 and is the open question in CLAUDE.md.)
         padding: 6px 0 8px;
-
-        & > * {
-            flex-shrink: 0;
-        }
+        align-items: start;
 
         .loading-row,
         .empty-row {
+            // Messages and the "no creatives" row are prose, not cards — span
+            // the whole grid rather than sitting in a 170px column.
+            grid-column: 1 / -1;
             display: flex;
             align-items: center;
             gap: 6px;
@@ -352,13 +365,12 @@
     .creative-card {
         display: flex;
         flex-direction: column;
-        // Grow to fill the row: flex-basis 0 + flex-grow 1 makes every card
-        // on a row share the full width equally, so 3 cards fill the row
-        // edge-to-edge instead of leaving gaps.  min-width keeps a lone card
-        // from shrinking to nothing on a very full row.
-        flex: 1 1 0;
-        min-width: 140px;
-        flex-shrink: 0;
+        // Sizing comes from the grid track now (see .creatives-grid), not
+        // from flex-grow — a grid item ignores flex-grow/shrink/basis anyway,
+        // and it was flex-grow that let a leftover card swell to a full row.
+        // min-width: 0 (NOT auto, the grid-item default) so a long creative
+        // name ellipsises inside its track instead of forcing the track wider.
+        min-width: 0;
         background: var(--surface-0, #202020);
         // Falls back to the fixed accent everywhere --card-accent hasn't
         // been set yet (extraction failed, or hasn't finished decoding the
