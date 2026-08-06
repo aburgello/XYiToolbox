@@ -48,8 +48,9 @@ interface Props {
 }
 
 export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
-    const { favoriteIds, favoriteEntries, toggleFavorite } = useFavorites(TOOLS);
-    const [favoritesOpen, setFavoritesOpen] = useState(false);
+    // Only the star badge on result cards lives here now -- the list itself
+    // renders in Toolset's Favourites group.
+    const { favoriteIds, toggleFavorite } = useFavorites(TOOLS);
     const [foldersOpen, setFoldersOpen] = useState(false);
     const [folders, setFolders] = useState<{ label: string; path: string }[] | null>(null);
 
@@ -327,18 +328,15 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
                                     </Tooltip>
                                 )}
                             </div>
-                            <Tooltip text="Favorites">
-                                <button
-                                    className={favoritesOpen || favoriteEntries.length > 0 ? "favorites-toggle active" : "favorites-toggle"}
-                                    onClick={() => { setFavoritesOpen((v) => !v); setFoldersOpen(false); }}
-                                >
-                                    <Star size={14} fill={favoriteEntries.length > 0 ? "currentColor" : "none"} />
-                                </button>
-                            </Tooltip>
+                            {/* The Favorites star/chip row that used to live here
+                                moved into Toolset as its own gold group -- see
+                                .action-group--favourites in Toolset.tsx. Starring
+                                itself is unchanged: the star badge on a search
+                                result card below is still how tools get added. */}
                             <Tooltip text="Useful Folders">
                                 <button
                                     className={foldersOpen ? "favorites-toggle active" : "favorites-toggle"}
-                                    onClick={() => { setFoldersOpen((v) => !v); setFavoritesOpen(false); }}
+                                    onClick={() => setFoldersOpen((v) => !v)}
                                 >
                                     <FolderOpen size={14} />
                                 </button>
@@ -349,39 +347,6 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
                                 onOpenFullTracker={() => onNavigate({ type: "tool", toolId: "timesheet-tracker", backTo: { type: "home" } })}
                             />
                         </div>
-
-                        <AnimatePresence>
-                            {favoritesOpen && (
-                                <motion.div
-                                    className="favorites-row"
-                                    initial={{ opacity: 0, height: 0 }}
-                                    animate={{ opacity: 1, height: "auto" }}
-                                    exit={{ opacity: 0, height: 0 }}
-                                    transition={{ duration: 0.15 }}
-                                >
-                                    {favoriteEntries.length === 0 ? (
-                                        <p className="hint">No favorites yet — star a tool from your search results to pin it here.</p>
-                                    ) : (
-                                        favoriteEntries.map(({ tool, action }) => {
-                                            const Icon = tool.icon;
-                                            return (
-                                                <motion.button
-                                                    key={favoriteKey(tool.id, action)}
-                                                    className="favorite-chip"
-                                                    style={categoryStyleVars(tool.categories[0])}
-                                                    whileHover={{ y: -2 }}
-                                                    whileTap={{ scale: 0.95 }}
-                                                    onClick={() => onNavigate({ type: "tool", toolId: tool.id, backTo: { type: "home" }, autoAction: action })}
-                                                >
-                                                    <Icon size={13} />
-                                                    <span>{action || tool.label}</span>
-                                                </motion.button>
-                                            );
-                                        })
-                                    )}
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
 
                         <AnimatePresence>
                             {foldersOpen && (

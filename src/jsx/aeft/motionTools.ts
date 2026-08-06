@@ -1708,3 +1708,93 @@ export const motionToolsReverseKeyframes = (): Result => {
     return { success: false, error: e.toString() };
   }
 };
+
+// =============================================================================
+// Fade -- one-click Opacity ramps on the selected layers.
+//
+// The "up" value is deliberately NOT hardcoded to 100: it reads whatever the
+// layer's Opacity already is (at the anchor time, keyframed or not) so fading
+// a deliberately-70%-scrim doesn't silently promote it to full. Only a layer
+// sitting at literal 0 falls back to 100, since fading 0 -> 0 is never what
+// anyone meant.
+//
+// Keys are ADDED, never cleared -- an existing Opacity animation keeps its
+// keyframes and just gains a ramp at the head/tail.
+//
+// `atEdges` false anchors the ramp to the playhead (fade starts where you
+// are); true anchors it to the layer's own In/Out points. "both" ignores the
+// toggle and always uses the layer edges, because a playhead-relative "fade
+// in AND out" has no sensible meaning.
+// =============================================================================
+function fadeKeyAt(prop: Property, time: number, value: number, influence: number): void {
+  prop.setValueAtTime(time, value);
+  const idx = prop.nearestKeyIndex(time);
+  if (idx < 1) return;
+  // nearestKeyIndex always returns SOMETHING; confirm it's the key we just
+  // wrote before re-easing it, or a fade landing on top of an existing
+  // animation would re-ease an unrelated neighbouring key.
+  const dt = Math.abs(prop.keyTime(idx) - time);
+  if (dt > 1e-6) return;
+  prop.setInterpolationTypeAtKey(idx, KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER);
+  const ease = easyEaseTuple(1, influence);
+  prop.setTemporalEaseAtKey(idx, ease, ease);
+}
+
+export const motionToolsFade = (mode: string, frames: number, atEdges: boolean): Result => {
+  try {
+    const comp = app.project.activeItem;
+    if (!(comp instanceof CompItem)) return { success: false, error: "Select or open a composition first." };
+    const layers = comp.selectedLayers;
+    if (layers.length === 0) return { success: false, error: "Please select layers first." };
+
+    const nFrames = Math.abs(frames);
+    if (!nFrames || nFrames < 1) return { success: false, error: "Fade length must be at least 1 frame." };
+    const dur = nFrames * comp.frameDuration;
+
+    // "both" is edge-anchored by definition -- see the header note.
+    const useEdges = mode === "both" ? true : !!atEdges;
+
+    app.beginUndoGroup("Fade");
+    let touched = 0;
+    const skipped: string[] = [];
+
+    for (let i = 0; i < layers.length; i++) {
+      const layer = layers[i];
+      // Cameras and lights have no Opacity at all -- property() returns null.
+      const op = layer.property("Opacity") as Property;
+      if (!op) { skipped.push(layer.name); continue; }
+
+      const anchor = useEdges ? layer.inPoint : comp.time;
+      const upRaw = (op.numKeys > 0 ? op.valueAtTime(anchor, false) : op.value) as number;
+      const up = upRaw > 0 ? upRaw : 100;
+
+      // Clamp so a fade longer than the layer can't invert its own ramp.
+      const span = layer.outPoint - layer.inPoint;
+      const d = Math.min(dur, span / 2);
+
+      if (mode === "in" || mode === "both") {
+        const t0 = useEdges ? layer.inPoint : comp.time;
+        fadeKeyAt(op, t0, 0, 33);
+        fadeKeyAt(op, t0 + d, up, 33);
+      }
+      if (mode === "out" || mode === "both") {
+        // Edge-anchored fades END on the out point; playhead-anchored ones
+        // START at the playhead and run forwards.
+        const tA = useEdges ? layer.outPoint - d : comp.time;
+        fadeKeyAt(op, tA, up, 33);
+        fadeKeyAt(op, tA + d, 0, 33);
+      }
+      touched++;
+    }
+
+    app.endUndoGroup();
+    if (touched === 0) return { success: false, error: "No layer with an Opacity property was selected." };
+    if (skipped.length) {
+      return { success: true, message: "Faded " + touched + " layer(s). Skipped (no Opacity): " + skipped.join(", ") } as Result & { message: string };
+    }
+    return { success: true };
+  } catch (e) {
+    app.endUndoGroup();
+    return { success: false, error: e.toString() };
+  }
+};

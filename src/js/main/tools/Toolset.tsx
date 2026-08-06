@@ -79,6 +79,7 @@ import { openPreFlight, type PreflightReport } from "../PreFlightModal";
 import { iconWiggle, buttonLift } from "../animations";
 import { TOOLS } from "../toolRegistry";
 import { useCustomTools, type CustomToolEntry } from "../hooks/useCustomTools";
+import { useFavorites, favoriteKey } from "../hooks/useFavorites";
 import type { Screen } from "../main";
 import turkGif from "../../assets/happy_shock_2.gif";
 import "../shared.scss";
@@ -1118,6 +1119,10 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
     //                    into a different group than its ACTIONS default.
     //   - labelOverride: groupId -> renamed label.
     const prefersReducedMotion = useReducedMotion();
+    // Read-only here: starring/unstarring still happens from the home screen's
+    // search results (the star badge on a result card). This surface just
+    // gives what's already starred somewhere prominent to land.
+    const { favoriteEntries } = useFavorites(TOOLS);
     const [editMode, setEditMode] = useState(false);
     const [hidden, setHidden] = useState<string[]>([]);
     // Purely visual emphasis (see the star badge in SortableTile): a starred
@@ -1501,7 +1506,45 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
                         </DragOverlay>
                     </DndContext>
                 ) : (
-                    GROUPS.map((group, groupIndex) => {
+                <>
+                {/* Favourites -- promoted OUT of the home screen's collapsed
+                    chip row and given the same visual weight as a real group,
+                    in gold so it reads as "yours" rather than as another
+                    category. Deliberately not part of GROUPS: it's derived
+                    from useFavorites (starred in search), has no drag order,
+                    no hide/rename, and no presence in edit mode -- edit mode
+                    reorders the grid, and there's nothing here to reorder. */}
+                {favoriteEntries.length > 0 && (
+                    <div className="action-group action-group--favourites">
+                        <div className="action-group-divider">
+                            <h3 className="action-group-label">Favourites</h3>
+                        </div>
+                        <div className="action-grid justify-center mx-auto">
+                            {favoriteEntries.map(({ tool, action }) => {
+                                const Icon = tool.icon;
+                                return (
+                                    <Tooltip key={favoriteKey(tool.id, action)} text={tool.description || `Open ${tool.label}.`} delay={1500}>
+                                        <motion.button
+                                            variants={buttonLift}
+                                            initial={{ opacity: 0, y: 10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            transition={{ type: "spring", stiffness: 300, damping: 24 }}
+                                            whileHover="hover"
+                                            whileTap={{ scale: 0.95 }}
+                                            onClick={() => onNavigate?.({ type: "tool", toolId: tool.id, backTo: { type: "home" }, autoAction: action })}
+                                        >
+                                            <motion.span variants={iconWiggle} className="action-icon">
+                                                <Icon size={16} />
+                                            </motion.span>
+                                            {action || tool.label}
+                                        </motion.button>
+                                    </Tooltip>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+                {GROUPS.map((group, groupIndex) => {
                     const groupActions = orderedActionsForGroup(group.id);
                     // Normal mode hides hidden actions outright.
                     const visibleActions = groupActions.filter((a) => !hiddenSet.has(a.id));
@@ -1600,7 +1643,8 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
                             </div>
                         </div>
                     );
-                    })
+                    })}
+                </>
                 )}
             </div>
 

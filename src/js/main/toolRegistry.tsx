@@ -52,6 +52,7 @@ import {
     Sparkles,
     Crosshair,
     ScanSearch,
+    Moon,
 } from "lucide-react";
 
 // --- Lazy tool imports --------------------------------------------------
@@ -94,6 +95,7 @@ const RenderQueueManagerTool = React.lazy(() => import("./tools/RenderQueueManag
 const MaskSeparatorTool      = React.lazy(() => import("./tools/MaskSeparator"));
 const ReplicatorTool         = React.lazy(() => import("./tools/Replicator"));
 const QuickFXTool            = React.lazy(() => import("./tools/QuickFX"));
+const DarkenTool             = React.lazy(() => import("./tools/Darken"));
 // WrikeTasksTool intentionally NOT imported here -- see the "Wrike Tasks
 // (unhooked)" note near the end of CLAUDE.md before re-adding it.
 
@@ -140,6 +142,7 @@ const PREFETCH_MAP: Record<string, () => Promise<any>> = {
     "mask-separator":       () => import("./tools/MaskSeparator"),
     "replicator":           () => import("./tools/Replicator"),
     "quick-fx":             () => import("./tools/QuickFX"),
+    "darken":               () => import("./tools/Darken"),
 };
 
 export const prefetchTool = (toolId: string) => {
@@ -530,6 +533,15 @@ export const TOOLS: ToolEntry[] = [
         Component: MaskSeparatorTool,
         actions: ["Separate Masks"],
         description: "Splits a layer with 2+ masks into one duplicate layer per mask (by Christopher R. Green, via aenhancers.com).",
+    },
+    {
+        id: "darken",
+        label: "Darken",
+        categories: ["tools"],
+        icon: Moon,
+        Component: DarkenTool,
+        actions: ["Generate Darkening Layer"],
+        description: "Drops a black scrim behind the selected layer so a CTA, TT or midcard reads over busy artwork.",
     },
     {
         id: "replicator",

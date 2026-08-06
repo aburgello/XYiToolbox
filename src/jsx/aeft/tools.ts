@@ -6465,3 +6465,119 @@ export const editInContextReveal = (rootId: number, pathJson: string): Result =>
     return { success: false, error: e.toString() };
   }
 };
+
+// =============================================================================
+// Darken -- generates a scrim layer to sit behind a CTA / TT / midcard.
+//
+// Why a solid + feathered mask rather than the obvious alternatives:
+//   - A comp-sized solid with a feathered mask CLIPS its own feather at the
+//     layer bounds, which is the hard edge you get doing this by hand. So the
+//     solid here is deliberately oversized by the feather amount on every
+//     side and the mask's outer edges are pushed outside the frame -- only
+//     the edge facing INTO frame ever shows its falloff.
+//   - Shape-layer gradient fills would be smoother still, but gradient stop
+//     colours ("ADBE Vector Grad Colors") are effectively unwritable from
+//     ExtendScript, so they'd need hand-editing after generation anyway.
+//   - Gradient Ramp on a solid ramps RGB, not alpha -- useless for a scrim.
+//
+// Placement: directly BEHIND the selected layer (moveAfter), so selecting the
+// CTA and hitting Darken lands the scrim in the right slot with the pool
+// already sized to that layer. With nothing selected it goes to the top of
+// the stack, where it's visible and obvious rather than lost at the bottom.
+// =============================================================================
+function darkenEllipse(cx: number, cy: number, rx: number, ry: number): Shape {
+  // 0.5523 -- the standard cubic-bezier circle approximation constant.
+  const k = 0.5523;
+  const s = new Shape();
+  s.vertices = [[cx, cy - ry], [cx + rx, cy], [cx, cy + ry], [cx - rx, cy]];
+  s.inTangents = [[-rx * k, 0], [0, -ry * k], [rx * k, 0], [0, ry * k]];
+  s.outTangents = [[rx * k, 0], [0, ry * k], [-rx * k, 0], [0, -ry * k]];
+  s.closed = true;
+  return s;
+}
+
+export const generateDarken = (style: string, opacityPct: number, featherPx: number, coveragePct: number): Result => {
+  try {
+    const comp = app.project.activeItem;
+    if (!(comp instanceof CompItem)) return { success: false, error: "Please open a composition first." };
+
+    const feather = Math.max(0, featherPx || 0);
+    const opacity = Math.max(0, Math.min(100, opacityPct || 0));
+    const coverage = Math.max(1, Math.min(100, coveragePct || 33));
+
+    // The selected layer (if any) both positions the scrim in the stack and
+    // sizes the "pool" style. Anything beyond the first selection is ignored.
+    const sel = comp.selectedLayers;
+    const anchorLayer = sel.length > 0 ? (sel[0] as AVLayer) : null;
+
+    app.beginUndoGroup("Generate Darken");
+
+    const flat = style === "flat";
+    // Oversize so the mask feather never meets the layer edge. Flat needs no
+    // mask at all, so it stays exactly comp-sized.
+    const pad = flat ? 0 : Math.ceil(feather) + 8;
+    const sw = comp.width + pad * 2;
+    const sh = comp.height + pad * 2;
+
+    const label = style === "pool" ? "Pool" : style === "bottom" ? "Bottom" : style === "top" ? "Top" : "Flat";
+    const solid = comp.layers.addSolid([0, 0, 0], "Darken - " + label, sw, sh, comp.pixelAspect, comp.duration);
+    solid.property("Position").setValue([comp.width / 2, comp.height / 2]);
+    (solid.property("Opacity") as Property).setValue(opacity);
+    solid.label = 11;
+
+    if (!flat) {
+      const masks = solid.property("Masks") as Property;
+      const mask = masks.addProperty("Mask") as MaskPropertyGroup;
+      mask.maskMode = MaskMode.ADD;
+
+      // Layer space: comp point (x, y) sits at (x + pad, y + pad).
+      let shape: Shape;
+      if (style === "pool") {
+        let cx = comp.width / 2;
+        let cy = comp.height / 2;
+        let rx = comp.width / 4;
+        let ry = comp.height / 4;
+        if (anchorLayer) {
+          try {
+            const pos = (anchorLayer.property("Position") as Property).value as number[];
+            const sc = (anchorLayer.property("Scale") as Property).value as number[];
+            const r = anchorLayer.sourceRectAtTime(comp.time, false);
+            // Approximate: assumes the layer is unparented and unrotated. The
+            // generous feather padding absorbs the error in practice.
+            cx = pos[0];
+            cy = pos[1];
+            rx = Math.abs(r.width * (sc[0] / 100)) / 2 + feather * 0.75 + 40;
+            ry = Math.abs(r.height * (sc[1] / 100)) / 2 + feather * 0.75 + 40;
+          } catch (e) {
+            // Fall through to the comp-centred default above.
+          }
+        }
+        shape = darkenEllipse(cx + pad, cy + pad, rx, ry);
+      } else {
+        const band = comp.height * (coverage / 100);
+        // Every edge except the one facing into frame is pushed outside the
+        // solid's own bounds, so only that edge's feather is ever visible.
+        const top = style === "bottom" ? pad + (comp.height - band) : -pad;
+        const bottom = style === "bottom" ? sh + pad : pad + band;
+        shape = new Shape();
+        shape.vertices = [[-pad, top], [sw + pad, top], [sw + pad, bottom], [-pad, bottom]];
+        shape.closed = true;
+      }
+
+      (mask.property("Mask Path") as Property).setValue(shape);
+      (mask.property("Mask Feather") as Property).setValue([feather, feather]);
+    }
+
+    if (anchorLayer) solid.moveAfter(anchorLayer);
+    else solid.moveToBeginning();
+
+    app.endUndoGroup();
+    return {
+      success: true,
+      message: anchorLayer ? "Scrim added behind \"" + anchorLayer.name + "\"." : "Scrim added at the top of the stack.",
+    } as Result & { message: string };
+  } catch (e) {
+    app.endUndoGroup();
+    return { success: false, error: e.toString() };
+  }
+};

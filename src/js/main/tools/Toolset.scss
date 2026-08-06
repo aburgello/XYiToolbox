@@ -47,6 +47,23 @@
         }
     }
 
+    // Favourites -- the one group that sets its accent from CSS rather than
+    // from groupAccentStyle()'s rotating palette, because it must NOT read as
+    // "just another category". Gold is reserved for it panel-wide. The vars
+    // are the same --btn-* contract every other group inherits (see
+    // groupAccentStyle in Toolset.tsx), so the tiles, their hover glow and the
+    // label's accent dot all pick this up with no extra rules.
+    .action-group--favourites {
+        --btn-border: #d9a441;
+        --btn-bg: rgba(217, 164, 65, 0.14);
+        --btn-glow: rgba(217, 164, 65, 0.38);
+        --btn-edge: rgba(217, 164, 65, 0.45);
+
+        .action-group-label {
+            color: #d9a441;
+        }
+    }
+
     // Same "legend sitting on the border line" trick as .toolset-panel's own
     // h2 (TOOLSET) -- a full-width rule via ::before, with the label's own
     // background masking the segment of line directly behind it. Unlike the

@@ -66,6 +66,7 @@ import {
     FlipHorizontal, FlipVertical,
     Eraser, Copy, ClipboardPaste, BookmarkPlus, Trash2, Undo2,
     ArrowRightToLine, ArrowLeftToLine,
+    Sunrise, Sunset, Contrast,
 } from "lucide-react";
 import Droplet from "./Droplet";
 import Tooltip from "./Tooltip";
@@ -323,6 +324,14 @@ const XYToolsDroplet: React.FC = () => {
     const [alignTo, setAlignTo] = useState("comp");
     const [seqFrames, setSeqFrames] = useState("2");
     const [seqReverse, setSeqReverse] = useState(false);
+    // Fade length in frames. 10 is a deliberately conservative default -- a
+    // ~0.4s fade at 25fps, short enough to read as a transition rather than
+    // a hold on the short DOOH durations this studio works in.
+    const [fadeFrames, setFadeFrames] = useState("10");
+    // false = ramp from the playhead; true = ramp from the layer's own
+    // In/Out points. See motionToolsFade's header -- "Both" ignores this and
+    // is always edge-anchored.
+    const [fadeAtEdges, setFadeAtEdges] = useState(true);
     const [exciteStrength, setExciteStrength] = useState(5);
     const [nudgeStep, setNudgeStep] = useState("1");
     // Held in React state, not app.settings -- a copied ease is meant to
@@ -630,6 +639,40 @@ const XYToolsDroplet: React.FC = () => {
                                         <ArrowRightLeft size={14} /> Sequence Layers
                                     </button>
                                     <p className="mt-hint">Cascades selected layers in time, top to bottom.</p>
+
+                                    <div className="mt-section-label mt-section-label--sub">Fade</div>
+                                    <div className="mt-seq-row">
+                                        <label className="mt-field">
+                                            <span>Length</span>
+                                            <input type="number" value={fadeFrames} onChange={(e) => setFadeFrames(e.target.value)} />
+                                            <span className="mt-field-unit">frames</span>
+                                        </label>
+                                    </div>
+                                    <div className="mt-seq-row">
+                                        <CheckboxToggle checked={fadeAtEdges} onChange={setFadeAtEdges} label="From layer In / Out" />
+                                    </div>
+                                    <div className="mt-row mt-row--fill">
+                                        <Tooltip text={fadeAtEdges ? "Fade up from the layer's In point" : "Fade up from the playhead"} grow>
+                                            <button className="mt-text-btn mt-text-btn--grow" onClick={() => run("motionToolsFade", "in", parseFloat(fadeFrames) || 0, fadeAtEdges)}>
+                                                <Sunrise size={13} /> In
+                                            </button>
+                                        </Tooltip>
+                                        <Tooltip text={fadeAtEdges ? "Fade down into the layer's Out point" : "Fade down starting at the playhead"} grow>
+                                            <button className="mt-text-btn mt-text-btn--grow" onClick={() => run("motionToolsFade", "out", parseFloat(fadeFrames) || 0, fadeAtEdges)}>
+                                                <Sunset size={13} /> Out
+                                            </button>
+                                        </Tooltip>
+                                        <Tooltip text="Fade up from the In point and down into the Out point" grow>
+                                            <button className="mt-text-btn mt-text-btn--grow" onClick={() => run("motionToolsFade", "both", parseFloat(fadeFrames) || 0, fadeAtEdges)}>
+                                                <Contrast size={13} /> Both
+                                            </button>
+                                        </Tooltip>
+                                    </div>
+                                    <p className="mt-hint">
+                                        Adds eased Opacity keys without clearing any you already have. Fades to
+                                        the layer's current Opacity, not blindly to 100. "Both" always uses the
+                                        layer In/Out points.
+                                    </p>
 
                                     <div className="mt-section-label mt-section-label--sub">Keyframes · Trim</div>
                                     <div className="mt-row mt-row--fill">

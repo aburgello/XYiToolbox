@@ -1,0 +1,101 @@
+// =============================================================================
+// src/js/main/tools/Darken.scss
+// -----------------------------------------------------------------------------
+// Styles for the live scrim preview only -- the form itself comes from
+// formTool.scss like every other form tool, same split as SafeGenerator.scss.
+//
+// The preview stacks three layers inside one clipped frame: a fake "artwork"
+// plate (so there's something for the scrim to darken -- a scrim over an empty
+// box is invisible), the scrim itself (background set inline from the live
+// control values), and a CTA chip to show what the scrim is meant to be
+// backing. Motion is a one-shot transition on value change, not a loop.
+// =============================================================================
+
+.dk-preview-wrap {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 12px 0 6px;
+}
+
+.dk-preview {
+    position: relative;
+    display: block;
+    flex-shrink: 0;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 4px;
+    overflow: hidden;
+    background: #1b1b1f;
+}
+
+// Stand-in artwork so the scrim has something to act on. Diagonal banding
+// reads as "image" without pretending to be any real creative.
+.dk-preview-plate {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #6d7f8c;
+    background-image: repeating-linear-gradient(
+        135deg,
+        rgba(255, 255, 255, 0.13) 0px,
+        rgba(255, 255, 255, 0.13) 7px,
+        rgba(255, 255, 255, 0) 7px,
+        rgba(255, 255, 255, 0) 15px
+    );
+}
+
+.dk-preview-scrim {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    transition: background 0.25s ease;
+}
+
+// The chip sits wherever that style's shadow actually pools, so the preview
+// reads as "this is what backs your CTA" rather than a floating label.
+.dk-preview-cta {
+    position: absolute;
+    left: 50%;
+    bottom: 14%;
+    transform: translateX(-50%);
+    padding: 2px 9px;
+    border-radius: 2px;
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    line-height: 1.5;
+}
+
+.dk-preview-cta--pool,
+.dk-preview-cta--flat {
+    top: 50%;
+    bottom: auto;
+    transform: translate(-50%, -50%);
+}
+
+.dk-preview-cta--top {
+    top: 14%;
+    bottom: auto;
+    transform: translateX(-50%);
+}
+
+.dk-preview-caption {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 10.5px;
+    color: #8a8a8a;
+    line-height: 1.4;
+
+    strong { color: #cfcfcf; font-weight: 600; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dk-preview-scrim { transition: none; }
+}
