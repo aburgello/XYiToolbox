@@ -2555,9 +2555,21 @@ function csvLocNameGen(
           // this keeps working if that ever changes. Same reason the repeats
           // are offset from `baseStart` rather than from 0.
           item.duration = item.duration + span * (repeatFactor - 1);
+          // `duplicate()` inserts the copy directly ABOVE its original, which
+          // pushes the original down one place each time -- so duplicating
+          // three times left the stack reading Frontcard, pass 3, pass 2,
+          // pass 1 from the top, with the FIRST pass at the bottom. Harmless
+          // to the render (the passes are sequential, nothing overlaps) but it
+          // reads as scrambled in the timeline.
+          //
+          // moveAfter() puts each copy immediately BELOW the previous pass, so
+          // the stack ends up in playback order: Frontcard, pass 1, pass 2, …
+          let previous: AVLayer = creative;
           for (let k = 1; k < repeatFactor; k++) {
             const dup = creative.duplicate() as AVLayer;
+            dup.moveAfter(previous);
             dup.startTime = baseStart + span * k;
+            previous = dup;
           }
           // Without this the work area still covers only the first pass and
           // a render comes back the original length.

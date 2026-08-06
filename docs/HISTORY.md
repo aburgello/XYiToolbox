@@ -6311,3 +6311,35 @@ its span from 15 to 10 and making 35 read as 30 (real AE PRESERVES in/out when
 the new source is at least as long); and a "40s from 10s x4" case was asserted
 against the 30sec row, where it correctly finds nothing because 30/4 is not an
 integer.
+
+### Repeat passes stacked in the wrong order (2026-08-06)
+
+Reported from a real 3x build: the timeline read Frontcard, then a pass at 15s,
+then 25s, then the FIRST pass at 5s sitting at the bottom.
+
+`AVLayer.duplicate()` inserts the copy directly ABOVE its original, so each
+duplicate pushed the original down one more place. Duplicating N-1 times from
+the same original leaves the stack in reverse-ish order with pass 1 last —
+`15, 25, 35, 5` top to bottom for a 4x.
+
+**Purely cosmetic**: the passes are sequential and never overlap, so every
+render was already correct. But a scrambled stack is exactly the thing an
+artist opens the file and distrusts.
+
+Fixed with `dup.moveAfter(previous)`, chaining each copy below the pass before
+it, so the stack reads in playback order: Frontcard, pass 1, pass 2, …
+
+**The first version of the headless fixture could not have caught this** — its
+`duplicate()` appended to the end of the layer array, which happens to produce
+the right order by accident. It now models AE properly (`duplicate()` splices
+ABOVE the original, `moveAfter()` moves to just below a target), and the
+strategies were run side by side to confirm the assertion actually
+distinguishes them:
+
+    without moveAfter -> 15,25,35,5   (matches the reported screenshot)
+    with moveAfter    -> 5,15,25,35
+
+General lesson, twice over on this feature: **a stub that is convenient rather
+than faithful will pass whatever you write.** This fixture has now hidden two
+real bugs — `replaceSource` resetting out-points, and `duplicate()` appending —
+both because the easy implementation was the wrong one.
