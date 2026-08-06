@@ -13,6 +13,7 @@
 // + PDF parsing happen here; only comp generation crosses the bridge.
 // =============================================================================
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
     FolderSearch,
     FolderPlus,
@@ -555,6 +556,29 @@ const CSVLocaliserTool = () => {
     // lines aren't written into a section the user can't see.
     const openBatch = (key: string) =>
         setExpandedBatches((s) => (s.has(key) ? s : new Set(s).add(key)));
+    const collapseBatch = (key: string) =>
+        setExpandedBatches((s) => {
+            if (!s.has(key)) return s;
+            const next = new Set(s);
+            next.delete(key);
+            return next;
+        });
+
+    // Escape closes the open batch modal. Bound once for the whole tool rather
+    // than per batch, and only while something is actually open, so it can't
+    // swallow Escape from the rest of the panel. Closes ALL open batches: only
+    // one can realistically be open at a time now that they are modal, but a
+    // run auto-opens one, so this stays defensive.
+    useEffect(() => {
+        if (expandedBatches.size === 0) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key !== "Escape") return;
+            e.stopPropagation();
+            setExpandedBatches(new Set());
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [expandedBatches]);
     const [busy, setBusy] = useState(false);
     const [progress, setProgress] = useState<string | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
@@ -1458,7 +1482,47 @@ const CSVLocaliserTool = () => {
                                                                 </>
                                                             )}
                                                         </div>
-                                                        {batchOpen && b.rows.length > 0 && (
+                                                        {/* The batch opens as a MODAL rather than expanding
+                                                            inline. Inline, the table sat inside an already
+                                                            indented territory > batch nest and every column was
+                                                            squeezed; a batch is the thing you actually read and
+                                                            edit, so it gets the full panel width.
+
+                                                            Rendered through createPortal so no `overflow` or
+                                                            `transform` ancestor in the territory list can clip
+                                                            it -- the same reason Tooltip portals its bubble. The
+                                                            JSX stays where it is in the tree, so it still closes
+                                                            over b/key/builtFor/dupOf exactly as before. */}
+                                                        {batchOpen && createPortal(
+                                                            <div
+                                                                className="specs-modal-overlay"
+                                                                onClick={() => collapseBatch(key)}
+                                                                role="presentation"
+                                                            >
+                                                                <div
+                                                                    className="specs-modal"
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                    role="dialog"
+                                                                    aria-modal="true"
+                                                                    aria-label={`${t.territory} — ${b.pdfName}`}
+                                                                >
+                                                                    <div className="specs-modal-head">
+                                                                        <FileText size={14} />
+                                                                        <span className="specs-modal-title">{b.pdfName}</span>
+                                                                        <span className="specs-batch-tag">{b.batch}</span>
+                                                                        <span className="specs-modal-terr">{t.territory}</span>
+                                                                        <span className="specs-modal-spacer" />
+                                                                        <button
+                                                                            type="button"
+                                                                            className="specs-modal-close"
+                                                                            onClick={() => collapseBatch(key)}
+                                                                            aria-label="Close"
+                                                                        >
+                                                                            <X size={15} />
+                                                                        </button>
+                                                                    </div>
+                                                                    <div className="specs-modal-body">
+                                                        {b.rows.length > 0 && (
                                                             <table className="specs-table specs-table--selectable">
                                                                 <thead>
                                                                     <tr>
@@ -1708,7 +1772,7 @@ const CSVLocaliserTool = () => {
                                                                 </tbody>
                                                             </table>
                                                         )}
-                                                        {batchOpen && batchRows[key] && (
+                                                        {batchRows[key] && (
                                                             <div className="specs-locresult">
                                                                 {(() => {
                                                                     const rows = batchRows[key];
@@ -1731,6 +1795,58 @@ const CSVLocaliserTool = () => {
                                                                     );
                                                                 })()}
                                                             </div>
+                                                        )}
+                                                                    </div>
+                                                                    {/* The batch's actions live on the collapsed row
+                                                                        too, but that row is now BEHIND this modal --
+                                                                        reviewing the rows and then being unable to run
+                                                                        them would be a silly place to leave someone.
+                                                                        Same handlers, so there is no second code path. */}
+                                                                    {canRun && (
+                                                                        <div className="specs-modal-foot">
+                                                                            <span className="specs-modal-foot-count">
+                                                                                {incl} of {b.rows.length} row{b.rows.length === 1 ? "" : "s"} selected
+                                                                            </span>
+                                                                            <span className="specs-modal-spacer" />
+                                                                            <Tooltip text={`Re-check AE/${padBatch(b.batch)} for files that already exist`}>
+                                                                                <button
+                                                                                    className="specs-batch-run specs-batch-recheck"
+                                                                                    disabled={busy}
+                                                                                    onClick={() => refreshBatchBuilt(t, b)}
+                                                                                    aria-label="Re-check which rows are already built"
+                                                                                >
+                                                                                    <RotateCcw size={13} />
+                                                                                </button>
+                                                                            </Tooltip>
+                                                                            <button
+                                                                                className="specs-batch-run specs-batch-mcit"
+                                                                                disabled={busy || (!b.done && st !== "done")}
+                                                                                onClick={() => runBatchMcIt(t, b)}
+                                                                            >
+                                                                                <ImageIcon size={13} /> {mcItInlineDone[key] ? "Re-run MC It!" : "MC It!"}
+                                                                            </button>
+                                                                            <button
+                                                                                className={"specs-batch-run" + (st === "done" ? " is-done" : st === "failed" ? " is-failed" : "")}
+                                                                                disabled={busy || !aepPath || incl === 0}
+                                                                                onClick={() => runBatch(t, b)}
+                                                                            >
+                                                                                {st === "running" ? (
+                                                                                    <><RefreshCw size={13} className="spin" /> Running…</>
+                                                                                ) : st === "done" ? (
+                                                                                    <><Check size={13} /> Done · Re-run</>
+                                                                                ) : st === "failed" ? (
+                                                                                    <><PlayCircle size={13} /> Retry</>
+                                                                                ) : someExcluded ? (
+                                                                                    <><PlayCircle size={13} /> Localise {incl} row{incl === 1 ? "" : "s"}</>
+                                                                                ) : (
+                                                                                    <><PlayCircle size={13} /> Localise batch</>
+                                                                                )}
+                                                                            </button>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>,
+                                                            document.body
                                                         )}
                                                     </div>
                                                 );

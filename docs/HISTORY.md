@@ -6161,3 +6161,46 @@ test over the whole path. Worth knowing when writing masters fixtures.
 **The AE-side build (comp stretch + layer duplication) has NOT been run in
 real AE** — it cannot be exercised headlessly. That is the part to test on a
 copy first.
+
+## Specs batch opens as a modal (2026-08-06)
+
+A batch expanded INLINE, inside the territory > batch nest, so its table was
+squeezed into whatever width survived two levels of indentation — columns
+collided and long site names truncated mid-word. The batch is the thing you
+actually read and edit, so it now opens over the panel.
+
+- **`createPortal` to `document.body`**, so no `overflow`/`transform` ancestor
+  in the territory list can clip it — the same reason Tooltip portals its
+  bubble.
+- **The table JSX did NOT move.** The portal wraps it where it already sat in
+  the tree, so it still closes over `b` / `key` / `builtFor` / `dupOf` /
+  `incl` exactly as before. Relocating ~250 lines of deeply nested JSX to a
+  helper would have been the riskier edit for zero behavioural gain.
+- **z-index 1500** — deliberately between the toast stack (1000) and Dialog
+  (2000). A confirm raised from inside this modal has to land on top of it.
+- Follows the existing `.mcit-overlay` look (fixed + dim + blur) rather than
+  inventing a second modal style. **`backdrop-filter` is Chrome 76 and the
+  declared target is chrome74**, so the blur is enhancement only: the
+  `rgba(8,8,10,0.74)` dim carries the effect on its own if it doesn't apply.
+  `.mcit-overlay` already ships the same declaration, so this adds no new risk
+  — and if blur turns out not to render in the real host, that is a pre-existing
+  question about the target, not this modal.
+- **The actions are repeated in a modal footer** (Localise batch / MC It! /
+  Re-check). They still exist on the collapsed row, but that row is now behind
+  the modal — reviewing rows and then being unable to run them would be an
+  absurd place to leave someone. Same handlers, so there is no second code
+  path, and `canRun` still gates them.
+- Escape closes it, bound once for the tool and only while a batch is open so
+  it cannot swallow Escape from the rest of the panel. Backdrop click closes;
+  clicks inside stop propagation.
+
+Sharp edge hit while building this: adding the footer put it AFTER
+`.specs-modal`'s closing tag, leaving the div count balanced but the footer a
+sibling of the modal inside the overlay. `tsc` was happy. Verified by reading
+the emitted structure back rather than trusting the JSX to be balanced.
+
+**Verified**: frontend tsconfig + `yarn build` + precedence audit clean, and
+all seven new classes confirmed present in the SINGLE bundled stylesheet (this
+project sets `cssCodeSplit: false`, so a missing class here is the failure mode
+that only shows up from an installed ZXP). **Not seen in a running panel** —
+layout and the blur want one look at a real docked panel.
