@@ -26,6 +26,7 @@ import { createPortal } from "react-dom";
 import { X, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { evalTS } from "../lib/utils/bolt";
 import { parseJobTitle, type WrikeJob } from "./lib/jobsFeed";
+import { setPendingBatch, type HandoffRow } from "./lib/localiseHandoff";
 
 // Mirrors NameDetectResult host-side.
 interface ParsedName {
@@ -38,6 +39,9 @@ interface ParsedName {
     site?: string;
     version?: string;
     error?: string;
+    // True when the name carries an isolated OV token -- i.e. it is the
+    // un-localised master, not a deliverable.
+    isOv?: boolean;
 }
 
 interface Row {
@@ -57,7 +61,12 @@ function buildRow(name: string, status: string, parsed: ParsedName | null): Row 
     const size = sizeMatch ? `${sizeMatch[1]}x${sizeMatch[2]}` : "";
     const missing: string[] = [];
     if (!parsed || !parsed.success) missing.push("unparseable");
-    else {
+    else if (parsed.isOv) {
+        // Not a gap in the name -- it is a perfectly good MASTER name. It just
+        // is not something to localise, and it parses identically to its own
+        // deliverable, so sending it would duplicate that row.
+        missing.push("is the OV master");
+    } else {
         // Campaign is what the master lookup keys on -- an empty one means the
         // row can never match a master, so it is the most important gap here.
         if (!parsed.campaign) missing.push("campaign");
@@ -119,6 +128,10 @@ export const ActiveJobModal: React.FC<Props> = ({ job, onClose, onOpenLocaliser 
 
     const parts = parseJobTitle(job.title);
     const clean = rows ? rows.filter((r) => r.missing.length === 0).length : 0;
+    // Only fully-parsed rows can be localised: campaign is what the master
+    // lookup keys on, and a run needs a size and duration too. A row missing
+    // any of those is shown in the table but never sent.
+    const sendable = rows ? rows.filter((r) => r.missing.length === 0) : [];
 
     return createPortal(
         <div className="ajm-overlay" onClick={onClose} role="presentation">
@@ -208,8 +221,46 @@ export const ActiveJobModal: React.FC<Props> = ({ job, onClose, onOpenLocaliser 
                     <button type="button" className="ajm-btn" onClick={onClose}>
                         Close
                     </button>
-                    <button type="button" className="ajm-btn ajm-btn--primary" onClick={onOpenLocaliser}>
-                        Open in Localise
+                    {/* Sends only the rows that can actually localise, and says
+                        how many were left behind. The RUN still happens in CSV
+                        Localiser, which owns every guard that matters --
+                        skip-existing, the built-row matcher, duplicate
+                        detection, per-row master status. Rebuilding those here
+                        would mean either duplicating them or shipping without
+                        them. */}
+                    <button
+                        type="button"
+                        className="ajm-btn ajm-btn--primary"
+                        disabled={!rows || sendable.length === 0}
+                        onClick={() => {
+                            if (!rows) return;
+                            const handoffRows: HandoffRow[] = sendable.map((r) => {
+                                const [w, h] = r.size.split("x");
+                                return {
+                                    artwork: r.parsed?.artworkType || "DOOH",
+                                    creative: r.parsed?.campaign || "",
+                                    width: w || "",
+                                    height: h || "",
+                                    // The builder's field is a bare number of
+                                    // seconds; the parser gives "30sec".
+                                    duration: (r.parsed?.duration || "").replace(/\D/g, ""),
+                                };
+                            });
+                            setPendingBatch({
+                                territory: parts.territory || "",
+                                batch: parts.batch || "Batch_1",
+                                rows: handoffRows,
+                                jobTitle: job.title,
+                                skipped: rows
+                                    .filter((r) => r.missing.length > 0)
+                                    .map((r) => ({ name: r.name, missing: r.missing })),
+                            });
+                            onOpenLocaliser();
+                        }}
+                    >
+                        {sendable.length === 0
+                            ? "Nothing to send"
+                            : `Send ${sendable.length} row${sendable.length === 1 ? "" : "s"} to Localise`}
                     </button>
                 </div>
             </div>

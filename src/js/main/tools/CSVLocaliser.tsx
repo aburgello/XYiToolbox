@@ -14,6 +14,7 @@
 // =============================================================================
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { takePendingBatch, type PendingBatch } from "../lib/localiseHandoff";
 import {
     FolderSearch,
     FolderPlus,
@@ -768,6 +769,52 @@ const CSVLocaliserTool = () => {
         { id: 1, artwork: "DOOH", creative: "", custom: "", width: "", height: "", duration: "" },
     ]);
     const buildRowId = useRef(2);
+    // A batch handed over from the Active Jobs modal ("Send N rows to
+    // Localise"), consumed once on mount. Kept in state only so the notice
+    // below can name the job it came from.
+    const [handoff, setHandoff] = useState<PendingBatch | null>(null);
+
+    useEffect(() => {
+        const pending = takePendingBatch();
+        if (!pending || !pending.rows.length) return;
+        setHandoff(pending);
+        setBuildRows(
+            pending.rows.map((r, i) => ({
+                id: i + 1,
+                artwork: r.artwork || "DOOH",
+                // The creative comes from the parsed subtask name, which is
+                // free text as far as the builder is concerned -- so it goes in
+                // via CUSTOM_CREATIVE rather than the scanned-creatives
+                // dropdown, which would silently blank anything not in the
+                // masters folder listing.
+                creative: CUSTOM_CREATIVE,
+                custom: r.creative,
+                width: r.width,
+                height: r.height,
+                duration: r.duration,
+            }))
+        );
+        buildRowId.current = pending.rows.length + 1;
+        setBuildBatch(pending.batch || "Batch_1");
+        // Territory is NOT set blindly: the dropdown lists scanned FOLDER names
+        // ("Italy"), while the Wrike title carries a code ("IT"). Setting an
+        // unmatched value would look like a selection that then fails on run.
+        // The effect below resolves it once the territory list has loaded.
+        setBuildOpen(true);
+    }, []);
+
+    // Resolve the handoff's territory code against the scanned folder names,
+    // once those exist. Exact, then prefix -- "IT" matching "Italy" is a guess
+    // worth making, "IT" matching "ITALY_ARCHIVE" is not, so anything
+    // ambiguous is left for the user to pick.
+    useEffect(() => {
+        if (!handoff || !handoff.territory || !buildTerritories.length) return;
+        const code = handoff.territory.toLowerCase();
+        const exact = buildTerritories.find((t) => t.toLowerCase() === code);
+        const prefixed = buildTerritories.filter((t) => t.toLowerCase().indexOf(code) === 0);
+        const hit = exact || (prefixed.length === 1 ? prefixed[0] : "");
+        if (hit) setBuildTerritory(hit);
+    }, [handoff, buildTerritories]);
     // Master lookup for the builder's rows, keyed by ROW ID (not position --
     // rows are added and removed, and a positional key would smear one row's
     // result onto another). Same resolver the specs table uses, so a hand-built
@@ -2033,6 +2080,20 @@ const CSVLocaliserTool = () => {
                 </button>
                 {buildOpen && (
                     <div className="specs-fallback-body specs-build-body">
+                        {handoff && (
+                            <div className="specs-handoff">
+                                <strong>{handoff.rows.length} row{handoff.rows.length === 1 ? "" : "s"}</strong> from{" "}
+                                <em>{handoff.jobTitle}</em> — check the territory and masters folder, then Localise.
+                                {handoff.skipped.length > 0 && (
+                                    <span className="specs-handoff-skipped">
+                                        {" "}{handoff.skipped.length} subtask{handoff.skipped.length === 1 ? " was" : "s were"} left
+                                        out: {handoff.skipped.slice(0, 3).map((sk) => sk.name.split("_").slice(-3).join("_")).join(", ")}
+                                        {handoff.skipped.length > 3 ? "…" : ""} (missing{" "}
+                                        {[...new Set(handoff.skipped.flatMap((sk) => sk.missing))].join(", ")}).
+                                    </span>
+                                )}
+                            </div>
+                        )}
                         <div className="specs-build-meta">
                             <label className="specs-build-field">
                                 <span>Territory</span>

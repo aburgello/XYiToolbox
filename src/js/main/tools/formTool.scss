@@ -2150,3 +2150,27 @@ $rail-gap: 10px;   // exactly the flex gap between rows, so segments tile
     font-size: 10px;
     color: #8a8a8a;
 }
+
+// Notice shown when the batch builder was populated from an Active Jobs
+// handoff rather than typed. Names the job and, crucially, says what was NOT
+// sent — silently forwarding 2 of 5 deliverables is how one goes missing.
+.specs-handoff {
+    margin: 0 0 10px;
+    padding: 8px 10px;
+    border: 1px solid #3a4a5a;
+    border-left: 3px solid var(--ov-accent, #4a7ab5);
+    border-radius: 5px;
+    background: rgba(74, 122, 181, 0.08);
+    font-size: 11px;
+    line-height: 1.5;
+    color: #b8c4d0;
+
+    strong { color: #e8e8e8; }
+    em { color: #dcdcdc; font-style: normal; font-weight: 600; }
+}
+
+.specs-handoff-skipped {
+    display: block;
+    margin-top: 4px;
+    color: #d9a441;
+}

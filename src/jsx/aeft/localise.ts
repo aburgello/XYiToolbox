@@ -2743,7 +2743,17 @@ export const parseDeliverableNames = (namesJson: string): NameDetectResult[] => 
   }
   if (!names || !names.length) return out;
   for (let i = 0; i < names.length; i++) {
-    out.push(nameGeneratorParse(String(names[i])));
+    const name = String(names[i]);
+    const parsed = nameGeneratorParse(name) as NameDetectResult & { isOv?: boolean };
+    // An isolated OV token means this is the un-localised MASTER, not a
+    // deliverable -- the same signal losOpenForEdit() uses to decide copy-first
+    // and Naming Audit uses to spot a master that has wandered into a batch.
+    //
+    // It matters here because "..._30s_JP" and "..._30s_JP_OV" parse to
+    // IDENTICAL rows: same campaign, size, duration, territory. Sending both
+    // would queue the same deliverable twice.
+    parsed.isOv = hasIsolatedOvToken(name);
+    out.push(parsed);
   }
   return out;
 };

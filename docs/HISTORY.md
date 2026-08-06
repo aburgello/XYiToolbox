@@ -6694,3 +6694,56 @@ cannot serve the previous person's jobs.
 **NOT DEPLOYED and not switched on.** The panel still shows sample data until
 `JobsFeedConfig` is set. To go live: `npx wrangler secret put PANEL_KEY`,
 deploy, then save `{url, key}` into that setting.
+
+## Active Jobs → CSV Localiser handoff (2026-08-06)
+
+"Send N rows to Localise" in the job modal: a Wrike job's subtasks become
+prefilled rows in CSV Localiser's batch builder. This is the answer to the
+original problem — **when a PM misses a specs PDF, Wrike becomes the spec
+source**, and today such a batch is invisible to the toolbox entirely.
+
+**It hands over; it does not run.** CSV Localiser owns every guard that matters
+(skip-existing, the built-row matcher, duplicate detection, per-row master
+status, the exclusion checkboxes). A "Localise" button in the modal would mean
+duplicating those or shipping without them. The modal prepares, the tool
+executes.
+
+- The modal's parsed columns are ALREADY `SpecRow` 1:1 (Artwork/Campaign/Size/
+  Duration/Country/Site), which is why this is a small step rather than a
+  feature.
+- Handoff is a module variable (`lib/localiseHandoff.ts`), **take-once**:
+  `takePendingBatch()` clears as it reads, or navigating back to Localise later
+  would silently re-prefill a job you already dealt with.
+- Rows go in as `CUSTOM_CREATIVE` + `custom`, not via the scanned-creatives
+  dropdown — that dropdown blanks anything absent from the masters listing.
+- **Territory is resolved, not set blindly.** The dropdown lists scanned FOLDER
+  names ("Italy"); the Wrike title carries a code ("IT"). Exact match first,
+  then a unique prefix; anything ambiguous is left for the user. Setting an
+  unmatched value would look like a selection that then fails on run.
+- Skipped subtasks are NAMED in the notice with what they were missing.
+  Silently forwarding 2 of 5 deliverables is exactly how one goes missing.
+
+### The `_OV` duplicate, caught before shipping
+
+Aaron's real job has two subtasks:
+
+    ODY_INTL_SilverSoldiers_DOOH_1080x1920px_30s_JP
+    ODY_INTL_SilverSoldiers_DOOH_1080x1920px_30s_JP_OV
+
+These parse to **identical rows** — same campaign, artwork, size, duration,
+territory — because the only difference is the OV suffix. Sending both would
+queue the same deliverable twice.
+
+`parseDeliverableNames` now also returns `isOv`, computed with the existing
+`hasIsolatedOvToken()` — the same signal `losOpenForEdit()` uses to decide
+copy-first and Naming Audit uses to spot a master among deliverables. An OV row
+is shown in the table (it is a perfectly good MASTER name) but never sent, and
+its reason reads "is the OV master" rather than a false "missing" field.
+
+**Verified**: both tsconfigs + `yarn build` + precedence audit clean; the
+conversion driven through the REAL built bundle over Aaron's actual subtasks
+plus the ARTWALL stills — 3 of 5 sendable, the OV duplicate excluded, ARTWALL
+excluded for campaign+duration, and `MOVEOVER` confirmed NOT to false-positive
+on the OV check. **The handoff has not been exercised in a running panel** —
+the round trip (modal → navigate → builder prefill → territory resolution) is
+the part to try first.
