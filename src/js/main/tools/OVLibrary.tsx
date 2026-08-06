@@ -672,12 +672,14 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
     const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
     const [loadingVariants, setLoadingVariants] = useState(false);
 
-    // Default orientation filters to Landscape-only when a creative is
-    // selected — the studio's most common deliverable.  Picking a creative
-    // resets to this; the user can toggle other orientations on per session.
+    // Default orientation filters when a creative is selected. Landscape AND
+    // Portrait — between them they cover almost every real deliverable, and
+    // Portrait-only was the common case that looked like an empty creative.
+    // Picking a creative resets to this; the user can toggle Square/QUAD on
+    // per session.
     const DEFAULT_FILTERS: Record<OrientationKey, boolean> = {
         LANDSCAPE: true,
-        PORTRAIT: false,
+        PORTRAIT: true,
         SQUARE: false,
         QUAD: false,
     };
