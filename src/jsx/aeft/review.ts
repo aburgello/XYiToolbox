@@ -34,6 +34,13 @@ interface RenderEntry {
   path: string;
 }
 const CAMPAIGNS_KEY = "OVLibCampaigns";
+// The campaign OV Library reopens on. Campaigns are stored in the order they
+// were ADDED, so defaulting to the first one meant always landing on the
+// oldest campaign on the machine and hand-picking the current one every time.
+// Deliberately NOT in team.ts's PROFILE_KEYS: which campaign you had open is
+// per-machine state like usage history, not a panel preference worth carrying
+// to someone else's setup.
+const LAST_CAMPAIGN_KEY = "OVLibLastCampaign";
 
 export function loadCampaignsRaw(): Campaign[] {
   const out: Campaign[] = [];
@@ -63,6 +70,26 @@ export const loadCampaigns = (): Campaign[] => {
   return loadCampaignsRaw();
 };
 
+// Returns "" when nothing has been remembered yet -- the caller falls back to
+// the most recently ADDED campaign rather than the first one.
+export const loadLastCampaign = (): string => {
+  try {
+    if (!app.settings.haveSetting(SETTINGS_SECTION, LAST_CAMPAIGN_KEY)) return "";
+    return app.settings.getSetting(SETTINGS_SECTION, LAST_CAMPAIGN_KEY) || "";
+  } catch (e) {
+    return "";
+  }
+};
+
+export const saveLastCampaign = (name: string): Result => {
+  try {
+    app.settings.saveSetting(SETTINGS_SECTION, LAST_CAMPAIGN_KEY, name == null ? "" : String(name));
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
 export const saveCampaign = (name: string, mastersRoot: string): Result => {
   try {
     const camps = loadCampaignsRaw();
@@ -89,6 +116,10 @@ export const removeCampaign = (name: string): Result => {
       }
     }
     saveCampaignsRaw(camps);
+    // Don't leave the reopen-on key pointing at a campaign that no longer
+    // exists -- the frontend would fall through to its default anyway, but a
+    // stale name here reads as a bug the next time anyone looks at it.
+    if (loadLastCampaign() === name) saveLastCampaign("");
     return { success: true };
   } catch (e) {
     return { success: false, error: e.toString() };

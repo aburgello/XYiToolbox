@@ -150,6 +150,10 @@ function mockFor(name: string, args: any[]): any {
     switch (name) {
         case "loadCampaigns":
             return MOCK_CAMPAIGNS;
+        case "loadLastCampaign":
+            // "" means nothing remembered, so preview exercises the
+            // most-recently-added fallback rather than a restored pick.
+            return "";
         case "scanCreatives":
             return MOCK_CREATIVES[args[0]] || [];
         case "scanMastersForCreative":
@@ -715,7 +719,30 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
         const camps = await safeEvalTS("loadCampaigns");
         setCampaigns(camps || []);
         if (camps && camps.length > 0 && !selectedCampaign) {
-            setSelectedCampaign(camps[0]);
+            // Campaigns come back in the order they were ADDED, so camps[0] is
+            // the OLDEST on this machine -- landing there meant re-picking the
+            // current campaign on every open. Prefer the one last used, and
+            // fall back to the most recently added (not the first) so a fresh
+            // machine still opens on something current.
+            const lastName: string = (await safeEvalTS("loadLastCampaign")) || "";
+            let pick: Campaign | undefined;
+            for (let i = 0; i < camps.length; i++) {
+                if (camps[i].name === lastName) { pick = camps[i]; break; }
+            }
+            setSelectedCampaign(pick || camps[camps.length - 1]);
+        }
+    };
+
+    // Remember the campaign for next time. Fire-and-forget and deliberately
+    // NOT routed through safeEvalTS: a failure here is cosmetic, and that
+    // helper would flip the whole panel into its "using mock data" banner
+    // over a persistence call nobody asked about.
+    const rememberCampaign = (camp: Campaign | null) => {
+        if (!camp) return;
+        try {
+            Promise.resolve(evalTS("saveLastCampaign", camp.name)).catch(() => {});
+        } catch (e) {
+            /* no bridge (browser preview) -- nothing to remember */
         }
     };
 
@@ -729,6 +756,7 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
             setSelectedCreative(null);
             return;
         }
+        rememberCampaign(selectedCampaign);
         refreshCreatives(selectedCampaign);
     }, [selectedCampaign]);
 

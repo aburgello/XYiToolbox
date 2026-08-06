@@ -5867,3 +5867,35 @@ and the render stem pairs. Note the namespace attaches to `$["com.xyi.toolbox"]`
 in that harness, not to the sandbox global. **Confirmed in a running panel**
 against a real campaign folder (2026-08-06). A new-convention row was added to
 OVLibrary.tsx's `MOCK_RECORDS` so browser preview exercises a mixed folder.
+
+## OV Library reopens on the campaign you last used (2026-08-06)
+
+It always opened on the OLDEST campaign on the machine, so the current one had
+to be re-picked by hand every single time. Not a sorting bug --
+`loadCampaignsRaw` returns campaigns in the order they were ADDED (`push`), and
+`refreshCampaigns` took `camps[0]`.
+
+- New per-machine key `OVLibLastCampaign` (`review.ts`), written whenever the
+  selection changes, read on mount.
+- **The fallback also changed**, and this half matters independently: with
+  nothing remembered it now takes `camps[camps.length - 1]` -- the most
+  recently added -- not `camps[0]`. A machine that has never picked a campaign
+  still opens on something current.
+- `removeCampaign` clears the key when it points at the campaign being
+  removed. The frontend would fall through to the default anyway; this just
+  stops a dangling name sitting in settings looking like a bug.
+- **Deliberately NOT in `team.ts`'s `PROFILE_KEYS`.** Which campaign you had
+  open is per-machine state, like usage history -- carrying it into someone
+  else's profile would yank them onto a campaign they aren't working on.
+  (`OVLibCampaigns` itself isn't a profile key either; campaigns travel via
+  `teamShareCampaign`.)
+- The persist call is fire-and-forget raw `evalTS`, **not** OVLibrary's own
+  `safeEvalTS` wrapper -- that wrapper flips the whole panel into its "using
+  mock data" banner on any failure, which would be an absurd outcome for a
+  cosmetic write. Same reasoning as `quietEvalTS` elsewhere.
+
+**Verified**: both tsconfigs clean on the touched files, `yarn build` + the
+precedence audit clean, and 7 headless assertions against the REAL built
+bundle (`dist/cep/jsx/index.js` in a `vm` with a stubbed `app.settings`)
+covering the fresh-machine default, add-order, the last-added fallback, the
+round-trip, and both remove cases. **Not yet seen in a running panel.**
