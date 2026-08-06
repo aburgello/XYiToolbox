@@ -1,3 +1,13 @@
+// Two curves, file-scoped (same convention as main.scss's $content-max-width).
+// The whole screen moves with these and nothing else -- the Localised Library
+// hero already used $ls-lift for its transform, and the Tools row was on bare
+// `0.3s`, which silently resolves to the CSS `ease` keyword. Sharing the pair
+// is what makes the hero and the buttons under it read as one hand rather than
+// two: things that MOVE overshoot slightly, things that only change COLOUR do
+// not (colour has no mass, so a springy colour fade reads as a glitch).
+$ls-lift: cubic-bezier(0.34, 1.56, 0.64, 1);  // transform only
+$ls-shift: cubic-bezier(0.22, 1, 0.36, 1);    // colour, border, shadow
+
 .ls-frame {
     flex: 1;
     min-height: 0;
@@ -190,17 +200,31 @@
     background: var(--surface-1, #2a2a2a);
     border: 1px solid var(--surface-border, #444);
     color: #ddd;
-    border-radius: 4px;
+    // 8px, matching .ls-frame -- with the hero at 12px this gives the screen a
+    // two-step radius language (containers and small controls at 8, the one
+    // hero element at 12) instead of the previous 4/8/12 scatter. 4px in
+    // particular is the stock framework default and reads as unstyled.
+    border-radius: 8px;
     padding: 9px 14px;
     cursor: pointer;
     font-size: 11px;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-    transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
+    transition: background 0.3s $ls-shift, border-color 0.3s $ls-shift,
+        box-shadow 0.3s $ls-shift, transform 0.3s $ls-lift;
 
     &:hover {
         background: var(--cat-grad, var(--ov-accent, #3a5a8a));
         border-color: var(--cat-border, transparent);
         box-shadow: 0 4px 14px var(--cat-glow, rgba(0, 0, 0, 0.35));
+        // The hero above lifts on hover and these did not, so the section had
+        // two different ideas about what hovering means. Same gesture, smaller
+        // amount -- these are secondary to the hero, not its equal.
+        transform: translateY(-1px);
+    }
+
+    &:active {
+        transform: translateY(0);
+        transition-duration: 0.1s;
     }
 
     svg {
@@ -491,8 +515,8 @@
     // without lighting the whole card. Cheaper than a glow and reads at a
     // glance, which is what "my team need to know it's there" actually needs.
     border-left: 2px solid var(--cat-icon, #2dd4bf);
-    transition: border-color 0.3s ease, box-shadow 0.3s ease,
-        transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: border-color 0.3s $ls-shift, box-shadow 0.3s $ls-shift,
+        background 0.3s $ls-shift, transform 0.3s $ls-lift;
 
     &:hover {
         border-color: var(--cat-border, #5eead4);
@@ -567,7 +591,11 @@
     font-size: 17px;
     font-weight: 800;
     color: #fff;
-    letter-spacing: 0.3px;
+    // Negative, not positive. Letters at 800 weight already carry their own
+    // visual mass; adding tracking on top is what makes a bold title read as
+    // browser-default rather than set. Tightening is the single change that
+    // most reads as "typeset".
+    letter-spacing: -0.2px;
     line-height: 1.15;
 }
 

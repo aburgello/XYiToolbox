@@ -30,6 +30,19 @@ $content-max-width: 900px;
     flex-direction: column;
 }
 
+// Form controls do NOT inherit font-family -- the UA gives every <button>,
+// <input>, <select> and <textarea> its own default (Arial on Windows). Without
+// this, every button in the panel rendered in a different typeface from the
+// text beside it: "Localised Library" (a <button>) in Arial, the caption
+// directly under it in Segoe UI. Nobody chose that; it's just the browser
+// default leaking through. One rule fixes it panel-wide.
+button,
+input,
+select,
+textarea {
+    font-family: inherit;
+}
+
 .screen-fade {
     flex: 1;
     min-height: 0;
