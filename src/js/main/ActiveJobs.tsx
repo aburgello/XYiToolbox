@@ -131,7 +131,11 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
         } finally {
             setSetupBusy(false);
         }
-    }, [setupUrl, setupKey, owner]);
+        // setupViewAs MUST be here. Without it this callback closes over the
+        // value from before you typed, so "view as" always saved as empty and
+        // the card silently kept showing your own jobs -- everything
+        // downstream was correct, the name just never reached the save.
+    }, [setupUrl, setupKey, setupViewAs, owner]);
     // Collapsed by default. The four category cards are the home screen's
     // primary navigation and this must not compete with them -- as a standing
     // open panel it read as a permanent slab of text under the nav. As a
@@ -217,7 +221,11 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
         } finally {
             setBusy(false);
         }
-    }, []);
+        // `owner` belongs here for the same reason as saveSetup's deps: with an
+        // empty array this closed over the mount-time value (""), so pressing
+        // refresh asked the feed for NO member -- which the Worker answers with
+        // the whole studio's jobs.
+    }, [owner]);
 
     // Nothing to show and nothing scanned yet: stay out of the way entirely
     // rather than occupying the home screen with an empty box. Once a scan has
