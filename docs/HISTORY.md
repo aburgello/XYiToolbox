@@ -6282,3 +6282,32 @@ i.e. the Frontcard untouched at the top and the creative laid twice end to end,
 which is the whole feature. Fixture notes for next time: CSV metadata is
 `Key: value` lines INSIDE a `[METADATA]`/`[/METADATA]` block — get either half
 wrong and rows read as malformed.
+
+### The Frontcard lead-in (same day, immediately after)
+
+First real batch showed the comp coming out at the nominal deliverable length.
+Wrong: **the delivery comp is longer than the deliverable** — the Frontcard runs
+~5s ahead of the creative, so a "30sec" deliverable is a 35s comp. Every other
+localising tool has always inherited this for free by never touching the
+duration; the multiples path was the first thing to SET it, and set it to
+`span * factor`.
+
+Now `item.duration = item.duration + span * (repeatFactor - 1)` — GROW by the
+extra passes rather than recompute from scratch. That inherits whatever lead-in
+(or tail) the master actually has, so **nothing here hardcodes 5s** and it keeps
+working if the Frontcard length ever changes. Same reason the repeats are
+offset from the creative layer's own `startTime` and not from 0.
+
+Verified against the built bundle with a fixture that models the real shape
+(Frontcard at 0, creative at 5s, delivery comp = creative + 5):
+
+    30sec row, 15sec master x2 -> comp 35s, creative @ 5, 20
+    30sec row, 10sec master x3 -> comp 35s, creative @ 5, 15, 25
+    40sec row, 10sec master x4 -> comp 45s, creative @ 5, 15, 25, 35
+
+Two fixture bugs found on the way, both mine, both worth remembering: the stub's
+`replaceSource` reset the layer's `outPoint` to the source duration, collapsing
+its span from 15 to 10 and making 35 read as 30 (real AE PRESERVES in/out when
+the new source is at least as long); and a "40s from 10s x4" case was asserted
+against the 30sec row, where it correctly finds nothing because 30/4 is not an
+integer.

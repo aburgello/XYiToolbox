@@ -2545,7 +2545,16 @@ function csvLocNameGen(
           // Stretch the comp FIRST. A layer placed past the old end is legal
           // but invisible, so leaving the comp short would silently drop
           // every repeat after the first.
-          item.duration = span * repeatFactor;
+          //
+          // GROW the existing duration by the EXTRA passes -- do not recompute
+          // it as span * factor. The delivery comp is longer than the creative
+          // it holds: the Frontcard runs ~5s ahead of it, so a "30sec"
+          // deliverable built from a 15sec master is a 35s comp, not 30s.
+          // Deriving from the comp's own length inherits whatever lead-in (or
+          // tail) the master actually has, so nothing here hardcodes 5s and
+          // this keeps working if that ever changes. Same reason the repeats
+          // are offset from `baseStart` rather than from 0.
+          item.duration = item.duration + span * (repeatFactor - 1);
           for (let k = 1; k < repeatFactor; k++) {
             const dup = creative.duplicate() as AVLayer;
             dup.startTime = baseStart + span * k;
