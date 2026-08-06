@@ -1051,7 +1051,10 @@ $content-max-width: 900px;
 //
 // No perpetual animation, and no color-mix/:has/aspect-ratio/clamp -- chrome74.
 .active-jobs {
-    margin-top: 10px;
+    // Matches .category-row's own margin-top above, so the gap Toolset -> cards
+    // and cards -> Active Jobs read as one rhythm rather than two. If that
+    // value moves, move this one with it.
+    margin-top: 14px;
 }
 
 .active-jobs-toggle {
