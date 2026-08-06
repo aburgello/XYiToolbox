@@ -1601,10 +1601,13 @@
         width: 100%;
     }
 
-    // Type | Creative | Width | Height | Dur | ✕
+    // Type | Creative | Width | Height | Dur | × | ✕
+    // The × column holds the duration-multiple control. It renders an empty
+    // <span> on rows that have no candidate, so the grid stays aligned rather
+    // than reflowing per row.
     .specs-build-row {
         display: grid;
-        grid-template-columns: 90px minmax(120px, 1fr) 66px 66px 66px 26px;
+        grid-template-columns: 90px minmax(120px, 1fr) 66px 66px 66px 40px 26px;
         gap: 6px;
         align-items: center;
 

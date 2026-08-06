@@ -6343,3 +6343,51 @@ General lesson, twice over on this feature: **a stub that is convenient rather
 than faithful will pass whatever you write.** This fixture has now hidden two
 real bugs — `replaceSource` resetting out-points, and `duplicate()` appending —
 both because the easy implementation was the wrong one.
+
+## Duration multiples in Build-a-batch (2026-08-06)
+
+The hand-built batch builder had **no master lookup at all** — no status icons,
+and `runBuilder` called `csvLocaliserRun` without a `multiplesJson`. So a typed
+row asking for 30s simply failed at run time with "no master", where the same
+row scanned from a PDF would have offered 15sec x2.
+
+Three pieces, deliberately reusing what the specs table already has rather than
+growing a parallel implementation:
+
+1. **The same resolver** (`csvLocaliserResolveMasters`) over the builder's
+   complete rows, so both flows answer "which master, and is a multiple
+   available?" identically. Nothing new host-side.
+2. **The same control** (`.specs-mult`, cycling off -> 2x -> 3x -> off) in a new
+   `×` column, rendering an empty `<span>` when a row has no candidate so the
+   grid stays aligned instead of reflowing per row.
+3. **The same run payload** (`{csvIndex: factor}`).
+
+**The design constraint is debouncing, and it is the real difference between
+the two flows.** The specs table resolves once per scan; builder rows change on
+every keystroke, and `csvLocaliserResolveMasters` walks the whole masters tree
+on the NAS per call. So: one call for ALL complete rows, 500ms after typing
+stops, cancelled on unmount/retype. Resolving per row or per keystroke would
+hammer the share.
+
+**Results are keyed by ROW ID, not position.** Builder rows are added and
+removed freely; a positional key smears one row's master onto another the
+moment a row above it is deleted.
+
+**The index re-mapping trap appears here too, in a nastier form.** `runBuilder`
+sends `buildComplete` — INCOMPLETE ROWS ARE FILTERED OUT — so a builder row at
+position 3 can be CSV row 1. The opt-in is indexed against `buildComplete`, not
+`buildRows`. Verified explicitly against a fixture with a half-typed row in the
+middle: ids 11/13/14 complete, choices on 11 and 14 -> `{"0":2,"2":3}`. The
+naive version (indexing over all rows) produces `{"0":2,"1":2,"3":3}` — a
+factor aimed at a CSV row that does not exist, and another aimed at the wrong
+deliverable. Same class of bug as the specs table's excluded rows; that is now
+twice, so **any future call site that filters rows before building the CSV must
+re-index the opt-ins against the filtered list.**
+
+Note there is nothing special about "durations above 15s" — the candidate
+finder is pure arithmetic over whatever masters exist (exact integer division,
+capped at 4x). A 20s row finds 10sec x2 the same way a 30s row finds 15sec x2.
+
+**Verified**: frontend tsconfig + `yarn build` + precedence audit clean; the
+index mapping proven against the filtered-list fixture above. **Not exercised
+in a running panel** — the debounce and the live lookup want a real typing pass.

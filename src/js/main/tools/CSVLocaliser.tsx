@@ -723,6 +723,24 @@ const CSVLocaliserTool = () => {
         { id: 1, artwork: "DOOH", creative: "", custom: "", width: "", height: "", duration: "" },
     ]);
     const buildRowId = useRef(2);
+    // Master lookup for the builder's rows, keyed by ROW ID (not position --
+    // rows are added and removed, and a positional key would smear one row's
+    // result onto another). Same resolver the specs table uses, so a hand-built
+    // row gets the same duration-multiple offer.
+    const [buildMasters, setBuildMasters] = useState<Record<number, ResolvedMaster>>({});
+    // Chosen multiple per builder row, row id -> factor. Absent = off.
+    const [buildMultiples, setBuildMultiples] = useState<Record<number, number>>({});
+
+    const cycleBuildMultiple = (id: number, available: number[]) =>
+        setBuildMultiples((prev) => {
+            const current = prev[id] || 0;
+            const at = available.indexOf(current);
+            const nextFactor = at === -1 ? available[0] : at + 1 < available.length ? available[at + 1] : 0;
+            const next = { ...prev };
+            if (nextFactor) next[id] = nextFactor;
+            else delete next[id];
+            return next;
+        });
 
     // Load territories + creatives whenever the builder is open and its inputs
     // change (campaign switch re-scans). Quiet — no bridge / empty are normal.
@@ -755,6 +773,52 @@ const CSVLocaliserTool = () => {
     const buildRowCreative = (r: BuildRow) => (r.creative === CUSTOM_CREATIVE ? r.custom.trim() : r.creative);
     const buildComplete = buildRows.filter((r) => buildRowCreative(r) && r.width && r.height && r.duration);
 
+    // Look up a master for each COMPLETE builder row, so a row asking for a
+    // duration no master has can still be offered "build it from the 15sec one
+    // twice" -- the same offer the scanned specs table makes.
+    //
+    // DEBOUNCED, and this is the whole design constraint: unlike the specs
+    // table (resolved once per scan), these rows change on every keystroke, and
+    // csvLocaliserResolveMasters walks the entire masters tree on the NAS per
+    // call. One call for ALL complete rows, 500ms after typing stops.
+    const buildResolveKey = buildRows
+        .map((r) => `${r.id}:${buildRowCreative(r)}|${r.width}x${r.height}|${r.duration}`)
+        .join(";");
+
+    useEffect(() => {
+        if (!buildOpen || !aepPath) return;
+        const complete = buildRows.filter((r) => buildRowCreative(r) && r.width && r.height && r.duration);
+        if (!complete.length) {
+            setBuildMasters({});
+            return;
+        }
+        let cancelled = false;
+        const timer = setTimeout(async () => {
+            try {
+                const payload = complete.map((r) => ({
+                    campaign: buildRowCreative(r),
+                    size: `${parseInt(r.width, 10)}x${parseInt(r.height, 10)}`,
+                    duration: `${parseInt(r.duration, 10)}sec`,
+                }));
+                const res = await evalTS("csvLocaliserResolveMasters", aepPath, JSON.stringify(payload));
+                if (cancelled || res === undefined || !(res as { success?: boolean }).success) return;
+                const resolved = ((res as { rows?: ResolvedMaster[] }).rows || []);
+                const next: Record<number, ResolvedMaster> = {};
+                complete.forEach((r, n) => {
+                    if (resolved[n]) next[r.id] = resolved[n];
+                });
+                setBuildMasters(next);
+            } catch (e) {
+                /* preview only -- never block the builder on a lookup */
+            }
+        }, 500);
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [buildOpen, aepPath, buildResolveKey]);
+
     const runBuilder = async () => {
         if (!aepPath) { setNotice("Pick the AEP masters folder first."); return; }
         if (!buildTerritory) { setNotice("Pick a territory to build for."); return; }
@@ -775,7 +839,16 @@ const CSVLocaliserTool = () => {
             const sourceFolder = path.join(marketsRoot, buildTerritory);
             const batch = buildBatch.trim() || "Batch_1";
             const csv = buildLocaliserCsv({ territory: buildTerritory, batch, sourceFolder, rows });
-            const res = await evalTS("csvLocaliserRun", aepPath, csv, skipExisting, runMcIt);
+            // Indexed by position in buildComplete -- the same list that became
+            // the CSV. Incomplete rows are filtered out before this, so a
+            // builder row's own position is NOT the CSV index, exactly the trap
+            // the specs table's excluded rows create.
+            const multiplesForRun: Record<number, number> = {};
+            buildComplete.forEach((r, n) => {
+                const f = buildMultiples[r.id];
+                if (f > 1) multiplesForRun[n] = f;
+            });
+            const res = await evalTS("csvLocaliserRun", aepPath, csv, skipExisting, runMcIt, JSON.stringify(multiplesForRun));
             if (res === undefined) throw new Error("no bridge");
             if (res.success) {
                 const rrows = (res as { rows?: CsvLocRow[] }).rows || [];
@@ -1923,7 +1996,7 @@ const CSVLocaliserTool = () => {
 
                         <div className="specs-build-rows">
                             <div className="specs-build-row specs-build-row--head">
-                                <span>Type</span><span>Creative</span><span>Width</span><span>Height</span><span>Dur</span><span />
+                                <span>Type</span><span>Creative</span><span>Width</span><span>Height</span><span>Dur</span><span>×</span><span />
                             </div>
                             {buildRows.map((r) => (
                                 <div className="specs-build-row" key={r.id}>
@@ -1955,6 +2028,38 @@ const CSVLocaliserTool = () => {
                                     <input type="number" min="1" placeholder="W" value={r.width} onChange={(e) => updateBuildRow(r.id, { width: e.target.value })} />
                                     <input type="number" min="1" placeholder="H" value={r.height} onChange={(e) => updateBuildRow(r.id, { height: e.target.value })} />
                                     <input type="number" min="1" placeholder="sec" value={r.duration} onChange={(e) => updateBuildRow(r.id, { duration: e.target.value })} />
+                                    {(() => {
+                                        // Same control, same meaning as the specs table's × column:
+                                        // only appears when this row has no same-duration master AND
+                                        // one exists whose duration divides it. Empty otherwise, so
+                                        // it costs nothing on a normal row.
+                                        const res = buildMasters[r.id];
+                                        const opts = res?.multiples || [];
+                                        if (!opts.length) return <span />;
+                                        const factors = opts.map((o) => o.factor);
+                                        const chosen = buildMultiples[r.id] || 0;
+                                        const active = opts.find((o) => o.factor === chosen);
+                                        const at = factors.indexOf(chosen);
+                                        const nextFactor = at === -1 ? factors[0] : at + 1 < factors.length ? factors[at + 1] : 0;
+                                        return (
+                                            <Tooltip
+                                                text={
+                                                    active
+                                                        ? `Building ${r.duration}s from the ${active.duration} master played ${active.factor}× (${active.master}). Click for ${nextFactor ? nextFactor + "×" : "off"}.`
+                                                        : `No ${r.duration}s master for ${buildRowCreative(r)}. Click to build it from a shorter one played ${factors.join("× or ")}×.`
+                                                }
+                                            >
+                                                <button
+                                                    type="button"
+                                                    className={active ? "specs-mult is-on" : "specs-mult"}
+                                                    onClick={() => cycleBuildMultiple(r.id, factors)}
+                                                    aria-label={`Duration multiple, currently ${chosen ? chosen + "×" : "off"}`}
+                                                >
+                                                    {chosen ? `${chosen}×` : `${factors[0]}×?`}
+                                                </button>
+                                            </Tooltip>
+                                        );
+                                    })()}
                                     <button className="specs-build-remove" onClick={() => removeBuildRow(r.id)} disabled={buildRows.length === 1} title="Remove row"><X size={12} /></button>
                                 </div>
                             ))}
