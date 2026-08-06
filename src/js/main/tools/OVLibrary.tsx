@@ -1238,7 +1238,20 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
                                             <button
                                                 key={c.name}
                                                 className={c.name === selectedCampaign?.name ? "ov-campaign-item active" : "ov-campaign-item"}
-                                                onClick={() => { setSelectedCampaign(c); close(); }}
+                                                onClick={() => {
+                                                    // Picking a campaign is the explicit "show me this"
+                                                    // action, so it drops the host's cached folder scans.
+                                                    // That makes re-selecting the campaign you are already
+                                                    // on a refresh — the escape hatch for files added on
+                                                    // disk while the panel sat open.
+                                                    try {
+                                                        Promise.resolve(evalTS("invalidateOvLibraryCache")).catch(() => {});
+                                                    } catch (e) {
+                                                        /* no bridge */
+                                                    }
+                                                    setSelectedCampaign(c);
+                                                    close();
+                                                }}
                                             >
                                                 {c.name}
                                             </button>

@@ -341,6 +341,57 @@ function findAllFiles(rootFolder: Folder): File[] {
   return out;
 }
 
+// =============================================================================
+// Per-folder scan cache
+// -----------------------------------------------------------------------------
+// Opening a campaign used to re-walk the same folders over and over: the
+// creatives loop calls scanMastersForCreative AND scanRendersForCreative for
+// every creative, and scanRendersForCreative calls scanMastersForCreative again
+// internally for its stem filter. A 6-creative campaign was ~18 subtree walks
+// (and 18 bridge round-trips) to show one grid.
+//
+// This memoises findAllFiles PER FOLDER PATH. It deliberately does NOT reuse
+// tools.ts's buildMastersIndex, even though that also walks masters: the two
+// exclude different things (`_old`/`_archive` matched case-sensitively on the
+// FOLDER NAME here, vs `_Old`/`_Archive`/`_DEV`/`Auto-Save` matched anywhere in
+// the PATH there), and buildMastersIndex drops any file without a WxH token.
+// Routing OV Library through it would quietly change which files come back,
+// which is exactly what this refactor must not do. Same walker, same filters,
+// same order -- only fewer times.
+//
+// Lifetime is the AE session (module variable, gone when AE quits or the panel
+// reloads), same as the masters index cache. Re-picking a campaign in the
+// dropdown clears it, which is the escape hatch when files change on disk.
+//
+// The cached array is returned BY REFERENCE. Every caller below only reads it.
+// =============================================================================
+var ovScanCache: { [path: string]: File[] } = {};
+
+function findAllFilesCached(rootFolder: Folder): File[] {
+  var key: string;
+  try {
+    key = rootFolder.fsName;
+  } catch (e) {
+    return findAllFiles(rootFolder);
+  }
+  if (ovScanCache.hasOwnProperty(key)) return ovScanCache[key];
+  const walked = findAllFiles(rootFolder);
+  ovScanCache[key] = walked;
+  return walked;
+}
+
+// Clears OV Library's cached folder scans. Called when a campaign is picked
+// from the dropdown, so re-selecting the one you are already on is a refresh.
+export const invalidateOvLibraryCache = (): Result => {
+  try {
+    ovScanCache = {};
+    ovMp4FolderCache = {};
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
 function detectOrientation(fileName: string, w: number, h: number): string {
   // An explicit "QUAD" token in the filename is treated as authoritative --
   // consistent with how the studio's existing tooling (Trotting2.jsx's
@@ -397,7 +448,7 @@ export const scanCreatives = (mastersRoot: string): string[] => {
 
 export const scanMastersForCreative = (mastersRoot: string, creative: string): MasterRecord[] => {
   const creativeFolder = new Folder(mastersRoot + "/AE/" + creative);
-  const allFiles = findAllFiles(creativeFolder);
+  const allFiles = findAllFilesCached(creativeFolder);
   const records: MasterRecord[] = [];
   for (let i = 0; i < allFiles.length; i++) {
     if (allFiles[i].name.slice(-4).toLowerCase() !== ".aep") continue;
@@ -435,7 +486,26 @@ function findChildFolderCI(parent: Folder, name: string): Folder | null {
 // (a flat, campaign-wide folder -- NOT per-creative like Renders/<Creative>),
 // alongside the masters rather than in the Renders tree. Returns null (not an
 // error) when the campaign doesn't use this layout.
+// Resolved path per masters root, or "" for "this campaign doesn't use the
+// layout" -- cached because the lookup costs three shallow directory listings
+// and is called once PER CREATIVE plus once for scanAllRenders. Same cache
+// lifetime and same invalidation as ovScanCache.
+var ovMp4FolderCache: { [root: string]: string } = {};
+
 function findMotionComponentsMp4Folder(mastersRoot: string): Folder | null {
+  const key = String(mastersRoot);
+  if (ovMp4FolderCache.hasOwnProperty(key)) {
+    const hit = ovMp4FolderCache[key];
+    return hit === "" ? null : new Folder(hit);
+  }
+  const resolved = findMotionComponentsMp4FolderUncached(key);
+  // Cache the MISS too -- a campaign on the older layout would otherwise pay
+  // the three listings again for every creative, which is the common case.
+  ovMp4FolderCache[key] = resolved ? resolved.fsName : "";
+  return resolved;
+}
+
+function findMotionComponentsMp4FolderUncached(mastersRoot: string): Folder | null {
   const support = findChildFolderCI(new Folder(mastersRoot), "Support");
   if (!support) return null;
   const mc = findChildFolderCI(support, "Motion_Components");
@@ -477,7 +547,7 @@ export const scanRendersForCreative = (mastersRoot: string, creative: string): R
 
   // 1. Renders/<Creative> (original layout) -- no stem filter, already scoped.
   const rendersFolder = new Folder(mastersRoot + "/Renders/" + creative);
-  if (rendersFolder.exists) pushVideos(findAllFiles(rendersFolder), null);
+  if (rendersFolder.exists) pushVideos(findAllFilesCached(rendersFolder), null);
 
   // 2. Support/Motion_Components/_mp4 (newer flat layout) -- filter to this
   // creative's own master stems.
@@ -486,7 +556,7 @@ export const scanRendersForCreative = (mastersRoot: string, creative: string): R
     const masters = scanMastersForCreative(mastersRoot, creative);
     const stems: { [stem: string]: boolean } = {};
     for (let i = 0; i < masters.length; i++) stems[masters[i].stem.toLowerCase()] = true;
-    pushVideos(findAllFiles(mp4Folder), stems);
+    pushVideos(findAllFilesCached(mp4Folder), stems);
   }
 
   return out;
@@ -516,11 +586,11 @@ export const scanAllRenders = (mastersRoot: string): RenderEntry[] => {
 
   // 1. Renders/ — all creatives, unfiltered.
   const rendersFolder = new Folder(mastersRoot + "/Renders");
-  if (rendersFolder.exists) addVideos(findAllFiles(rendersFolder));
+  if (rendersFolder.exists) addVideos(findAllFilesCached(rendersFolder));
 
   // 2. Support/Motion_Components/_mp4 — campaign-wide flat folder.
   const mp4Folder = findMotionComponentsMp4Folder(mastersRoot);
-  if (mp4Folder && mp4Folder.exists) addVideos(findAllFiles(mp4Folder));
+  if (mp4Folder && mp4Folder.exists) addVideos(findAllFilesCached(mp4Folder));
 
   return out;
 };

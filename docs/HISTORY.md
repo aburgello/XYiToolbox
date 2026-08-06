@@ -6444,3 +6444,46 @@ bundle and rebuilds the namespace).
 the cache stays stale after a file appears (by design), `invalidateMastersIndex`
 with and without a root forces a re-walk, a different root walks its own tree,
 a RUN re-walks even with a warm cache, and the run's walk repopulates the cache.
+
+## OV Library: stop re-walking the same folders (2026-08-06)
+
+Opening a campaign re-walked the same trees repeatedly. The creatives loop
+calls `scanMastersForCreative` AND `scanRendersForCreative` for every creative,
+`scanRendersForCreative` calls `scanMastersForCreative` again internally for its
+stem filter, and `findMotionComponentsMp4Folder` costs three shallow listings
+EVERY time it is called — once per creative, plus once for `scanAllRenders`.
+
+Measured on the fixture: **11 `getFiles()` calls to open a 2-creative campaign,
+down to 1 on the second open** (that one is `scanCreatives`' single shallow
+listing of `AE/`, left uncached — it is one call per campaign and cheap). On a
+real 6-creative campaign the saving scales with creative count, and each avoided
+scan is also an avoided bridge round-trip.
+
+**Deliberately NOT routed through `buildMastersIndex`,** even though that also
+walks masters and is now cached. The two exclude different things —
+`_old`/`_archive` matched case-sensitively against the FOLDER NAME here, versus
+`_Old`/`_Archive`/`_DEV`/`Auto-Save` matched anywhere in the PATH there — and
+`buildMastersIndex` drops any file with no WxH token. Sharing it would silently
+change which files OV Library returns, which was the one thing this refactor was
+asked not to do. So it memoises OV Library's OWN walker instead: same function,
+same filters, same order, fewer calls.
+
+- `ovScanCache` keys `findAllFiles` results by folder path; the array is
+  returned BY REFERENCE and every caller only reads it.
+- `ovMp4FolderCache` caches the resolved `Support/Motion_Components/_mp4` path
+  per masters root, **including the miss** — a campaign on the older layout
+  would otherwise repeat three failed listings per creative, and that is the
+  common case.
+- Lifetime is the AE session, same as the masters index cache. **Picking a
+  campaign in the dropdown clears it**, so re-selecting the campaign you are
+  already on is the refresh gesture for files added on disk mid-session.
+
+**Verified**: 13 assertions against the REAL built bundle. The load-bearing one
+is that the cached result is BYTE-IDENTICAL to the fresh walk (whole campaign
+open serialised and compared), and identical again after an invalidate. The rest
+pin the behaviour that must not have drifted: a nested master at depth 2 still
+found, `_old` and `Auto-Save` masters still excluded, `_`-prefixed creatives
+still absent, `Renders/<creative>` movs still picked up, the `_mp4` folder still
+filtered to that creative's own stems, `scanAllRenders` still spanning every
+creative, and a campaign with no `_mp4` folder still returning its renders with
+the miss cached (2 -> 0 calls).
