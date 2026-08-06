@@ -23,7 +23,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Briefcase, ChevronDown, ChevronRight, MapPin, RefreshCw } from "lucide-react";
 import { evalTS } from "../lib/utils/bolt";
 import Tooltip from "./Tooltip";
-import { fetchJobs, refreshJobs, saveJobsFeedConfig, parseJobTitle, type WrikeJob } from "./lib/jobsFeed";
+import { fetchJobs, refreshJobs, saveJobsFeedConfig, loadJobsFeedConfig, parseJobTitle, type WrikeJob } from "./lib/jobsFeed";
 import ActiveJobModal from "./ActiveJobModal";
 
 interface ActiveJob {
@@ -72,6 +72,13 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
     // filter rather than an auth question -- every member can read the whole
     // studio's Wrike, so the feed returns everything and we narrow it here.
     const [owner, setOwner] = useState("");
+    // Whose list is on screen. Equals `owner` normally; differs when a
+    // "view as" is configured. The card filters and labels on THIS, never on
+    // the machine tag, or a view-as result would be filtered by your own name
+    // and come back empty.
+    const [viewingAs, setViewingAs] = useState("");
+    const [impersonating, setImpersonating] = useState(false);
+    const [setupViewAs, setSetupViewAs] = useState("");
     // Clicking a batch opens it here rather than jumping straight to Localise:
     // the useful first question is "what is actually in this job", and the
     // subtask names answer it without leaving home.
@@ -87,7 +94,13 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
 
     const saveSetup = useCallback(async () => {
         const url = setupUrl.trim();
-        const key = setupKey.trim();
+        let key = setupKey.trim();
+        if (!key) {
+            // Blank means "unchanged" -- so the view-as field can be edited
+            // without retyping a 44-character secret every time.
+            const existing = await loadJobsFeedConfig();
+            key = existing?.key || "";
+        }
         if (!url || !key) {
             setSetupNote("Both the URL and the key are needed.");
             return;
@@ -95,7 +108,7 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
         setSetupBusy(true);
         setSetupNote("");
         try {
-            const ok = await saveJobsFeedConfig({ url, key });
+            const ok = await saveJobsFeedConfig({ url, key, viewAs: setupViewAs.trim() || undefined });
             if (!ok) {
                 setSetupNote("Couldn't save — no bridge to After Effects.");
                 return;
@@ -107,6 +120,8 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
             setJobs(res.jobs);
             setJobsMock(res.mock);
             setJobsError(res.error);
+            setViewingAs(res.viewingAs);
+            setImpersonating(res.impersonating);
             if (res.mock) setSetupNote(res.error || "Saved, but the feed didn't answer.");
             else {
                 setSetupNote("");
@@ -164,11 +179,25 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
             } catch (e) {
                 /* untagged machine or no bridge -- "mine" simply matches nothing */
             }
+            // Prefill so the form edits the existing config rather than only
+            // ever creating one. The key is deliberately NOT read back into a
+            // visible field -- left blank means "keep the stored one".
+            try {
+                const cfg = await loadJobsFeedConfig();
+                if (!cancelled && cfg) {
+                    setSetupUrl(cfg.url || "");
+                    setSetupViewAs(cfg.viewAs || "");
+                }
+            } catch (e) {
+                /* nothing saved yet */
+            }
             const res = await fetchJobs(who);
             if (cancelled) return;
             setJobs(res.jobs);
             setJobsMock(res.mock);
             setJobsError(res.error);
+            setViewingAs(res.viewingAs);
+            setImpersonating(res.impersonating);
         })();
         return () => { cancelled = true; };
     }, []);
@@ -183,6 +212,8 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
             setJobs(res.jobs);
             setJobsMock(res.mock);
             setJobsError(res.error);
+            setViewingAs(res.viewingAs);
+            setImpersonating(res.impersonating);
         } finally {
             setBusy(false);
         }
@@ -206,7 +237,8 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
     // An untagged machine can't answer "mine", so it says so rather than
     // showing an empty list, which would read as "no work" instead of "we
     // don't know who you are".
-    const shown = owner ? allJobs.filter((j) => j.assignee === owner) : [];
+    const listFor = viewingAs || owner;
+    const shown = listFor ? allJobs.filter((j) => j.assignee === listFor) : [];
     const openCount = shown.filter((j) => (j.subtasksDone ?? 0) < (j.subtaskCount ?? 0)).length;
 
     return (
@@ -227,10 +259,10 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
                 </span>
                 <span className="active-jobs-title">Active Jobs</span>
                 <span className="active-jobs-count">
-                    {!owner
+                    {!listFor
                         ? "Machine not tagged"
                         : shown.length === 0
-                        ? "Nothing assigned to you"
+                        ? impersonating ? `Nothing assigned to ${listFor}` : "Nothing assigned to you"
                         : `${shown.length} job${shown.length === 1 ? "" : "s"}${openCount ? ` · ${openCount} to build` : ""}`}
                 </span>
                 {jobsMock && (
@@ -292,8 +324,17 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
                                     <input
                                         type="password"
                                         value={setupKey}
-                                        placeholder="the PANEL_KEY you set with wrangler"
+                                        placeholder="leave blank to keep the saved key"
                                         onChange={(e) => setSetupKey(e.target.value)}
+                                    />
+                                </label>
+                                <label className="active-jobs-field">
+                                    <span>View as</span>
+                                    <input
+                                        type="text"
+                                        value={setupViewAs}
+                                        placeholder="optional — a colleague's name, to preview their list"
+                                        onChange={(e) => setSetupViewAs(e.target.value)}
                                     />
                                 </label>
                                 <div className="active-jobs-setup-actions">
@@ -306,14 +347,31 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
                             </div>
                         )}
 
-                        {!owner ? (
+                        {!jobsMock && !setupOpen && (
+                            <button
+                                type="button"
+                                className="active-jobs-settings"
+                                onClick={() => setSetupOpen(true)}
+                            >
+                                Feed settings
+                            </button>
+                        )}
+
+                        {impersonating && (
+                            <p className="active-jobs-viewas">
+                                Viewing <strong>{listFor}</strong>'s jobs, not your own. Clear the “View as” field to go
+                                back. Your Team tag is untouched — nothing is posted or synced as {listFor}.
+                            </p>
+                        )}
+
+                        {!listFor ? (
                             <p className="active-jobs-empty">
                                 This machine isn't tagged with a member name, so there's no "you" to filter by. Tag it
                                 from the Team menu and your jobs will appear here.
                             </p>
                         ) : shown.length === 0 ? (
                             <p className="active-jobs-empty">
-                                Nothing in the feed is assigned to {owner}.
+                                Nothing in the feed is assigned to {listFor}.
                             </p>
                         ) : (
                             <ul className="active-jobs-list">

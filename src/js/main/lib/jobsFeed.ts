@@ -49,6 +49,12 @@ export interface WrikeSubtask {
 export interface JobsFeedResult {
     jobs: WrikeJob[];
     fetchedAt: number;
+    // Whose list this actually is. The card filters and labels against this
+    // rather than the machine's own tag -- otherwise a "view as" result would
+    // be filtered by YOUR name and come back empty.
+    viewingAs: string;
+    // True when viewingAs is not the machine's own tag, so the UI can say so.
+    impersonating: boolean;
     // True when nothing real was reachable and the sample below is being shown.
     // Surfaced in the UI: a card that silently shows invented jobs would be
     // worse than one showing none.
@@ -56,9 +62,17 @@ export interface JobsFeedResult {
     error?: string;
 }
 
-interface FeedConfig {
+export interface FeedConfig {
     url: string;
     key: string;
+    // Optional "view as": ask the feed for someone ELSE's jobs.
+    //
+    // Deliberately its own setting rather than retagging the machine. The Team
+    // tag (TeamMachineOwner) drives profile live-sync and shared board posts --
+    // retagging as a colleague to peek at their list would write your setup
+    // into their profile on the NAS and post arcade scores under their name.
+    // This touches nothing but the feed request.
+    viewAs?: string;
 }
 
 // Sample data so the card can be built and judged before the Worker route
@@ -168,10 +182,12 @@ export async function fetchJobs(member: string, force = false): Promise<JobsFeed
 
     const cfg = await loadJobsFeedConfig();
     if (!cfg) {
-        cache = { jobs: MOCK_JOBS, fetchedAt: Date.now(), mock: true };
+        cache = { jobs: MOCK_JOBS, fetchedAt: Date.now(), mock: true, viewingAs: member, impersonating: false };
         cacheMember = member;
         return cache;
     }
+    const viewAs = (cfg.viewAs || "").trim();
+    const effective = viewAs || member;
 
     try {
         // No credentials/cookies: the key is the gate, and sending credentials
@@ -182,7 +198,7 @@ export async function fetchJobs(member: string, force = false): Promise<JobsFeed
         // anyone -- but it keeps the panel from downloading the studio's whole
         // board to show one person's rows.
         const sep = cfg.url.indexOf("?") === -1 ? "?" : "&";
-        const res = await fetch(`${cfg.url}${sep}member=${encodeURIComponent(member)}`, {
+        const res = await fetch(`${cfg.url}${sep}member=${encodeURIComponent(effective)}`, {
             method: "GET",
             headers: { "X-Panel-Key": cfg.key },
             credentials: "omit",
@@ -192,7 +208,11 @@ export async function fetchJobs(member: string, force = false): Promise<JobsFeed
                 jobs: MOCK_JOBS,
                 fetchedAt: Date.now(),
                 mock: true,
-                error: res.status === 401 ? "Feed key rejected." : `Feed returned ${res.status}.`,
+                error: res.status === 401 ? "Feed key rejected."
+                    : res.status === 404 ? `The feed doesn't recognise "${effective}" as a member.`
+                    : `Feed returned ${res.status}.`,
+                viewingAs: effective,
+                impersonating: !!viewAs && viewAs !== member,
             };
             return cache;
         }
@@ -207,18 +227,21 @@ export async function fetchJobs(member: string, force = false): Promise<JobsFeed
                 fetchedAt: Date.now(),
                 mock: true,
                 error: "That URL returned the website, not the feed — the /api/panel/jobs route isn't deployed yet.",
+                viewingAs: effective,
+                impersonating: !!viewAs && viewAs !== member,
             };
             cacheMember = member;
             return cache;
         }
         const data = await res.json();
         const jobs = normalise(data instanceof Array ? data : (data && data.jobs) || []);
-        cache = { jobs, fetchedAt: Date.now(), mock: false };
+        cache = { jobs, fetchedAt: Date.now(), mock: false, viewingAs: effective, impersonating: !!viewAs && viewAs !== member };
+        cacheMember = member;
         return cache;
     } catch (e: any) {
         // Offline, VPN down, Worker unreachable. Never throws to the caller --
         // the home screen must not depend on the network being up.
-        cache = { jobs: MOCK_JOBS, fetchedAt: Date.now(), mock: true, error: "Jobs feed unreachable." };
+        cache = { jobs: MOCK_JOBS, fetchedAt: Date.now(), mock: true, error: "Jobs feed unreachable.", viewingAs: effective, impersonating: !!viewAs && viewAs !== member };
         return cache;
     }
 }
