@@ -213,6 +213,10 @@ function mockFor(name: string, args: any[]): any {
             return MOCK_RENDERS[args[1]] || [];
         case "selectMastersFolder":
             return "/mock/odyssey";
+        case "loadCampaignBanner":
+            return "";
+        case "setCampaignBanner":
+        case "clearCampaignBanner":
         case "saveCampaign":
         case "removeCampaign":
         case "importFile":
@@ -804,6 +808,18 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
     // resting state.
     const [filters, setFilters] = useState<Record<OrientationKey, boolean>>({ ...DEFAULT_FILTERS });
 
+    // "" = no pinned banner, fall back to the creative-thumbnail heuristic.
+    const [campaignBanner, setCampaignBanner] = useState("");
+    // Revealed by holding the cursor on the banner, same deliberate ~1s hold
+    // as the creative cards' override button rather than an instant hover.
+    const [showBannerOverride, setShowBannerOverride] = useState(false);
+    const bannerHoldRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // A pinned banner that happens to be a video is parked on a frame rather
+    // than left on frame 0 — same reasoning as the card thumbnails. No accent
+    // sampling here, so the frame-ready callback has nothing to do.
+    const heroVideoRef = useRef<HTMLVideoElement>(null);
+    const heroPoster = usePosterFrame(heroVideoRef, () => {});
+
     const [usingMock, setUsingMock] = useState(false);
     const [toasts, setToasts] = useState<Toast[]>([]);
     const toastId = useRef(0);
@@ -879,6 +895,14 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
         }
         rememberCampaign(selectedCampaign);
         refreshCreatives(selectedCampaign);
+        // Clear first: without this the previous campaign's banner stays on
+        // screen through the async read, so switching campaigns briefly
+        // shows the wrong artwork under the new title.
+        setCampaignBanner("");
+        (async () => {
+            const pinned = await safeEvalTS("loadCampaignBanner", selectedCampaign.name);
+            setCampaignBanner(typeof pinned === "string" ? pinned : "");
+        })();
     }, [selectedCampaign]);
 
     // Report campaign changes upward so sibling tabs (Review Session) can
@@ -984,7 +1008,15 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
     // the same on every studio Mac.
     const handleShareCampaign = async () => {
         if (!selectedCampaign) return;
-        const payload = JSON.stringify({ name: selectedCampaign.name, mastersRoot: selectedCampaign.mastersRoot });
+        // The pinned banner travels with the campaign (per-creative thumbnails
+        // deliberately do not — those are personal). Re-sharing an
+        // already-shared campaign is the supported way to push a banner
+        // pinned after the first share; teamShareCampaign updates that field.
+        const payload = JSON.stringify({
+            name: selectedCampaign.name,
+            mastersRoot: selectedCampaign.mastersRoot,
+            banner: campaignBanner || "",
+        });
         const result = await safeEvalTS("teamShareCampaign", payload);
         if (result && result.success) {
             pushToast(result.message || "Shared with the team.", "success");
@@ -994,6 +1026,29 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
     };
 
     // --- Custom creative thumbnails --------------------------------------
+    // --- Campaign hero banner --------------------------------------------
+    // Pinned per campaign and SHARED with the team (unlike per-creative
+    // thumbnails, which stay on this machine) -- see setCampaignBanner in
+    // aeft/review.ts.
+    const handleSetCampaignBanner = async () => {
+        if (!selectedCampaign) return;
+        const path = await safeEvalTS("selectCreativeThumbnail");
+        if (!path) return;
+        const result = await safeEvalTS("setCampaignBanner", selectedCampaign.name, path);
+        if (result && result.success) {
+            setCampaignBanner(path);
+            pushToast("Campaign banner set. Share the campaign again to send it to the team.", "success");
+        } else if (result) {
+            pushToast(result.error || "Could not set the banner.", "error");
+        }
+    };
+    const handleClearCampaignBanner = async () => {
+        if (!selectedCampaign) return;
+        if (!(await confirmDialog(`Reset "${selectedCampaign.name}" back to its automatic banner?`))) return;
+        await safeEvalTS("clearCampaignBanner", selectedCampaign.name);
+        setCampaignBanner("");
+    };
+
     const handleSetCustomThumbnail = async (creativeName: string) => {
         if (!selectedCampaign) return;
         const path = await safeEvalTS("selectCreativeThumbnail");
@@ -1100,19 +1155,69 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
     // CreativeCard's own previewSrc, just picked once for the whole page
     // rather than per-card.
     const heroPreviewName = selectedCreative || visibleCreatives.find((n) => thumbOverrides[n] || creativePreviews[n]);
-    const heroBannerSrc = heroPreviewName ? thumbOverrides[heroPreviewName] || creativePreviews[heroPreviewName] : undefined;
+    const autoBannerSrc = heroPreviewName ? thumbOverrides[heroPreviewName] || creativePreviews[heroPreviewName] : undefined;
+    // A pinned banner always wins, and is the whole point of pinning: the
+    // automatic one changes as you click between creatives, so a campaign
+    // has no settled identity until someone chooses its image.
+    const heroBannerSrc = campaignBanner || autoBannerSrc;
+    const heroBannerIsPinned = !!campaignBanner;
 
     return (
         <div className="ov-library">
             {hero ? (
                 <div className="ov-hero">
-                    <div className="ov-hero-banner">
+                    <div
+                        className="ov-hero-banner"
+                        onMouseEnter={() => {
+                            if (!selectedCampaign) return;
+                            bannerHoldRef.current = setTimeout(() => setShowBannerOverride(true), 1000);
+                        }}
+                        onMouseLeave={() => {
+                            if (bannerHoldRef.current) clearTimeout(bannerHoldRef.current);
+                            setShowBannerOverride(false);
+                        }}
+                    >
                         {heroBannerSrc && isImageFile(heroBannerSrc) ? (
                             <img src={toFileUrl(heroBannerSrc)} alt="" />
+                        ) : heroBannerSrc && heroBannerIsPinned ? (
+                            // A PINNED banner is deliberately static — that is
+                            // what pinning is for. A video file still gets
+                            // parked on a frame rather than looping behind the
+                            // title. No autoPlay, no loop.
+                            <video
+                                key={heroBannerSrc}
+                                ref={heroVideoRef}
+                                src={toFileUrl(heroBannerSrc)}
+                                muted
+                                playsInline
+                                preload="metadata"
+                                onLoadedMetadata={heroPoster.onLoadedMetadata}
+                            />
                         ) : heroBannerSrc ? (
                             <video src={toFileUrl(heroBannerSrc)} muted loop autoPlay playsInline preload="metadata" />
                         ) : null}
                         <div className="ov-hero-overlay" />
+                        {showBannerOverride && selectedCampaign && (
+                            <button
+                                className={heroBannerIsPinned ? "ov-hero-banner-override active" : "ov-hero-banner-override"}
+                                title={
+                                    heroBannerIsPinned
+                                        ? "Change the campaign banner (right-click to reset)"
+                                        : "Pin a campaign banner from a file"
+                                }
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSetCampaignBanner();
+                                }}
+                                onContextMenu={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    if (heroBannerIsPinned) handleClearCampaignBanner();
+                                }}
+                            >
+                                <ImagePlus size={13} />
+                            </button>
+                        )}
                     </div>
                     <div className="ov-hero-bar">
                         <div className="ov-hero-info">

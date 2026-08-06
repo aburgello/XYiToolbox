@@ -6022,3 +6022,62 @@ The first attempt FAILED the build on a ref type (`RefObject<HTMLVideoElement>`
 vs the nullable form this React version infers) -- caught by the gate, fixed.
 **Not seen in a running panel**: this is video decode behaviour, so it cannot
 be verified headlessly and browser preview has no real renders to load.
+
+## Campaign hero banner: pinnable, static, and shared (2026-08-06)
+
+The hero banner borrowed whichever creative thumbnail happened to be in play,
+so it changed as you clicked around and a campaign had no settled identity.
+Now pinnable per campaign, on the same hold-to-reveal interaction as the
+creative thumbnails.
+
+- **Backend** `OVLibCampaignBanners` in `review.ts` (campaign -> path,
+  tab-separated, same shape as `OVLibThumbOverrides`). `removeCampaign` clears
+  it alongside the last-campaign key.
+- **UI**: ~1s hold on the banner reveals the button (matching CreativeCard's
+  deliberate hold, not an instant hover); click to pick, right-click to reset.
+  The button needs its own `z-index: 2` — `.ov-hero-overlay` is
+  `position: absolute; inset: 0`, and two POSITIONED siblings fall back to
+  document order, so the "positioned beats non-positioned" rule in CLAUDE.md
+  does not save you here. It also re-declares `:hover`/`:active` against
+  index.scss's global blue.
+- **A pinned banner renders STATIC** — no `autoPlay`, no `loop`. A pinned
+  video is parked via `usePosterFrame`. The automatic banner keeps its
+  existing looping behaviour; pinning is what opts out.
+- **Fixed in passing**: `.ov-hero-banner` only ever styled `video`, so the
+  `<img>` branch (which has existed since overrides could be stills) rendered
+  at natural size instead of being cropped to the banner. Invisible until
+  pinned banners made stills the common case.
+
+**Unlike per-creative thumbnails, this one TRAVELS.** `teamShareCampaign`
+sends it, `teamSyncShared` applies it.
+
+- **Re-sharing an already-shared campaign now updates the banner** instead of
+  returning "already in the team library" and doing nothing. Without that a
+  banner pinned AFTER the first share could never reach anyone. The masters
+  root is deliberately NOT updated on re-share — re-sharing must not silently
+  repoint a campaign the team already has.
+- **Sync applies the banner to campaigns a machine ALREADY has**, not only to
+  newly-added ones, so people who added the campaign by hand still get it. It
+  never overwrites a locally pinned banner.
+- **Path portability is not enforced.** A banner only resolves for others if
+  it lives on the NAS; there is no reliable cross-platform "is this a shared
+  volume" test, so a local path shares fine and simply falls back to the
+  automatic banner elsewhere. That is the graceful failure, not a broken image.
+
+**Verified**: both tsconfigs + `yarn build` + precedence audit clean. 8
+headless assertions on the storage layer against the real built bundle
+(round-trip, re-pin replaces rather than duplicates, per-campaign isolation,
+clear, removal cascade, tab/newline injection, empty-path rejection) and 6 on
+the share path using TWO sandboxes over one real on-disk team folder
+(share -> sync -> banner arrives; re-share updates; a locally pinned banner
+survives; an existing campaign with no banner adopts the shared one). Plus a
+backward-compatibility run against the studio's REAL
+`shared-campaigns.json` copied off the share — two entries, neither with a
+`banner` field: syncs cleanly, invents nothing. **Not seen in a running
+panel.**
+
+Incidental finding, NOT fixed: the share holds two copies of that file,
+`<team>/shared-campaigns.json` (1 entry, stale) and
+`<team>/misc/shared-campaigns.json` (2 entries, current). Consistent with the
+documented `arcade/ -> misc/ -> root` fallback chain, but worth knowing the
+root copy is behind.

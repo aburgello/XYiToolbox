@@ -27,7 +27,7 @@
 import { Result, SETTINGS_SECTION } from "./shared";
 import { expressionsBankLoad, expressionsBankSave, loadCustomTools, saveCustomTools } from "./tools";
 import { loadCombos, saveCombos, EffectComboEntry } from "./effects";
-import { loadCampaignsRaw, saveCampaign } from "./review";
+import { loadCampaignsRaw, saveCampaign, loadCampaignBanner, setCampaignBanner } from "./review";
 
 const TEAM_FOLDER_KEY = "TeamFolderPath";
 
@@ -673,6 +673,9 @@ const SHARED_POSTERGAME_TYPE = "xyi-shared-postergame";
 interface SharedCampaign {
   name: string;
   mastersRoot: string;
+  // Optional: entries written before campaign banners existed have no such
+  // field, so every read must treat it as possibly absent.
+  banner?: string;
 }
 
 interface ExpressionEntry {
@@ -956,6 +959,14 @@ export const teamSyncShared = (): SyncResult => {
       for (let i = 0; i < sharedCampaigns.length; i++) {
         const camp = sharedCampaigns[i];
         if (!camp || !camp.name || !camp.mastersRoot) continue;
+        // The banner is applied even for a campaign this machine ALREADY
+        // has, and only when nothing is pinned locally. A shared banner is
+        // campaign identity rather than personal preference, so it should
+        // reach people who added the campaign by hand before it was shared
+        // -- but it must never overwrite a banner someone chose themselves.
+        if (camp.banner && loadCampaignBanner(camp.name) === "") {
+          setCampaignBanner(camp.name, camp.banner);
+        }
         if (names[camp.name.toLowerCase()]) continue;
         const r = saveCampaign(camp.name, camp.mastersRoot);
         if (r.success) {
@@ -1083,12 +1094,26 @@ export const teamShareCampaign = (campaignJson: string): Result => {
     if (!entry || !entry.name || !entry.mastersRoot) return { success: false, error: "Campaign has no name/path to share." };
 
     const shared = readSharedFile<SharedCampaign>(SHARED_CAMPAIGNS_FILE, SHARED_CAMPAIGNS_TYPE) || [];
+    const banner = entry.banner ? String(entry.banner) : "";
     for (let i = 0; i < shared.length; i++) {
       if (shared[i].name.toLowerCase() === entry.name.toLowerCase()) {
+        // Already shared. Re-sharing is how you push a banner you pinned
+        // AFTER the first share, so update that field rather than treating
+        // the whole call as a no-op -- otherwise the banner could never
+        // reach anyone. The masters root is left alone: someone re-sharing
+        // should not silently repoint a campaign the team already has.
+        const existingBanner = shared[i].banner ? String(shared[i].banner) : "";
+        if (banner && banner !== existingBanner) {
+          shared[i].banner = banner;
+          if (!writeSharedFile(SHARED_CAMPAIGNS_FILE, SHARED_CAMPAIGNS_TYPE, shared)) {
+            return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
+          }
+          return { success: true, message: 'Updated the banner for "' + entry.name + '".' };
+        }
         return { success: true, message: '"' + entry.name + '" is already in the team library.' };
       }
     }
-    shared.push({ name: entry.name, mastersRoot: entry.mastersRoot });
+    shared.push({ name: entry.name, mastersRoot: entry.mastersRoot, banner: banner });
     if (!writeSharedFile(SHARED_CAMPAIGNS_FILE, SHARED_CAMPAIGNS_TYPE, shared)) {
       return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
     }

@@ -120,6 +120,95 @@ export const removeCampaign = (name: string): Result => {
     // exists -- the frontend would fall through to its default anyway, but a
     // stale name here reads as a bug the next time anyone looks at it.
     if (loadLastCampaign() === name) saveLastCampaign("");
+    clearCampaignBanner(name);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// --- Campaign hero banner ---------------------------------------------
+// The banner behind the campaign title normally borrows whichever creative
+// thumbnail is in play, which makes it change as you click around and gives
+// a campaign no identity of its own. This pins one file per campaign.
+//
+// Unlike OVLibThumbOverrides, this one is SHARED: teamShareCampaign() sends
+// it with the campaign and teamSyncShared() applies it, so a campaign set up
+// once looks the same on everyone's panel. That is only meaningful while the
+// path resolves on every machine -- i.e. a file on the NAS, not on someone's
+// Desktop. Nothing enforces that (there is no reliable "is this a shared
+// volume" test across Mac and Windows), so a local path shares fine and
+// simply falls back to the automatic banner for everyone else, which is the
+// graceful failure rather than a broken image.
+const CAMPAIGN_BANNER_KEY = "OVLibCampaignBanners";
+
+interface CampaignBanner {
+  campaign: string;
+  path: string;
+}
+
+function loadCampaignBannersRaw(): CampaignBanner[] {
+  const out: CampaignBanner[] = [];
+  if (app.settings.haveSetting(SETTINGS_SECTION, CAMPAIGN_BANNER_KEY)) {
+    const raw = app.settings.getSetting(SETTINGS_SECTION, CAMPAIGN_BANNER_KEY);
+    const lines = raw.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i] === "") continue;
+      const parts = lines[i].split("\t");
+      if (parts.length >= 2) out.push({ campaign: parts[0], path: parts[1] });
+    }
+  }
+  return out;
+}
+
+function saveCampaignBannersRaw(arr: CampaignBanner[]): void {
+  const lines: string[] = [];
+  for (let i = 0; i < arr.length; i++) {
+    const c = String(arr[i].campaign).replace(/[\t\n\r]/g, " ");
+    const p = String(arr[i].path).replace(/[\t\n\r]/g, " ");
+    lines.push(c + "\t" + p);
+  }
+  app.settings.saveSetting(SETTINGS_SECTION, CAMPAIGN_BANNER_KEY, lines.join("\n"));
+}
+
+// "" when this campaign has no pinned banner -- the frontend falls back to
+// its creative-thumbnail heuristic.
+export const loadCampaignBanner = (campaign: string): string => {
+  try {
+    const all = loadCampaignBannersRaw();
+    for (let i = 0; i < all.length; i++) {
+      if (all[i].campaign === campaign) return all[i].path;
+    }
+    return "";
+  } catch (e) {
+    return "";
+  }
+};
+
+export const setCampaignBanner = (campaign: string, path: string): Result => {
+  try {
+    if (!campaign || !path) return { success: false, error: "No campaign or file given." };
+    const all = loadCampaignBannersRaw();
+    let found = false;
+    for (let i = 0; i < all.length; i++) {
+      if (all[i].campaign === campaign) {
+        all[i].path = path;
+        found = true;
+        break;
+      }
+    }
+    if (!found) all.push({ campaign: campaign, path: path });
+    saveCampaignBannersRaw(all);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+export const clearCampaignBanner = (campaign: string): Result => {
+  try {
+    const remaining = loadCampaignBannersRaw().filter((b) => b.campaign !== campaign);
+    saveCampaignBannersRaw(remaining);
     return { success: true };
   } catch (e) {
     return { success: false, error: e.toString() };

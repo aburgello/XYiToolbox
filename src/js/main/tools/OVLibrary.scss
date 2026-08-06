@@ -69,7 +69,13 @@
         background: var(--surface-0, #151515);
         overflow: hidden;
 
-        video {
+        // img as well as video: the image branch has existed since custom
+        // thumbnails could be stills, but was never styled, so a PNG banner
+        // rendered at its natural size instead of being cropped to the
+        // banner. Pinned banners are usually stills, which is what made this
+        // visible.
+        video,
+        img {
             width: 100%;
             height: 100%;
             object-fit: cover;
@@ -79,6 +85,45 @@
             // blur's own soft edge from ever peeking in at the frame edges.
             filter: blur(3px) brightness(0.5) saturate(1.1);
             transform: scale(1.06);
+        }
+    }
+
+    // Revealed after a ~1s hold on the banner. Sits ABOVE .ov-hero-overlay,
+    // which is `position: absolute; inset: 0` and would otherwise swallow the
+    // clicks — a positioned sibling paints over a non-positioned one, but two
+    // positioned siblings fall back to document order, so this needs its own
+    // z-index rather than just being declared later.
+    .ov-hero-banner-override {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        z-index: 2;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(20, 20, 20, 0.75);
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        border-radius: 4px;
+        color: #ddd;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+
+        // index.scss's global button:hover/:active would paint this blue
+        // otherwise — any button with its own background has to re-declare
+        // both states.
+        &:hover,
+        &:active {
+            background: var(--ov-accent, #3a5a8a);
+            border-color: transparent;
+            color: #fff;
+        }
+
+        &.active {
+            background: var(--ov-accent, #3a5a8a);
+            border-color: transparent;
+            color: #fff;
         }
     }
 
