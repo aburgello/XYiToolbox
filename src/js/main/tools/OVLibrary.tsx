@@ -291,6 +291,75 @@ function pickPreviewRender(renders: RenderEntry[]): RenderEntry | undefined {
     return best;
 }
 
+// How far into a render to park the thumbnail. A <video> at rest shows
+// frame 0, and frame 0 of a DOOH render is routinely the worst frame in the
+// clip -- these ads open on a white flash, a black hold or an empty plate,
+// so the grid was full of blank cards for footage that looks fine a second
+// later. A quarter of the way in clears the intro on the 10s and 15s
+// durations the studio actually ships.
+const POSTER_FRAME_FRACTION = 0.25;
+
+// Parks a preview <video> on a representative frame instead of frame 0, and
+// tells the caller when a frame worth sampling for the accent colour has
+// decoded.
+//
+// Shared by CreativeCard and VariantBlock deliberately: they had two
+// byte-identical copies of the old handler, which is exactly the setup where
+// one gets fixed and the other quietly doesn't.
+//
+// Sequencing matters. `loadedmetadata` is the first point `duration` exists,
+// so the seek is issued there; the frame only actually exists after `seeked`,
+// which is where the colour sample belongs. `loadeddata` is kept purely as
+// the fallback for a clip whose duration never resolves (a stream, or a
+// codec Chromium half-supports) -- in that case there is no seek coming and
+// frame 0 is all there is.
+function usePosterFrame(videoRef: React.RefObject<HTMLVideoElement | null>, onFrameReady: () => void) {
+    const posterTimeRef = useRef(0);
+    const seekPendingRef = useRef(false);
+
+    const onLoadedMetadata = () => {
+        const v = videoRef.current;
+        if (!v) return;
+        const d = v.duration;
+        // NaN until metadata resolves, Infinity for a stream -- both mean
+        // "can't compute an offset", so leave it on frame 0 rather than
+        // throwing a bad currentTime at the element.
+        if (!isFinite(d) || d <= 0) return;
+        posterTimeRef.current = d * POSTER_FRAME_FRACTION;
+        seekPendingRef.current = true;
+        try {
+            v.currentTime = posterTimeRef.current;
+        } catch (e) {
+            seekPendingRef.current = false;
+        }
+    };
+
+    const onSeeked = () => {
+        seekPendingRef.current = false;
+        onFrameReady();
+    };
+
+    const onLoadedData = () => {
+        if (seekPendingRef.current) return; // the seeked frame is the one to sample
+        onFrameReady();
+    };
+
+    // Called on mouse-leave: stop, and go back to the poster frame rather
+    // than leaving the card sitting on whatever frame the hover stopped on.
+    const restToPoster = () => {
+        const v = videoRef.current;
+        if (!v) return;
+        v.pause();
+        try {
+            v.currentTime = posterTimeRef.current;
+        } catch (e) {
+            /* nothing to restore to */
+        }
+    };
+
+    return { onLoadedMetadata, onSeeked, onLoadedData, restToPoster };
+}
+
 // Samples an approximate dominant color off a loaded <video>'s current
 // frame via a tiny offscreen canvas, for the dynamic per-thumbnail accent
 // (see CreativeCard/VariantBlock below) -- lets each creative/render tint
@@ -409,9 +478,21 @@ const CreativeCard: React.FC<{
     const [showOverride, setShowOverride] = useState(false);
     const overrideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+    // Grabs the dominant color off the poster frame, once. Declared before
+    // usePosterFrame because that hook calls it.
+    const handleFrameReady = () => {
+        const v = videoRef.current;
+        if (!v || accent) return;
+        const color = sampleDominantColor(v);
+        if (color) setAccent(color);
+    };
+    const poster = usePosterFrame(videoRef, handleFrameReady);
+
     const handleEnter = () => {
         const v = videoRef.current;
         if (!v) return;
+        // Hover still plays the whole thing from the top -- the poster offset
+        // is about what the card RESTS on, not where playback starts.
         v.currentTime = 0;
         v.play().catch(() => {
             // Autoplay can be rejected in some contexts -- fine, the poster
@@ -419,7 +500,7 @@ const CreativeCard: React.FC<{
         });
     };
     const handleLeave = () => {
-        videoRef.current?.pause();
+        poster.restToPoster();
     };
 
     const handleMouseEnter = () => {
@@ -430,17 +511,6 @@ const CreativeCard: React.FC<{
         handleLeave();
         if (overrideTimeoutRef.current) clearTimeout(overrideTimeoutRef.current);
         setShowOverride(false);
-    };
-
-    // Grabs the dominant color off the very first frame, once, as soon as
-    // it's decoded -- independent of hover, so the card's accent is
-    // already correct the first time it's ever seen, not only after the
-    // user happens to hover it.
-    const handleLoadedData = () => {
-        const v = videoRef.current;
-        if (!v || accent) return;
-        const color = sampleDominantColor(v);
-        if (color) setAccent(color);
     };
 
     return (
@@ -468,7 +538,9 @@ const CreativeCard: React.FC<{
                             loop
                             playsInline
                             preload="metadata"
-                            onLoadedData={handleLoadedData}
+                            onLoadedMetadata={poster.onLoadedMetadata}
+                            onSeeked={poster.onSeeked}
+                            onLoadedData={poster.onLoadedData}
                             onError={() => setVideoError(true)}
                         />
                         <div className="creative-card-play-hint">
@@ -561,6 +633,14 @@ const VariantBlock: React.FC<{
     const [accent, setAccent] = useState<DominantColor | null>(null);
     const [videoError, setVideoError] = useState(false);
 
+    const handleFrameReady = () => {
+        const v = videoRef.current;
+        if (!v || accent) return;
+        const color = sampleDominantColor(v);
+        if (color) setAccent(color);
+    };
+    const poster = usePosterFrame(videoRef, handleFrameReady);
+
     const handleEnter = () => {
         const v = videoRef.current;
         if (!v) return;
@@ -568,13 +648,7 @@ const VariantBlock: React.FC<{
         v.play().catch(() => {});
     };
     const handleLeave = () => {
-        videoRef.current?.pause();
-    };
-    const handleLoadedData = () => {
-        const v = videoRef.current;
-        if (!v || accent) return;
-        const color = sampleDominantColor(v);
-        if (color) setAccent(color);
+        poster.restToPoster();
     };
 
     return (
@@ -593,7 +667,9 @@ const VariantBlock: React.FC<{
                         loop
                         playsInline
                         preload="metadata"
-                        onLoadedData={handleLoadedData}
+                        onLoadedMetadata={poster.onLoadedMetadata}
+                        onSeeked={poster.onSeeked}
+                        onLoadedData={poster.onLoadedData}
                         onError={() => setVideoError(true)}
                     />
                 ) : (

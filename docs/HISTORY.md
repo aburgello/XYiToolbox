@@ -5979,3 +5979,46 @@ pre-existing violations already listed in CLAUDE.md). **The layout itself has
 not been re-seen in a running panel** — the fix is structural rather than
 tuned, but the 170px figure is a judgement call and wants one look at a real
 docked panel.
+
+## OV Library thumbnails were showing frame 0 (2026-08-06)
+
+A `<video>` at rest displays frame 0, and frame 0 of a DOOH render is
+routinely the worst frame in the clip -- these ads open on a white flash, a
+black hold or an empty plate. The creatives grid was full of blank-looking
+cards for footage that looks fine a second later (BRACELET rendering as a
+plain white tile was the reported case).
+
+**Now parked at 25% of duration** (`POSTER_FRAME_FRACTION`), via a
+`usePosterFrame()` hook.
+
+- **One hook, two call sites.** CreativeCard and VariantBlock had
+  byte-identical copies of the old `handleLoadedData`. That is precisely the
+  arrangement where one gets fixed and the other silently doesn't, so the
+  logic was extracted rather than patched twice.
+- **Event sequencing is the whole trick.** `duration` does not exist until
+  `loadedmetadata`, so that is where the seek is issued. The frame does not
+  exist until `seeked`, so that is where the colour sample happens.
+  `loadeddata` is kept ONLY as the fallback for a clip whose duration never
+  resolves (stream, or a codec Chromium half-supports) -- guarded by
+  `seekPendingRef` so a normal clip never samples frame 0 first and keeps that
+  accent. Sampling on `loadeddata` alone was the old behaviour and is why some
+  cards also had washed-out white accents.
+- **Non-finite duration leaves it on frame 0** rather than assigning NaN to
+  `currentTime`.
+- **Hover still plays from 0** -- the offset governs what the card RESTS on,
+  not where playback starts. `restToPoster()` on mouse-leave also fixes a
+  smaller pre-existing wart: leaving a card used to strand it on whatever
+  frame the hover happened to stop on, so a grid looked different after being
+  scrolled past.
+- Bonus: the accent colour is now sampled from a representative frame, so
+  cards tint from actual footage rather than an intro flash.
+
+25% was chosen for the 10s/15s durations the studio ships (2.5-3.75s in,
+clear of the intro). It is a guess at what "representative" means and is the
+one number here worth revisiting against real footage.
+
+**Verified**: frontend tsconfig clean, `yarn build` + precedence audit clean.
+The first attempt FAILED the build on a ref type (`RefObject<HTMLVideoElement>`
+vs the nullable form this React version infers) -- caught by the gate, fixed.
+**Not seen in a running panel**: this is video decode behaviour, so it cannot
+be verified headlessly and browser preview has no real renders to load.
