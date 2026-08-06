@@ -4,7 +4,7 @@
 // now a thin barrel -- see its header comment for context.
 // =============================================================================
 import { Result, SETTINGS_SECTION, decode } from "./shared";
-import { buildMastersIndex, pickBestMasterFromIndex } from "./tools";
+import { getMastersIndex, pickBestMasterFromIndex } from "./tools";
 
 
 
@@ -552,7 +552,8 @@ export const reviewMatchToMaster = (mastersRoot: string, itemsJson: string): Res
     if (!items || items.length === 0) return { success: false, error: "No items to match." };
 
     // 1. Build the masters index — one walk, reused by every item.
-    var index = buildMastersIndex(mastersRoot);
+    // Cached: read-only matching, nothing here writes.
+    var index = getMastersIndex(mastersRoot);
     if (!index || index.length === 0) return { success: false, error: "No masters found under " + mastersRoot + "/AE/." };
 
     // 2. Build the render map — every video file under Renders/ and _mp4/,

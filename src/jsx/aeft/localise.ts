@@ -5,7 +5,7 @@
 // Check, CSV Localiser). Split out of aeft.ts, which is now a thin barrel --
 // see its header comment for context.
 // =============================================================================
-import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, MAX_DURATION_MULTIPLE, buildMastersIndex, pickBestMasterFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, scanMastersForBestMatch } from "./tools";
+import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, scanMastersForBestMatch } from "./tools";
 import { makeParentLayerOfAllUnparented, scaleAllCameraZooms } from "./deliver";
 import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, saveLocGenReport, buildDeliverableName, durationForMasterLookup } from "./shared";
 import { loadCampaignsRaw } from "./review";
@@ -350,6 +350,10 @@ export const campaignLocaliserTrott2 = (): LocGenResult => {
   const rows: LocGenRowReport[] = [];
   let lastOutFolder = folder.fsName;
 
+  // One authoritative walk before the per-row loop. scanMastersForBestMatch is
+  // cached now, so every row below reads memory instead of the NAS -- the same
+  // win ee86aed gave CSV Localiser, without restructuring this loop.
+  refreshMastersIndex(mastersPath);
   const processedMasterFiles = trotPreprocessMasters(mastersPath);
 
   for (let i = 0; i < pdfFiles.length; i++) {
@@ -2718,7 +2722,9 @@ export const csvLocaliserRun = (
   // ONE walk of the masters tree for the whole run. This used to be a full
   // tree walk PER ROW (scanMastersForBestMatch), so a 14-row batch walked the
   // NAS 14 times; the scoring is unchanged, only how often we read the disk.
-  const mastersIndex = buildMastersIndex(mastersPath);
+  // Refreshed, not cached: this run COPIES master files, so it gets a walk it
+  // can trust. Repopulates the shared cache for every lookup after it.
+  const mastersIndex = refreshMastersIndex(mastersPath);
 
   if (rawCsvText === "") {
     return { success: false, error: "No CSV data pasted." };
@@ -3360,7 +3366,9 @@ export const csvLocaliserResolveMasters = (mastersPath: string, rowsJson: string
     }
     if (!parsed || !parsed.length) return { success: true, indexed: 0, rows: [] };
 
-    const index = buildMastersIndex(mastersPath);
+    // Cached — this is a read-only preview, and it is also what Build-a-batch
+    // calls on every debounced keystroke.
+    const index = getMastersIndex(mastersPath);
     const out: ResolvedMasterRow[] = [];
     for (let i = 0; i < parsed.length; i++) {
       const r = parsed[i];

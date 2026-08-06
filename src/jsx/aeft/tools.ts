@@ -2429,6 +2429,61 @@ function mastersCanon(s: string): string {
 // (not `<`), so among equally-good matches the LAST one wins. This walk must
 // therefore visit files in exactly the order the original single-pass version
 // did -- depth-first, recursing at the point a folder is encountered.
+// =============================================================================
+// Masters index cache
+// -----------------------------------------------------------------------------
+// One walk of a campaign's AE tree costs ~2s against the studio NAS (measured:
+// Forgotten Island 296 masters / 2757 files / 570 dirs; Paw Patrol 410 / 2146 /
+// 419). Nothing cached that, so every preview, every run, and every debounced
+// keystroke in Build-a-batch paid it again.
+//
+// LIFETIME: a plain module variable in the ExtendScript engine. It therefore
+// lives for the AE session and is gone when AE quits -- and is ALSO reset when
+// the panel reloads, because that re-evaluates this bundle and rebuilds the
+// namespace. There is no on-disk copy, deliberately: a persisted index that
+// misses a newly-added master produces a false "no master", and one holding a
+// renamed file points a copy at a path that no longer exists. Both are silent.
+//
+// FRESHNESS POLICY, and it is the important part:
+//   - LOOKUPS (previews, the specs table, Build-a-batch typing, review
+//     matching) read the cache. Worst case they show a slightly stale answer
+//     on screen, which the next refresh corrects.
+//   - RUNS refresh first via refreshMastersIndex(). Anything that COPIES or
+//     WRITES gets a walk it can trust, and repopulates the cache for everyone
+//     else at the same time.
+// Callers that know the tree changed (campaign switch, "Re-check") should call
+// invalidateMastersIndex().
+// =============================================================================
+var mastersIndexCache: { [root: string]: MasterIndexEntry[] } = {};
+
+// Cached read. Walks only on a miss.
+export function getMastersIndex(mastersRoot: string): MasterIndexEntry[] {
+  const key = String(mastersRoot);
+  if (mastersIndexCache.hasOwnProperty(key)) return mastersIndexCache[key];
+  const built = buildMastersIndex(key);
+  mastersIndexCache[key] = built;
+  return built;
+}
+
+// Forced walk. Use before anything that writes files.
+export function refreshMastersIndex(mastersRoot: string): MasterIndexEntry[] {
+  const key = String(mastersRoot);
+  const built = buildMastersIndex(key);
+  mastersIndexCache[key] = built;
+  return built;
+}
+
+// Drop one root, or everything when called with no argument.
+export const invalidateMastersIndex = (mastersRoot?: string): Result => {
+  try {
+    if (mastersRoot) delete mastersIndexCache[String(mastersRoot)];
+    else mastersIndexCache = {};
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
 export function buildMastersIndex(mastersRoot: string): MasterIndexEntry[] {
   const out: MasterIndexEntry[] = [];
   const walk = (folder: Folder) => {
@@ -2564,7 +2619,10 @@ export function multipleMasterForFactor(
 // index-then-score rather than one fused pass, so the two callers below and the
 // batch preview all share one definition of "best master".
 export function scanMastersForBestMatch(mastersRoot: string, campaign: string, size: string, duration: string): File | null {
-  const best = pickBestMasterFromIndex(buildMastersIndex(mastersRoot), campaign, size, duration);
+  // Cached: campaignLocaliserGenerate calls this once PER ROW, so before the
+  // cache a 14-row batch meant 14 full tree walks. That run refreshes the
+  // index once up front, so every row after the first is now a memory hit.
+  const best = pickBestMasterFromIndex(getMastersIndex(mastersRoot), campaign, size, duration);
   return best ? best.file : null;
 }
 

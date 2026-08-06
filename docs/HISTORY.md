@@ -6391,3 +6391,56 @@ capped at 4x). A 20s row finds 10sec x2 the same way a 30s row finds 15sec x2.
 **Verified**: frontend tsconfig + `yarn build` + precedence audit clean; the
 index mapping proven against the filtered-list fixture above. **Not exercised
 in a running panel** — the debounce and the live lookup want a real typing pass.
+
+## Masters index cache (2026-08-06)
+
+Measured against the real share before deciding anything: **one walk of a
+campaign's AE tree costs ~2s** (Forgotten Island 296 masters / 2757 files / 570
+dirs; Paw Patrol Dino 410 / 2146 / 419 — Node `readdir`+`stat`, warm; AE's
+`Folder.getFiles()` is heavier per item). Nothing cached it, so every preview,
+every run and every debounced keystroke in Build-a-batch paid it again.
+
+**The index itself already existed** — `buildMastersIndex` has always
+precomputed path/name/canonPath/ratio/orientation, which is exactly the "store
+every master's position and ratio" idea. What was missing was reuse BETWEEN
+calls.
+
+`getMastersIndex` (cached) / `refreshMastersIndex` (forced) /
+`invalidateMastersIndex` (bridge export) in `tools.ts`, keyed by masters root.
+
+**Freshness policy, which is the whole design:**
+
+- **Lookups read the cache** — `csvLocaliserResolveMasters` (so the specs table
+  AND Build-a-batch's per-keystroke lookup), `reviewMatch`,
+  `scanMastersForBestMatch`. Worst case is a briefly stale answer on screen.
+- **Runs refresh first** — `csvLocaliserRun` and `campaignLocaliserGenerate`
+  both walk before writing anything, and repopulate the cache for everyone
+  else. Anything that COPIES a master gets a walk it can trust.
+
+**Keyed by root, so switching campaigns is inherently safe** — a different
+mastersRoot is a different cache entry, never a stale answer from the previous
+campaign. The only staleness that can bite is the same root changing on disk
+mid-session, so "Re-check" (the button people already press when files changed
+in Finder) now also invalidates.
+
+**Side effect worth naming: this fixes the Campaign Localiser per-row walk for
+free.** `campaignLocaliserGenerate` calls `scanMastersForBestMatch` INSIDE its
+per-row loop, so a 14-row batch walked the NAS 14 times (~28s of pure I/O).
+That function is cached now and the run refreshes once up front, so every row
+after the first is a memory hit — the same win `ee86aed` gave CSV Localiser,
+without restructuring the loop.
+
+**Deliberately NOT persisted to disk.** ~400 entries is only ~60KB, so size was
+never the issue; staleness is. A stored index that misses a newly-added master
+produces a false "no master", and one holding a renamed file points a copy at a
+path that no longer exists — both silent. SMB directory mtimes don't propagate
+on recursive changes, so there is no cheap staleness check to lean on. Lifetime
+is therefore the AE session: a plain module variable in the ExtendScript engine,
+gone when AE quits, and also reset on panel reload (that re-evaluates the
+bundle and rebuilds the namespace).
+
+**Verified**: 8 assertions against the REAL built bundle, counting
+`Folder.getFiles()` calls — first lookup walks, the next two walk zero times,
+the cache stays stale after a file appears (by design), `invalidateMastersIndex`
+with and without a root forces a re-walk, a different root walks its own tree,
+a RUN re-walks even with a warm cache, and the run's walk repopulates the cache.

@@ -1158,6 +1158,18 @@ const CSVLocaliserTool = () => {
     // versus silently hiding a deliverable that is genuinely missing.
     const refreshBatchBuilt = (t: TerritoryScan, b: Batch) => {
         const key = batchKey(t.territory, b.pdfName);
+        // "Re-check" is the button people press when files changed in Finder
+        // while the panel sat open, so it is also the right moment to drop the
+        // cached masters index — otherwise a master added since the first
+        // lookup keeps reading as "no master" for the rest of the session.
+        // Fire-and-forget: a failure here only costs a stale cache.
+        if (aepPath) {
+            try {
+                Promise.resolve(evalTS("invalidateMastersIndex", aepPath)).catch(() => {});
+            } catch (e) {
+                /* no bridge */
+            }
+        }
         const existing = readExistingAeps(t.sourceFolder, b.batch);
         setScan((prev) =>
             prev
