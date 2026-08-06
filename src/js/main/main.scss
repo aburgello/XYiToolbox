@@ -1088,7 +1088,85 @@ $content-max-width: 900px;
         border-bottom-color: transparent;
     }
 
-    &.is-open .active-jobs-caret {
+    &.is-open // "sample" marker when no feed is configured. A card silently showing invented
+// jobs would be worse than one showing none, so this is always visible when the
+// data is not real.
+.active-jobs-pill {
+    flex-shrink: 0;
+    padding: 1px 6px;
+    border: 1px solid #7a5c1f;
+    border-radius: 3px;
+    background: rgba(245, 158, 11, 0.12);
+    color: #d9a441;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+}
+
+// Sits inside the toggle button and stops propagation, so clicking it refreshes
+// without also collapsing the card.
+.active-jobs-age.is-busy { opacity: 0.6; }
+
+.active-jobs-filter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px 2px;
+}
+
+.active-jobs-chip {
+    padding: 2px 8px;
+    background: transparent;
+    border: 1px solid var(--surface-edge, #3a3a3a);
+    border-radius: 10px;
+    color: #9a9a9a;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+
+    // index.scss's global button:hover/:active would paint this blue.
+    &:hover,
+    &:active {
+        border-color: var(--ov-accent, #4a7ab5);
+        color: #ddd;
+    }
+
+    &.is-on {
+        background: var(--ov-accent, #3a5a8a);
+        border-color: transparent;
+        color: #fff;
+    }
+}
+
+.active-jobs-filter-hint {
+    font-size: 10px;
+    color: #6f6f6f;
+}
+
+// The job's own name, between territory and batch. Takes the slack so short
+// titles do not leave a gap and long ones ellipsise rather than push the bar
+// off the row.
+.active-jobs-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #c8c8c8;
+}
+
+// The specs-scan counterpart line under the list.
+.active-jobs-foot {
+    margin: 0;
+    padding: 6px 12px 10px;
+    border-top: 1px solid var(--surface-divider, #2a2a2a);
+    font-size: 10px;
+    color: #7d7d7d;
+}
+
+.active-jobs-caret {
         transform: rotate(180deg);
     }
 }
@@ -1133,6 +1211,84 @@ $content-max-width: 900px;
     font-weight: 500;
     color: #6f6f6f;
     white-space: nowrap;
+}
+
+// "sample" marker when no feed is configured. A card silently showing invented
+// jobs would be worse than one showing none, so this is always visible when the
+// data is not real.
+.active-jobs-pill {
+    flex-shrink: 0;
+    padding: 1px 6px;
+    border: 1px solid #7a5c1f;
+    border-radius: 3px;
+    background: rgba(245, 158, 11, 0.12);
+    color: #d9a441;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+}
+
+// Sits inside the toggle button and stops propagation, so clicking it refreshes
+// without also collapsing the card.
+.active-jobs-age.is-busy { opacity: 0.6; }
+
+.active-jobs-filter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px 2px;
+}
+
+.active-jobs-chip {
+    padding: 2px 8px;
+    background: transparent;
+    border: 1px solid var(--surface-edge, #3a3a3a);
+    border-radius: 10px;
+    color: #9a9a9a;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+
+    // index.scss's global button:hover/:active would paint this blue.
+    &:hover,
+    &:active {
+        border-color: var(--ov-accent, #4a7ab5);
+        color: #ddd;
+    }
+
+    &.is-on {
+        background: var(--ov-accent, #3a5a8a);
+        border-color: transparent;
+        color: #fff;
+    }
+}
+
+.active-jobs-filter-hint {
+    font-size: 10px;
+    color: #6f6f6f;
+}
+
+// The job's own name, between territory and batch. Takes the slack so short
+// titles do not leave a gap and long ones ellipsise rather than push the bar
+// off the row.
+.active-jobs-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #c8c8c8;
+}
+
+// The specs-scan counterpart line under the list.
+.active-jobs-foot {
+    margin: 0;
+    padding: 6px 12px 10px;
+    border-top: 1px solid var(--surface-divider, #2a2a2a);
+    font-size: 10px;
+    color: #7d7d7d;
 }
 
 .active-jobs-caret {
@@ -1219,8 +1375,10 @@ $content-max-width: 900px;
 }
 
 .active-jobs-bar {
-    flex: 1;
-    min-width: 40px;
+    // Fixed, not flex: .active-jobs-name takes the slack now, and a bar that
+    // grew with the row made short lists look like progress meters.
+    width: 64px;
+    flex-shrink: 0;
     height: 4px;
     border-radius: 2px;
     background: rgba(255, 255, 255, 0.08);

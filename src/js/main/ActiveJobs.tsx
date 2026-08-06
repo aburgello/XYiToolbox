@@ -23,6 +23,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Briefcase, ChevronDown, ChevronRight, MapPin, RefreshCw } from "lucide-react";
 import { evalTS } from "../lib/utils/bolt";
 import Tooltip from "./Tooltip";
+import { fetchJobs, refreshJobs, parseJobTitle, type WrikeJob } from "./lib/jobsFeed";
 
 interface ActiveJob {
     territory: string;
@@ -58,6 +59,19 @@ interface Props {
 export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
     const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
     const [loaded, setLoaded] = useState(false);
+    // Wrike is the source of TRUTH for what needs doing: a PM can forget to
+    // drop a specs PDF, but a task assigned to someone is real work regardless.
+    // The specs snapshot stays as the second half of the picture -- it is the
+    // only thing that knows what is actually BUILT on disk.
+    const [jobs, setJobs] = useState<WrikeJob[] | null>(null);
+    const [jobsMock, setJobsMock] = useState(false);
+    const [jobsError, setJobsError] = useState<string | undefined>(undefined);
+    const [busy, setBusy] = useState(false);
+    // Which member this station belongs to, so "assigned to me" is a local
+    // filter rather than an auth question -- every member can read the whole
+    // studio's Wrike, so the feed returns everything and we narrow it here.
+    const [owner, setOwner] = useState("");
+    const [mineOnly, setMineOnly] = useState(true);
     // Collapsed by default. The four category cards are the home screen's
     // primary navigation and this must not compete with them -- as a standing
     // open panel it read as a permanent slab of text under the nav. As a
@@ -90,14 +104,56 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
         load();
     }, [load]);
 
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const state = await evalTS("teamGetMachineState");
+                if (!cancelled && state && (state as { owner?: string }).owner) {
+                    setOwner((state as { owner: string }).owner);
+                }
+            } catch (e) {
+                /* untagged machine or no bridge -- "mine" simply matches nothing */
+            }
+            const res = await fetchJobs();
+            if (cancelled) return;
+            setJobs(res.jobs);
+            setJobsMock(res.mock);
+            setJobsError(res.error);
+        })();
+        return () => { cancelled = true; };
+    }, []);
+
+    const doRefresh = useCallback(async (e: React.MouseEvent) => {
+        // The refresh control lives inside the toggle button, so its click must
+        // not also collapse/expand the card.
+        e.stopPropagation();
+        setBusy(true);
+        try {
+            const res = await refreshJobs();
+            setJobs(res.jobs);
+            setJobsMock(res.mock);
+            setJobsError(res.error);
+        } finally {
+            setBusy(false);
+        }
+    }, []);
+
     // Nothing to show and nothing scanned yet: stay out of the way entirely
     // rather than occupying the home screen with an empty box. Once a scan has
     // happened the card persists, because "0 outstanding" is real information.
+    // Render as soon as EITHER source has something. Waiting for both would
+    // hide the card on a machine that has never scanned but does have jobs.
     if (!loaded) return null;
-    if (!snapshot) return null;
+    if (!jobs && !snapshot) return null;
 
-    const outstanding = snapshot.jobs.filter((j) => j.built < j.total);
-    const totalLeft = outstanding.reduce((n, j) => n + (j.total - j.built), 0);
+    const built = snapshot ? snapshot.jobs.filter((j) => j.built < j.total) : [];
+    const allJobs = jobs || [];
+    const mine = owner ? allJobs.filter((j) => j.assignee === owner) : [];
+    // An untagged machine has no "me", so showing an empty list would read as
+    // "no work" rather than "we don't know who you are". Fall back to all.
+    const shown = mineOnly && owner && mine.length > 0 ? mine : allJobs;
+    const openCount = shown.filter((j) => (j.subtasksDone ?? 0) < (j.subtaskCount ?? 0)).length;
 
     return (
         <motion.div
@@ -116,18 +172,25 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
                     <Briefcase size={16} />
                 </span>
                 <span className="active-jobs-title">Active Jobs</span>
-                {totalLeft > 0 ? (
-                    <span className="active-jobs-count">
-                        {outstanding.length} batch{outstanding.length === 1 ? "" : "es"} · {totalLeft} deliverable
-                        {totalLeft === 1 ? "" : "s"} to build
-                    </span>
-                ) : (
-                    <span className="active-jobs-count">Nothing outstanding</span>
+                <span className="active-jobs-count">
+                    {shown.length === 0
+                        ? "Nothing assigned"
+                        : `${shown.length} job${shown.length === 1 ? "" : "s"}${openCount ? ` · ${openCount} to build` : ""}`}
+                </span>
+                {jobsMock && (
+                    <Tooltip text={jobsError || "No jobs feed configured — showing sample data so the layout is visible."}>
+                        <span className="active-jobs-pill">sample</span>
+                    </Tooltip>
                 )}
                 <span className="active-jobs-spacer" />
-                <Tooltip text="From the last specs scan — open Localise and re-scan to refresh">
-                    <span className="active-jobs-age">
-                        <RefreshCw size={10} /> {relativeAge(snapshot.capturedAt)}
+                <Tooltip text="Re-read the jobs feed">
+                    <span
+                        className={busy ? "active-jobs-age is-busy" : "active-jobs-age"}
+                        role="button"
+                        tabIndex={-1}
+                        onClick={doRefresh}
+                    >
+                        <RefreshCw size={10} /> {busy ? "…" : "refresh"}
                     </span>
                 </Tooltip>
                 <ChevronDown size={15} className="active-jobs-caret" />
@@ -142,41 +205,78 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
                         exit={{ height: 0, opacity: 0 }}
                         transition={{ duration: 0.18, ease: "easeOut" }}
                     >
-                        {outstanding.length === 0 ? (
-                            <p className="active-jobs-empty">
-                                Everything in the last scan is built.
-                            </p>
+                        {owner && mine.length > 0 && (
+                            <div className="active-jobs-filter">
+                                <button
+                                    type="button"
+                                    className={mineOnly ? "active-jobs-chip is-on" : "active-jobs-chip"}
+                                    onClick={() => setMineOnly((v) => !v)}
+                                >
+                                    {mineOnly ? `Assigned to ${owner}` : "Everyone"}
+                                </button>
+                                <span className="active-jobs-filter-hint">
+                                    {mineOnly ? `${allJobs.length - mine.length} more across the team` : `${mine.length} yours`}
+                                </span>
+                            </div>
+                        )}
+
+                        {shown.length === 0 ? (
+                            <p className="active-jobs-empty">No active jobs in the feed.</p>
                         ) : (
                             <ul className="active-jobs-list">
-                                {outstanding.map((job) => {
-                                    const left = job.total - job.built;
-                                    const pct = job.total > 0 ? Math.round((job.built / job.total) * 100) : 0;
+                                {shown.map((job) => {
+                                    const parts = parseJobTitle(job.title);
+                                    const total = job.subtaskCount ?? 0;
+                                    const done = job.subtasksDone ?? 0;
+                                    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
                                     return (
-                                        <li key={`${job.territory}/${job.pdfName}`}>
+                                        <li key={job.id}>
                                             <button
                                                 type="button"
                                                 className="active-jobs-row"
                                                 onClick={onOpen}
-                                                title={job.pdfName}
+                                                title={job.title}
                                             >
                                                 <MapPin size={12} className="active-jobs-pin" />
-                                                <span className="active-jobs-terr">{job.territory}</span>
-                                                <span className="active-jobs-batch">{job.batch}</span>
-                                                {/* A bar, not a percentage: "how much is
-                                                    left" reads faster as a length. */}
-                                                <span className="active-jobs-bar" aria-hidden="true">
-                                                    <span className="active-jobs-bar-fill" style={{ width: `${pct}%` }} />
+                                                <span className="active-jobs-terr">
+                                                    {parts.territory || parts.film || "—"}
                                                 </span>
-                                                <span className="active-jobs-left">
-                                                    {left} left
-                                                    <span className="active-jobs-of"> / {job.total}</span>
-                                                </span>
+                                                <span className="active-jobs-name">{parts.name || job.title}</span>
+                                                {parts.batch && <span className="active-jobs-batch">{parts.batch}</span>}
+                                                {total > 0 ? (
+                                                    <>
+                                                        {/* A bar, not a percentage: "how much is
+                                                            left" reads faster as a length. */}
+                                                        <span className="active-jobs-bar" aria-hidden="true">
+                                                            <span className="active-jobs-bar-fill" style={{ width: `${pct}%` }} />
+                                                        </span>
+                                                        <span className="active-jobs-left">
+                                                            {total - done} left
+                                                            <span className="active-jobs-of"> / {total}</span>
+                                                        </span>
+                                                    </>
+                                                ) : (
+                                                    <span className="active-jobs-bar" aria-hidden="true" />
+                                                )}
                                                 <ChevronRight size={13} className="active-jobs-chev" />
                                             </button>
                                         </li>
                                     );
                                 })}
                             </ul>
+                        )}
+
+                        {/* The other half of the picture: Wrike knows what was
+                            ASKED FOR, the specs scan knows what is BUILT. Stated
+                            plainly rather than merged, because a mismatch between
+                            them is itself the useful signal (a missed specs PDF). */}
+                        {snapshot && built.length > 0 && (
+                            <p className="active-jobs-foot">
+                                Last specs scan: {built.length} batch{built.length === 1 ? "" : "es"} with
+                                {" "}
+                                {built.reduce((n, j) => n + (j.total - j.built), 0)} deliverable(s) not yet built
+                                <span className="active-jobs-of"> · {relativeAge(snapshot.capturedAt)}</span>
+                            </p>
                         )}
                     </motion.div>
                 )}

@@ -2712,6 +2712,36 @@ export interface CsvLocResult {
 // Stored as JSON because it is a real structure, which CLAUDE.md's persistence
 // rule allows for exactly this case.
 // =============================================================================
+// Where the panel reads Wrike-derived jobs from: the Worker route's URL and
+// its shared key, per machine.
+//
+// SECURITY: this key is a credential and must NEVER go in team.ts's
+// PROFILE_KEYS -- profiles are written to the shared team folder. It is a
+// deliberately low-stakes one (read-only, and it returns what every studio
+// member can already see in Wrike), but "low stakes" is not "publish it".
+// It is also NOT a Wrike token: the Worker holds those and the panel never
+// sees one.
+const JOBS_FEED_KEY = "JobsFeedConfig";
+
+export const saveJobsFeedConfig = (json: string): Result => {
+  try {
+    app.settings.saveSetting(SETTINGS_SECTION, JOBS_FEED_KEY, json == null ? "" : String(json));
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// "" when unconfigured -- the card shows its "not connected" state.
+export const loadJobsFeedConfig = (): string => {
+  try {
+    if (!app.settings.haveSetting(SETTINGS_SECTION, JOBS_FEED_KEY)) return "";
+    return app.settings.getSetting(SETTINGS_SECTION, JOBS_FEED_KEY) || "";
+  } catch (e) {
+    return "";
+  }
+};
+
 const ACTIVE_JOBS_KEY = "OVActiveJobs";
 
 export const saveActiveJobs = (json: string): Result => {

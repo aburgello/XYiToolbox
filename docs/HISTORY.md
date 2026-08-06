@@ -6542,3 +6542,62 @@ missing class only shows up from an installed ZXP); `saveActiveJobs`/
 `loadActiveJobs` resolve in the ExtendScript bundle; and the card's CSS block
 confirmed free of banned features. **Not seen in a running panel** — it needs a
 real specs scan to have anything to show.
+
+### Active Jobs, second pass: Wrike feed + full-width button (2026-08-06)
+
+Two corrections from first use.
+
+**It was a standing panel; it is now a closed full-width BUTTON** in the same
+family as the four category cards, expanding on click. As an always-open card
+it read as a permanent slab of text under the primary navigation.
+
+**It was also wider than everything else** — `.toolset-grid` and
+`.category-row` are capped at `$content-max-width` and centred inside
+`.home-screen`; the new card was not, so it ran edge-to-edge while the cards
+directly above stayed narrow. It is now in that same selector list, so it
+cannot drift from them again.
+
+**Wrike is the source of truth, not the specs PDFs.** A PM can forget to drop a
+specs PDF; a task assigned to someone is real work regardless. So the card's
+primary content is now the Wrike feed, and the specs snapshot became a footer
+line. They are stated separately ON PURPOSE rather than merged: Wrike knows
+what was ASKED FOR, the specs scan knows what is BUILT, and a mismatch between
+them is itself the useful signal — a batch in Wrike with no specs PDF is
+exactly the failure mode that is invisible today.
+
+**"Assigned to me" is a local filter, not an auth problem.** Every studio
+member can already read the whole Wrike account, so the feed returns everything
+and the panel narrows it using `teamGetMachineState().owner`. That single fact
+is what removes the need for per-user OAuth in CEP. An untagged machine falls
+back to showing everyone rather than an empty list, which would read as "no
+work" instead of "we don't know who you are".
+
+**Transport** (`lib/jobsFeed.ts`): a plain frontend `fetch` to the studio
+Worker's read-only route with an `X-Panel-Key` header — NOT over the
+ExtendScript bridge (this is HTTPS, CEP's Chromium does it natively, and
+routing it through evalTS would block the bridge for the duration) and NOT a
+cookie session (a CEP panel has no session and its origin is `null`, so cookies
+never attach cross-origin). Cached for the panel session with an explicit
+refresh, same reasoning as the masters index cache.
+
+- The Worker route does not exist yet, so **sample data is used and marked
+  "sample" in the UI**. A card silently showing invented jobs would be worse
+  than one showing none.
+- `normalise()` is deliberately defensive: the `tasks` table belongs to
+  TimeHub, not this panel, so its columns can change without anyone thinking
+  about the toolbox. A missing field becomes a blank cell, never a throw.
+- The feed key lives in `app.settings` (`JobsFeedConfig`) and is **NOT** in
+  `PROFILE_KEYS` — verified absent. It is low-stakes (read-only, returns what
+  every member can already see) but low-stakes is not "publish it to the team
+  folder". It is also not a Wrike token: the Worker holds those.
+
+**Bug caught in review, not by tooling**: the first version of the collapse
+put `useState` AFTER the component's early returns, so the hook count changed
+once a snapshot loaded and React would have thrown "rendered fewer hooks than
+expected". `tsc` is happy with that.
+
+**Verified**: both tsconfigs + `yarn build` + precedence audit clean; the
+centring rule confirmed to name all three selectors in the bundled CSS; and 6
+assertions on `parseJobTitle` against the real title format, including no
+batch token, no territory, a hyphenated job name, and a title with no
+separators at all. **Not seen in a running panel.**
