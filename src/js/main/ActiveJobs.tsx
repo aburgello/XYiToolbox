@@ -23,7 +23,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Briefcase, ChevronDown, ChevronRight, MapPin, RefreshCw } from "lucide-react";
 import { evalTS } from "../lib/utils/bolt";
 import Tooltip from "./Tooltip";
-import { fetchJobs, refreshJobs, parseJobTitle, type WrikeJob } from "./lib/jobsFeed";
+import { fetchJobs, refreshJobs, saveJobsFeedConfig, parseJobTitle, type WrikeJob } from "./lib/jobsFeed";
 import ActiveJobModal from "./ActiveJobModal";
 
 interface ActiveJob {
@@ -76,6 +76,47 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
     // the useful first question is "what is actually in this job", and the
     // subtask names answer it without leaving home.
     const [openJob, setOpenJob] = useState<WrikeJob | null>(null);
+    // Setup lives inside the card rather than in a settings screen: the only
+    // moment anyone wants it is when they are looking at the "sample" badge
+    // wondering why the data is not real.
+    const [setupOpen, setSetupOpen] = useState(false);
+    const [setupUrl, setSetupUrl] = useState("");
+    const [setupKey, setSetupKey] = useState("");
+    const [setupBusy, setSetupBusy] = useState(false);
+    const [setupNote, setSetupNote] = useState("");
+
+    const saveSetup = useCallback(async () => {
+        const url = setupUrl.trim();
+        const key = setupKey.trim();
+        if (!url || !key) {
+            setSetupNote("Both the URL and the key are needed.");
+            return;
+        }
+        setSetupBusy(true);
+        setSetupNote("");
+        try {
+            const ok = await saveJobsFeedConfig({ url, key });
+            if (!ok) {
+                setSetupNote("Couldn't save — no bridge to After Effects.");
+                return;
+            }
+            // Fetch straight away so a wrong URL or key is reported HERE, while
+            // the fields are still on screen to correct, rather than silently
+            // falling back to sample data.
+            const res = await refreshJobs(owner);
+            setJobs(res.jobs);
+            setJobsMock(res.mock);
+            setJobsError(res.error);
+            if (res.mock) setSetupNote(res.error || "Saved, but the feed didn't answer.");
+            else {
+                setSetupNote("");
+                setSetupOpen(false);
+                setSetupKey("");
+            }
+        } finally {
+            setSetupBusy(false);
+        }
+    }, [setupUrl, setupKey, owner]);
     // Collapsed by default. The four category cards are the home screen's
     // primary navigation and this must not compete with them -- as a standing
     // open panel it read as a permanent slab of text under the nav. As a
@@ -193,8 +234,19 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
                         : `${shown.length} job${shown.length === 1 ? "" : "s"}${openCount ? ` · ${openCount} to build` : ""}`}
                 </span>
                 {jobsMock && (
-                    <Tooltip text={jobsError || "No jobs feed configured — showing sample data so the layout is visible."}>
-                        <span className="active-jobs-pill">sample</span>
+                    <Tooltip text={jobsError || "No jobs feed connected — showing sample data. Click to connect."}>
+                        <span
+                            className="active-jobs-pill"
+                            role="button"
+                            tabIndex={-1}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setOpen(true);
+                                setSetupOpen(true);
+                            }}
+                        >
+                            sample
+                        </span>
                     </Tooltip>
                 )}
                 <span className="active-jobs-spacer" />
@@ -220,6 +272,40 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
                         exit={{ height: 0, opacity: 0 }}
                         transition={{ duration: 0.18, ease: "easeOut" }}
                     >
+                        {(setupOpen || (jobsMock && open)) && (
+                            <div className="active-jobs-setup">
+                                <p className="active-jobs-setup-lead">
+                                    Connect the jobs feed. Both values come from the studio Worker —{" "}
+                                    <strong>this is not a Wrike token</strong>, and it's stored on this machine only.
+                                </p>
+                                <label className="active-jobs-field">
+                                    <span>Feed URL</span>
+                                    <input
+                                        type="text"
+                                        value={setupUrl}
+                                        placeholder="https://your-worker-url/api/panel/jobs"
+                                        onChange={(e) => setSetupUrl(e.target.value)}
+                                    />
+                                </label>
+                                <label className="active-jobs-field">
+                                    <span>Panel key</span>
+                                    <input
+                                        type="password"
+                                        value={setupKey}
+                                        placeholder="the PANEL_KEY you set with wrangler"
+                                        onChange={(e) => setSetupKey(e.target.value)}
+                                    />
+                                </label>
+                                <div className="active-jobs-setup-actions">
+                                    {setupNote && <span className="active-jobs-setup-note">{setupNote}</span>}
+                                    <span className="active-jobs-spacer" />
+                                    <button type="button" className="active-jobs-save" disabled={setupBusy} onClick={saveSetup}>
+                                        {setupBusy ? "Checking…" : "Connect"}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
                         {!owner ? (
                             <p className="active-jobs-empty">
                                 This machine isn't tagged with a member name, so there's no "you" to filter by. Tag it
