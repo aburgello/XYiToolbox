@@ -12,12 +12,15 @@
 // fallback at the bottom. ExtendScript can't read PDF bytes, so folder walking
 // + PDF parsing happen here; only comp generation crosses the bridge.
 // =============================================================================
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { takePendingBatch, type PendingBatch } from "../lib/localiseHandoff";
 import {
     FolderSearch,
     FolderPlus,
+    Share2,
+    Archive,
+    Trash2,
     Library,
     PlayCircle,
     ScanSearch,
@@ -45,10 +48,20 @@ import { fs, path } from "../../lib/cep/node";
 import CheckboxToggle from "../CheckboxToggle";
 import Tooltip from "../Tooltip";
 import Dropdown from "../Dropdown";
-import { alertDialog, promptDialog } from "../Dialog";
+import { alertDialog, confirmDialog, promptDialog } from "../Dialog";
 import { showMcItReport, type McReport } from "../McItReportModal";
 import { showLocGenReport, type LocGenReport, type LocGenRow } from "../LocGenReportModal";
 import type { SpecRow } from "../lib/pdfSpecs";
+
+// One row of the team's shared campaign board (team.ts's TeamCampaignRow).
+// Only what this picker needs: the name, and who retired it if anyone.
+interface TeamCampaignRow {
+    name: string;
+    mastersRoot: string;
+    marketsRoot: string;
+    retiredBy: string;
+    retiredAt: string;
+}
 
 interface Campaign {
     name: string;
@@ -1047,6 +1060,114 @@ const CSVLocaliserTool = () => {
         }
     };
 
+    // --- campaign housekeeping ------------------------------------------
+    // Three separate concerns that all show up on the same picker row, kept
+    // apart on purpose because they have genuinely different blast radii:
+    //   reachability -- this machine only, read-only, advisory
+    //   remove       -- this machine only, destructive, undoable by re-adding
+    //   retire       -- the whole studio, advisory, reversible
+    // Nothing here ever deletes anything from anyone ELSE's machine.
+
+    // Which campaigns' Markets roots resolve right now. Re-read whenever the
+    // list changes. Quiet: no bridge, or an unmounted NAS, is a normal state
+    // and must never toast (CLAUDE.md).
+    const [campaignReach, setCampaignReach] = useState<Record<string, boolean>>({});
+    // The team's shared campaign board, and whether we could actually READ it.
+    // `read` false means "couldn't ask" -- distinct from "nothing is retired",
+    // and the UI must not show a retired-marker vacuum as fact.
+    const [teamCampaigns, setTeamCampaigns] = useState<{ read: boolean; rows: TeamCampaignRow[] }>({ read: false, rows: [] });
+
+    const refreshCampaignStatus = useCallback(async () => {
+        try {
+            const rows = (await evalTS("locLibCampaignStatus")) as { name: string; reachable: boolean }[] | undefined;
+            if (rows) {
+                const next: Record<string, boolean> = {};
+                rows.forEach((r) => { next[r.name] = r.reachable; });
+                setCampaignReach(next);
+            }
+        } catch (e) { /* no bridge — leave every campaign unmarked */ }
+        try {
+            const board = (await evalTS("teamCampaignBoard")) as { read?: boolean; rows?: TeamCampaignRow[] } | undefined;
+            if (board && board.read) setTeamCampaigns({ read: true, rows: board.rows || [] });
+        } catch (e) { /* team folder unreachable — keep whatever we last had */ }
+    }, []);
+
+    useEffect(() => {
+        if (campaigns.length) refreshCampaignStatus();
+    }, [campaigns, refreshCampaignStatus]);
+
+    const retiredEntry = (name: string) =>
+        teamCampaigns.rows.find((r) => r.name.toLowerCase() === name.toLowerCase() && r.retiredBy);
+
+    // Remove from THIS machine. The confirm names the part nobody would guess
+    // from this screen: the campaign list is shared with Localised Library, so
+    // this also drops that campaign's saved component entries there.
+    const removeCampaign = async () => {
+        if (!campaignName) return;
+        const ok = await confirmDialog(
+            `Remove "${campaignName}" from this machine's campaign list?\n\n` +
+                `It also disappears from Localised Library, along with that campaign's saved component entries and custom folders. ` +
+                `Files on disk are untouched, and you can add it back by pointing at its Markets folder again.\n\n` +
+                `This changes nothing for anyone else — use "Retire for team" if the volume has been archived.`
+        );
+        if (!ok) return;
+        try {
+            const res = await evalTS("removeLocLibCampaign", campaignName);
+            if (!res || !res.success) {
+                await alertDialog((res && (res as { error?: string }).error) || "Could not remove the campaign.");
+                return;
+            }
+            setCampaignName("");
+            setMarketsRoot("");
+            setScan(null);
+            await refreshCampaigns();
+            await refreshCampaignStatus();
+            setNotice(`Removed "${campaignName}" from this machine.`);
+        } catch (e) {
+            setNotice("No CEP bridge — open this panel inside After Effects.");
+        }
+    };
+
+    // Push this campaign's Markets path to the team library, so the next
+    // person doesn't have to browse for it. Merges; never repoints a path the
+    // team already holds.
+    const shareCampaign = async () => {
+        const camp = campaigns.find((c) => c.name === campaignName);
+        if (!camp) return;
+        try {
+            const res = await evalTS("teamShareLocCampaign", JSON.stringify({ name: camp.name, marketsRoot: camp.marketsRoot }));
+            if (res === undefined) throw new Error("no bridge");
+            setNotice((res as { message?: string; error?: string }).message || (res as { error?: string }).error || "");
+            await refreshCampaignStatus();
+        } catch (e) {
+            setNotice("No CEP bridge — open this panel inside After Effects.");
+        }
+    };
+
+    // Mark retired for the whole studio (or undo that). Advisory: it marks
+    // every picker, and stops NEW machines pulling the campaign on sync, but
+    // never deletes a local list entry -- not even this machine's.
+    const toggleRetireCampaign = async () => {
+        if (!campaignName) return;
+        const already = !!retiredEntry(campaignName);
+        if (!already) {
+            const ok = await confirmDialog(
+                `Mark "${campaignName}" retired for the whole team?\n\n` +
+                    `Everyone's picker will show it as retired, and machines syncing from now on won't pick it up. ` +
+                    `Nobody's existing campaign list is changed, and you can un-retire it here.`
+            );
+            if (!ok) return;
+        }
+        try {
+            const res = await evalTS("teamSetCampaignRetired", campaignName, !already);
+            if (res === undefined) throw new Error("no bridge");
+            setNotice((res as { message?: string; error?: string }).message || (res as { error?: string }).error || "");
+            await refreshCampaignStatus();
+        } catch (e) {
+            setNotice("No CEP bridge — open this panel inside After Effects.");
+        }
+    };
+
     const browseAep = async () => {
         try {
             const picked = await evalTS("selectCsvLocaliserAepFolder");
@@ -1444,7 +1565,21 @@ const CSVLocaliserTool = () => {
                                 icon={<Library size={13} />}
                                 value={campaignName}
                                 onChange={selectCampaign}
-                                options={campaigns.map((c) => ({ value: c.name, label: c.name }))}
+                                options={campaigns.map((c) => ({
+                                    value: c.name,
+                                    label: c.name,
+                                    // "retired" (the team said so) outranks "not mounted"
+                                    // (this machine can't see it) -- a retired campaign is
+                                    // usually also unreachable, and showing both would be
+                                    // noise. Reachability is only claimed when the check
+                                    // actually ran: an absent entry means "not asked",
+                                    // which must not render as "not mounted".
+                                    hint: retiredEntry(c.name)
+                                        ? "retired"
+                                        : campaignReach[c.name] === false
+                                        ? "not mounted"
+                                        : undefined,
+                                }))}
                                 placeholder="Select a campaign…"
                                 emptyMessage="No campaigns yet — add one with the + button."
                                 disabled={busy}
@@ -1453,7 +1588,40 @@ const CSVLocaliserTool = () => {
                         <Tooltip text="Add a campaign (pick its Markets folder)">
                             <button className="icon-btn specs-campaign-btn" disabled={busy} onClick={addCampaign}><FolderPlus size={14} /></button>
                         </Tooltip>
+                        <Tooltip text={campaignName ? `Share "${campaignName}"'s Markets path with the team` : "Pick a campaign to share it"}>
+                            <button className="icon-btn specs-campaign-btn" disabled={busy || !campaignName} onClick={shareCampaign}><Share2 size={14} /></button>
+                        </Tooltip>
+                        <Tooltip
+                            text={
+                                !campaignName
+                                    ? "Pick a campaign first"
+                                    : retiredEntry(campaignName)
+                                    ? `Retired by ${retiredEntry(campaignName)!.retiredBy} — click to un-retire for the team`
+                                    : "Mark retired for the team (volume archived). Marks everyone's picker; deletes nothing."
+                            }
+                        >
+                            <button
+                                className={"icon-btn specs-campaign-btn" + (campaignName && retiredEntry(campaignName) ? " is-retired" : "")}
+                                disabled={busy || !campaignName}
+                                onClick={toggleRetireCampaign}
+                            >
+                                <Archive size={14} />
+                            </button>
+                        </Tooltip>
+                        <Tooltip text={campaignName ? `Remove "${campaignName}" from this machine` : "Pick a campaign to remove it"}>
+                            <button className="icon-btn specs-campaign-btn specs-campaign-btn--danger" disabled={busy || !campaignName} onClick={removeCampaign}><Trash2 size={14} /></button>
+                        </Tooltip>
                     </div>
+                    {campaignName && retiredEntry(campaignName) && (
+                        <p className="specs-campaign-retired">
+                            Retired by {retiredEntry(campaignName)!.retiredBy}. It still works here — this is a flag, not a lock.
+                        </p>
+                    )}
+                    {campaignName && !retiredEntry(campaignName) && campaignReach[campaignName] === false && (
+                        <p className="specs-campaign-retired">
+                            Its Markets folder isn't reachable from this machine right now — the volume may just not be mounted.
+                        </p>
+                    )}
                 </div>
 
                 <div className="specs-branches">
@@ -2114,10 +2282,75 @@ const CSVLocaliserTool = () => {
 
                         <div className="specs-build-rows">
                             <div className="specs-build-row specs-build-row--head">
+                                {/* Master status column, blank header exactly like the
+                                    specs table's own — the icon says what it is, and a
+                                    label here would crowd a 20px column. */}
+                                <span />
                                 <span>Type</span><span>Creative</span><span>Width</span><span>Height</span><span>Dur</span><span>×</span><span />
                             </div>
                             {buildRows.map((r) => (
                                 <div className="specs-build-row" key={r.id}>
+                                    {(() => {
+                                        // Same three states as the specs table's master
+                                        // column, reusing its markup and colours so the
+                                        // two can't drift apart — plus one the specs
+                                        // table can't have: a row too incomplete to look
+                                        // up yet. That must NOT render as "no master",
+                                        // which would read as a failed lookup on a row
+                                        // nobody has finished typing.
+                                        //
+                                        // This matters most for handed-over Wrike rows:
+                                        // their creative is free text parsed from a
+                                        // subtask name, never checked against the masters
+                                        // folder, so without this the first sign of a
+                                        // mismatch was a "no-master" line in the run
+                                        // report.
+                                        if (!aepPath) {
+                                            return (
+                                                <Tooltip text="Pick the AEP masters folder above to check which master each row would use.">
+                                                    <span className="specs-master specs-master--unknown"><Circle size={11} /></span>
+                                                </Tooltip>
+                                            );
+                                        }
+                                        const complete = buildRowCreative(r) && r.width && r.height && r.duration;
+                                        if (!complete) {
+                                            return (
+                                                <Tooltip text="Fill in creative, size and duration to check for a master.">
+                                                    <span className="specs-master specs-master--unknown"><Circle size={11} /></span>
+                                                </Tooltip>
+                                            );
+                                        }
+                                        const res = buildMasters[r.id];
+                                        if (!res) {
+                                            // The lookup is debounced 500ms and walks the
+                                            // NAS, so "not back yet" is a normal, visible
+                                            // state rather than an edge case.
+                                            return (
+                                                <Tooltip text="Checking the masters folder…">
+                                                    <span className="specs-master specs-master--unknown"><Circle size={11} /></span>
+                                                </Tooltip>
+                                            );
+                                        }
+                                        if (res.master) {
+                                            return (
+                                                <Tooltip text={`Master found: ${res.master}`}>
+                                                    <span className="specs-master specs-master--ok"><FileCheck size={12} /></span>
+                                                </Tooltip>
+                                            );
+                                        }
+                                        const canMultiply = !!res.multiples?.length;
+                                        return (
+                                            <Tooltip
+                                                text={
+                                                    canMultiply
+                                                        ? `No ${r.duration}s master for ${buildRowCreative(r)} at ${r.width}x${r.height} — but it can be built from a shorter one. See the × column.`
+                                                        : `No master matches ${buildRowCreative(r) || "this creative"} at ${r.width}x${r.height} / ${r.duration}s. This row would be skipped.`
+                                                }
+                                            >
+                                                <span className="specs-master specs-master--none"><FileX size={12} /></span>
+                                            </Tooltip>
+                                        );
+                                    })()}
                                     <Dropdown
                                         className="specs-build-artwork"
                                         value={r.artwork}

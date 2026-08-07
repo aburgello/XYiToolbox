@@ -928,6 +928,40 @@ export const setLocLibComponentFolder = (campaign: string, territory: string, la
 
 export const loadLocLibCampaigns = (): LocLibCampaign[] => loadLocLibCampaignsRaw();
 
+export interface LocLibCampaignStatus {
+  name: string;
+  marketsRoot: string;
+  // Does this campaign's Markets root resolve on THIS machine right now?
+  //
+  // `.exists` is used here, and only here, because the target is a DIRECTORY
+  // -- the one case CLAUDE.md says it can be trusted on the studio NAS (it is
+  // FILES it lies about). There is no cheaper honest test: the alternative,
+  // listing the folder, walks a network directory per campaign every time a
+  // picker opens.
+  //
+  // FALSE IS NOT AN ERROR AND NOT PROOF OF ANYTHING PERMANENT. An archived
+  // volume and a laptop at home with nothing mounted are indistinguishable
+  // from here, so callers must present this as "not mounted right now", never
+  // as "gone" -- and nothing in this codebase may auto-remove a campaign on
+  // the strength of it (CLAUDE.md: every NAS feature degrades silently).
+  reachable: boolean;
+}
+
+export const locLibCampaignStatus = (): LocLibCampaignStatus[] => {
+  const out: LocLibCampaignStatus[] = [];
+  const camps = loadLocLibCampaignsRaw();
+  for (let i = 0; i < camps.length; i++) {
+    let reachable = false;
+    try {
+      reachable = new Folder(camps[i].marketsRoot).exists;
+    } catch (e) {
+      reachable = false;
+    }
+    out.push({ name: camps[i].name, marketsRoot: camps[i].marketsRoot, reachable: reachable });
+  }
+  return out;
+};
+
 export const saveLocLibCampaign = (name: string, marketsRoot: string): Result => {
   try {
     const camps = loadLocLibCampaignsRaw();

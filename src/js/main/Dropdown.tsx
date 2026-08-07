@@ -35,6 +35,13 @@ import "./Dropdown.scss";
 export interface DropdownOption {
     value: string;
     label: string;
+    /** Small trailing note on the option row, e.g. "not mounted" / "retired".
+     *  Purely informational: it never changes what selecting the option does,
+     *  and an option carrying one is still selectable on purpose -- a campaign
+     *  on an unmounted volume is a normal thing to pick while the share is
+     *  offline. Also shown on the closed trigger when that option is the
+     *  selected one, or the state would vanish the moment the list closes. */
+    hint?: string;
 }
 
 interface Props {
@@ -71,6 +78,7 @@ const Dropdown: React.FC<Props> = ({ value, onChange, options, placeholder = "Se
                     <span className={"dropdown-trigger-label" + (selected ? "" : " placeholder")}>
                         {selected ? selected.label : placeholder}
                     </span>
+                    {selected?.hint && <span className="dropdown-trigger-hint">{selected.hint}</span>}
                     <ChevronDown size={13} className="dropdown-trigger-chevron" />
                 </button>
             )}
@@ -129,6 +137,7 @@ const Dropdown: React.FC<Props> = ({ value, onChange, options, placeholder = "Se
                                 }}
                             >
                                 <span className="dropdown-option-label">{opt.label}</span>
+                                {opt.hint && <span className="dropdown-option-hint">{opt.hint}</span>}
                                 {opt.value === value && <Check size={13} className="dropdown-option-check" />}
                             </button>
                         ))}

@@ -28,6 +28,7 @@ import { Result, SETTINGS_SECTION } from "./shared";
 import { expressionsBankLoad, expressionsBankSave, loadCustomTools, saveCustomTools } from "./tools";
 import { loadCombos, saveCombos, EffectComboEntry } from "./effects";
 import { loadCampaignsRaw, saveCampaign, loadCampaignBanner, setCampaignBanner } from "./review";
+import { loadLocLibCampaigns, saveLocLibCampaign } from "./localise";
 
 const TEAM_FOLDER_KEY = "TeamFolderPath";
 
@@ -676,6 +677,21 @@ interface SharedCampaign {
   // Optional: entries written before campaign banners existed have no such
   // field, so every read must treat it as possibly absent.
   banner?: string;
+  // The MARKETS root -- the other half of the same campaign, used by
+  // Localised Library and CSV Localiser (LocLibCampaigns) rather than OV
+  // Library. Optional for the same reason `banner` is: every entry written
+  // before this existed has neither, and one campaign may legitimately be
+  // known to the team by only one of its two roots. A row can also carry a
+  // marketsRoot and an EMPTY mastersRoot -- that's a campaign shared from
+  // CSV Localiser by someone who never added it to OV Library.
+  marketsRoot?: string;
+  // Retired = the volume has been archived and nobody should be pointed at
+  // this campaign any more. A FLAG, never a deletion: a retired row keeps
+  // its paths so a machine that still has the volume mounted is not lied
+  // to, and so retiring can be undone. Rows are marked in every picker
+  // rather than hidden -- see teamSetCampaignRetired.
+  retiredBy?: string;
+  retiredAt?: string;
 }
 
 interface ExpressionEntry {
@@ -869,6 +885,10 @@ interface SyncResult extends Result {
   newExpressions?: number;
   newTools?: number;
   newCampaigns?: number;
+  // Localise (markets-root) campaigns pulled, counted separately from
+  // newCampaigns: they land in a different list and a summary that merged
+  // them would overstate what OV Library gained.
+  newLocCampaigns?: number;
 }
 
 export const teamSyncShared = (): SyncResult => {
@@ -959,6 +979,12 @@ export const teamSyncShared = (): SyncResult => {
       for (let i = 0; i < sharedCampaigns.length; i++) {
         const camp = sharedCampaigns[i];
         if (!camp || !camp.name || !camp.mastersRoot) continue;
+        // Retired campaigns are not pulled into EITHER list -- the flag is
+        // studio-wide, so a campaign the team has retired must not keep
+        // arriving on new machines through the masters half after someone
+        // retired it from the markets half. Not even the banner: a retired
+        // campaign should stop spreading entirely.
+        if (camp.retiredBy) continue;
         // The banner is applied even for a campaign this machine ALREADY
         // has, and only when nothing is pinned locally. A shared banner is
         // campaign identity rather than personal preference, so it should
@@ -976,7 +1002,44 @@ export const teamSyncShared = (): SyncResult => {
       }
     }
 
-    return { success: true, newCombos: newCombos, newExpressions: newExpressions, newTools: newTools, newCampaigns: newCampaigns };
+    // Localise campaigns (LocLibCampaigns -- Localised Library / CSV
+    // Localiser): the same merge over the OTHER root on the same rows.
+    // Separate loop rather than folded into the one above because the two
+    // lists are genuinely independent -- a row may carry either root, both,
+    // or (for a retire-only marker) neither, and this machine may already
+    // hold one list and not the other.
+    //
+    // A RETIRED campaign is never pulled. Adding a row the team has just
+    // declared dead would be the panel undoing the retirement, and the whole
+    // point of retiring is that new machines stop picking it up. Machines
+    // that already have it keep it -- see teamSetCampaignRetired on why this
+    // never deletes anything local.
+    let newLocCampaigns = 0;
+    if (sharedCampaigns && sharedCampaigns.length > 0) {
+      const localLoc = loadLocLibCampaigns();
+      const locNames: { [lower: string]: boolean } = {};
+      for (let i = 0; i < localLoc.length; i++) locNames[localLoc[i].name.toLowerCase()] = true;
+      for (let i = 0; i < sharedCampaigns.length; i++) {
+        const camp = sharedCampaigns[i];
+        if (!camp || !camp.name || !camp.marketsRoot) continue;
+        if (camp.retiredBy) continue;
+        if (locNames[camp.name.toLowerCase()]) continue;
+        const r = saveLocLibCampaign(camp.name, camp.marketsRoot);
+        if (r.success) {
+          locNames[camp.name.toLowerCase()] = true;
+          newLocCampaigns++;
+        }
+      }
+    }
+
+    return {
+      success: true,
+      newCombos: newCombos,
+      newExpressions: newExpressions,
+      newTools: newTools,
+      newCampaigns: newCampaigns,
+      newLocCampaigns: newLocCampaigns,
+    };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -1118,6 +1181,146 @@ export const teamShareCampaign = (campaignJson: string): Result => {
       return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
     }
     return { success: true, message: 'Shared "' + entry.name + '" with the team.' };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// Share a LOCALISE campaign (name + markets root) -- the LocLibCampaigns list
+// behind Localised Library's and CSV Localiser's pickers, which until now had
+// no team route at all while OV Library's masters-root list did.
+//
+// Writes into the SAME shared-campaigns file rather than a second one: it is
+// one campaign with two roots, and two files would immediately raise "which
+// one is authoritative when the names disagree?". A row shared from OV Library
+// gains a marketsRoot here; a row shared from CSV Localiser first may have an
+// empty mastersRoot until someone shares that half.
+//
+// NEVER REPOINTS an existing root, exactly as teamShareCampaign doesn't:
+// re-sharing is how you fill in a missing half, not how you overwrite the
+// path the team already agreed on. Someone whose local path genuinely differs
+// should say so out loud, not silently move everyone.
+export const teamShareLocCampaign = (campaignJson: string): Result => {
+  try {
+    if (!teamFolder()) return { success: false, error: "Team folder not set -- set it in the Team menu on the home screen first." };
+    let entry: { name?: string; marketsRoot?: string } | null = null;
+    try {
+      entry = JSON.parse(campaignJson);
+    } catch (e2) {
+      return { success: false, error: "Could not read the campaign data." };
+    }
+    if (!entry || !entry.name || !entry.marketsRoot) return { success: false, error: "Campaign has no name/path to share." };
+
+    const shared = readSharedFile<SharedCampaign>(SHARED_CAMPAIGNS_FILE, SHARED_CAMPAIGNS_TYPE) || [];
+    for (let i = 0; i < shared.length; i++) {
+      if (shared[i].name.toLowerCase() === entry.name.toLowerCase()) {
+        const existing = shared[i].marketsRoot ? String(shared[i].marketsRoot) : "";
+        if (existing) {
+          return { success: true, message: '"' + entry.name + '" is already in the team library.' };
+        }
+        shared[i].marketsRoot = entry.marketsRoot;
+        if (!writeSharedFile(SHARED_CAMPAIGNS_FILE, SHARED_CAMPAIGNS_TYPE, shared)) {
+          return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
+        }
+        return { success: true, message: 'Added the Markets path for "' + entry.name + '".' };
+      }
+    }
+    shared.push({ name: entry.name, mastersRoot: "", marketsRoot: entry.marketsRoot, banner: "" });
+    if (!writeSharedFile(SHARED_CAMPAIGNS_FILE, SHARED_CAMPAIGNS_TYPE, shared)) {
+      return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
+    }
+    return { success: true, message: 'Shared "' + entry.name + '" with the team.' };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// Mark a campaign retired studio-wide (or un-retire it). This is the answer to
+// "the volume got archived and now everyone's picker has a dead row" -- one
+// person says so once and every panel marks it, instead of each artist
+// discovering it separately and deleting it locally.
+//
+// DELIBERATELY NOT A DELETE, on either side:
+//   - It never removes the shared row, so the paths survive for anyone who
+//     still has that volume mounted, and retiring is reversible.
+//   - It never touches anyone's LOCAL campaign list. A machine's own settings
+//     are its own; the team file is advisory. Pickers mark a retired campaign
+//     and let the user decide -- silently deleting local rows from a shared
+//     file would be this panel reaching into someone's setup uninvited.
+//
+// Refuses from an untagged machine rather than posting anonymously (CLAUDE.md:
+// never post to a shared board from an untagged machine).
+export const teamSetCampaignRetired = (name: string, retired: boolean): Result => {
+  try {
+    if (!teamFolder()) return { success: false, error: "Team folder not set -- set it in the Team menu on the home screen first." };
+    const owner = loadLocalSetting(MACHINE_OWNER_KEY);
+    if (!owner) return { success: false, error: "Tag this machine with your name in the Team menu first -- a retired campaign says who retired it." };
+    const target = String(name || "");
+    if (!target) return { success: false, error: "No campaign given." };
+
+    const shared = readSharedFile<SharedCampaign>(SHARED_CAMPAIGNS_FILE, SHARED_CAMPAIGNS_TYPE) || [];
+    let found = false;
+    for (let i = 0; i < shared.length; i++) {
+      if (shared[i].name.toLowerCase() !== target.toLowerCase()) continue;
+      found = true;
+      if (retired) {
+        shared[i].retiredBy = owner;
+        shared[i].retiredAt = new Date().toString();
+      } else {
+        shared[i].retiredBy = "";
+        shared[i].retiredAt = "";
+      }
+      break;
+    }
+    // Retiring a campaign nobody ever shared is a real case -- everyone added
+    // it by hand. Record it so the mark still reaches the team; the roots stay
+    // empty because this machine's local path is not necessarily theirs.
+    if (!found) {
+      if (!retired) return { success: true, message: '"' + target + '" was not marked retired.' };
+      shared.push({ name: target, mastersRoot: "", marketsRoot: "", retiredBy: owner, retiredAt: new Date().toString() });
+    }
+    if (!writeSharedFile(SHARED_CAMPAIGNS_FILE, SHARED_CAMPAIGNS_TYPE, shared)) {
+      return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
+    }
+    return {
+      success: true,
+      message: retired ? 'Marked "' + target + '" retired for the team.' : 'Un-retired "' + target + '".',
+    };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+export interface TeamCampaignRow {
+  name: string;
+  mastersRoot: string;
+  marketsRoot: string;
+  retiredBy: string;
+  retiredAt: string;
+}
+
+// The team's campaign board, for pickers that want to mark their rows. Returns
+// an EMPTY list with read:false when the team folder isn't reachable, so the
+// caller can tell "nothing is retired" from "we couldn't ask" -- CLAUDE.md's
+// rule that an empty or failed read must never be presented as data.
+export const teamCampaignBoard = (): { success: boolean; read?: boolean; rows?: TeamCampaignRow[]; error?: string } => {
+  try {
+    if (!teamFolder()) return { success: true, read: false, rows: [] };
+    const shared = readSharedFile<SharedCampaign>(SHARED_CAMPAIGNS_FILE, SHARED_CAMPAIGNS_TYPE);
+    if (shared === null) return { success: true, read: false, rows: [] };
+    const rows: TeamCampaignRow[] = [];
+    for (let i = 0; i < shared.length; i++) {
+      const s = shared[i];
+      if (!s || !s.name) continue;
+      rows.push({
+        name: s.name,
+        mastersRoot: s.mastersRoot ? String(s.mastersRoot) : "",
+        marketsRoot: s.marketsRoot ? String(s.marketsRoot) : "",
+        retiredBy: s.retiredBy ? String(s.retiredBy) : "",
+        retiredAt: s.retiredAt ? String(s.retiredAt) : "",
+      });
+    }
+    return { success: true, read: true, rows: rows };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

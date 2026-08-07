@@ -247,6 +247,14 @@ tab-separated lines (JSON only where a real map is needed).
   without its read is a silently dead feature.
 - Never post to a shared board from an untagged machine — refuse rather than
   guess a name.
+- A shared campaign can be **retired** (`teamSetCampaignRetired`). It is a
+  FLAG, not a delete: it never removes the shared row and never touches
+  anyone's local list — it marks pickers and stops `teamSyncShared` pulling
+  into either campaign list. Never "finish the job" by deleting local rows
+  from a shared file.
+- Campaign reachability (`locLibCampaignStatus`) is the one place `.exists`
+  is allowed on a team path, because the target is a DIRECTORY. `false` means
+  "not mounted right now", never "gone" — never auto-remove on it.
 - Keep the read fallback chain (`arcade/` → `misc/` → root) until every machine
   has written at least once.
 - Adding an arcade game = a `MACHINES` entry in `ArcadeHub.tsx` **plus** its

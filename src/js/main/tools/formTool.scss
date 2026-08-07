@@ -1601,13 +1601,17 @@
         width: 100%;
     }
 
-    // Type | Creative | Width | Height | Dur | × | ✕
+    // ⬤ | Type | Creative | Width | Height | Dur | × | ✕
+    // The first column is the master-status icon, the same one the scanned
+    // specs table shows per row -- a builder row's creative is free text (and,
+    // for a row handed over from Active Jobs, parsed from a Wrike subtask
+    // name), so "will this actually match a master?" is not knowable by eye.
     // The × column holds the duration-multiple control. It renders an empty
     // <span> on rows that have no candidate, so the grid stays aligned rather
     // than reflowing per row.
     .specs-build-row {
         display: grid;
-        grid-template-columns: 90px minmax(120px, 1fr) 66px 66px 66px 40px 26px;
+        grid-template-columns: 20px 90px minmax(120px, 1fr) 66px 66px 66px 40px 26px;
         gap: 6px;
         align-items: center;
 
@@ -1757,6 +1761,47 @@
         background: none;
 
         > * { width: 100%; }
+    }
+
+    // Remove is the only DESTRUCTIVE button on this row, so it is the only one
+    // that doesn't wear the accent every other icon-btn wears. Red on hover
+    // rather than at rest: a permanently red button in a row of four reads as
+    // an alarm about the campaign rather than a description of one action.
+    // Explicit background on both states -- index.scss's global
+    // button:hover/:active would otherwise paint straight over it (CLAUDE.md).
+    .specs-campaign-btn--danger {
+        border-color: #6a3a3a;
+        color: #c98b8b;
+        background: transparent;
+
+        &:hover:not(:disabled),
+        &:active:not(:disabled) {
+            border-color: #a04a4a;
+            color: #f0b4b4;
+            background: rgba(160, 74, 74, 0.18);
+        }
+    }
+
+    // Retire toggle, lit while this campaign is retired for the team.
+    .specs-campaign-btn.is-retired {
+        border-color: #8a6a2a;
+        color: #e0b45c;
+        background: rgba(208, 164, 88, 0.14);
+
+        &:hover:not(:disabled),
+        &:active:not(:disabled) {
+            background: rgba(208, 164, 88, 0.22);
+        }
+    }
+
+    // The line under the picker explaining a retired / unreachable campaign.
+    // Deliberately worded and styled as information, never as an error: an
+    // unmounted share is a normal state (CLAUDE.md), so no red, no icon.
+    .specs-campaign-retired {
+        margin: 5px 0 0;
+        font-size: 10.5px;
+        line-height: 1.35;
+        color: #b08f5a;
     }
 }
 

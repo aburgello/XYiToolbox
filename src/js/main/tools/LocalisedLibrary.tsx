@@ -302,6 +302,35 @@ const LocalisedLibraryTool = () => {
         refreshCampaigns();
     }, []);
 
+    // Advisory markers for the picker: which campaigns' Markets roots resolve
+    // on this machine, and which the team has retired. Both are best-effort and
+    // completely silent on failure -- an unmounted NAS is a normal state, and
+    // an unmarked row is the safe default in both directions (it never claims
+    // "reachable", only "not mounted" when the check actually ran and said so).
+    const [campaignReach, setCampaignReach] = useState<Record<string, boolean>>({});
+    const [retiredCampaigns, setRetiredCampaigns] = useState<Record<string, string>>({});
+
+    useEffect(() => {
+        if (!campaigns.length) return;
+        (async () => {
+            const rows = (await quietEvalTS("locLibCampaignStatus")) as { name: string; reachable: boolean }[] | null;
+            if (rows) {
+                const next: Record<string, boolean> = {};
+                rows.forEach((r) => { next[r.name] = r.reachable; });
+                setCampaignReach(next);
+            }
+            const board = (await quietEvalTS("teamCampaignBoard")) as { read?: boolean; rows?: { name: string; retiredBy: string }[] } | null;
+            // `read` false means the team folder could not be asked -- keep
+            // whatever we had rather than clearing every marker, so a dropped
+            // NAS mount doesn't silently un-retire the whole list on screen.
+            if (board && board.read) {
+                const next: Record<string, string> = {};
+                (board.rows || []).forEach((r) => { if (r.retiredBy) next[r.name.toLowerCase()] = r.retiredBy; });
+                setRetiredCampaigns(next);
+            }
+        })();
+    }, [campaigns]);
+
     const refreshCampaigns = async () => {
         // quietEvalTS (not safeEvalTS) for this first probe: a null result
         // here means "no bridge" (browser preview), which we handle with
@@ -857,7 +886,21 @@ const LocalisedLibraryTool = () => {
                     icon={<Library size={13} />}
                     value={selectedCampaign?.name || ""}
                     onChange={(v) => setSelectedCampaign(campaigns.find((c) => c.name === v) || null)}
-                    options={campaigns.map((c) => ({ value: c.name, label: c.name }))}
+                    // Same two markers CSV Localiser's picker shows -- both
+                    // read the SAME campaign list, so a campaign the team has
+                    // retired must not look fine here just because this screen
+                    // is the one you happened to open. Read-only on this side:
+                    // retiring is done from CSV Localiser, and removal already
+                    // has its own button below.
+                    options={campaigns.map((c) => ({
+                        value: c.name,
+                        label: c.name,
+                        hint: retiredCampaigns[c.name.toLowerCase()]
+                            ? "retired"
+                            : campaignReach[c.name] === false
+                            ? "not mounted"
+                            : undefined,
+                    }))}
                     placeholder="Select a campaign…"
                     emptyMessage="No campaigns yet — add one with the folder icon."
                 />

@@ -138,12 +138,17 @@ const TeamDroplet: React.FC = () => {
                     setLatestVersion(version.latest);
                 }
                 const sync = await evalTS("teamSyncShared");
-                if (sync && sync.success && ((sync.newCombos || 0) > 0 || (sync.newExpressions || 0) > 0 || (sync.newTools || 0) > 0 || (sync.newCampaigns || 0) > 0)) {
+                if (sync && sync.success && ((sync.newCombos || 0) > 0 || (sync.newExpressions || 0) > 0 || (sync.newTools || 0) > 0 || (sync.newCampaigns || 0) > 0 || (sync.newLocCampaigns || 0) > 0)) {
                     const parts: string[] = [];
                     if (sync.newCombos) parts.push(`${sync.newCombos} new team combo${sync.newCombos === 1 ? "" : "s"}`);
                     if (sync.newExpressions) parts.push(`${sync.newExpressions} new expression${sync.newExpressions === 1 ? "" : "s"}`);
                     if (sync.newTools) parts.push(`${sync.newTools} new tool${sync.newTools === 1 ? "" : "s"}`);
                     if (sync.newCampaigns) parts.push(`${sync.newCampaigns} new campaign${sync.newCampaigns === 1 ? "" : "s"}`);
+                    // Counted separately from newCampaigns because they land in
+                    // a different list (LocLibCampaigns, behind Localised
+                    // Library and CSV Localiser) -- "3 new campaigns" that only
+                    // half showed up in OV Library would be a puzzle.
+                    if (sync.newLocCampaigns) parts.push(`${sync.newLocCampaigns} new localise campaign${sync.newLocCampaigns === 1 ? "" : "s"}`);
                     cachedSyncNote = `Synced from team: ${parts.join(" · ")}.`;
                     setSyncNote(cachedSyncNote);
                 }
