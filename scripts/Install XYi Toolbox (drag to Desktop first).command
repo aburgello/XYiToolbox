@@ -44,12 +44,44 @@ Let Antonio know if that folder is missing."
 fi
 
 # --- 2. After Effects must be closed ------------------------------------
-if pgrep -q -f "Adobe After Effects"; then
-  echo "After Effects is currently running."
-  echo "Quit it first, then press RETURN to continue (or Ctrl-C to cancel)."
+#
+# Match the process NAME exactly (-x), never the command line (-f).
+#
+# The old test was `pgrep -f "Adobe After Effects"`. -f matches the whole
+# command line of EVERY process, so any Adobe background helper, crash daemon,
+# or leftover CEPHtmlEngine that merely MENTIONS the app in its arguments read
+# as "After Effects is running". A colleague hit exactly that: AE closed, Mac
+# restarted, still blocked, and the re-check below gave no way past it.
+#
+# The app's binary is literally named "After Effects" (inside
+# "Adobe After Effects 2026.app/Contents/MacOS/") -- note the missing "Adobe",
+# which is why matching on "Adobe After Effects" as a PATH would also have
+# been wrong. -x compares against the process name only, so nothing that
+# merely references the app can trip it.
+#
+# The render engine's binary is "After Effects Render Engine", a different
+# exact name, so a render node is deliberately NOT matched: it is a separate
+# app and has no bearing on copying files into ~/Library.
+ae_running() { pgrep -x "After Effects" >/dev/null 2>&1; }
+
+if [ "${XYI_SKIP_AE_CHECK:-0}" = "1" ]; then
+  echo "Skipping the After Effects check (XYI_SKIP_AE_CHECK=1)."
+elif ae_running; then
+  echo "After Effects looks like it is running:"
+  # Print WHAT matched. If this is ever another false positive, the lines
+  # below are the evidence needed to fix it properly instead of guessing.
+  pgrep -xl "After Effects" 2>/dev/null | sed 's/^/      /'
+  echo
+  echo "Quit it, then press RETURN to continue (or Ctrl-C to cancel)."
   read -r
-  if pgrep -q -f "Adobe After Effects"; then
-    fail "After Effects is still running. Quit it and run this again."
+  if ae_running; then
+    echo
+    echo "Still detected. If After Effects really is closed, this check is"
+    echo "wrong -- send the lines above to Antonio, and install anyway with:"
+    echo
+    echo "      XYI_SKIP_AE_CHECK=1 bash \"$SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")\""
+    echo
+    fail "After Effects still detected."
   fi
 fi
 
