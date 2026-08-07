@@ -316,7 +316,18 @@ const LocalisedLibraryTool = () => {
         setMockMode(false);
         setCampaigns(camps || []);
         if (camps && camps.length > 0 && !selectedCampaign) {
-            setSelectedCampaign(camps[0]);
+            // Campaigns come back in the order they were ADDED, so camps[0]
+            // is the OLDEST campaign on the machine -- opening on it meant
+            // landing on the wrong campaign every time for anyone with more
+            // than one saved. Ask the backend which campaign we're actually
+            // in instead (open project's path, else CSV Localiser's / OV
+            // Library's current campaign -- see detectCurrentLocLibCampaign
+            // in localise.ts), and only fall back to camps[0] when nothing
+            // has an opinion. quietEvalTS: a failed guess is not something
+            // to toast about, it just means the fallback stands.
+            const detected: string | null = await quietEvalTS("detectCurrentLocLibCampaign");
+            const match = detected ? camps.find((c: Campaign) => c.name === detected) : undefined;
+            setSelectedCampaign(match || camps[0]);
         }
     };
 

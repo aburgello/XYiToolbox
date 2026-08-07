@@ -1,0 +1,129 @@
+// =============================================================================
+// src/js/main/tools/OVSwap.scss
+// -----------------------------------------------------------------------------
+// Layout for OV Swap's pairing table. Everything structural lives in
+// formTool.scss (page padding, field-row, button-row, tool-status) -- this
+// file only adds the per-row "OV source -> replacement" block.
+//
+// Spacing is margin-based rather than flex `gap` on purpose: CLAUDE.md flags
+// flex gap (Chrome 84) against the declared chrome74 build target as an open,
+// unsettled question. Nothing here needs gap badly enough to bet a row of
+// squashed controls on the answer.
+//
+// Status tinting uses precomputed rgba literals -- no color-mix(), which is
+// Chrome 111 and banned by the build target.
+// =============================================================================
+.ov-swap {
+    // "auto" / "manual" marker inside the Territory Code label, saying where
+    // the value in the box came from.
+    .ovs-code-origin {
+        margin-left: 6px;
+        padding: 1px 4px;
+        border-radius: 3px;
+        font-size: 8px;
+        font-weight: 700;
+        letter-spacing: 0.7px;
+        text-transform: uppercase;
+        color: #9a9a9a;
+        background: rgba(255, 255, 255, 0.07);
+    }
+
+    .ovs-rows {
+        display: flex;
+        flex-direction: column;
+        margin-top: 2px;
+    }
+
+    .ovs-row {
+        display: flex;
+        align-items: flex-start;
+        padding: 7px 8px;
+        margin-bottom: 5px;
+        border: 1px solid rgba(255, 255, 255, 0.07);
+        border-left: 2px solid rgba(255, 255, 255, 0.18);
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.025);
+
+        // A confident pairing reads as resolved; the two that need a human
+        // read as outstanding. Amber and red rather than the category tint,
+        // since this is a state, not a brand accent.
+        &--matched {
+            border-left-color: var(--cat-icon, var(--ov-accent, #42b3bd));
+        }
+        &--ambiguous {
+            border-left-color: #d99a2b;
+            background: rgba(217, 154, 43, 0.06);
+        }
+        &--no-match {
+            border-left-color: #c25c5c;
+            background: rgba(194, 92, 92, 0.06);
+        }
+
+        // The checkbox must not stretch to the row's height next to a
+        // three-line body.
+        .checkbox-toggle {
+            flex: 0 0 auto;
+            margin: 1px 7px 0 0;
+        }
+    }
+
+    .ovs-row-body {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .ovs-from {
+        display: flex;
+        align-items: center;
+        margin-bottom: 4px;
+    }
+
+    .ovs-badge {
+        flex: 0 0 auto;
+        margin-right: 6px;
+        padding: 1px 5px;
+        border-radius: 3px;
+        font-size: 8px;
+        font-weight: 700;
+        letter-spacing: 0.8px;
+        color: #cfcfcf;
+        background: rgba(255, 255, 255, 0.09);
+    }
+
+    .ovs-name {
+        font-size: 11px;
+        color: #e2e2e2;
+        // Long studio names must wrap rather than push the row wide.
+        // `break-word`, not `anywhere` (Chrome 80, banned).
+        overflow-wrap: break-word;
+        word-break: break-word;
+        min-width: 0;
+    }
+
+    .ovs-to {
+        margin-bottom: 4px;
+
+        .dropdown-trigger {
+            width: 100%;
+        }
+    }
+
+    .ovs-meta {
+        display: flex;
+        align-items: baseline;
+        flex-wrap: wrap;
+        font-size: 9.5px;
+        color: #8a8a8a;
+    }
+
+    .ovs-where {
+        margin-right: 8px;
+        white-space: nowrap;
+    }
+
+    .ovs-reason {
+        color: #c9a15f;
+        overflow-wrap: break-word;
+        min-width: 0;
+    }
+}

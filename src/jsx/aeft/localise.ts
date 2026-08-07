@@ -8,7 +8,7 @@
 import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, scanMastersForBestMatch } from "./tools";
 import { makeParentLayerOfAllUnparented, scaleAllCameraZooms } from "./deliver";
 import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, saveLocGenReport, buildDeliverableName, durationForMasterLookup } from "./shared";
-import { loadCampaignsRaw } from "./review";
+import { loadCampaignsRaw, loadLastCampaign as loadOVLastCampaign } from "./review";
 
 
 
@@ -997,10 +997,11 @@ export const scanTerritories = (marketsRoot: string): string[] => {
 // fixed global vocabulary, since Loc Lib's territory list is already
 // derived live from disk per campaign and is more accurate than a
 // hardcoded list for this purpose. Deliberately scoped to the currently
-// selected campaign's territories only -- doesn't try to also detect
-// *which campaign* the project belongs to; if the wrong campaign is
-// selected, this just returns null (no suggestion), which is a safe,
-// unsurprising fallback, not a bug.
+// selected campaign's territories only -- picking *which campaign* the
+// project belongs to is detectCurrentLocLibCampaign()'s job below, and
+// this stays a within-campaign lookup; if the wrong campaign is selected,
+// this just returns null (no suggestion), which is a safe, unsurprising
+// fallback, not a bug.
 export const detectCurrentTerritory = (territories: string[]): string | null => {
   const projFile = app.project.file;
   if (!projFile) return null;
@@ -1016,6 +1017,145 @@ export const detectCurrentTerritory = (territories: string[]): string | null => 
     } else {
       break;
     }
+  }
+  return null;
+};
+
+// Normalised path key for ancestor comparison: forward slashes, no trailing
+// slash, lowercased. Only ever compared against another key made the same
+// way, so it doesn't have to survive a round-trip back to a real path.
+// A saved root is an fsName, not a URI, so it may hold a literal "%" that
+// makes decodeURI throw -- keep the raw string in that case rather than
+// letting one odd folder name kill detection for every campaign.
+function llPathKey(path: string): string {
+  let raw = String(path || "");
+  try {
+    raw = decode(raw);
+  } catch (e) {
+    /* keep raw */
+  }
+  return raw
+    .replace(/\\/g, "/")
+    .replace(/\/+$/, "")
+    .toLowerCase();
+}
+
+// True when `child` is `root` itself or sits anywhere beneath it. The "/"
+// on the prefix test is what keeps ".../ODY_INT" from swallowing
+// ".../ODY_INTL" -- a plain indexOf(root) === 0 would match both.
+function llPathIsWithin(child: string, root: string): boolean {
+  if (!child || !root) return false;
+  if (child === root) return true;
+  return child.indexOf(root + "/") === 0;
+}
+
+// Which campaign is the artist actually working in right now? Answers the
+// question Localised Library used to skip entirely -- it opened on
+// camps[0], i.e. the FIRST campaign ever added on that machine, which for
+// anyone with more than one saved campaign is essentially always the wrong
+// one (same defect OV Library's OVLibLastCampaign already fixed for
+// itself, see review.ts).
+//
+// Three sources, strongest first, all best-effort -- null just means "no
+// opinion", and the caller keeps its own fallback:
+//
+//   1. The open project's own saved path. If it sits under a campaign's
+//      Markets root -- or under that root's PARENT, which by the studio's
+//      layout is the campaign root holding the sibling *_Markets and
+//      *_Masters folders (see CSVLocaliser.tsx's deriveMastersFromMarkets)
+//      -- then that's the campaign, whether the artist has a localised
+//      working file or a master open. Longest matching root wins so a
+//      campaign nested inside another campaign's tree still resolves to
+//      the inner one. Failing that, the same test against OV Library's
+//      own campaign roots, accepted only when it names a campaign we
+//      also hold.
+//   2. CSV Localiser's last selected campaign. It reads the very same
+//      campaign list (loadLocLibCampaigns), so its remembered NAME is
+//      directly usable here.
+//   3. OV Library's last selected campaign. A separate list with its own
+//      roots, so only the name is portable -- accepted only when it
+//      exactly names a campaign we actually have.
+//
+// Deliberately READ-ONLY on all three keys: this never writes a "last
+// campaign" of its own. Loc Lib joining in as a fourth writer would mean
+// merely opening it silently re-points CSV Localiser's restore, and the
+// whole point here is to follow the campaign context, not to compete for
+// it.
+export const detectCurrentLocLibCampaign = (): string | null => {
+  try {
+    const camps = loadLocLibCampaignsRaw();
+    if (camps.length === 0) return null;
+
+    // 1. Open project path.
+    const projFile = app.project.file;
+    if (projFile) {
+      let projKey = "";
+      try {
+        projKey = llPathKey(projFile.fsName);
+      } catch (e) {
+        projKey = "";
+      }
+      if (projKey) {
+        let best: string | null = null;
+        let bestLen = -1;
+        for (let i = 0; i < camps.length; i++) {
+          const marketsKey = llPathKey(camps[i].marketsRoot);
+          if (!marketsKey) continue;
+          const roots = [marketsKey];
+          const cut = marketsKey.lastIndexOf("/");
+          // Only climb to the campaign root when there's a real parent
+          // left -- never up to "" or a bare volume root, which would
+          // match every project on the machine.
+          if (cut > 0) roots.push(marketsKey.substring(0, cut));
+          for (let r = 0; r < roots.length; r++) {
+            if (llPathIsWithin(projKey, roots[r]) && roots[r].length > bestLen) {
+              bestLen = roots[r].length;
+              best = camps[i].name;
+            }
+          }
+        }
+        if (best) return best;
+
+        // 1b. Same question against OV Library's OWN campaign list, whose
+        // roots point at masters rather than markets. Only the NAME crosses
+        // over -- a match there is only usable if we hold a campaign called
+        // the same thing.
+        const ovCamps = loadCampaignsRaw();
+        let ovBest: string | null = null;
+        let ovBestLen = -1;
+        for (let i = 0; i < ovCamps.length; i++) {
+          const mastersKey = llPathKey(ovCamps[i].mastersRoot);
+          if (!mastersKey) continue;
+          if (llPathIsWithin(projKey, mastersKey) && mastersKey.length > ovBestLen) {
+            ovBestLen = mastersKey.length;
+            ovBest = ovCamps[i].name;
+          }
+        }
+        if (ovBest) {
+          for (let i = 0; i < camps.length; i++) {
+            if (camps[i].name === ovBest) return camps[i].name;
+          }
+        }
+      }
+    }
+
+    // 2. CSV Localiser's remembered campaign (same list, same names).
+    const csvLast = csvLocaliserLoadLastCampaign();
+    if (csvLast) {
+      for (let i = 0; i < camps.length; i++) {
+        if (camps[i].name === csvLast) return camps[i].name;
+      }
+    }
+
+    // 3. OV Library's remembered campaign (different list -- name only).
+    const ovLast = loadOVLastCampaign();
+    if (ovLast) {
+      for (let i = 0; i < camps.length; i++) {
+        if (camps[i].name === ovLast) return camps[i].name;
+      }
+    }
+  } catch (e) {
+    return null;
   }
   return null;
 };
@@ -1621,6 +1761,376 @@ export const importComponentsIntoBatchFolder = (componentPaths: string[], batchF
   }
 
   return { success: true, imported: imported, failed: failed };
+};
+
+// =============================================================================
+// OV Swap -- after MC It! has replaced the JPG/PNG artwork and the territory's
+// components have been imported (importLocLibComponentsBatch above), the
+// working comp is still pointing at the OV precomps and OV logo/legal
+// artwork. This pairs each of those with its just-imported territory
+// counterpart and swaps them in one undo group.
+//
+// Scope is the ACTIVE COMP and the precomps nested inside it, confirmed with
+// the user -- not the whole project. Consequences of that choice, all
+// deliberate:
+//   - Every swap is layer.replaceSource(), never FootageItem.replace(). The
+//     item-level call is one line and updates every usage everywhere, but
+//     "everywhere" includes comps outside the active one, which is exactly
+//     the reach the user ruled out.
+//   - A source used by BOTH the active comp and some other size's comp is
+//     therefore swapped only in this one. Re-run the tool with that comp
+//     active to do the other.
+//
+// Matching is EXACT after normalisation, never fuzzy, and deliberately does
+// not reuse shared.ts's findBestComponentFile: that scorer always returns
+// its best guess among the candidates it is given. Here a wrong guess
+// silently ships another territory's (or another component's) artwork in a
+// finished deliverable -- the real case that motivated this is a project
+// whose only imported .ai was the DATE artwork while the layer needing a
+// swap was the TAGLINE, which any fuzzy matcher pairs happily. An unmatched
+// row costs one manual pick; a wrongly matched row costs a re-delivery.
+// Same reasoning as CLAUDE.md's "never loosen the CSV already-built matcher".
+// =============================================================================
+export interface OvSwapRow {
+  // Layer identity. `compId`/`layerIndex` are what apply re-resolves from --
+  // never a held DOM object, since two accesses of the same AE item return
+  // different wrappers and === would never match (CLAUDE.md).
+  compId: number;
+  compName: string;
+  layerIndex: number;
+  layerName: string;
+  // Source currently on the layer, and what we intend to put there.
+  sourceName: string;
+  sourceIsComp: boolean;
+  // "" when nothing matched -- the panel offers a manual pick in that case.
+  matchId: number;
+  matchName: string;
+  status: "matched" | "no-match" | "ambiguous";
+  reason?: string;
+}
+
+export interface OvSwapCandidate {
+  id: number;
+  name: string;
+  isComp: boolean;
+}
+
+export interface OvSwapScan extends Result {
+  compName?: string;
+  territoryCode?: string;
+  rows?: OvSwapRow[];
+  candidates?: OvSwapCandidate[];
+}
+
+// Normalised key for exact comparison: lowercased, extension dropped, every
+// run of non-alphanumerics collapsed to a single "_". Collapsing separators
+// is what lets "…_IT_RGB Precomp" (space) match "…_IT_RGB_Precomp"
+// (underscore) -- AE and the artists use both for the same name.
+function ovsKey(name: string): string {
+  return String(name || "")
+    .toLowerCase()
+    .replace(/\.[a-z0-9]{1,5}$/i, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function ovsExtension(name: string): string {
+  const n = String(name || "");
+  const dot = n.lastIndexOf(".");
+  if (dot <= 0 || n.length - dot > 6) return "";
+  return n.substring(dot + 1).toLowerCase();
+}
+
+// "FID_RGB_TT_OV_ON_BLACK.psd" + "IT" -> "FID_RGB_TT_IT_ON_BLACK.psd".
+// Only ever rewrites an ISOLATED OV token (same test hasIsolatedOvToken
+// uses), so a name that merely contains the letters "ov" -- "Discovery",
+// "Overlay", "MOVE" -- is left completely alone. Bounded loop rather than a
+// /g replace because the separator is a captured group shared between two
+// adjacent tokens, which a global replace would consume.
+function ovsSwapToken(name: string, code: string): string {
+  let out = String(name || "");
+  for (let guard = 0; guard < 4; guard++) {
+    if (!hasIsolatedOvToken(out)) break;
+    out = out.replace(/(^|[_\s])OV([_\s.]|$)/i, "$1" + code + "$2");
+  }
+  return out;
+}
+
+// Value-based item lookup. Deliberately NOT app.project.itemByID(): rather
+// than take that method's availability on trust in this host version, this
+// walks the same project collection every other scan in this file already
+// walks and compares `id`, which is a plain number.
+function ovsItemById(id: number): AVItem | null {
+  for (let i = 1; i <= app.project.numItems; i++) {
+    const item = app.project.item(i);
+    if (item && (item as AVItem).id === id) return item as AVItem;
+  }
+  return null;
+}
+
+// The comp the user is looking at: the viewer's active comp, else the one
+// comp selected in the Project panel. Returns null (not an error) when
+// neither is true -- the panel turns that into a plain instruction.
+function ovsActiveComp(): CompItem | null {
+  const active = app.project.activeItem;
+  if (active && typeof (active as CompItem).numLayers === "number") return active as CompItem;
+  const sel = app.project.selection;
+  if (sel) {
+    for (let i = 0; i < sel.length; i++) {
+      if (sel[i] && typeof (sel[i] as CompItem).numLayers === "number") return sel[i] as CompItem;
+    }
+  }
+  return null;
+}
+
+// Every AVItem in the project carrying an isolated <code> token, i.e. the
+// pool of just-imported territory components. These normally sit inside the
+// "<name>.aep" folders AE creates when an .aep is imported -- which is why,
+// unlike the batch walks CLAUDE.md warns about, this one deliberately does
+// NOT skip items under an .aep-named ancestor folder. Here those items are
+// the whole point; it's the swap TARGETS (the active comp's own layers) that
+// are scoped elsewhere.
+// `excludeId` is the comp being scanned. It carries the territory code in
+// its own name ("…_15s_IT_V01"), so it would otherwise be offered in the
+// manual picker as a replacement for one of its own layers -- a circular
+// reference AE rejects, and a pointless thing to put in front of the user.
+function ovsCollectCandidates(code: string, excludeId: number): OvSwapCandidate[] {
+  const out: OvSwapCandidate[] = [];
+  const token = new RegExp("(^|[_\\s])" + code + "([_\\s.]|$)", "i");
+  for (let i = 1; i <= app.project.numItems; i++) {
+    const item = app.project.item(i) as AVItem;
+    if (!item || !item.name) continue;
+    if (item.id === excludeId) continue;
+    const isComp = typeof (item as CompItem).numLayers === "number";
+    const isFootage = !isComp && typeof (item as FootageItem).mainSource !== "undefined";
+    if (!isComp && !isFootage) continue;
+    if (!token.test(item.name)) continue;
+    out.push({ id: item.id, name: item.name, isComp: isComp });
+  }
+  return out;
+}
+
+// Walks the active comp depth-first, collecting every layer whose SOURCE
+// name still carries an isolated OV token.
+//
+// Once a layer is collected, its own source comp is NOT descended into:
+// swapping "…Pedigree_OV_RGB" for "…Pedigree_IT_RGB" brings that comp's
+// entire inner tree (its own "…_Teaser_…_IT_…" precomp included) along with
+// it, so anything found below would be work undone a moment later -- and
+// worse, would show the user rows that are about to stop existing.
+//
+// `seen` guards a comp used more than once (and any accidental cycle) so a
+// shared precomp is only ever offered as one row.
+function ovsCollectRows(comp: CompItem, code: string, candidates: OvSwapCandidate[], rows: OvSwapRow[], seen: number[], depth: number): void {
+  if (!comp || depth > 12) return;
+  if (seen.indexOf(comp.id) !== -1) return;
+  seen.push(comp.id);
+
+  for (let i = 1; i <= comp.numLayers; i++) {
+    const layer = comp.layer(i) as AVLayer;
+    if (!layer) continue;
+    const src = layer.source as AVItem;
+    if (!src || !src.name) continue;
+
+    const srcIsComp = typeof (src as CompItem).numLayers === "number";
+
+    if (hasIsolatedOvToken(src.name)) {
+      const wanted = ovsKey(ovsSwapToken(src.name, code));
+      const srcExt = ovsExtension(src.name);
+      let matchId = 0;
+      let matchName = "";
+      let hits = 0;
+      for (let c = 0; c < candidates.length; c++) {
+        const cand = candidates[c];
+        // A comp never stands in for footage or vice versa, and two files
+        // sharing a stem across extensions (…_IT_RGB.ai vs …_IT_RGB.psd)
+        // are two different assets, not one match.
+        if (cand.isComp !== srcIsComp) continue;
+        if (srcExt && ovsExtension(cand.name) !== srcExt) continue;
+        if (ovsKey(cand.name) !== wanted) continue;
+        hits++;
+        if (hits === 1) {
+          matchId = cand.id;
+          matchName = cand.name;
+        }
+      }
+
+      const row: OvSwapRow = {
+        compId: comp.id,
+        compName: comp.name,
+        layerIndex: i,
+        layerName: layer.name,
+        sourceName: src.name,
+        sourceIsComp: srcIsComp,
+        matchId: hits === 1 ? matchId : 0,
+        matchName: hits === 1 ? matchName : "",
+        status: hits === 1 ? "matched" : hits > 1 ? "ambiguous" : "no-match",
+      };
+      if (hits > 1) {
+        row.reason = hits + ' imported items are named "' + ovsSwapToken(src.name, code) + '" — pick the right one.';
+      } else if (hits === 0) {
+        row.reason = 'Nothing imported is named "' + ovsSwapToken(src.name, code) + '".';
+      }
+      rows.push(row);
+      continue; // do not descend a branch that is about to be replaced
+    }
+
+    if (srcIsComp) ovsCollectRows(src as CompItem, code, candidates, rows, seen, depth + 1);
+  }
+}
+
+// Which territory is this project being localised into? Derived from the
+// project itself rather than asked for, since the answer is already sitting
+// in the active comp's name ("…_15s_IT_V01").
+//
+// The discriminator that makes this safe is NOT "a two-letter token" -- it's
+// that a territory code appears in the imported components and NOT in the OV
+// ones being replaced. In the real project this was built against, the comp
+// name yields both "FID" and "IT"; "FID" appears in every OV item too, so it
+// is rejected outright, while "IT" appears only in the imported ones. Ties
+// go to the token nearest the END of the comp name, where the code sits by
+// this studio's naming convention.
+//
+// Returns "" rather than a guess when nothing satisfies both halves -- the
+// panel just shows an empty field for the user to fill in.
+export const suggestOvSwapCode = (): string => {
+  try {
+    const comp = ovsActiveComp();
+    if (!comp) return "";
+
+    const parts = String(comp.name).split(/[^A-Za-z0-9]+/);
+    const tokens: string[] = [];
+    for (let i = 0; i < parts.length; i++) {
+      if (/^[A-Za-z]{2,3}$/.test(parts[i]) && !hasIsolatedOvToken(parts[i])) tokens.push(parts[i]);
+    }
+    if (tokens.length === 0) return "";
+
+    let best = "";
+    let bestHits = 0;
+    for (let t = 0; t < tokens.length; t++) {
+      const token = new RegExp("(^|[_\\s])" + tokens[t] + "([_\\s.]|$)", "i");
+      let hits = 0;
+      let inOv = false;
+      for (let i = 1; i <= app.project.numItems; i++) {
+        const item = app.project.item(i);
+        if (!item || !item.name || !token.test(item.name)) continue;
+        if (hasIsolatedOvToken(item.name)) {
+          inOv = true;
+          break;
+        }
+        hits++;
+      }
+      // ">=" not ">": later tokens win ties, and the code sits at the end.
+      if (!inOv && hits > 0 && hits >= bestHits) {
+        bestHits = hits;
+        best = tokens[t];
+      }
+    }
+    return best.toUpperCase();
+  } catch (e) {
+    return "";
+  }
+};
+
+// Dry run -- reads the project and changes nothing, so the panel can show
+// the pairing table and get a confirmation before anything is touched.
+export const scanOvSwap = (territoryCode: string): OvSwapScan => {
+  try {
+    const code = String(territoryCode || "").replace(/^\s+|\s+$/g, "");
+    if (!code) return { success: false, error: "No territory code — pick a territory first." };
+    if (!/^[A-Za-z0-9]{2,5}$/.test(code)) {
+      return { success: false, error: 'Territory code "' + code + '" doesn\'t look like a code (expected something like IT or FR).' };
+    }
+
+    const comp = ovsActiveComp();
+    if (!comp) {
+      return { success: false, error: "Open the comp you want to swap in the viewer (or select it in the Project panel), then run this again." };
+    }
+
+    const candidates = ovsCollectCandidates(code, comp.id);
+    const rows: OvSwapRow[] = [];
+    ovsCollectRows(comp, code, candidates, rows, [], 0);
+
+    return {
+      success: true,
+      compName: comp.name,
+      territoryCode: code,
+      rows: rows,
+      candidates: candidates,
+    };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+export interface OvSwapApplyResult extends Result {
+  swapped?: number;
+  skipped?: string[];
+}
+
+// Applies the pairings the user confirmed. `assignmentsJson` is a JSON
+// STRING, not an array of objects: evalTS splices its arguments into
+// ExtendScript source and nested arrays-of-objects lose their values in
+// transit (CLAUDE.md's bridge rule).
+//
+// Every row is re-verified against the live project before it is touched --
+// the comp still exists, the layer is still at that index, and its source
+// still has the name the scan saw. Between scan and apply the user can
+// reorder or delete layers in AE, and a stale index would otherwise replace
+// the source of whatever layer happens to sit there now. A row that fails
+// re-verification is skipped and reported, never guessed at.
+export const applyOvSwap = (assignmentsJson: string): OvSwapApplyResult => {
+  let parsed: { compId: number; layerIndex: number; sourceName: string; matchId: number }[] = [];
+  try {
+    parsed = JSON.parse(assignmentsJson || "[]");
+  } catch (e) {
+    return { success: false, error: "Could not read the swap list: " + e.toString() };
+  }
+  if (!parsed || parsed.length === 0) return { success: false, error: "Nothing selected to swap." };
+
+  const skipped: string[] = [];
+  let swapped = 0;
+
+  app.beginUndoGroup("Swap OV Components for Territory");
+  try {
+    for (let i = 0; i < parsed.length; i++) {
+      const a = parsed[i];
+      const comp = ovsItemById(a.compId) as CompItem;
+      if (!comp || typeof comp.numLayers !== "number") {
+        skipped.push(a.sourceName + " (its comp is no longer in the project)");
+        continue;
+      }
+      if (a.layerIndex < 1 || a.layerIndex > comp.numLayers) {
+        skipped.push(a.sourceName + " (layer no longer at that position in " + comp.name + ")");
+        continue;
+      }
+      const layer = comp.layer(a.layerIndex) as AVLayer;
+      const src = layer ? (layer.source as AVItem) : null;
+      if (!src || src.name !== a.sourceName) {
+        skipped.push(a.sourceName + " (that layer now holds " + (src && src.name ? src.name : "no source") + " — reorder? re-scan and try again)");
+        continue;
+      }
+      const replacement = ovsItemById(a.matchId);
+      if (!replacement) {
+        skipped.push(a.sourceName + " (the imported replacement is no longer in the project)");
+        continue;
+      }
+      try {
+        // `false` = don't reset the layer's scale/duration to the new
+        // source's. Confirmed with the user: an asset exported at different
+        // pixel dimensions should look wrong immediately rather than be
+        // silently compensated for.
+        layer.replaceSource(replacement, false);
+        swapped++;
+      } catch (e) {
+        skipped.push(a.sourceName + " (" + e.toString() + ")");
+      }
+    }
+  } finally {
+    app.endUndoGroup();
+  }
+
+  return { success: true, swapped: swapped, skipped: skipped };
 };
 
 // Cosmetic-only territory -> country-code badge (reuses the same

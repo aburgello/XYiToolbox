@@ -263,6 +263,12 @@ Naming Audit, which skips only `Auto-Save`/`_Archive`/`_Old`/`_DEV`.
   the scorer keeps `diff <= min`, so walk order decides tie-breaks.
 - Never loosen the CSV "already built" matcher into a fuzzy match. A false
   "already built" silently loses a deliverable; a false "new" costs one re-run.
+- Same for OV Swap's `scanOvSwap`: exact normalised name only, never
+  `findBestComponentFile`. A wrong pair puts another component's artwork into
+  a finished deliverable; an unmatched row costs one manual pick. It scopes to
+  the ACTIVE COMP by studio decision — don't widen it to the project, and
+  don't "optimise" a footage swap into `FootageItem.replace()`, which reaches
+  every comp.
 - Campaign matching uses token boundaries on the FILENAME side only.
 - Never re-add Artwork to the CSV built-row core match — `reshapeSpecs` defaults
   it to `"DOOH"`, and a field that can silently default cannot be required.

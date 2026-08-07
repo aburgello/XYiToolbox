@@ -50,7 +50,7 @@ import "./TeamDroplet.scss";
 // To bump: set today's date and update toolbox-version.txt on the team
 // folder to the same string. Keep in step with HomeScreen.tsx's
 // "Toolbox {version}" hover text, which renders it via formatVersion().
-export const TOOLBOX_VERSION = "20260806";
+export const TOOLBOX_VERSION = "20260807";
 
 // YYYYMMDD -> "2026.07.30" for display only. The raw fixed-width string is
 // what gets compared; this is purely so the panel doesn't show a bare

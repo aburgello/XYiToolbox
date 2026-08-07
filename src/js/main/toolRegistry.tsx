@@ -57,6 +57,7 @@ import {
 
 // --- Lazy tool imports --------------------------------------------------
 const LocalisedLibraryTool  = React.lazy(() => import("./tools/LocalisedLibrary"));
+const OVSwapTool            = React.lazy(() => import("./tools/OVSwap"));
 const RandomLayersTool      = React.lazy(() => import("./tools/RandomLayers"));
 const NameGeneratorTool     = React.lazy(() => import("./tools/NameGenerator"));
 const CampaignLocaliserTool = React.lazy(() => import("./tools/CampaignLocaliser"));
@@ -230,6 +231,15 @@ export const TOOLS: ToolEntry[] = [
         Component: LocalisedLibraryTool,
         actions: ["Auto-Populate from Motion Components", "Add Component"],
         description: "",
+    },
+    {
+        id: "ov-swap",
+        label: "OV Swap",
+        categories: ["localise"],
+        icon: Repeat,
+        Component: OVSwapTool,
+        actions: ["Scan Active Comp", "Swap Selected", "Reset"],
+        description: "Swaps the OV precomps and OV artwork in the active comp for the territory components already imported into the project — exact name match only, with a manual picker for anything it won't guess at.",
     },
     {
         id: "random-layers",
