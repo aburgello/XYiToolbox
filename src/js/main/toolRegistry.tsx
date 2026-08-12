@@ -514,8 +514,8 @@ export const TOOLS: ToolEntry[] = [
         categories: ["tools"],
         icon: Code2,
         Component: ExpressionsBankTool,
-        actions: ["Add", "Save", "Copy code"],
-        description: "Save, search, and copy expressions the team uses often. Click an entry to copy its code.",
+        actions: ["Add", "Save", "Copy code", "Share to team library", "Group by Source", "Group by Tag"],
+        description: "Save, search, and copy expressions the team uses often, sectioned into yours, the team's, and the built-ins. Click an entry to copy its code.",
     },
     {
         id: "comp-inspector",

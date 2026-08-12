@@ -239,6 +239,11 @@ export const ActiveJobModal: React.FC<Props> = ({ job, onClose, onOpenLocaliser 
                                 return {
                                     artwork: r.parsed?.artworkType || "DOOH",
                                     creative: r.parsed?.campaign || "",
+                                    // Passed through verbatim: nameGeneratorParse
+                                    // already returns the site exactly as the subtask
+                                    // spelled it, and that spelling is what the
+                                    // generated filename is meant to agree with.
+                                    site: r.parsed?.site || "",
                                     width: w || "",
                                     height: h || "",
                                     // The builder's field is a bare number of

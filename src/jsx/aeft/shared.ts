@@ -446,3 +446,279 @@ export function buildDeliverableName(parts: DeliverableNameParts): string {
     parts.territory
   );
 }
+
+// =============================================================================
+// Media-site token sanitising -- ONE sanitiser, shared by every tool that
+// writes a site into a deliverable name.
+//
+// It lived inside localise.ts serving only csvLocaliserRun, which meant the
+// other two writers (campaignLocaliserGenerate, nameGeneratorGenerate) put raw
+// text straight into a filename: unfolded accents, spaces, and none of the
+// misread guards below. Moved here for the same reason buildDeliverableName is
+// here -- a convention this file owns should not have three implementations,
+// two of which are "none".
+// =============================================================================
+// Latin-1/Latin Extended-A accent folding, keyed by CODE POINT rather than by
+// character literals on purpose: this file compiles down to an ExtendScript
+// .jsx whose source encoding can't be relied on to carry non-ASCII literals
+// intact, so "é" written here could arrive mangled. Code points can't be.
+// Anything not listed (Cyrillic, CJK, emoji) simply gets dropped by
+// sanitiseSiteToken's A-Z0-9 filter rather than transliterated.
+const SITE_ACCENT_FOLD: { [code: string]: string } = {
+  "192": "A", "193": "A", "194": "A", "195": "A", "196": "A", "197": "A", "256": "A", "258": "A", "260": "A",
+  "198": "AE",
+  "199": "C", "262": "C", "264": "C", "266": "C", "268": "C",
+  "270": "D", "272": "D",
+  "200": "E", "201": "E", "202": "E", "203": "E", "274": "E", "276": "E", "278": "E", "280": "E", "282": "E",
+  "284": "G", "286": "G", "288": "G", "290": "G",
+  "292": "H", "294": "H",
+  "204": "I", "205": "I", "206": "I", "207": "I", "296": "I", "298": "I", "300": "I", "302": "I", "304": "I",
+  "308": "J",
+  "310": "K",
+  "313": "L", "315": "L", "317": "L", "319": "L", "321": "L",
+  "209": "N", "323": "N", "325": "N", "327": "N",
+  "210": "O", "211": "O", "212": "O", "213": "O", "214": "O", "216": "O", "332": "O", "334": "O", "336": "O",
+  "338": "OE",
+  "340": "R", "342": "R", "344": "R",
+  "346": "S", "348": "S", "350": "S", "352": "S",
+  "354": "T", "356": "T", "358": "T",
+  "217": "U", "218": "U", "219": "U", "220": "U", "360": "U", "362": "U", "364": "U", "366": "U", "368": "U", "370": "U",
+  "372": "W",
+  "221": "Y", "374": "Y", "376": "Y",
+  "377": "Z", "379": "Z", "381": "Z",
+  "223": "SS",
+  "224": "A", "225": "A", "226": "A", "227": "A", "228": "A", "229": "A", "257": "A", "259": "A", "261": "A",
+  "230": "AE",
+  "231": "C", "263": "C", "265": "C", "267": "C", "269": "C",
+  "271": "D", "273": "D",
+  "232": "E", "233": "E", "234": "E", "235": "E", "275": "E", "277": "E", "279": "E", "281": "E", "283": "E",
+  "285": "G", "287": "G", "289": "G", "291": "G",
+  "293": "H", "295": "H",
+  "236": "I", "237": "I", "238": "I", "239": "I", "297": "I", "299": "I", "301": "I", "303": "I", "305": "I",
+  "309": "J",
+  "311": "K",
+  "314": "L", "316": "L", "318": "L", "320": "L", "322": "L",
+  "241": "N", "324": "N", "326": "N", "328": "N",
+  "242": "O", "243": "O", "244": "O", "245": "O", "246": "O", "248": "O", "333": "O", "335": "O", "337": "O",
+  "339": "OE",
+  "341": "R", "343": "R", "345": "R",
+  "347": "S", "349": "S", "351": "S", "353": "S",
+  "355": "T", "357": "T", "359": "T",
+  "249": "U", "250": "U", "251": "U", "252": "U", "361": "U", "363": "U", "365": "U", "367": "U", "369": "U", "371": "U",
+  "373": "W",
+  "253": "Y", "255": "Y", "375": "Y",
+  "378": "Z", "380": "Z", "382": "Z",
+};
+
+// A raw MEDIA SITE NAME off a client PDF ("Gare de l'Est — Quai 3", "Bahnhof
+// Zoo/Süd") or off a Wrike subtask name ("PiccadillyLights") is turned into ONE
+// A-Za-z0-9 token safe for a filename on any filesystem: accents folded to
+// their base letter, everything else (spaces, punctuation, slashes, dashes,
+// anything non-Latin) dropped rather than replaced -- notably NO underscores,
+// since every downstream tool in this toolbox splits these filenames on "_" and
+// an extra separator inside the site would silently shift their token indices.
+// Capped at 40 chars to keep the already-long generated names inside path
+// limits.
+//
+// Casing is camelCaseName's rule -- the same one the campaign/artwork token
+// uses, so a site and a creative in the same filename can't disagree about the
+// convention. See camelCaseName for why the decision is made per value:
+//
+//   "PiccadillyLights"  -> PiccadillyLights   (already one word: untouched)
+//   "Piccadilly Lights" -> PiccadillyLights
+//   "gare de l'Est"     -> GareDeLEst
+//   "GENERIC"           -> Generic            (all caps: title-cased)
+//   "IMAX SIGNAGE"      -> IMAXSignage        (listed acronym keeps its caps)
+//
+// On top of that it adds the two things only a SITE needs: the guards below
+// (a site token sits ahead of the real size/version/duration/territory tokens,
+// so a site shaped like one wins the parsers' first match) and a 40-char cap.
+export function sanitiseSiteToken(raw: string): string {
+  const guarded = guardSiteToken(camelCaseName(raw));
+  return guarded.length > 40 ? guarded.substring(0, 40) : guarded;
+}
+
+// Studio acronyms that stay SHOUTED even inside an all-caps value. Without
+// this list, "IMAX SIGNAGE" off a client PDF would title-case into
+// "ImaxSignage" -- correct for the second word, wrong for the first.
+//
+// Only needed for values that are ENTIRELY upper case: the moment a value
+// carries one lower-case letter ("IMAX Signage"), camelCaseName preserves it
+// verbatim and this list is never consulted. So a missing entry only ever
+// costs a shouted acronym its caps, never a name its meaning -- and adding one
+// is a one-line edit here.
+//
+// Keyed as an object, not an array with indexOf, so a lookup stays O(1) and
+// no polyfill is involved.
+const NAME_ACRONYMS: { [word: string]: boolean } = {
+  IMAX: true, LSQ: true, BFI: true, QUAD: true, HPTO: true, OOH: true,
+  DOOH: true, DFOH: true, DINTH: true, FOH: true, TOS: true, UPIM: true,
+  PLF: true, DGTL: true, OV: true, INTL: true, DOM: true, CW: true,
+  MM: true, EPO: true, BLB: true, VIP: true, AV: true, TV: true, UK: true,
+  IRE: true, AUS: true, NZ: true, INT: true, NM: true, USA: true, GER: true,
+};
+
+// The convention every NAME token follows: one CamelCase A-Za-z0-9 word.
+//
+// The case rule is decided per VALUE, because "TRIO" and "IMAX" are the same
+// shape and only knowledge of the word tells them apart:
+//
+//   value has ANY lower-case letter  -> it is meaningfully cased, PRESERVE it
+//   value is entirely UPPER case     -> that is shouting, not meaning:
+//                                       title-case each word, except acronyms
+//
+// So a client PDF that shouts every cell still yields readable names, while a
+// value someone deliberately cased -- "PortalToParadise", "IMAX Signage",
+// "GareDuNord" -- comes through exactly as written:
+//
+//   "PortalToParadise"   -> PortalToParadise   (has lower case: preserved)
+//   "Portal To Paradise" -> PortalToParadise
+//   "IMAX Signage"       -> IMAXSignage        (has lower case: preserved)
+//   "TRIO"               -> Trio               (all caps: title-cased)
+//   "GENERIC SITE"       -> GenericSite
+//   "IMAX SIGNAGE"       -> IMAXSignage        (all caps, but IMAX is listed)
+//
+// NOT for film titles -- those are identifiers lifted off the master filename
+// ("FID", "ODY"), where title-casing would rename the film. They use
+// camelCaseToken, which never re-cases anything.
+export function camelCaseName(raw: string): string {
+  const trimmed = String(raw == null ? "" : raw).replace(/^\s+|\s+$/g, "");
+  if (trimmed === "") return "";
+  // Tested on the RAW value, before folding: folding maps to upper-case
+  // letters, so testing after it would call every accented lower-case name
+  // "shouted".
+  const shouted = !NAME_HAS_LOWER.test(trimmed);
+  if (!shouted) return camelCaseToken(trimmed);
+  const words = splitNameWords(foldNameAccents(trimmed));
+  let out = "";
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i];
+    out += NAME_ACRONYMS[word] ? word : word.charAt(0).toUpperCase() + word.substring(1).toLowerCase();
+  }
+  return out;
+}
+
+const NAME_HAS_LOWER = /[a-z]/;
+
+// Collapse to one token, NEVER re-casing anything -- for name parts that are
+// IDENTIFIERS rather than descriptions.
+//
+// Free text in, ONE A-Za-z0-9 token out: accents folded to their base letter,
+// separators and punctuation dropped, word starts capitalised, and no letter
+// ever lowered. That last part is why film titles use this and not
+// camelCaseName: a title is the studio's short code for the film ("FID",
+// "ODY"), and title-casing it to "Fid" would rename the film.
+//
+//   "FID"                -> FID                (identifier: untouched)
+//   "The Odyssey"        -> TheOdyssey
+//   "PortalToParadise"   -> PortalToParadise
+//   "PORTAL TO PARADISE" -> PORTALTOPARADISE   (caps never flattened here)
+export function camelCaseToken(raw: string): string {
+  const trimmed = String(raw == null ? "" : raw).replace(/^\s+|\s+$/g, "");
+  if (trimmed === "") return "";
+  const words = splitNameWords(foldNameAccents(trimmed));
+  let token = "";
+  for (let i = 0; i < words.length; i++) {
+    token += words[i].charAt(0).toUpperCase() + words[i].substring(1);
+  }
+  return token;
+}
+
+// Accents to their base letter, case kept. The fold table is written entirely
+// in upper case, so a mapped LOWER-case source character has to be put back
+// down or "Süd" would come out "SUd" -- losing the case exactly on the
+// accented names the table exists for.
+// Written as plain statements, NOT as a nested ternary. The parenthesised form
+//
+//   folded += mapped ? (ch !== ch.toUpperCase() ? mapped.toLowerCase() : mapped) : ch;
+//
+// is what shipped on 2026-08-10, and it broke the panel outright: esbuild
+// strips the redundant parentheses, leaving `a ? b ? c : d : e`, and the
+// ExtendScript parser cannot tell which colon belongs to which "?" -- the
+// whole bundle fails to load with "SyntaxError: Expected: :". A ternary CHAIN
+// (`a ? x : b ? y : z`) parses fine and is used all over this codebase; it is
+// specifically a ternary nested in the CONSEQUENT that it chokes on. Never
+// reintroduce one, in any file under src/jsx.
+function foldNameAccents(s: string): string {
+  let folded = "";
+  for (let i = 0; i < s.length; i++) {
+    const ch = s.charAt(i);
+    const mapped = SITE_ACCENT_FOLD[String(s.charCodeAt(i))];
+    if (!mapped) {
+      folded += ch;
+    } else if (ch !== ch.toUpperCase()) {
+      folded += mapped.toLowerCase();
+    } else {
+      folded += mapped;
+    }
+  }
+  return folded;
+}
+
+// Runs of A-Za-z0-9. Everything else (spaces, punctuation, slashes, dashes,
+// anything non-Latin the fold table didn't cover) is a separator and is
+// DROPPED rather than replaced -- notably never turned into "_", which every
+// filename parser in this toolbox tokenises on.
+function splitNameWords(folded: string): string[] {
+  const words: string[] = [];
+  let current = "";
+  for (let i = 0; i < folded.length; i++) {
+    const c = folded.charAt(i);
+    if (SITE_ALNUM.test(c)) {
+      current += c;
+    } else if (current !== "") {
+      words.push(current);
+      current = "";
+    }
+  }
+  if (current !== "") words.push(current);
+  return words;
+}
+
+// Deliberately NOT global: a /g regex carries `lastIndex` between .test()
+// calls, so reusing one per character would skip every other match.
+const SITE_ALNUM = /[A-Za-z0-9]/;
+
+// Three shapes a site name could sanitise into that would be MISREAD by the
+// filename parsers this toolbox already runs over these names -- every one of
+// them takes the FIRST match in the string, and the site token sits ahead of
+// the real size/version/territory tokens, so a collision wins outright:
+//
+//   "4x3"  -> mcItParseFilename's /\d+x\d+/i reads it as the AEP's resolution,
+//             no image candidate passes the resolution filter, and that file's
+//             inline MC It! swap silently does nothing.
+//   "V2"   -> parseFilenameMeta's /(V\d+)/ reads it as the version instead of
+//             the real _V01, and Cheeky DT stamps it onto the Frontcard.
+//   "SW"   -> parseFilenameMeta's /_([A-Z]{2})(?:_|$)/ reads it as the country
+//             code instead of the real one at the end of the name.
+//
+// Each is defused with the smallest edit that breaks the pattern while leaving
+// the name readable, and NOTHING else is touched -- a token with none of these
+// shapes (the overwhelmingly normal case) comes through byte-identical. The
+// hyphen is chosen deliberately: it can't be confused with "_", which every
+// tool here tokenises these filenames on.
+//
+//   "5s"   -> durationMatchesPath's /(^|[^0-9])<n>s(ec)?([^0-9]|$)/i reads it
+//             as the row's duration, so a master of the wrong length passes the
+//             duration filter.
+//
+// The duration and size shapes used to be listed here as UNGUARDABLE-BY-
+// CONSTRUCTION, on the grounds that parseFilenameMeta's /(\d+)s(?:ec)?/ and
+// /(\d+x\d+)(?:px)?/ are lowercase with no /i while the token was uppercase by
+// construction. The token is no longer uppercase by construction (see
+// sanitiseSiteToken), so both are guarded explicitly now -- and the
+// duration one in either case, because durationMatchesPath DOES use /i and was
+// always reachable.
+function guardSiteToken(token: string): string {
+  if (token === "") return "";
+  // Lookahead, not a captured trailing digit: a consuming match would step
+  // past the digit and leave a second "3X2" inside "4X3X2" unguarded.
+  let guarded = token.replace(/(\d)([xX])(?=\d)/g, "$1-$2");
+  guarded = guarded.replace(/V(?=\d)/g, "V-");
+  guarded = guarded.replace(/(\d)(?=[sS])/g, "$1-");
+  // Only an EXACTLY-two-letter token can be mistaken for a country code
+  // ("N4" and single letters can't match /^[A-Za-z]{2}$/), so this is the one
+  // case with nothing internal to break -- it gets qualified instead.
+  if (/^[A-Za-z]{2}$/.test(guarded)) guarded = "Site" + guarded;
+  return guarded;
+}

@@ -1002,3 +1002,74 @@
         color: #e07a7a;
     }
 }
+// =============================================================================
+// Master check — the launcher for the out-of-process Python report
+// (lib/masterCheck.ts). Sits under the masters list because that is what it
+// checks. Deliberately quiet: it is a once-per-delivery action, not part of
+// the browsing loop, so it must not compete with the variant cards above it.
+// =============================================================================
+.master-check {
+    margin-top: 14px;
+    padding: 13px 15px;
+    border: 1px solid var(--surface-edge, #333);
+    border-radius: 8px;
+    background: var(--surface-0, #1a1a1a);
+}
+
+.master-check-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.master-check-text {
+    flex: 1;
+    min-width: 0;
+
+    strong {
+        display: block;
+        font-size: 12.5px;
+        font-weight: 650;
+        color: #ddd;
+    }
+
+    span {
+        display: block;
+        font-size: 11px;
+        color: #8a8a8a;
+        line-height: 1.45;
+        margin-top: 2px;
+    }
+}
+
+// Has its own background, so index.scss's global button:hover/:active
+// ($active #20639b) would paint straight over it — both re-declared here.
+.master-check-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    background: var(--cat-grad);
+    border: 1px solid var(--cat-border);
+    color: #fff;
+    border-radius: 6px;
+    padding: 7px 14px;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+
+    &:hover:not(:disabled) { background: var(--cat-grad); filter: brightness(1.12); }
+    &:active:not(:disabled) { background: var(--cat-grad); filter: brightness(0.94); }
+
+    &:disabled { opacity: 0.6; cursor: default; }
+    &:disabled:hover { background: var(--cat-grad); filter: none; }
+}
+
+.master-check-note {
+    margin: 10px 0 0;
+    font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+    font-size: 10.5px;
+    color: #8a8a8a;
+    line-height: 1.5;
+    word-break: break-word;
+}

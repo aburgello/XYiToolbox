@@ -7,6 +7,8 @@ import { Truck, ListPlus, Trash2, ChevronsDown, Send, AlertCircle, AlertTriangle
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import { evalTS } from "../../lib/utils/bolt";
 import { sfx } from "../../lib/utils/sfx";
+import { suggestForComp, type SpecSuggestion } from "../lib/deliverySpecMatch";
+import { child_process } from "../../lib/cep/node";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
 import Droplet from "../Droplet";
@@ -84,6 +86,55 @@ const TEMPLATE_BITRATES_MBPS = [
     24, 25, 26, 28, 30, 32, 36, 40, 48, 50, 60,
 ];
 const AUDIO_RESERVE_KBPS = 192;
+
+// Frame rates this studio actually delivers at. Used only to spot a typo --
+// never to correct one.
+const PLAUSIBLE_FPS = [23.976, 24, 25, 29.97, 30, 50, 60];
+
+/**
+ * Advisory warnings about a row's numbers. ADVISORY: this never changes a
+ * value, never disables a row and never stops the queue. Delivery's numbers are
+ * typed by hand (or bulk-set), so the person entering them is the authority --
+ * this only points.
+ *
+ * Deliberately NOT a call to pdfSpecs' specRowWarnings, even though that was
+ * the plan: there `BitRate` is a TARGET, here `maxMbps` is a CAP, and a cap is
+ * *supposed* to sit away from what the size implies. Reusing that cross-check
+ * would have flagged every capped row. These use Delivery's own template list
+ * instead, which makes the important check possible at all.
+ */
+function rowWarnings(row: RowData): string[] {
+    const out: string[] = [];
+    const sizeMB = row.sizeMB !== "" ? parseFloat(row.sizeMB) : null;
+    const fps = row.fps !== "" ? parseFloat(row.fps) : null;
+
+    if (sizeMB !== null && !isNaN(sizeMB) && sizeMB >= 1000) {
+        out.push(`${row.sizeMB} MB looks like KB`);
+    }
+    if (fps !== null && !isNaN(fps) && fps > 0 &&
+        !PLAUSIBLE_FPS.some((f) => Math.abs(f - fps) < 0.05)) {
+        out.push(`${row.fps} isn't a frame rate we deliver at`);
+    }
+
+    // THE ONE THAT ACTUALLY BITES. Template choice rounds DOWN, so output
+    // normally lands under target. But when even the LOWEST template is above
+    // what the target size allows, the file overshoots -- it goes out over the
+    // size limit and nothing downstream would catch it.
+    if (sizeMB !== null && !isNaN(sizeMB) && sizeMB > 0 && row.duration > 0) {
+        let kbps = (sizeMB * 8 * 1000 * 1000) / row.duration / 1000;
+        if (row.includeAudio) kbps -= AUDIO_RESERVE_KBPS;
+        const required = kbps / 1000;
+        let lowest = TEMPLATE_BITRATES_MBPS[0];
+        for (const v of TEMPLATE_BITRATES_MBPS) if (v < lowest) lowest = v;
+        if (required > 0 && required < lowest) {
+            out.push(
+                `${sizeMB}MB over ${row.duration.toFixed(1)}s needs ~${required.toFixed(2)}Mbps — ` +
+                `below the smallest template (${lowest}), so the file will come out over size`
+            );
+        }
+    }
+    return out;
+}
 
 function predictRowTemplate(row: RowData): { name: string; capped: boolean } | null {
     const sizeMB = row.sizeMB !== "" ? parseFloat(row.sizeMB) : null;
@@ -354,6 +405,40 @@ const DeliveryHubTool = () => {
 
     // --- Checklist ----------------------------------------------------------
     const [rows, setRows] = useState<RowData[]>([]);
+    // Spec suggestions, keyed by row id. Opt-in: nothing is looked up until
+    // the button is pressed, so loading comps never pays for PDF parsing and
+    // nobody gets numbers they didn't ask for.
+    const [suggestions, setSuggestions] = useState<Record<number, SpecSuggestion>>({});
+    const [suggestBusy, setSuggestBusy] = useState(false);
+
+    const runSuggest = async () => {
+        setSuggestBusy(true);
+        try {
+            const found: Record<number, SpecSuggestion> = {};
+            for (const row of rows) {
+                if (!row.sourcePath) continue;
+                try {
+                    const s = await suggestForComp(row.name, row.sourcePath);
+                    if (s.searched) found[row.id] = s;
+                } catch { /* one bad PDF must not stop the rest */ }
+            }
+            setSuggestions(found);
+            // FILL ONLY WHAT IS EMPTY. A value already on screen was put there
+            // by a person, and a suggestion off a hand-filled PDF has no
+            // business overruling them.
+            setRows((prev) => prev.map((r) => {
+                const s = found[r.id];
+                if (!s) return r;
+                return {
+                    ...r,
+                    sizeMB: r.sizeMB === "" && s.sizeMB ? s.sizeMB : r.sizeMB,
+                    maxMbps: r.maxMbps === "" && s.maxMbps ? s.maxMbps : r.maxMbps,
+                };
+            }));
+        } finally {
+            setSuggestBusy(false);
+        }
+    };
     const [bulkSize, setBulkSize] = useState("");
     const [bulkMbps, setBulkMbps] = useState("");
     const [bulkFps, setBulkFps] = useState("");
@@ -689,6 +774,20 @@ const DeliveryHubTool = () => {
                             transition={{ duration: 0.15, ease: "easeOut" }}
                             style={{ overflow: "hidden", flexShrink: 0 }}
                         >
+                            {/* Opt-in, never automatic: reads each row's own comp
+                                name for its country code, finds that territory's
+                                Masters/Specs, and fills ONLY empty fields. Where a
+                                spec can't be read (vendor sheets rather than a
+                                table) it names the document to open instead. */}
+                            <Tooltip text="Look up each row's spec PDF and fill anything still blank">
+                                <button
+                                    className="dh-icon-btn"
+                                    disabled={checkBusy || suggestBusy || rows.length === 0}
+                                    onClick={runSuggest}
+                                >
+                                    <Folder size={14} />
+                                </button>
+                            </Tooltip>
                             <button
                                 className="dh-icon-btn"
                                 disabled={checkBusy}
@@ -763,6 +862,7 @@ const DeliveryHubTool = () => {
                         <div key={batchKey}>
                         {rows.map((row, i) => {
                             const missing = !row.folderName;
+                            const warnings = rowWarnings(row);
                             return (
                                 <motion.div
                                     key={row.id}
@@ -782,6 +882,27 @@ const DeliveryHubTool = () => {
                                             {getShortLabel(row.name)}
                                         </span>
                                     </Tooltip>
+                                    {suggestions[row.id]?.source && (
+                                        <Tooltip text={suggestions[row.id].source + (suggestions[row.id].openPath ? " — click to open it" : "")}>
+                                            <button
+                                                className="dh-row-spec"
+                                                onClick={() => {
+                                                    const p = suggestions[row.id]?.openPath;
+                                                    // `open` rather than a file:// URL: CEP's
+                                                    // browser handoff is unreliable for local
+                                                    // files, same as in masterCheck.ts.
+                                                    if (p) { try { child_process.spawn("open", [p], { detached: true }); } catch { /* nothing to do */ } }
+                                                }}
+                                            >
+                                                spec
+                                            </button>
+                                        </Tooltip>
+                                    )}
+                                    {warnings.length > 0 && (
+                                        <Tooltip text={warnings.join(" · ") + " — correct the value to clear this"}>
+                                            <span className="dh-row-warn" aria-label="Check these numbers">▲</span>
+                                        </Tooltip>
+                                    )}
                                     {row.queued && (
                                         <Tooltip text="Un-queue (removes from render queue)">
                                             <button

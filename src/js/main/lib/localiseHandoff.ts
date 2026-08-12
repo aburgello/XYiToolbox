@@ -18,6 +18,11 @@
 export interface HandoffRow {
     artwork: string;
     creative: string;
+    // Media site token as the subtask name carries it, CASE INCLUDED -- the
+    // studio writes sites in CamelCase in Wrike, and the localiser's filename
+    // builder now preserves whatever case arrives here. Empty for a
+    // deliverable with no site, which is a normal name, not a gap.
+    site: string;
     width: string;
     height: string;
     duration: string;

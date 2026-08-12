@@ -654,15 +654,135 @@
         cursor: pointer;
     }
 
+    // --- Group-by row -------------------------------------------------------
+    .eb-group-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+    }
+
+    .eb-group-label {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: #777;
+    }
+
+    .eb-group-count {
+        margin-left: auto;
+        font-size: 10px;
+        color: #666;
+    }
+
     .eb-list {
         display: flex;
         flex-direction: column;
         gap: 6px;
     }
 
+    // --- Sections -----------------------------------------------------------
+    // Provenance sections (My Expressions / Team Library / Built-in) or tag
+    // sections, depending on the Group by toggle.
+    .eb-section {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+    }
+
+    // Section headers get a top rule instead of margin so consecutive
+    // sections read as one scannable spine rather than free-floating groups.
+    .eb-section + .eb-section {
+        margin-top: 6px;
+        padding-top: 8px;
+        border-top: 1px solid rgba(255, 255, 255, 0.07);
+    }
+
+    .eb-section-header {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+        // index.scss's global button:hover/:active would otherwise paint
+        // $active (#20639b) straight over this header -- both re-declared
+        // below, as every custom-background button in this app has to.
+        background: none;
+        border: none;
+        padding: 2px 2px 2px 0;
+        cursor: pointer;
+        color: #999;
+        font-size: 10.5px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.7px;
+        text-align: left;
+
+        &:hover { background: none; color: #ddd; }
+        &:active { background: none; color: #fff; }
+
+        // While a search is running the sections are force-expanded, so the
+        // header is inert -- say so rather than looking clickable.
+        &:disabled { cursor: default; opacity: 0.75; }
+        &:disabled:hover { color: #999; }
+
+        svg { flex-shrink: 0; }
+    }
+
+    .eb-section-icon {
+        display: flex;
+        align-items: center;
+        flex-shrink: 0;
+    }
+
+    .eb-section-label {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .eb-section-count {
+        flex-shrink: 0;
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 8px;
+        padding: 1px 7px;
+        font-size: 9.5px;
+        font-weight: 700;
+        color: #aaa;
+        letter-spacing: 0;
+    }
+
+    // Section tints: the icon + count carry the section's identity so the
+    // eye can jump straight to "mine" without reading the words. Literal
+    // rgba values, no color-mix (Chrome 111, target is 74).
+    .eb-section-mine {
+        .eb-section-icon { color: var(--cat-icon, #5eead4); }
+        .eb-section-count { background: rgba(94, 234, 212, 0.14); color: #9fe9dc; }
+    }
+    .eb-section-team {
+        .eb-section-icon { color: #8fa8ff; }
+        .eb-section-count { background: rgba(143, 168, 255, 0.14); color: #b3c2ff; }
+    }
+    .eb-section-builtin {
+        .eb-section-icon { color: #8a8a8a; }
+    }
+
+    .eb-section-empty {
+        margin: 2px 0 4px 20px;
+        font-size: 10.5px;
+        color: #6b6b6b;
+        font-style: italic;
+    }
+
     .eb-entry {
+        position: relative;
         background: var(--ov-bg, #1e1e1e);
         border: 1px solid var(--surface-edge, #333);
+        // Left accent bar = origin, readable at a glance in either grouping
+        // mode. border-left rather than a pseudo-element so it survives the
+        // row's own border-radius without extra clipping rules.
+        border-left: 2px solid #3a3a3a;
         border-radius: 6px;
         padding: 8px 10px;
         transition: border-color 0.2s ease;
@@ -670,24 +790,25 @@
         &:hover { border-color: #555; }
     }
 
+    .eb-origin-mine  { border-left-color: var(--cat-icon, #5eead4); }
+    .eb-origin-team  { border-left-color: #8fa8ff; }
+    // Built-ins stay deliberately quiet -- they are the background furniture
+    // of this list, not the thing anyone is scanning for.
+    .eb-origin-builtin { border-left-color: #3f3f3f; }
+
+    // Ring on a just-saved row for a few seconds. This exists because a save
+    // used to drop the row at the bottom of 21 entries with nothing to mark
+    // it, which read as "my expression didn't save".
+    .eb-entry-saved {
+        border-color: var(--cat-icon, #5eead4);
+        box-shadow: 0 0 0 1px rgba(94, 234, 212, 0.35);
+    }
+
     .eb-entry-header {
         display: flex;
         align-items: center;
         gap: 6px;
         margin-bottom: 4px;
-
-        // The name is now Tooltip-wrapped (a <span class="ov-tooltip-wrapper">
-        // with no className passthrough of its own -- see Tooltip.tsx), so
-        // .eb-entry-name one level in no longer sits directly in this flex
-        // row. :nth-child(2) singles out that one wrapper (1st child is the
-        // collapse button's own Tooltip wrapper, 3rd is .eb-entry-actions)
-        // to carry the flex:1/truncation .eb-entry-name used to have --
-        // same technique already used for OV Library's/Localised Library's
-        // row wrappers elsewhere in this app.
-        > span:nth-child(2) {
-            flex: 1;
-            min-width: 0;
-        }
     }
 
     .eb-collapse-btn {
@@ -705,8 +826,13 @@
         &:hover { color: #ddd; background: rgba(255, 255, 255, 0.06); }
     }
 
+    // Wrapped in <Tooltip grow> -- the grow variant is what carries the
+    // flex:1/min-width:0 down the wrapper chain, so the name can truncate
+    // instead of shoving the action buttons off the row. (Plain <Tooltip>
+    // would pin this to flex: 0 0 auto; see Tooltip.scss.)
     .eb-entry-name {
         display: block;
+        min-width: 0;
         font-size: 12px;
         font-weight: 600;
         color: #ddd;
@@ -734,7 +860,37 @@
         letter-spacing: 0.5px;
     }
 
+    // Credit on a team-shared row. Blank author (shared from an untagged
+    // machine) renders nothing at all rather than an empty pill.
+    .eb-entry-author {
+        display: inline-block;
+        max-width: 74px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        background: rgba(143, 168, 255, 0.14);
+        border-radius: 3px;
+        padding: 1px 6px;
+        font-size: 9px;
+        color: #b3c2ff;
+        letter-spacing: 0.3px;
+    }
+
+    // Grouped by tag, sections are mixed, so each row needs its origin
+    // spelled out beyond the left accent -- a dot in the same colour.
+    .eb-entry-origin {
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        border-radius: 3px;
+        background: #4a4a4a;
+    }
+    .eb-origin-dot-mine    { background: var(--cat-icon, #5eead4); }
+    .eb-origin-dot-team    { background: #8fa8ff; }
+    .eb-origin-dot-builtin { background: #555; }
+
     .eb-entry-uses {
+        display: inline-block;
         font-size: 10px;
         color: #777;
         min-width: 18px;
@@ -1420,6 +1576,24 @@
     // so the table doesn't look like a form; hover/focus reveals it's editable.
     .specs-cell-edit { padding: 1px 3px; }
 
+    // Delivery-spec warning marker. Advisory: it never changes a value or
+    // stops a run, so it stays quiet -- a marker you can choose to read,
+    // not an alarm. MUST live inside .specs-tool like every other
+    // .specs-* rule; a top-level copy simply would not apply.
+    .specs-cell-warn {
+        width: 18px;
+        text-align: center;
+        padding: 0;
+    }
+
+    .specs-spec-warn {
+        display: inline-block;
+        font-size: 10px;
+        line-height: 1;
+        color: #fbbf24;
+        cursor: help;
+    }
+
     .specs-cell-input {
         width: 100%;
         min-width: 0;
@@ -1601,7 +1775,7 @@
         width: 100%;
     }
 
-    // ⬤ | Type | Creative | Width | Height | Dur | × | ✕
+    // ⬤ | Type | Creative | Site | Width | Height | Dur | × | ✕
     // The first column is the master-status icon, the same one the scanned
     // specs table shows per row -- a builder row's creative is free text (and,
     // for a row handed over from Active Jobs, parsed from a Wrike subtask
@@ -1611,11 +1785,15 @@
     // than reflowing per row.
     .specs-build-row {
         display: grid;
-        grid-template-columns: 20px 90px minmax(120px, 1fr) 66px 66px 66px 40px 26px;
+        // Site shares the flexible track with Creative (2fr/1fr) rather than
+        // taking a fixed width: it is optional and often blank, so it should
+        // give its room back to the creative name rather than squeeze it.
+        grid-template-columns: 20px 90px minmax(110px, 2fr) minmax(80px, 1fr) 66px 66px 66px 40px 26px;
         gap: 6px;
         align-items: center;
 
         > input[type="number"],
+        > .specs-build-site,
         > .specs-build-custom {
             background: var(--ov-bg, #1e1e1e);
             border: 1px solid var(--surface-edge, #3a3a3a);

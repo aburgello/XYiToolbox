@@ -701,6 +701,12 @@ interface ExpressionEntry {
   code: string;
   uses: number;
   description: string;
+  // Provenance, so the Expressions Bank can section "yours" from "the team's"
+  // from the shipped built-ins instead of showing one undifferentiated list.
+  // Both optional: entries shared before these existed simply have no author,
+  // and the frontend infers an origin for anything unmarked.
+  origin?: string; // "builtin" | "mine" | "team"
+  author?: string; // member name of the machine that shared it, "" if untagged
 }
 
 // Mirrors the frontend's CustomToolEntry (useCustomTools.ts). The `id` is
@@ -935,6 +941,11 @@ export const teamSyncShared = (): SyncResult => {
           code: entry.code,
           uses: 0,
           description: entry.description || "",
+          // Marked as team-pulled so the bank can section it away from the
+          // artist's own saves. The author is whoever shared it, NOT this
+          // machine's owner -- it travels with the shared file.
+          origin: "team",
+          author: entry.author || "",
         });
         names[entry.name.toLowerCase()] = true;
         newExpressions++;
@@ -1096,6 +1107,13 @@ export const teamShareExpression = (entryJson: string): Result => {
         return { success: true, message: '"' + entry.name + '" is already in the team library.' };
       }
     }
+    // Stamp who shared it so colleagues' banks can show "from Aaron" rather
+    // than an anonymous row. An untagged station still shares (unlike the word
+    // board / invites, which refuse) -- this is a library, not a post, and the
+    // pre-existing behaviour of sharing without a name is deliberately kept;
+    // it just lands with a blank author.
+    entry.origin = "team";
+    if (!entry.author) entry.author = loadLocalSetting(MACHINE_OWNER_KEY) || "";
     shared.push(entry);
     if (!writeSharedFile(SHARED_EXPRESSIONS_FILE, SHARED_EXPRESSIONS_TYPE, shared)) {
       return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };

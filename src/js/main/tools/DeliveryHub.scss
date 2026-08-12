@@ -373,6 +373,36 @@
         }
     }
 
+    // Advisory only — never blocks the queue, never changes a value. Quiet on
+    // purpose: a marker to read, not an alarm. Must sit at the same nesting
+    // level as .dh-row-name or it simply won't apply.
+    // Link to the spec PDF this row was matched to. A suggestion, not a
+    // verdict -- quiet, and it only appears when there is one.
+    .dh-row-spec {
+        flex-shrink: 0;
+        font-size: 9px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        font-weight: 700;
+        color: #7fd4c5;
+        background: rgba(45, 212, 191, 0.12);
+        border: 1px solid rgba(45, 212, 191, 0.3);
+        border-radius: 3px;
+        padding: 1px 5px;
+        cursor: pointer;
+
+        &:hover { background: rgba(45, 212, 191, 0.22); border-color: rgba(45, 212, 191, 0.5); }
+        &:active { background: rgba(45, 212, 191, 0.3); }
+    }
+
+    .dh-row-warn {
+        flex-shrink: 0;
+        font-size: 10px;
+        line-height: 1;
+        color: #fbbf24;
+        cursor: help;
+    }
+
     .dh-row-name {
         flex: 1;
         min-width: 0;

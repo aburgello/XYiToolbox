@@ -75,6 +75,16 @@ so this whole class of bug is structurally invisible in browser preview.
   `layer.property("<display name>")`** — matchName collisions (Point of Interest
   ≡ Anchor Point) resolve against the wrong property on other layer types. Use
   `layer.transform.*`.
+- **Never fetch an EFFECT parameter by display name either — use its
+  matchName.** Display names change between AE point releases. The Transform
+  effect's uniform-scale slot reports as `"Scale"` on AE ≤26.2 and
+  `"Scale Height"` on 26.3+, so Auto AR's `transformFx.property("Scale")`
+  returned null on one artist's newer AE and the `if (scaleProp)` guard
+  skipped the whole scale rig in silence, for months, in both this port and
+  the original `XYi_AutAR.jsx`. `ADBE Geometry2-0003` is stable across
+  versions and languages. A null lookup must be **reported, never
+  `continue`d past** — a rig that half-applies and claims success is the
+  actual bug here.
 - **Never walk a property tree upward via `propertyGroup(1)` in a collector** —
   it returns the PARENT and blows up exponentially. This froze AE solid once.
 - Return `{success, error}` shapes; never throw across the bridge.
@@ -226,6 +236,14 @@ re-apply it. Compute blends in JS; never `color-mix()`.
 
 **Persistence.** `app.settings` section **`"XYiToolbox"`**, one key per feature,
 tab-separated lines (JSON only where a real map is needed).
+
+- **Never store USER-AUTHORED text in a delimited value — use JSON.** There is
+  no separator that expression code, a script body, or a filename can't
+  contain. Expressions Bank stored `id|name|tag|code|uses|description` joined
+  by `\t`: a tab in the code (anything pasted from an editor) silently DROPPED
+  the whole entry on the next load, and a `|` (i.e. `||`) truncated the code —
+  both reported "saved" and lost the work invisibly. Delimited lines are fine
+  only for fields the app itself generates and controls.
 
 - Add every new personalisation key to `team.ts`'s `PROFILE_KEYS`, or it won't
   travel with profiles.

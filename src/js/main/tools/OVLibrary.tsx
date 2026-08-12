@@ -29,6 +29,7 @@ import {
     ImagePlus,
     Columns2,
     Users,
+    ClipboardCheck,
 } from "lucide-react";
 import CSInterface from "../../lib/cep/csinterface";
 import { csi, evalTS } from "../../lib/utils/bolt";
@@ -37,6 +38,7 @@ import StatusIcon from "../StatusIcon";
 import Droplet from "../Droplet";
 import { alertDialog, confirmDialog, promptDialog } from "../Dialog";
 import { hasUserTheme } from "../themes";
+import { runMasterCheck, openReport } from "../lib/masterCheck";
 import "../shared.scss";
 import "./OVLibrary.scss";
 
@@ -822,6 +824,45 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
 
     const [usingMock, setUsingMock] = useState(false);
     const [toasts, setToasts] = useState<Toast[]>([]);
+    // --- Master check (Python, out of process -- see lib/masterCheck.ts) ----
+    // Deliberately no availability probe on mount: that would spawn a process
+    // every time this tool opens, for a button most sessions never press.
+    // Everything is checked at click time instead.
+    const [checkBusy, setCheckBusy] = useState(false);
+    const [checkNote, setCheckNote] = useState<string | null>(null);
+
+    const runCheck = async () => {
+        if (!selectedCampaign) return;
+        setCheckBusy(true);
+        setCheckNote("Starting…");
+        try {
+            const result = await runMasterCheck(
+                selectedCampaign.name,
+                selectedCampaign.mastersRoot,
+                (line) => setCheckNote(line)
+            );
+            if (result.ok && result.reportPath) {
+                openReport(result.reportPath);
+                setCheckNote("Report opened in your browser.");
+                pushToast("Master check done.");
+            } else {
+                setCheckNote(result.message);
+                // A machine that has never run the setup isn't a failure, it's
+                // a normal state -- same rule the NAS features follow. It gets
+                // the inline note (which stays put and explains the fix) and
+                // deliberately NOT a toast, which would read as an error and
+                // then vanish before it could be acted on.
+                if (!result.notInstalled) pushToast(result.message, "error");
+            }
+        } catch (e: any) {
+            const msg = e?.message || "The check couldn't run.";
+            setCheckNote(msg);
+            pushToast(msg, "error");
+        } finally {
+            setCheckBusy(false);
+        }
+    };
+
     const toastId = useRef(0);
     const [playerPath, setPlayerPath] = useState<string | null>(null);
 
@@ -1441,6 +1482,34 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
                             );
                         })}
                 </div>
+
+                {/* Master check — sits under the masters because that's what it
+                    checks, and it checks the WHOLE campaign, not the creative
+                    currently selected above. The report deliberately opens in a
+                    browser rather than in here: it's a wide table meant for a
+                    sign-off read, and the panel is a narrow dock. */}
+                {selectedCampaign && (
+                    <div className="master-check">
+                        <div className="master-check-row">
+                            <div className="master-check-text">
+                                <strong>Check the masters</strong>
+                                <span>
+                                    Reads every master in {selectedCampaign.name} and reports size,
+                                    duration, missing footage and layer differences. Opens in your browser.
+                                </span>
+                            </div>
+                            <button
+                                className="master-check-btn"
+                                disabled={checkBusy}
+                                onClick={runCheck}
+                            >
+                                {checkBusy ? <RefreshCw size={13} className="spin" /> : <ClipboardCheck size={13} />}
+                                {checkBusy ? "Checking…" : "Run check"}
+                            </button>
+                        </div>
+                        {checkNote && <p className="master-check-note">{checkNote}</p>}
+                    </div>
+                )}
             </div>
 
             <div className="toast-stack">

@@ -7,7 +7,7 @@
 // etc.). Split out of aeft.ts, which is now a thin barrel -- see its header
 // comment for context.
 // =============================================================================
-import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, buildDeliverableName, durationForMasterLookup } from "./shared";
+import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, buildDeliverableName, durationForMasterLookup, sanitiseSiteToken, camelCaseToken, camelCaseName } from "./shared";
 import { drqrProcessLayers, makeParentLayerOfAllUnparented, scaleAllCameraZooms, scaleCompToFit } from "./deliver";
 
 
@@ -2662,7 +2662,12 @@ export const campaignLocaliserGenerate = (skipExisting: boolean): LocGenResult =
         // upper-cased here; XYi_Campaign_Scanner.jsx (2026-07-31) dropped that
         // to preserve CamelCase, and every downstream comparison in this
         // codebase canonicalises case anyway, so nothing depends on it.
-        const campaign = texLoc[1].replace(/"/g, "");
+        //
+        // Case was already safe here, but SEPARATORS were not: a loc file
+        // written by hand can carry "Portal To Paradise", and the spaces went
+        // straight into the .aep filename. camelCaseName collapses them and
+        // applies the one shared casing rule, matching the CSV Localiser path.
+        const campaign = camelCaseName(texLoc[1].replace(/"/g, ""));
         const width = Math.floor(Number(sizeParts[0]));
         const height = Math.floor(Number(sizeParts[1]));
         const size = width + "x" + height;
@@ -2675,7 +2680,12 @@ export const campaignLocaliserGenerate = (skipExisting: boolean): LocGenResult =
         // 5th column, added to the loc CSV by XYi_PDF_to_CSV.jsx in the same
         // handover. Absent in every pre-existing loc file, which is why this
         // tolerates a short row rather than indexing blindly.
-        const siteToken = texLoc.length > 4 ? texLoc[4].replace(/"/g, "").replace(/^\s+|\s+$/g, "") : "";
+        // Sanitised, not just de-quoted: this column is normally written by
+        // XYi_PDF_to_CSV.jsx from an already-tokenised name, but a hand-edited
+        // loc file can carry anything, and an unsanitised site here would put
+        // a space or an unfolded accent straight into a filename on the NAS.
+        // Same sanitiser as the CSV Localiser and Name Generator paths.
+        const siteToken = texLoc.length > 4 ? sanitiseSiteToken(texLoc[4].replace(/"/g, "")) : "";
         rep.artwork = texLoc[0].replace(/"/g, "");
         rep.campaign = campaign;
         rep.size = size;
@@ -3960,6 +3970,35 @@ function autoArAddControl(effectsGroup: Property, type: "point" | "slider", name
   return p;
 }
 
+// Resolve a Transform-effect parameter by MATCHNAME first, display name only
+// as a fallback.
+//
+// This is not defensive tidying -- the display name is version-dependent and
+// it silently broke the rig. On AE 26.2 and earlier the Transform effect's
+// uniform-scale slot reports its name as "Scale" while Uniform Scale is
+// ticked; on 26.3 it reports "Scale Height" unconditionally. So
+// `transformFx.property("Scale")` returned null on a 26.3 station, the
+// `if (scaleProp)` guard below skipped the entire scale half of the rig, and
+// the artist got a correct-looking Auto AR with no scale expression and no
+// error -- for months, across both this port and the original XYi_AutAR.jsx.
+// Confirmed by probe on the 26.3 machine (scripts/diagnostics/auto-ar-probe.jsx):
+// Uniform Scale = 1, property('Scale') NULL, property('Scale Height') FOUND.
+//
+// `ADBE Geometry2-000n` is stable across versions AND languages, which is the
+// same reason CLAUDE.md §2 already bans display-name property lookups.
+// Display names are kept as a fallback purely in case the effect the rig
+// latched onto isn't ADBE Geometry2 at all (it matches by the name
+// "Transform", so it can pick up a renamed effect).
+function autoArTransformParam(transformFx: Property, matchName: string, displayNames: string[]): Property | null {
+  const byMatch = transformFx.property(matchName) as Property | null;
+  if (byMatch) return byMatch;
+  for (var i = 0; i < displayNames.length; i++) {
+    const byName = transformFx.property(displayNames[i]) as Property | null;
+    if (byName) return byName;
+  }
+  return null;
+}
+
 function autoArBuildExpression(type: "position" | "scale", landscapeObj: typeof AUTO_AR_LANDSCAPE, portraitObj: typeof AUTO_AR_PORTRAIT): string {
   const isPos = type === "position";
   let expr = "";
@@ -4049,10 +4088,13 @@ export const autoAspectRatio = (): Result => {
     if (!selLayers || selLayers.length === 0) return { success: false, error: "Please select one or more layers." };
 
     app.beginUndoGroup("Apply Aspect Rig (Universal v2)");
+    // Parameters the rig couldn't resolve, reported at the end instead of
+    // being swallowed -- see the return below.
+    const skipped: string[] = [];
     for (let li = 0; li < selLayers.length; li++) {
       const layer = selLayers[li];
       const effects = layer.property("Effects") as Property;
-      if (!effects) continue;
+      if (!effects) { skipped.push(layer.name + " (no Effects group)"); continue; }
 
       // layer.property("Anchor Point").value is [x,y,z] (3 elements) for a
       // 3D layer, but both places this feeds into below -- the Point
@@ -4077,24 +4119,61 @@ export const autoAspectRatio = (): Result => {
       autoArAddControl(effects, "slider", "Over_Ride", 100);
 
       const transformFx = (effects.property("Transform") as Property) || (effects.addProperty("ADBE Geometry2") as Property);
-      if (!transformFx) continue;
+      if (!transformFx) { skipped.push(layer.name + " (no Transform effect)"); continue; }
       transformFx.name = "Transform";
 
-      const tfAnchor = transformFx.property("Anchor Point") as Property;
+      const tfAnchor = autoArTransformParam(transformFx, "ADBE Geometry2-0001", ["Anchor Point"]);
       if (tfAnchor) tfAnchor.setValue(layerAnchor);
 
-      const posProp = transformFx.property("Position") as Property;
-      const scaleProp = transformFx.property("Scale") as Property;
+      const posProp = autoArTransformParam(transformFx, "ADBE Geometry2-0002", ["Position"]);
+      // "Scale" is what 26.2 and earlier call this; "Scale Height" is 26.3+.
+      const scaleProp = autoArTransformParam(transformFx, "ADBE Geometry2-0003", ["Scale", "Scale Height"]);
       if (posProp) {
         posProp.expression = autoArBuildExpression("position", AUTO_AR_LANDSCAPE, AUTO_AR_PORTRAIT);
         posProp.expressionEnabled = true;
+      } else {
+        skipped.push(layer.name + " (Position)");
       }
       if (scaleProp) {
-        scaleProp.expression = autoArBuildExpression("scale", AUTO_AR_LANDSCAPE, AUTO_AR_PORTRAIT);
+        const scaleExpr = autoArBuildExpression("scale", AUTO_AR_LANDSCAPE, AUTO_AR_PORTRAIT);
+        scaleProp.expression = scaleExpr;
         scaleProp.expressionEnabled = true;
+        // The slot above is Scale HEIGHT. With Uniform Scale ticked (the
+        // default, and what the rig assumes) Width follows it and one
+        // expression scales uniformly -- exactly the behaviour every station
+        // has had. With it UNticked, Width is independent, and driving height
+        // alone would stretch the layer. Drive both so an unticked checkbox
+        // produces uniform scaling rather than a visibly wrong rig; before
+        // this the same case just silently did nothing at all.
+        const uniform = autoArTransformParam(transformFx, "ADBE Geometry2-0011", ["Uniform Scale"]);
+        // Truthiness, not `!== 0`: an AE checkbox param reads back as 1/0 on
+        // current builds, but `false !== 0` is TRUE under strict comparison,
+        // so a boolean would invert this test. `!!` reads both correctly.
+        let isUniform = true;
+        if (uniform) isUniform = !!uniform.value;
+        if (!isUniform) {
+          const widthProp = autoArTransformParam(transformFx, "ADBE Geometry2-0004", ["Scale Width"]);
+          if (widthProp) {
+            widthProp.expression = scaleExpr;
+            widthProp.expressionEnabled = true;
+          }
+        }
+      } else {
+        skipped.push(layer.name + " (Scale)");
       }
     }
     app.endUndoGroup();
+    // A rig that half-applies must never report success. The silent
+    // `if (scaleProp)` skip is precisely how the 26.3 breakage went unnoticed
+    // for months -- every control appeared, position worked, and nothing
+    // anywhere said the scale expression had not been written.
+    if (skipped.length > 0) {
+      return {
+        success: false,
+        error: "Auto AR could not find these Transform parameters, so their expressions were NOT applied: " +
+          skipped.join(", ") + ". Check the Transform effect on those layers.",
+      };
+    }
     return { success: true };
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -5772,25 +5851,105 @@ export const importCustomToolsFromFile = (): Result => {
 // =============================================================================
 // Expressions Bank — team-shared expression snippets, persisted via
 // app.settings (section "XYiToolbox", key "ExpressionsBank").
+//
+// STORAGE IS JSON, NOT DELIMITED TEXT -- and must never go back. The original
+// format packed each entry as `id|name|tag|code|uses|description` and joined
+// entries with "\t", which silently corrupted or DESTROYED any expression
+// whose code contained either delimiter:
+//   * a TAB anywhere in the code (i.e. anything pasted from a real editor)
+//     split one entry into fragments; every fragment failed the `>= 5` parts
+//     test on load and the whole entry was dropped WITHOUT ANY ERROR. This is
+//     the "I saved it, moved page, and it was gone" report from the studio.
+//   * a `|` in the code -- `||` is ordinary expression syntax -- truncated the
+//     code at the first pipe and shifted uses/description into garbage.
+// Neither failure surfaced anywhere: the save reported success, and the loss
+// only appeared on the next load. Same reasoning (and same fix) as
+// saveCustomTools above, which stores an opaque JSON string.
+//
+// AE escapes newlines/tabs in its prefs file as hex ("0A"/"09"), so a JSON
+// blob with embedded newlines round-trips through app.settings intact.
 // =============================================================================
 
-export const expressionsBankLoad = (): Result => {
+// Where the raw pre-JSON value is parked when it turns out to contain
+// fragments the legacy reader can't reassemble. NOT in team.ts's PROFILE_KEYS:
+// it is one machine's recovery scrap, not personalisation, and has no business
+// travelling to a colleague with a profile.
+const EXPRESSIONS_LEGACY_BACKUP_KEY = "ExpressionsBankLegacyRaw";
+
+// Legacy pipe/tab reader, kept ONLY so a store written before the JSON switch
+// still loads (artists have entries under this key -- see CLAUDE.md on never
+// dropping live app.settings data). Lossy by nature; the first save after this
+// migrates whatever survived into JSON. Do not extend it.
+//
+// `dropped` counts fragments that couldn't be read as a record -- i.e. the
+// wreckage of an expression whose code contained a tab. Their TEXT is still
+// present in the raw setting, just unsplittable back into fields with any
+// confidence, so this reports the loss instead of guessing at a reassembly
+// that could hand an artist a silently mangled expression to paste into AE.
+function expressionsBankParseLegacy(raw: string) {
+  const entries: { id: string; name: string; tag: string; code: string; uses: number; description: string }[] = [];
+  let dropped = 0;
+  const lines = raw.split("\t");
+  for (var i = 0; i < lines.length; i++) {
+    if (lines[i].length === 0) continue;
+    var parts = lines[i].split("|");
+    if (parts.length >= 5) {
+      // description (parts[5]) is optional -- entries saved before that field
+      // existed still load fine, just with an empty description.
+      entries.push({
+        id: parts[0],
+        name: parts[1],
+        tag: parts[2],
+        code: parts[3],
+        uses: parseInt(parts[4]) || 0,
+        description: parts.length >= 6 ? parts[5] : "",
+      });
+    } else {
+      dropped++;
+    }
+  }
+  return { entries: entries, dropped: dropped };
+}
+
+// Declared rather than riding on `Result` alone: `legacyDropped` is read by
+// the frontend to warn about a lossy migration, and this file gets NO type
+// checking during a build (tsconfig-build excludes src/jsx entirely -- see
+// CLAUDE.md §6), so the shape is worth writing down where it's returned.
+interface ExpressionsBankLoadResult extends Result {
+  message?: string;
+  /** Legacy-format rows that could not be read back. 0 on a JSON store. */
+  legacyDropped?: number;
+}
+
+export const expressionsBankLoad = (): ExpressionsBankLoadResult => {
   try {
-    const raw = app.settings.getSetting("XYiToolbox", "ExpressionsBank", "");
-    let entries: { id: string; name: string; tag: string; code: string; uses: number; description: string }[] = [];
-    if (raw && raw.length > 0) {
-      const lines = raw.split("\t");
-      for (var i = 0; i < lines.length; i++) {
-        if (lines[i].length === 0) continue;
-        var parts = lines[i].split("|");
-        if (parts.length >= 5) {
-          // description (parts[5]) is optional -- entries saved before this
-          // field existed still load fine, just with an empty description.
-          entries.push({ id: parts[0], name: parts[1], tag: parts[2], code: parts[3], uses: parseInt(parts[4]) || 0, description: parts.length >= 6 ? parts[5] : "" });
+    const raw = app.settings.haveSetting("XYiToolbox", "ExpressionsBank")
+      ? app.settings.getSetting("XYiToolbox", "ExpressionsBank")
+      : "";
+    if (!raw || raw.length === 0) return { success: true, message: "[]" };
+    // We always write a bare JSON array, so the first character identifies the
+    // format. A legacy row starts with an id, never with "[".
+    if (raw.charAt(0) === "[") {
+      // Hand the stored JSON straight back rather than parse-and-restringify:
+      // unknown fields added by a newer panel (origin/author) survive a read
+      // on an older one instead of being silently stripped.
+      return { success: true, message: raw };
+    }
+    const legacy = expressionsBankParseLegacy(raw);
+    if (legacy.dropped > 0) {
+      // Park the original text before the first JSON save overwrites this key
+      // -- the wreckage of a lost expression is still readable in there by
+      // hand. Written once and never overwritten, so a later, more degraded
+      // read can't replace a good backup.
+      try {
+        if (!app.settings.haveSetting("XYiToolbox", EXPRESSIONS_LEGACY_BACKUP_KEY)) {
+          app.settings.saveSetting("XYiToolbox", EXPRESSIONS_LEGACY_BACKUP_KEY, raw);
         }
+      } catch (e2) {
+        // A failed backup must not stop the bank from loading.
       }
     }
-    return { success: true, message: JSON.stringify(entries) };
+    return { success: true, message: JSON.stringify(legacy.entries), legacyDropped: legacy.dropped };
   } catch (e) {
     return { success: false, error: String(e) };
   }
@@ -5798,13 +5957,11 @@ export const expressionsBankLoad = (): Result => {
 
 export const expressionsBankSave = (entriesJson: string): Result => {
   try {
+    // Validate before writing: a malformed payload must not overwrite a good
+    // store with something the next load can't read.
     var entries = JSON.parse(entriesJson);
-    var lines: string[] = [];
-    for (var i = 0; i < entries.length; i++) {
-      var e = entries[i];
-      lines.push([e.id, e.name, e.tag, e.code, String(e.uses || 0), e.description || ""].join("|"));
-    }
-    app.settings.saveSetting("XYiToolbox", "ExpressionsBank", lines.join("\t"));
+    if (!(entries instanceof Array)) return { success: false, error: "Expression data was not a list." };
+    app.settings.saveSetting("XYiToolbox", "ExpressionsBank", JSON.stringify(entries));
     return { success: true };
   } catch (e) {
     return { success: false, error: String(e) };

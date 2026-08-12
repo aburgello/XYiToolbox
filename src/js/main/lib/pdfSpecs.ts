@@ -51,6 +51,10 @@ const TARGET_COLS: TargetCol[] = [
   { key: "soundReq", match: /\bsound\b/i },
   { key: "fileSize", match: /file.{0,20}size/i },
   { key: "bitRate", match: /bit.{0,10}rate/i },
+  // Needed to SPOT SWAPS, not just to report fps: territories regularly put the
+  // frame rate in the bitrate column and vice versa, and you can only tell
+  // which way round it went by reading both.
+  { key: "frameRate", match: /(frame.{0,10}rate|\bfps\b)/i },
   { key: "specificVideo", match: /specific.{0,30}video/i },
 ];
 
@@ -257,6 +261,71 @@ export interface SpecRow {
   // can be tied back to the screen it's for. Informational only: the host's
   // csvLocaliserRun() reads columns 0-3 positionally and never looks at this.
   Site: string;
+  // --- delivery spec, normalised. "" when the PDF didn't say. ---------------
+  // These were being parsed off the PDF and then dropped on the floor, which
+  // is why Delivery's size field has always been typed by hand and why nothing
+  // could check a finished file against what it was supposed to be.
+  /** Target file size in MB (decimal, matching deliver.ts's own maths). */
+  FileSize: string;
+  /** Target/max video bitrate in Mbps. */
+  BitRate: string;
+  /** Frame rate. */
+  Fps: string;
+  /** Human-readable warnings about THIS row, "" when clean. Never auto-corrected
+   *  -- see validateSpecValues. Deliberately not written to the CSV. */
+  Flags: string;
+}
+
+// --- value shapes ----------------------------------------------------------
+// The parser is positional: a cell belongs to whichever column band its centre
+// lands in, and the header is trusted. That is correct behaviour on correct
+// input, but territories fill these tables by hand and routinely put the fps in
+// the bitrate column, the bitrate in the fps column, KB where MB was asked for.
+// So each value is checked against the SHAPE its column claims, and a mismatch
+// is FLAGGED rather than silently moved: a wrong bitrate is a wrong delivery,
+// and a parser that "helpfully" corrected it would hide that.
+const PLAUSIBLE_FPS = [23.976, 24, 25, 29.97, 30, 50, 60];
+
+function looksLikeFps(n: number): boolean {
+  for (const f of PLAUSIBLE_FPS) {
+    if (Math.abs(n - f) < 0.05) return true;
+  }
+  return false;
+}
+
+/** First number in a string, or null. */
+function firstNumber(v: string): number | null {
+  const m = String(v || "").match(/\d+(?:[.,]\d+)?/);
+  if (!m) return null;
+  const n = parseFloat(m[0].replace(",", "."));
+  return isNaN(n) ? null : n;
+}
+
+/** -> MB. Decimal (1 MB = 1000 KB), matching deliver.ts's own size maths. */
+function normaliseFileSize(v: string): { mb: number | null; note: string } {
+  const raw = String(v || "").trim();
+  if (!raw) return { mb: null, note: "" };
+  const n = firstNumber(raw);
+  if (n === null) return { mb: null, note: "" };
+  if (/\bg(b|ig)/i.test(raw)) return { mb: n * 1000, note: "" };
+  if (/\bk(b|ilo)/i.test(raw)) return { mb: n / 1000, note: "" };
+  if (/\bm(b|eg)/i.test(raw)) return { mb: n, note: "" };
+  // No unit. A bare number in the thousands is almost certainly KB, but
+  // "almost certainly" is not good enough to convert silently.
+  if (n >= 1000) return { mb: n, note: `file size "${raw}" has no unit — KB?` };
+  return { mb: n, note: "" };
+}
+
+/** -> Mbps. */
+function normaliseBitrate(v: string): { mbps: number | null; note: string } {
+  const raw = String(v || "").trim();
+  if (!raw) return { mbps: null, note: "" };
+  const n = firstNumber(raw);
+  if (n === null) return { mbps: null, note: "" };
+  if (/\bk(b|ilo)/i.test(raw)) return { mbps: n / 1000, note: "" };
+  if (/\bm(b|eg)/i.test(raw)) return { mbps: n, note: "" };
+  if (n >= 1000) return { mbps: n / 1000, note: `bitrate "${raw}" read as kbps` };
+  return { mbps: n, note: "" };
 }
 
 // Mirrors the website CsvPreviewModal's formattedData: keep only rows that
@@ -282,6 +351,12 @@ export function reshapeSpecs(rawSpecs: RawSpec[], territory: string): SpecRow[] 
       if (m) duration = m[0];
     }
 
+    const fs = normaliseFileSize(String(row.fileSize || ""));
+    const br = normaliseBitrate(String(row.bitRate || ""));
+    const fpsNum = firstNumber(String(row.frameRate || ""));
+
+    const trim = (n: number) => String(Math.round(n * 1000) / 1000);
+
     return {
       Artwork: artwork,
       Campaign: row.campaignSelection ? String(row.campaignSelection).trim() : "",
@@ -289,6 +364,11 @@ export function reshapeSpecs(rawSpecs: RawSpec[], territory: string): SpecRow[] 
       Duration: duration,
       Country: territory || "UNKNOWN",
       Site: row.mediaSiteName ? String(row.mediaSiteName).replace(/\s+/g, " ").trim() : "",
+      FileSize: fs.mb === null ? "" : trim(fs.mb),
+      BitRate: br.mbps === null ? "" : trim(br.mbps),
+      Fps: fpsNum === null ? "" : trim(fpsNum),
+      // Filled in below, once the row exists to be checked.
+      Flags: "",
     };
   });
 
@@ -303,17 +383,78 @@ export function reshapeSpecs(rawSpecs: RawSpec[], territory: string): SpecRow[] 
   });
   const dominant = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
 
-  return mapped.map((r) => ({ ...r, Campaign: r.Campaign || dominant || "UNKNOWN" }));
+  return mapped.map((r) => {
+    const withCampaign = { ...r, Campaign: r.Campaign || dominant || "UNKNOWN" };
+    return { ...withCampaign, Flags: specRowWarnings(withCampaign).join(" · ") };
+  });
+}
+
+/**
+ * Warnings about a row's delivery spec. PURE, and computed from the row as it
+ * stands -- so the panel can re-run it on an EDITED row and a warning simply
+ * disappears once someone corrects the value it was complaining about.
+ *
+ * That is the whole design: these values come off PDFs that territories fill in
+ * by hand, so nothing here ever rewrites a value, blocks a run, or excludes a
+ * row. It points at what looks wrong and gets out of the way. The person
+ * looking at the table is the authority, not the parser.
+ */
+export function specRowWarnings(row: SpecRow): string[] {
+  const notes: string[] = [];
+  const size = firstNumber(row.FileSize);
+  const bitrate = firstNumber(row.BitRate);
+  const fps = firstNumber(row.Fps);
+  const secs = firstNumber(row.Duration);
+
+  const fpsLooksWrong = fps !== null && fps >= 1 && !looksLikeFps(fps);
+
+  // The classic swap: a frame rate sitting in the bitrate column. Only called
+  // out when the fps column ISN'T already holding a sensible frame rate --
+  // otherwise a genuine 25 Mbps beside a genuine 25 fps cries wolf on every row.
+  // Only suspect a swap when there IS a frame-rate column holding something
+  // wrong. Real data killed the looser version: Italy's specs PDF has no fps
+  // column at all and a bitrate of 30 on every row -- a perfectly ordinary
+  // 30 Mbps -- and the old rule flagged all 12. With no fps column there is
+  // no swap to suspect, and a checker that fires on every row gets ignored
+  // within a day.
+  if (bitrate !== null && looksLikeFps(bitrate) && fps !== null && fpsLooksWrong) {
+    notes.push(`bitrate reads "${row.BitRate}", which looks like a frame rate`);
+  }
+  if (fpsLooksWrong) {
+    notes.push(`frame rate "${row.Fps}" isn't one we use`);
+  }
+  // A bare four-figure "size" is almost certainly KB -- but "almost certainly"
+  // is not enough to convert on someone's behalf.
+  if (size !== null && size >= 1000) {
+    notes.push(`file size ${row.FileSize} looks like KB, not MB`);
+    return notes; // the cross-check below would just restate this one
+  }
+  if (size !== null && bitrate !== null && secs && secs > 0) {
+    const implied = (size * 8) / secs;
+    if (implied > 0 && (bitrate > implied * 2.5 || bitrate < implied / 2.5)) {
+      notes.push(
+        `${bitrate}Mbps and ${size}MB over ${secs}s disagree ` +
+        `(the size implies ~${implied.toFixed(1)}Mbps)`
+      );
+    }
+  }
+  return notes;
 }
 
 // ─── public: build the [METADATA]/CSV text csvLocaliserRun() parses ───────────
 
-// Site is deliberately LAST: csvLocaliserRun() splits each row on commas and
-// reads texLoc[0..3] positionally, so anything appended after Country is
-// carried along for the human reading the CSV without shifting a field the
-// host relies on (a comma inside a site name only ever adds a trailing,
-// ignored element for the same reason).
-const CSV_HEADERS: (keyof SpecRow)[] = ["Artwork", "Campaign", "Size", "Duration", "Country", "Site"];
+// APPEND-ONLY BEYOND COUNTRY. csvLocaliserRun() splits each row on commas and
+// reads texLoc[0..3] positionally, so Artwork/Campaign/Size/Duration must keep
+// their index. Everything after Country is carried along for the human reading
+// the CSV and ignored by the host (a comma inside a site name only ever adds a
+// trailing, ignored element for the same reason). Add new columns at the END.
+//
+// Flags is deliberately NOT here: it's a warning for the person looking at the
+// specs table, not data for the localiser to consume.
+const CSV_HEADERS: (keyof SpecRow)[] = [
+  "Artwork", "Campaign", "Size", "Duration", "Country", "Site",
+  "FileSize", "BitRate", "Fps",
+];
 
 // csvLocaliserRun() strips quotes before splitting on commas, so a quoted
 // comma would still split a row — commas and newlines are replaced with a

@@ -6747,3 +6747,260 @@ excluded for campaign+duration, and `MOVEOVER` confirmed NOT to false-positive
 on the OV check. **The handoff has not been exercised in a running panel** —
 the round trip (modal → navigate → builder prefill → territory resolution) is
 the part to try first.
+
+## Expressions Bank: the delimited store was eating expressions (2026-08-11)
+
+**The report.** A colleague saved an expression, moved to another page in
+the panel, came back, and it was gone. Reproduced from the storage code
+before ever opening AE.
+
+`expressionsBankSave` packed each entry as
+`id|name|tag|code|uses|description` and joined entries with `\t`, into
+`app.settings` section `XYiToolbox`, key `ExpressionsBank`. Both delimiters
+occur in ordinary expression code:
+
+- **A TAB anywhere in the code** — i.e. anything pasted out of a real editor
+  — split one record into fragments. Every fragment failed the loader's
+  `parts.length >= 5` test and was skipped by a bare `continue`. The entry
+  vanished **with no error at either end**: the save reported success, and
+  the loss only showed on the next load. This is the reported bug.
+- **A `|` in the code** — `||` is ordinary expression syntax — truncated the
+  code at the first pipe and shifted `uses`/`description` into garbage. The
+  row still appeared, with silently wrong code.
+
+Verified by transcribing both functions into node and round-tripping four
+entries: a `||` one came back truncated, a tab-indented one and a `|` in a
+name were dropped entirely, and a fragment of the pipe-named row loaded as
+a bogus extra entry.
+
+It compounded through team sync: `teamSyncShared` does
+`loadLocalExpressions()` → push shared → `expressionsBankSave(...)`. Under
+the old format the load already dropped the tabbed entry, so the re-save
+**permanently deleted it from the store**.
+
+**AE prefs were never the problem** — worth knowing, since that was the
+first suspicion. AE escapes newlines and tabs in its prefs file as hex
+(`"0A"`, `"09"`; confirmed by reading `Adobe After Effects 26.2 Prefs.txt`),
+so multi-line code survives `app.settings` fine. The delimiters were ours.
+
+**Fix: the store is JSON**, same as `saveCustomTools` right above it.
+`expressionsBankLoad` picks format by `raw.charAt(0) === "["` and hands
+stored JSON straight back without re-stringifying, so fields a newer panel
+adds survive a read by an older one. Legacy pipe/tab values still parse via
+`expressionsBankParseLegacy` (do not extend it), and `expressionsBankSave`
+validates `instanceof Array` before writing so a malformed payload can't
+overwrite a good store.
+
+**RULE, now in CLAUDE.md: never store user-authored text in a delimited
+`app.settings` value.** There is no separator that expression code, a script
+body, or a filename can't contain. JSON or nothing.
+
+**Recovering what was already lost.** The wreckage is still in the raw
+setting — the text was never deleted, just unsplittable. Reassembly is
+ambiguous (a fragment boundary can't be told from a pipe inside code), and
+handing an artist a silently mis-joined expression to paste into AE is worse
+than telling them it's gone. So the legacy parser **counts** unreadable
+fragments, `expressionsBankLoad` copies the original raw string to
+`ExpressionsBankLegacyRaw` once (never overwritten, deliberately NOT in
+`PROFILE_KEYS` — it's one machine's scrap, not personalisation) before the
+first JSON save clobbers the key, and the panel shows a red status naming
+the count and where to dig.
+
+**`verifyStored` on every save.** After persisting, the panel reads the
+store back and confirms the entry is there with matching name and code; a
+mismatch reports an error instead of "Expression saved." The format is safe
+now, but a save that can't be read back must never again pass for a
+successful one.
+
+## Expressions Bank UI: sectioned by provenance (2026-08-11)
+
+The other half of "couldn't retrieve it". The list was flat and sorted by
+`uses` descending, so a just-saved entry (uses 0) landed at the bottom of 21
+rows, visually identical to the 20 shipped templates. Even when storage
+worked, the artist couldn't find their own expression.
+
+- **`origin: "builtin" | "mine" | "team"` is a stored field, not a guess.**
+  `BUILT_IN_ENTRIES` (renamed from `MOCK_ENTRIES` — it is shipped content,
+  not mock data) carry `builtin`; `team.ts` stamps `team` + `author` on
+  everything `teamSyncShared` pulls; the editor stamps `mine`. Rows saved
+  before the field existed are inferred once on load: **name matches a
+  shipped template ⇒ builtin, else mine** — a template only ever reaches the
+  store by being edited, so the name match is sound.
+- **Sections: My Expressions / Team Library / Built-in**, collapsible, with
+  counts. "My Expressions" renders **even when empty** — an absent section
+  reads as lost data; an empty one with "Nothing saved yet" doesn't. Built-in
+  auto-collapses only when the artist already has rows of their own.
+- **A search force-expands every section** and disables the headers. A match
+  hidden behind a folded header is the same bug in a new costume.
+- **Group by Source / Tag** (SegmentedToggle, `name="eb-group"` so it can't
+  share a Framer `layoutId`). In Tag mode sections are mixed, so each row
+  gains an origin dot; in Source mode the section already says it.
+- Origin also rides on each row's **left border colour** — mine takes the
+  category tint, team `#8fa8ff`, built-in a deliberately dead `#3f3f3f`.
+- **Just-saved rows get a 4s ring and `scrollIntoView`**, and saving
+  force-expands the section it landed in. Claiming "saved" about a row the
+  artist can't see is what started this.
+- **Built-in rows no longer offer Remove.** The load merge re-adds any
+  shipped template missing from the store, so deleting one only appeared to
+  work until the next visit. Better no button than a button that lies.
+- The row name is wrapped in **`<Tooltip grow>`** — the sanctioned way to let
+  a stretch-sized element truncate (plain `<Tooltip>` pins it to
+  `flex: 0 0 auto`). This replaced the old `.eb-entry-header > span:nth-child(2)`
+  positional hack, which the new header structure would have broken.
+
+Published as `20260811`. **Not yet seen rendered** — the browser preview
+wouldn't open (Chrome extension errored on localhost) and browser preview
+never runs ExtendScript anyway, so both the storage fix and the layout still
+want a real-AE pass.
+
+## Auto AR silently skipped the Scale expression on AE 26.3 (2026-08-11)
+
+**The report.** One artist ran Auto AR and got a rig that looked right —
+all 24 controls, anchor synced, Position expression live — but the effect
+Transform's Scale had no expression. Everyone else was fine. Predates the
+CEP port: the same fault is in the original `XYi_AutAR.jsx`, so it was never
+ours.
+
+**Cause: a display-name lookup that AE renamed in a point release.**
+
+```js
+var scaleProp = transformFx.property("Scale") || transformFx.property("ADBE Transform-Scale");
+if (scaleProp) { ... }        // ← null on 26.3, skipped without a word
+```
+
+The Transform effect's uniform-scale slot reports its name as **`"Scale"` on
+AE ≤26.2** and **`"Scale Height"` on 26.3+**. His station was `26.3x87`; the
+rest of the studio was on 26.2. Nothing about his machine, project or layers
+differed — only the AE build.
+
+The `|| transformFx.property("ADBE Transform-Scale")` fallback was dead code
+and always had been: that's the **layer** transform's matchName. The effect's
+params are `ADBE Geometry2-*`. Our port had dropped the fallback entirely,
+which changed nothing.
+
+**Two wrong diagnoses before the right one, both plausible, both killed by
+data.** First: "Uniform Scale must be unticked, since the plugin binary ships
+both a `Scale` and a `Scale Height` string." Second: "`autoArAddControl`
+reuses an existing control without checking its type, so his `[L] … Scale`
+sliders must be Point Controls." **The lesson is the probe, not the
+guesses** — three causes produced an identical user description and only a
+read of the live property could separate them.
+
+`scripts/diagnostics/auto-ar-probe.jsx` is kept for this. Read-only; on the
+selected layer it dumps every effect with its matchName, which effect
+`property("Transform")` actually resolves to, every Transform param with
+matchName + `canSetExpression` + expression length + `expressionEnabled` +
+`expressionError`, both spellings of the scale lookup, and each `[L]/[P] …
+Scale` control marked ok / MISSING / WRONGTYPE with a usable-points count.
+It settled the question in one run:
+
+```
+Uniform Scale            = 1        (ticked -- kills theory 1)
+property('Scale')        -> NULL
+property('Scale Height') -> FOUND
+scale expression         = NONE
+--> usable scale points: 12, missing: 0, wrong type: 0   (kills theory 2)
+    3. 'Uniform Scale'  [ADBE Geometry2-0011]
+    4. 'Scale Height'   [ADBE Geometry2-0003]
+    5. 'Scale Width'    [ADBE Geometry2-0004]
+```
+
+**Fix.** `autoArTransformParam(transformFx, matchName, displayNames[])`
+resolves by matchName first (`-0001` anchor, `-0002` position, `-0003` scale
+height, `-0004` scale width, `-0011` uniform), falling back to display names
+only in case the effect the rig latched onto isn't `ADBE Geometry2` at all —
+it is matched by the *name* "Transform", so it can pick up a renamed effect.
+
+Two behaviour changes shipped with it:
+
+- **A half-applied rig now returns `success: false`** naming the layer and
+  parameter. Every silent `continue` in `autoAspectRatio` (no Effects group,
+  no Transform effect, unresolved Position, unresolved Scale) records into a
+  `skipped` list that is reported. The swallowed skip is what let a broken
+  rig look correct for months — the rename was only half the bug.
+- **Uniform Scale off now drives Scale Width too.** The expression lands on
+  Scale Height; with Uniform Scale ticked (the default the rig assumes) Width
+  follows and one expression scales uniformly, which is what every station
+  has always had. Unticked, Width is independent and driving height alone
+  would stretch the layer — so both get it. That case previously did nothing
+  at all, so this can't regress anyone.
+
+**Rule added to CLAUDE.md §2: never fetch an effect parameter by display
+name — matchNames are stable across versions AND languages, display names
+are neither.**
+
+## Master check: the panel's first out-of-process dependency (2026-08-11)
+
+**What.** A "Run check" button under the masters list in OV Library reads every
+master `.aep` in the selected campaign — without opening After Effects — and
+opens an HTML sign-off report in the browser.
+
+**How, and why it's shaped this way.**
+
+- **Python, out of process.** `py-aep` parses the `.aep` RIFX binary directly.
+  ExtendScript cannot read those bytes, and asking AE to open 100 masters just
+  to look at them is the exact thing this toolbox exists to prevent. So the
+  work happens in a spawned process (`lib/masterCheck.ts`) and the panel only
+  launches it. `child_process` was already exported from `lib/cep/node.ts` and
+  CEP already runs with `--enable-nodejs`, so this needed no new panel wiring.
+- **Nothing ships in the ZXP.** py-aep + fontTools + uharfbuzz is ~29 MB, and
+  all of it lives in a venv under the user's home. Measured: the bundle is
+  2.80 MB before and after. Bundling a Python runtime instead would have added
+  ~50 MB to the installer.
+- **No mount-time probe, on purpose.** `isAvailable()` is called on CLICK, never
+  in a `useEffect`. A probe on mount would put a process spawn on every OV
+  Library open, for a button most sessions never press.
+- **The report opens in a BROWSER, not in the panel.** Direct studio request:
+  it's a wide table read for sign-off, and the panel is a narrow dock. Anything
+  condensed enough to fit in the panel would be unreadable.
+- **The report is written LOCALLY** (`~/Library/Application Support/XYi/
+  aep-tools/reports/<campaign>/`), never into the masters tree. Partly because
+  that tree is sacred; partly because a NAS folder one artist can write to and
+  another can't would fail unevenly.
+- **A machine without the venv is a NORMAL state, not an error.** It gets the
+  inline note (which stays put and names the fix) and deliberately NOT a toast —
+  a toast would read as a failure and then vanish before it could be acted on.
+  Same rule the NAS features already follow.
+
+**The checks are the point, and they were unit-tested against synthetic
+failures rather than trusted because a real run came back clean:**
+
+| Level | Check |
+|---|---|
+| Fix | main comp size != the size in the filename |
+| Fix | main comp duration != the filename's duration (±0.5s — a 10s comp at 23.976 really runs 10.010) |
+| Fix | any footage item flagged missing |
+| Fix | no comp named after the file |
+| Check | frame rate differs from the rest of that creative |
+| Check | a layer most of the creative's masters have and this one doesn't |
+
+A filename that parses under NEITHER convention has its size/duration checks
+**skipped, not guessed**, and is listed separately. Both conventions are handled
+(size with or without `px`, duration `s` or `sec`) — the same rule every other
+master-filename parser in this codebase follows.
+
+**Two things the report deliberately does NOT do.** It does not call a layer
+name "missing" when it appears in roughly half the masters — that is an
+orientation or duration variant (`ART` vs `ART_Vertical`), reported but not
+flagged. And it does not count reference/guide frames named after a master file
+as differences; they can never line up, so they are kept out of the verdict but
+stay visible in the matrix, because a master carrying *another* master's guide
+frame is worth spotting.
+
+An earlier draft of the summary said "every shared layer name appears in all 4
+masters" for a creative that had seven 2-of-4 splits. **A QC report that
+overstates is worse than no report** — it now separates "no near-misses" from
+"everything matches".
+
+**Speed.** Files are read 8 at a time (the NAS is the limit, not the 24 cores)
+and a cache keyed on size + mtime means a re-run only reads what changed.
+Measured on 25 masters: 30s → 5s cold, 0.2s warm, ~1s after re-saving one
+master. Cached output is byte-identical to a `--no-cache` run; that was
+verified, not assumed.
+
+**The script lives on the NAS, not in this repo** (`Team_Folder/aep-tools/` is
+the intended home; `lib/masterCheck.ts` checks there first). It also cannot be
+double-clicked from the share: `/Volumes/newmedia` is mounted `nodev,nosuid`
+and macOS refuses to exec from it — the standalone `Layer Report.command`
+launcher has to be copied local first, which is why it resolves its payload
+from a candidate list rather than `dirname $0`.

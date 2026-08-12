@@ -51,7 +51,7 @@ import Dropdown from "../Dropdown";
 import { alertDialog, confirmDialog, promptDialog } from "../Dialog";
 import { showMcItReport, type McReport } from "../McItReportModal";
 import { showLocGenReport, type LocGenReport, type LocGenRow } from "../LocGenReportModal";
-import type { SpecRow } from "../lib/pdfSpecs";
+import { specRowWarnings, type SpecRow } from "../lib/pdfSpecs";
 
 // One row of the team's shared campaign board (team.ts's TeamCampaignRow).
 // Only what this picker needs: the name, and who retired it if anyone.
@@ -114,6 +114,11 @@ interface BuildRow {
     artwork: string; // DOOH | DINTH | FOH
     creative: string;
     custom: string;
+    // Media site name, free text and OPTIONAL -- a deliverable with no site is
+    // normal (that is what the whole pre-Site era of masters is), so this never
+    // gates a row from being "complete". Typed as the studio writes it and
+    // sanitised host-side by csvLocSanitiseSiteToken, which keeps the case.
+    site: string;
     width: string;
     height: string;
     duration: string;
@@ -779,7 +784,7 @@ const CSVLocaliserTool = () => {
     const [buildTerritories, setBuildTerritories] = useState<string[]>([]);
     const [buildCreatives, setBuildCreatives] = useState<string[]>([]);
     const [buildRows, setBuildRows] = useState<BuildRow[]>([
-        { id: 1, artwork: "DOOH", creative: "", custom: "", width: "", height: "", duration: "" },
+        { id: 1, artwork: "DOOH", creative: "", custom: "", site: "", width: "", height: "", duration: "" },
     ]);
     const buildRowId = useRef(2);
     // A batch handed over from the Active Jobs modal ("Send N rows to
@@ -802,6 +807,10 @@ const CSVLocaliserTool = () => {
                 // masters folder listing.
                 creative: CUSTOM_CREATIVE,
                 custom: r.creative,
+                // Straight from the subtask name's own site token, in the case
+                // Wrike carries it -- that case is the point (see
+                // csvLocSanitiseSiteToken), so nothing here re-cases it.
+                site: r.site || "",
                 width: r.width,
                 height: r.height,
                 duration: r.duration,
@@ -871,7 +880,7 @@ const CSVLocaliserTool = () => {
     const updateBuildRow = (id: number, patch: Partial<BuildRow>) =>
         setBuildRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
     const addBuildRow = () =>
-        setBuildRows((rs) => [...rs, { id: buildRowId.current++, artwork: "DOOH", creative: "", custom: "", width: "", height: "", duration: "" }]);
+        setBuildRows((rs) => [...rs, { id: buildRowId.current++, artwork: "DOOH", creative: "", custom: "", site: "", width: "", height: "", duration: "" }]);
     const removeBuildRow = (id: number) =>
         setBuildRows((rs) => (rs.length > 1 ? rs.filter((r) => r.id !== id) : rs));
 
@@ -933,7 +942,19 @@ const CSVLocaliserTool = () => {
             Size: `${parseInt(r.width, 10)}x${parseInt(r.height, 10)}`,
             Duration: String(parseInt(r.duration, 10)),
             Country: buildTerritory,
-            Site: "", // hand-built rows have no PDF to read a site name from
+            // Optional: blank on a hand-typed row for a deliverable with no
+            // media site, filled from the Wrike subtask on a handed-over one.
+            // buildLocaliserCsv puts it in the CSV's trailing Site column, and
+            // an empty one produces a filename with no site token at all --
+            // exactly the pre-Site behaviour.
+            Site: r.site.trim(),
+            // Build-a-batch is hand-typed, so there is no PDF to read a target
+            // size, bitrate or frame rate off. Left blank rather than defaulted:
+            // an invented delivery spec is worse than an absent one.
+            FileSize: "",
+            BitRate: "",
+            Fps: "",
+            Flags: "",
         }));
         if (!rows.length) { setNotice("Add at least one complete row (creative, width, height, duration)."); return; }
 
@@ -1925,7 +1946,7 @@ const CSVLocaliserTool = () => {
                                                                             shifting every label one column left of the
                                                                             data it names. */}
                                                                         <th className="specs-row-master-col" />
-                                                                        <th>Artwork</th><th>Campaign</th><th>Site</th><th>Size</th><th>Dur</th>
+                                                                        <th>Artwork</th><th>Campaign</th><th className="specs-row-warn-col" /><th>Site</th><th>Size</th><th>Dur</th>
                                                                         {/* Duration multiple — sits next to Dur because that
                                                                             is what it modifies. Header is a bare × so the
                                                                             column stays narrow. */}
@@ -1937,6 +1958,7 @@ const CSVLocaliserTool = () => {
                                                                     {b.rows.map((r, i) => {
                                                                         const excluded = isRowExcluded(key, i);
                                                                         const eff = effectiveRow(key, i, r);
+                                                                        const specWarnings = specRowWarnings(eff);
                                                                         const edited = isRowEdited(key, i);
                                                                         // Match on the EFFECTIVE row: correcting a
                                                                         // mis-parsed size in place should immediately
@@ -2052,6 +2074,20 @@ const CSVLocaliserTool = () => {
                                                                                 {/* MEDIA SITE NAME from the PDF — informational (the host
                                                                                     never reads it), editable so a mis-parsed name can be
                                                                                     tidied like every other cell. */}
+                                                                                {/* Delivery-spec warning. ADVISORY ONLY -- changes no
+                                                                                    value, excludes no row, blocks no run. Computed from
+                                                                                    `eff`, i.e. the row INCLUDING manual edits, so fixing a
+                                                                                    cell makes its warning disappear on the spot. These
+                                                                                    numbers come off PDFs territories fill in by hand; the
+                                                                                    person reading the table is the authority here, not the
+                                                                                    parser. */}
+                                                                                <td className="specs-cell-warn">
+                                                                                    {specWarnings.length > 0 && (
+                                                                                        <Tooltip text={specWarnings.join(" · ") + " — correct any cell to clear this"}>
+                                                                                            <span className="specs-spec-warn" aria-label="Delivery spec looks wrong">▲</span>
+                                                                                        </Tooltip>
+                                                                                    )}
+                                                                                </td>
                                                                                 <td className="specs-cell-edit">
                                                                                     <Tooltip text={eff.Site || "No MEDIA SITE NAME found in the PDF for this row"}>
                                                                                         <input
@@ -2286,7 +2322,7 @@ const CSVLocaliserTool = () => {
                                     specs table's own — the icon says what it is, and a
                                     label here would crowd a 20px column. */}
                                 <span />
-                                <span>Type</span><span>Creative</span><span>Width</span><span>Height</span><span>Dur</span><span>×</span><span />
+                                <span>Type</span><span>Creative</span><span>Site</span><span>Width</span><span>Height</span><span>Dur</span><span>×</span><span />
                             </div>
                             {buildRows.map((r) => (
                                 <div className="specs-build-row" key={r.id}>
@@ -2376,6 +2412,18 @@ const CSVLocaliserTool = () => {
                                             emptyMessage="No creatives scanned — pick the masters folder, or type one."
                                         />
                                     )}
+                                    {/* Optional, and deliberately NOT wrapped in a Tooltip:
+                                        its span carries flex:0 0 auto, which would defeat this
+                                        grid cell's sizing (see the note in CLAUDE.md). */}
+                                    <input
+                                        className="specs-build-site"
+                                        type="text"
+                                        placeholder="Site"
+                                        aria-label="Media site name (optional)"
+                                        title="Media site name, as written in the Wrike subtask or specs PDF. Optional — leave blank for a deliverable with no site. The case you type is the case in the filename."
+                                        value={r.site}
+                                        onChange={(e) => updateBuildRow(r.id, { site: e.target.value })}
+                                    />
                                     <input type="number" min="1" placeholder="W" value={r.width} onChange={(e) => updateBuildRow(r.id, { width: e.target.value })} />
                                     <input type="number" min="1" placeholder="H" value={r.height} onChange={(e) => updateBuildRow(r.id, { height: e.target.value })} />
                                     <input type="number" min="1" placeholder="sec" value={r.duration} onChange={(e) => updateBuildRow(r.id, { duration: e.target.value })} />

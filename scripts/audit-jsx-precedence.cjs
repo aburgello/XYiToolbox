@@ -1,8 +1,16 @@
 // =============================================================================
 // scripts/audit-jsx-precedence.cjs
 // -----------------------------------------------------------------------------
-// Guards against the ExtendScript logical-precedence engine bug that broke
-// MC It! (July 2026): ExtendScript evaluates `A || B && C` LEFT-TO-RIGHT as
+// Guards two ExtendScript parser/engine bugs, both of which survive
+// parenthesised source because the emitter strips redundant parens:
+//
+//   1. logical precedence (below) -- broke MC It! in July 2026
+//   2. a ternary nested in another ternary's CONSEQUENT -- broke the whole
+//      panel on 2026-08-10 ("SyntaxError: Expected: :"); see rule 2 in
+//      auditFile().
+//
+// Rule 1 -- the logical-precedence engine bug. ExtendScript evaluates
+// `A || B && C` LEFT-TO-RIGHT as
 // `(A || B) && C`, not standard JS's `A || (B && C)`. Writing parens in the
 // TS source does NOT protect you -- Babel strips redundant parens on emit, so
 // `A || (B && C)` still compiles to the broken bare form. The only safe fix
@@ -69,7 +77,28 @@ function auditFile(file) {
       node.right.type === "LogicalExpression" &&
       node.right.operator === "&&"
     ) {
-      hits.push(node);
+      hits.push({ node, rule: "|| ... &&" });
+    }
+    // Rule 2: a ternary nested in another ternary's CONSEQUENT.
+    //
+    // Emits as `a ? b ? c : d : e`, which the ExtendScript parser cannot
+    // resolve -- it fails the WHOLE bundle with "SyntaxError: Expected: :",
+    // so every tool in the panel dies at load. Shipped on 2026-08-10 from one
+    // line in shared.ts's accent folder and broke the studio build.
+    //
+    // Same trap as rule 1: writing `a ? (b ? c : d) : e` does not help,
+    // because esbuild strips the redundant parens on emit. Restructure into
+    // if/else statements instead.
+    //
+    // A ternary CHAIN (`a ? x : b ? y : z`, nested in the ALTERNATE) is a
+    // different AST shape, parses fine in ExtendScript, and is used widely in
+    // this codebase -- so it is deliberately NOT flagged.
+    if (
+      node.type === "ConditionalExpression" &&
+      node.consequent &&
+      node.consequent.type === "ConditionalExpression"
+    ) {
+      hits.push({ node, rule: "nested ternary" });
     }
     for (const key of Object.keys(node)) {
       if (key === "loc") continue;
@@ -83,8 +112,9 @@ function auditFile(file) {
   })(ast.program);
 
   for (const h of hits) {
-    const snippet = src.slice(h.start, Math.min(h.end, h.start + 160)).replace(/\s+/g, " ");
-    console.log(path.relative(repoRoot, file) + ":" + h.loc.start.line + "  " + snippet);
+    const n = h.node;
+    const snippet = src.slice(n.start, Math.min(n.end, n.start + 160)).replace(/\s+/g, " ");
+    console.log(path.relative(repoRoot, file) + ":" + n.loc.start.line + "  [" + h.rule + "]  " + snippet);
   }
   return hits.length;
 }
@@ -94,12 +124,13 @@ let total = 0;
 for (const t of targets) total += auditFile(t);
 
 if (total === 0) {
-  console.log("CLEAN — no ExtendScript-unsafe `|| ... &&` expressions in " + targets.length + " file(s).");
+  console.log("CLEAN — no ExtendScript-unsafe `|| ... &&` or nested-ternary expressions in " + targets.length + " file(s).");
 } else {
   console.log(
     total +
-      " dangerous expression(s) found. Restructure each into separate statements " +
-      "(see mcIt()'s isSameType in src/jsx/aeft/tools.ts) — parentheses alone do NOT survive Babel."
+      " dangerous expression(s) found. Restructure each into separate statements or " +
+      "if/else (see mcIt()'s isSameType and shared.ts's foldNameAccents) — parentheses " +
+      "alone do NOT survive emit, for either rule."
   );
   process.exit(1);
 }

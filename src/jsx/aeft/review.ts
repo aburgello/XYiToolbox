@@ -651,8 +651,18 @@ export const reviewMatchToMaster = (mastersRoot: string, itemsJson: string): Res
       var dotIdx = fileName.lastIndexOf(".");
       var stem = dotIdx >= 0 ? fileName.substring(0, dotIdx) : fileName;
 
-      // Extract size: _<W>x<H>_  (same pattern parseMasterFilename uses)
-      var sizeMatch = stem.match(/_(\d+)x(\d+)_/);
+      // Extract size: _<W>x<H>_ or _<W>x<H>px_  -- BOTH conventions, same as
+      // parseMasterFilename above.
+      //
+      // The "px" was missing here until 2026-08-10, and the failure was
+      // completely silent. Masters written before 2026-08 say "_1920x858_" and
+      // matched; everything written since says "_1920x1080px_" and did not, so
+      // `size` came out "". pickBestMasterFromIndex then divides ""/undefined
+      // into NaN, calls every master "Portrait", and its `diff <= min` accept
+      // test is false for NaN -- so NO master ever scored, no .mp4 was found,
+      // and no comparison comp was built. A campaign on the old naming worked
+      // perfectly while a new one silently produced plain review rows.
+      var sizeMatch = stem.match(/_(\d+)x(\d+)(?:px)?_/i);
       var size = sizeMatch ? (sizeMatch[1] + "x" + sizeMatch[2]) : "";
 
       // Extract duration: _<N>sec_ or _<N>s_  (durationMatchesPath handles both)
@@ -673,7 +683,7 @@ export const reviewMatchToMaster = (mastersRoot: string, itemsJson: string): Res
         // Skip tokens that can't possibly be a creative name.
         if (!token) continue;
         if (/^\d+$/.test(token)) continue;                          // all digits
-        if (/^\d+x\d+$/i.test(token)) continue;                     // WxH
+        if (/^\d+x\d+(?:px)?$/i.test(token)) continue;              // WxH, both conventions
         if (/^\d+(sec|s)$/i.test(token)) continue;                  // duration
         if (/^[A-Z]{2}$/.test(token)) continue;                     // territory code
         if (token === "OV") continue;                                // master suffix

@@ -7,7 +7,7 @@
 // =============================================================================
 import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, scanMastersForBestMatch } from "./tools";
 import { makeParentLayerOfAllUnparented, scaleAllCameraZooms } from "./deliver";
-import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, saveLocGenReport, buildDeliverableName, durationForMasterLookup } from "./shared";
+import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, saveLocGenReport, buildDeliverableName, durationForMasterLookup, sanitiseSiteToken, camelCaseToken, camelCaseName } from "./shared";
 import { loadCampaignsRaw, loadLastCampaign as loadOVLastCampaign } from "./review";
 
 
@@ -2219,15 +2219,32 @@ export const nameGeneratorGenerate = (
 
     app.beginUndoGroup("XYi Name Generator");
     let lastName = "";
+    // The site field is free text an artist types, so it is the ONE site input
+    // in the toolbox that can arrive with spaces, accents or a shape the
+    // filename parsers misread ("4x3", "V2", "5s", a bare two-letter name).
+    // Sanitised here, exactly as the CSV path sanitises its column, so all
+    // three writers of a site put the same shape of token in a name.
+    const siteToken = sanitiseSiteToken(site == null ? "" : site);
+    // Same treatment as the CSV path: an artwork name typed with spaces
+    // ("Portal To Paradise") becomes one CamelCase token, and one typed the
+    // studio's way ("PortalToParadise") is left exactly as typed.
+    const campaignToken = camelCaseName(campaign);
+    // Film title is an IDENTIFIER, so it only gets its separators collapsed --
+    // "The Odyssey" -> "TheOdyssey", while a short code stays exactly as the
+    // studio writes it ("FID" must not become "Fid"). Every other tool reads
+    // this token off the matched master's own filename, where it is already in
+    // that form; Name Generator is the one place a human types it, so this is
+    // where it has to be normalised.
+    const titleToken = camelCaseToken(filmTitle);
     for (let i = 0; i < sel.length; i++) {
       const item = sel[i];
       const indo = isInternational ? "INTL" : "DOM";
       const newName = buildDeliverableName({
-        filmTitle: filmTitle,
+        filmTitle: titleToken,
         region: indo,
-        campaign: campaign,
+        campaign: campaignToken,
         artworkType: artworkType,
-        site: site,
+        site: siteToken,
         width: item.width,
         height: item.height,
         duration: String(Math.round(item.duration)),
@@ -2876,112 +2893,33 @@ function csvLocTrim(str: string): string {
   return String(str).replace(/^\s+|\s+$/g, "");
 }
 
-// Latin-1/Latin Extended-A accent folding, keyed by CODE POINT rather than by
-// character literals on purpose: this file compiles down to an ExtendScript
-// .jsx whose source encoding can't be relied on to carry non-ASCII literals
-// intact, so "é" written here could arrive mangled. Code points can't be.
-// Anything not listed (Cyrillic, CJK, emoji) simply gets dropped by
-// csvLocSanitiseSiteToken's A-Z0-9 filter rather than transliterated.
-const CSV_LOC_ACCENT_FOLD: { [code: string]: string } = {
-  "192": "A", "193": "A", "194": "A", "195": "A", "196": "A", "197": "A", "256": "A", "258": "A", "260": "A",
-  "198": "AE",
-  "199": "C", "262": "C", "264": "C", "266": "C", "268": "C",
-  "270": "D", "272": "D",
-  "200": "E", "201": "E", "202": "E", "203": "E", "274": "E", "276": "E", "278": "E", "280": "E", "282": "E",
-  "284": "G", "286": "G", "288": "G", "290": "G",
-  "292": "H", "294": "H",
-  "204": "I", "205": "I", "206": "I", "207": "I", "296": "I", "298": "I", "300": "I", "302": "I", "304": "I",
-  "308": "J",
-  "310": "K",
-  "313": "L", "315": "L", "317": "L", "319": "L", "321": "L",
-  "209": "N", "323": "N", "325": "N", "327": "N",
-  "210": "O", "211": "O", "212": "O", "213": "O", "214": "O", "216": "O", "332": "O", "334": "O", "336": "O",
-  "338": "OE",
-  "340": "R", "342": "R", "344": "R",
-  "346": "S", "348": "S", "350": "S", "352": "S",
-  "354": "T", "356": "T", "358": "T",
-  "217": "U", "218": "U", "219": "U", "220": "U", "360": "U", "362": "U", "364": "U", "366": "U", "368": "U", "370": "U",
-  "372": "W",
-  "221": "Y", "374": "Y", "376": "Y",
-  "377": "Z", "379": "Z", "381": "Z",
-  "223": "SS",
-  "224": "A", "225": "A", "226": "A", "227": "A", "228": "A", "229": "A", "257": "A", "259": "A", "261": "A",
-  "230": "AE",
-  "231": "C", "263": "C", "265": "C", "267": "C", "269": "C",
-  "271": "D", "273": "D",
-  "232": "E", "233": "E", "234": "E", "235": "E", "275": "E", "277": "E", "279": "E", "281": "E", "283": "E",
-  "285": "G", "287": "G", "289": "G", "291": "G",
-  "293": "H", "295": "H",
-  "236": "I", "237": "I", "238": "I", "239": "I", "297": "I", "299": "I", "301": "I", "303": "I", "305": "I",
-  "309": "J",
-  "311": "K",
-  "314": "L", "316": "L", "318": "L", "320": "L", "322": "L",
-  "241": "N", "324": "N", "326": "N", "328": "N",
-  "242": "O", "243": "O", "244": "O", "245": "O", "246": "O", "248": "O", "333": "O", "335": "O", "337": "O",
-  "339": "OE",
-  "341": "R", "343": "R", "345": "R",
-  "347": "S", "349": "S", "351": "S", "353": "S",
-  "355": "T", "357": "T", "359": "T",
-  "249": "U", "250": "U", "251": "U", "252": "U", "361": "U", "363": "U", "365": "U", "367": "U", "369": "U", "371": "U",
-  "373": "W",
-  "253": "Y", "255": "Y", "375": "Y",
-  "378": "Z", "380": "Z", "382": "Z",
-};
-
-// A raw MEDIA SITE NAME off a client PDF ("Gare de l'Est — Quai 3", "Bahnhof
-// Zoo/Süd") is turned into ONE uppercase A-Z0-9 token safe for a filename on
-// any filesystem: accents folded to their base letter, everything else
-// (spaces, punctuation, slashes, dashes, anything non-Latin) dropped rather
-// than replaced -- notably NO underscores, since every downstream tool in this
-// toolbox splits these filenames on "_" and an extra separator inside the site
-// would silently shift their token indices. Capped at 40 chars to keep the
-// already-long generated names inside path limits.
-function csvLocSanitiseSiteToken(raw: string): string {
-  const trimmed = csvLocTrim(raw);
-  if (trimmed === "") return "";
-  let folded = "";
-  for (let i = 0; i < trimmed.length; i++) {
-    const ch = trimmed.charAt(i);
-    const mapped = CSV_LOC_ACCENT_FOLD[String(trimmed.charCodeAt(i))];
-    folded += mapped ? mapped : ch;
+// "Is this deliverable already built?", answered CASE-INSENSITIVELY against
+// what is actually in the output folder. Returns the name on disk, or "".
+//
+// Two reasons it is not `new File(folder + "/" + name).exists`:
+//
+//   1. The output folder is on the studio NAS, where .exists lies about FILES
+//      (it is only trustworthy on a directory). Listing the folder and
+//      comparing names is the pattern the rest of this codebase uses there.
+//   2. Site tokens built before 2026-08-10 are ALL-CAPS -- sanitiseSiteToken
+//      upper-cased everything back then. An exact compare would call those
+//      files "not built", rebuild them under the new CamelCase spelling, and
+//      leave two .aep files for one deliverable in the batch folder.
+//
+// Case is the ONLY thing relaxed. Separators and every other character still
+// have to match exactly: this is the "already built" check, and a false hit
+// here silently drops a deliverable from the batch, which costs far more than
+// a false miss (one re-run).
+function csvLocFindExistingBuild(outputFolder: Folder, wantedName: string): string {
+  const wanted = decode(wantedName).toUpperCase();
+  // No mask: getFiles(mask) is unreliable on the NAS, so filter by hand.
+  const entries = outputFolder.getFiles();
+  if (!entries) return "";
+  for (let i = 0; i < entries.length; i++) {
+    const found = decode(entries[i].name);
+    if (found.toUpperCase() === wanted) return found;
   }
-  const token = csvLocGuardSiteToken(folded.toUpperCase().replace(/[^A-Z0-9]/g, ""));
-  return token.length > 40 ? token.substring(0, 40) : token;
-}
-
-// Three shapes a site name could sanitise into that would be MISREAD by the
-// filename parsers this toolbox already runs over these names -- every one of
-// them takes the FIRST match in the string, and the site token sits ahead of
-// the real size/version/territory tokens, so a collision wins outright:
-//
-//   "4x3"  -> mcItParseFilename's /\d+x\d+/i reads it as the AEP's resolution,
-//             no image candidate passes the resolution filter, and that file's
-//             inline MC It! swap silently does nothing.
-//   "V2"   -> parseFilenameMeta's /(V\d+)/ reads it as the version instead of
-//             the real _V01, and Cheeky DT stamps it onto the Frontcard.
-//   "SW"   -> parseFilenameMeta's /_([A-Z]{2})(?:_|$)/ reads it as the country
-//             code instead of the real one at the end of the name.
-//
-// Each is defused with the smallest edit that breaks the pattern while leaving
-// the name readable, and NOTHING else is touched -- a token with none of these
-// shapes (the overwhelmingly normal case) comes through byte-identical. The
-// hyphen is chosen deliberately: it can't be confused with "_", which every
-// tool here tokenises these filenames on.
-//
-// Not guarded because they already can't collide: /(\d+)s(?:ec)?/ (duration)
-// and /(\d+x\d+)(?:px)?/ (size, in parseFilenameMeta) are both LOWERCASE with
-// no /i, and this token is uppercase by construction.
-function csvLocGuardSiteToken(token: string): string {
-  if (token === "") return "";
-  // Lookahead, not a captured trailing digit: a consuming match would step
-  // past the digit and leave a second "3X2" inside "4X3X2" unguarded.
-  let guarded = token.replace(/(\d)X(?=\d)/g, "$1-X");
-  guarded = guarded.replace(/V(?=\d)/g, "V-");
-  // Only an EXACTLY-two-letter token can be mistaken for a country code
-  // ("N4" and single letters can't match /^[A-Z]{2}$/), so this is the one
-  // case with nothing internal to break -- it gets qualified instead.
-  if (/^[A-Z]{2}$/.test(guarded)) guarded = "SITE" + guarded;
-  return guarded;
+  return "";
 }
 
 // Zero-pads a trailing single digit so "Batch_1"/"France 2"/"Batch1" become
@@ -3508,7 +3446,20 @@ export const csvLocaliserRun = (
       }
 
       const sizeArr = csvLocTrim(texLoc[2]).split("x");
-      const campaign = csvLocTrim(texLoc[1]).toUpperCase();
+      // ARTWORK SELECTION off the specs PDF ("Portal To Paradise"), collapsed
+      // to the studio's own one-word CamelCase spelling for the filename.
+      //
+      // This used to be .toUpperCase(), which threw away the case the artwork
+      // was actually named in -- "PortalToParadise" shipped as
+      // "PORTALTOPARADISE". Word starts are capitalised so a spaced PDF cell
+      // still becomes one token, and an already-CamelCase value is returned
+      // untouched.
+      //
+      // Safe to feed to the master lookup in this form: pickBestMasterFromIndex
+      // canonicalises with mastersCanon (upper-case, alphanumerics only), so
+      // "PortalToParadise", "PORTAL TO PARADISE" and "portal_to_paradise" all
+      // reduce to the same key it matches on.
+      const campaign = camelCaseName(csvLocTrim(texLoc[1]));
       const width = Math.floor(Number(sizeArr[0]));
       const height = Math.floor(Number(sizeArr[1]));
       const size = String(width) + "x" + String(height);
@@ -3522,7 +3473,7 @@ export const csvLocaliserRun = (
       // from the Specs PDF. Optional by design: a hand-built batch, or a CSV
       // pasted from before this column existed, has fewer columns and simply
       // produces no site token, leaving the filename exactly as it was.
-      const siteToken = texLoc.length > 5 ? csvLocSanitiseSiteToken(texLoc[5]) : "";
+      const siteToken = texLoc.length > 5 ? sanitiseSiteToken(texLoc[5]) : "";
       rep.artwork = csvLocTrim(texLoc[0]);
       rep.campaign = campaign;
       rep.size = size;
@@ -3588,10 +3539,11 @@ export const csvLocaliserRun = (
       // disk, it just doesn't repeat the batch name in every filename too.
       // Site name (when the CSV carried one) sits directly after the ARTWORK
       // token under the current convention, already sanitised to a single
-      // uppercase A-Z0-9 token by csvLocSanitiseSiteToken. That sanitiser
+      // CamelCase A-Za-z0-9 token by shared.ts's sanitiseSiteToken. That
       // matters more than ever now: the site is a first-class field the
-      // parsers read back, so its guards against "4X3"/"V2"/two-letter
-      // shapes are what stop it being mistaken for a size/version/territory.
+      // parsers read back, so its guards against "4x3"/"V2"/"5s"/two-letter
+      // shapes are what stop it being mistaken for a size/version/duration/
+      // territory.
       const newCompName = buildDeliverableName({
         filmTitle: scanFilmTitle,
         region: scanIndo,
@@ -3607,10 +3559,16 @@ export const csvLocaliserRun = (
       rep.master = masterName;
 
       const outputFile = new File(outputFolder.toString() + "/" + newCompName + "_V01.aep");
-      if (skipExisting && outputFile.exists) {
-        rep.status = "skipped-existing";
-        rep.output = newCompName + "_V01.aep";
-        continue;
+      if (skipExisting) {
+        const already = csvLocFindExistingBuild(outputFolder, newCompName + "_V01.aep");
+        if (already !== "") {
+          rep.status = "skipped-existing";
+          // The name ON DISK, not the one this run would have written -- if
+          // they differ (an older ALL-CAPS site token), the report should say
+          // which file it actually found.
+          rep.output = already;
+          continue;
+        }
       }
 
       // Copy the master .aep to the destination first, then open the COPY.
