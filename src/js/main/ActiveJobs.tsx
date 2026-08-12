@@ -20,10 +20,11 @@
 // =============================================================================
 import React, { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Briefcase, ChevronDown, ChevronRight, MapPin, RefreshCw } from "lucide-react";
+import { Briefcase, ChevronDown, ChevronRight, MapPin, RefreshCw, Users, Check } from "lucide-react";
+import Droplet from "./Droplet";
 import { evalTS } from "../lib/utils/bolt";
 import Tooltip from "./Tooltip";
-import { fetchJobs, refreshJobs, saveJobsFeedConfig, loadJobsFeedConfig, parseJobTitle, type WrikeJob } from "./lib/jobsFeed";
+import { fetchJobs, refreshJobs, saveJobsFeedConfig, loadJobsFeedConfig, parseJobTitle, jobReadiness, territoryFlag, statusTint, type WrikeJob } from "./lib/jobsFeed";
 import ActiveJobModal from "./ActiveJobModal";
 
 interface ActiveJob {
@@ -40,18 +41,6 @@ interface Snapshot {
     jobs: ActiveJob[];
 }
 
-// "3 minutes ago" / "2 days ago". Deliberately coarse: the point is to convey
-// staleness at a glance, not a timestamp anyone reads precisely.
-function relativeAge(ms: number): string {
-    const secs = Math.max(0, Math.round((Date.now() - ms) / 1000));
-    if (secs < 90) return "just now";
-    const mins = Math.round(secs / 60);
-    if (mins < 60) return `${mins} min ago`;
-    const hours = Math.round(mins / 60);
-    if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
-    const days = Math.round(hours / 24);
-    return `${days} day${days === 1 ? "" : "s"} ago`;
-}
 
 interface Props {
     onOpen: () => void;
@@ -91,6 +80,55 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
     const [setupKey, setSetupKey] = useState("");
     const [setupBusy, setSetupBusy] = useState(false);
     const [setupNote, setSetupNote] = useState("");
+
+    // The Motion roster, straight from the team folder -- the same
+    // teamListProfiles the Team menu lists, so this can't drift into a second
+    // idea of who's on the team. Loaded when the picker opens, not on mount:
+    // it's a NAS read and most sessions never touch it.
+    const [roster, setRoster] = useState<string[] | null>(null);
+    const loadRoster = useCallback(async () => {
+        if (roster) return;
+        try {
+            const res = await evalTS("teamListProfiles");
+            const names = ((res as { profiles?: { name: string }[] })?.profiles || [])
+                .map((p) => p.name)
+                .filter(Boolean);
+            setRoster(names);
+        } catch {
+            setRoster([]); // unmounted share is a normal state, not an error
+        }
+    }, [roster]);
+
+    /** Switch whose list is shown. Empty string = back to your own. */
+    const viewAsMember = useCallback(async (name: string) => {
+        const cfg = await loadJobsFeedConfig();
+        if (!cfg) return;
+        await saveJobsFeedConfig({ ...cfg, viewAs: name || undefined });
+        setBusy(true);
+        try {
+            // ALWAYS `owner`, never the person being viewed. fetchJobs treats
+            // its argument as "who this machine is" and derives impersonation
+            // from cfg.viewAs !== member -- so passing the target name made
+            // viewAs and member identical and the result came back
+            // impersonating: false. The trigger stayed "You" and both the
+            // owner and the viewed person showed a tick, until a refresh
+            // (which does pass `owner`) corrected it.
+            //
+            // fetchJobs(force) NOT refreshJobs: switching whose list you see is
+            // a different FILTER, not a request for newer data -- refreshJobs
+            // asks the Worker to read Wrike live, so every name change was
+            // spending a Wrike call. `force` bypasses the panel's own cache,
+            // which is all this needs.
+            const res = await fetchJobs(owner, true);
+            setJobs(res.jobs);
+            setJobsMock(!!res.mock);
+            setJobsError(res.error);
+            setViewingAs(res.viewingAs);
+            setImpersonating(!!res.impersonating);
+        } finally {
+            setBusy(false);
+        }
+    }, [owner]);
 
     const saveSetup = useCallback(async () => {
         const url = setupUrl.trim();
@@ -235,7 +273,10 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
     if (!loaded) return null;
     if (!jobs && !snapshot) return null;
 
-    const built = snapshot ? snapshot.jobs.filter((j) => j.built < j.total) : [];
+    // The snapshot no longer renders a line of its own -- the "last specs scan"
+    // footer was restating a count nobody acted on. It is still LOADED, because
+    // it is half of the guard that decides whether this card appears at all on
+    // a machine with no jobs feed configured.
     const allJobs = jobs || [];
     // YOURS ONLY -- no "everyone" toggle. The whole point of the card is a
     // short, glanceable list of what you personally have to build; the feed
@@ -248,6 +289,22 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
     const listFor = viewingAs || owner;
     const shown = listFor ? allJobs.filter((j) => j.assignee === listFor) : [];
     const openCount = shown.filter((j) => (j.subtasksDone ?? 0) < (j.subtaskCount ?? 0)).length;
+    // "3 ready · 2 waiting" beats "5 jobs" -- but only once the feed actually
+    // sends custom statuses. Until then readyCount is 0 and the old wording
+    // stands, so a lagging feed reads as it always did rather than as "nothing
+    // is ready".
+    const readyCount = shown.filter((j) => jobReadiness(j.status) === "ready").length;
+
+    // A job with NO SUBTASKS has nothing to localise -- showreels, case
+    // studies, decks. They filled the card with rows that open a modal saying
+    // "no subtasks in the feed". Hidden here, counted below: hiding is only
+    // honest if the count stays visible.
+    const localisable = shown.filter((j) => (j.subtaskCount ?? 0) > 0);
+    const hiddenCount = shown.length - localisable.length;
+    const localisableReady = localisable.filter((j) => jobReadiness(j.status) === "ready").length;
+    // Only phrase it as ready/waiting once the feed actually sends statuses --
+    // otherwise every row would read "waiting" purely because nothing is known.
+    const anyStatusKnown = localisable.some((j) => jobReadiness(j.status) !== "unknown");
 
     return (
         <motion.div
@@ -271,7 +328,9 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
                         ? "Machine not tagged"
                         : shown.length === 0
                         ? impersonating ? `Nothing assigned to ${listFor}` : "Nothing assigned to you"
-                        : `${shown.length} job${shown.length === 1 ? "" : "s"}${openCount ? ` · ${openCount} to build` : ""}`}
+                        : anyStatusKnown
+                        ? `${localisableReady} ready · ${localisable.length - localisableReady} waiting`
+                        : `${localisable.length} job${localisable.length === 1 ? "" : "s"}${openCount ? ` · ${openCount} to build` : ""}`}
                 </span>
                 {jobsMock && (
                     <Tooltip text={jobsError || "No jobs feed connected — showing sample data. Click to connect."}>
@@ -290,6 +349,66 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
                     </Tooltip>
                 )}
                 <span className="active-jobs-spacer" />
+                {/* Whose list this is. Sits beside refresh rather than behind
+                    "Feed settings" -- checking a colleague's queue is a normal
+                    thing to do, not a configuration change. Stops propagation
+                    so opening it doesn't also collapse the card. */}
+                <span
+                    className={impersonating ? "active-jobs-who is-other" : "active-jobs-who"}
+                    onClick={(e) => e.stopPropagation()}
+                    role="presentation"
+                >
+                    <Droplet
+                        panelClassName="active-jobs-who-panel"
+                        trigger={({ toggle }) => (
+                            <span
+                                className="active-jobs-who-trigger"
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => { toggle(); loadRoster(); }}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); loadRoster(); }
+                                }}
+                            >
+                                <Users size={13} />
+                                {impersonating ? listFor : "You"}
+                            </span>
+                        )}
+                    >
+                        {(close) => (
+                          <>
+                        <p className="droplet-title">Whose jobs</p>
+                        <button
+                            type="button"
+                            className={impersonating ? "active-jobs-who-item" : "active-jobs-who-item is-current"}
+                            onClick={() => { close(); viewAsMember(""); }}
+                        >
+                            {!impersonating && <Check size={12} />}
+                            {owner || "You"}
+                        </button>
+                        {roster === null ? (
+                            <p className="hint">Reading the team folder…</p>
+                        ) : roster.length === 0 ? (
+                            <p className="hint">No team folder set, or the share isn't mounted.</p>
+                        ) : (
+                            roster
+                                .filter((n) => n.toLowerCase() !== (owner || "").toLowerCase())
+                                .map((n) => (
+                                    <button
+                                        key={n}
+                                        type="button"
+                                        className={listFor === n ? "active-jobs-who-item is-current" : "active-jobs-who-item"}
+                                        onClick={() => { close(); viewAsMember(n); }}
+                                    >
+                                        {listFor === n && <Check size={12} />}
+                                        {n}
+                                    </button>
+                                ))
+                        )}
+                          </>
+                        )}
+                    </Droplet>
+                </span>
                 <Tooltip text="Re-read the jobs feed">
                     <span
                         className={busy ? "active-jobs-age is-busy" : "active-jobs-age"}
@@ -297,7 +416,7 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
                         tabIndex={-1}
                         onClick={doRefresh}
                     >
-                        <RefreshCw size={10} /> {busy ? "…" : "refresh"}
+                        <RefreshCw size={13} /> {busy ? "…" : "refresh"}
                     </span>
                 </Tooltip>
                 <ChevronDown size={15} className="active-jobs-caret" />
@@ -315,8 +434,7 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
                         {(setupOpen || (jobsMock && open)) && (
                             <div className="active-jobs-setup">
                                 <p className="active-jobs-setup-lead">
-                                    Connect the jobs feed. Both values come from the studio Worker —{" "}
-                                    <strong>this is not a Wrike token</strong>, and it's stored on this machine only.
+                                    Already set up — these only need changing if the feed moves.
                                 </p>
                                 <label className="active-jobs-field">
                                     <span>Feed URL</span>
@@ -348,6 +466,17 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
                                 <div className="active-jobs-setup-actions">
                                     {setupNote && <span className="active-jobs-setup-note">{setupNote}</span>}
                                     <span className="active-jobs-spacer" />
+                                    {/* There was no way OUT of this panel short of
+                                        connecting — opening it by accident trapped
+                                        you in it. */}
+                                    <button
+                                        type="button"
+                                        className="active-jobs-cancel"
+                                        disabled={setupBusy}
+                                        onClick={() => { setSetupOpen(false); setSetupNote(""); }}
+                                    >
+                                        Close
+                                    </button>
                                     <button type="button" className="active-jobs-save" disabled={setupBusy} onClick={saveSetup}>
                                         {setupBusy ? "Checking…" : "Connect"}
                                     </button>
@@ -355,13 +484,18 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
                             </div>
                         )}
 
-                        {!jobsMock && !setupOpen && (
+                        {/* Only when there is a reason to. The URL and key ship
+                            with the panel, so a healthy feed needs no setup at
+                            all -- a permanent settings chip on the home screen
+                            was inviting people to fiddle with something already
+                            correct. It reappears the moment the feed errors. */}
+                        {!jobsMock && !setupOpen && (jobsError || impersonating) && (
                             <button
                                 type="button"
                                 className="active-jobs-settings"
                                 onClick={() => setSetupOpen(true)}
                             >
-                                Feed settings
+                                {impersonating ? "Viewing as someone else" : "Fix feed settings"}
                             </button>
                         )}
 
@@ -377,17 +511,22 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
                                 This machine isn't tagged with a member name, so there's no "you" to filter by. Tag it
                                 from the Team menu and your jobs will appear here.
                             </p>
-                        ) : shown.length === 0 ? (
+                        ) : localisable.length === 0 ? (
                             <p className="active-jobs-empty">
-                                Nothing in the feed is assigned to {listFor}.
+                                {hiddenCount > 0
+                                    ? `Nothing to localise for ${listFor} — ${hiddenCount} job${hiddenCount === 1 ? " has" : "s have"} no deliverables.`
+                                    : `Nothing in the feed is assigned to ${listFor}.`}
                             </p>
                         ) : (
                             <ul className="active-jobs-list">
-                                {shown.map((job) => {
+                                {localisable.map((job) => {
                                     const parts = parseJobTitle(job.title);
+                                    const flag = territoryFlag(parts.territory);
+                                    // job.status carries the CUSTOM Wrike status the feed
+                                    // resolves ("Render review"), not the base group.
+                                    const readiness = jobReadiness(job.status);
                                     const total = job.subtaskCount ?? 0;
                                     const done = job.subtasksDone ?? 0;
-                                    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
                                     return (
                                         <li key={job.id}>
                                             <button
@@ -396,26 +535,43 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
                                                 onClick={() => setOpenJob(job)}
                                                 title={job.title}
                                             >
-                                                <MapPin size={12} className="active-jobs-pin" />
+                                                {/* Flag AND code, never flag alone: at 12px several
+                                                    flags are hard to tell apart, and the code is what
+                                                    people actually say out loud. The flag just makes
+                                                    the row findable. Falls back to the pin icon when
+                                                    the token isn't a real two-letter territory. */}
+                                                {flag ? (
+                                                    <span className="active-jobs-flag" aria-hidden="true">{flag}</span>
+                                                ) : (
+                                                    <MapPin size={12} className="active-jobs-pin" />
+                                                )}
                                                 <span className="active-jobs-terr">
                                                     {parts.territory || parts.film || "—"}
                                                 </span>
                                                 <span className="active-jobs-name">{parts.name || job.title}</span>
                                                 {parts.batch && <span className="active-jobs-batch">{parts.batch}</span>}
-                                                {total > 0 ? (
-                                                    <>
-                                                        {/* A bar, not a percentage: "how much is
-                                                            left" reads faster as a length. */}
-                                                        <span className="active-jobs-bar" aria-hidden="true">
-                                                            <span className="active-jobs-bar-fill" style={{ width: `${pct}%` }} />
-                                                        </span>
-                                                        <span className="active-jobs-left">
-                                                            {total - done} left
-                                                            <span className="active-jobs-of"> / {total}</span>
-                                                        </span>
-                                                    </>
-                                                ) : (
-                                                    <span className="active-jobs-bar" aria-hidden="true" />
+                                                {/* Coloured by WORKFLOW, matching TimeHub, so a
+                                                    status looks the same in both places. Readiness
+                                                    (ready/waiting/done) is carried by the header
+                                                    count and the send button rather than by this
+                                                    chip -- one colour can't say two things. */}
+                                                {readiness !== "unknown" && (
+                                                    <span
+                                                        className={`active-jobs-state is-${readiness}`}
+                                                        style={statusTint(job.status)}
+                                                    >
+                                                        {job.status}
+                                                    </span>
+                                                )}
+                                                {/* No bar. "4 left / 12" is the number people act
+                                                    on, and a fill behind it read as progress toward
+                                                    delivery when it only ever counted ticked
+                                                    subtasks -- a meter nobody trusted. */}
+                                                {total > 0 && (
+                                                    <span className="active-jobs-left">
+                                                        {total - done} left
+                                                        <span className="active-jobs-of"> / {total}</span>
+                                                    </span>
                                                 )}
                                                 <ChevronRight size={13} className="active-jobs-chev" />
                                             </button>
@@ -425,18 +581,6 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
                             </ul>
                         )}
 
-                        {/* The other half of the picture: Wrike knows what was
-                            ASKED FOR, the specs scan knows what is BUILT. Stated
-                            plainly rather than merged, because a mismatch between
-                            them is itself the useful signal (a missed specs PDF). */}
-                        {snapshot && built.length > 0 && (
-                            <p className="active-jobs-foot">
-                                Last specs scan: {built.length} batch{built.length === 1 ? "" : "es"} with
-                                {" "}
-                                {built.reduce((n, j) => n + (j.total - j.built), 0)} deliverable(s) not yet built
-                                <span className="active-jobs-of"> · {relativeAge(snapshot.capturedAt)}</span>
-                            </p>
-                        )}
                     </motion.div>
                 )}
             </AnimatePresence>

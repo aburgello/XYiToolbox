@@ -57,6 +57,98 @@ export interface WrikeSubtask {
     customStatusName?: string;
 }
 
+// --- readiness ---------------------------------------------------------
+// ONE definition, used by the Active Jobs card and the job modal. They showed
+// the same jobs with two copies of these rules, which is exactly how a card
+// ends up disagreeing with the sheet it opens.
+//
+// Custom Wrike statuses that mean "this can be localised now" -- a studio
+// decision, not a guess. Everything outside the list is shown but never sent.
+export const LOCALISABLE_STATUSES = /^(backlog|motion|save\s*png)$/i;
+/** Finished for real -- struck through rather than merely held back. */
+export const FINISHED_STATUSES = /^(delivered|completed?|done|published)$/i;
+
+export type Readiness = "ready" | "waiting" | "done" | "unknown";
+
+/**
+ * Workflow-status colour, matching TimeHub's own (src/utils/tagStyles.js) so
+ * a status reads the same in both places.
+ *
+ * TRANSLATED, not copied: TimeHub paints on white with Tailwind's -50/-600
+ * pairs, this panel is dark, so each status keeps its HUE at the -400 level on
+ * a low-alpha tint of itself. Same colour language, legible on the other
+ * ground. Literal rgba because color-mix() is Chrome 111 and this ships to 74.
+ *
+ * ORDER IS LOAD-BEARING and mirrors TimeHub's: these are substring tests, so
+ * "content review" must be checked before the broader entries, and reordering
+ * silently changes which colour a status gets.
+ */
+const STATUS_TINTS: [RegExp, string, string][] = [
+    [/to amend/,                    "#fb7185", "rgba(251, 113, 133, 0.14)"], // rose
+    [/render review/,               "#818cf8", "rgba(129, 140, 248, 0.14)"], // indigo
+    [/revised/,                     "#2dd4bf", "rgba(45, 212, 191, 0.14)"],  // teal
+    [/creative approved/,           "#60a5fa", "rgba(96, 165, 250, 0.14)"],  // blue
+    [/content approved/,            "#c084fc", "rgba(192, 132, 252, 0.14)"], // purple
+    [/client review|content review/,"#facc15", "rgba(250, 204, 21, 0.14)"],  // yellow
+    [/motion/,                      "#34d399", "rgba(52, 211, 153, 0.14)"],  // emerald
+    [/digital/,                     "#22d3ee", "rgba(34, 211, 238, 0.14)"],  // cyan
+    [/prep for delivery/,           "#fb923c", "rgba(251, 146, 60, 0.14)"],  // orange
+    [/^deliver(ing|y)$/,            "#fbbf24", "rgba(251, 191, 36, 0.18)"],  // amber, stronger
+    [/on hold/,                     "#f87171", "rgba(248, 113, 113, 0.14)"], // red
+    [/\bpm\b/,                      "#e879f9", "rgba(232, 121, 249, 0.14)"], // fuchsia
+    [/backlog/,                     "#94a3b8", "rgba(148, 163, 184, 0.14)"], // slate
+];
+
+const STATUS_TINT_DEFAULT: [string, string] = ["#94a3b8", "rgba(148, 163, 184, 0.14)"];
+
+export function statusTint(status: string | undefined): { color: string; background: string } {
+    const s = String(status || "").trim().toLowerCase();
+    if (s) {
+        for (const [re, color, background] of STATUS_TINTS) {
+            if (re.test(s)) return { color, background };
+        }
+    }
+    return { color: STATUS_TINT_DEFAULT[0], background: STATUS_TINT_DEFAULT[1] };
+}
+
+/**
+ * `status` here is the CUSTOM status name the feed resolves ("Render review",
+ * "Backlog"), not Wrike's base group. "unknown" means the feed sent no custom
+ * status at all -- older feed, or a subtask row that was never cached -- and
+ * callers must treat it as "no opinion" rather than "not ready", or every row
+ * goes amber the moment the feed lags.
+ */
+export function jobReadiness(status: string | undefined): Readiness {
+    const s = String(status || "").trim();
+    if (!s) return "unknown";
+    if (FINISHED_STATUSES.test(s)) return "done";
+    if (LOCALISABLE_STATUSES.test(s)) return "ready";
+    return "waiting";
+}
+
+/**
+ * Territory code -> flag emoji. Regional-indicator pairs, derived rather than
+ * looked up.
+ *
+ * Renders fine: this panel already ships a real emoji (ReviewHub's 🔶) and the
+ * studio is macOS-only, so Apple Color Emoji draws flags properly. The known
+ * emoji bug is ExtendScript's File.write() mangling surrogate pairs on the way
+ * to the clipboard -- so a flag may be DISPLAYED but must never be sent across
+ * the bridge.
+ *
+ * Returns "" for anything that isn't a plain two-letter code (OV, INTL, a
+ * film name), which would otherwise render as tofu or a wrong flag.
+ */
+export function territoryFlag(code: string | undefined): string {
+    const c = String(code || "").trim().toUpperCase();
+    if (!/^[A-Z]{2}$/.test(c)) return "";
+    if (c === "OV") return ""; // a real ISO code (nothing), but not a territory
+    return String.fromCodePoint(
+        0x1f1e6 + (c.charCodeAt(0) - 65),
+        0x1f1e6 + (c.charCodeAt(1) - 65)
+    );
+}
+
 export interface JobsFeedResult {
     jobs: WrikeJob[];
     fetchedAt: number;
@@ -135,16 +227,33 @@ const MOCK_JOBS: WrikeJob[] = [
 let cache: JobsFeedResult | null = null;
 let cacheMember = "";
 
+// STUDIO DEFAULTS. Every machine points at the same Worker with the same
+// read-only key, so making each artist paste both was pure ceremony -- and the
+// panel showed sample data until they did.
+//
+// The key is deliberately shippable: it grants exactly what any studio member
+// can already read in Wrike, it is not a Wrike token, and it reaches machines
+// through a signed ZXP on the studio's own NAS. It is readable in the bundle by
+// anyone holding that ZXP -- who, by definition, already has it. Anything with
+// real authority must never be baked in this way.
+//
+// A saved config still WINS, so "view as" and any future re-pointing keep
+// working; these only fill the blanks.
+const DEFAULT_FEED_URL = "https://timesheeter.burgello-antonio.workers.dev/api/panel/jobs";
+const DEFAULT_FEED_KEY = "1oQqdH1bYXiPDxHzHjQsx46PeeoEJrBRjuBxUpbYrNE=";
+
 export async function loadJobsFeedConfig(): Promise<FeedConfig | null> {
+    let saved: Partial<FeedConfig> | null = null;
     try {
         const raw = await evalTS("loadJobsFeedConfig");
-        if (typeof raw !== "string" || raw === "") return null;
-        const parsed = JSON.parse(raw) as FeedConfig;
-        if (!parsed || !parsed.url || !parsed.key) return null;
-        return parsed;
+        if (typeof raw === "string" && raw !== "") saved = JSON.parse(raw) as FeedConfig;
     } catch (e) {
-        return null;
+        saved = null;
     }
+    const url = (saved && saved.url) || DEFAULT_FEED_URL;
+    const key = (saved && saved.key) || DEFAULT_FEED_KEY;
+    if (!url || !key) return null;
+    return { ...(saved || {}), url, key } as FeedConfig;
 }
 
 export async function saveJobsFeedConfig(cfg: FeedConfig): Promise<boolean> {

@@ -1173,14 +1173,6 @@ textarea {
     color: #c8c8c8;
 }
 
-// The specs-scan counterpart line under the list.
-.active-jobs-foot {
-    margin: 0;
-    padding: 6px 12px 10px;
-    border-top: 1px solid var(--surface-divider, #2a2a2a);
-    font-size: 10px;
-    color: #7d7d7d;
-}
 
 .active-jobs-caret {
         transform: rotate(180deg);
@@ -1297,14 +1289,6 @@ textarea {
     color: #c8c8c8;
 }
 
-// The specs-scan counterpart line under the list.
-.active-jobs-foot {
-    margin: 0;
-    padding: 6px 12px 10px;
-    border-top: 1px solid var(--surface-divider, #2a2a2a);
-    font-size: 10px;
-    color: #7d7d7d;
-}
 
 .active-jobs-caret {
     flex-shrink: 0;
@@ -1389,23 +1373,7 @@ textarea {
     white-space: nowrap;
 }
 
-.active-jobs-bar {
-    // Fixed, not flex: .active-jobs-name takes the slack now, and a bar that
-    // grew with the row made short lists look like progress meters.
-    width: 64px;
-    flex-shrink: 0;
-    height: 4px;
-    border-radius: 2px;
-    background: rgba(255, 255, 255, 0.08);
-    overflow: hidden;
-}
 
-.active-jobs-bar-fill {
-    display: block;
-    height: 100%;
-    border-radius: 2px;
-    background: var(--ov-accent, #4a7ab5);
-}
 
 .active-jobs-left {
     flex-shrink: 0;
@@ -1775,4 +1743,130 @@ textarea {
         color: #ccc;
         background: transparent;
     }
+}
+
+/* ===========================================================================
+   Active Jobs — weight + state (direction C)
+   The card sits under four large category cards and was the quietest thing on
+   the screen, at 9–11px throughout. Nothing here goes below 11px now, and the
+   row is a real target rather than a line of text.
+   =========================================================================== */
+.active-jobs-toggle { font-size: 13px; }
+
+.active-jobs-title { font-size: 14px; font-weight: 650; letter-spacing: -0.01em; }
+.active-jobs-count { font-size: 11.5px; font-weight: 500; }
+
+/* Was Wrike green (#3fb774) — a fifth hue on a screen with a deliberate
+   four-colour system. Teal ties it to the Localise card above, which is where
+   a row actually hands off to. */
+.active-jobs-icon { color: var(--cat-icon, #5eead4); }
+
+.active-jobs-age {
+    font-size: 11px;
+    padding: 5px 8px;
+    border-radius: 6px;
+    /* A real target. It still sits inside the toggle, so it keeps its own
+       stopPropagation — but at 28px it can at least be hit. */
+    min-height: 28px;
+    box-sizing: border-box;
+
+    &:hover { color: #ccc; background: rgba(255, 255, 255, 0.06); }
+}
+
+.active-jobs-row { min-height: 34px; }
+.active-jobs-name { font-size: 12.5px; }
+.active-jobs-terr { font-size: 10.5px; }
+
+/* Territory flag. Display only — never send an emoji across the ExtendScript
+   bridge (File.write mangles surrogate pairs; see ReviewHub's 🔶 note). */
+.active-jobs-flag {
+    flex-shrink: 0;
+    font-size: 13px;
+    line-height: 1;
+}
+
+/* Readiness. Semantic colour, always with the status word beside it — the
+   colour is a scanning aid, never the only carrier of meaning. */
+.active-jobs-state {
+    flex-shrink: 0;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    border-radius: 20px;
+    padding: 2px 7px;
+    white-space: nowrap;
+    max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    /* Colour comes from statusTint() as an inline style (TimeHub's own
+       workflow hues). Only the finished state overrides it -- a delivered job
+       should recede whatever colour its workflow wears. */
+    &.is-done {
+        opacity: 0.55;
+        text-decoration: line-through;
+    }
+}
+
+/* Way out of the feed setup panel. Same weight as Connect, quieter fill —
+   leaving should never look like the primary action, but it has to exist. */
+.active-jobs-cancel {
+    padding: 6px 14px;
+    border: 1px solid var(--surface-edge, #3d3d3d);
+    border-radius: 6px;
+    background: var(--surface-1, #232323);
+    color: #bbb;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+
+    &:hover, &:active { background: var(--surface-2, #292929); color: #ddd; }
+    &:disabled { opacity: 0.5; cursor: default; }
+}
+
+/* Whose-jobs picker, beside refresh. Checking a colleague's queue is a normal
+   action, not a configuration change — so it lives in the header rather than
+   behind Feed settings. */
+.active-jobs-who { flex-shrink: 0; }
+
+.active-jobs-who-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 28px;
+    padding: 5px 9px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #9a9a9a;
+    cursor: pointer;
+
+    &:hover { color: #ddd; background: rgba(255, 255, 255, 0.06); }
+}
+
+/* Viewing someone else is a state worth seeing without reading — it changes
+   what every row below means. */
+.active-jobs-who.is-other .active-jobs-who-trigger {
+    color: var(--cat-icon, #5eead4);
+    background: rgba(94, 234, 212, 0.1);
+}
+
+.active-jobs-who-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    width: 100%;
+    min-height: 30px;
+    padding: 6px 10px;
+    border: none;
+    border-radius: 5px;
+    background: none;
+    color: #ccc;
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover, &:active { background: rgba(255, 255, 255, 0.07); color: #fff; }
+    &.is-current { color: var(--cat-icon, #5eead4); font-weight: 600; }
 }

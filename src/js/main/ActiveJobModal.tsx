@@ -196,7 +196,19 @@ export const ActiveJobModal: React.FC<Props> = ({ job, onClose, onOpenLocaliser 
                     {rows === null ? (
                         <p className="ajm-note">Reading subtasks…</p>
                     ) : rows.length === 0 ? (
-                        <p className="ajm-note">This job has no subtasks in the feed.</p>
+                        <p className="ajm-note">
+                            {/* "No subtasks" and "subtasks whose names didn't arrive"
+                                are different problems and only one of them is the
+                                job's fault. The COUNT comes from subTaskIds and is
+                                always right; the NAMES are resolved separately and
+                                can come back blank, which is what an undeployed or
+                                lagging feed looks like. Saying "no subtasks" there
+                                sends someone to check Wrike for a task that is
+                                perfectly fine. */}
+                            {(job.subtaskCount ?? 0) > 0
+                                ? `Wrike says this job has ${job.subtaskCount} subtask${job.subtaskCount === 1 ? "" : "s"}, but their names didn't come through. Hit refresh on the card — if they still don't appear, the feed is behind.`
+                                : "This job has no subtasks in the feed."}
+                        </p>
                     ) : usable.length === 0 ? (
                         <p className="ajm-note">
                             Nothing here can be localised — no campaign, size or duration in the names.
