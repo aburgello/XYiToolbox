@@ -139,6 +139,36 @@ export function jobReadiness(status: string | undefined): Readiness {
  * Returns "" for anything that isn't a plain two-letter code (OV, INTL, a
  * film name), which would otherwise render as tofu or a wrong flag.
  */
+/**
+ * Territory FOLDER NAME -> ISO code, for the flags on scanned territories.
+ * The markets tree names folders in English ("Italy", "New_Zealand"), not codes.
+ *
+ * Deliberately a MAP, not a guess: there is no rule that turns "Czechia" into
+ * "CZ" or "India English" into "IN". An unlisted name simply gets no flag --
+ * the same fallback territoryFlag() already uses for OV/INTL. A wrong flag on
+ * a deliverable would be worse than none, and adding a name here is one line.
+ */
+const TERRITORY_CODES: Record<string, string> = {
+    australia: "AU", bulgaria: "BG", croatia: "HR", czechia: "CZ", "czech republic": "CZ",
+    denmark: "DK", finland: "FI", france: "FR", germany: "DE", greece: "GR",
+    hungary: "HU", iceland: "IS", india: "IN", "india english": "IN", "india hindi": "IN",
+    indonesia: "ID", ireland: "IE", israel: "IL", italy: "IT", japan: "JP",
+    korea: "KR", latvia: "LV", lithuania: "LT", malaysia: "MY", mexico: "MX",
+    netherlands: "NL", "new zealand": "NZ", norway: "NO", philippines: "PH",
+    poland: "PL", portugal: "PT", romania: "RO", serbia: "RS", singapore: "SG",
+    slovakia: "SK", slovenia: "SI", "south africa": "ZA", spain: "ES", sweden: "SE",
+    switzerland: "CH", taiwan: "TW", thailand: "TH", turkey: "TR", "türkiye": "TR",
+    uk: "GB", "united kingdom": "GB", usa: "US", vietnam: "VN", brazil: "BR",
+    argentina: "AR", chile: "CL", colombia: "CO", peru: "PE", austria: "AT",
+    belgium: "BE", estonia: "EE", "hong kong": "HK", china: "CN", canada: "CA",
+};
+
+/** Folder name -> flag, or "" when we don't know the code. */
+export function territoryNameFlag(name: string | undefined): string {
+    const key = String(name || "").trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+    return territoryFlag(TERRITORY_CODES[key]);
+}
+
 export function territoryFlag(code: string | undefined): string {
     const c = String(code || "").trim().toUpperCase();
     if (!/^[A-Z]{2}$/.test(c)) return "";

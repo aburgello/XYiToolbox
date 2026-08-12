@@ -14,6 +14,8 @@
 // =============================================================================
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { motion, useReducedMotion } from "motion/react";
+import { territoryNameFlag } from "../lib/jobsFeed";
 import { takePendingBatch, type PendingBatch } from "../lib/localiseHandoff";
 import {
     FolderSearch,
@@ -536,6 +538,14 @@ function csvResultToLocGenReport(res: {
 // trailing digit (Batch_1 -> Batch_01), so mirror that to find the folder.
 const padBatch = (batch: string) => batch.replace(/(\d+)$/, (d) => (d.length === 1 ? "0" + d : d));
 
+/** Last path segment, for the collapsed summary. Handles both separators and a
+ *  trailing slash; returns "" rather than a stray separator. */
+function baseName(p: string): string {
+    const clean = String(p || "").replace(/[\\/]+$/, "");
+    const bits = clean.split(/[\\/]/);
+    return bits[bits.length - 1] || "";
+}
+
 const CSVLocaliserTool = () => {
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
     const [campaignName, setCampaignName] = useState("");
@@ -626,6 +636,7 @@ const CSVLocaliserTool = () => {
     const [notice, setNotice] = useState<string | null>(null);
 
     const [scan, setScan] = useState<TerritoryScan[] | null>(null);
+
 
     // Territories whose specs are being read right now (one spinner each).
 
@@ -1093,6 +1104,22 @@ const CSVLocaliserTool = () => {
     // list changes. Quiet: no bridge, or an unmounted NAS, is a normal state
     // and must never toast (CLAUDE.md).
     const [campaignReach, setCampaignReach] = useState<Record<string, boolean>>({});
+    const reduced = useReducedMotion();
+    // --- landing state -----------------------------------------------------
+    // This tool mounts EXPANDED on the Localise screen, so every visit opened
+    // with a setup form aimed at someone who filled it in weeks ago. The
+    // campaign and both paths are remembered, so on the common visit there is
+    // nothing to ask.
+    //
+    // FAILS SOFT, deliberately: reachability is only a blocker when the check
+    // actually RAN and said no (`=== false`). An undefined entry means "not
+    // asked" -- an unmounted share or a check still in flight -- and must not
+    // collapse the form OR claim anything is missing. Per CLAUDE.md, an
+    // unreachable team path means "not mounted right now", never "gone".
+    const [setupOpen, setSetupOpen] = useState(false);
+    const setupComplete =
+        !!campaignName && !!marketsRoot && !!aepPath && campaignReach[campaignName] !== false;
+    const showSetup = setupOpen || !setupComplete;
     // The team's shared campaign board, and whether we could actually READ it.
     // `read` false means "couldn't ask" -- distinct from "nothing is retired",
     // and the UI must not show a retired-marker vacuum as fact.
@@ -1218,6 +1245,9 @@ const CSVLocaliserTool = () => {
 
     // ── scan every territory's Masters/Specs for PDFs ─────────────────────────
     const runScan = async () => {
+        // Pressing Scan is the moment the setup form has done its job, so it
+        // folds itself away rather than sitting above the results it produced.
+        setSetupOpen(false);
         setNotice(null);
         if (!isBridge()) {
             setNotice("No CEP bridge — open this panel inside After Effects to scan.");
@@ -1578,6 +1608,24 @@ const CSVLocaliserTool = () => {
                 and makes "what is still missing" readable at a glance instead
                 of requiring you to notice an empty box. */}
             <div className="specs-setup">
+                {!showSetup && (
+                    /* Everything the form would ask for, already answered. Edit
+                       puts the full form back; it never disappears, it just
+                       stops being the first thing you meet. */
+                    <div className="specs-ready">
+                        <Check size={14} className="specs-ready-tick" />
+                        <span className="specs-ready-text">
+                            <strong>{campaignName}</strong>
+                            <span>{baseName(marketsRoot)} · {mastersAuto ? "masters found" : baseName(aepPath)}</span>
+                        </span>
+                        <button className="specs-ready-edit" onClick={() => setSetupOpen(true)}>Edit</button>
+                        <button className="specs-scan-btn" disabled={busy || !marketsRoot} onClick={runScan}>
+                            {scan ? <RefreshCw size={14} /> : <ScanSearch size={14} />} {scan ? "Re-scan" : "Scan territories"}
+                        </button>
+                    </div>
+                )}
+                {showSetup && (
+                <>
                 <div className="specs-setup-root">
                     <label className="specs-field-label">Campaign</label>
                     <div className="field-with-button">
@@ -1705,6 +1753,11 @@ const CSVLocaliserTool = () => {
                         {scan ? <RefreshCw size={14} /> : <ScanSearch size={14} />} {scan ? "Re-scan" : "Scan territories"}
                     </button>
                 </div>
+                {setupComplete && (
+                    <button className="specs-ready-done" onClick={() => setSetupOpen(false)}>Done</button>
+                )}
+                </>
+                )}
             </div>
 
             {progress && <p className="hint specs-progress">{progress}</p>}
@@ -1722,7 +1775,7 @@ const CSVLocaliserTool = () => {
                     {!aepPath && <p className="hint specs-warn">Pick the AEP masters folder above to enable batch runs.</p>}
 
                     <div className="specs-list">
-                        {filtered.map((t) => {
+                        {filtered.map((t, i) => {
                             const open = expanded.has(t.territory);
                             const loading = loadingTerr.has(t.territory);
                             // Before a territory is read we have no idea what is in it,
@@ -1739,11 +1792,27 @@ const CSVLocaliserTool = () => {
                                 ? "no rows"
                                 : "no Specs";
                             const statusClass = loading ? "muted" : !t.loaded ? "muted" : t.rowCount > 0 ? "ok" : t.hasSpecs ? "warn" : "muted";
+                            const flag = territoryNameFlag(t.territory);
                             return (
-                                <div key={t.territory} className={"specs-terr" + (runnable ? "" : " is-disabled")}>
+                                <motion.div
+                                    key={t.territory}
+                                    className={"specs-terr" + (runnable ? "" : " is-disabled")}
+                                    initial={reduced ? false : { opacity: 0, y: 6 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    /* Explicit per-item delay, not staggerChildren --
+                                       the house rule, and it keeps the cascade stable
+                                       when the filter box changes the list. Capped so
+                                       a 17-territory campaign doesn't take a second to
+                                       finish arriving. */
+                                    transition={{ duration: 0.22, delay: Math.min(i * 0.03, 0.3), ease: "easeOut" }}
+                                >
                                     <div className="specs-terr-head">
                                         <button className="specs-terr-main" onClick={() => runnable && toggleExpand(t.territory)} disabled={!runnable}>
-                                            <MapPin size={13} />
+                                            {flag ? (
+                                                <span className="specs-terr-flag" aria-hidden="true">{flag}</span>
+                                            ) : (
+                                                <MapPin size={13} />
+                                            )}
                                             <span className="specs-terr-name">{t.territory}</span>
                                             <span className={"specs-pill specs-pill--" + statusClass}>{status}</span>
                                             {runnable && (open ? <ChevronDown size={14} /> : <ChevronRight size={14} />)}
@@ -2269,7 +2338,7 @@ const CSVLocaliserTool = () => {
                                             })}
                                         </div>
                                     )}
-                                </div>
+                                </motion.div>
                             );
                         })}
                     </div>
