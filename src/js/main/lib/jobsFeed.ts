@@ -43,7 +43,18 @@ export interface WrikeJob {
 export interface WrikeSubtask {
     id: string;
     name: string;
+    /** Wrike's status GROUP -- only ever Active / Completed / Deferred /
+     *  Cancelled. "Delivering", "On hold" and the rest are CUSTOM statuses
+     *  that all report as Active, which is why this alone can't tell you
+     *  whether a batch still needs localising. */
     status: string;
+    /** The custom workflow status name ("Delivering", "To amend", …) when the
+     *  feed supplies it. Optional because the panel feed doesn't send it yet --
+     *  the worker resolves customStatusId against Wrike's workflows the way
+     *  TimeHub's enrichJob already does for tasks. Preferred over `status`
+     *  wherever it exists, so the panel starts using it the moment the feed
+     *  does, with no further change here. */
+    customStatusName?: string;
 }
 
 export interface JobsFeedResult {
@@ -168,6 +179,13 @@ function normalise(rows: any[]): WrikeJob[] {
                       id: String(st?.id ?? n),
                       name: String(st?.name ?? st?.title ?? "").trim(),
                       status: String(st?.status ?? "").trim(),
+                      // This mapper REBUILDS each subtask field by field, so a
+                      // field the feed adds is dropped unless it is copied here
+                      // too. customStatusName was, which left the panel seeing
+                      // only the base group ("Active") while the feed was
+                      // sending "Render review" all along. Anything added to
+                      // WrikeSubtask needs a line here.
+                      customStatusName: String(st?.customStatusName ?? "").trim(),
                   })).filter((st: WrikeSubtask) => st.name !== "")
                 : undefined,
         });
@@ -175,7 +193,7 @@ function normalise(rows: any[]): WrikeJob[] {
     return out.filter((j) => j.title !== "");
 }
 
-export async function fetchJobs(member: string, force = false): Promise<JobsFeedResult> {
+export async function fetchJobs(member: string, force = false, live = false): Promise<JobsFeedResult> {
     // Keyed by member: switching the machine's tag must not serve the previous
     // person's jobs out of cache.
     if (cache && cacheMember === member && !force) return cache;
@@ -198,7 +216,13 @@ export async function fetchJobs(member: string, force = false): Promise<JobsFeed
         // anyone -- but it keeps the panel from downloading the studio's whole
         // board to show one person's rows.
         const sep = cfg.url.indexOf("?") === -1 ? "?" : "&";
-        const res = await fetch(`${cfg.url}${sep}member=${encodeURIComponent(effective)}`, {
+        // `refresh=1` only on an explicit refresh. The feed normally reads a
+        // Supabase cache that is only as current as the last time somebody had
+        // the Motion board open; this asks the Worker to go to Wrike instead.
+        // Deliberately not on every open -- that would spend Wrike API budget
+        // for a panel nobody is looking at.
+        const liveParam = live ? "&refresh=1" : "";
+        const res = await fetch(`${cfg.url}${sep}member=${encodeURIComponent(effective)}${liveParam}`, {
             method: "GET",
             headers: { "X-Panel-Key": cfg.key },
             credentials: "omit",
@@ -246,8 +270,10 @@ export async function fetchJobs(member: string, force = false): Promise<JobsFeed
     }
 }
 
+/** The refresh button: bypasses the panel's own cache AND asks the feed to
+ *  read Wrike live rather than its Supabase snapshot. */
 export function refreshJobs(member: string): Promise<JobsFeedResult> {
-    return fetchJobs(member, true);
+    return fetchJobs(member, true, true);
 }
 
 // Splits "FID - IT - ARTWALL GALLERIA - Batch 2" into its parts. The title is a

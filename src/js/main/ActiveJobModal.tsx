@@ -47,6 +47,9 @@ interface ParsedName {
 interface Row {
     name: string;
     status: string;
+    /** Custom workflow status when the feed sends one; falls back to `status`
+     *  for display. */
+    customStatusName?: string;
     parsed: ParsedName | null;
     // Size is not part of nameGeneratorParse's output, so it is read straight
     // off the filename here rather than pretending the parser supplies it.
@@ -56,7 +59,7 @@ interface Row {
 
 const SIZE_RE = /_(\d+)x(\d+)(?:px)?_/;
 
-function buildRow(name: string, status: string, parsed: ParsedName | null): Row {
+function buildRow(name: string, status: string, parsed: ParsedName | null, customStatusName?: string): Row {
     const sizeMatch = name.match(SIZE_RE);
     const size = sizeMatch ? `${sizeMatch[1]}x${sizeMatch[2]}` : "";
     const missing: string[] = [];
@@ -75,7 +78,7 @@ function buildRow(name: string, status: string, parsed: ParsedName | null): Row 
         if (!parsed.duration) missing.push("duration");
         if (!size) missing.push("size");
     }
-    return { name, status, parsed, size, missing };
+    return { name, status, customStatusName, parsed, size, missing };
 }
 
 interface Props {
@@ -103,11 +106,11 @@ export const ActiveJobModal: React.FC<Props> = ({ job, onClose, onOpenLocaliser 
                     JSON.stringify(subs.map((s) => s.name))
                 )) as ParsedName[];
                 if (cancelled) return;
-                setRows(subs.map((s, i) => buildRow(s.name, s.status, (parsed && parsed[i]) || null)));
+                setRows(subs.map((s, i) => buildRow(s.name, s.status, (parsed && parsed[i]) || null, s.customStatusName)));
             } catch (e) {
                 // No bridge (browser preview): still list the names, just
                 // without a parse. Better than an empty modal.
-                if (!cancelled) setRows(subs.map((s) => buildRow(s.name, s.status, null)));
+                if (!cancelled) setRows(subs.map((s) => buildRow(s.name, s.status, null, s.customStatusName)));
             }
         })();
         return () => {
@@ -127,11 +130,44 @@ export const ActiveJobModal: React.FC<Props> = ({ job, onClose, onOpenLocaliser 
     }, [onClose]);
 
     const parts = parseJobTitle(job.title);
-    const clean = rows ? rows.filter((r) => r.missing.length === 0).length : 0;
-    // Only fully-parsed rows can be localised: campaign is what the master
-    // lookup keys on, and a run needs a size and duration too. A row missing
-    // any of those is shown in the table but never sent.
-    const sendable = rows ? rows.filter((r) => r.missing.length === 0) : [];
+
+    // WHICH CUSTOM STATUSES MEAN "ready to localise" -- an ALLOWLIST, per the
+    // studio. Everything else is shown but not sent: it may be waiting, may be
+    // in flight, may already be done, and none of those want re-localising.
+    const LOCALISABLE = /^(backlog|motion|save\s*png)$/i;
+    // Finished for real. Struck through rather than merely dimmed, because
+    // "delivered" reads very differently from "on hold". Matches TimeHub's
+    // own test (enrichJob) so the two never disagree.
+    const FINISHED = /^(delivered|completed?|done|published)$/i;
+
+    // The feed does not send customStatusName yet -- every subtask arrives with
+    // the status GROUP ("Active"), which is in no allowlist. Applying the
+    // allowlist to that would make every row unsendable and the button dead.
+    // So the allowlist only governs rows that actually carry a custom status;
+    // until the worker resolves customStatusId (as TimeHub already does for
+    // tasks), behaviour is unchanged apart from excluding finished rows.
+    const hasCustom = (r: Row) => !!String(r.customStatusName || "").trim();
+    const statusOf = (r: Row) => String(r.customStatusName || r.status || "").trim();
+
+    const isFinished = (r: Row) =>
+        String(r.status || "").trim() === "Completed" || FINISHED.test(statusOf(r));
+    /** Not ready or not needed -- shown, highlighted, never sent. */
+    const isHeld = (r: Row) => hasCustom(r) && !LOCALISABLE.test(statusOf(r)) && !isFinished(r);
+
+    // Rows that can't drive a localise are HIDDEN, not greyed. Campaign is what
+    // the master lookup keys on and a run needs a size and duration too, so a
+    // row missing any of those was only ever there to be scrolled past --
+    // stills, mostly. The count below still says how many were dropped, so
+    // nothing disappears silently.
+    const usable = rows ? rows.filter((r) => r.missing.length === 0) : [];
+    const hidden = rows ? rows.length - usable.length : 0;
+    const clean = usable.length;
+
+    // Completed rows stay VISIBLE and struck through -- seeing that eight of
+    // twelve are already done is the useful part -- but they are never sent.
+    const sendable = usable.filter((r) => !isFinished(r) && !isHeld(r));
+    const doneCount = usable.filter(isFinished).length;
+    const heldCount = usable.filter(isHeld).length;
 
     return createPortal(
         <div className="ajm-overlay" onClick={onClose} role="presentation">
@@ -161,19 +197,33 @@ export const ActiveJobModal: React.FC<Props> = ({ job, onClose, onOpenLocaliser 
                         <p className="ajm-note">Reading subtasks…</p>
                     ) : rows.length === 0 ? (
                         <p className="ajm-note">This job has no subtasks in the feed.</p>
+                    ) : usable.length === 0 ? (
+                        <p className="ajm-note">
+                            Nothing here can be localised — no campaign, size or duration in the names.
+                        </p>
                     ) : (
                         <>
+                            {/* Says what is on screen AND what isn't. Hiding
+                                unusable rows is only safe if the count of what
+                                was hidden stays visible. */}
                             <p className="ajm-summary">
-                                {clean === rows.length ? (
+                                {hidden === 0 ? (
                                     <>
                                         <CheckCircle2 size={12} className="ajm-ok" /> All {rows.length} subtask
-                                        {rows.length === 1 ? "" : "s"} parse cleanly.
+                                        {rows.length === 1 ? "" : "s"} can be localised.
                                     </>
                                 ) : (
                                     <>
-                                        <AlertTriangle size={12} className="ajm-warn" /> {clean} of {rows.length} parse
-                                        cleanly — the rest are missing fields a localise needs.
+                                        <AlertTriangle size={12} className="ajm-warn" /> Showing {clean} of{" "}
+                                        {rows.length} — {hidden} hidden, missing fields a localise needs.
                                     </>
+                                )}
+                                {(doneCount > 0 || heldCount > 0) && (
+                                    <span className="ajm-summary-done">
+                                        {doneCount > 0 && ` ${doneCount} already finished.`}
+                                        {heldCount > 0 && ` ${heldCount} not ready to localise.`}
+                                        {" Neither gets sent."}
+                                    </span>
                                 )}
                             </p>
                             <table className="ajm-table">
@@ -189,8 +239,8 @@ export const ActiveJobModal: React.FC<Props> = ({ job, onClose, onOpenLocaliser 
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {rows.map((r) => (
-                                        <tr key={r.name} className={r.missing.length ? "ajm-row--gap" : undefined}>
+                                    {usable.map((r) => (
+                                        <tr key={r.name} className={isFinished(r) ? "ajm-row--done" : isHeld(r) ? "ajm-row--hold" : undefined}>
                                             <td className={!r.parsed?.campaign ? "ajm-missing" : undefined}>
                                                 {r.parsed?.campaign || "—"}
                                             </td>
@@ -203,16 +253,11 @@ export const ActiveJobModal: React.FC<Props> = ({ job, onClose, onOpenLocaliser 
                                                 {r.parsed?.duration || "—"}
                                             </td>
                                             <td>{r.parsed?.territory || "—"}</td>
-                                            <td className="ajm-status">{r.status || "—"}</td>
+                                            <td className="ajm-status">{r.customStatusName || r.status || "—"}</td>
                                         </tr>
                                     ))}
                                 </tbody>
                             </table>
-                            <p className="ajm-foot">
-                                Parsed from the subtask names with the toolbox's own naming parser. Names that don't
-                                carry a campaign or duration — stills, mostly — can't drive a run on their own; the
-                                specs PDF is still the input the localiser reads.
-                            </p>
                         </>
                     )}
                 </div>

@@ -1590,12 +1590,31 @@ textarea {
 
 .ajm-status { color: #8a8a8a; }
 
-.ajm-foot {
-    margin: 10px 0 0;
-    font-size: 10px;
-    line-height: 1.5;
-    color: #7a7a7a;
+/* A completed subtask stays VISIBLE and struck through rather than hidden:
+   seeing that 8 of 12 are already done is the useful part. It is excluded
+   from the send, which the summary line says out loud. Top level, matching
+   every other .ajm-* rule here — these are NOT nested. */
+.ajm-row--done td {
+    text-decoration: line-through;
+    color: #6a6a6a;
 }
+.ajm-row--done .ajm-status {
+    text-decoration: none;
+    color: #6a6a6a;
+}
+/* Not in the localisable allowlist — waiting, in flight, or simply not
+   wanted. Visible and tinted rather than hidden: the point is that everyone
+   can see it isn't ready, not that it vanishes. */
+.ajm-row--hold td {
+    background: rgba(251, 191, 36, 0.07);
+    color: #b8a06a;
+}
+.ajm-row--hold .ajm-status {
+    color: #fbbf24;
+    font-weight: 600;
+}
+
+.ajm-summary-done { color: #8a8a8a; }
 
 .ajm-actions {
     display: flex;
