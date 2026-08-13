@@ -556,6 +556,10 @@ const NAME_ACRONYMS: { [word: string]: boolean } = {
   PLF: true, DGTL: true, OV: true, INTL: true, DOM: true, CW: true,
   MM: true, EPO: true, BLB: true, VIP: true, AV: true, TV: true, UK: true,
   IRE: true, AUS: true, NZ: true, INT: true, NM: true, USA: true, GER: true,
+  // Site acronyms seen in real Wrike subtask names, where they sit all-caps
+  // inside otherwise-CamelCase names ("FID_INTL_Trio_DINTH_INTHDS_..."), which
+  // is exactly what marks them as acronyms rather than shouting.
+  INTHDS: true, AMC: true,
 };
 
 // The convention every NAME token follows: one CamelCase A-Za-z0-9 word.
