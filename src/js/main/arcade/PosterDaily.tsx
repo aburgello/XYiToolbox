@@ -58,6 +58,38 @@ import "./PosterDaily.scss";
 
 const MAX_GUESSES = 6;
 
+// --- scoring ---------------------------------------------------------------
+// Replaces `Math.max(1, MAX_GUESSES + 1 - guesses - hints)`, which had two
+// faults. It FLOORED at 1, so solved-in-6-cold, solved-in-4-with-everything and
+// solved-in-6-with-everything all landed on the same number -- collapsing
+// exactly the rounds this game exists to tell apart. And it charged every hint
+// the same, when the premise is strong enough that it has to be redacted before
+// it is safe to sell (see redactPlot) while the facts barely narrow anything.
+//
+// Now: 100 for a cold first guess, priced down by what you actually spent. The
+// worst realistic solve (5 wrong, all three hints) is 16, so nothing collides
+// and no floor is needed.
+//
+// The scale changed from 1-6 to 16-100, and the board keeps the SAME game id on
+// purpose: the arcade card ranks One Sheet by how many days you solved, not by
+// this number, so a new id would orphan everyone's history to protect a detail
+// column that re-scales itself the first time anyone scores above 6.
+const WRONG_GUESS_COST = 10;
+const HINT_COST: Record<HintId, number> = {
+    facts: 6,    // weakest -- year, runtime, a genre
+    tagline: 10,
+    plot: 18,    // strongest, even redacted
+};
+
+/** Points for a SOLVED round. Unsolved days post nothing, as before. */
+function roundScore(guesses: number, hintIds: HintId[]): number {
+    // `guesses` counts the winning guess too, so wrong ones are guesses - 1.
+    const wrong = Math.max(0, guesses - 1);
+    let score = 100 - wrong * WRONG_GUESS_COST;
+    for (const id of hintIds) score -= HINT_COST[id] || 0;
+    return Math.max(1, Math.round(score));
+}
+
 /**
  * Block columns per stage, indexed by guesses used.
  *
@@ -440,7 +472,14 @@ export const PosterDaily = ({ onClose }: { onClose: () => void }) => {
     // post to is a dead leaderboard, so it's handled by being open about it
     // rather than by asking. An untagged machine still can't post; the host
     // refuses rather than guessing a name, and that surfaces as a quiet note.
-    const postResult = useCallback(async (r: { guesses: number; hints: number; solved: boolean; streak: number }) => {
+    const postResult = useCallback(async (r: {
+        guesses: number;
+        hints: number;
+        /** WHICH hints, not just how many -- they are priced differently now. */
+        hintIds: HintId[];
+        solved: boolean;
+        streak: number;
+    }) => {
         if (postingRef.current) return;
         postingRef.current = true;
         try {
@@ -464,8 +503,7 @@ export const PosterDaily = ({ onClose }: { onClose: () => void }) => {
                 // (higher is better) so the hub's existing max-based detail
                 // column means something: 6 = first guess, no hints.
                 if (r.solved) {
-                    const clean = Math.max(1, MAX_GUESSES + 1 - r.guesses - r.hints);
-                    evalTS("teamArcadePost", "poster", clean, "").catch(() => undefined);
+                    evalTS("teamArcadePost", "poster", roundScore(r.guesses, r.hintIds), "").catch(() => undefined);
                 }
             } else {
                 setPostNote(out.error || "Couldn't post to the team board.");
@@ -508,6 +546,7 @@ export const PosterDaily = ({ onClose }: { onClose: () => void }) => {
             // on the third attempt posts 3, not 2.
             guesses: won ? nextIds.length + nextSkips + 1 : MAX_GUESSES,
             hints: hints.length,
+            hintIds: hints,
             solved: won,
             streak: nextStreak,
         });

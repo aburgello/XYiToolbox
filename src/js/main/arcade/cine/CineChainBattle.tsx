@@ -106,6 +106,22 @@ const drawUnplayed = async (playedIds: number[]) => {
     return pick;
 };
 
+// --- scoring ----------------------------------------------------------------
+// A win was worth its CHAIN LENGTH, so a one-link scrappy win scored 1 and the
+// board could rank a single long game above someone who had beaten everyone all
+// month. Now a win is worth a win -- flat 25 -- and the chain is a BONUS on top,
+// so longevity is rewarded without being the whole story.
+//
+// 3 a link: a 1-link win pays 28, a 16-link marathon pays 73. Enough that a long
+// game is clearly worth more, not so much that one lucky chain outweighs several
+// straight wins (three 1-link wins = 84 > one 16-link win).
+const WIN_BASE = 25;
+const CHAIN_BONUS = 3;
+
+function winScore(chainLength: number): number {
+    return WIN_BASE + Math.max(0, chainLength) * CHAIN_BONUS;
+}
+
 export const CineChainBattle = ({
     room, against, seat, onClose, onQuit,
 }: { room: string; against: string; seat: 1 | 2; onClose: () => void; onQuit: () => void }) => {
@@ -320,7 +336,7 @@ export const CineChainBattle = ({
         // never actually defined on the host, so every win up to now went
         // nowhere and the board could never fill. Score is the chain length,
         // which is the honest "how good was this game" number.
-        evalTS("teamArcadePost", "xyinerdle", state.chain.length, against).catch(() => undefined);
+        evalTS("teamArcadePost", "xyinerdle", winScore(state.chain.length), against).catch(() => undefined);
         evalTS("teamBattleCleanup", room).catch(() => undefined);
     }, [state?.loser, seat, room, me, against, state?.chain.length]);
 

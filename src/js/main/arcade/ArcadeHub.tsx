@@ -58,7 +58,14 @@ interface Machine {
     /** Column header over the numbers -- the noun the score is counted in. */
     metric: string;
     /** See the scoring note in the header. */
-    mode: "wins" | "best";
+    /** How this game's board is ranked:
+     *   wins   -- versus game, one row per win: COUNT the rows.
+     *   best   -- arcade game, every attempt posted: take the MAX.
+     *   points -- daily game, one scored round per day: SUM them, so the board
+     *             rewards playing well AND showing up. Ranking a daily game by
+     *             its best single day would crown one lucky morning; ranking it
+     *             by days played said nothing about how well any went. */
+    mode: "wins" | "best" | "points";
     accent: string;
     /**
      * The accent again, pre-blended to a low alpha for the lit-screen hover.
@@ -74,10 +81,10 @@ const MACHINES: Machine[] = [
     // NAMES ARE DISPLAY-ONLY -- the ids are the keys in the shared score files
     // already on the NAS, so a rename never touches them ("daily" is Wordmark,
     // "poster" is One Sheet). Renaming an id would orphan every posted row.
-    { id: "poster", name: "One Sheet", metric: "Solved", mode: "wins", accent: "#fbbf24", glow: "rgba(251, 191, 36, 0.16)", Game: PosterDaily },
-    { id: "daily", name: "Wordmark", metric: "Streak", mode: "best", accent: "#a78bfa", glow: "rgba(167, 139, 250, 0.16)", Game: DailyWord },
+    { id: "poster", name: "One Sheet", metric: "Points", mode: "points", accent: "#fbbf24", glow: "rgba(251, 191, 36, 0.16)", Game: PosterDaily },
+    { id: "daily", name: "Wordmark", metric: "Points", mode: "points", accent: "#a78bfa", glow: "rgba(167, 139, 250, 0.16)", Game: DailyWord },
     { id: "timeline", name: "Push the Playhead", metric: "Score", mode: "best", accent: "#fb923c", glow: "rgba(251, 146, 60, 0.16)", Game: KeyframeSnake },
-    { id: "xyinerdle", name: "XYiNerdle", metric: "Wins", mode: "wins", accent: "#2dd4bf", glow: "rgba(45, 212, 191, 0.16)", Game: CineChain },
+    { id: "xyinerdle", name: "XYiNerdle", metric: "Points", mode: "points", accent: "#2dd4bf", glow: "rgba(45, 212, 191, 0.16)", Game: CineChain },
 ];
 
 /** How many lines fit on a cabinet face without it becoming a spreadsheet. */
@@ -99,11 +106,94 @@ function standingsFor(scores: ArcadeScore[], m: Machine): Standing[] {
         .map((name) => {
             const mine = by[name];
             const best = mine.reduce((n, r) => Math.max(n, r.score), 0);
-            return m.mode === "wins"
-                ? { name, value: mine.length, detail: best }
-                : { name, value: best };
+            if (m.mode === "wins") return { name, value: mine.length, detail: best };
+            if (m.mode === "best") return { name, value: best };
+            // points: total earned, with the best single round as the tiebreak
+            // and the small detail line.
+            const total = mine.reduce((n, r) => n + (r.score || 0), 0);
+            return { name, value: total, detail: best };
         })
         .sort((a, b) => b.value - a.value || (b.detail || 0) - (a.detail || 0));
+}
+
+// --- the overall board ------------------------------------------------------
+// Scored the way a racing season is: rank within each game, pay for position.
+// Second in three games (300) then beats winning one (150), which is what an
+// "overall" board should reward.
+// The championship pays for a POSITION, not for a total. Each game ranks its own
+// players by its own metric first; only where you finished crosses over here.
+//
+// This is the whole reason it works. One Sheet and Wordmark accumulate ~1400 a
+// month for someone who plays daily, XYiNerdle a few hundred, and Push the
+// Playhead is a single best run -- summing those raw numbers would make the
+// championship a register of who opened the panel most often, and would bury the
+// timeline entirely. Converting to a position makes four unlike games comparable
+// and keeps every one of them worth winning.
+//
+// Nothing below 4th scores: a place has to be worth something to be worth
+// chasing, and with a team this size 5th is most of the board.
+const CHAMPIONSHIP_POINTS = [150, 100, 60, 30];
+
+// Rolling window. All-time would permanently favour whoever started first and
+// give a new starter no route in; 30 days keeps it live without resetting so
+// often that nothing accumulates.
+const OVERALL_WINDOW_DAYS = 30;
+
+// Ranked below anyone who has entered more games, however well they did in it:
+// topping an OVERALL board off a single game is the failure mode this guards.
+// Shown, never hidden -- the row says how many games it was.
+const MIN_GAMES_TO_RANK = 2;
+
+export interface OverallRow {
+    name: string;
+    points: number;
+    games: number;
+    /** Position per game id, for the row's little medal strip. 1-based. */
+    places: Record<string, number>;
+    ranked: boolean;
+}
+
+function withinWindow(stamp: string, days: number): boolean {
+    // Stamps are "YYYY-MM-DD HH:MM" (nowStamp, team.ts). A plain string compare
+    // against a cutoff of the same shape is enough and needs no parsing.
+    if (!stamp) return false;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    const p = (n: number) => String(n).padStart(2, "0");
+    const key = `${cutoff.getFullYear()}-${p(cutoff.getMonth() + 1)}-${p(cutoff.getDate())}`;
+    return stamp.slice(0, 10) >= key;
+}
+
+export function overallStandings(scores: ArcadeScore[], machines: Machine[]): OverallRow[] {
+    const recent = scores.filter((s) => withinWindow(s.stamp, OVERALL_WINDOW_DAYS));
+    const acc: Record<string, OverallRow> = {};
+
+    for (const m of machines) {
+        const standings = standingsFor(recent, m);
+        standings.forEach((row, idx) => {
+            const r = acc[row.name] || (acc[row.name] = {
+                name: row.name, points: 0, games: 0, places: {}, ranked: false,
+            });
+            r.points += CHAMPIONSHIP_POINTS[idx] || 0;
+            r.games += 1;
+            r.places[m.id] = idx + 1;
+        });
+    }
+
+    return Object.keys(acc)
+        .map((k) => {
+            const r = acc[k];
+            r.ranked = r.games >= MIN_GAMES_TO_RANK;
+            return r;
+        })
+        // Ranked players first, then points, then breadth -- someone level on
+        // points across three games is ahead of the same total off two.
+        .sort((a, b) =>
+            Number(b.ranked) - Number(a.ranked) ||
+            b.points - a.points ||
+            b.games - a.games ||
+            a.name.localeCompare(b.name)
+        );
 }
 
 export const ArcadeHub = ({ onClose }: { onClose: () => void }) => {
@@ -116,6 +206,9 @@ export const ArcadeHub = ({ onClose }: { onClose: () => void }) => {
     // later refresh couldn't reach the team folder.
     const [stale, setStale] = useState(false);
     const reduced = useReducedMotion();
+    const overall = useMemo(() => overallStandings(scores || [], MACHINES), [scores]);
+    const podium = overall.slice(0, 3);
+    const rest = overall.slice(3);
 
     // `refresh` is stable (empty deps, so the mount effect runs once), which
     // means it can't read `scores` from its own closure. This ref is how it
@@ -279,7 +372,7 @@ export const ArcadeHub = ({ onClose }: { onClose: () => void }) => {
                                             <span className="arc-c-name">{row.name}</span>
                                             <span className="arc-c-val">
                                                 {row.value}
-                                                {m.mode === "wins" && row.detail ? <em>{row.detail} best</em> : null}
+                                                {(m.mode === "wins" || m.mode === "points") && row.detail ? <em>{row.detail} best</em> : null}
                                             </span>
                                         </span>
                                     ))}
@@ -296,6 +389,64 @@ export const ArcadeHub = ({ onClose }: { onClose: () => void }) => {
                         );
                     })}
                 </div>
+
+                {/* THE CHAMPIONSHIP. Sits under the cabinets because it is a
+                    summary of them, not a fifth machine -- it has no Play. Top
+                    three get a podium; the rest a plain list. Hidden entirely
+                    when nobody qualifies, so a fresh team folder shows an
+                    arcade rather than an empty trophy case. */}
+                {overall.length > 0 && (
+                    <div className="arc-overall">
+                        <div className="arc-overall-head">
+                            <span className="arc-overall-title arcade-pixel">CHAMPIONSHIP</span>
+                            <span className="arc-overall-sub">last {OVERALL_WINDOW_DAYS} days · points for placing in each game</span>
+                        </div>
+
+                        <div className="arc-podium">
+                            {podium.map((row, i) => (
+                                <motion.div
+                                    key={row.name}
+                                    className={`arc-plinth arc-plinth--${i + 1}${row.name === me ? " is-me" : ""}`}
+                                    initial={reduced ? false : { opacity: 0, y: 12 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: reduced ? 0 : 0.28 + i * 0.07, duration: 0.3, ease: "easeOut" }}
+                                >
+                                    {i === 0 && <Crown size={14} className="arc-plinth-crown" />}
+                                    <span className="arc-plinth-pos arcade-pixel">{i + 1}</span>
+                                    <span className="arc-plinth-name">{row.name}</span>
+                                    <span className="arc-plinth-pts">{row.points}<em>pts</em></span>
+                                    <span className="arc-plinth-games">{row.games} of {MACHINES.length} games</span>
+                                </motion.div>
+                            ))}
+                        </div>
+
+                        {rest.length > 0 && (
+                            <ul className="arc-overall-list">
+                                {rest.map((row, i) => (
+                                    <li key={row.name} className={row.name === me ? "is-me" : undefined}>
+                                        <span className="arc-ol-pos">{podium.length + i + 1}</span>
+                                        <span className="arc-ol-name">{row.name}</span>
+                                        {/* One pip per game entered, tinted with that
+                                            game's own accent, so breadth reads at a
+                                            glance without another column of numbers. */}
+                                        <span className="arc-ol-pips">
+                                            {MACHINES.map((m) => (
+                                                <span
+                                                    key={m.id}
+                                                    className={row.places[m.id] ? "arc-pip is-in" : "arc-pip"}
+                                                    style={row.places[m.id] ? { background: m.accent } : undefined}
+                                                    title={row.places[m.id] ? `${m.name}: ${row.places[m.id]}` : `${m.name}: not played`}
+                                                />
+                                            ))}
+                                        </span>
+                                        {!row.ranked && <em className="arc-ol-unranked">needs {MIN_GAMES_TO_RANK} games</em>}
+                                        <span className="arc-ol-pts">{row.points}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
+                )}
 
                 {/* Says the board on screen is the last one we could read,
                     rather than letting it silently drift out of date. Only

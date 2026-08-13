@@ -43,6 +43,23 @@ import "./DailyWord.scss";
 const LEN = 5;
 const MAX_GUESSES = 6;
 
+// --- scoring ---------------------------------------------------------------
+// Was posting STREAK, so the rack ranked Wordmark by "how many days in a row"
+// and said nothing about how well any of them went -- solving in two and
+// scraping it in six were worth the same. Now each solved day is worth what it
+// cost you, and those points add up over the window.
+//
+// Same 100-top shape as One Sheet so the two daily games are directly
+// comparable in the championship rather than one quietly outweighing the other.
+// Streak is still tracked and still shown in this game's own board; it just
+// isn't what the cross-game rack ranks on.
+const WORD_GUESS_COST = 15;
+
+/** Points for a SOLVED day. 1 guess = 100 … 6 guesses = 25. */
+function roundScore(guesses: number): number {
+    return Math.max(1, 100 - Math.max(0, guesses - 1) * WORD_GUESS_COST);
+}
+
 // Letters + Enter + Backspace, claimed from AE while the game is open.
 const KEY_CODES = (() => {
     const out = [13, 8];
@@ -304,7 +321,7 @@ export const DailyWord = ({ onClose }: { onClose: () => void }) => {
                 // were played. Streak, because that's the metric the rack shows
                 // for this machine, and its "best" mode takes the max.
                 if (payload.solved) {
-                    evalTS("teamArcadePost", "daily", payload.streak, "").catch(() => undefined);
+                    evalTS("teamArcadePost", "daily", roundScore(payload.guesses), "").catch(() => undefined);
                 }
             } else {
                 setPostNote(r.error || "Couldn't post to the team board.");
