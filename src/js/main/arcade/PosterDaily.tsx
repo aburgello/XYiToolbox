@@ -74,15 +74,15 @@ const MAX_GUESSES = 6;
 // purpose: the arcade card ranks One Sheet by how many days you solved, not by
 // this number, so a new id would orphan everyone's history to protect a detail
 // column that re-scales itself the first time anyone scores above 6.
-const WRONG_GUESS_COST = 10;
-const HINT_COST: Record<HintId, number> = {
+export const WRONG_GUESS_COST = 10;
+export const HINT_COST: Record<HintId, number> = {
     facts: 6,    // weakest -- year, runtime, a genre
     tagline: 10,
     plot: 18,    // strongest, even redacted
 };
 
 /** Points for a SOLVED round. Unsolved days post nothing, as before. */
-function roundScore(guesses: number, hintIds: HintId[]): number {
+export function roundScore(guesses: number, hintIds: HintId[]): number {
     // `guesses` counts the winning guess too, so wrong ones are guesses - 1.
     const wrong = Math.max(0, guesses - 1);
     let score = 100 - wrong * WRONG_GUESS_COST;
@@ -723,12 +723,16 @@ export const PosterDaily = ({ onClose }: { onClose: () => void }) => {
                         )}
 
                         <div className="pd-hints">
+                            {/* PRICES ON THE MENU. Every hint and every wrong
+                                guess costs points, and none of it was visible
+                                until after you had spent it -- so the only way
+                                to learn the tariff was to lose to it once. */}
                             <div className="pd-hints-head">
                                 Hints
                                 <span className="pd-hints-note">
-                                    {hints.length
-                                        ? `${hints.length} used — the board sees this`
-                                        : "each one is recorded on the board"}
+                                    {done
+                                        ? `${hints.length} used`
+                                        : `worth ${roundScore(used + 1, hints)} pts if you get it now · each wrong guess −${WRONG_GUESS_COST}`}
                                 </span>
                             </div>
                             {HINTS.map((h) => {
@@ -741,7 +745,10 @@ export const PosterDaily = ({ onClose }: { onClose: () => void }) => {
                                 if (open) {
                                     return (
                                         <div className="pd-hint pd-hint--open" key={h.id}>
-                                            <span className="pd-hint-label">{h.label}</span>
+                                            <span className="pd-hint-label">
+                                                {h.label}
+                                                <em className="pd-hint-spent">−{HINT_COST[h.id]}</em>
+                                            </span>
                                             <span className="pd-hint-body">{body || "—"}</span>
                                         </div>
                                     );
@@ -758,7 +765,7 @@ export const PosterDaily = ({ onClose }: { onClose: () => void }) => {
                                             {done ? "not used"
                                                 : !facts ? (factsError ? "unavailable" : "loading…")
                                                 : empty ? "none for this film"
-                                                : "reveal"}
+                                                : `−${HINT_COST[h.id]} pts`}
                                         </span>
                                     </button>
                                 );

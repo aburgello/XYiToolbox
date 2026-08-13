@@ -369,3 +369,12 @@
     color: #4e5a5d;
     letter-spacing: 0.3px;
 }
+
+/* What a hint cost, once bought -- so the running total in the header can be
+   checked rather than taken on trust. */
+.pd-hint-spent {
+    margin-left: 6px;
+    font-style: normal;
+    font-size: 9.5px;
+    color: #c98f3f;
+}
