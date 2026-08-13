@@ -393,6 +393,18 @@
 
         &:hover { background: rgba(45, 212, 191, 0.22); border-color: rgba(45, 212, 191, 0.5); }
         &:active { background: rgba(45, 212, 191, 0.3); }
+
+        /* Carries a reason but no document. Muted and not interactive, so it
+           reads as a note rather than a control that does nothing when clicked.
+           Precomputed rgba, never color-mix -- chrome74 target. */
+        &.dh-row-spec--none {
+            color: #8a8f96;
+            background: rgba(138, 143, 150, 0.1);
+            border-color: rgba(138, 143, 150, 0.28);
+            cursor: default;
+
+            &:hover { background: rgba(138, 143, 150, 0.1); border-color: rgba(138, 143, 150, 0.28); }
+        }
     }
 
     .dh-row-warn {

@@ -888,20 +888,30 @@ const DeliveryHubTool = () => {
                                         </span>
                                     </Tooltip>
                                     {suggestions[row.id]?.source && (
-                                        <Tooltip text={suggestions[row.id].source + (suggestions[row.id].openPath ? " — click to open it" : "")}>
-                                            <button
-                                                className="dh-row-spec"
-                                                onClick={() => {
-                                                    const p = suggestions[row.id]?.openPath;
-                                                    // `open` rather than a file:// URL: CEP's
-                                                    // browser handoff is unreliable for local
-                                                    // files, same as in masterCheck.ts.
-                                                    if (p) { try { child_process.spawn("open", [p], { detached: true }); } catch { /* nothing to do */ } }
-                                                }}
-                                            >
-                                                spec
-                                            </button>
-                                        </Tooltip>
+                                        suggestions[row.id].openPath ? (
+                                            <Tooltip text={suggestions[row.id].source + " — click to open it"}>
+                                                <button
+                                                    className="dh-row-spec"
+                                                    onClick={() => {
+                                                        const p = suggestions[row.id]?.openPath;
+                                                        // `open` rather than a file:// URL: CEP's
+                                                        // browser handoff is unreliable for local
+                                                        // files, same as in masterCheck.ts.
+                                                        if (p) { try { child_process.spawn("open", [p], { detached: true }); } catch { /* nothing to do */ } }
+                                                    }}
+                                                >
+                                                    spec
+                                                </button>
+                                            </Tooltip>
+                                        ) : (
+                                            /* A reason, but no document to open. Rendered as a
+                                               plain chip rather than the button above -- a
+                                               control that looks clickable and does nothing is
+                                               worse than saying so. */
+                                            <Tooltip text={suggestions[row.id].source}>
+                                                <span className="dh-row-spec dh-row-spec--none">no spec</span>
+                                            </Tooltip>
+                                        )
                                     )}
                                     {warnings.length > 0 && (
                                         <Tooltip text={warnings.join(" · ") + " — correct the value to clear this"}>

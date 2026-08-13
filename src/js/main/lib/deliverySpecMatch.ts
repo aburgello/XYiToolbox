@@ -145,18 +145,29 @@ export interface SpecSuggestion {
 const EMPTY: SpecSuggestion = { sizeMB: "", maxMbps: "", source: "", openPath: "", searched: false };
 
 export async function suggestForComp(compName: string, sourcePath: string): Promise<SpecSuggestion> {
+    // EVERY EXIT SAYS WHY. These all used to return EMPTY, which the caller
+    // discards (searched:false), so the row showed nothing at all -- identical
+    // to never having pressed the button. A reason you can read is the
+    // difference between "the panel is broken" and "your comp name has no
+    // country code in it", and only one of those is worth anyone's afternoon.
     const parts = parseDeliveryCompName(compName);
-    if (!parts) return EMPTY;
+    if (!parts) {
+        return { ...EMPTY, searched: true, source: "Couldn't read a size, duration and country code out of this comp's name" };
+    }
     const specsDir = findSpecsFolder(sourcePath);
-    if (!specsDir) return EMPTY;
+    if (!specsDir) {
+        return { ...EMPTY, searched: true, source: "No Masters/Specs folder anywhere above this render" };
+    }
 
     let pdfs: string[] = [];
     try {
         pdfs = fs.readdirSync(specsDir).filter((f: string) => /\.pdf$/i.test(f) && !f.startsWith("."));
     } catch {
-        return EMPTY;
+        return { ...EMPTY, searched: true, source: `Couldn't read ${specsDir}` };
     }
-    if (!pdfs.length) return EMPTY;
+    if (!pdfs.length) {
+        return { ...EMPTY, searched: true, source: "The Specs folder has no PDFs in it" };
+    }
 
     // A row that matched exactly but carries no numbers. Held rather than
     // returned immediately, so a LATER pdf that does have them still wins --
@@ -234,5 +245,9 @@ export async function suggestForComp(compName: string, sourcePath: string): Prom
         }
     }
 
-    return { ...EMPTY, searched: true };
+    return {
+        ...EMPTY,
+        searched: true,
+        source: `Nothing in ${pdfs.length === 1 ? "the spec PDF" : `the ${pdfs.length} spec PDFs`} matches ${parts.size} · ${parts.duration}s`,
+    };
 }
