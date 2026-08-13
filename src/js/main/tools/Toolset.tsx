@@ -246,8 +246,15 @@ export const ACTIONS: ActionEntry[] = [
         run: async () => {
             const insp = (await evalTSSafe("cheekyTInspect")) as ActionResult & CheekyTInspection;
             if (!insp || insp.success === false) return insp;
+            // APPLY WHAT RESOLVED EITHER WAY. cheekyTCheck writes artwork,
+            // version and date, and skips a territory it couldn't resolve -- so
+            // running it first means the modal only ever has to collect the one
+            // field that failed. Skipping this step left the resolvable fields
+            // unwritten if someone closed the modal without answering, which is
+            // not what "Cheeky T ran" should mean.
+            const applied = await evalTSSafe("cheekyTCheck");
             if ((insp.unresolved || []).length > 0) return insp;
-            return evalTSSafe("cheekyTCheck");
+            return applied;
         },
         successText: () => "Frontcard text layers updated.",
     },

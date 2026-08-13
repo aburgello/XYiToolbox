@@ -60,8 +60,17 @@ export const CheekyTModal = ({ inspection, onClose }: Props) => {
     const [applied, setApplied] = useState(false);
     const [applyError, setApplyError] = useState<string | null>(null);
 
+    // ONLY THE FIELDS THAT FAILED. Everything the comp name answered has
+    // already been applied correctly, so showing it here was asking someone to
+    // re-check work that was never in doubt -- and burying the one field that
+    // was. Cheeky DT is the tool for editing a field that parsed fine.
+    //
+    // Taken from the inspection, not from live state, so a field does not
+    // vanish out from under you the moment you fill it in. Date is never in
+    // here: it is always today, so it can never fail to resolve.
     const unresolved = inspection.unresolved || [];
     const missing = useCallback((k: string) => unresolved.indexOf(k) !== -1, [unresolved]);
+    const show = useCallback((k: string) => unresolved.indexOf(k) !== -1, [unresolved]);
 
     const countries = inspection.countries || [];
     // Matches on CODE as well as name, so "DE" finds Germany. An exact code hit
@@ -98,7 +107,12 @@ export const CheekyTModal = ({ inspection, onClose }: Props) => {
         }
         if (timer.current) window.clearTimeout(timer.current);
         timer.current = window.setTimeout(() => {
-            evalTS("cheekyTApplyFields", JSON.stringify({ artwork, version, territory, date }))
+            // The three fields this modal can own. Date is written by the
+            // Cheeky T run that opened this and is never editable here. Sending
+            // all three unconditionally is safe and simpler than working out
+            // which are on screen: they are prefilled with the values that run
+            // already applied, and the host skips blanks entirely.
+            evalTS("cheekyTApplyFields", JSON.stringify({ artwork, version, territory }))
                 .then((r) => {
                     const res = r as unknown as { success?: boolean; error?: string } | undefined;
                     if (res && res.success === false) {
@@ -114,7 +128,7 @@ export const CheekyTModal = ({ inspection, onClose }: Props) => {
         return () => {
             if (timer.current) window.clearTimeout(timer.current);
         };
-    }, [artwork, version, territory, date]);
+    }, [artwork, version, territory]);
 
     // Clicking anywhere outside the picker closes it. Mousedown rather than
     // click: the list's buttons are gone from the DOM by the time a click
@@ -152,11 +166,10 @@ export const CheekyTModal = ({ inspection, onClose }: Props) => {
         return () => window.removeEventListener("keydown", onKey);
     }, [onClose, terOpen]);
 
-    const stillMissing = [
-        !artwork ? "artwork" : "",
-        !version ? "version" : "",
-        !territory ? "territory" : "",
-    ].filter((s) => s !== "");
+    // Counts only what is actually on screen -- a field the name answered is
+    // not "still blank", it was simply never asked about.
+    const current: Record<string, string> = { artwork, version, territory };
+    const stillMissing = unresolved.filter((k) => !current[k]);
 
     return (
         <div className="ctm-backdrop" onClick={onClose}>
@@ -170,6 +183,7 @@ export const CheekyTModal = ({ inspection, onClose }: Props) => {
                 </div>
 
                 <div className="ctm-fields">
+                    {show("artwork") && (
                     <label className={"ctm-field" + (missing("artwork") ? " is-missing" : "")}>
                         <span className="ctm-lbl">
                             Artwork {missing("artwork") && <AlertCircle size={10} />}
@@ -187,7 +201,9 @@ export const CheekyTModal = ({ inspection, onClose }: Props) => {
                             ))}
                         </span>
                     </label>
+                    )}
 
+                    {show("version") && (
                     <label className={"ctm-field" + (missing("version") ? " is-missing" : "")}>
                         <span className="ctm-lbl">
                             Version {missing("version") && <AlertCircle size={10} />}
@@ -203,7 +219,9 @@ export const CheekyTModal = ({ inspection, onClose }: Props) => {
                             onBlur={() => setVersion((v) => v.toUpperCase())}
                         />
                     </label>
+                    )}
 
+                    {show("territory") && (
                     <div className={"ctm-field" + (missing("territory") ? " is-missing" : "")} ref={terRef}>
                         <span className="ctm-lbl">
                             Territory {missing("territory") && <AlertCircle size={10} />}
@@ -240,11 +258,7 @@ export const CheekyTModal = ({ inspection, onClose }: Props) => {
                             </ul>
                         )}
                     </div>
-
-                    <label className="ctm-field">
-                        <span className="ctm-lbl">Date</span>
-                        <input className="ctm-input" value={date} onChange={(e) => setDate(e.target.value)} />
-                    </label>
+                    )}
                 </div>
 
                 <div className="ctm-foot">
@@ -252,7 +266,7 @@ export const CheekyTModal = ({ inspection, onClose }: Props) => {
                         {applyError ? (
                             <><StatusIcon type="error" size={12} /> {applyError}</>
                         ) : stillMissing.length ? (
-                            <>{stillMissing.length} still blank — blanks are left untouched on the card.</>
+                            <>{stillMissing.join(" and ")} still blank — left untouched on the card.</>
                         ) : applied ? (
                             <><Check size={12} /> Written to {inspection.frontcards === 1 ? "the Frontcard" : `${inspection.frontcards} Frontcards`}.</>
                         ) : (
