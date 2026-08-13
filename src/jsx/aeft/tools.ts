@@ -840,6 +840,192 @@ function frontcardSet(target: FrontcardTarget, which: string, value: string): vo
   prop.setValue(String(value));
 }
 
+// =============================================================================
+// FRONTCARD FIELDS -- read what's on the card, write only what was edited.
+//
+// Cheeky DT's checkboxes only ever said WHICH fields to re-derive from the
+// filename; there was no way to say what to write. These two calls back the
+// live-editing version: read gives the panel what the card currently says (plus
+// what the name would give), write takes only the fields a human touched.
+// =============================================================================
+
+/** Trailing inch mark is a studio constant -- stored bare, appended on write. */
+function stripInch(v: string): string {
+  const t = String(v);
+  return t.length && t.charAt(t.length - 1) === '"' ? t.substring(0, t.length - 1) : t;
+}
+
+function readText(target: FrontcardTarget, which: string): string {
+  const idx = (target.idx as any)[which];
+  if (!idx) return "";
+  const layer = target.source.layer(idx);
+  if (!layer) return "";
+  const prop = layer.property("Source Text") as Property;
+  if (!prop) return "";
+  return String(prop.value);
+}
+
+/**
+ * Splits "MULTIPLE ART 15\"" back into campaign and duration.
+ *
+ * This is the same guess the old code made, and it is still a guess -- but it
+ * is now only a PREFILL that a human sees and can correct, never a value
+ * written back unseen. The old version used the guessed fragment as a split
+ * delimiter and silently truncated any campaign containing the duration digits.
+ */
+function splitCampaignLine(line: string): { campaign: string; duration: string } {
+  const raw = String(line);
+  const parts = raw.split(" ");
+  if (parts.length < 2) return { campaign: raw, duration: "" };
+  const last = stripInch(parts[parts.length - 1]);
+  // Only treat the last token as a duration if it actually looks like one.
+  let numeric = last.length > 0;
+  for (let i = 0; i < last.length; i++) {
+    const c = last.charAt(i);
+    if (c < "0" || c > "9") { numeric = false; break; }
+  }
+  if (!numeric) return { campaign: raw, duration: "" };
+  parts.length = parts.length - 1;
+  return { campaign: parts.join(" "), duration: last };
+}
+
+export interface FrontcardFields {
+  success: boolean;
+  error?: string;
+  frontcards?: number;
+  compName?: string;
+  /** What the card says right now. */
+  current?: { title: string; artwork: string; version: string; campaign: string; duration: string; territory: string; date: string };
+  /** What the filename would give -- what the per-field reset button applies. */
+  derived?: { title: string; artwork: string; version: string; campaign: string; duration: string; territory: string; date: string };
+  /** Derived fields the name couldn't answer. */
+  unresolved?: string[];
+  territoryToken?: string;
+  countries?: string[];
+}
+
+export const frontcardReadFields = (): FrontcardFields => {
+  try {
+    const comp = app.project.activeItem;
+    if (!(comp instanceof CompItem)) return { success: false, error: "Select or open a composition first." };
+    const targets = frontcardTargets(comp);
+    if (!targets.length) return { success: false, error: "No Frontcard layer in this comp." };
+
+    // Read from the FIRST frontcard. Multiple frontcards in one comp are all
+    // written together, so any of them answers "what does it say now".
+    const t0 = targets[0];
+    const line = splitCampaignLine(readText(t0, "campaignLine"));
+    let ter = readText(t0, "territory");
+    if (ter.length > 1 && ter.charAt(0) === "(" && ter.charAt(ter.length - 1) === ")") {
+      ter = ter.substring(1, ter.length - 1);
+    }
+
+    const name = comp.name;
+    const meta = parseFilenameMeta(name);
+    const terMatch = frontcardTerritory(name);
+
+    const today = new Date();
+    const day = today.getDate();
+    const month = today.getMonth() + 1;
+    const year = String(today.getFullYear()).slice(2, 4);
+    const fullDate = (day < 10 ? "0" : "") + day + "." + (month < 10 ? "0" : "") + month + "." + year;
+
+    let derivedTitle = "";
+    if (app.project.file) {
+      const projPath = String(app.project.file);
+      derivedTitle = projPath.split("/Digital")[0].split("/").slice(-1)[0].split("_").join(" ");
+    }
+
+    const unresolved: string[] = [];
+    if (!meta.artworkType) unresolved.push("artwork");
+    if (!meta.version) unresolved.push("version");
+    if (!terMatch.name) unresolved.push("territory");
+    if (!meta.campaign) unresolved.push("campaign");
+    if (!derivedTitle) unresolved.push("title");
+
+    const names: string[] = [];
+    for (let i = 0; i < TC_COUNTRIES.length; i++) {
+      if (names.indexOf(TC_COUNTRIES[i].name) === -1) names.push(TC_COUNTRIES[i].name);
+    }
+
+    return {
+      success: true,
+      frontcards: targets.length,
+      compName: name,
+      current: {
+        title: readText(t0, "title"),
+        artwork: readText(t0, "artwork"),
+        version: readText(t0, "version"),
+        campaign: line.campaign,
+        duration: line.duration,
+        territory: ter,
+        date: readText(t0, "date"),
+      },
+      derived: {
+        title: derivedTitle,
+        artwork: meta.artworkType || "",
+        version: meta.version || "",
+        campaign: (meta.campaign || "").split("_").join(" "),
+        duration: (meta.duration || "").replace("sec", ""),
+        territory: terMatch.name || "",
+        date: fullDate,
+      },
+      unresolved: unresolved,
+      territoryToken: terMatch.token,
+      countries: names,
+    };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/**
+ * Writes ONLY the keys present in the payload, to every Frontcard in the comp.
+ *
+ * Campaign and duration share one text layer, so both must be supplied together
+ * when either is being written -- the line is composed from the two values
+ * rather than reverse-engineered out of itself, which is the whole reason the
+ * old read-back-and-split could silently lose text.
+ */
+export const frontcardWriteFields = (payload: string): Result => {
+  try {
+    const v = JSON.parse(payload) as Record<string, string>;
+    const comp = app.project.activeItem;
+    if (!(comp instanceof CompItem)) return { success: false, error: "Select or open a composition first." };
+    const targets = frontcardTargets(comp);
+    if (!targets.length) return { success: false, error: "No Frontcard layer in this comp." };
+
+    const has = (k: string) => {
+      // hasOwnProperty rather than truthiness: an intentionally emptied field
+      // is still a field, and must be distinguishable from one never sent.
+      return v.hasOwnProperty(k) && String(v[k]) !== "";
+    };
+
+    app.beginUndoGroup("Frontcard fields");
+    try {
+      for (let i = 0; i < targets.length; i++) {
+        if (has("title")) frontcardSet(targets[i], "title", v.title);
+        if (has("artwork")) frontcardSet(targets[i], "artwork", v.artwork);
+        if (has("version")) frontcardSet(targets[i], "version", v.version);
+        if (has("territory")) frontcardSet(targets[i], "territory", "(" + v.territory + ")");
+        if (has("date")) frontcardSet(targets[i], "date", v.date);
+        if (has("campaign") || has("duration")) {
+          // The inch mark is a studio constant -- the panel holds a bare number
+          // and it is appended here, so it can never end up doubled or missing.
+          const dur = has("duration") ? stripInch(String(v.duration)) : "";
+          const camp = has("campaign") ? String(v.campaign) : "";
+          frontcardSet(targets[i], "campaignLine", (camp + " " + dur + '"').replace(/^ +/, ""));
+        }
+      }
+    } finally {
+      app.endUndoGroup();
+    }
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
 export interface CheekyTInspection {
   success: boolean;
   error?: string;
@@ -920,28 +1106,10 @@ export const cheekyTInspect = (): CheekyTInspection => {
  * blank a field that was already correct on the card.
  */
 export const cheekyTApplyFields = (payload: string): Result => {
-  try {
-    const v = JSON.parse(payload) as { artwork?: string; version?: string; territory?: string; date?: string };
-    const comp = app.project.activeItem;
-    if (!(comp instanceof CompItem)) return { success: false, error: "Select or open a composition first." };
-    const targets = frontcardTargets(comp);
-    if (!targets.length) return { success: false, error: "No Frontcard layer in this comp." };
-
-    app.beginUndoGroup("Cheeky T fields");
-    try {
-      for (let i = 0; i < targets.length; i++) {
-        if (v.artwork) frontcardSet(targets[i], "artwork", v.artwork);
-        if (v.version) frontcardSet(targets[i], "version", v.version);
-        if (v.territory) frontcardSet(targets[i], "territory", "(" + v.territory + ")");
-        if (v.date) frontcardSet(targets[i], "date", v.date);
-      }
-    } finally {
-      app.endUndoGroup();
-    }
-    return { success: true };
-  } catch (e) {
-    return { success: false, error: e.toString() };
-  }
+  // Cheeky T's four fields, through the same writer Cheeky DT uses. Kept as its
+  // own export because the modal calls it by name; the logic lives in one place
+  // so the two can never disagree about how a field is written.
+  return frontcardWriteFields(payload);
 };
 
 export interface CheekyDTResult {

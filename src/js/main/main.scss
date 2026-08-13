@@ -2090,3 +2090,205 @@ textarea {
     &:hover { background: #24405a; }
     &:active { background: #172a3a; }
 }
+
+/* ── Cheeky DT, live fields (tools/CheekyDT.tsx) ──────────────────────────── */
+.cdt { display: flex; flex-direction: column; gap: 12px; }
+
+.cdt-head { display: flex; align-items: flex-start; gap: 10px; }
+.cdt-head-text { min-width: 0; }
+.cdt-title { margin: 0; font-size: 14px; font-weight: 650; color: #eee; }
+
+.cdt-comp {
+    margin: 2px 0 0;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 9.5px;
+    color: #7a7a7a;
+    word-break: break-word;
+}
+
+.cdt-refresh {
+    margin-left: auto;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid #333;
+    border-radius: 5px;
+    /* index.scss's global button:hover/:active would paint over this. */
+    background: #1d1d1d;
+    color: #999;
+    cursor: pointer;
+
+    &:hover { background: #262626; color: #ddd; }
+    &:active { background: #191919; }
+    &:disabled { opacity: 0.4; cursor: default; }
+}
+
+.cdt-lede { margin: 0; font-size: 11.5px; line-height: 1.5; color: #8f8f8f; }
+.cdt-empty { margin: 0; font-size: 11.5px; color: #b4776a; }
+
+.cdt-fields { display: flex; flex-direction: column; gap: 11px; }
+
+.cdt-row {
+    display: block;
+
+    &.is-touched .cdt-row-label { color: #5eead4; }
+    &.is-touched .cdt-input { border-color: #2a6b64; }
+    &.is-missing .cdt-row-label { color: #e0a04a; }
+    &.is-missing .cdt-input { border-color: #6b4a1e; }
+}
+
+.cdt-row-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+
+.cdt-row-label {
+    /* flex:1 rather than margin-left:auto on the button -- the button is wrapped
+       in <Tooltip>, whose inner span carries flex:0 0 auto !important and would
+       defeat an auto margin placed on the button itself. */
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    font-size: 9px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: #767c88;
+}
+
+.cdt-hint {
+    flex: none;
+    font-style: normal;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 9.5px;
+    color: #a98244;
+}
+
+.cdt-reset {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 7px;
+    border: 1px solid #333;
+    border-radius: 5px;
+    background: #1d1d1d;
+    color: #8a8a8a;
+    font-size: 9.5px;
+    cursor: pointer;
+
+    &:hover:not(:disabled) { background: #262626; color: #ddd; }
+    &:active:not(:disabled) { background: #191919; }
+    &:disabled { opacity: 0.3; cursor: default; }
+}
+
+.cdt-input {
+    box-sizing: border-box;
+    width: 100%;
+    height: 27px;
+    padding: 0 9px;
+    border: 1px solid #363636;
+    border-radius: 6px;
+    background: #121212;
+    color: #ddd;
+    font-size: 11.5px;
+
+    &:focus { outline: none; border-color: #4a7fa8; }
+}
+
+.cdt-suffixed { display: flex; align-items: center; gap: 6px; }
+.cdt-suffix { flex: none; font-size: 13px; color: #8a8a8a; }
+
+.cdt-chips { display: flex; gap: 5px; flex-wrap: wrap; }
+
+.cdt-chip {
+    box-sizing: border-box;
+    padding: 5px 11px;
+    border: 1px solid #363636;
+    border-radius: 6px;
+    background: #121212;
+    color: #999;
+    font-size: 10.5px;
+    cursor: pointer;
+
+    &:hover { background: #1e1e1e; color: #ddd; }
+    &:active { background: #101010; }
+
+    &.is-on { background: #12332f; border-color: #2dd4bf; color: #5eead4; }
+    /* Beats the shared :hover, which would otherwise grey out the selected chip. */
+    &.is-on:hover { background: #17423d; color: #7ff0dd; }
+}
+
+.cdt-matches {
+    box-sizing: border-box;
+    /* In flow, not absolute: the tool page has overflow ancestors and an
+       absolutely positioned list gets clipped by them -- same trap the Cheeky T
+       modal hit. Flowing it pushes the fields below down instead. */
+    margin: 4px 0 0;
+    padding: 4px;
+    list-style: none;
+    max-height: 150px;
+    overflow-y: auto;
+    border: 1px solid #363636;
+    border-radius: 6px;
+    background: #131313;
+
+    button {
+        display: block;
+        width: 100%;
+        padding: 5px 8px;
+        border: none;
+        border-radius: 4px;
+        background: transparent;
+        color: #c4c4c4;
+        font-size: 11px;
+        text-align: left;
+        cursor: pointer;
+
+        &:hover { background: #1f3b38; color: #fff; }
+        &:active { background: #18302e; }
+    }
+}
+
+.cdt-none { padding: 5px 8px; font-size: 11px; color: #6f6f6f; }
+
+.cdt-written { margin: 0; font-size: 10.5px; color: #6f6f6f; }
+
+.cdt-status {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin: 0;
+    font-size: 11px;
+
+    &.is-success { color: #5eead4; }
+    &.is-error { color: #e0857a; }
+}
+
+.cdt-lookup {
+    margin-top: 4px;
+    padding-top: 12px;
+    border-top: 1px solid #2a2a2a;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.cdt-lookup-row { display: flex; gap: 6px; }
+
+.cdt-lookup-go {
+    flex: none;
+    padding: 0 14px;
+    height: 27px;
+    border: 1px solid #3d5a6b;
+    border-radius: 6px;
+    background: #1a2c38;
+    color: #cfe6f2;
+    font-size: 11px;
+    cursor: pointer;
+
+    &:hover { background: #223a4a; }
+    &:active { background: #16242e; }
+}
