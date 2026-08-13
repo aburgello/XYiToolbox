@@ -404,3 +404,18 @@
     &:hover { background: #221c36; border-color: #574a7d; }
     &:active { background: #14111f; }
 }
+
+.nte-clock {
+    margin-left: 12px;
+    color: #8f84b8;
+    font-variant-numeric: tabular-nums;
+
+    &.is-out { color: #6a6a72; }
+}
+
+.nte-bd-bonus {
+    width: 26px;
+    text-align: right;
+    color: #7fd4a8;
+    font-variant-numeric: tabular-nums;
+}

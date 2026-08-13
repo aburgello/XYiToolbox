@@ -26,6 +26,35 @@ const POINTS_PER_CURVE = 200;
 /** Mean sampled error at which a curve is worth nothing. */
 const ZERO_AT = 0.15;
 
+// THE CLOCK EXISTS BECAUSE THE TARGET LOOPS FOREVER.
+//
+// Untimed, a patient player converges on near-200 every curve by nudging a
+// handle a hundredth at a time, so the board ranks persistence rather than eye
+// -- the same staring-contest problem the clock solves in Off by a Pixel.
+//
+// 20 seconds rather than something snappier because of what a careful attempt
+// actually costs: the target loops every 1.95s, so reading it takes ~3 loops,
+// dragging both handles ~3s, and checking the two dots together ~2 loops. That
+// is about 13s. At 10s there is no verification pass at all and the game stops
+// being about reading acceleration.
+//
+// The pressure lives in the BONUS, not in a guillotine: time out and you keep
+// whatever accuracy you had. Accuracy therefore still decides the winner and
+// speed breaks ties, rather than fast-and-sloppy beating slow-and-precise.
+const CURVE_SECONDS = 20;
+const SPEED_BONUS = 60;
+/**
+ * No bonus below half marks, or the optimal opening is to slam "Lock it in" on
+ * the default handles five times and bank 300 for nothing.
+ */
+const BONUS_FLOOR = POINTS_PER_CURVE / 2;
+
+export function speedBonus(seconds: number, accuracy: number): number {
+    if (accuracy < BONUS_FLOOR) return 0;
+    const left = Math.max(0, 1 - seconds / CURVE_SECONDS);
+    return Math.round(SPEED_BONUS * left);
+}
+
 interface Ease {
     name: string;
     p: [number, number, number, number];
@@ -174,6 +203,7 @@ const KEY_CODES: number[] = [];
 interface Result {
     name: string;
     points: number;
+    bonus: number;
     err: number;
 }
 
@@ -189,6 +219,8 @@ export const NailTheEase = ({ onClose }: { onClose: () => void }) => {
     const [done, setDone] = useState(false);
     const [postNote, setPostNote] = useState<string | null>(null);
     const [dragging, setDragging] = useState<0 | 1 | null>(null);
+    const [elapsed, setElapsed] = useState(0);
+    const startedRef = useRef(Date.now());
 
     // Read by the render loop every frame. Kept in refs as well as state so the
     // rAF closure never has to be rebuilt (and the animation never restarts)
@@ -201,12 +233,14 @@ export const NailTheEase = ({ onClose }: { onClose: () => void }) => {
     useEffect(() => { doneRef.current = done; }, [done]);
 
     const postedRef = useRef(false);
-    const total = results.reduce((n, r) => n + r.points, 0);
+    const total = results.reduce((n, r) => n + r.points + r.bonus, 0);
     const target = targets[Math.min(idx, targets.length - 1)];
 
     const submit = useCallback(() => {
+        const secs = Math.min(CURVE_SECONDS, (Date.now() - startedRef.current) / 1000);
         const err = curveError(handles, target.p);
-        setResults((prev) => [...prev, { name: target.name, points: scoreFor(err), err }]);
+        const points = scoreFor(err);
+        setResults((prev) => [...prev, { name: target.name, points, bonus: speedBonus(secs, points), err }]);
         if (idx + 1 >= targets.length) setDone(true);
         else {
             setIdx((i) => i + 1);
@@ -215,6 +249,16 @@ export const NailTheEase = ({ onClose }: { onClose: () => void }) => {
             setHandles([0.4, 0.4, 0.6, 0.6]);
         }
     }, [handles, idx, target, targets.length]);
+
+    // The clock. Restarts on each curve; running out locks in what you have
+    // rather than scoring zero, so the cost of overrunning is the bonus alone.
+    useEffect(() => {
+        if (done) return;
+        startedRef.current = Date.now();
+        setElapsed(0);
+        const t = window.setInterval(() => setElapsed((Date.now() - startedRef.current) / 1000), 100);
+        return () => window.clearInterval(t);
+    }, [idx, done]);
 
     useEffect(() => {
         if (!done || postedRef.current) return;
@@ -390,7 +434,7 @@ export const NailTheEase = ({ onClose }: { onClose: () => void }) => {
     return (
         <ArcadeFrame
             title="NAIL THE EASE"
-            hint="Drag the two handles until your dot moves like the target · five curves a run"
+            hint={`Drag the two handles until your dot moves like the target · ${CURVE_SECONDS}s a curve for the speed bonus`}
             keyCodes={KEY_CODES}
             onClose={onClose}
         >
@@ -407,6 +451,11 @@ export const NailTheEase = ({ onClose }: { onClose: () => void }) => {
                 <>
                     <div className="nte-hud">
                         <span className="nte-round">Curve {idx + 1} / {targets.length}</span>
+                        <span className={"nte-clock" + (elapsed >= CURVE_SECONDS ? " is-out" : "")}>
+                            {elapsed >= CURVE_SECONDS
+                                ? "no bonus"
+                                : `+${speedBonus(elapsed, POINTS_PER_CURVE)} bonus`}
+                        </span>
                         <span className="nte-score">{total} pts</span>
                     </div>
                     <button className="nte-submit" onClick={submit}>Lock it in</button>
@@ -416,13 +465,14 @@ export const NailTheEase = ({ onClose }: { onClose: () => void }) => {
             {done && (
                 <div className="nte-overlay">
                     <span className="nte-total">{total}</span>
-                    <span className="nte-outof">out of {targets.length * POINTS_PER_CURVE}</span>
+                    <span className="nte-outof">out of {targets.length * (POINTS_PER_CURVE + SPEED_BONUS)}</span>
                     <ul className="nte-breakdown">
                         {results.map((r, i) => (
                             <li key={i}>
                                 <span className="nte-bd-name">{r.name}</span>
                                 <span className="nte-bd-err">±{r.err.toFixed(3)}</span>
-                                <span className="nte-bd-pts">{r.points}</span>
+                                <span className="nte-bd-bonus">{r.bonus > 0 ? `+${r.bonus}` : ""}</span>
+                                <span className="nte-bd-pts">{r.points + r.bonus}</span>
                             </li>
                         ))}
                     </ul>
