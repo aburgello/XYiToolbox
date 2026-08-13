@@ -237,7 +237,18 @@ export const ACTIONS: ActionEntry[] = [
         description: "Updates the active comp's Frontcard text layers (artwork type, version, territory check, date) from its filename. Requires a Frontcard-based project.",
         icon: CheckSquare,
         group: "qc",
-        run: () => evalTSSafe("cheekyTCheck"),
+        // INSPECT BEFORE WRITING. Cheeky T used to stamp whatever the comp name
+        // gave it, so an unreadable name wrote "(null)" -- or, before the lookup
+        // was fixed, a confidently wrong country -- onto a finished frontcard.
+        // Anything the name can't answer now opens the review modal instead
+        // (handled in runAction, which reads `unresolved` off this result). A
+        // name that parses cleanly still runs in one click, exactly as before.
+        run: async () => {
+            const insp = (await evalTSSafe("cheekyTInspect")) as ActionResult & CheekyTInspection;
+            if (!insp || insp.success === false) return insp;
+            if ((insp.unresolved || []).length > 0) return insp;
+            return evalTSSafe("cheekyTCheck");
+        },
         successText: () => "Frontcard text layers updated.",
     },
     {
@@ -1111,6 +1122,16 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
         // MC It! returns a full structured report -- show the app-root results
         // modal (McItReportHost in main.tsx) instead of a one-line toast, same
         // rich UI as Campaign Localiser's own MC It! button.
+        // Cheeky T hands an inspection back when the comp name couldn't answer
+        // a field: open the review modal instead of toasting a success that
+        // silently skipped something. Same id-check shape as mc-it below.
+        if (action.id === "cheeky-t-check" && result && result.success) {
+            const insp = result as unknown as CheekyTInspection;
+            if ((insp.unresolved || []).length > 0) {
+                setCheekyT(insp);
+                return;
+            }
+        }
         if (action.id === "mc-it" && result && result.success) {
             showMcItReport(result as unknown as McReport);
             sfx.success();
