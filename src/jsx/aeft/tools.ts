@@ -943,6 +943,48 @@ function splitCampaignLine(line: string): { campaign: string; duration: string }
   return { campaign: parts.join(" "), duration: last };
 }
 
+/** A name is usable when it carries the tokens the frontcard needs. */
+function frontcardNameUsable(name: string): boolean {
+  const meta = parseFilenameMeta(name);
+  return meta.artworkType !== "" && meta.size !== "";
+}
+
+/**
+ * The name to derive frontcard values FROM, which is not always the comp's own.
+ *
+ * A master's main comp is called "_V01" and carries nothing -- the real name
+ * lives on the comp it WRAPS ("FID_INTL_Trio_DOOH_1920x1080px_15s_OV"), sitting
+ * right there as a layer. So every "from name" reset was permanently greyed out
+ * on exactly the files where the name was most obviously available.
+ *
+ * Layers before folder siblings: a layer inside this comp is a real structural
+ * link, while a sibling merely shares a folder and could belong to a different
+ * deliverable entirely.
+ */
+function frontcardSourceName(comp: CompItem): { name: string; from: string } {
+  if (frontcardNameUsable(comp.name)) return { name: comp.name, from: "" };
+
+  for (let i = 1; i <= comp.numLayers; i++) {
+    const layer = comp.layer(i);
+    const src = (layer as AVLayer).source;
+    // Duck-typed, never instanceof -- see the note on frontcardTargets.
+    if (src && typeof (src as CompItem).numLayers === "number" && frontcardNameUsable(src.name)) {
+      return { name: src.name, from: src.name };
+    }
+  }
+
+  const folder = comp.parentFolder;
+  if (folder) {
+    for (let i = 1; i <= folder.numItems; i++) {
+      const item = folder.item(i);
+      if (item && typeof (item as CompItem).numLayers === "number" && frontcardNameUsable(item.name)) {
+        return { name: item.name, from: item.name };
+      }
+    }
+  }
+  return { name: comp.name, from: "" };
+}
+
 export interface FrontcardFields {
   success: boolean;
   error?: string;
@@ -956,6 +998,9 @@ export interface FrontcardFields {
   unresolved?: string[];
   territoryToken?: string;
   countries?: { name: string; code: string }[];
+  /** Set when the values were derived from a DIFFERENT comp's name than the
+   *  active one -- a master's "_V01" reading off the comp it wraps. */
+  derivedFrom?: string;
 }
 
 export const frontcardReadFields = (): FrontcardFields => {
@@ -974,7 +1019,10 @@ export const frontcardReadFields = (): FrontcardFields => {
       ter = ter.substring(1, ter.length - 1);
     }
 
-    const name = comp.name;
+    // The comp's own name where it carries anything, otherwise the comp it
+    // wraps -- see frontcardSourceName.
+    const src = frontcardSourceName(comp);
+    const name = src.name;
     const meta = parseFilenameMeta(name);
     const terMatch = frontcardTerritory(name);
 
@@ -1024,7 +1072,11 @@ export const frontcardReadFields = (): FrontcardFields => {
       derived: {
         title: derivedTitle,
         artwork: meta.artworkType || "",
-        version: meta.version || "",
+        // VERSION comes from whichever name has one. A master wraps a comp
+        // called "FID_..._OV" that carries no version at all, inside a comp
+        // called "_V01" that is nothing BUT the version -- so taking it from
+        // the wrapped name alone threw away the one thing the outer name knew.
+        version: meta.version || (comp.name.match(/V\d+/) ? String(comp.name.match(/V\d+/)) : ""),
         campaign: campaignWords(meta.campaign || ""),
         duration: (meta.duration || "").replace("sec", ""),
         territory: terMatch.name || "",
@@ -1033,6 +1085,7 @@ export const frontcardReadFields = (): FrontcardFields => {
       unresolved: unresolved,
       territoryToken: terMatch.token,
       countries: names,
+      derivedFrom: src.from,
     };
   } catch (e) {
     return { success: false, error: e.toString() };

@@ -55,6 +55,7 @@ interface FrontcardFields {
     derived?: FieldMap;
     unresolved?: string[];
     territoryToken?: string;
+    derivedFrom?: string;
     countries?: { name: string; code: string }[];
 }
 
@@ -354,6 +355,13 @@ const CheekyDTTool = () => {
                 <p className="cdt-comp">
                     {card?.compName || (loading ? "Reading the Frontcard…" : "No comp open")}
                     {card?.frontcards ? ` · ${card.frontcards} Frontcard${card.frontcards === 1 ? "" : "s"}` : ""}
+                    {/* Says WHERE the reset values come from when it isn't this
+                        comp's own name -- a master's "_V01" reads off the comp
+                        it wraps, and silently using another comp's name would
+                        be worse than not using it at all. */}
+                    {card?.derivedFrom && (
+                        <em className="cdt-derived">names from {card.derivedFrom}</em>
+                    )}
                 </p>
                 <Tooltip text="Re-read the Frontcard and drop your edits">
                     <button className="cdt-refresh" onClick={read} disabled={loading}>
