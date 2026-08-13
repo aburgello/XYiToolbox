@@ -42,6 +42,156 @@ function applyValue(prop: Property, time: number, value: any): void {
 // own width/height instead for anything whose source is a CompItem;
 // real footage/solids/text/shapes still use sourceRectAtTime, which
 // already reports exactly what's on screen for those.
+// =============================================================================
+// MASK-AWARE CONTENT RECT (Snap Anchor Point only)
+//
+// A layer masked down to one shape has a content rect that is still the FULL
+// source: sourceRectAtTime reports the layer's pixels, not what the mask lets
+// through. So snapping the anchor to "bottom-left" on a masked-off logo put it
+// on the corner of the untouched artwork, somewhere out in the transparent
+// area, which is exactly the jump the tool exists to avoid.
+//
+// EXACTLY ONE mask -> measure that mask. Zero, or two or more -> fall back to
+// the layer rect, because with several masks the intended region depends on
+// their modes (add/subtract/intersect) and their stacking, and guessing wrong
+// is worse than the current behaviour. A single mask has no such ambiguity.
+//
+// Scoped to the anchor tool deliberately: getContentFrameRect is also read by
+// align/distribute and Fit to Comp, and whether THOSE should follow a mask is a
+// separate decision.
+// =============================================================================
+
+/** One cubic segment's min/max on a single axis, including its bezier bulge. */
+function bezierAxisExtent(a: number, b: number, c: number, d: number): { min: number; max: number } {
+  let min = a < d ? a : d;
+  let max = a > d ? a : d;
+  const consider = (t: number) => {
+    if (t <= 0 || t >= 1) return;
+    const mt = 1 - t;
+    const v = mt * mt * mt * a + 3 * mt * mt * t * b + 3 * mt * t * t * c + t * t * t * d;
+    if (v < min) min = v;
+    if (v > max) max = v;
+  };
+  // B'(t)/3 = At^2 + Bt + C
+  const A = -a + 3 * b - 3 * c + d;
+  const B = 2 * a - 4 * b + 2 * c;
+  const C = -a + b;
+  if (Math.abs(A) < 1e-9) {
+    if (Math.abs(B) > 1e-9) consider(-C / B);
+    return { min: min, max: max };
+  }
+  const disc = B * B - 4 * A * C;
+  if (disc < 0) return { min: min, max: max };
+  const root = Math.sqrt(disc);
+  consider((-B + root) / (2 * A));
+  consider((-B - root) / (2 * A));
+  return { min: min, max: max };
+}
+
+/**
+ * True bounds of a mask path, tangents included.
+ *
+ * NOT the bounding box of the vertices: a rounded or organic mask bulges past
+ * its own points, and anchoring to a corner the shape never reaches is the same
+ * class of error this is meant to fix. Each segment's extrema are solved
+ * exactly rather than sampled.
+ *
+ * Pure and exported so it can be exercised headlessly -- nothing in src/jsx is
+ * type-checked by the build, so the arithmetic is only trustworthy if it has
+ * actually been run.
+ */
+export function maskBoundsFromPath(
+  vertices: number[][],
+  inTangents: number[][],
+  outTangents: number[][],
+  closed: boolean
+): { left: number; top: number; width: number; height: number } | null {
+  if (!vertices || vertices.length === 0) return null;
+  if (vertices.length === 1) {
+    return { left: vertices[0][0], top: vertices[0][1], width: 0, height: 0 };
+  }
+  let minX = vertices[0][0], maxX = vertices[0][0];
+  let minY = vertices[0][1], maxY = vertices[0][1];
+  const segments = closed ? vertices.length : vertices.length - 1;
+  for (let i = 0; i < segments; i++) {
+    const j = (i + 1) % vertices.length;
+    const p0 = vertices[i];
+    const p3 = vertices[j];
+    // AE stores tangents RELATIVE to their own vertex.
+    const ot = outTangents && outTangents[i] ? outTangents[i] : [0, 0];
+    const it = inTangents && inTangents[j] ? inTangents[j] : [0, 0];
+    const p1 = [p0[0] + ot[0], p0[1] + ot[1]];
+    const p2 = [p3[0] + it[0], p3[1] + it[1]];
+
+    const ex = bezierAxisExtent(p0[0], p1[0], p2[0], p3[0]);
+    const ey = bezierAxisExtent(p0[1], p1[1], p2[1], p3[1]);
+    if (ex.min < minX) minX = ex.min;
+    if (ex.max > maxX) maxX = ex.max;
+    if (ey.min < minY) minY = ey.min;
+    if (ey.max > maxY) maxY = ey.max;
+  }
+  return { left: minX, top: minY, width: maxX - minX, height: maxY - minY };
+}
+
+/**
+ * The rect the anchor tool should snap to: the sole mask's bounds when there is
+ * exactly one that actually crops, otherwise the layer's own content rect.
+ *
+ * A mask that is DISABLED or set to mode None crops nothing, so it does not
+ * count as "the one mask" -- treating it as one would move the anchor to a
+ * region the viewer cannot see.
+ *
+ * Mask vertices are documented as being in the layer's own coordinate space,
+ * the same space sourceRectAtTime reports in, so the two are interchangeable
+ * here. Worth eyeballing once on a real masked layer before trusting it --
+ * nothing in this file is exercised by the build.
+ */
+function getAnchorFrameRect(layer: AVLayer, time: number): { left: number; top: number; width: number; height: number } {
+  const fallback = getContentFrameRect(layer, time);
+  try {
+    const masks = layer.property("ADBE Mask Parade") as PropertyGroup;
+    if (!masks || masks.numProperties !== 1) return fallback;
+
+    const mask = masks.property(1) as MaskPropertyGroup;
+    if (!mask) return fallback;
+    if (mask.enabled === false) return fallback;
+    // Duck-typed rather than compared against the MaskMode enum, which is not
+    // reliably reachable in every host context.
+    if (mask.maskMode !== undefined && String(mask.maskMode) === String(MaskMode.NONE)) return fallback;
+
+    const shapeProp = mask.property("ADBE Mask Shape") as Property;
+    if (!shapeProp) return fallback;
+    const shape = (shapeProp.numKeys > 0 ? shapeProp.valueAtTime(time, false) : shapeProp.value) as Shape;
+    if (!shape || !shape.vertices) return fallback;
+
+    const rect = maskBoundsFromPath(
+      shape.vertices as unknown as number[][],
+      shape.inTangents as unknown as number[][],
+      shape.outTangents as unknown as number[][],
+      shape.closed !== false
+    );
+    if (!rect || rect.width <= 0 || rect.height <= 0) return fallback;
+
+    // Mask Expansion pushes the edge outward (or in, when negative). Inflating
+    // the box by that amount is exact for a straight edge and an approximation
+    // on a curve -- stated rather than pretended otherwise.
+    const expProp = mask.property("ADBE Mask Offset") as Property;
+    const expand = expProp ? Number(expProp.value) : 0;
+    if (expand && !isNaN(expand)) {
+      rect.left -= expand;
+      rect.top -= expand;
+      rect.width += expand * 2;
+      rect.height += expand * 2;
+      if (rect.width <= 0 || rect.height <= 0) return fallback;
+    }
+    return rect;
+  } catch (e) {
+    // A layer type without a mask parade, or an unreadable path: the layer rect
+    // is always a valid answer, so never fail the whole snap over this.
+    return fallback;
+  }
+}
+
 function getContentFrameRect(layer: AVLayer, time: number): { left: number; top: number; width: number; height: number } {
   if (layer.source && layer.source instanceof CompItem) {
     return { left: 0, top: 0, width: layer.source.width, height: layer.source.height };
@@ -236,7 +386,7 @@ export const motionToolsSnapAnchor = (relX: number, relY: number): Result => {
       if (typeof (rawLayer as any).sourceRectAtTime !== "function") continue;
       const layer = rawLayer as AVLayer;
 
-      const rect = getContentFrameRect(layer, time);
+      const rect = getAnchorFrameRect(layer, time);
       const newAnchorX = rect.left + rect.width * relX;
       const newAnchorY = rect.top + rect.height * relY;
 
