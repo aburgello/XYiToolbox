@@ -883,10 +883,30 @@ function frontcardSet(target: FrontcardTarget, which: string, value: string): vo
 // what the name would give), write takes only the fields a human touched.
 // =============================================================================
 
-/** Trailing inch mark is a studio constant -- stored bare, appended on write. */
+// EVERY inch mark the cards actually use. Real frontcards are authored with the
+// TYPOGRAPHIC "  (U+201D), not the ASCII one, so a straight-quote-only test left
+// the duration welded to the campaign: "Trio 15" came back as campaign "Trio 15"
+// with a blank duration, which is what put a duration in the campaign field.
+const INCH_MARKS = "\"\u201C\u201D\u2033\u0027\u2018\u2019\u2032";
+
 function stripInch(v: string): string {
   const t = String(v);
-  return t.length && t.charAt(t.length - 1) === '"' ? t.substring(0, t.length - 1) : t;
+  if (!t.length) return t;
+  return INCH_MARKS.indexOf(t.charAt(t.length - 1)) !== -1 ? t.substring(0, t.length - 1) : t;
+}
+
+/**
+ * The inch mark THIS card already uses, so writing never silently swaps it.
+ *
+ * The original tool took the line's last character and put it back verbatim --
+ * deliberately, because the studio's cards are not all authored with the same
+ * glyph. Hardcoding one would rewrite every card it touched.
+ */
+function inchMarkOf(line: string, fallback: string): string {
+  const t = String(line);
+  if (!t.length) return fallback;
+  const last = t.charAt(t.length - 1);
+  return INCH_MARKS.indexOf(last) !== -1 ? last : fallback;
 }
 
 function readText(target: FrontcardTarget, which: string): string {
@@ -1050,11 +1070,15 @@ export const frontcardWriteFields = (payload: string): Result => {
         if (has("territory")) frontcardSet(targets[i], "territory", "(" + v.territory + ")");
         if (has("date")) frontcardSet(targets[i], "date", v.date);
         if (has("campaign") || has("duration")) {
-          // The inch mark is a studio constant -- the panel holds a bare number
-          // and it is appended here, so it can never end up doubled or missing.
+          // The panel holds a BARE number and the mark is appended here, so it
+          // can never be doubled or missed. Which mark comes from the card
+          // itself -- see inchMarkOf: rewriting a card's " as a " would change
+          // every line this tool ever touched.
+          const existing = readText(targets[i], "campaignLine");
+          const mark = inchMarkOf(existing, "\u201D");
           const dur = has("duration") ? stripInch(String(v.duration)) : "";
           const camp = has("campaign") ? String(v.campaign) : "";
-          frontcardSet(targets[i], "campaignLine", (camp + " " + dur + '"').replace(/^ +/, ""));
+          frontcardSet(targets[i], "campaignLine", (camp + " " + dur + mark).replace(/^ +/, ""));
         }
       }
     } finally {
