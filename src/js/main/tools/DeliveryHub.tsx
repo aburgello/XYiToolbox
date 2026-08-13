@@ -769,10 +769,15 @@ const DeliveryHubTool = () => {
                         <motion.div
                             key="clear-wrap"
                             initial={{ width: 0, opacity: 0, marginLeft: 0 }}
-                            animate={{ width: 28, opacity: 1, marginLeft: 6 }}
+                            // TWO buttons live in here, each 28px, with a 6px gap
+                            // between them -- so 62, not 28. Animating to one
+                            // button's width while overflow:hidden clipped the
+                            // second, which read as the two icons sitting on top
+                            // of each other rather than side by side.
+                            animate={{ width: 62, opacity: 1, marginLeft: 6 }}
                             exit={{ width: 0, opacity: 0, marginLeft: 0 }}
                             transition={{ duration: 0.15, ease: "easeOut" }}
-                            style={{ overflow: "hidden", flexShrink: 0 }}
+                            style={{ overflow: "hidden", flexShrink: 0, display: "flex", gap: 6 }}
                         >
                             {/* Opt-in, never automatic: reads each row's own comp
                                 name for its country code, finds that territory's
