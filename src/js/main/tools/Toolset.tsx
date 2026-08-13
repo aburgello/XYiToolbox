@@ -70,6 +70,7 @@ import {
 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { showMcItReport, type McReport } from "../McItReportModal";
+import CheekyTModal, { type CheekyTInspection } from "../CheekyTModal";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import { sfx } from "../../lib/utils/sfx";
 import Tooltip from "../Tooltip";
@@ -1078,6 +1079,8 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
     const [toasts, setToasts] = useState<Toast[]>([]);
     const toastId = useRef(0);
     const [showTurkGif, setShowTurkGif] = useState(false);
+    // Cheeky T's review modal -- only ever set when a field couldn't be read.
+    const [cheekyT, setCheekyT] = useState<CheekyTInspection | null>(null);
     const turkGifTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const pushToast = (text: string, type: Toast["type"]) => {
@@ -1695,6 +1698,10 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
                 classes as the logo click easter egg (main.scss). Click
                 dismisses early; otherwise auto-hides after 3s. */}
             <AnimatePresence>
+                {cheekyT && (
+                    <CheekyTModal inspection={cheekyT} onClose={() => setCheekyT(null)} />
+                )}
+
                 {showTurkGif && (
                     <motion.div
                         className="logo-easter-egg-overlay"

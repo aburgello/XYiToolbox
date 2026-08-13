@@ -771,6 +771,179 @@ function frontcardLayerTextIndices(variantA: boolean) {
     : { title: 16, artwork: 15, version: 14, campaignLine: 13, territory: 12, date: 11 };
 }
 
+// =============================================================================
+// FRONTCARD TERRITORY -- candidate-and-validate, not one regex.
+//
+// parseFilenameMeta's /_([A-Z]{2})(?:_|$)/ takes the FIRST two-letter token in
+// the whole name, which goes wrong three different ways on real files:
+//   _15s_BE_DE   -> "BE"  (Belgium, on a Belgium GERMAN asset)
+//   _15s_DOM     -> ""    (three letters never match)
+//   _HD_..._IT   -> "HD"  (a stray token upstream wins)
+// It is also not simply "the last token": real names end _DE_V02, with the
+// version AFTER the territory.
+//
+// So: strip a trailing version, then try candidates longest-first and keep the
+// first one that RESOLVES against TC_COUNTRIES. Validation is what makes this
+// safe -- a compound guess that isn't a real territory falls through instead of
+// being stamped on a deliverable.
+export function frontcardTerritory(name: string): { token: string; name: string | null } {
+  let base = String(name);
+  // Trailing version token: "..._DE_V02" -> "..._DE".
+  const vTail = base.match(/_V\d+$/);
+  if (vTail) base = base.substring(0, base.length - vTail[0].length);
+
+  const candidates: string[] = [];
+  const compound = base.match(/_([A-Z]{2}_[A-Z]{2})$/);
+  if (compound) candidates.push(compound[1]);
+  const tail = base.match(/_([A-Z]{2,3})$/);
+  if (tail) candidates.push(tail[1]);
+  // Last resort: the old first-match behaviour, so a name shaped unlike any of
+  // the above still gets whatever it used to get rather than nothing.
+  const legacy = base.match(/_([A-Z]{2})(?:_|$)/);
+  if (legacy) candidates.push(legacy[1]);
+
+  for (let i = 0; i < candidates.length; i++) {
+    const resolved = territoryCheck(candidates[i]);
+    if (resolved) return { token: candidates[i], name: resolved };
+  }
+  return { token: candidates.length ? candidates[0] : "", name: null };
+}
+
+interface FrontcardTarget {
+  source: CompItem;
+  idx: { title: number; artwork: number; version: number; campaignLine: number; territory: number; date: number };
+}
+
+/** Every Frontcard precomp in `comp`, with its resolved layer-index map. */
+function frontcardTargets(comp: CompItem): FrontcardTarget[] {
+  const out: FrontcardTarget[] = [];
+  for (let i = 1; i <= comp.numLayers; i++) {
+    const layer = comp.layer(i);
+    // indexOf, not .match() -- deliver.ts already identifies frontcards this
+    // way and a layer name is not a regex.
+    if (String(layer.name).indexOf("Frontcard") === -1) continue;
+    const source = (layer as AVLayer).source as CompItem;
+    if (!source || typeof source.numLayers !== "number") continue;
+    const variantA = source.layer(2).name === "XYi_Logo_V20_[0000-0250].png";
+    out.push({ source: source, idx: frontcardLayerTextIndices(variantA) });
+  }
+  return out;
+}
+
+function frontcardSet(target: FrontcardTarget, which: string, value: string): void {
+  const idx = (target.idx as any)[which];
+  if (!idx) return;
+  const layer = target.source.layer(idx);
+  if (!layer) return;
+  const prop = layer.property("Source Text") as Property;
+  if (!prop) return;
+  prop.setValue(String(value));
+}
+
+export interface CheekyTInspection {
+  success: boolean;
+  error?: string;
+  frontcards?: number;
+  compName?: string;
+  /** The short-name path: only "(HO Approved)" is written, nothing is parsed. */
+  shortName?: boolean;
+  values?: { artwork: string; version: string; territory: string; date: string };
+  /** Field keys the filename could not answer. Drives the review modal. */
+  unresolved?: string[];
+  /** What was in the name where a territory should have been. */
+  territoryToken?: string;
+  countries?: string[];
+}
+
+/** Resolves everything Cheeky T would write, WITHOUT writing any of it. */
+export const cheekyTInspect = (): CheekyTInspection => {
+  try {
+    const comp = app.project.activeItem;
+    if (!(comp instanceof CompItem)) return { success: false, error: "Select or open a composition first." };
+    const targets = frontcardTargets(comp);
+    if (!targets.length) return { success: false, error: "No Frontcard layer in this comp." };
+
+    const names: string[] = [];
+    for (let i = 0; i < TC_COUNTRIES.length; i++) {
+      if (names.indexOf(TC_COUNTRIES[i].name) === -1) names.push(TC_COUNTRIES[i].name);
+    }
+
+    const today = new Date();
+    const day = today.getDate();
+    const month = today.getMonth() + 1;
+    const year = String(today.getFullYear()).slice(2, 4);
+    const fullDate = (day < 10 ? "0" : "") + day + "." + (month < 10 ? "0" : "") + month + "." + year;
+
+    const name = comp.name;
+    if (name.split("_").length < 8) {
+      return {
+        success: true, frontcards: targets.length, compName: name, shortName: true,
+        values: { artwork: "", version: "", territory: "(HO Approved)", date: fullDate },
+        unresolved: [], countries: names,
+      };
+    }
+
+    const meta = parseFilenameMeta(name);
+    const ter = frontcardTerritory(name);
+    const unresolved: string[] = [];
+    if (!meta.artworkType) unresolved.push("artwork");
+    if (!meta.version) unresolved.push("version");
+    if (!ter.name) unresolved.push("territory");
+
+    return {
+      success: true,
+      frontcards: targets.length,
+      compName: name,
+      shortName: false,
+      values: {
+        artwork: meta.artworkType || "",
+        version: meta.version || "",
+        territory: ter.name || "",
+        date: fullDate,
+      },
+      unresolved: unresolved,
+      territoryToken: ter.token,
+      countries: names,
+    };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/**
+ * Writes the four fields Cheeky T owns to every Frontcard in the active comp.
+ * Called on every keystroke in the review modal, so it is deliberately a plain
+ * idempotent overwrite -- no read-back, no string surgery, and the campaign
+ * line is not touched at all.
+ *
+ * A blank value is SKIPPED, never written: half-filling the modal must not
+ * blank a field that was already correct on the card.
+ */
+export const cheekyTApplyFields = (payload: string): Result => {
+  try {
+    const v = JSON.parse(payload) as { artwork?: string; version?: string; territory?: string; date?: string };
+    const comp = app.project.activeItem;
+    if (!(comp instanceof CompItem)) return { success: false, error: "Select or open a composition first." };
+    const targets = frontcardTargets(comp);
+    if (!targets.length) return { success: false, error: "No Frontcard layer in this comp." };
+
+    app.beginUndoGroup("Cheeky T fields");
+    try {
+      for (let i = 0; i < targets.length; i++) {
+        if (v.artwork) frontcardSet(targets[i], "artwork", v.artwork);
+        if (v.version) frontcardSet(targets[i], "version", v.version);
+        if (v.territory) frontcardSet(targets[i], "territory", "(" + v.territory + ")");
+        if (v.date) frontcardSet(targets[i], "date", v.date);
+      }
+    } finally {
+      app.endUndoGroup();
+    }
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
 export const cheekyDTCheck = (
   doTitle: boolean,
   doArtwork: boolean,
@@ -819,7 +992,10 @@ export const cheekyDTCheck = (
     const year = String(today.getFullYear()).slice(2, 4);
     const fullDate = (day < 10 ? "0" : "") + day + "." + (month < 10 ? "0" : "") + month + "." + year;
 
-    const territoryMatch = territoryCheck(meta.territory);
+    // frontcardTerritory, not territoryCheck(meta.territory): the meta token is
+    // the FIRST two-letter run in the name, which truncates BE_DE to BE and
+    // misses DOM entirely. See the note on frontcardTerritory above.
+    const territoryMatch = frontcardTerritory(name).name;
 
     for (let i = 1; i <= comp.numLayers; i++) {
       const layer = comp.layer(i);
@@ -840,7 +1016,14 @@ export const cheekyDTCheck = (
         ender = String(campaignLineProp.value).slice(-1);
         campaignLineProp.setValue(String(campaign + "" + duration + ender));
 
-        if (doTerritoryCheck) (source.layer(idx.territory).property("Source Text") as Property).setValue("(" + String(territoryMatch) + ")");
+        // NEVER stamp an unresolved territory. This used to write whatever
+        // String(null) gave it, so a name the parser couldn't read put a
+        // literal "(null)" -- and before the lookup was fixed, a confident
+        // "(Afghanistan)" -- onto a finished frontcard. A blank field is
+        // fixable; a plausible wrong country ships.
+        if (doTerritoryCheck && territoryMatch) {
+          (source.layer(idx.territory).property("Source Text") as Property).setValue("(" + territoryMatch + ")");
+        }
         if (doDate) (source.layer(idx.date).property("Source Text") as Property).setValue(String(fullDate));
       }
     }
