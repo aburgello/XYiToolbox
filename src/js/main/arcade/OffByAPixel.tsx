@@ -39,9 +39,29 @@ const POINTS_PER_ROUND = 20;
 const WRONG_CLICK_COST = 3;
 
 /** How far the fault is pushed, per round. The whole difficulty curve. */
-export const OFFSETS = [12, 8, 5, 3, 2];
+export const OFFSETS = [16, 12, 9, 7, 5];
 /** Channel delta for a colour fault, per round. */
-const TINTS = [20, 14, 9, 6, 4];
+const TINTS = [26, 20, 15, 12, 9];
+
+// A FLAT PIXEL VALUE IS NOT A FLAT DIFFICULTY, which is why the late rounds
+// could land somewhere between "obvious" and "impossible" depending on nothing
+// but which element got picked.
+//
+// Two things drive it. An element with a NEIGHBOUR is measured against that
+// neighbour -- the eye reads the leading of a headline stack, so a few pixels
+// jump out. An element sitting on its own (the pack shot, the logo) has no such
+// reference and the same shift is invisible. And a WIDTH change on a long bar is
+// really a percentage change: 5px off a 380px rule is barely one percent.
+//
+// So the push is scaled by what's actually being asked of the eye, rather than
+// leaving the difficulty to the luck of the draw.
+const LONELY: Record<string, number> = { pack: 1.5, logo: 1.4, rule: 1.4 };
+
+function push(off: number, id: string, kind: FaultKind): number {
+    let n = off * (LONELY[id] || 1);
+    if (kind === "size") n *= 1.6;   // on top of the x2 a width change already gets
+    return Math.round(n);
+}
 
 // --- deterministic randomness ----------------------------------------------
 // Everyone gets the same five boards on the same day, so the score means
@@ -273,11 +293,12 @@ export function applyFault(elems: Elem[], rand: () => number, round: number): { 
     if (kind === "shift") {
         const id = pick(["head0", "head1", "head2", "logo", "pack"]);
         const e = at(id);
+        const d = push(off, id, kind);
         // Horizontal on copy (breaks the left margin the eye is tracking),
         // vertical on blocks (breaks the leading).
-        if (rand() < 0.5) e.x += rand() < 0.5 ? off : -off;
-        else e.y += rand() < 0.5 ? off : -off;
-        return { faulty: out, fault: { kind, id, label: `${off}px off its position` } };
+        if (rand() < 0.5) e.x += rand() < 0.5 ? d : -d;
+        else e.y += rand() < 0.5 ? d : -d;
+        return { faulty: out, fault: { kind, id, label: `${d}px off its position` } };
     }
 
     if (kind === "colour") {
@@ -290,8 +311,12 @@ export function applyFault(elems: Elem[], rand: () => number, round: number): { 
     if (kind === "size") {
         const id = pick(["rule", "head1", "legal0", "pack"]);
         const e = at(id);
-        e.w += rand() < 0.5 ? off * 2 : -off * 2;
-        return { faulty: out, fault: { kind, id, label: "wrong width" } };
+        const d = push(off, id, kind) * 2;
+        // One roll, used for both -- rolling again for the label would let the
+        // reveal say "too wide" about a bar that was narrowed.
+        const wider = rand() < 0.5;
+        e.w += wider ? d : -d;
+        return { faulty: out, fault: { kind, id, label: `${d}px too ${wider ? "wide" : "narrow"}` } };
     }
 
     if (kind === "safe") {
@@ -299,16 +324,19 @@ export function applyFault(elems: Elem[], rand: () => number, round: number): { 
         // breach rather than as inconsistent padding.
         const id = pick(["head0", "legal0", "logo", "rule"]);
         const e = at(id);
-        e.x -= off;
-        e.w += off;
-        return { faulty: out, fault: { kind, id, label: "breaks the safe margin" } };
+        const d = push(off, id, kind);
+        e.x -= d;
+        e.w += d;
+        return { faulty: out, fault: { kind, id, label: `${d}px outside the safe margin` } };
     }
 
     // gap: one headline bar's leading is wrong, so the block is unevenly spaced.
+    // Never scaled -- a headline stack is the one place the eye has two
+    // neighbours to measure against, so this is already the fairest fault.
     const id = pick(["head1", "head2"]);
     const e = at(id);
     e.y += rand() < 0.5 ? off : -off;
-    return { faulty: out, fault: { kind, id, label: "uneven leading" } };
+    return { faulty: out, fault: { kind, id, label: `${off}px of uneven leading` } };
 }
 
 // --- drawing ----------------------------------------------------------------
