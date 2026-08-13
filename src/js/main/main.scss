@@ -1887,11 +1887,18 @@ textarea {
 .ctm {
     width: 100%;
     max-width: 430px;
+    box-sizing: border-box;
     border: 1px solid #333;
     border-radius: 10px;
     background: #171717;
     box-shadow: 0 18px 46px rgba(0, 0, 0, 0.55);
     overflow: hidden;
+    // Column layout with a scrollable middle: the territory list is INLINE (see
+    // .ctm-matches), so the modal has to be able to grow and then scroll rather
+    // than run off the bottom of a short panel.
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 40px);
 }
 
 .ctm-head {
@@ -1942,7 +1949,17 @@ textarea {
     border-bottom: 1px solid #2a2a2a;
 }
 
-.ctm-fields { padding: 13px 14px; display: flex; flex-direction: column; gap: 13px; }
+.ctm-fields {
+    padding: 13px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 13px;
+    // The only part that scrolls. Head and foot stay put so Done is always
+    // reachable however long the territory list gets.
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
 
 .ctm-field {
     display: block;
@@ -1965,6 +1982,10 @@ textarea {
 
 .ctm-input {
     width: 100%;
+    // No global *{box-sizing:border-box} in this app -- it is declared per
+    // rule. Without it, width:100% plus the padding and border overflowed the
+    // modal and the right-hand edge of every field was clipped.
+    box-sizing: border-box;
     height: 28px;
     padding: 0 9px;
     border: 1px solid #363636;
@@ -1979,6 +2000,7 @@ textarea {
 .ctm-chips { display: flex; gap: 5px; flex-wrap: wrap; }
 
 .ctm-chip {
+    box-sizing: border-box;
     padding: 5px 11px;
     border: 1px solid #363636;
     border-radius: 6px;
@@ -2002,19 +2024,20 @@ textarea {
 }
 
 .ctm-matches {
-    position: absolute;
-    left: 0;
-    right: 0;
-    z-index: 3;
-    margin: 3px 0 0;
+    box-sizing: border-box;
+    // IN FLOW, not absolute. `.ctm` sets overflow:hidden for its rounded
+    // corners, which clipped an absolutely-positioned list at the modal's
+    // edge -- the same overflow-ancestor trap Tooltip has to portal around.
+    // Flowing it inline pushes the fields below it down instead, and the
+    // modal's own scroll (above) handles the rest. No portal needed.
+    margin: 4px 0 0;
     padding: 4px;
     list-style: none;
-    max-height: 168px;
+    max-height: 150px;
     overflow-y: auto;
     border: 1px solid #363636;
     border-radius: 6px;
-    background: #1b1b1b;
-    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+    background: #131313;
 
     button {
         display: block;
