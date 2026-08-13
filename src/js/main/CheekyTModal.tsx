@@ -139,16 +139,6 @@ export const CheekyTModal = ({ inspection, onClose }: Props) => {
                     <button className="ctm-x" onClick={onClose} title="Close (Esc)"><X size={13} /></button>
                 </div>
 
-                <p className="ctm-why">
-                    {unresolved.length === 1
-                        ? "One field couldn't be read from the comp name."
-                        : `${unresolved.length} fields couldn't be read from the comp name.`}
-                    {missing("territory") && inspection.territoryToken
-                        ? ` The territory slot held “${inspection.territoryToken}”, which isn't a territory we know.`
-                        : ""}
-                    {" Everything you set here writes to the Frontcard as you type."}
-                </p>
-
                 <div className="ctm-fields">
                     <label className={"ctm-field" + (missing("artwork") ? " is-missing" : "")}>
                         <span className="ctm-lbl">
@@ -183,6 +173,9 @@ export const CheekyTModal = ({ inspection, onClose }: Props) => {
                     <div className={"ctm-field" + (missing("territory") ? " is-missing" : "")}>
                         <span className="ctm-lbl">
                             Territory {missing("territory") && <AlertCircle size={10} />}
+                            {missing("territory") && inspection.territoryToken && (
+                                <em className="ctm-hint">“{inspection.territoryToken}” isn't one we know</em>
+                            )}
                         </span>
                         {/* Picked from the real TC_COUNTRIES list rather than typed
                             free-hand: the frontcard shows this name verbatim, and a

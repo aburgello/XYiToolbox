@@ -1940,13 +1940,13 @@ textarea {
     &:active { background: #191919; }
 }
 
-.ctm-why {
-    margin: 0;
-    padding: 11px 14px;
-    font-size: 11.5px;
-    line-height: 1.5;
-    color: #9a9a9a;
-    border-bottom: 1px solid #2a2a2a;
+.ctm-hint {
+    margin-left: auto;
+    font-style: normal;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 10px;
+    color: #a98244;
 }
 
 .ctm-fields {
