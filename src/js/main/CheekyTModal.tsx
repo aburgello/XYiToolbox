@@ -196,7 +196,11 @@ export const CheekyTModal = ({ inspection, onClose }: Props) => {
                             className="ctm-input"
                             value={version}
                             placeholder="V01"
-                            onChange={(e) => setVersion(e.target.value.toUpperCase())}
+                            // Uppercased on blur, not on change: rewriting the
+                            // value React echoes back moves the caret to the end
+                            // of the rewritten string mid-typing.
+                            onChange={(e) => setVersion(e.target.value)}
+                            onBlur={() => setVersion((v) => v.toUpperCase())}
                         />
                     </label>
 
@@ -214,7 +218,9 @@ export const CheekyTModal = ({ inspection, onClose }: Props) => {
                             className="ctm-input"
                             value={terOpen ? terQuery : territory}
                             placeholder="Search territories…"
-                            onFocus={() => { setTerOpen(true); setTerQuery(""); }}
+                            // Opens the list without blanking the field -- see
+                            // the same fix in CheekyDT.
+                            onFocus={(e) => { setTerOpen(true); setTerQuery(territory); e.target.select(); }}
                             onChange={(e) => { setTerOpen(true); setTerQuery(e.target.value); }}
                         />
                         {terOpen && (

@@ -280,7 +280,17 @@ const CheekyDTTool = () => {
                             className="cdt-input"
                             value={terOpen ? terQuery : values.territory}
                             placeholder="Search territories…"
-                            onFocus={() => { setTerOpen(true); setTerQuery(""); }}
+                            // Opens the list WITHOUT blanking the field: it used
+                            // to swap the value for an empty query string on
+                            // focus, so clicking into "Germany" emptied the box
+                            // and dumped the caret at position 0. The current
+                            // value becomes the query instead, and is selected so
+                            // typing still replaces it in one go.
+                            onFocus={(e) => {
+                                setTerOpen(true);
+                                setTerQuery(values.territory);
+                                e.target.select();
+                            }}
                             onChange={(e) => { setTerOpen(true); setTerQuery(e.target.value); }}
                         />
                         {resetBtn}
@@ -321,7 +331,13 @@ const CheekyDTTool = () => {
                         <input
                             className="cdt-input"
                             value={values[key]}
-                            onChange={(e) => set(key, key === "version" ? e.target.value.toUpperCase() : e.target.value)}
+                            // NOT uppercased in onChange. Rewriting the value
+                            // React is about to echo back moves the caret off
+                            // where you were typing -- it lands at the end of the
+                            // rewritten string, not where your cursor was. Done
+                            // on blur instead, when the caret no longer matters.
+                            onChange={(e) => set(key, e.target.value)}
+                            onBlur={() => { if (key === "version") set("version", values.version.toUpperCase()); }}
                         />
                         {resetBtn}
                     </div>
