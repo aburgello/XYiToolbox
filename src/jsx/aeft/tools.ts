@@ -944,6 +944,17 @@ export const cheekyTApplyFields = (payload: string): Result => {
   }
 };
 
+export interface CheekyDTResult {
+  success: boolean;
+  error?: string;
+  /** What actually happened -- shown verbatim, never a generic "Complete." */
+  message?: string;
+  frontcards?: number;
+  /** Territory was asked for and could not be resolved, so it was LEFT ALONE. */
+  territorySkipped?: boolean;
+  territoryToken?: string;
+}
+
 export const cheekyDTCheck = (
   doTitle: boolean,
   doArtwork: boolean,
@@ -952,7 +963,7 @@ export const cheekyDTCheck = (
   doDuration: boolean,
   doTerritoryCheck: boolean,
   doDate: boolean
-): Result => {
+): CheekyDTResult => {
   try {
     const comp = app.project.activeItem;
     if (!(comp instanceof CompItem)) return { success: false, error: "Select or open a composition first." };
@@ -961,18 +972,26 @@ export const cheekyDTCheck = (
     // Short names (<8 underscore tokens): only the territory-check
     // parenthetical gets touched, nothing else.
     if (name.split("_").length < 8) {
+      let shortCards = 0;
       for (let i = 1; i <= comp.numLayers; i++) {
         const layer = comp.layer(i);
-        if (String(layer.name.match("Frontcard")) === "Frontcard") {
-          const source = (layer as AVLayer).source as CompItem;
-          const variantA = source.layer(2).name === "XYi_Logo_V20_[0000-0250].png";
-          if (doTerritoryCheck) {
-            const idx = variantA ? 4 : 12;
-            (source.layer(idx).property("Source Text") as Property).setValue("(HO Approved)");
-          }
+        if (String(layer.name).indexOf("Frontcard") === -1) continue;
+        shortCards++;
+        const source = (layer as AVLayer).source as CompItem;
+        const variantA = source.layer(2).name === "XYi_Logo_V20_[0000-0250].png";
+        if (doTerritoryCheck) {
+          const idx = variantA ? 4 : 12;
+          (source.layer(idx).property("Source Text") as Property).setValue("(HO Approved)");
         }
       }
-      return { success: true };
+      // A comp with no Frontcard is a real failure, not a quiet success. This
+      // returned `{success: true}` either way, so running it on the wrong comp
+      // looked exactly like running it on the right one.
+      if (shortCards === 0) return { success: false, error: "No Frontcard layer in this comp." };
+      return {
+        success: true, frontcards: shortCards,
+        message: "Short comp name — stamped (HO Approved) on " + shortCards + (shortCards === 1 ? " Frontcard" : " Frontcards") + ". Nothing else was touched.",
+      };
     }
 
     if (!app.project.file) return { success: false, error: "Save this project once first." };
@@ -997,9 +1016,12 @@ export const cheekyDTCheck = (
     // misses DOM entirely. See the note on frontcardTerritory above.
     const territoryMatch = frontcardTerritory(name).name;
 
+    let cards = 0;
     for (let i = 1; i <= comp.numLayers; i++) {
       const layer = comp.layer(i);
-      if (String(layer.name.match("Frontcard")) === "Frontcard") {
+      // indexOf, not .match() -- a layer name is not a regex pattern.
+      if (String(layer.name).indexOf("Frontcard") !== -1) {
+        cards++;
         const source = (layer as AVLayer).source as CompItem;
         const variantA = source.layer(2).name === "XYi_Logo_V20_[0000-0250].png";
         const idx = frontcardLayerTextIndices(variantA);
@@ -1028,7 +1050,23 @@ export const cheekyDTCheck = (
       }
     }
 
-    return { success: true };
+    if (cards === 0) return { success: false, error: "No Frontcard layer in this comp." };
+
+    // SAYS WHAT IT SKIPPED. An unresolved territory is left untouched rather
+    // than stamped, which is right -- but reporting a plain success afterwards
+    // is the Auto AR failure exactly: a rig that half-applies and claims it
+    // worked. The message names the token so it can be fixed at the source.
+    const skipped = doTerritoryCheck && !territoryMatch;
+    const where = cards === 1 ? "Frontcard" : cards + " Frontcards";
+    if (skipped) {
+      const token = frontcardTerritory(name).token;
+      return {
+        success: true, frontcards: cards, territorySkipped: true, territoryToken: token,
+        message: "Updated " + where + ", but the territory was left as-is — " +
+          (token ? "\"" + token + "\" isn't a territory we know." : "the name has no territory in it."),
+      };
+    }
+    return { success: true, frontcards: cards, message: "Updated " + where + "." };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

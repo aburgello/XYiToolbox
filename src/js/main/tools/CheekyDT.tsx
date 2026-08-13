@@ -44,7 +44,16 @@ const CheekyDTTool = () => {
         try {
             const result = await fn();
             if (result === undefined) throw new Error("no bridge");
-            setStatus(result.success ? { text: typeof result === "string" ? result : "Complete.", type: "success" } : { text: result.error || "Something went wrong.", type: "error" });
+            // Shows the host's own message when there is one. It used to be a
+            // flat "Complete." for every success, which meant a run that
+            // deliberately SKIPPED a field -- an unresolved territory is left
+            // untouched rather than stamped wrong -- reported identically to
+            // one that changed everything.
+            setStatus(
+                result.success
+                    ? { text: result.message || "Complete.", type: "success" }
+                    : { text: result.error || "Something went wrong.", type: "error" }
+            );
         } catch (e) {
             setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
         } finally {
