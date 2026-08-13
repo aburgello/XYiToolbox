@@ -188,3 +188,219 @@
     font-size: 11px;
     color: #9aa;
 }
+
+// ── OFF BY A PIXEL (OffByAPixel.tsx) ─────────────────────────────────────────
+// The canvas is the play surface here (every other game's is display-only), so
+// this one keeps pointer events and shows a crosshair.
+.obp-canvas {
+    cursor: crosshair;
+}
+
+.obp-hud {
+    position: absolute;
+    top: 8px;
+    left: 10px;
+    right: 10px;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    pointer-events: none;
+}
+
+.obp-round { color: #6f8fa6; }
+.obp-score { margin-left: auto; color: #7dd3fc; font-weight: 700; }
+.obp-wrong { color: #b4776a; }
+
+.obp-clock {
+    color: #9aa4ad;
+    font-variant-numeric: tabular-nums;
+
+    &.is-low { color: #ff5f56; font-weight: 700; }
+}
+
+.obp-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    text-align: center;
+    background: rgba(5, 9, 10, 0.86);
+}
+
+.obp-verdict {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #ff5f56;
+
+    &.is-hit { color: #7dd3fc; }
+}
+
+.obp-why {
+    font-size: 11px;
+    color: #9aa;
+}
+
+.obp-next {
+    margin-top: 6px;
+    padding: 6px 16px;
+    border: 1px solid #2f4652;
+    border-radius: 5px;
+    // index.scss's global button:hover/:active would otherwise paint over this.
+    background: #14222a;
+    color: #cfe6f2;
+    font-size: 11.5px;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+
+    &:hover { background: #1b2f3a; border-color: #3f6376; }
+    &:active { background: #111c22; }
+}
+
+.obp-overlay--end {
+    justify-content: flex-end;
+    padding-bottom: 26px;
+    // The canvas already draws the total in the middle -- this only carries the
+    // per-round breakdown, so it must not curtain the number behind it.
+    background: linear-gradient(to top, rgba(5, 9, 10, 0.94) 62%, rgba(5, 9, 10, 0) 100%);
+}
+
+.obp-breakdown {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    width: 300px;
+
+    li {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        font-size: 10.5px;
+        color: #8a949c;
+    }
+}
+
+.obp-bd-round { width: 12px; color: #566068; }
+.obp-bd-why { flex: 1; text-align: left; }
+.obp-bd-pts { color: #7dd3fc; font-variant-numeric: tabular-nums; }
+
+.obp-post {
+    margin-top: 8px;
+    font-size: 10.5px;
+    color: #6f7a82;
+}
+
+// ── NAIL THE EASE (NailTheEase.tsx) ──────────────────────────────────────────
+.nte-canvas {
+    cursor: grab;
+
+    &:active { cursor: grabbing; }
+}
+
+.nte-hud {
+    position: absolute;
+    top: 8px;
+    left: 10px;
+    right: 10px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    pointer-events: none;
+}
+
+.nte-round { color: #7c6ba8; }
+.nte-score { color: #c4b5fd; font-weight: 700; }
+
+.nte-submit {
+    position: absolute;
+    right: 18px;
+    bottom: 18px;
+    padding: 7px 18px;
+    border: 1px solid #4b3f6b;
+    border-radius: 5px;
+    // Re-declared against index.scss's global button:hover/:active.
+    background: #1d1730;
+    color: #d8ccff;
+    font-size: 11.5px;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+
+    &:hover { background: #281f42; border-color: #6d5aa0; }
+    &:active { background: #171226; }
+}
+
+.nte-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    text-align: center;
+    background: rgba(6, 5, 10, 0.9);
+}
+
+.nte-total {
+    font-size: 40px;
+    font-weight: 700;
+    color: #c4b5fd;
+    font-variant-numeric: tabular-nums;
+}
+
+.nte-outof {
+    font-size: 11px;
+    color: #6f6f7a;
+    margin-bottom: 10px;
+}
+
+.nte-breakdown {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    width: 260px;
+
+    li {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        font-size: 10.5px;
+        color: #8a849c;
+    }
+}
+
+.nte-bd-name { flex: 1; text-align: left; }
+.nte-bd-err { color: #5c5670; font-variant-numeric: tabular-nums; }
+.nte-bd-pts { width: 30px; text-align: right; color: #c4b5fd; font-variant-numeric: tabular-nums; }
+
+.nte-post {
+    margin-top: 10px;
+    font-size: 10.5px;
+    color: #6f6a7a;
+}
+
+.nte-again {
+    margin-top: 12px;
+    padding: 6px 16px;
+    border: 1px solid #3a3350;
+    border-radius: 5px;
+    background: #191527;
+    color: #b9b0d4;
+    font-size: 11px;
+    cursor: pointer;
+
+    &:hover { background: #221c36; border-color: #574a7d; }
+    &:active { background: #14111f; }
+}

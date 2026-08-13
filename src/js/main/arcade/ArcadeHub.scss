@@ -487,6 +487,59 @@ $arc-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
     color: #7d7d7d;
 }
 
+/* Season stepper. Pushed to the far end of the head row so it reads as a
+   control on the championship, not a third label in the title. */
+.arc-season-nav {
+    display: flex;
+    gap: 4px;
+    margin-left: auto;
+}
+
+.arc-season-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 1px solid #2f2f2f;
+    border-radius: 4px;
+    /* index.scss sets a global button:hover/:active background, which paints
+       over any custom button -- both states are re-declared below because of
+       it, not for their own sake. */
+    background: #171717;
+    color: #9a9a9a;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+        background: #232323;
+        border-color: #444;
+        color: #e8c766;
+    }
+
+    &:active:not(:disabled) {
+        background: #1c1c1c;
+    }
+
+    &:disabled {
+        opacity: 0.3;
+        cursor: default;
+    }
+}
+
+.arc-season-empty {
+    margin: 2px 0 0;
+    font-size: 11px;
+    color: #7d7d7d;
+}
+
+.arc-season-quiet {
+    margin: 10px 0 0;
+    font-size: 10.5px;
+    color: #6f6f6f;
+    font-style: italic;
+}
+
 /* --- podium --------------------------------------------------------------- */
 .arc-podium {
     display: grid;

@@ -34,12 +34,14 @@
 // machine -- it's guidance for the unset, not a permanent caption.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { Crown, Loader2, Play, RefreshCw, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Crown, Loader2, Play, RefreshCw, X } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import KeyframeSnake from "./KeyframeSnake";
 import DailyWord from "./DailyWord";
 import PosterDaily from "./PosterDaily";
 import CineChain from "./cine/CineChain";
+import OffByAPixel from "./OffByAPixel";
+import NailTheEase from "./NailTheEase";
 import "./arcadeFont.scss";
 import "./ArcadeHub.scss";
 
@@ -85,6 +87,10 @@ const MACHINES: Machine[] = [
     { id: "daily", name: "Wordmark", metric: "Points", mode: "points", accent: "#a78bfa", glow: "rgba(167, 139, 250, 0.16)", Game: DailyWord },
     { id: "timeline", name: "Push the Playhead", metric: "Score", mode: "best", accent: "#fb923c", glow: "rgba(251, 146, 60, 0.16)", Game: KeyframeSnake },
     { id: "xyinerdle", name: "XYiNerdle", metric: "Points", mode: "points", accent: "#2dd4bf", glow: "rgba(45, 212, 191, 0.16)", Game: CineChain },
+    // Added as a PAIR -- the floor is a fixed 2-column grid, so an odd number of
+    // cabinets leaves a hole in the last row.
+    { id: "pixel", name: "Off by a Pixel", metric: "Points", mode: "points", accent: "#7dd3fc", glow: "rgba(125, 211, 252, 0.16)", Game: OffByAPixel },
+    { id: "ease", name: "Nail the Ease", metric: "Score", mode: "best", accent: "#8b5cf6", glow: "rgba(139, 92, 246, 0.16)", Game: NailTheEase },
 ];
 
 /** How many lines fit on a cabinet face without it becoming a spreadsheet. */
@@ -134,15 +140,60 @@ function standingsFor(scores: ArcadeScore[], m: Machine): Standing[] {
 // chasing, and with a team this size 5th is most of the board.
 const CHAMPIONSHIP_POINTS = [150, 100, 60, 30];
 
-// Rolling window. All-time would permanently favour whoever started first and
-// give a new starter no route in; 30 days keeps it live without resetting so
-// often that nothing accumulates.
-const OVERALL_WINDOW_DAYS = 30;
+// SEASONS ARE CALENDAR MONTHS, AND NOTHING IS EVER RESET.
+//
+// This was a rolling 30-day window. A month is both easier to talk about ("who
+// won August") and easier to compute, because the stamps are already
+// "YYYY-MM-DD HH:MM" -- the first seven characters ARE the season key.
+//
+// Critically it is a FILTER, not a reset: no row is deleted, no job runs on the
+// 1st, nothing is written when a season turns over. That also means past seasons
+// need no storage of their own -- August's champion is this same function with a
+// different key, computed from the file we already have. A hall of fame for free,
+// and no way for two panels opening on the 1st to race each other writing one.
+export function seasonKeyOf(stamp: string): string {
+    return (stamp || "").slice(0, 7);
+}
 
-// Ranked below anyone who has entered more games, however well they did in it:
-// topping an OVERALL board off a single game is the failure mode this guards.
-// Shown, never hidden -- the row says how many games it was.
-const MIN_GAMES_TO_RANK = 2;
+export function currentSeasonKey(): string {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"];
+
+export function seasonLabel(key: string): string {
+    const [y, m] = key.split("-");
+    const idx = Number(m) - 1;
+    if (!MONTH_NAMES[idx]) return key;
+    return `${MONTH_NAMES[idx]} ${y}`;
+}
+
+/** Every season with a row in it, newest first, with this month always present. */
+export function seasonsIn(scores: ArcadeScore[]): string[] {
+    const seen: Record<string, true> = { [currentSeasonKey()]: true };
+    for (const s of scores) {
+        const k = seasonKeyOf(s.stamp);
+        if (k.length === 7) seen[k] = true;
+    }
+    return Object.keys(seen).sort().reverse();
+}
+
+// A GAME ONLY PAYS WHEN ENOUGH PEOPLE ARE IN IT TO FILL THE LADDER.
+//
+// Without this, adding machines makes the championship easier to game rather
+// than harder: winning a two-person board is worth 150, while third in a game
+// everyone plays is worth 60, so the optimal move becomes finding the cabinet
+// nobody touches. Four entrants is exactly the number of paying places -- below
+// that the game still keeps its own board, it just contributes nothing.
+const MIN_PLAYERS_PER_GAME = 4;
+
+// Raised from 2 when the arcade went past four machines: two of four was half
+// the arcade, two of six is a third, and breadth is the point of an overall
+// board. Counts only games that PAID -- otherwise a dead cabinet is a free
+// entry towards qualifying.
+const MIN_GAMES_TO_RANK = 3;
 
 export interface OverallRow {
     name: string;
@@ -153,23 +204,17 @@ export interface OverallRow {
     ranked: boolean;
 }
 
-function withinWindow(stamp: string, days: number): boolean {
-    // Stamps are "YYYY-MM-DD HH:MM" (nowStamp, team.ts). A plain string compare
-    // against a cutoff of the same shape is enough and needs no parsing.
-    if (!stamp) return false;
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - days);
-    const p = (n: number) => String(n).padStart(2, "0");
-    const key = `${cutoff.getFullYear()}-${p(cutoff.getMonth() + 1)}-${p(cutoff.getDate())}`;
-    return stamp.slice(0, 10) >= key;
-}
-
-export function overallStandings(scores: ArcadeScore[], machines: Machine[]): OverallRow[] {
-    const recent = scores.filter((s) => withinWindow(s.stamp, OVERALL_WINDOW_DAYS));
+export function overallStandings(
+    scores: ArcadeScore[],
+    machines: Machine[],
+    season: string
+): OverallRow[] {
+    const inSeason = scores.filter((s) => seasonKeyOf(s.stamp) === season);
     const acc: Record<string, OverallRow> = {};
 
     for (const m of machines) {
-        const standings = standingsFor(recent, m);
+        const standings = standingsFor(inSeason, m);
+        if (standings.length < MIN_PLAYERS_PER_GAME) continue;   // see the guard above
         standings.forEach((row, idx) => {
             const r = acc[row.name] || (acc[row.name] = {
                 name: row.name, points: 0, games: 0, places: {}, ranked: false,
@@ -196,6 +241,12 @@ export function overallStandings(scores: ArcadeScore[], machines: Machine[]): Ov
         );
 }
 
+/** Machines with enough entrants this season to be worth points. */
+export function payingMachines(scores: ArcadeScore[], machines: Machine[], season: string): Machine[] {
+    const inSeason = scores.filter((s) => seasonKeyOf(s.stamp) === season);
+    return machines.filter((m) => standingsFor(inSeason, m).length >= MIN_PLAYERS_PER_GAME);
+}
+
 export const ArcadeHub = ({ onClose }: { onClose: () => void }) => {
     const [scores, setScores] = useState<ArcadeScore[] | null>(null);
     const [me, setMe] = useState("");
@@ -206,9 +257,28 @@ export const ArcadeHub = ({ onClose }: { onClose: () => void }) => {
     // later refresh couldn't reach the team folder.
     const [stale, setStale] = useState(false);
     const reduced = useReducedMotion();
-    const overall = useMemo(() => overallStandings(scores || [], MACHINES), [scores]);
+
+    // Which month the championship is showing. Defaults to the live one; the
+    // picker walks back through every month that has a row in it.
+    const [season, setSeason] = useState(currentSeasonKey());
+    const seasons = useMemo(() => seasonsIn(scores || []), [scores]);
+    const seasonIdx = Math.max(0, seasons.indexOf(season));
+    const isThisSeason = season === currentSeasonKey();
+
+    const overall = useMemo(() => overallStandings(scores || [], MACHINES, season), [scores, season]);
+    const paying = useMemo(() => payingMachines(scores || [], MACHINES, season), [scores, season]);
     const podium = overall.slice(0, 3);
     const rest = overall.slice(3);
+    // Cabinets that are being played but haven't reached four entrants yet --
+    // named explicitly, because "I won it and got nothing" needs an answer on
+    // screen rather than in a comment.
+    const quiet = useMemo(() => {
+        const inSeason = (scores || []).filter((x) => seasonKeyOf(x.stamp) === season);
+        return MACHINES.filter((m) => {
+            const n = standingsFor(inSeason, m).length;
+            return n > 0 && n < MIN_PLAYERS_PER_GAME;
+        });
+    }, [scores, season]);
 
     // `refresh` is stable (empty deps, so the mount effect runs once), which
     // means it can't read `scores` from its own closure. This ref is how it
@@ -395,11 +465,33 @@ export const ArcadeHub = ({ onClose }: { onClose: () => void }) => {
                     three get a podium; the rest a plain list. Hidden entirely
                     when nobody qualifies, so a fresh team folder shows an
                     arcade rather than an empty trophy case. */}
-                {overall.length > 0 && (
+                {(overall.length > 0 || !!scores?.length) && (
                     <div className="arc-overall">
                         <div className="arc-overall-head">
                             <span className="arc-overall-title arcade-pixel">CHAMPIONSHIP</span>
-                            <span className="arc-overall-sub">last {OVERALL_WINDOW_DAYS} days · points for placing in each game</span>
+                            <span className="arc-overall-sub">
+                                {seasonLabel(season)}{isThisSeason ? " · in play" : " · final"} · points for placing in each game
+                            </span>
+
+                            {/* Older seasons are computed, not stored -- this
+                                just re-runs the same standings over a different
+                                month key. */}
+                            {seasons.length > 1 && (
+                                <span className="arc-season-nav">
+                                    <button
+                                        className="arc-season-btn"
+                                        disabled={seasonIdx >= seasons.length - 1}
+                                        onClick={() => setSeason(seasons[seasonIdx + 1])}
+                                        title="Previous season"
+                                    ><ChevronLeft size={12} /></button>
+                                    <button
+                                        className="arc-season-btn"
+                                        disabled={seasonIdx <= 0}
+                                        onClick={() => setSeason(seasons[seasonIdx - 1])}
+                                        title="Next season"
+                                    ><ChevronRight size={12} /></button>
+                                </span>
+                            )}
                         </div>
 
                         <div className="arc-podium">
@@ -415,10 +507,28 @@ export const ArcadeHub = ({ onClose }: { onClose: () => void }) => {
                                     <span className="arc-plinth-pos arcade-pixel">{i + 1}</span>
                                     <span className="arc-plinth-name">{row.name}</span>
                                     <span className="arc-plinth-pts">{row.points}<em>pts</em></span>
-                                    <span className="arc-plinth-games">{row.games} of {MACHINES.length} games</span>
+                                    <span className="arc-plinth-games">{row.games} of {paying.length} game{paying.length === 1 ? "" : "s"}</span>
                                 </motion.div>
                             ))}
                         </div>
+
+                        {/* The 1st of the month is a blank board by design --
+                            say so, rather than letting it read as broken. */}
+                        {overall.length === 0 && (
+                            <p className="arc-season-empty">
+                                {isThisSeason
+                                    ? `${seasonLabel(season)} is wide open — nothing's been won yet.`
+                                    : `Nothing scored in ${seasonLabel(season)}.`}
+                            </p>
+                        )}
+
+                        {quiet.length > 0 && (
+                            <p className="arc-season-quiet">
+                                {quiet.map((m) => m.name).join(" and ")}
+                                {quiet.length > 1 ? " need " : " needs "}
+                                {MIN_PLAYERS_PER_GAME} players this season before {quiet.length > 1 ? "they pay" : "it pays"} points.
+                            </p>
+                        )}
 
                         {rest.length > 0 && (
                             <ul className="arc-overall-list">
@@ -430,7 +540,7 @@ export const ArcadeHub = ({ onClose }: { onClose: () => void }) => {
                                             game's own accent, so breadth reads at a
                                             glance without another column of numbers. */}
                                         <span className="arc-ol-pips">
-                                            {MACHINES.map((m) => (
+                                            {paying.map((m) => (
                                                 <span
                                                     key={m.id}
                                                     className={row.places[m.id] ? "arc-pip is-in" : "arc-pip"}

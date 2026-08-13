@@ -277,6 +277,17 @@ tab-separated lines (JSON only where a real map is needed).
   has written at least once.
 - Adding an arcade game = a `MACHINES` entry in `ArcadeHub.tsx` **plus** its
   `teamArcadePost` call. The grid is fixed at 2 columns — add games in pairs.
+- **A championship season is a FILTER over `stamp.slice(0,7)`, never a reset.**
+  Nothing is deleted and nothing is written when a month turns over, so past
+  seasons are `overallStandings()` with an older key — a hall of fame for free
+  and no way for two panels opening on the 1st to race each other. Never "tidy
+  up" by pruning last month's rows.
+- **A game pays championship points only with `MIN_PLAYERS_PER_GAME` entrants**
+  (4 — the number of paying places). Without it, more cabinets makes the title
+  *easier* to farm: winning a 2-person board is 150, third in a busy one is 60,
+  so the best move becomes finding the machine nobody plays. A game below the
+  threshold must also not count towards `MIN_GAMES_TO_RANK`, or a dead cabinet
+  is a free entry towards qualifying.
 
 **Folders starting with `_` are excluded from every scan.** The one exception is
 Naming Audit, which skips only `Auto-Save`/`_Archive`/`_Old`/`_DEV`.
