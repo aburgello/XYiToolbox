@@ -258,6 +258,27 @@ export function makeLayout(rand: () => number): { elems: Elem[]; pal: typeof PAL
 // --- the fault --------------------------------------------------------------
 type FaultKind = "shift" | "colour" | "size" | "safe" | "gap";
 
+// FIVE KINDS, FIVE ROUNDS, one of each per day -- see faultOrder below.
+export const FAULT_KINDS: FaultKind[] = ["shift", "colour", "size", "safe", "gap"];
+
+/**
+ * The day's fault kinds, shuffled, one per round.
+ *
+ * Picking a kind independently per round clustered badly: 13 Aug drew FOUR
+ * shifts out of five. On a solo game that's just a dull run, but this board is
+ * the same for the whole team, so a monotonous day is monotonous for everybody
+ * at once and the drill only exercises one thing. There are exactly as many
+ * kinds as rounds, so a shuffle gives every day all five, in a different order.
+ */
+export function faultOrder(rand: () => number): FaultKind[] {
+    const out = FAULT_KINDS.slice();
+    for (let i = out.length - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1));
+        [out[i], out[j]] = [out[j], out[i]];
+    }
+    return out;
+}
+
 interface Fault {
     kind: FaultKind;
     /** Which element carries it -- the only correct click target. */
@@ -280,14 +301,13 @@ function shiftChannel(hex: string, delta: number): string {
  * carries it. Never mutates the reference layout -- both panels render from the
  * same source and a mutation would silently "fix" the left-hand one too.
  */
-export function applyFault(elems: Elem[], rand: () => number, round: number): { faulty: Elem[]; fault: Fault } {
+export function applyFault(elems: Elem[], rand: () => number, round: number, forced?: FaultKind): { faulty: Elem[]; fault: Fault } {
     const off = OFFSETS[round];
     const tint = TINTS[round];
     const out = elems.map((e) => ({ ...e }));
     const pick = (ids: string[]) => ids[Math.floor(rand() * ids.length)];
 
-    const kinds: FaultKind[] = ["shift", "colour", "size", "safe", "gap"];
-    const kind = kinds[Math.floor(rand() * kinds.length)];
+    const kind = forced || FAULT_KINDS[Math.floor(rand() * FAULT_KINDS.length)];
     const at = (id: string) => out[out.findIndex((e) => e.id === id)];
 
     if (kind === "shift") {
@@ -425,10 +445,11 @@ export const OffByAPixel = ({ onClose }: { onClose: () => void }) => {
     // so the layout and its fault stay in step.
     const boards = useMemo(() => {
         const rand = mulberry32(today.seed);
+        const kinds = faultOrder(rand);
         const out: { clean: Elem[]; faulty: Elem[]; pal: typeof PALETTES[0]; fault: Fault }[] = [];
         for (let i = 0; i < ROUNDS; i++) {
             const { elems, pal } = makeLayout(rand);
-            const { faulty, fault } = applyFault(elems, rand, i);
+            const { faulty, fault } = applyFault(elems, rand, i, kinds[i]);
             out.push({ clean: elems, faulty, pal, fault });
         }
         return out;
