@@ -443,9 +443,16 @@ export const DailyWord = ({ onClose }: { onClose: () => void }) => {
     return (
         <ArcadeFrame
             title="WORDMARK"
-            // States plainly that finishing posts to the board, so an
-            // automatic post is never a surprise to whoever's playing.
-            hint={`Six guesses · ${today.dayKey}${streak > 0 ? ` · streak ${streak}` : ""} · result posts to the team board`}
+            // WHAT THE ROUND IS WORTH, before you spend a guess on finding
+            // out. "Six guesses" was static text restating what the grid
+            // already shows, while the actual rule -- 100, less 15 a guess --
+            // was invisible until the board ranked you on it. Ticks down live.
+            //
+            // Calls the real roundScore rather than repeating the arithmetic,
+            // so the number shown can never drift from the one posted.
+            hint={done
+                ? `${today.dayKey}${streak > 0 ? ` · streak ${streak}` : ""} · result posted to the team board`
+                : `Worth ${roundScore(guesses.length + 1)} pts · ${today.dayKey}${streak > 0 ? ` · streak ${streak}` : ""} · −${WORD_GUESS_COST} a guess · posts to the board`}
             keyCodes={KEY_CODES}
             fluid
             onClose={onClose}

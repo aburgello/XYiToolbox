@@ -180,14 +180,21 @@ export function seasonsIn(scores: ArcadeScore[]): string[] {
     return Object.keys(seen).sort().reverse();
 }
 
-// A GAME ONLY PAYS WHEN ENOUGH PEOPLE ARE IN IT TO FILL THE LADDER.
+// A GAME ONLY PAYS WHEN ENOUGH PEOPLE ARE IN IT TO BE A CONTEST.
 //
 // Without this, adding machines makes the championship easier to game rather
 // than harder: winning a two-person board is worth 150, while third in a game
 // everyone plays is worth 60, so the optimal move becomes finding the cabinet
-// nobody touches. Four entrants is exactly the number of paying places -- below
-// that the game still keeps its own board, it just contributes nothing.
-const MIN_PLAYERS_PER_GAME = 4;
+// nobody touches. Below the threshold a game keeps its own board, it just
+// contributes nothing.
+//
+// THREE, not four. Four matched the number of paying places, which is tidy but
+// the wrong test: the guard exists to stop a quiet cabinet being farmed, and
+// three people is already a contest you cannot walk. On a team this size four
+// was keeping real games off the championship altogether -- a worse failure
+// than the one it guards against. A three-player game pays 150/100/60 and
+// simply has no fourth place to award.
+const MIN_PLAYERS_PER_GAME = 3;
 
 // Raised from 2 when the arcade went past four machines: two of four was half
 // the arcade, two of six is a third, and breadth is the point of an overall
