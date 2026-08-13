@@ -140,12 +140,14 @@ export const ActiveJobModal: React.FC<Props> = ({ job, onClose, onOpenLocaliser 
     // own test (enrichJob) so the two never disagree.
     const FINISHED = /^(delivered|completed?|done|published)$/i;
 
-    // The feed does not send customStatusName yet -- every subtask arrives with
-    // the status GROUP ("Active"), which is in no allowlist. Applying the
-    // allowlist to that would make every row unsendable and the button dead.
-    // So the allowlist only governs rows that actually carry a custom status;
-    // until the worker resolves customStatusId (as TimeHub already does for
-    // tasks), behaviour is unchanged apart from excluding finished rows.
+    // The feed DOES send customStatusName now (verified on the live feed:
+    // subtasks arrive as status "Active" with customStatusName "Backlog" /
+    // "On hold" / "Render review"). The guard below stays anyway: a subtask
+    // that arrives without one must not be judged against an allowlist it
+    // cannot satisfy -- the status GROUP is only ever Active/Completed/
+    // Deferred/Cancelled, none of which is localisable, so applying the
+    // allowlist to a bare group would make every row unsendable and the
+    // button dead.
     const hasCustom = (r: Row) => !!String(r.customStatusName || "").trim();
     const statusOf = (r: Row) => String(r.customStatusName || r.status || "").trim();
 
@@ -201,12 +203,19 @@ export const ActiveJobModal: React.FC<Props> = ({ job, onClose, onOpenLocaliser 
                                 are different problems and only one of them is the
                                 job's fault. The COUNT comes from subTaskIds and is
                                 always right; the NAMES are resolved separately and
-                                can come back blank, which is what an undeployed or
-                                lagging feed looks like. Saying "no subtasks" there
+                                can come back blank. Saying "no subtasks" there
                                 sends someone to check Wrike for a task that is
-                                perfectly fine. */}
+                                perfectly fine.
+
+                                DOES NOT SUGGEST REFRESHING. It used to, and that
+                                was the worst possible advice: a live refresh is
+                                the ONE path that loses subtask names (the worker
+                                rebuilds its rows from Wrike and the names have to
+                                be joined back on), so the fix being offered was
+                                the cause. Measured on the live feed: the cached
+                                path returned 19 of 19 names, refresh returned 12. */}
                             {(job.subtaskCount ?? 0) > 0
-                                ? `Wrike says this job has ${job.subtaskCount} subtask${job.subtaskCount === 1 ? "" : "s"}, but their names didn't come through. Hit refresh on the card — if they still don't appear, the feed is behind.`
+                                ? `Wrike says this job has ${job.subtaskCount} subtask${job.subtaskCount === 1 ? "" : "s"}, but their names didn't arrive with the feed. The job itself is fine — open it in Wrike to work from there.`
                                 : "This job has no subtasks in the feed."}
                         </p>
                     ) : usable.length === 0 ? (

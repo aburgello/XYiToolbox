@@ -722,22 +722,48 @@ export const TC_COUNTRIES: { name: string; code: string }[] = [
   { name: "Zimbabwe", code: "ZW" },
 ];
 
+/** Lowercase, and treat _ - and spaces as the same separator on BOTH sides. */
+function tcNormalise(s: string): string {
+  return String(s).toLowerCase().replace(/[_\-\s]+/g, " ").replace(/^ +/, "").replace(/ +$/, "");
+}
+
 function territoryCheck(input: string): string | null {
-  const userInput = input.toLowerCase().replace("_", " ");
+  const want = tcNormalise(input);
+  if (want === "") return null;
+
+  // EXACT CODE FIRST, and this is the whole fix.
+  //
+  // This used to be a substring test in the OTHER direction -- "does any code
+  // CONTAIN the input" -- walking the table in order. So "DE" hit `BE_DE`
+  // (Belgium German), which sits two hundred entries before Germany, and "FR"
+  // hit `BE_FR` before ever reaching France. A German batch went out with
+  // BELGIUM GERMAN burnt into its frontcard, and France was wrong the same way
+  // the whole time without anybody noticing.
+  //
+  // The compound codes were broken too, in the opposite direction: the input
+  // had `_` normalised to a space but the code side did not, so "BE_DE" and
+  // all three CH_* codes matched nothing at all and returned null.
   for (let i = 0; i < TC_COUNTRIES.length; i++) {
-    // Plain substring check, not .match() -- userInput ultimately comes from
-    // real folder/file names on disk (not a fixed set of clean country
-    // codes), and .match() treats its argument as a regex pattern. A name
-    // containing regex-special characters (parentheses, +, etc. -- common
-    // in real territory folder names like "APAC (ex. China)") would throw a
-    // SyntaxError instead of just not matching. indexOf has no such risk
-    // and is exactly what a substring check needs.
-    if (TC_COUNTRIES[i].code.toLowerCase().indexOf(userInput) !== -1) {
-      return TC_COUNTRIES[i].name;
+    if (tcNormalise(TC_COUNTRIES[i].code) === want) return TC_COUNTRIES[i].name;
+  }
+  for (let i = 0; i < TC_COUNTRIES.length; i++) {
+    if (tcNormalise(TC_COUNTRIES[i].name) === want) return TC_COUNTRIES[i].name;
+  }
+
+  // Messy real-world folder names ("Germany (DE)") still resolve, but only
+  // against the NAME and only when the input is long enough that a two-letter
+  // code cannot collide -- which is exactly what went wrong above.
+  //
+  // indexOf, never .match(): this input comes from real folder and file names,
+  // and .match() would compile "APAC (ex. China)" as a regex and throw.
+  if (want.length >= 4) {
+    for (let i = 0; i < TC_COUNTRIES.length; i++) {
+      if (tcNormalise(TC_COUNTRIES[i].name).indexOf(want) !== -1) return TC_COUNTRIES[i].name;
     }
   }
   return null;
 }
+
 
 function frontcardLayerTextIndices(variantA: boolean) {
   return variantA
