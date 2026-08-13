@@ -32,7 +32,7 @@ export interface CheekyTInspection {
     values?: { artwork: string; version: string; territory: string; date: string };
     unresolved?: string[];
     territoryToken?: string;
-    countries?: string[];
+    countries?: { name: string; code: string }[];
 }
 
 /** The studio's four, confirmed -- the same set the whole toolbox parses on. */
@@ -56,6 +56,7 @@ export const CheekyTModal = ({ inspection, onClose }: Props) => {
     const [date, setDate] = useState(inspection.values?.date || "");
     const [terQuery, setTerQuery] = useState("");
     const [terOpen, setTerOpen] = useState(false);
+    const terRef = useRef<HTMLDivElement>(null);
     const [applied, setApplied] = useState(false);
     const [applyError, setApplyError] = useState<string | null>(null);
 
@@ -63,19 +64,23 @@ export const CheekyTModal = ({ inspection, onClose }: Props) => {
     const missing = useCallback((k: string) => unresolved.indexOf(k) !== -1, [unresolved]);
 
     const countries = inspection.countries || [];
+    // Matches on CODE as well as name, so "DE" finds Germany. An exact code hit
+    // ranks first. indexOf throughout, never a built regex -- these are real
+    // country names and several carry brackets and commas.
     const matches = useMemo(() => {
         const q = terQuery.trim().toLowerCase();
         if (!q) return countries.slice(0, MAX_MATCHES);
-        const starts: string[] = [];
-        const contains: string[] = [];
+        const exactCode: typeof countries = [];
+        const starts: typeof countries = [];
+        const contains: typeof countries = [];
         for (const c of countries) {
-            const lc = c.toLowerCase();
-            // indexOf, never a built regex -- these are real country names and
-            // several carry brackets and commas.
-            if (lc.indexOf(q) === 0) starts.push(c);
-            else if (lc.indexOf(q) !== -1) contains.push(c);
+            const lc = c.name.toLowerCase();
+            const code = String(c.code || "").toLowerCase();
+            if (code === q || code.split("_").join(" ") === q) exactCode.push(c);
+            else if (lc.indexOf(q) === 0) starts.push(c);
+            else if (lc.indexOf(q) !== -1 || code.indexOf(q) === 0) contains.push(c);
         }
-        return starts.concat(contains).slice(0, MAX_MATCHES);
+        return exactCode.concat(starts, contains).slice(0, MAX_MATCHES);
     }, [terQuery, countries]);
 
     // --- live write ---------------------------------------------------------
@@ -111,8 +116,33 @@ export const CheekyTModal = ({ inspection, onClose }: Props) => {
         };
     }, [artwork, version, territory, date]);
 
+    // Clicking anywhere outside the picker closes it. Mousedown rather than
+    // click: the list's buttons are gone from the DOM by the time a click
+    // finishes bubbling, so a click listener can't tell a pick from a
+    // click-away.
+    useEffect(() => {
+        if (!terOpen) return;
+        const onDown = (e: MouseEvent) => {
+            if (terRef.current && !terRef.current.contains(e.target as Node)) {
+                setTerOpen(false);
+                setTerQuery("");
+            }
+        };
+        document.addEventListener("mousedown", onDown, true);
+        return () => document.removeEventListener("mousedown", onDown, true);
+    }, [terOpen]);
+
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
+            // Escape closes the picker first if it is open, and only closes the
+            // modal when it isn't -- otherwise dismissing a dropdown throws away
+            // everything you were in the middle of.
+            if (e.key === "Escape" && terOpen) {
+                e.stopPropagation();
+                setTerOpen(false);
+                setTerQuery("");
+                return;
+            }
             if (e.key === "Escape") {
                 e.stopPropagation();
                 onClose();
@@ -120,7 +150,7 @@ export const CheekyTModal = ({ inspection, onClose }: Props) => {
         };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
-    }, [onClose]);
+    }, [onClose, terOpen]);
 
     const stillMissing = [
         !artwork ? "artwork" : "",
@@ -170,7 +200,7 @@ export const CheekyTModal = ({ inspection, onClose }: Props) => {
                         />
                     </label>
 
-                    <div className={"ctm-field" + (missing("territory") ? " is-missing" : "")}>
+                    <div className={"ctm-field" + (missing("territory") ? " is-missing" : "")} ref={terRef}>
                         <span className="ctm-lbl">
                             Territory {missing("territory") && <AlertCircle size={10} />}
                             {missing("territory") && inspection.territoryToken && (
@@ -190,12 +220,13 @@ export const CheekyTModal = ({ inspection, onClose }: Props) => {
                         {terOpen && (
                             <ul className="ctm-matches">
                                 {matches.map((c) => (
-                                    <li key={c}>
+                                    <li key={c.name}>
                                         <button
                                             type="button"
-                                            onClick={() => { setTerritory(c); setTerOpen(false); setTerQuery(""); }}
+                                            onClick={() => { setTerritory(c.name); setTerOpen(false); setTerQuery(""); }}
                                         >
-                                            {c}
+                                            {c.name}
+                                            <em className="ctm-code">{c.code}</em>
                                         </button>
                                     </li>
                                 ))}

@@ -551,7 +551,10 @@ export const frontcard = (): Result => {
 interface FilenameMeta {
   filmTitle: string;
   artworkType: string;
+  /** What sits LEFT of the artwork type -- the creative. */
   campaign: string;
+  /** What sits RIGHT of it -- the site, never shown on the frontcard. */
+  siteName: string;
   size: string;
   duration: string;
   territory: string;
@@ -574,6 +577,7 @@ export function parseFilenameMeta(name: string): FilenameMeta {
   let territory = "";
   let version = "";
   let region = "";
+  let siteName = "";
 
   const regionMatch = name.match(/_(INTL|DOM)_/);
   if (regionMatch && regionMatch.index !== undefined) {
@@ -622,12 +626,42 @@ export function parseFilenameMeta(name: string): FilenameMeta {
           break;
         }
       }
-      if (artworkIndex !== -1) artworkType = middleParts.splice(artworkIndex, 1)[0];
-      campaign = middleParts.join("_");
+      // CAMPAIGN IS WHAT SITS LEFT OF THE ARTWORK TYPE. Everything to its
+      // RIGHT is the site name (MotionPoster, INTHDS, BioRexTripla), which is
+      // never shown on the frontcard. This used to drop the artwork token and
+      // join whatever was left, so a name like
+      // MultipleArt_DINTH_MotionPoster gave a campaign of
+      // "MultipleArt_MotionPoster" -- the site glued onto the creative, long
+      // enough to overflow the frontcard's campaign line.
+      if (artworkIndex !== -1) {
+        artworkType = middleParts[artworkIndex];
+        const left: string[] = [];
+        const right: string[] = [];
+        for (let m = 0; m < middleParts.length; m++) {
+          if (m < artworkIndex) left.push(middleParts[m]);
+          else if (m > artworkIndex) right.push(middleParts[m]);
+        }
+        campaign = left.join("_");
+        siteName = right.join("_");
+      } else {
+        // No recognised artwork type: keep the old behaviour rather than
+        // guessing where the split would have been.
+        campaign = middleParts.join("_");
+      }
     }
   }
 
-  return { filmTitle, artworkType, campaign, size, duration, territory, version, region };
+  return { filmTitle, artworkType, campaign, siteName, size, duration, territory, version, region };
+}
+
+/**
+ * "MultipleArt" -> "Multiple Art". Filenames run the creative together in
+ * CamelCase; the frontcard shows it as words. The text layer applies All Caps
+ * itself, so "PortalToParadise" -> "Portal To Paradise" renders correctly as
+ * PORTAL TO PARADISE. An all-caps token (INTHDS) is left alone.
+ */
+export function campaignWords(token: string): string {
+  return String(token).split("_").join(" ").replace(/([a-z0-9])([A-Z])/g, "$1 $2");
 }
 
 export const TC_COUNTRIES: { name: string; code: string }[] = [
@@ -901,7 +935,7 @@ export interface FrontcardFields {
   /** Derived fields the name couldn't answer. */
   unresolved?: string[];
   territoryToken?: string;
-  countries?: string[];
+  countries?: { name: string; code: string }[];
 }
 
 export const frontcardReadFields = (): FrontcardFields => {
@@ -943,9 +977,15 @@ export const frontcardReadFields = (): FrontcardFields => {
     if (!meta.campaign) unresolved.push("campaign");
     if (!derivedTitle) unresolved.push("title");
 
-    const names: string[] = [];
+    // Name AND code: the picker matches on either, so "DE" finds Germany
+    // without anyone having to remember the long-form country name.
+    const names: { name: string; code: string }[] = [];
     for (let i = 0; i < TC_COUNTRIES.length; i++) {
-      if (names.indexOf(TC_COUNTRIES[i].name) === -1) names.push(TC_COUNTRIES[i].name);
+      let seen = false;
+      for (let j = 0; j < names.length; j++) {
+        if (names[j].name === TC_COUNTRIES[i].name) { seen = true; break; }
+      }
+      if (!seen) names.push({ name: TC_COUNTRIES[i].name, code: TC_COUNTRIES[i].code });
     }
 
     return {
@@ -965,7 +1005,7 @@ export const frontcardReadFields = (): FrontcardFields => {
         title: derivedTitle,
         artwork: meta.artworkType || "",
         version: meta.version || "",
-        campaign: (meta.campaign || "").split("_").join(" "),
+        campaign: campaignWords(meta.campaign || ""),
         duration: (meta.duration || "").replace("sec", ""),
         territory: terMatch.name || "",
         date: fullDate,
@@ -1038,7 +1078,7 @@ export interface CheekyTInspection {
   unresolved?: string[];
   /** What was in the name where a territory should have been. */
   territoryToken?: string;
-  countries?: string[];
+  countries?: { name: string; code: string }[];
 }
 
 /** Resolves everything Cheeky T would write, WITHOUT writing any of it. */
@@ -1049,9 +1089,13 @@ export const cheekyTInspect = (): CheekyTInspection => {
     const targets = frontcardTargets(comp);
     if (!targets.length) return { success: false, error: "No Frontcard layer in this comp." };
 
-    const names: string[] = [];
+    const names: { name: string; code: string }[] = [];
     for (let i = 0; i < TC_COUNTRIES.length; i++) {
-      if (names.indexOf(TC_COUNTRIES[i].name) === -1) names.push(TC_COUNTRIES[i].name);
+      let seen = false;
+      for (let j = 0; j < names.length; j++) {
+        if (names[j].name === TC_COUNTRIES[i].name) { seen = true; break; }
+      }
+      if (!seen) names.push({ name: TC_COUNTRIES[i].name, code: TC_COUNTRIES[i].code });
     }
 
     const today = new Date();
@@ -1167,7 +1211,7 @@ export const cheekyDTCheck = (
     const projPath = String(app.project.file);
     const filmTitle = projPath.split("/Digital")[0].split("/").slice(-1)[0].split("_").join(" ");
     const artworkType = meta.artworkType;
-    let campaign = meta.campaign.split("_").join(" ") + " ";
+    let campaign = campaignWords(meta.campaign) + " ";
     let duration = meta.duration.replace("sec", "");
     const version = meta.version;
 

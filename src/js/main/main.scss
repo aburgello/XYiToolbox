@@ -1888,9 +1888,9 @@ textarea {
     width: 100%;
     max-width: 430px;
     box-sizing: border-box;
-    border: 1px solid #333;
+    border: 1px solid var(--surface-border, #333);
     border-radius: 10px;
-    background: #171717;
+    background: var(--surface-1, #171717);
     box-shadow: 0 18px 46px rgba(0, 0, 0, 0.55);
     overflow: hidden;
     // Column layout with a scrollable middle: the territory list is INLINE (see
@@ -1906,7 +1906,7 @@ textarea {
     align-items: flex-start;
     gap: 10px;
     padding: 13px 14px 11px;
-    border-bottom: 1px solid #2a2a2a;
+    border-bottom: 1px solid var(--surface-divider, #2a2a2a);
 }
 
 .ctm-title { margin: 0; font-size: 13px; font-weight: 650; color: #eee; }
@@ -1928,11 +1928,11 @@ textarea {
     width: 22px;
     height: 22px;
     padding: 0;
-    border: 1px solid #333;
+    border: 1px solid var(--surface-border, #333);
     border-radius: 5px;
     /* index.scss's global button:hover/:active paints over any custom button,
        so both states are re-declared here. */
-    background: #1d1d1d;
+    background: var(--surface-2, #1d1d1d);
     color: #999;
     cursor: pointer;
 
@@ -1988,9 +1988,9 @@ textarea {
     box-sizing: border-box;
     height: 28px;
     padding: 0 9px;
-    border: 1px solid #363636;
+    border: 1px solid var(--surface-border, #363636);
     border-radius: 6px;
-    background: #121212;
+    background: var(--surface-0, #121212);
     color: #ddd;
     font-size: 11.5px;
 
@@ -2002,9 +2002,9 @@ textarea {
 .ctm-chip {
     box-sizing: border-box;
     padding: 5px 11px;
-    border: 1px solid #363636;
+    border: 1px solid var(--surface-border, #363636);
     border-radius: 6px;
-    background: #121212;
+    background: var(--surface-0, #121212);
     color: #999;
     font-size: 10.5px;
     letter-spacing: 0.04em;
@@ -2035,9 +2035,9 @@ textarea {
     list-style: none;
     max-height: 150px;
     overflow-y: auto;
-    border: 1px solid #363636;
+    border: 1px solid var(--surface-border, #363636);
     border-radius: 6px;
-    background: #131313;
+    background: var(--surface-2, #131313);
 
     button {
         display: block;
@@ -2063,8 +2063,8 @@ textarea {
     align-items: center;
     gap: 10px;
     padding: 11px 14px;
-    border-top: 1px solid #2a2a2a;
-    background: #141414;
+    border-top: 1px solid var(--surface-divider, #2a2a2a);
+    background: var(--surface-1, #141414);
 }
 
 .ctm-state {
@@ -2094,12 +2094,11 @@ textarea {
 /* ── Cheeky DT, live fields (tools/CheekyDT.tsx) ──────────────────────────── */
 .cdt { display: flex; flex-direction: column; gap: 12px; }
 
-.cdt-head { display: flex; align-items: flex-start; gap: 10px; }
-.cdt-head-text { min-width: 0; }
-.cdt-title { margin: 0; font-size: 14px; font-weight: 650; color: #eee; }
+.cdt-head { display: flex; align-items: center; gap: 10px; }
 
 .cdt-comp {
-    margin: 2px 0 0;
+    flex: 1;
+    margin: 0;
     font-family: ui-monospace, Menlo, monospace;
     font-size: 9.5px;
     color: #7a7a7a;
@@ -2107,18 +2106,17 @@ textarea {
 }
 
 .cdt-refresh {
-    margin-left: auto;
     flex: none;
     display: flex;
     align-items: center;
-    justify-content: center;
-    width: 24px;
+    gap: 5px;
     height: 24px;
-    padding: 0;
-    border: 1px solid #333;
+    padding: 0 10px;
+    font-size: 10.5px;
+    border: 1px solid var(--surface-border, #333);
     border-radius: 5px;
     /* index.scss's global button:hover/:active would paint over this. */
-    background: #1d1d1d;
+    background: var(--surface-2, #1d1d1d);
     color: #999;
     cursor: pointer;
 
@@ -2168,15 +2166,17 @@ textarea {
 }
 
 .cdt-reset {
+    flex: none;
     display: flex;
     align-items: center;
-    gap: 3px;
-    padding: 2px 7px;
-    border: 1px solid #333;
-    border-radius: 5px;
-    background: #1d1d1d;
+    justify-content: center;
+    width: 27px;
+    height: 27px;
+    padding: 0;
+    border: 1px solid var(--surface-border, #333);
+    border-radius: 6px;
+    background: var(--surface-2, #1d1d1d);
     color: #8a8a8a;
-    font-size: 9.5px;
     cursor: pointer;
 
     &:hover:not(:disabled) { background: #262626; color: #ddd; }
@@ -2189,14 +2189,23 @@ textarea {
     width: 100%;
     height: 27px;
     padding: 0 9px;
-    border: 1px solid #363636;
+    border: 1px solid var(--surface-border, #363636);
     border-radius: 6px;
-    background: #121212;
+    background: var(--surface-0, #121212);
     color: #ddd;
     font-size: 11.5px;
 
     &:focus { outline: none; border-color: #4a7fa8; }
 }
+
+/* Input and its reset button on one line, so the control reads as belonging to
+   that field rather than floating at the far edge of the panel. */
+.cdt-field-row { display: flex; align-items: center; gap: 6px; }
+.cdt-field-row .cdt-chips { flex: 1; }
+/* width:100% is a flex BASIS in a row, which would squeeze the reset button
+   out. Explicit flex, and min-width:0 so a long value can't push it off. */
+.cdt-field-row .cdt-input,
+.cdt-suffixed .cdt-input { flex: 1; width: auto; min-width: 0; }
 
 .cdt-suffixed { display: flex; align-items: center; gap: 6px; }
 .cdt-suffix { flex: none; font-size: 13px; color: #8a8a8a; }
@@ -2206,9 +2215,9 @@ textarea {
 .cdt-chip {
     box-sizing: border-box;
     padding: 5px 11px;
-    border: 1px solid #363636;
+    border: 1px solid var(--surface-border, #363636);
     border-radius: 6px;
-    background: #121212;
+    background: var(--surface-0, #121212);
     color: #999;
     font-size: 10.5px;
     cursor: pointer;
@@ -2231,9 +2240,9 @@ textarea {
     list-style: none;
     max-height: 150px;
     overflow-y: auto;
-    border: 1px solid #363636;
+    border: 1px solid var(--surface-border, #363636);
     border-radius: 6px;
-    background: #131313;
+    background: var(--surface-2, #131313);
 
     button {
         display: block;
@@ -2270,7 +2279,7 @@ textarea {
 .cdt-lookup {
     margin-top: 4px;
     padding-top: 12px;
-    border-top: 1px solid #2a2a2a;
+    border-top: 1px solid var(--surface-divider, #2a2a2a);
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -2291,4 +2300,15 @@ textarea {
 
     &:hover { background: #223a4a; }
     &:active { background: #16242e; }
+}
+
+/* The code beside each territory: confirms what you typed matched, and teaches
+   the code for next time. */
+.cdt-code,
+.ctm-code {
+    float: right;
+    font-family: ui-monospace, Menlo, monospace;
+    font-style: normal;
+    font-size: 9.5px;
+    color: #6f6f6f;
 }

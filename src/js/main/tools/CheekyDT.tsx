@@ -29,7 +29,8 @@
 // delimiter -- which silently dropped text from any campaign containing the
 // duration digits. The inch mark is appended by the host, never typed.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Globe2, RefreshCw, RotateCcw } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
+import { AlertCircle, Globe2, RefreshCw, Undo2 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
@@ -54,7 +55,7 @@ interface FrontcardFields {
     derived?: FieldMap;
     unresolved?: string[];
     territoryToken?: string;
-    countries?: string[];
+    countries?: { name: string; code: string }[];
 }
 
 const FIELDS: { key: FieldKey; label: string }[] = [
@@ -82,11 +83,13 @@ const CheekyDTTool = () => {
     const [loading, setLoading] = useState(true);
     const [terOpen, setTerOpen] = useState(false);
     const [terQuery, setTerQuery] = useState("");
+    const terRef = useRef<HTMLDivElement>(null);
 
     // The independent territory-code lookup. Unrelated to the card and useful
     // on its own, so it survives the rebuild untouched.
     const [territoryEntry, setTerritoryEntry] = useState("OV");
     const [lookup, setLookup] = useState<StatusMsg | null>(null);
+    const reduced = useReducedMotion();
 
     const read = useCallback(async () => {
         setLoading(true);
@@ -140,6 +143,30 @@ const CheekyDTTool = () => {
         return () => { if (timer.current) window.clearTimeout(timer.current); };
     }, [values, touched]);
 
+    // Close the picker on any click outside it. MOUSEDOWN, not click: the
+    // list's own buttons are removed from the DOM by the time a click event
+    // finishes bubbling, so a click listener can't tell "picked an option"
+    // from "clicked away" -- mousedown still sees the real target. Capture
+    // phase so it runs before React's own handlers.
+    useEffect(() => {
+        if (!terOpen) return;
+        const onDown = (e: MouseEvent) => {
+            if (terRef.current && !terRef.current.contains(e.target as Node)) {
+                setTerOpen(false);
+                setTerQuery("");
+            }
+        };
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") { setTerOpen(false); setTerQuery(""); }
+        };
+        document.addEventListener("mousedown", onDown, true);
+        window.addEventListener("keydown", onKey);
+        return () => {
+            document.removeEventListener("mousedown", onDown, true);
+            window.removeEventListener("keydown", onKey);
+        };
+    }, [terOpen]);
+
     const set = (k: FieldKey, v: string) => {
         setValues((prev) => ({ ...prev, [k]: v }));
         setTouched((prev) => ({ ...prev, [k]: true }));
@@ -149,17 +176,23 @@ const CheekyDTTool = () => {
     const unresolved = card?.unresolved || [];
     const countries = card?.countries || [];
 
+    // MATCHES ON CODE AS WELL AS NAME, so "DE" finds Germany. An exact code hit
+    // ranks first -- typing a two-letter code is unambiguous and should not be
+    // buried under every country whose name happens to contain those letters.
     const matches = useMemo(() => {
         const q = terQuery.trim().toLowerCase();
         if (!q) return countries.slice(0, MAX_MATCHES);
-        const starts: string[] = [];
-        const rest: string[] = [];
+        const exactCode: typeof countries = [];
+        const starts: typeof countries = [];
+        const rest: typeof countries = [];
         for (const c of countries) {
-            const lc = c.toLowerCase();
-            if (lc.indexOf(q) === 0) starts.push(c);
-            else if (lc.indexOf(q) !== -1) rest.push(c);
+            const lc = c.name.toLowerCase();
+            const code = String(c.code || "").toLowerCase();
+            if (code === q || code.split("_").join(" ") === q) exactCode.push(c);
+            else if (lc.indexOf(q) === 0) starts.push(c);
+            else if (lc.indexOf(q) !== -1 || code.indexOf(q) === 0) rest.push(c);
         }
-        return starts.concat(rest).slice(0, MAX_MATCHES);
+        return exactCode.concat(starts, rest).slice(0, MAX_MATCHES);
     }, [terQuery, countries]);
 
     const runLookup = async () => {
@@ -175,14 +208,42 @@ const CheekyDTTool = () => {
 
     const touchedKeys = Object.keys(touched) as FieldKey[];
 
-    const renderField = (key: FieldKey, label: string) => {
+    const renderField = (key: FieldKey, label: string, idx: number) => {
         const isMissing = unresolved.indexOf(key) !== -1 && !touched[key];
         const fromName = derived[key] || "";
         const canReset = fromName !== "" && fromName !== values[key];
         const cls = "cdt-row" + (touched[key] ? " is-touched" : "") + (isMissing ? " is-missing" : "");
 
+        // The reset button sits WITH its input rather than floating out at the
+        // right-hand end of the label row: on a wide panel that put it a long
+        // way from the field it acts on, reading as page furniture rather than
+        // as a control belonging to that row.
+        const resetBtn = (
+            <Tooltip text={fromName ? `Reset to “${fromName}” from the comp name` : "The comp name doesn't answer this one"}>
+                <button
+                    type="button"
+                    className="cdt-reset"
+                    disabled={!canReset}
+                    onClick={() => set(key, fromName)}
+                    aria-label="Reset from the comp name"
+                >
+                    <Undo2 size={12} />
+                </button>
+            </Tooltip>
+        );
+
         return (
-            <div className={cls} key={key}>
+            <motion.div
+                className={cls}
+                key={key}
+                // Per-item explicit delay rather than a stagger parent -- this
+                // codebase's documented workaround for variant propagation
+                // stalling inside an AnimatePresence wrapper. Same cadence as
+                // CSV Localiser's scanned territories.
+                initial={reduced ? false : { opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: reduced ? 0 : Math.min(idx * 0.035, 0.3), duration: 0.22, ease: "easeOut" }}
+            >
                 <div className="cdt-row-head">
                     <span className="cdt-row-label">
                         {label}
@@ -191,19 +252,10 @@ const CheekyDTTool = () => {
                     {isMissing && key === "territory" && card?.territoryToken && (
                         <em className="cdt-hint">“{card.territoryToken}” isn't one we know</em>
                     )}
-                    <Tooltip text={fromName ? `Set to “${fromName}”` : "The filename doesn't answer this one"}>
-                        <button
-                            type="button"
-                            className="cdt-reset"
-                            disabled={!canReset}
-                            onClick={() => set(key, fromName)}
-                        >
-                            <RotateCcw size={9} /> from name
-                        </button>
-                    </Tooltip>
                 </div>
 
                 {key === "artwork" ? (
+                    <div className="cdt-field-row">
                     <div className="cdt-chips">
                         {ARTWORK_TYPES.map((t) => (
                             <button
@@ -216,8 +268,11 @@ const CheekyDTTool = () => {
                             </button>
                         ))}
                     </div>
+                    {resetBtn}
+                    </div>
                 ) : key === "territory" ? (
-                    <>
+                    <div ref={terRef}>
+                    <div className="cdt-field-row">
                         {/* Picked from the real TC_COUNTRIES list rather than typed
                             free-hand: the card prints this verbatim, so a typo here
                             is exactly as wrong as a bad lookup. */}
@@ -228,22 +283,25 @@ const CheekyDTTool = () => {
                             onFocus={() => { setTerOpen(true); setTerQuery(""); }}
                             onChange={(e) => { setTerOpen(true); setTerQuery(e.target.value); }}
                         />
+                        {resetBtn}
+                        </div>
                         {terOpen && (
                             <ul className="cdt-matches">
                                 {matches.map((c) => (
-                                    <li key={c}>
+                                    <li key={c.name}>
                                         <button
                                             type="button"
-                                            onClick={() => { set("territory", c); setTerOpen(false); setTerQuery(""); }}
+                                            onClick={() => { set("territory", c.name); setTerOpen(false); setTerQuery(""); }}
                                         >
-                                            {c}
+                                            {c.name}
+                                            <em className="cdt-code">{c.code}</em>
                                         </button>
                                     </li>
                                 ))}
                                 {matches.length === 0 && <li className="cdt-none">No territory matches that.</li>}
                             </ul>
                         )}
-                    </>
+                    </div>
                 ) : key === "duration" ? (
                     <div className="cdt-suffixed">
                         <input
@@ -256,31 +314,35 @@ const CheekyDTTool = () => {
                             can never end up doubled or missing -- the host appends
                             it when it composes the line. */}
                         <span className="cdt-suffix">”</span>
+                        {resetBtn}
                     </div>
                 ) : (
-                    <input
-                        className="cdt-input"
-                        value={values[key]}
-                        onChange={(e) => set(key, key === "version" ? e.target.value.toUpperCase() : e.target.value)}
-                    />
+                    <div className="cdt-field-row">
+                        <input
+                            className="cdt-input"
+                            value={values[key]}
+                            onChange={(e) => set(key, key === "version" ? e.target.value.toUpperCase() : e.target.value)}
+                        />
+                        {resetBtn}
+                    </div>
                 )}
-            </div>
+            </motion.div>
         );
     };
 
     return (
         <div className="form-tool cdt">
+            {/* No heading here: the tool shell already prints "Cheeky DT" with
+                its icon directly above, and a second one read as a duplicate. */}
             <div className="cdt-head">
-                <div className="cdt-head-text">
-                    <h2 className="cdt-title">Cheeky DT</h2>
-                    <p className="cdt-comp">
-                        {card?.compName || (loading ? "Reading the Frontcard…" : "No comp")}
-                        {card?.frontcards ? ` · ${card.frontcards} Frontcard${card.frontcards === 1 ? "" : "s"}` : ""}
-                    </p>
-                </div>
+                <p className="cdt-comp">
+                    {card?.compName || (loading ? "Reading the Frontcard…" : "No comp open")}
+                    {card?.frontcards ? ` · ${card.frontcards} Frontcard${card.frontcards === 1 ? "" : "s"}` : ""}
+                </p>
                 <Tooltip text="Re-read the Frontcard and drop your edits">
                     <button className="cdt-refresh" onClick={read} disabled={loading}>
-                        <RefreshCw size={11} className={loading ? "spin" : ""} />
+                        <RefreshCw size={12} className={loading ? "spin" : ""} />
+                        <span>Re-read</span>
                     </button>
                 </Tooltip>
             </div>
@@ -295,7 +357,7 @@ const CheekyDTTool = () => {
                     </p>
 
                     <div className="cdt-fields">
-                        {FIELDS.map((f) => renderField(f.key, f.label))}
+                        {FIELDS.map((f, i) => renderField(f.key, f.label, i))}
                     </div>
 
                     <p className="cdt-written">
