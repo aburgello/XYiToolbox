@@ -334,12 +334,25 @@ function normaliseBitrate(v: string): { mbps: number | null; note: string } {
 
 // Mirrors the website CsvPreviewModal's formattedData: keep only rows that
 // carry a size or duration, then normalise each field.
-/** The Sound column reduced to "yes" | "no" | "" (silent). */
+/**
+ * The Sound column reduced to "yes" | "no" | "" (silent).
+ *
+ * DELIBERATELY BIASED TOWARDS NO. Audio on a DOOH deliverable is rare, and a
+ * file shipped with sound it shouldn't have is a redelivery, while a missing
+ * "yes" costs one click. So:
+ *
+ *   - any negative word ANYWHERE in the cell wins first. "Sound: No" starts
+ *     with the word "sound" and used to come back YES on a prefix test, which
+ *     is the exact failure this ordering removes.
+ *   - "yes" requires the WHOLE cell to be an affirmative. A cell that merely
+ *     mentions sound is not a request for it.
+ *   - anything else is "", and the caller treats that as no.
+ */
 function soundFromCell(cell: unknown): string {
   const v = String(cell == null ? "" : cell).trim().toLowerCase();
   if (v === "") return "";
-  if (/^(y|yes|true|sound|audio|with sound)\b/.test(v)) return "yes";
-  if (/^(n|no|false|mos|none|no sound|silent|mute)\b/.test(v)) return "no";
+  if (/\b(no|none|not|false|mos|silent|mute|muted|without|n\/a)\b/.test(v)) return "no";
+  if (/^(y|yes|true|sound|audio|with sound|sound required)$/.test(v)) return "yes";
   return "";
 }
 

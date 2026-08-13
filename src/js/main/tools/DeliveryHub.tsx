@@ -435,15 +435,18 @@ const DeliveryHubTool = () => {
             setRows((prev) => prev.map((r) => {
                 const s = found[r.id];
                 if (!s) return r;
-                // A boolean has no "empty" to test, so audio keys off whether
-                // anyone has touched it instead. "" means the sheet was silent
-                // and nothing is changed either way.
-                const setAudio = !r.audioTouched && (s.audio === "yes" || s.audio === "no");
+                // AUDIO ONLY ON AN EXPLICIT YES. It is rare on these
+                // deliverables, and shipping a file with sound it shouldn't
+                // have means redelivering, while a missing "yes" costs one
+                // click -- so a sheet that says no, or says nothing at all,
+                // both leave it off. A boolean has no empty state to test, so
+                // this defers to audioTouched instead: once anyone has clicked
+                // the toggle, no lookup moves it again.
                 return {
                     ...r,
                     sizeMB: r.sizeMB === "" && s.sizeMB ? s.sizeMB : r.sizeMB,
                     maxMbps: r.maxMbps === "" && s.maxMbps ? s.maxMbps : r.maxMbps,
-                    includeAudio: setAudio ? s.audio === "yes" : r.includeAudio,
+                    includeAudio: r.audioTouched ? r.includeAudio : s.audio === "yes",
                 };
             }));
         } finally {
