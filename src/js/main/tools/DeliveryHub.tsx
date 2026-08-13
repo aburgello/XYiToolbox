@@ -29,6 +29,11 @@ interface RowData {
     fps: string;
     batchOffset: number;
     includeAudio: boolean;
+    /** True once a person has clicked the audio toggle on this row. The spec
+     *  sheet fills it only while this is false -- the same "never overrule a
+     *  human" rule the size and bitrate fields follow, expressed for a value
+     *  that has no empty state to test. */
+    audioTouched: boolean;
     queued: boolean;
 }
 
@@ -63,6 +68,7 @@ function buildMockRows(): RowData[] {
         fps: i % 3 === 1 ? "25" : "",
         batchOffset: 0,
         includeAudio: i % 2 === 0,
+        audioTouched: false,
         queued: false,
     }));
 }
@@ -429,10 +435,15 @@ const DeliveryHubTool = () => {
             setRows((prev) => prev.map((r) => {
                 const s = found[r.id];
                 if (!s) return r;
+                // A boolean has no "empty" to test, so audio keys off whether
+                // anyone has touched it instead. "" means the sheet was silent
+                // and nothing is changed either way.
+                const setAudio = !r.audioTouched && (s.audio === "yes" || s.audio === "no");
                 return {
                     ...r,
                     sizeMB: r.sizeMB === "" && s.sizeMB ? s.sizeMB : r.sizeMB,
                     maxMbps: r.maxMbps === "" && s.maxMbps ? s.maxMbps : r.maxMbps,
+                    includeAudio: setAudio ? s.audio === "yes" : r.includeAudio,
                 };
             }));
         } finally {
@@ -580,6 +591,7 @@ const DeliveryHubTool = () => {
         fps: bulkFps,
         batchOffset,
         includeAudio: false,
+        audioTouched: false,
         queued: false,
     });
 
@@ -704,6 +716,7 @@ const DeliveryHubTool = () => {
                     maxMbps: r.maxMbps !== "" ? parseFloat(r.maxMbps) : null,
                     fps: r.fps !== "" ? parseFloat(r.fps) : null,
                     includeAudio: r.includeAudio,
+                    audioTouched: r.audioTouched,
                 }))
             );
             if (result === undefined) throw new Error("no bridge");
@@ -938,7 +951,7 @@ const DeliveryHubTool = () => {
                                         <Tooltip text={row.includeAudio ? "Includes audio" : "No audio"}>
                                             <button
                                                 className={`dh-row-audio${row.includeAudio ? " active" : ""}`}
-                                                onClick={() => setRows((r) => r.map((x, xi) => xi === i ? { ...x, includeAudio: !x.includeAudio } : x))}
+                                                onClick={() => setRows((r) => r.map((x, xi) => xi === i ? { ...x, includeAudio: !x.includeAudio, audioTouched: true } : x))}
                                             >
                                                 {row.includeAudio ? <Volume2 size={11} /> : <VolumeX size={11} />}
                                             </button>

@@ -271,6 +271,10 @@ export interface SpecRow {
   BitRate: string;
   /** Frame rate. */
   Fps: string;
+  /** The sheet's Sound column, normalised: "yes", "no", or "" when it is
+   *  silent. Kept as a string rather than a boolean precisely so "the PDF
+   *  didn't say" stays distinguishable from "the PDF said no". */
+  Sound: string;
   /** Human-readable warnings about THIS row, "" when clean. Never auto-corrected
    *  -- see validateSpecValues. Deliberately not written to the CSV. */
   Flags: string;
@@ -330,6 +334,15 @@ function normaliseBitrate(v: string): { mbps: number | null; note: string } {
 
 // Mirrors the website CsvPreviewModal's formattedData: keep only rows that
 // carry a size or duration, then normalise each field.
+/** The Sound column reduced to "yes" | "no" | "" (silent). */
+function soundFromCell(cell: unknown): string {
+  const v = String(cell == null ? "" : cell).trim().toLowerCase();
+  if (v === "") return "";
+  if (/^(y|yes|true|sound|audio|with sound)\b/.test(v)) return "yes";
+  if (/^(n|no|false|mos|none|no sound|silent|mute)\b/.test(v)) return "no";
+  return "";
+}
+
 export function reshapeSpecs(rawSpecs: RawSpec[], territory: string): SpecRow[] {
   const valid = rawSpecs.filter((r) => r.pixelWidth || r.pixelHeight || r.duration);
 
@@ -367,6 +380,10 @@ export function reshapeSpecs(rawSpecs: RawSpec[], territory: string): SpecRow[] 
       FileSize: fs.mb === null ? "" : trim(fs.mb),
       BitRate: br.mbps === null ? "" : trim(br.mbps),
       Fps: fpsNum === null ? "" : trim(fpsNum),
+      // "Yes"/"No"/"Y"/"N"/"Sound"/"MOS" all occur; anything unrecognised
+      // stays "" so an odd value is treated as "the sheet didn't say" rather
+      // than silently becoming a no.
+      Sound: soundFromCell(row.soundReq),
       // Filled in below, once the row exists to be checked.
       Flags: "",
     };

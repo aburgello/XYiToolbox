@@ -140,6 +140,9 @@ export interface SpecSuggestion {
     openPath: string;
     /** True when a spec folder existed but offered nothing useful. */
     searched: boolean;
+    /** The sheet's Sound column: "yes" | "no" | "" when it didn't say. Kept
+     *  tri-state so silence never gets mistaken for an instruction to mute. */
+    audio?: string;
 }
 
 const EMPTY: SpecSuggestion = { sizeMB: "", maxMbps: "", source: "", openPath: "", searched: false };
@@ -196,6 +199,7 @@ export async function suggestForComp(compName: string, sourcePath: string): Prom
             return {
                 sizeMB: hits[0].FileSize || "",
                 maxMbps: hits[0].BitRate || "",
+                audio: hits[0].Sound || "",
                 source: `${parts.size} · ${parts.duration}s in ${file}`,
                 openPath: path.join(specsDir, file),
                 searched: true,
@@ -210,7 +214,12 @@ export async function suggestForComp(compName: string, sourcePath: string): Prom
             matchedButSilent = {
                 ...EMPTY,
                 searched: true,
-                source: `${parts.size} · ${parts.duration}s found in ${file}, but it doesn't specify size or bitrate`,
+                audio: hits[0].Sound || "",
+                // Says what it DID find, since a sheet with no numbers often
+                // still answers the sound question.
+                source: `${parts.size} · ${parts.duration}s found in ${file}`
+                    + (hits[0].Sound ? ` — sound: ${hits[0].Sound}` : "")
+                    + ", but no size or bitrate",
                 openPath: path.join(specsDir, file),
             };
         }

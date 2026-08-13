@@ -965,6 +965,9 @@ const CSVLocaliserTool = () => {
             FileSize: "",
             BitRate: "",
             Fps: "",
+            // Same reasoning: nothing to read a sound requirement off either,
+            // and "" means "the sheet didn't say" rather than "no sound".
+            Sound: "",
             Flags: "",
         }));
         if (!rows.length) { setNotice("Add at least one complete row (creative, width, height, duration)."); return; }
