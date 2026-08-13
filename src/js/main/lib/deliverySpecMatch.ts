@@ -158,6 +158,12 @@ export async function suggestForComp(compName: string, sourcePath: string): Prom
     }
     if (!pdfs.length) return EMPTY;
 
+    // A row that matched exactly but carries no numbers. Held rather than
+    // returned immediately, so a LATER pdf that does have them still wins --
+    // but it is remembered, because "I found your spec and it doesn't say"
+    // is a real answer and used to be thrown away.
+    let matchedButSilent: SpecSuggestion | null = null;
+
     // --- tier 1: a real delivery table -------------------------------------
     for (const file of pdfs) {
         let rows: SpecRow[] = [];
@@ -184,6 +190,19 @@ export async function suggestForComp(compName: string, sourcePath: string): Prom
                 searched: true,
             };
         }
+        // EXACTLY ONE ROW, NO NUMBERS. Plenty of real sheets specify dimensions,
+        // duration, sound and container and stop there -- the German DINTH one
+        // does. That used to fall through to the fuzzy filename tier, score
+        // nothing, and end with no badge, so a PERFECT match offered less than a
+        // vague guess and looked identical to "couldn't find your spec".
+        if (hits.length === 1 && !matchedButSilent) {
+            matchedButSilent = {
+                ...EMPTY,
+                searched: true,
+                source: `${parts.size} · ${parts.duration}s found in ${file}, but it doesn't specify size or bitrate`,
+                openPath: path.join(specsDir, file),
+            };
+        }
         if (hits.length > 1) {
             return {
                 ...EMPTY,
@@ -193,6 +212,9 @@ export async function suggestForComp(compName: string, sourcePath: string): Prom
             };
         }
     }
+
+    // A confident table match beats a filename guess, even with nothing to fill.
+    if (matchedButSilent) return matchedButSilent;
 
     // --- tier 2: point at the likeliest document ---------------------------
     if (parts.site) {
