@@ -478,6 +478,15 @@ const XYToolsDroplet: React.FC = () => {
                                     <motion.span
                                         className="mt-tab-ind"
                                         layoutId="mt-tab-ind"
+                                        // The pill's FIRST render is an entrance
+                                        // as far as Framer is concerned, so it
+                                        // animated into place instead of simply
+                                        // being there -- visible as a slide from
+                                        // the middle to under the first tab every
+                                        // time XYiTools opens. initial={false}
+                                        // opts out of that one animation while
+                                        // leaving every later tab change animated.
+                                        initial={false}
                                         transition={reduced ? { duration: 0 } : { type: "spring", stiffness: 520, damping: 40 }}
                                     />
                                 )}

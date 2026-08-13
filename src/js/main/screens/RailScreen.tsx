@@ -502,6 +502,10 @@ export const RailScreen: React.FC<Props> = ({
                                                             <motion.div
                                                                 className="rail-highlight"
                                                                 layoutId="rail-highlight"
+                                                                // No entrance on first
+                                                                // paint -- see the note
+                                                                // in XYToolsDroplet.
+                                                                initial={false}
                                                                 transition={{ type: "spring", stiffness: 500, damping: 38 }}
                                                             />
                                                         )}

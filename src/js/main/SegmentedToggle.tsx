@@ -51,6 +51,9 @@ const SegmentedToggle: React.FC<Props> = ({ value, onChange, options, name = "se
                             <motion.span
                                 className="seg-highlight"
                                 layoutId={`seg-highlight-${name}`}
+                                // No entrance on first paint -- see the note in
+                                // XYToolsDroplet.
+                                initial={false}
                                 transition={reduced ? { duration: 0 } : { type: "spring", stiffness: 500, damping: 38 }}
                             />
                         )}
