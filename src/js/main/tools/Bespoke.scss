@@ -1,0 +1,352 @@
+// Bespoke -- MultipleArt composition.
+//
+// Surfaces come from the theme tokens, never hardcoded greys, so OLED drops to
+// true black with the rest of the panel. Precomputed rgba throughout: the
+// chrome74 build target has no color-mix().
+.bsp {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.bsp-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.bsp-head-text { flex: 1; min-width: 0; }
+
+.bsp-masters {
+    margin: 0;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 9.5px;
+    color: #8b9199;
+    word-break: break-all;
+}
+
+.bsp-count {
+    margin: 1px 0 0;
+    font-size: 9.5px;
+    color: #6f757f;
+}
+
+.bsp-btn {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: 26px;
+    padding: 0 12px;
+    border: 1px solid #2a6b64;
+    border-radius: 6px;
+    // index.scss's global button:hover/:active paints over any custom button,
+    // so both states are re-declared on every one of these.
+    background: #12332f;
+    color: #7fe7d8;
+    font-size: 11px;
+    cursor: pointer;
+
+    &:hover { background: #17423d; }
+    &:active { background: #0e2724; }
+    &:disabled { opacity: 0.4; cursor: default; }
+}
+
+.bsp-btn--ghost {
+    border-color: var(--surface-border, #3a3a3a);
+    background: var(--surface-2, #212121);
+    color: #9aa1ac;
+
+    &:hover { background: #2b2b2b; color: #ddd; }
+    &:active { background: #1b1b1b; }
+}
+
+.bsp-btn--icon {
+    justify-content: center;
+    width: 26px;
+    padding: 0;
+}
+
+.bsp-target {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.bsp-field { display: flex; flex-direction: column; gap: 4px; }
+.bsp-size { display: flex; align-items: center; gap: 5px; }
+.bsp-x { font-size: 11px; color: #767c88; }
+
+.bsp-lbl {
+    font-size: 9px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: #767c88;
+}
+
+.bsp-lbl--section { margin: 4px 0 -4px; }
+
+.bsp-input {
+    box-sizing: border-box;
+    width: 100%;
+    height: 27px;
+    padding: 0 9px;
+    border: 1px solid var(--surface-border, #363636);
+    border-radius: 6px;
+    background: var(--surface-0, #121212);
+    color: #ddd;
+    font-size: 11.5px;
+
+    &:focus { outline: none; border-color: #2dd4bf; }
+}
+
+.bsp-input--n { width: 66px; flex: none; }
+.bsp-input--sel { width: auto; flex: none; }
+
+/* --- the frame ----------------------------------------------------------- */
+.bsp-stage {
+    border: 1px solid var(--surface-border, #303030);
+    border-radius: 7px;
+    background: var(--surface-0, #0e0e0e);
+    padding: 8px;
+}
+
+.bsp-tiles {
+    display: flex;
+    gap: 2px;
+    height: 96px;
+}
+
+.bsp-tile {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 4px;
+    text-align: center;
+}
+
+.bsp-tile-name {
+    font-size: 10px;
+    font-weight: 650;
+    color: #eaf6f4;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.bsp-tile-spec {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 8.5px;
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.bsp-tile-x {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    padding: 0;
+    border: 0;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.32);
+    color: rgba(255, 255, 255, 0.72);
+    cursor: pointer;
+
+    &:hover { background: rgba(0, 0, 0, 0.55); color: #fff; }
+    &:active { background: rgba(0, 0, 0, 0.7); }
+}
+
+.bsp-tiles-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    font-size: 10.5px;
+    color: #6f757f;
+}
+
+.bsp-stage-foot {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 6px;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 9px;
+    color: #6f757f;
+}
+
+.bsp-segctl {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-wrap: wrap;
+}
+
+/* --- running order -------------------------------------------------------- */
+.bsp-timeline {
+    display: flex;
+    gap: 3px;
+    height: 40px;
+}
+
+.bsp-seg {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    padding: 0 6px;
+    border: 1px solid var(--surface-border, #333);
+    border-radius: 5px;
+    background: var(--surface-2, #20242a);
+    cursor: pointer;
+
+    &:hover { border-color: #4a5a62; }
+    &:active { background: #191d22; }
+
+    &.is-on {
+        border-color: #2dd4bf;
+        background: rgba(45, 212, 191, 0.13);
+    }
+    // Beats the shared :hover, which would otherwise wash out the selected one.
+    &.is-on:hover { border-color: #5eead4; }
+}
+
+.bsp-seg-name {
+    font-size: 9.5px;
+    color: #c8cdd4;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.bsp-seg.is-on .bsp-seg-name { color: #7fe7d8; }
+.bsp-seg-secs { font-family: ui-monospace, Menlo, monospace; font-size: 8.5px; color: #767c88; }
+
+.bsp-seg-add {
+    flex: 0 0 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px dashed var(--surface-border, #3d3d3d);
+    border-radius: 5px;
+    background: transparent;
+    color: #6f757f;
+    cursor: pointer;
+
+    &:hover { border-color: #2dd4bf; color: #2dd4bf; background: transparent; }
+    &:active { background: rgba(45, 212, 191, 0.08); }
+}
+
+.bsp-problems {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+
+    li {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 10.5px;
+        color: #e0a04a;
+    }
+}
+
+/* --- picker --------------------------------------------------------------- */
+.bsp-picker {
+    border: 1px solid var(--surface-border, #333);
+    border-radius: 7px;
+    background: var(--surface-1, #141414);
+    padding: 9px;
+}
+
+.bsp-filters {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+
+    .bsp-input:first-child { flex: 1; min-width: 120px; width: auto; }
+}
+
+.bsp-list {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    max-height: 210px;
+    overflow-y: auto;
+}
+
+.bsp-master {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 5px 8px;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    background: var(--surface-2, #1a1a1a);
+    cursor: pointer;
+    text-align: left;
+
+    &:hover { border-color: #2dd4bf; background: #172422; }
+    &:active { background: #12201e; }
+}
+
+.bsp-master-sw { flex: none; width: 8px; height: 8px; border-radius: 2px; }
+
+.bsp-master-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 10.5px;
+    color: #d2d6dc;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.bsp-master-tag {
+    flex: none;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 9px;
+    color: #767c88;
+}
+
+.bsp-none { margin: 4px 2px; font-size: 10.5px; color: #6f757f; }
+
+.bsp-status {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin: 0;
+    font-size: 11px;
+
+    &.is-success { color: #5eead4; }
+    &.is-error { color: #e0857a; }
+}
+
+.bsp-pending {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin: 0;
+    padding-top: 9px;
+    border-top: 1px solid var(--surface-divider, #2a2a2a);
+    font-size: 10.5px;
+    color: #6f757f;
+}

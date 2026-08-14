@@ -5,7 +5,7 @@
 // Check, CSV Localiser). Split out of aeft.ts, which is now a thin barrel --
 // see its header comment for context.
 // =============================================================================
-import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, scanMastersForBestMatch } from "./tools";
+import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, parseFilenameMeta, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, scanMastersForBestMatch } from "./tools";
 import { makeParentLayerOfAllUnparented, scaleAllCameraZooms } from "./deliver";
 import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, saveLocGenReport, buildDeliverableName, durationForMasterLookup, sanitiseSiteToken, camelCaseToken, camelCaseName } from "./shared";
 import { loadCampaignsRaw, loadLastCampaign as loadOVLastCampaign } from "./review";
@@ -3962,6 +3962,74 @@ interface CsvLocResolveResult extends Result {
   indexed?: number;
   rows?: ResolvedMasterRow[];
 }
+
+// =============================================================================
+// BESPOKE -- masters as a browsable list.
+//
+// Every other consumer of the masters index asks it a question ("which master
+// best fits this row"). Bespoke asks for the whole shelf, because a person is
+// choosing, not the scorer -- so this returns a plain serialisable list rather
+// than MasterIndexEntry, whose `file` is a File object and does not survive the
+// bridge.
+//
+// Reuses getMastersIndex, so it is the SAME cached walk the localiser uses and
+// costs nothing extra once warm.
+// =============================================================================
+export interface BespokeMaster {
+  path: string;
+  name: string;
+  creative: string;
+  artwork: string;
+  site: string;
+  size: string;
+  width: number;
+  height: number;
+  /** Bare digits, matching the rest of the toolbox. */
+  duration: string;
+  territory: string;
+}
+
+export const bespokeListMasters = (
+  mastersRoot: string
+): { success: boolean; error?: string; masters?: BespokeMaster[] } => {
+  try {
+    if (!mastersRoot) return { success: false, error: "No masters folder set." };
+    const index = getMastersIndex(mastersRoot);
+    if (!index || index.length === 0) {
+      // Reachability, not emptiness: an unmounted share and a genuinely empty
+      // folder are different problems and only one is worth acting on.
+      const folder = new Folder(mastersRoot);
+      if (!folder.exists) return { success: false, error: "Can't reach " + mastersRoot + " right now." };
+      return { success: true, masters: [] };
+    }
+
+    const out: BespokeMaster[] = [];
+    for (let i = 0; i < index.length; i++) {
+      const entry = index[i];
+      const stem = String(entry.name).replace(/\.aep$/i, "");
+      const meta = parseFilenameMeta(stem);
+      // A master that does not parse is still SHOWN -- with blank fields -- so
+      // it can be picked by eye. Dropping it silently is the failure mode the
+      // masters-index work already ran into once.
+      const wh = meta.size ? meta.size.split("x") : ["0", "0"];
+      out.push({
+        path: entry.path,
+        name: stem,
+        creative: meta.campaign || "",
+        artwork: meta.artworkType || "",
+        site: meta.siteName || "",
+        size: meta.size || "",
+        width: Number(wh[0]) || 0,
+        height: Number(wh[1]) || 0,
+        duration: meta.duration ? meta.duration.replace("sec", "") : "",
+        territory: meta.territory || "",
+      });
+    }
+    return { success: true, masters: out };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
 
 export const csvLocaliserResolveMasters = (mastersPath: string, rowsJson: string): CsvLocResolveResult => {
   try {

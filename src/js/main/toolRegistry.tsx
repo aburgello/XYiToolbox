@@ -64,6 +64,7 @@ const CampaignLocaliserTool = React.lazy(() => import("./tools/CampaignLocaliser
 const EditGeneratorTool     = React.lazy(() => import("./tools/EditGenerator"));
 const GenerateCueSheetTool  = React.lazy(() => import("./tools/GenerateCueSheet"));
 const CheekyDTTool          = React.lazy(() => import("./tools/CheekyDT"));
+const BespokeTool           = React.lazy(() => import("./tools/Bespoke"));
 
 const CheckTool             = React.lazy(() => import("./tools/Check"));
 const DeliveryHubTool       = React.lazy(() => import("./tools/DeliveryHub"));
@@ -113,6 +114,7 @@ const PREFETCH_MAP: Record<string, () => Promise<any>> = {
     "edit-generator":     () => import("./tools/EditGenerator"),
     "generate-cue-sheet": () => import("./tools/GenerateCueSheet"),
     "cheeky-dt":          () => import("./tools/CheekyDT"),
+    "bespoke":            () => import("./tools/Bespoke"),
     "check":              () => import("./tools/Check"),
     "delivery-hub":       () => import("./tools/DeliveryHub"),
     "review-hub":         () => import("./tools/ReviewHub"),
@@ -312,6 +314,18 @@ export const TOOLS: ToolEntry[] = [
         Component: GenerateCueSheetTool,
         actions: ["Generate Cue Sheet"],
         description: "Exports a cue sheet (layer in/out points and durations) for the active comp to a .txt file on the Desktop.",
+    },
+    {
+        // Named for where it is going, not what it does first: a tool id can't
+        // be renamed once it ships without orphaning anything saved under it,
+        // and this section is meant to grow past MultipleArt.
+        id: "bespoke",
+        label: "Bespoke",
+        categories: ["localise"],
+        icon: Layers,
+        Component: BespokeTool,
+        actions: ["Bespoke", "Multiple Art", "Add segment", "Remove segment"],
+        description: "Compose a deliverable from several masters — creatives tiled across the frame, segments played in order. For MultipleArt rows, where no single master fits.",
     },
     {
         id: "cheeky-dt",

@@ -9,7 +9,8 @@
 import React, { Suspense, useState, useRef, useEffect } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import gsap from "gsap";
-import { ArrowLeft, ArrowRight, BookOpen, FileSignature, Stamp, ClipboardCheck, Clapperboard, FileText, Copy, Image as ImageIcon, FileSpreadsheet, Rabbit, ScanSearch, Repeat } from "lucide-react";
+import {    Layers,
+ ArrowLeft, ArrowRight, BookOpen, FileSignature, Stamp, ClipboardCheck, Clapperboard, FileText, Copy, Image as ImageIcon, FileSpreadsheet, Rabbit, ScanSearch, Repeat } from "lucide-react";
 import { TOOLS, categoryStyleVars, type ToolProps } from "../toolRegistry";
 import { ToolErrorBoundary } from "../ToolErrorBoundary";
 import { PaletteTrigger, triggerPalette } from "../CommandPalette";
@@ -55,6 +56,7 @@ const PANES: { id: Pane; label: string; icon: React.ComponentType<{ size?: numbe
 // whose only content is that button.
 const TOOLS_ROW: (UtilityEntry & { run?: string })[] = [
     { id: "ov-swap",           label: "OV Swap",        icon: Repeat },
+    { id: "bespoke",           label: "Bespoke",        icon: Layers },
     { id: "pdf-to-csv",        label: "PDF to CSV",     icon: FileSpreadsheet, run: "pdfToCsvGenerate" },
     { id: "jpeg-loc",          label: "JPEG Loc",       icon: ImageIcon,       run: "jpegLoc" },
     { id: "aep-thief",         label: "AEP Thief",      icon: Copy,            run: "copyAep" },
