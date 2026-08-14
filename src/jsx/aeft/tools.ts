@@ -797,6 +797,51 @@ function territoryCheck(input: string): string | null {
 }
 
 
+/**
+ * Shrinks a BOX text layer's type until its text fits the box it was given.
+ *
+ * The brand template's title is box text sized for a short film name, so
+ * "Forgotten Island" wrapped and the second word fell outside -- the card read
+ * FORGOTTEN. Nothing warned, because a text layer that overflows its box still
+ * renders perfectly happily.
+ *
+ * Only ever makes type SMALLER, and only on box text: point text has no box to
+ * overflow, and growing a title past its designed size would be a worse
+ * surprise than a small one. Bails out unchanged if the measurement is not
+ * telling it anything -- an unfixed title is better than one shrunk to nothing
+ * by a loop that could not see what it was doing.
+ */
+function fitFrontcardText(layer: Layer, time: number): string {
+  try {
+    const prop = layer.property("Source Text") as Property;
+    if (!prop) return "";
+    const doc = prop.value as TextDocument;
+    if (!doc || !doc.boxText) return "";
+
+    const boxHeight = doc.boxTextSize[1];
+    const startSize = doc.fontSize;
+    if (!boxHeight || !startSize) return "";
+
+    let guard = 0;
+    while (guard < 30) {
+      guard++;
+      const rect = (layer as AVLayer).sourceRectAtTime(time, false);
+      // Not measurable -- leave the layer exactly as it was.
+      if (!rect || !rect.height) return "";
+      if (rect.height <= boxHeight) break;
+      const next = prop.value as TextDocument;
+      if (next.fontSize <= 10) break;
+      next.fontSize = next.fontSize - 2;
+      prop.setValue(next);
+    }
+    const endSize = (prop.value as TextDocument).fontSize;
+    if (endSize < startSize) return "shrunk from " + startSize + "pt to " + endSize + "pt to fit its box";
+    return "";
+  } catch (e) {
+    return "";
+  }
+}
+
 function frontcardLayerTextIndices(variantA: boolean) {
   return variantA
     ? { title: 8, artwork: 7, version: 6, campaignLine: 5, territory: 4, date: 3 }
@@ -1304,6 +1349,7 @@ export const cheekyDTCheck = (
     const territoryMatch = frontcardTerritory(name).name;
 
     let cards = 0;
+    let titleNote = "";
     for (let i = 1; i <= comp.numLayers; i++) {
       const layer = comp.layer(i);
       // indexOf, not .match() -- a layer name is not a regex pattern.
@@ -1313,7 +1359,13 @@ export const cheekyDTCheck = (
         const variantA = source.layer(2).name === "XYi_Logo_V20_[0000-0250].png";
         const idx = frontcardLayerTextIndices(variantA);
 
-        if (doTitle) (source.layer(idx.title).property("Source Text") as Property).setValue(filmTitle);
+        if (doTitle) {
+          const titleLayer = source.layer(idx.title);
+          (titleLayer.property("Source Text") as Property).setValue(filmTitle);
+          // Measured AFTER the write, since the fit depends on the new text.
+          const fitted = fitFrontcardText(titleLayer, 0);
+          if (fitted !== "") titleNote = " Title " + fitted + ".";
+        }
         if (doArtwork) (source.layer(idx.artwork).property("Source Text") as Property).setValue(String(artworkType));
         if (doVersion) (source.layer(idx.version).property("Source Text") as Property).setValue(String(version));
 
@@ -1363,7 +1415,7 @@ export const cheekyDTCheck = (
           (token ? "\"" + token + "\" isn't a territory we know." : "the name has no territory in it."),
       };
     }
-    return { success: true, frontcards: cards, message: "Updated " + where + "." };
+    return { success: true, frontcards: cards, message: "Updated " + where + "." + titleNote };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
