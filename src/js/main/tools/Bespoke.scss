@@ -205,7 +205,11 @@
 .bsp-timeline {
     display: flex;
     gap: 3px;
-    height: 40px;
+    // SIZES TO ITS CONTENT. A fixed 40px could not hold two lines of text plus
+    // padding, so the creative name was clipped through the middle -- the
+    // segment showed its duration and half a word.
+    align-items: stretch;
+    min-height: 44px;
     // The row must never be wider than the panel: the segments grow into what
     // is left rather than declaring a width up front.
     width: 100%;
@@ -220,7 +224,8 @@
     // Small enough that a 1s segment beside a 20s one still shows its name,
     // large enough that it can shrink when the panel is narrow.
     min-width: 54px;
-    padding: 0 5px;
+    padding: 6px 5px;
+    gap: 1px;
     border: 1px solid var(--surface-border, #333);
     border-radius: 5px;
     background: var(--surface-2, #20242a);
@@ -239,6 +244,9 @@
 
 .bsp-seg-name {
     font-size: 9.5px;
+    // Explicit, so the row's height is predictable rather than inherited from
+    // whatever the panel's base line-height happens to be.
+    line-height: 1.25;
     color: #c8cdd4;
     max-width: 100%;
     overflow: hidden;
@@ -247,9 +255,16 @@
 }
 
 .bsp-seg.is-on .bsp-seg-name { color: #7fe7d8; }
-.bsp-seg-secs { font-family: ui-monospace, Menlo, monospace; font-size: 8.5px; color: #767c88; }
+.bsp-seg-secs {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 8.5px;
+    line-height: 1.25;
+    color: #767c88;
+}
 
 .bsp-seg-add {
+    // Matches the segments' own height rather than the old fixed strip.
+    align-self: stretch;
     flex: 0 0 36px;
     display: flex;
     align-items: center;
