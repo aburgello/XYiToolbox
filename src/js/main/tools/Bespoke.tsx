@@ -144,6 +144,10 @@ export const BespokeTool = () => {
     // introducing a crop it did not have; locking a side is for the common case
     // of a panel that must stay the full height or width of the screen.
     const [refMismatch, setRefMismatch] = useState("");
+    // Rulers. Region edges snap to these while dragging, which is how you sit a
+    // master exactly between two lines rather than nearly between them.
+    const [guidesX, setGuidesX] = useState<number[]>([]);
+    const [guidesY, setGuidesY] = useState<number[]>([]);
     const [lockRatio, setLockRatio] = useState(true);
     const [lockW, setLockW] = useState(false);
     const [lockH, setLockH] = useState(false);
@@ -299,12 +303,32 @@ export const BespokeTool = () => {
     const addRegion = (m: BespokeMaster) => {
         const cw = Number(canvasW) || 1920;
         const ch = Number(canvasH) || 1080;
+        // AT THE MASTER'S OWN RATIO, so it starts uncropped. It used to arrive
+        // as a half-canvas rectangle at whatever shape that happened to be,
+        // which meant reaching for "Match master ratio" every single time.
+        // Sized to fit inside half the canvas, never scaled up past it.
+        const aspect = m.width && m.height ? m.width / m.height : 1;
+        let w = Math.round(cw * 0.5);
+        let h = Math.round(w / aspect);
+        if (h > ch * 0.8) { h = Math.round(ch * 0.8); w = Math.round(h * aspect); }
         setRegions((prev) => [...prev, {
             id: nextSegId++, master: m,
-            x: Math.round(cw * 0.25), y: Math.round(ch * 0.25),
-            w: Math.round(cw * 0.5), h: Math.round(ch * 0.5),
+            x: Math.round((cw - w) / 2), y: Math.round((ch - h) / 2),
+            w: Math.max(24, w), h: Math.max(24, h),
         }]);
         setSelRegion(regions.length);
+    };
+
+    /** Nearest guide within reach, or the value untouched. */
+    const snapTo = (v: number, guides: number[], span: number) => {
+        const reach = Math.max(6, span * 0.01);
+        let best = v;
+        let dist = reach;
+        for (const g of guides) {
+            const d = Math.abs(g - v);
+            if (d <= dist) { dist = d; best = g; }
+        }
+        return best;
     };
 
     const patchRegion = (i: number, patch: Partial<Region>) =>
@@ -323,15 +347,35 @@ export const BespokeTool = () => {
             const dx = ((e.clientX - d.sx) / d.box.width) * cw;
             const dy = ((e.clientY - d.sy) / d.box.height) * ch;
             const s0 = d.start;
-            if (d.handle === "move") {
-                patchRegion(selRegion, { x: Math.round(s0.x + dx), y: Math.round(s0.y + dy) });
+            if (d.handle.indexOf("guide") === 0) {
+                const bits = d.handle.split(":");
+                const i = Number(bits[1]);
+                if (bits[0] === "guideX") setGuidesX((g) => g.map((v, n) => (n === i ? Math.round(d.start.x + dx) : v)));
+                else setGuidesY((g) => g.map((v, n) => (n === i ? Math.round(d.start.y + dy) : v)));
+            } else if (d.handle === "move") {
+                // Both edges are offered to the ruler, so a region can land
+                // flush against a line from either side.
+                const rawX = Math.round(s0.x + dx);
+                const rawY = Math.round(s0.y + dy);
+                const sx = snapTo(rawX, guidesX, cw);
+                const sx2 = snapTo(rawX + s0.w, guidesX, cw) - s0.w;
+                const sy = snapTo(rawY, guidesY, ch);
+                const sy2 = snapTo(rawY + s0.h, guidesY, ch) - s0.h;
+                patchRegion(selRegion, {
+                    x: Math.abs(sx - rawX) <= Math.abs(sx2 - rawX) ? sx : sx2,
+                    y: Math.abs(sy - rawY) <= Math.abs(sy2 - rawY) ? sy : sy2,
+                });
             } else {
                 const west = d.handle.indexOf("w") !== -1;
                 const north = d.handle.indexOf("n") !== -1;
-                const nx = west ? Math.round(s0.x + dx) : s0.x;
-                const ny = north ? Math.round(s0.y + dy) : s0.y;
-                let nw = west ? Math.round(s0.w - dx) : Math.round(s0.w + dx);
-                let nh = north ? Math.round(s0.h - dy) : Math.round(s0.h + dy);
+                // The moving EDGE snaps, not the size -- that is what lets a
+                // height sit exactly between two horizontal guides.
+                const edgeX = snapTo(west ? Math.round(s0.x + dx) : Math.round(s0.x + s0.w + dx), guidesX, cw);
+                const edgeY = snapTo(north ? Math.round(s0.y + dy) : Math.round(s0.y + s0.h + dy), guidesY, ch);
+                const nx = west ? edgeX : s0.x;
+                const ny = north ? edgeY : s0.y;
+                let nw = west ? s0.x + s0.w - edgeX : edgeX - s0.x;
+                let nh = north ? s0.y + s0.h - edgeY : edgeY - s0.y;
 
                 // A locked side simply does not move; ratio drives the other
                 // axis from the one being dragged, using the region's CURRENT
@@ -365,7 +409,7 @@ export const BespokeTool = () => {
             window.removeEventListener("mousemove", move);
             window.removeEventListener("mouseup", up);
         };
-    }, [mode, selRegion, canvasW, canvasH, lockRatio, lockW, lockH]);
+    }, [mode, selRegion, canvasW, canvasH, lockRatio, lockW, lockH, guidesX, guidesY]);
 
     /** Snaps a region to one of the canvas's nine anchor points. */
     const alignRegion = (hx: 0 | 0.5 | 1, vy: 0 | 0.5 | 1) => {
@@ -789,9 +833,55 @@ export const BespokeTool = () => {
                                 </div>
                             );
                         })}
+                        {guidesY.map((g, i) => (
+                            <span
+                                key={"gy" + i}
+                                className="bsp-guide bsp-guide--h"
+                                style={{ top: `${(g / (Number(canvasH) || 1080)) * 100}%` }}
+                                onMouseDown={(e) => {
+                                    const box = stageRef.current?.getBoundingClientRect();
+                                    if (!box) return;
+                                    dragRef.current = { handle: `guideY:${i}`, sx: e.clientX, sy: e.clientY, box, start: { id: 0, master: regions[0]?.master as BespokeMaster, x: 0, y: g, w: 0, h: 0 } };
+                                    e.preventDefault();
+                                }}
+                                onDoubleClick={() => setGuidesY((gs) => gs.filter((_, n) => n !== i))}
+                                title={`y ${g} — drag to move, double-click to remove`}
+                            />
+                        ))}
+                        {guidesX.map((g, i) => (
+                            <span
+                                key={"gx" + i}
+                                className="bsp-guide bsp-guide--v"
+                                style={{ left: `${(g / (Number(canvasW) || 1920)) * 100}%` }}
+                                onMouseDown={(e) => {
+                                    const box = stageRef.current?.getBoundingClientRect();
+                                    if (!box) return;
+                                    dragRef.current = { handle: `guideX:${i}`, sx: e.clientX, sy: e.clientY, box, start: { id: 0, master: regions[0]?.master as BespokeMaster, x: g, y: 0, w: 0, h: 0 } };
+                                    e.preventDefault();
+                                }}
+                                onDoubleClick={() => setGuidesX((gs) => gs.filter((_, n) => n !== i))}
+                                title={`x ${g} — drag to move, double-click to remove`}
+                            />
+                        ))}
                         {regions.length === 0 && (
                             <span className="bsp-canvas-empty">Pick a master below to drop the first region in.</span>
                         )}
+                    </div>
+
+                    <div className="bsp-guidebar">
+                        <span className="bsp-lbl">Guides</span>
+                        <button className="bsp-btn bsp-btn--ghost" onClick={() => setGuidesY((g) => [...g, Math.round((Number(canvasH) || 1080) / 2)])}>
+                            + Horizontal
+                        </button>
+                        <button className="bsp-btn bsp-btn--ghost" onClick={() => setGuidesX((g) => [...g, Math.round((Number(canvasW) || 1920) / 2)])}>
+                            + Vertical
+                        </button>
+                        {(guidesX.length > 0 || guidesY.length > 0) && (
+                            <button className="bsp-btn bsp-btn--ghost" onClick={() => { setGuidesX([]); setGuidesY([]); }}>
+                                Clear
+                            </button>
+                        )}
+                        <span className="bsp-guidehint">drag a line to place it · region edges snap to it</span>
                     </div>
 
                     {refMismatch !== "" && (

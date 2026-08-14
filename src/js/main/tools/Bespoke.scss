@@ -711,3 +711,18 @@
 }
 
 .bsp-locks { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* --- guides --------------------------------------------------------------- */
+.bsp-guidebar { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.bsp-guidehint { font-size: 9.5px; color: #6f757f; }
+
+.bsp-guide {
+    position: absolute;
+    background: #e0a04a;
+    // Reaching a 1px line with a mouse is miserable, so the hit area is padded
+    // well past what is drawn.
+    &::after { content: ""; position: absolute; inset: -5px; }
+}
+
+.bsp-guide--h { left: 0; right: 0; height: 1px; cursor: ns-resize; }
+.bsp-guide--v { top: 0; bottom: 0; width: 1px; cursor: ew-resize; }
