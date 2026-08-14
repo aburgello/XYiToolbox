@@ -405,7 +405,7 @@ const FRONTCARD_LANDSCAPE_TEMPLATE = "/Volumes/newmedia/XYi Design/XY016893_XYi_
 const FRONTCARD_PORTRAIT_TEMPLATE = "/Volumes/newmedia/XYi Design/XY016893_XYi_Brand_Guidelines/AE/_Portrait.aep";
 // The source comp is held off the top of the wrapper by this much, so the
 // Frontcard has time to play before the creative starts.
-const FRONTCARD_LEAD_IN_SECONDS = 5;
+export const FRONTCARD_LEAD_IN_SECONDS = 5;
 // AE label index 1 is red -- same constant setCompDuration's red-label rule
 // uses. The wrapper is deliberately flagged so the delivery comp stands out
 // from the source comp sitting next to it in the Project panel.
@@ -426,6 +426,64 @@ function frontcardFindInFolder(folder: FolderItem, name: string): AVItem | null 
     }
   }
   return null;
+}
+
+/**
+ * Wraps `source` in a "<name>_V01" comp with the brand Frontcard over it and a
+ * 5s lead-in -- the structure every master already has (the probe found _V01 at
+ * 15s over a 10s edit).
+ *
+ * Extracted from frontcard() so Bespoke can produce the identical thing. Two
+ * copies of this would drift, and the version that drifts is the one nobody
+ * looks at until a deliverable goes out wrong.
+ */
+export function frontcardWrap(source: CompItem): { comp: CompItem; frontcardItem: AVItem | null } {
+  const versionMatch = source.name.match(/_[Vv](\d\d)$/);
+  let newName: string;
+  if (versionMatch) {
+    const next = parseInt(versionMatch[1], 10) + 1;
+    newName = source.name.replace(/_[Vv]\d\d$/, "_V" + (next < 10 ? "0" + next : String(next)));
+  } else {
+    newName = source.name + "_V01";
+  }
+
+  const width = source.width;
+  const height = source.height;
+  const frameRate = source.frameRate;
+  const format = width / height > 1.2 ? "Landscape" : "Portrait";
+  const wantedName = format + "_Frontcard";
+
+  const imported = app.project.importFile(
+    new ImportOptions(new File(format === "Landscape" ? FRONTCARD_LANDSCAPE_TEMPLATE : FRONTCARD_PORTRAIT_TEMPLATE))
+  ) as unknown as Item;
+
+  let frontcardItem: AVItem | null = null;
+  if (imported) {
+    if (typeof (imported as any).numItems === "number") {
+      frontcardItem = frontcardFindInFolder(imported as FolderItem, wantedName);
+    } else if (imported.name === wantedName) {
+      frontcardItem = imported as AVItem;
+    }
+  }
+  if (!frontcardItem) {
+    for (let i = 1; i <= app.project.numItems; i++) {
+      const item = app.project.item(i);
+      if (item.name === wantedName) { frontcardItem = item as AVItem; break; }
+    }
+  }
+
+  const newComp = app.project.items.addComp(
+    newName, width, height, 1, source.duration + FRONTCARD_LEAD_IN_SECONDS, frameRate
+  );
+  newComp.parentFolder = source.parentFolder;
+  newComp.label = FRONTCARD_LABEL_RED;
+
+  const compLayer = newComp.layers.add(source);
+  const frameDuration = 1 / frameRate;
+  compLayer.startTime = Math.round(FRONTCARD_LEAD_IN_SECONDS / frameDuration) * frameDuration;
+
+  if (frontcardItem) newComp.layers.add(frontcardItem);
+  return { comp: newComp, frontcardItem: frontcardItem };
 }
 
 export const frontcard = (): Result => {
@@ -451,73 +509,13 @@ export const frontcard = (): Result => {
   try {
     app.beginUndoGroup("XYi Frontcard");
 
-    // Don't stack a second version tag on an already-versioned comp
-    // (the original always appended, giving "..._V01_V01"). Bump instead, so
-    // the wrapper can't collide by name with the comp it wraps -- several
-    // tools in this codebase look comps up by name.
-    const versionMatch = source.name.match(/_[Vv](\d\d)$/);
-    let newName: string;
-    if (versionMatch) {
-      const next = parseInt(versionMatch[1], 10) + 1;
-      newName = source.name.replace(/_[Vv]\d\d$/, "_V" + (next < 10 ? "0" + next : String(next)));
-    } else {
-      newName = source.name + "_V01";
-    }
-
-    const width = source.width;
-    const height = source.height;
-    const frameRate = source.frameRate;
-    const format = width / height > 1.2 ? "Landscape" : "Portrait";
+    // The wrap itself lives in frontcardWrap so Bespoke produces the identical
+    // structure -- see the note there.
+    const wrapped = frontcardWrap(source);
+    const newComp = wrapped.comp;
+    const frontcardItem = wrapped.frontcardItem;
+    const format = source.width / source.height > 1.2 ? "Landscape" : "Portrait";
     const wantedName = format + "_Frontcard";
-
-    const imported = app.project.importFile(
-      new ImportOptions(new File(format === "Landscape" ? FRONTCARD_LANDSCAPE_TEMPLATE : FRONTCARD_PORTRAIT_TEMPLATE))
-    ) as unknown as Item;
-
-    // Take the Frontcard from THIS import only. The original scanned the whole
-    // project for either orientation's name and added every hit, so a project
-    // that already contained a Frontcard (a previous run, or the other
-    // orientation) ended up with them stacked in the new comp.
-    let frontcardItem: AVItem | null = null;
-    if (imported) {
-      if (typeof (imported as any).numItems === "number") {
-        frontcardItem = frontcardFindInFolder(imported as FolderItem, wantedName);
-      } else if (imported.name === wantedName) {
-        frontcardItem = imported as AVItem;
-      }
-    }
-    if (!frontcardItem) {
-      // Template structure differs from what's expected -- fall back to a
-      // project-wide search, but still only for THIS orientation and only the
-      // first match.
-      for (let i = 1; i <= app.project.numItems; i++) {
-        const item = app.project.item(i);
-        if (item.name === wantedName) {
-          frontcardItem = item as AVItem;
-          break;
-        }
-      }
-    }
-
-    const newComp = app.project.items.addComp(
-      newName,
-      width,
-      height,
-      1,
-      source.duration + FRONTCARD_LEAD_IN_SECONDS,
-      frameRate
-    );
-    // Same folder as the source comp: AE has no API to set an item's row
-    // position, but with the Project panel on its default Name sort the
-    // "<source>_VNN" name lands the wrapper directly beneath the comp it wraps.
-    newComp.parentFolder = source.parentFolder;
-    newComp.label = FRONTCARD_LABEL_RED;
-
-    const compLayer = newComp.layers.add(source);
-    const frameDuration = 1 / frameRate;
-    compLayer.startTime = Math.round(FRONTCARD_LEAD_IN_SECONDS / frameDuration) * frameDuration;
-
-    if (frontcardItem) newComp.layers.add(frontcardItem);
 
     newComp.openInViewer();
     newComp.selected = true;

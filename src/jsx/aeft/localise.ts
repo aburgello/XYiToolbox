@@ -5,7 +5,8 @@
 // Check, CSV Localiser). Split out of aeft.ts, which is now a thin barrel --
 // see its header comment for context.
 // =============================================================================
-import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, parseFilenameMeta, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, scanMastersForBestMatch } from "./tools";
+import { scaleCompToFit } from "./deliver";
+import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, parseFilenameMeta, frontcardWrap, cheekyTCheck, FRONTCARD_LEAD_IN_SECONDS, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, scanMastersForBestMatch } from "./tools";
 import { makeParentLayerOfAllUnparented, scaleAllCameraZooms } from "./deliver";
 import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, saveLocGenReport, buildDeliverableName, durationForMasterLookup, sanitiseSiteToken, camelCaseToken, camelCaseName } from "./shared";
 import { loadCampaignsRaw, loadLastCampaign as loadOVLastCampaign } from "./review";
@@ -4167,6 +4168,22 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
           dup.parentFolder = panelFolder;
 
           const layer = out.layers.add(dup);
+          // WHERE IT SITS, not what it is called. The source name already says
+          // which master it is, and reading three near-identical filenames to
+          // work out which one is the middle panel is exactly the friction this
+          // removes. Numbers past three, because LEFT/CENTRE/RIGHT stops
+          // meaning anything on four.
+          // if/else, not nested ternaries: those do not survive the ES3 emit
+          // and the build gate rejects them outright.
+          if (n === 2) {
+            layer.name = t === 0 ? "LEFT" : "RIGHT";
+          } else if (n === 3) {
+            if (t === 0) layer.name = "LEFT";
+            else if (t === 1) layer.name = "CENTRE";
+            else layer.name = "RIGHT";
+          } else if (n > 3) {
+            layer.name = String(t + 1);
+          }
 
           // Fit inside the panel without cropping. The probe's own case is
           // exact (1080 into 1080), so this only ever engages on a mismatch --
@@ -4200,6 +4217,50 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
         : scaled + " tile(s) were scaled to fit their panel -- worth a look.");
       lines.push("Each panel is its own duplicate in \"" + outName + " panels\" -- retime one without touching the rest.");
       lines.push("No frontcard added: it goes over the finished canvas at " + canvasW + "x" + canvasH + ".");
+      // --- finish it the way a localised batch is finished ------------------
+      // Same frontcardWrap the Frontcard button uses, so the structure matches
+      // every master on disk: "<name>" is the edit, "<name>_V01" is the render
+      // comp with a 5s frontcard over it.
+      let finished: CompItem = out;
+      try {
+        const wrapped = frontcardWrap(out);
+        finished = wrapped.comp;
+        lines.push("");
+        lines.push("wrapped as " + finished.name + " with a " + FRONTCARD_LEAD_IN_SECONDS + "s frontcard");
+
+        if (!wrapped.frontcardItem) {
+          lines.push("  NO FRONTCARD FOUND in the brand template -- the wrapper is empty above the edit.");
+        } else {
+          // MULTI COMP SCALE, on the frontcard only. The template comes at a
+          // standard portrait/landscape size and this canvas is neither, so
+          // without it the frontcard sits at its own size in the corner. Same
+          // scaleCompToFit the Multi Comp Scale button calls.
+          for (let L = 1; L <= finished.numLayers; L++) {
+            const layer = finished.layer(L);
+            const src2 = (layer as AVLayer).source;
+            if (!src2 || typeof (src2 as CompItem).numLayers !== "number") continue;
+            if (String(layer.name).indexOf("Frontcard") === -1) continue;
+            if ((src2 as CompItem).width !== canvasW || (src2 as CompItem).height !== canvasH) {
+              scaleCompToFit(src2 as CompItem, canvasW, canvasH);
+              (layer as AVLayer).scale.setValue([100, 100]);
+              lines.push("  frontcard scaled to " + canvasW + "x" + canvasH);
+            }
+          }
+        }
+
+        // CHEEKY T, so the frontcard carries the right artwork, version,
+        // territory and date instead of the template's placeholders. It reads
+        // the ACTIVE comp, so the wrapper has to be in front of it first.
+        finished.openInViewer();
+        const stamped = cheekyTCheck() as { success: boolean; error?: string; message?: string };
+        lines.push(stamped && stamped.success
+          ? "  Cheeky T: " + (stamped.message || "stamped")
+          : "  Cheeky T did not run: " + ((stamped && stamped.error) || "unknown"));
+      } catch (e) {
+        lines.push("");
+        lines.push("Frontcard step failed: " + e.toString());
+      }
+
       // --- where it lands ---------------------------------------------------
       // Same convention as Build a Batch: <markets>/<territory>/AE/<batch>.
       // Saved only when a destination was given; otherwise built and left for
@@ -4247,7 +4308,7 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
         lines.push("Nothing saved -- no territory chosen, so it was built and left where it is.");
       }
 
-      out.openInViewer();
+      finished.openInViewer();
     } finally {
       app.endUndoGroup();
     }
