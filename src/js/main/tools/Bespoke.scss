@@ -4,6 +4,44 @@
 // true black with the rest of the panel. Precomputed rgba throughout: the
 // chrome74 build target has no color-mix().
 .bsp {
+    // ── Tokens ──────────────────────────────────────────────────────────
+    // Scoped to the tool, NOT :root. Category tint (--cat-*) already
+    // arrives as an inline style and cascades in; a tool that also wrote
+    // to :root would leak its scale into every other tool mounted after
+    // it. Everything below is consumed through these, so the scale can be
+    // retuned in one place.
+    //
+    // No color-mix(), no clamp(), no @property -- chrome74 build target.
+    // Blends are precomputed literals, per CLAUDE.md section 3.
+
+    // Radius language: was NINE ad-hoc values (1,2,3,4,5,6,7,13,14px)
+    // across 28 declarations, which reads as unconsidered even when no
+    // single one looks wrong. Three steps and a pill.
+    --r-xs: 3px;     // inner marks, proxy fills
+    --r-sm: 5px;     // inputs, buttons, cards
+    --r-md: 7px;     // containers, panels
+    --r-pill: 999px; // filter chips
+
+    // Type scale: was NINE sizes between 8 and 12px. Four steps.
+    --t-micro: 9px;  // meta, counts, captions
+    --t-sm: 10px;    // default UI text
+    --t-md: 11px;    // emphasis
+    --t-lg: 12px;    // section values
+
+    // Easing. CSS keyword easings have no character; these are the two
+    // curves everything in this tool moves on.
+    --ease-snap: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+    // Durations are SHORT on purpose. The vendored motion skill prescribes
+    // 0.3-0.4s, which is right for a landing page and wrong here: this is
+    // a dense tool panel where a master card is clicked dozens of times in
+    // a session, and awwwards-motion's own frequency gate says high-traffic
+    // controls get the smallest budget. Anything above ~180ms reads as lag
+    // rather than polish when you are placing eight regions in a row.
+    --dur-fast: 110ms;
+    --dur: 150ms;
+
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -20,14 +58,14 @@
 .bsp-masters {
     margin: 0;
     font-family: ui-monospace, Menlo, monospace;
-    font-size: 9.5px;
+    font-size: var(--t-micro);
     color: #8b9199;
     word-break: break-all;
 }
 
 .bsp-count {
     margin: 1px 0 0;
-    font-size: 9.5px;
+    font-size: var(--t-micro);
     color: #6f757f;
 }
 
@@ -39,12 +77,12 @@
     height: 26px;
     padding: 0 12px;
     border: 1px solid #2a6b64;
-    border-radius: 6px;
+    border-radius: var(--r-md);
     // index.scss's global button:hover/:active paints over any custom button,
     // so both states are re-declared on every one of these.
     background: #12332f;
     color: #7fe7d8;
-    font-size: 11px;
+    font-size: var(--t-md);
     cursor: pointer;
 
     &:hover { background: #17423d; }
@@ -75,10 +113,10 @@
 
 .bsp-field { display: flex; flex-direction: column; gap: 4px; }
 .bsp-size { display: flex; align-items: center; gap: 5px; }
-.bsp-x { font-size: 11px; color: #767c88; }
+.bsp-x { font-size: var(--t-md); color: #767c88; }
 
 .bsp-lbl {
-    font-size: 9px;
+    font-size: var(--t-micro);
     letter-spacing: 0.11em;
     text-transform: uppercase;
     color: #767c88;
@@ -92,10 +130,10 @@
     height: 27px;
     padding: 0 9px;
     border: 1px solid var(--surface-border, #363636);
-    border-radius: 6px;
+    border-radius: var(--r-md);
     background: var(--surface-0, #121212);
     color: #ddd;
-    font-size: 11.5px;
+    font-size: var(--t-md);
 
     &:focus { outline: none; border-color: #2dd4bf; }
 }
@@ -114,7 +152,7 @@
 /* --- the frame ----------------------------------------------------------- */
 .bsp-stage {
     border: 1px solid var(--surface-border, #303030);
-    border-radius: 7px;
+    border-radius: var(--r-md);
     background: var(--surface-0, #0e0e0e);
     padding: 8px;
 }
@@ -129,7 +167,7 @@
     position: relative;
     flex: 1;
     min-width: 0;
-    border-radius: 4px;
+    border-radius: var(--r-sm);
     border: 1px solid rgba(255, 255, 255, 0.09);
     display: flex;
     flex-direction: column;
@@ -141,7 +179,7 @@
 }
 
 .bsp-tile-name {
-    font-size: 10px;
+    font-size: var(--t-sm);
     font-weight: 650;
     color: #eaf6f4;
     max-width: 100%;
@@ -152,7 +190,7 @@
 
 .bsp-tile-spec {
     font-family: ui-monospace, Menlo, monospace;
-    font-size: 8.5px;
+    font-size: var(--t-micro);
     color: rgba(255, 255, 255, 0.55);
 }
 
@@ -167,7 +205,7 @@
     height: 15px;
     padding: 0;
     border: 0;
-    border-radius: 3px;
+    border-radius: var(--r-xs);
     background: rgba(0, 0, 0, 0.32);
     color: rgba(255, 255, 255, 0.72);
     cursor: pointer;
@@ -181,7 +219,7 @@
     align-items: center;
     justify-content: center;
     width: 100%;
-    font-size: 10.5px;
+    font-size: var(--t-sm);
     color: #6f757f;
 }
 
@@ -190,7 +228,7 @@
     justify-content: space-between;
     margin-top: 6px;
     font-family: ui-monospace, Menlo, monospace;
-    font-size: 9px;
+    font-size: var(--t-micro);
     color: #6f757f;
 }
 
@@ -227,7 +265,7 @@
     padding: 6px 5px;
     gap: 1px;
     border: 1px solid var(--surface-border, #333);
-    border-radius: 5px;
+    border-radius: var(--r-sm);
     background: var(--surface-2, #20242a);
     cursor: pointer;
 
@@ -243,7 +281,7 @@
 }
 
 .bsp-seg-name {
-    font-size: 9.5px;
+    font-size: var(--t-micro);
     // Explicit, so the row's height is predictable rather than inherited from
     // whatever the panel's base line-height happens to be.
     line-height: 1.25;
@@ -257,7 +295,7 @@
 .bsp-seg.is-on .bsp-seg-name { color: #7fe7d8; }
 .bsp-seg-secs {
     font-family: ui-monospace, Menlo, monospace;
-    font-size: 8.5px;
+    font-size: var(--t-micro);
     line-height: 1.25;
     color: #767c88;
 }
@@ -270,7 +308,7 @@
     align-items: center;
     justify-content: center;
     border: 1px dashed var(--surface-border, #3d3d3d);
-    border-radius: 5px;
+    border-radius: var(--r-sm);
     background: transparent;
     color: #6f757f;
     cursor: pointer;
@@ -291,7 +329,7 @@
         display: flex;
         align-items: center;
         gap: 5px;
-        font-size: 10.5px;
+        font-size: var(--t-sm);
         color: #e0a04a;
     }
 
@@ -306,7 +344,7 @@
 /* --- picker --------------------------------------------------------------- */
 .bsp-picker {
     border: 1px solid var(--surface-border, #333);
-    border-radius: 7px;
+    border-radius: var(--r-md);
     background: var(--surface-1, #141414);
     padding: 9px;
 }
@@ -328,17 +366,17 @@
     gap: 5px;
     padding: 5px 10px;
     border: 1px solid var(--surface-border, #363636);
-    border-radius: 14px;
+    border-radius: var(--r-pill);
     background: var(--surface-0, #121212);
     color: #a8aeb6;
-    font-size: 10.5px;
+    font-size: var(--t-sm);
     white-space: nowrap;
     cursor: pointer;
 
     em {
         font-style: normal;
         font-family: ui-monospace, Menlo, monospace;
-        font-size: 9px;
+        font-size: var(--t-micro);
         color: #6f757f;
     }
 
@@ -355,7 +393,7 @@
     &.is-on em { color: #5eead4; }
 }
 
-.bsp-creative-sw { width: 7px; height: 7px; border-radius: 2px; flex: none; }
+.bsp-creative-sw { width: 7px; height: 7px; border-radius: var(--r-xs); flex: none; }
 
 .bsp-filters {
     display: flex;
@@ -371,10 +409,10 @@
     gap: 4px;
     padding: 4px 9px;
     border: 1px solid var(--surface-border, #363636);
-    border-radius: 13px;
+    border-radius: var(--r-pill);
     background: var(--surface-0, #121212);
     color: #9aa1ac;
-    font-size: 10px;
+    font-size: var(--t-sm);
     cursor: pointer;
 
     &:hover:not(:disabled) { background: #1c1c1c; color: #ddd; }
@@ -393,21 +431,44 @@
 }
 
 .bsp-list {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    max-height: 210px;
+    // A GRID, not a stack of full-width rows. Twenty masters of one creative
+    // differ only by size and duration, so a full-width row spent most of its
+    // width on repeated text and set the one distinguishing field small at the
+    // far right. Cards put the ratio first and fit five or six to a row.
+    //
+    // grid gap is Chrome 66, safely under the chrome74 target -- unlike flex
+    // gap, which is 84 and is the open question in CLAUDE.md.
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+    gap: 6px;
+    align-items: start;
+    // Tall enough to browse in, short enough to leave the canvas on screen --
+    // this panel is docked beside a comp, not a full page.
+    max-height: 320px;
     overflow-y: auto;
+    padding-right: 2px;
+}
+
+// Prose, skeletons and messages are not cards -- span the row rather than
+// sitting in one 112px track.
+.bsp-none,
+.bsp-chatter,
+.bsp-skel {
+    grid-column: 1 / -1;
 }
 
 .bsp-master {
     display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    padding: 5px 8px;
-    border: 1px solid transparent;
-    border-radius: 5px;
+    flex-direction: column;
+    // A <button> that is a flex container does not stretch its children in
+    // Chromium unless told to.
+    align-items: stretch;
+    // min-width 0, not the grid-item default of auto, so a long creative name
+    // ellipsises inside its track instead of forcing the track wider.
+    min-width: 0;
+    padding: 6px 6px 5px;
+    border: 1px solid var(--surface-edge, #2b3230);
+    border-radius: var(--r-sm);
     background: var(--surface-2, #1a1a1a);
     cursor: pointer;
     text-align: left;
@@ -416,33 +477,96 @@
     &:active { background: #12201e; }
 }
 
-.bsp-master-sw { flex: none; width: 8px; height: 8px; border-radius: 2px; }
+// The master's true ratio, drawn. Fixed-height band so every card in a row
+// lines up whatever shape sits in it.
+.bsp-master-proxy {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 34px;
+    margin-bottom: 4px;
+    background: rgba(0, 0, 0, 0.28);
+    border-radius: var(--r-xs);
+
+    > span {
+        border-radius: var(--r-xs);
+        // Dimensions come from JS -- see MasterCard.
+    }
+}
+
+.bsp-master-proxy { position: relative; }
+
+.bsp-master-used {
+    position: absolute;
+    top: 2px;
+    right: 3px;
+    padding: 0 3px;
+    border-radius: var(--r-md);
+    background: #2dd4bf;
+    color: #04211d;
+    font-size: var(--t-micro);
+    font-weight: 700;
+    line-height: 13px;
+}
+
+.bsp-master.is-used {
+    border-color: rgba(45, 212, 191, 0.35);
+}
+
+.bsp-master-size {
+    display: block;
+    color: #dfe7e5;
+    font-size: var(--t-sm);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.2px;
+}
+
+.bsp-master-meta {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 5px;
+    margin-top: 2px;
+}
+
+.bsp-master-name {
+    // The repeated part, so it recedes -- and ellipsises rather than wrapping
+    // a card taller than its neighbours.
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: #7f8d8a;
+    font-size: var(--t-micro);
+}
+
+.bsp-master-dur {
+    flex: 0 0 auto;
+    color: #9fb3b0;
+    font-size: var(--t-micro);
+    font-variant-numeric: tabular-nums;
+}
+
 
 .bsp-master-name {
     flex: 1;
     min-width: 0;
-    font-size: 10.5px;
+    font-size: var(--t-sm);
     color: #d2d6dc;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.bsp-master-tag {
-    flex: none;
-    font-family: ui-monospace, Menlo, monospace;
-    font-size: 9px;
-    color: #767c88;
-}
 
-.bsp-none { margin: 4px 2px; font-size: 10.5px; color: #6f757f; }
+.bsp-none { margin: 4px 2px; font-size: var(--t-sm); color: #6f757f; }
 
 .bsp-status {
     display: flex;
     align-items: center;
     gap: 5px;
     margin: 0;
-    font-size: 11px;
+    font-size: var(--t-md);
 
     &.is-success { color: #5eead4; }
     &.is-error { color: #e0857a; }
@@ -455,7 +579,7 @@
     margin: 0;
     padding-top: 9px;
     border-top: 1px solid var(--surface-divider, #2a2a2a);
-    font-size: 10.5px;
+    font-size: var(--t-sm);
     color: #6f757f;
 }
 
@@ -470,7 +594,7 @@
 
 .bsp-probe {
     border: 1px solid var(--surface-border, #333);
-    border-radius: 7px;
+    border-radius: var(--r-md);
     background: var(--surface-1, #141414);
     overflow: hidden;
 }
@@ -481,7 +605,7 @@
     gap: 8px;
     padding: 7px 10px;
     border-bottom: 1px solid var(--surface-divider, #2a2a2a);
-    font-size: 10px;
+    font-size: var(--t-sm);
     letter-spacing: 0.09em;
     text-transform: uppercase;
     color: #8b9199;
@@ -498,7 +622,7 @@
     height: 19px;
     padding: 0;
     border: 1px solid var(--surface-border, #333);
-    border-radius: 4px;
+    border-radius: var(--r-sm);
     background: var(--surface-2, #1d1d1d);
     color: #999;
     cursor: pointer;
@@ -513,7 +637,7 @@
     max-height: 260px;
     overflow: auto;
     font-family: ui-monospace, Menlo, monospace;
-    font-size: 9.5px;
+    font-size: var(--t-micro);
     line-height: 1.55;
     color: #b8bec6;
     // break-word, not `anywhere` -- the chrome74 target has no overflow-wrap:anywhere.
@@ -534,7 +658,7 @@
 .bsp-path {
     margin: 0;
     font-family: ui-monospace, Menlo, monospace;
-    font-size: 9px;
+    font-size: var(--t-micro);
     color: #6f757f;
     word-break: break-all;
 }
@@ -547,7 +671,7 @@
     gap: 8px;
     padding: 6px 8px;
     border: 1px solid transparent;
-    border-radius: 5px;
+    border-radius: var(--r-sm);
     background: var(--surface-2, #1a1a1a);
     animation: bsp-skel-pulse 1.25s ease-in-out infinite;
 }
@@ -556,7 +680,7 @@
 .bsp-skel-name,
 .bsp-skel-tag {
     height: 8px;
-    border-radius: 3px;
+    border-radius: var(--r-xs);
     background: #2e3338;
 }
 
@@ -583,14 +707,14 @@
     display: block;
     padding: 8px 12px;
     border: 1px solid var(--surface-border, #34383f);
-    border-radius: 7px;
+    border-radius: var(--r-md);
     background: var(--surface-1, #1e2126);
     color: #9aa1ac;
     text-align: left;
     cursor: pointer;
 
-    b { display: block; font-size: 12px; font-weight: 650; color: #d4d9df; }
-    span { font-size: 9.5px; color: #767c88; }
+    b { display: block; font-size: var(--t-lg); font-weight: 650; color: #d4d9df; }
+    span { font-size: var(--t-micro); color: #767c88; }
 
     &:hover { background: #23272e; }
     &:active { background: #191c21; }
@@ -605,10 +729,10 @@
     margin-left: 8px;
     padding: 2px 8px;
     border: 1px solid var(--surface-border, #363636);
-    border-radius: 4px;
+    border-radius: var(--r-sm);
     background: var(--surface-0, #121212);
     color: #8fb9b2;
-    font-size: 9.5px;
+    font-size: var(--t-micro);
     text-transform: none;
     letter-spacing: 0;
     cursor: pointer;
@@ -622,7 +746,7 @@
     width: 100%;
     height: 0;
     border: 1px solid var(--surface-border, #303030);
-    border-radius: 7px;
+    border-radius: var(--r-md);
     background: var(--surface-0, #0e0e0e);
     overflow: hidden;
 }
@@ -646,7 +770,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 10.5px;
+    font-size: var(--t-sm);
     color: #6f757f;
 }
 
@@ -696,9 +820,9 @@
     // button, so both states are re-declared here or they flash blue.
     background: rgba(45, 212, 191, 0.1);
     border: 1px solid rgba(45, 212, 191, 0.3);
-    border-radius: 4px;
+    border-radius: var(--r-sm);
     color: #7fe7d8;
-    font-size: 12px;
+    font-size: var(--t-lg);
     line-height: 1;
     cursor: pointer;
 
@@ -714,16 +838,16 @@
     padding: 0 4px;
     background: rgba(0, 0, 0, 0.35);
     border: 1px solid rgba(45, 212, 191, 0.28);
-    border-radius: 4px;
+    border-radius: var(--r-sm);
     color: #cfe9e4;
-    font-size: 10px;
+    font-size: var(--t-sm);
 }
 
 .bsp-refcount {
     flex: 0 0 auto;
     color: #6f8b87;
     font-family: ui-monospace, Menlo, monospace;
-    font-size: 9px;
+    font-size: var(--t-micro);
     font-variant-numeric: tabular-nums;
 }
 
@@ -733,7 +857,7 @@
     background: none;
     border: 0;
     color: #7fe7d8;
-    font-size: 10px;
+    font-size: var(--t-sm);
     text-decoration: underline;
     cursor: pointer;
 
@@ -745,7 +869,7 @@
 .bsp-problems-or {
     margin-left: 5px;
     color: #7d8b89;
-    font-size: 10px;
+    font-size: var(--t-sm);
 }
 
 .bsp-swapbar {
@@ -753,9 +877,9 @@
     padding: 5px 7px;
     background: rgba(45, 212, 191, 0.09);
     border: 1px dashed rgba(45, 212, 191, 0.4);
-    border-radius: 4px;
+    border-radius: var(--r-sm);
     color: #cfe9e4;
-    font-size: 10px;
+    font-size: var(--t-sm);
 }
 
 // While a swap is pending the list is a picker for one region, not the
@@ -767,6 +891,61 @@
     &:hover { background: rgba(45, 212, 191, 0.16); }
 }
 
+// The master's whole footprint at the cover scale, centred on the region.
+// Spills outside the region by exactly what is being cropped, and flips
+// portrait/landscape on a quarter turn -- which is the only way a rotation
+// is visible at all on a flat colour block.
+.bsp-region-extent {
+    position: absolute;
+    border: 1px dashed rgba(255, 255, 255, 0.45);
+    pointer-events: none;
+}
+
+// The master's own top edge, walking round the sides as it turns.
+.bsp-region-top {
+    position: absolute;
+    background: #ffd68a;
+    pointer-events: none;
+}
+
+.bsp-region-top--0 { left: 0; right: 0; top: 0; height: 3px; }
+.bsp-region-top--90 { top: 0; bottom: 0; right: 0; width: 3px; }
+.bsp-region-top--180 { left: 0; right: 0; bottom: 0; height: 3px; }
+.bsp-region-top--270 { top: 0; bottom: 0; left: 0; width: 3px; }
+
+.bsp-guidenum {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: #9fb3b0;
+    font-size: var(--t-sm);
+
+    label {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    input {
+        width: 62px;
+        height: 19px;
+        padding: 0 4px;
+        background: rgba(0, 0, 0, 0.4);
+        border: 1px solid rgba(45, 212, 191, 0.35);
+        border-radius: var(--r-xs);
+        color: #d9f5f0;
+        font-family: ui-monospace, Menlo, monospace;
+        font-size: var(--t-sm);
+        font-variant-numeric: tabular-nums;
+    }
+}
+
+.bsp-guidenum-max {
+    color: #6f8b87;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: var(--t-micro);
+}
+
 .bsp-region-tag {
     position: absolute;
     left: 0;
@@ -776,7 +955,7 @@
     background: rgba(0, 0, 0, 0.66);
     color: #d9f5f0;
     font-family: ui-monospace, Menlo, monospace;
-    font-size: 9.5px;
+    font-size: var(--t-micro);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -787,7 +966,7 @@
     position: absolute;
     width: 11px;
     height: 11px;
-    border-radius: 2px;
+    border-radius: var(--r-xs);
     background: #7fe7d8;
 }
 
@@ -810,7 +989,7 @@
 .bsp-anchor {
     padding: 0;
     border: 1px solid var(--surface-border, #363636);
-    border-radius: 3px;
+    border-radius: var(--r-xs);
     background: var(--surface-0, #121212);
     cursor: pointer;
 
@@ -822,7 +1001,7 @@
 
 /* --- guides --------------------------------------------------------------- */
 .bsp-guidebar { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
-.bsp-guidehint { font-size: 9.5px; color: #6f757f; }
+.bsp-guidehint { font-size: var(--t-micro); color: #6f757f; }
 
 .bsp-guide {
     // above even a selected region, or a line under one cannot be grabbed
@@ -835,4 +1014,95 @@
 }
 
 .bsp-guide--h { left: 0; right: 0; height: 1px; cursor: ns-resize; }
+.bsp-guide.is-on { background: #ffd68a; }
 .bsp-guide--v { top: 0; bottom: 0; width: 1px; cursor: ew-resize; }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Motion
+//
+// This section had ZERO transitions in 980 lines -- every hover, selection
+// and filter change snapped instantly. That is the single loudest "nobody
+// designed this" signal in the tool, and the cheapest to fix.
+//
+// TRANSITIONED PROPERTIES ARE NAMED EXPLICITLY, never `all`. Two reasons,
+// one of them load-bearing here: regions and guides are DRAGGED, and their
+// position and size are inline styles updated on every mousemove. A
+// transition on left/top/width/height -- which `all` would apply -- would
+// make every drag lag behind the cursor and rubber-band on release. Only
+// colour, shadow and opacity move.
+//
+// Durations come from --dur/--dur-fast, which are deliberately short; see
+// the token block for why a tool panel gets a smaller motion budget than
+// the vendored skill prescribes.
+// ─────────────────────────────────────────────────────────────────────────
+
+.bsp-master {
+    transition:
+        border-color var(--dur) var(--ease-snap),
+        background-color var(--dur) var(--ease-snap),
+        transform var(--dur) var(--ease-snap),
+        box-shadow var(--dur) var(--ease-snap);
+
+    &:hover {
+        // A 1px lift, not the 4px a landing-page card gets. These cards are
+        // ~80px tall and sit in a grid six across -- a 4px jump reads as the
+        // row twitching, not as the card responding.
+        transform: translateY(-1px);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    }
+
+    &:active {
+        transform: translateY(0);
+        transition-duration: var(--dur-fast);
+    }
+}
+
+.bsp-btn,
+.bsp-refstep,
+.bsp-reflink,
+.bsp-swaplink {
+    transition:
+        background-color var(--dur) var(--ease-snap),
+        border-color var(--dur) var(--ease-snap),
+        color var(--dur) var(--ease-snap);
+}
+
+// Colour and depth only -- NOT geometry. See the note above.
+.bsp-region {
+    transition:
+        border-color var(--dur) var(--ease-snap),
+        box-shadow var(--dur) var(--ease-snap),
+        opacity var(--dur) var(--ease-snap);
+}
+
+.bsp-guide {
+    transition: background-color var(--dur-fast) var(--ease-snap);
+}
+
+// Keyboard focus was invisible throughout this tool. A ring that only shows
+// for keyboard users leaves the mouse path untouched.
+.bsp-master:focus-visible,
+.bsp-btn:focus-visible,
+.bsp-refstep:focus-visible,
+.bsp-reflink:focus-visible,
+.bsp-swaplink:focus-visible {
+    outline: 2px solid #7fe7d8;
+    outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .bsp-master,
+    .bsp-btn,
+    .bsp-refstep,
+    .bsp-reflink,
+    .bsp-swaplink,
+    .bsp-region,
+    .bsp-guide {
+        transition: none;
+    }
+
+    .bsp-master:hover,
+    .bsp-master:active {
+        transform: none;
+    }
+}

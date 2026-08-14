@@ -67,6 +67,50 @@ const ORIENTATION_ICON: Record<OrientationKey, React.ComponentType<{ size?: numb
     QUAD: LayoutGrid,
 };
 
+/**
+ * One master in the picker.
+ *
+ * The list used to be full-width rows of "PortalToParadise", twenty of them,
+ * with the size — the only thing that actually differed — set small at the far
+ * right. The shape IS the information here, so the card leads with a proxy
+ * drawn at the master's true ratio: a 5760x1440 strip and a 1080x1920 portrait
+ * are told apart at a glance, before reading a single number.
+ *
+ * The proxy is sized in JS rather than CSS because aspect-ratio is Chrome 88
+ * and this builds for chrome74 — and the padding-box trick can't express
+ * "fit inside a square box either way round" without a wrapper per case.
+ */
+const MasterCard: React.FC<{ master: BespokeMaster; swapping: boolean; used: number; onPick: () => void }> = ({
+    master, swapping, used, onPick,
+}) => {
+    const BOX = 38;
+    const aspect = master.width && master.height ? master.width / master.height : 1;
+    const pw = aspect >= 1 ? BOX : Math.max(4, BOX * aspect);
+    const ph = aspect >= 1 ? Math.max(4, BOX / aspect) : BOX;
+    const tint = hueFor(master.creative || master.name);
+    return (
+        <button
+            className={"bsp-master" + (swapping ? " is-swap" : "") + (used > 0 ? " is-used" : "")}
+            onClick={onPick}
+            title={master.name}
+        >
+            <span className="bsp-master-proxy">
+                <span style={{ width: `${pw}px`, height: `${ph}px`, background: tint }} />
+                {/* ALREADY ON THE CANVAS. Twenty near-identical cards and no
+                    memory of which have been placed is how a region gets added
+                    twice, or a master gets missed entirely on a board with
+                    eight of them. */}
+                {used > 0 && <span className="bsp-master-used">{used > 1 ? `×${used}` : "✓"}</span>}
+            </span>
+            <span className="bsp-master-size">{master.size || "?"}</span>
+            <span className="bsp-master-meta">
+                <span className="bsp-master-name">{master.creative || master.name}</span>
+                <span className="bsp-master-dur">{master.duration ? `${master.duration}s` : "?"}</span>
+            </span>
+        </button>
+    );
+};
+
 interface Region {
     id: number;
     master: BespokeMaster;
@@ -157,6 +201,9 @@ export const BespokeTool = () => {
     // the region's coordinates, so a placement traced by eye is not lost just
     // because the master in it turned out to be the wrong length.
     const [swapTarget, setSwapTarget] = useState(-1);
+    // Which ruler is selected, so it can be typed rather than dragged. Dragging
+    // is fine for roughing a line in and useless for landing it on 2380.
+    const [selGuide, setSelGuide] = useState<{ axis: "x" | "y"; i: number } | null>(null);
     const [layouts, setLayouts] = useState<Record<string, { regions: Region[]; guidesX: number[]; guidesY: number[] }>>({});
     // Constraints while dragging a corner. Ratio keeps a region from ever
     // introducing a crop it did not have; locking a side is for the common case
@@ -440,6 +487,14 @@ export const BespokeTool = () => {
             w: turned ? r.master.height : r.master.width,
             h: turned ? r.master.width : r.master.height,
         };
+    };
+
+    /** Moves a guide to an exact pixel, clamped inside the canvas. */
+    const setGuideAt = (axis: "x" | "y", i: number, value: number) => {
+        const span = axis === "x" ? Number(canvasW) || 1920 : Number(canvasH) || 1080;
+        const at = Math.max(0, Math.min(span, Math.round(value)));
+        if (axis === "x") setGuidesX((g) => g.map((v, n) => (n === i ? at : v)));
+        else setGuidesY((g) => g.map((v, n) => (n === i ? at : v)));
     };
 
     /** Nearest guide within reach, or the value untouched. */
@@ -1040,6 +1095,30 @@ export const BespokeTool = () => {
                                         e.preventDefault();
                                     }}
                                 >
+                                    {/* A MASTER IS AN .aep WITH NO THUMBNAIL, so
+                                        there is no artwork in here to turn --
+                                        the region is a flat colour block and a
+                                        rotated block looks identical. These two
+                                        marks are what a quarter turn can
+                                        visibly move: the dashed outline is the
+                                        master's WHOLE footprint at the cover
+                                        scale, so it flips portrait to landscape
+                                        and shows exactly what is spilling out
+                                        of the region; the solid bar is the
+                                        master's own top edge, which walks round
+                                        the sides as it turns. */}
+                                    {i === selRegion && (
+                                    <span
+                                        className="bsp-region-extent"
+                                        style={{
+                                            width: `${(face.w * cover / r.w) * 100}%`,
+                                            height: `${(face.h * cover / r.h) * 100}%`,
+                                            left: `${(1 - (face.w * cover / r.w)) * 50}%`,
+                                            top: `${(1 - (face.h * cover / r.h)) * 50}%`,
+                                        }}
+                                    />
+                                    )}
+                                    <span className={`bsp-region-top bsp-region-top--${r.rotation || 0}`} />
                                     <span className="bsp-region-tag" title={r.master.name}>
                                         {/* WHICH MASTER THIS IS, not just its
                                             campaign. Two regions of the same
@@ -1061,11 +1140,12 @@ export const BespokeTool = () => {
                         {guidesY.map((g, i) => (
                             <span
                                 key={"gy" + i}
-                                className="bsp-guide bsp-guide--h"
+                                className={"bsp-guide bsp-guide--h" + (selGuide?.axis === "y" && selGuide.i === i ? " is-on" : "")}
                                 style={{ top: `${(g / (Number(canvasH) || 1080)) * 100}%` }}
                                 onMouseDown={(e) => {
                                     const box = stageRef.current?.getBoundingClientRect();
                                     if (!box) return;
+                                    setSelGuide({ axis: "y", i });
                                     dragRef.current = { handle: `guideY:${i}`, sx: e.clientX, sy: e.clientY, box, start: { id: 0, master: regions[0]?.master as BespokeMaster, rotation: 0, x: 0, y: g, w: 0, h: 0 } };
                                     e.preventDefault();
                                 }}
@@ -1076,11 +1156,12 @@ export const BespokeTool = () => {
                         {guidesX.map((g, i) => (
                             <span
                                 key={"gx" + i}
-                                className="bsp-guide bsp-guide--v"
+                                className={"bsp-guide bsp-guide--v" + (selGuide?.axis === "x" && selGuide.i === i ? " is-on" : "")}
                                 style={{ left: `${(g / (Number(canvasW) || 1920)) * 100}%` }}
                                 onMouseDown={(e) => {
                                     const box = stageRef.current?.getBoundingClientRect();
                                     if (!box) return;
+                                    setSelGuide({ axis: "x", i });
                                     dragRef.current = { handle: `guideX:${i}`, sx: e.clientX, sy: e.clientY, box, start: { id: 0, master: regions[0]?.master as BespokeMaster, rotation: 0, x: g, y: 0, w: 0, h: 0 } };
                                     e.preventDefault();
                                 }}
@@ -1101,6 +1182,35 @@ export const BespokeTool = () => {
                         <button className="bsp-btn bsp-btn--ghost" onClick={() => setGuidesX((g) => [...g, Math.round((Number(canvasW) || 1920) / 2)])}>
                             + Vertical
                         </button>
+                        {selGuide && (
+                            // TYPED, NOT DRAGGED. Dragging roughs a line in;
+                            // landing it on an exact pixel from a brief is what
+                            // it is actually for, and no amount of snapping
+                            // makes a mouse hit 2380 on a 2816px canvas.
+                            <span className="bsp-guidenum">
+                                <label>
+                                    {selGuide.axis === "y" ? "Horizontal at y" : "Vertical at x"}
+                                    <input
+                                        type="number"
+                                        value={String(selGuide.axis === "y" ? guidesY[selGuide.i] : guidesX[selGuide.i])}
+                                        onChange={(e) => setGuideAt(selGuide.axis, selGuide.i, Number(e.target.value))}
+                                    />
+                                </label>
+                                <span className="bsp-guidenum-max">
+                                    of {selGuide.axis === "y" ? canvasH : canvasW}
+                                </span>
+                                <button
+                                    className="bsp-swaplink"
+                                    onClick={() => {
+                                        if (selGuide.axis === "y") setGuidesY((g) => g.filter((_, n) => n !== selGuide.i));
+                                        else setGuidesX((g) => g.filter((_, n) => n !== selGuide.i));
+                                        setSelGuide(null);
+                                    }}
+                                >
+                                    remove
+                                </button>
+                            </span>
+                        )}
                         {(guidesX.length > 0 || guidesY.length > 0) && (
                             <button className="bsp-btn bsp-btn--ghost" onClick={() => { setGuidesX([]); setGuidesY([]); }}>
                                 Clear
@@ -1401,20 +1511,17 @@ export const BespokeTool = () => {
                     {!loading && !masters && <p className="bsp-none">Pick a masters folder to browse.</p>}
                     {!loading && masters && matches.length === 0 && <p className="bsp-none">No master matches those filters.</p>}
                     {!loading && matches.map((m) => (
-                        <button
-                            className={"bsp-master" + (swapTarget >= 0 ? " is-swap" : "")}
+                        <MasterCard
                             key={m.path}
-                            onClick={() => {
+                            master={m}
+                            swapping={swapTarget >= 0}
+                            used={regions.filter((r) => r.master.path === m.path).length}
+                            onPick={() => {
                                 if (swapTarget >= 0) { swapRegion(m); return; }
                                 if (mode === "regions") { addRegion(m); return; }
                                 addTile(m);
                             }}
-                        >
-                            <span className="bsp-master-sw" style={{ background: hueFor(m.creative) }} />
-                            <span className="bsp-master-name">{m.creative || m.name}</span>
-                            <span className="bsp-master-tag">{m.size || "?"}</span>
-                            <span className="bsp-master-tag">{m.duration ? `${m.duration}s` : "?"}</span>
-                        </button>
+                        />
                     ))}
                 </div>
             </div>
