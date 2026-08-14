@@ -3052,12 +3052,203 @@ function mastersCanon(s: string): string {
 // =============================================================================
 var mastersIndexCache: { [root: string]: MasterIndexEntry[] } = {};
 
+// =============================================================================
+// THE SHARED INDEX
+//
+// mastersIndexCache above is per SESSION -- a module variable that dies with
+// AE -- so the first lookup of every session paid a full recursive walk of the
+// masters tree over the NAS. That is the wait everyone sees on open.
+//
+// This layer persists the same index to the team folder, so the walk is paid
+// once by whoever triggers it and read as a single file by everyone else.
+//
+// IT IS NOT MAINTAINED BY HAND. Anything that copies or writes already calls
+// refreshMastersIndex() for a walk it can trust; that walk now writes the
+// shared file as a side effect. Normal use keeps it warm, and
+// mastersReindex() is a fallback, not the mechanism.
+//
+// IT IS NOT TRUSTED EITHER. A stale index points an import at a master that
+// has moved, and that fails silently at copy time -- the exact class of bug
+// this codebase keeps getting bitten by. So each entry set is stored with the
+// modified time of every folder near the top of the tree, and a read
+// re-stats just those. A handful of stats is nothing against thousands of
+// directory enumerations, and it catches the two changes that actually
+// happen: a master added to a creative, and a creative added or removed.
+//
+// LIMIT, stated plainly: stamps stop at STAMP_DEPTH. A change deeper than
+// that is not detected, because stamping every folder would cost as much as
+// the walk it replaces and defeat the point. Deep reshuffles need the
+// re-index button.
+// =============================================================================
+const MASTERS_INDEX_DIR = "misc/masters-index";
+const STAMP_DEPTH = 2;
+
+interface MastersStamp { path: string; modified: number; }
+
+function teamFolderRoot(): Folder | null {
+  try {
+    if (!app.settings.haveSetting(SETTINGS_SECTION, "TeamFolderPath")) return null;
+    const p = app.settings.getSetting(SETTINGS_SECTION, "TeamFolderPath");
+    if (!p) return null;
+    const f = new Folder(p);
+    // .exists is only trustworthy on a DIRECTORY -- which this is.
+    return f.exists ? f : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/** One file per masters root, named from the root so two roots never collide. */
+function mastersIndexFileFor(mastersRoot: string): File | null {
+  const root = teamFolderRoot();
+  if (!root) return null;
+  const key = mastersCanon(mastersRoot);
+  const short = key.length > 60 ? key.slice(0, 60) + String(key.length) : key;
+  return new File(root.fsName + "/" + MASTERS_INDEX_DIR + "/" + short + ".json");
+}
+
+/** Modified times of the folders near the top of the tree. */
+function mastersStamps(mastersRoot: string): MastersStamp[] {
+  const out: MastersStamp[] = [];
+  const visit = (folder: Folder, depth: number) => {
+    try {
+      out.push({ path: folder.fsName, modified: Number(folder.modified) || 0 });
+    } catch (e) {
+      return;
+    }
+    if (depth >= STAMP_DEPTH) return;
+    const items = folder.getFiles();
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (typeof (item as Folder).getFiles !== "function") continue;
+      if (mastersSkipFolder((item as Folder).name)) continue;
+      visit(item as Folder, depth + 1);
+    }
+  };
+  try {
+    const root = new Folder(mastersRoot);
+    if (root.exists) visit(root, 0);
+  } catch (e) {
+    return [];
+  }
+  return out;
+}
+
+function mastersStampsMatch(saved: MastersStamp[], now: MastersStamp[]): boolean {
+  if (!saved || !now || saved.length !== now.length) return false;
+  for (let i = 0; i < saved.length; i++) {
+    if (saved[i].path !== now[i].path) return false;
+    if (Number(saved[i].modified) !== Number(now[i].modified)) return false;
+  }
+  return true;
+}
+
+/**
+ * NULL MEANS "I DID NOT GET AN INDEX", never "there are no masters".
+ * A caller that flattens null to [] turns an unmounted share into a confident
+ * "no master matched", which is the failure this whole file guards against.
+ */
+function readSharedMastersIndex(mastersRoot: string): MasterIndexEntry[] | null {
+  try {
+    const f = mastersIndexFileFor(mastersRoot);
+    if (!f) return null;
+    // NEVER gate a team-folder FILE operation on .exists -- it returns false
+    // for files that plainly exist on the NAS. Attempt the open and let its
+    // failure be the answer.
+    if (!f.open("r")) return null;
+    let raw = "";
+    try { raw = f.read(); } finally { f.close(); }
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { root: string; stamps: MastersStamp[]; entries: MasterIndexEntry[] };
+    if (!parsed || !parsed.entries || parsed.entries.length === 0) return null;
+    if (String(parsed.root) !== String(mastersRoot)) return null;
+    if (!mastersStampsMatch(parsed.stamps, mastersStamps(mastersRoot))) return null;
+
+    // .file is a live File object and cannot survive JSON -- rebuild it, and
+    // keep the stored ORDER exactly: the scorer keeps `diff <= min`, so walk
+    // order decides tie-breaks and a reordered index silently picks a
+    // different master.
+    const out: MasterIndexEntry[] = [];
+    for (let i = 0; i < parsed.entries.length; i++) {
+      const e = parsed.entries[i];
+      out.push({
+        file: new File(e.path),
+        path: e.path,
+        name: e.name,
+        canonPath: e.canonPath,
+        ratio: Number(e.ratio),
+        orientation: e.orientation,
+      });
+    }
+    return out;
+  } catch (e) {
+    return null;
+  }
+}
+
+function writeSharedMastersIndex(mastersRoot: string, entries: MasterIndexEntry[]): void {
+  try {
+    if (!entries || entries.length === 0) return;
+    const root = teamFolderRoot();
+    if (!root) return;
+    // Folder.create() does not make intermediate levels -- one at a time.
+    const parts = MASTERS_INDEX_DIR.split("/");
+    let sofar = root.fsName;
+    for (let i = 0; i < parts.length; i++) {
+      sofar = sofar + "/" + parts[i];
+      const dir = new Folder(sofar);
+      if (!dir.exists) { try { dir.create(); } catch (e) { return; } }
+    }
+    const slim: { path: string; name: string; canonPath: string; ratio: number; orientation: string }[] = [];
+    for (let i = 0; i < entries.length; i++) {
+      slim.push({
+        path: entries[i].path,
+        name: entries[i].name,
+        canonPath: entries[i].canonPath,
+        ratio: entries[i].ratio,
+        orientation: entries[i].orientation,
+      });
+    }
+    const f = mastersIndexFileFor(mastersRoot);
+    if (!f) return;
+    if (!f.open("w")) return;
+    try {
+      f.write(JSON.stringify({ root: mastersRoot, stamps: mastersStamps(mastersRoot), entries: slim }));
+    } finally {
+      f.close();
+    }
+  } catch (e) {
+    // An unmounted share is a normal state, never an error. The walk already
+    // succeeded; failing to share it costs the next person a walk, nothing more.
+  }
+}
+
+/** Forces a walk and republishes the shared index. The manual fallback. */
+export const mastersReindex = (mastersRoot: string): Result => {
+  try {
+    if (!mastersRoot) return { success: false, error: "No masters folder set." };
+    const built = refreshMastersIndex(mastersRoot);
+    return { success: true, message: "Indexed " + built.length + " masters." } as Result;
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
 // Cached read. Walks only on a miss.
 export function getMastersIndex(mastersRoot: string): MasterIndexEntry[] {
   const key = String(mastersRoot);
   if (mastersIndexCache.hasOwnProperty(key)) return mastersIndexCache[key];
+  // The shared file first: one read instead of a recursive walk, and it
+  // validates its own freshness before it is believed.
+  const shared = readSharedMastersIndex(key);
+  if (shared) {
+    mastersIndexCache[key] = shared;
+    return shared;
+  }
   const built = buildMastersIndex(key);
   mastersIndexCache[key] = built;
+  // Publish it so the next person on the same root does not pay for it.
+  writeSharedMastersIndex(key, built);
   return built;
 }
 
@@ -3066,6 +3257,10 @@ export function refreshMastersIndex(mastersRoot: string): MasterIndexEntry[] {
   const key = String(mastersRoot);
   const built = buildMastersIndex(key);
   mastersIndexCache[key] = built;
+  // A RUN's walk is the trustworthy one, so it is also the one worth sharing.
+  // This is why the shared index needs no daily human pass: ordinary use of
+  // anything that writes files keeps it current.
+  writeSharedMastersIndex(key, built);
   return built;
 }
 
@@ -3080,16 +3275,38 @@ export const invalidateMastersIndex = (mastersRoot?: string): Result => {
   }
 };
 
+// Folders whose CONTENTS are discarded by the file filter below. The walk used
+// to descend into them anyway, enumerate every .aep inside, and throw the lot
+// away -- and AE's Auto-Save folders are routinely the largest directories in a
+// masters tree. Every subfolder is a separate round trip to the NAS, so this is
+// where the wait on a cold session actually came from. Pruning here is
+// behaviour-preserving: the file filter stays, so a FILE that happens to carry
+// one of these tokens is still excluded exactly as before.
+const MASTERS_SKIP_FOLDERS = ["Auto-Save", "_Archive", "_Old", "_DEV"];
+
+function mastersSkipFolder(name: string): boolean {
+  for (let i = 0; i < MASTERS_SKIP_FOLDERS.length; i++) {
+    // indexOf, never .match() -- a folder name is not a regex and real ones
+    // carry ( + [.
+    if (String(name).indexOf(MASTERS_SKIP_FOLDERS[i]) !== -1) return true;
+  }
+  return false;
+}
+
 export function buildMastersIndex(mastersRoot: string): MasterIndexEntry[] {
   const out: MasterIndexEntry[] = [];
   const walk = (folder: Folder) => {
     const items = folder.getFiles();
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      if (item instanceof Folder) {
-        walk(item);
-      } else if (item instanceof File) {
-        const path = item.fsName;
+      // DUCK-TYPED, not instanceof: two accesses to the same AE object return
+      // different wrappers, so instanceof against a host class is banned
+      // (CLAUDE.md section 2). A Folder is the thing that can list itself.
+      if (typeof (item as Folder).getFiles === "function") {
+        if (mastersSkipFolder((item as Folder).name)) continue;
+        walk(item as Folder);
+      } else {
+        const path = (item as File).fsName;
         if (
           path.slice(-4) === ".aep" &&
           path.indexOf("Auto-Save") === -1 &&
@@ -3102,9 +3319,9 @@ export function buildMastersIndex(mastersRoot: string): MasterIndexEntry[] {
           const destParts = sizeMatch[0].split("x");
           const ratio = Number(destParts[0]) / Number(destParts[1]);
           out.push({
-            file: item,
+            file: item as File,
             path: path,
-            name: item.name,
+            name: (item as File).name,
             canonPath: mastersCanon(path),
             ratio: ratio,
             orientation: ratio >= 1 ? "Landscape" : "Portrait",
