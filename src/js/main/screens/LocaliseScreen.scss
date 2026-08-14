@@ -167,7 +167,15 @@ $ls-shift: cubic-bezier(0.22, 1, 0.36, 1);    // colour, border, shadow
 // than a bare 1fr so a long label truncates instead of widening the track.
 .ls-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+    // 128, not 148. At the panel's usual width 148 fitted five across, which
+    // left eleven tools as 5 + 5 + 1 -- one button stranded on its own row.
+    // 128 fits six, making it 6 + 5, and the tiles were over-wide at five
+    // anyway: half of each was empty space beside a short label.
+    //
+    // No column count divides every tool count, so this balances the list as it
+    // stands rather than pretending to solve it forever. Adding a twelfth tool
+    // would give a clean 6 + 6.
+    grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
     gap: 8px;
 }
 
@@ -370,8 +378,13 @@ $ls-shift: cubic-bezier(0.22, 1, 0.36, 1);    // colour, border, shadow
 }
 
 .ls-stage--runnable,
+// RUNS IN PLACE rather than opening a page. This was a 2px accent border down
+// the left edge, which read as three buttons drawn to a different spec rather
+// than as a property they share -- the tiles are otherwise identical, so any
+// asymmetry looks like a mistake. The icon carries it instead: same
+// information, no change to the tile's shape.
 .ls-grid-item--runnable {
-    border-left: 2px solid var(--cat-icon, #2dd4bf);
+    svg { color: var(--cat-icon, #2dd4bf); }
 
     &:disabled {
         opacity: 0.6;
