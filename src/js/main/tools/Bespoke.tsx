@@ -438,6 +438,42 @@ export const BespokeTool = () => {
         setSelRegion(regions.length);
     };
 
+    /**
+     * Sizes the region to span the guides that BRACKET it, per axis.
+     *
+     * Dragging an edge onto a line was the only way to use a guide, which meant
+     * doing it twice per axis and reaching a hairline each time. This takes the
+     * nearest line either side of the region's own centre, so which pair it
+     * means is whichever pair it is already sitting between.
+     *
+     * Each axis is independent: two horizontal lines and no vertical ones sets
+     * the height and leaves the width alone.
+     */
+    const fitToGuides = () => {
+        const r = regions[selRegion];
+        if (!r) return;
+        const bracket = (guides: number[], centre: number) => {
+            let lo = -Infinity;
+            let hi = Infinity;
+            for (const g of guides) {
+                if (g <= centre && g > lo) lo = g;
+                if (g >= centre && g < hi) hi = g;
+            }
+            return lo === -Infinity || hi === Infinity || hi - lo < 24 ? null : { lo, hi };
+        };
+        const v = bracket(guidesY, r.y + r.h / 2);
+        const h = bracket(guidesX, r.x + r.w / 2);
+        if (!v && !h) {
+            setStatus({ text: "Put a guide either side of the region first — it fits between a pair.", type: "error" });
+            return;
+        }
+        setStatus(null);
+        patchRegion(selRegion, {
+            ...(h ? { x: h.lo, w: h.hi - h.lo } : {}),
+            ...(v ? { y: v.lo, h: v.hi - v.lo } : {}),
+        });
+    };
+
     /** Reshapes the region to its master's native ratio, so nothing is cropped. */
     const matchMasterRatio = () => {
         const r = regions[selRegion];
@@ -787,13 +823,35 @@ export const BespokeTool = () => {
                                 // than trusted. A reference exported at the
                                 // wrong size would otherwise silently become
                                 // the thing everything is traced over.
+                                //
+                                // ONLY THE ASPECT MATTERS, NOT THE PIXELS. These
+                                // JPGs come out of the PDF at whatever the export
+                                // felt like -- 8000x5867 for a 3840x2816 board is
+                                // normal -- and the backdrop is stretched to the
+                                // stage while every region coordinate is computed
+                                // from the NAMED canvas size. A uniform rescale
+                                // therefore cannot move anything by a pixel.
+                                // Comparing dimensions flagged every one of those
+                                // as broken, which trains people to ignore the
+                                // one case that is genuinely wrong: a different
+                                // SHAPE, where the image really is skewed against
+                                // the canvas and tracing off it lands wide.
                                 onLoad={(e) => {
                                     const img = e.currentTarget;
                                     const cw = Number(canvasW) || 0;
                                     const ch = Number(canvasH) || 0;
+                                    if (!cw || !ch || !img.naturalWidth || !img.naturalHeight) {
+                                        setRefMismatch("");
+                                        return;
+                                    }
+                                    const refAspect = img.naturalWidth / img.naturalHeight;
+                                    const canAspect = cw / ch;
+                                    // 0.5% covers rounding in the export; a real
+                                    // wrong-shape reference is out by far more.
+                                    const skew = Math.abs(refAspect - canAspect) / canAspect;
                                     setRefMismatch(
-                                        cw && ch && (img.naturalWidth !== cw || img.naturalHeight !== ch)
-                                            ? `Reference is ${img.naturalWidth}×${img.naturalHeight} but the name says ${cw}×${ch} — tracing over it will be off.`
+                                        skew > 0.005
+                                            ? `Reference is ${img.naturalWidth}×${img.naturalHeight} (${refAspect.toFixed(2)}:1) but the name says ${cw}×${ch} (${canAspect.toFixed(2)}:1) — different shape, so tracing over it will be off.`
                                             : ""
                                     );
                                 }}
@@ -881,7 +939,7 @@ export const BespokeTool = () => {
                                 Clear
                             </button>
                         )}
-                        <span className="bsp-guidehint">drag a line to place it · region edges snap to it</span>
+                        <span className="bsp-guidehint">drag to place · double-click to remove · edges snap while dragging</span>
                     </div>
 
                     {refMismatch !== "" && (
@@ -936,6 +994,11 @@ export const BespokeTool = () => {
                                 <CheckboxToggle checked={lockRatio} onChange={setLockRatio} label="Keep ratio" />
                                 <CheckboxToggle checked={lockW} onChange={setLockW} label="Lock width" />
                                 <CheckboxToggle checked={lockH} onChange={setLockH} label="Lock height" />
+                                <Tooltip text="Size this region to the guides either side of it — each axis independently">
+                                    <button className="bsp-btn bsp-btn--ghost" onClick={fitToGuides}>
+                                        Fit to guides
+                                    </button>
+                                </Tooltip>
                                 <Tooltip text="Reshape this region to its master's own ratio, so nothing is cropped">
                                     <button className="bsp-btn bsp-btn--ghost" onClick={matchMasterRatio}>
                                         Match master ratio
