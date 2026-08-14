@@ -4117,6 +4117,13 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
     if (total <= 0) return { success: false, error: "The segments add up to no time at all." };
 
     const lines: string[] = [];
+    // DECLARED OUT HERE because the return that reads them sits after the
+    // try/finally below. Declared inside it, they are block-scoped and the
+    // return cannot see them -- which shipped as "ReferenceError: saved is
+    // undefined" AFTER a successful build, because tsconfig-build excludes
+    // src/jsx and nothing type-checked the reference.
+    let saved = false;
+    let savedTo = "";
     app.beginUndoGroup("Bespoke build");
     try {
       // --- import each distinct master once -------------------------------
@@ -4304,8 +4311,6 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
       // comp with a 5s frontcard over it.
       let finished: CompItem = out;
       let frontcardOk = false;
-      let saved = false;
-      let savedTo = "";
       try {
         const wrapped = frontcardWrap(out);
         finished = wrapped.comp;
