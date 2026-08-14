@@ -237,7 +237,7 @@
 .team-profile-empty-tag {
     margin-left: auto;
     flex-shrink: 0;
-    font-size: 8.5px;
+    font-size: var(--t-micro);
     color: #5f5f5f;
     text-transform: uppercase;
     letter-spacing: 0.05em;

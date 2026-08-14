@@ -815,7 +815,7 @@
 .qfxr-item-cat {
     margin-left: auto;
     flex-shrink: 0;
-    font-size: 8.5px;
+    font-size: var(--t-micro);
     color: #666;
     text-transform: uppercase;
     letter-spacing: 0.04em;

@@ -1,5 +1,40 @@
 @use "./variables.scss" as *;
 
+// ─────────────────────────────────────────────────────────────────────────
+// Shared scale
+//
+// A survey of every tool stylesheet found 18 distinct border-radius values
+// and 17 distinct font sizes across the panel -- main.scss and
+// formTool.scss carry 10 and 11 of each on their own. No single value
+// looks wrong; the spread is what reads as "each file was styled
+// separately". These live at :root rather than in a partial so a tool
+// consumes them with var() and nothing has to be imported per file.
+//
+// Set here, next to the theme vars themes.ts writes, and safe at the
+// chrome74 target: custom properties are Chrome 49. No @property.
+// ─────────────────────────────────────────────────────────────────────────
+:root {
+  --r-xs: 3px;      // inner marks, chips inside a control
+  --r-sm: 5px;      // inputs, buttons, cards
+  --r-md: 7px;      // containers, panels
+  --r-lg: 10px;     // modals, large surfaces
+  --r-pill: 999px;  // filter pills, badges
+
+  // The floor is 9px on purpose: 12 declarations across the panel sat at
+  // 8 or 8.5px, which is below comfortable reading in a panel docked
+  // beside a comp.
+  --t-micro: 9px;   // meta, counts, captions
+  --t-sm: 10px;     // default UI text
+  --t-md: 11px;     // emphasis
+  --t-lg: 12px;     // section values
+  --t-xl: 14px;     // headings
+
+  --ease-snap: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 110ms;
+  --dur: 150ms;
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
@@ -52,6 +87,29 @@ button:hover {
 
 button:active {
   background-color: $active;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Keyboard focus
+//
+// `outline: none` on the button rule above removed focus indication from
+// every button in the panel, which is why a survey of all 44 stylesheets
+// found exactly ONE :focus-visible rule. It was not an omission per tool;
+// it was switched off globally and never given a replacement.
+//
+// That matters more here than on a web page: the panel already runs a
+// hidden-input keygrab for shortcuts, so keyboard is a first-class path,
+// and there was no way to see where you were on it.
+//
+// :focus-visible, NOT :focus -- the browser only matches it when focus
+// arrived by keyboard, so the mouse path stays exactly as it was and no
+// existing visual changes for a clicking user. Keyed off --ov-accent so
+// the ring follows the active theme (themes.ts writes it to :root).
+// ─────────────────────────────────────────────────────────────────────────
+:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--ov-accent, #3a5a8a);
+  outline-offset: 1px;
 }
 
 label {

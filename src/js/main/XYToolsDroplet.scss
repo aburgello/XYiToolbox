@@ -100,7 +100,7 @@ $mt-surface: #202020;
 }
 
 .mt-tab-label {
-    font-size: 8.5px;
+    font-size: var(--t-micro);
     font-weight: 700;
     letter-spacing: 0.4px;
     text-transform: uppercase;
