@@ -3,6 +3,25 @@
 // Surfaces come from the theme tokens, never hardcoded greys, so OLED drops to
 // true black with the rest of the panel. Precomputed rgba throughout: the
 // chrome74 build target has no color-mix().
+.bsp,
+.bsp *,
+.bsp *::before,
+.bsp *::after {
+    // THIS APP HAS NO GLOBAL box-sizing RESET -- it is set per element in
+    // main.scss, Dialog.scss and friends, and this tool never set it. Every
+    // `width: 100%` that also carried a border or padding was therefore
+    // WIDER than its parent: .bsp-canvas (width:100% + 1px border) pushed
+    // the whole tool 2px over and put a horizontal scrollbar on the panel,
+    // which CLAUDE.md forbids outright -- wide content scrolls in its own
+    // container, the body never does.
+    //
+    // Scoped to this tool rather than `*`, so no other tool's layout shifts.
+    // It also makes .bsp-region and .bsp-region-extent draw at their TRUE
+    // size: both are sized in % and bordered, so both were previously a few
+    // pixels larger than the region they represent.
+    box-sizing: border-box;
+}
+
 .bsp {
     // ── Tokens ──────────────────────────────────────────────────────────
     // Scoped to the tool, NOT :root. Category tint (--cat-*) already
@@ -470,6 +489,9 @@
     border: 1px solid var(--surface-edge, #2b3230);
     border-radius: var(--r-sm);
     background: var(--surface-2, #1a1a1a);
+    // Belt and braces: a rounded card should clip its own contents, so no
+    // future child can bleed past the corner the way the proxy band did.
+    overflow: hidden;
     cursor: pointer;
     text-align: left;
 
@@ -485,8 +507,11 @@
     justify-content: center;
     height: 34px;
     margin-bottom: 4px;
-    background: rgba(0, 0, 0, 0.28);
-    border-radius: var(--r-xs);
+    // No background of its own. It had a dark fill so flat proxies would read
+    // against the card, but the card already provides that surface -- and on
+    // hover, where the card lightens, the fill turned into a visible box
+    // inside the box. The proxy shape carries the meaning; the band only has
+    // to reserve a consistent height so cards align across a row.
 
     > span {
         border-radius: var(--r-xs);

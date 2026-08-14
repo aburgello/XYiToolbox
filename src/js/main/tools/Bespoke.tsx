@@ -750,6 +750,23 @@ export const BespokeTool = () => {
         return Object.keys(counts).sort().map((name) => ({ name, count: counts[name] }));
     }, [masters]);
 
+    // ONE CREATIVE IS ALWAYS SELECTED. A bespoke board is built from one
+    // campaign's masters, so "All" only ever offered a mixed list nobody
+    // wants -- 34 masters across six unrelated creatives, with the twenty
+    // that matter buried in it. Removing the chip means the empty filter
+    // state has to be filled, or the picker would open showing nothing.
+    //
+    // The busiest creative is the default: on a real masters folder that is
+    // the campaign the job is for, and the long tail is other work that
+    // happens to share the root.
+    useEffect(() => {
+        if (creative !== "") return;
+        if (creatives.length === 0) return;
+        let best = creatives[0];
+        for (const c of creatives) if (c.count > best.count) best = c;
+        setCreative(best.name);
+    }, [creatives, creative]);
+
     /** Orientation counts WITHIN the chosen creative, so a pill that would
      *  return nothing reads as empty rather than looking available. */
     const orientCounts = useMemo(() => {
@@ -1438,17 +1455,11 @@ export const BespokeTool = () => {
                 {/* Creative first, the way OV Library asks it -- the question is
                     "which artwork", not "what was that file called". */}
                 <div className="bsp-creatives">
-                    <button
-                        className={"bsp-creative" + (creative === "" ? " is-on" : "")}
-                        onClick={() => setCreative("")}
-                    >
-                        All<em>{(masters || []).length}</em>
-                    </button>
                     {creatives.map((c) => (
                         <button
                             key={c.name}
                             className={"bsp-creative" + (creative === c.name ? " is-on" : "")}
-                            onClick={() => setCreative(creative === c.name ? "" : c.name)}
+                            onClick={() => setCreative(c.name)}
                         >
                             <span className="bsp-creative-sw" style={{ background: hueFor(c.name) }} />
                             {c.name}<em>{c.count}</em>
