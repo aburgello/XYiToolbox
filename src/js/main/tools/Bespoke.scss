@@ -198,6 +198,10 @@
     display: flex;
     gap: 3px;
     height: 40px;
+    // The row must never be wider than the panel: the segments grow into what
+    // is left rather than declaring a width up front.
+    width: 100%;
+    min-width: 0;
 }
 
 .bsp-seg {
@@ -205,8 +209,10 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-width: 0;
-    padding: 0 6px;
+    // Small enough that a 1s segment beside a 20s one still shows its name,
+    // large enough that it can shrink when the panel is narrow.
+    min-width: 54px;
+    padding: 0 5px;
     border: 1px solid var(--surface-border, #333);
     border-radius: 5px;
     background: var(--surface-2, #20242a);

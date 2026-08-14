@@ -4029,8 +4029,24 @@ export const bespokeProbeImport = (
   pathsJson: string
 ): { success: boolean; error?: string; report?: string } => {
   try {
-    const paths = JSON.parse(pathsJson) as string[];
-    if (!paths || paths.length === 0) return { success: false, error: "Pick at least one master to probe." };
+    const raw = JSON.parse(pathsJson) as string[];
+    if (!raw || raw.length === 0) return { success: false, error: "Pick at least one master to probe." };
+
+    // ONE IMPORT PER MASTER, however many tiles use it. Three tiles of the same
+    // creative sent the same path three times and produced three complete
+    // copies of that project -- its comps, its precomps, its footage, all
+    // triplicated. The same master placed three times is three LAYERS pointing
+    // at one imported comp, not three imports.
+    const paths: string[] = [];
+    const uses: { [path: string]: number } = {};
+    for (let i = 0; i < raw.length; i++) {
+      const key = String(raw[i]);
+      if (uses[key] === undefined) {
+        uses[key] = 0;
+        paths.push(key);
+      }
+      uses[key]++;
+    }
 
     const lines: string[] = [];
     const root = app.project.rootFolder;
@@ -4038,14 +4054,18 @@ export const bespokeProbeImport = (
     const before: { [id: string]: boolean } = {};
     for (let i = 1; i <= app.project.numItems; i++) before[String(app.project.item(i).id)] = true;
     lines.push("Project held " + app.project.numItems + " items before importing.");
+    if (paths.length < raw.length) {
+      lines.push(raw.length + " tiles reference " + paths.length + " distinct masters -- importing each once.");
+    }
 
     app.beginUndoGroup("Bespoke probe (report only)");
     try {
       for (let p = 0; p < paths.length; p++) {
         const file = new File(paths[p]);
         const label = String(paths[p]).split("/").pop();
+        const used = uses[String(paths[p])] || 1;
         lines.push("");
-        lines.push("=== " + label + " ===");
+        lines.push("=== " + label + (used > 1 ? "   (used by " + used + " tiles, imported once)" : "") + " ===");
 
         const countBefore = app.project.numItems;
         try {

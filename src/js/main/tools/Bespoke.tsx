@@ -370,7 +370,6 @@ export const BespokeTool = () => {
             <p className="bsp-lbl bsp-lbl--section">Running order</p>
             <div className="bsp-timeline">
                 {segments.map((s, i) => {
-                    const span = Math.max(9, (s.seconds / Math.max(totalSecs, wantSecs || 1)) * 100);
                     const name = s.tiles.length === 0 ? "empty"
                         : s.tiles.length === 1 ? (s.tiles[0].creative || s.tiles[0].name)
                         : `${s.tiles.length} × ${s.tiles[0].creative || s.tiles[0].name}`;
@@ -378,7 +377,14 @@ export const BespokeTool = () => {
                         <button
                             key={s.id}
                             className={"bsp-seg" + (i === current ? " is-on" : "")}
-                            style={{ flex: `0 0 ${span}%` }}
+                            // GROW-proportional, not a percentage basis. Bases of
+                            // 70% + 30% already fill the row, so the gaps and the
+                            // fixed-width + button pushed it past the panel edge.
+                            // Growing from a zero basis shares whatever is LEFT
+                            // after those, which is the actual space available --
+                            // and keeps each segment's width proportional to its
+                            // duration, which is the point of the strip.
+                            style={{ flex: `${Math.max(s.seconds, 0.5)} 1 0%` }}
                             onClick={() => setCurrent(i)}
                         >
                             <span className="bsp-seg-name">{name}</span>
