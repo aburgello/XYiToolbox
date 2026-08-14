@@ -90,6 +90,8 @@ export const BespokeTool = () => {
     const [masters, setMasters] = useState<BespokeMaster[] | null>(null);
     const [loading, setLoading] = useState(false);
     const [status, setStatus] = useState<StatusMsg | null>(null);
+    const [probe, setProbe] = useState<string | null>(null);
+    const [probing, setProbing] = useState(false);
 
     // The deliverable being composed. Canvas and runtime come from the row this
     // is being built for; typed by hand until the row picker is wired.
@@ -158,6 +160,41 @@ export const BespokeTool = () => {
             }
         } catch {
             setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+        }
+    };
+
+    /**
+     * Imports the masters in this segment and reports what actually arrives.
+     *
+     * REPORT ONLY -- see bespokeProbeImport. It answers the questions the real
+     * builder cannot be written without: how much a master drags in with it,
+     * which comp inside is the one to place, whether footage resolves here, and
+     * whether the frame rates agree. Run it in a scratch project; one undo puts
+     * everything back.
+     */
+    const runProbe = async () => {
+        const seg0 = segments[current];
+        const paths = seg0 ? seg0.tiles.map((t) => t.path) : [];
+        if (paths.length === 0) {
+            setStatus({ text: "Add a master to this segment first — the probe imports what's in it.", type: "error" });
+            return;
+        }
+        setProbing(true);
+        setProbe(null);
+        setStatus(null);
+        try {
+            const res = (await evalTS("bespokeProbeImport", JSON.stringify(paths))) as unknown as
+                { success: boolean; error?: string; report?: string } | undefined;
+            if (res === undefined) throw new Error("no bridge");
+            if (!res.success) {
+                setStatus({ text: res.error || "The probe failed.", type: "error" });
+                return;
+            }
+            setProbe(res.report || "(no report)");
+        } catch {
+            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+        } finally {
+            setProbing(false);
         }
     };
 
@@ -429,10 +466,27 @@ export const BespokeTool = () => {
 
             {/* Says plainly what this does NOT do yet, rather than offering a
                 Build button that would have to guess how masters are placed. */}
-            <p className="bsp-pending">
-                <Layers size={11} /> Composition only for now — assembling this into an AE
-                project is the next step, once how masters sit in their panel is settled.
-            </p>
+            <div className="bsp-pending">
+                <p className="bsp-pending-note">
+                    <Layers size={11} /> Composition only for now — assembling this into an AE
+                    project is the next step, once how masters sit in their panel is settled.
+                </p>
+                <Tooltip text="Imports this segment's masters and reports what arrives. Changes nothing — run it in a scratch project and undo once after.">
+                    <button className="bsp-btn bsp-btn--ghost" onClick={runProbe} disabled={probing}>
+                        {probing ? "Probing…" : "Probe import"}
+                    </button>
+                </Tooltip>
+            </div>
+
+            {probe && (
+                <div className="bsp-probe">
+                    <div className="bsp-probe-head">
+                        <span>What actually arrived</span>
+                        <button className="bsp-probe-x" onClick={() => setProbe(null)} title="Dismiss"><X size={11} /></button>
+                    </div>
+                    <pre className="bsp-probe-body">{probe}</pre>
+                </div>
+            )}
         </div>
     );
 };
