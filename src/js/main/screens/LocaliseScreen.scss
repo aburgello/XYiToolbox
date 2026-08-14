@@ -641,3 +641,36 @@ $ls-shift: cubic-bezier(0.22, 1, 0.36, 1);    // colour, border, shadow
     opacity: 0.85;
     white-space: nowrap;
 }
+
+/* Shown while a tool's module mounts -- see ToolSkeleton. */
+.ls-toolskel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 18px;
+}
+
+.ls-toolskel-title,
+.ls-toolskel-sub,
+.ls-toolskel-row {
+    display: block;
+    border-radius: 4px;
+    background: var(--surface-2, #23272d);
+    animation: ls-toolskel-pulse 1.25s ease-in-out infinite;
+}
+
+.ls-toolskel-title { width: 180px; height: 13px; }
+.ls-toolskel-sub { width: 260px; height: 9px; }
+.ls-toolskel-rows { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.ls-toolskel-row { height: 28px; }
+
+@keyframes ls-toolskel-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.8; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ls-toolskel-title,
+    .ls-toolskel-sub,
+    .ls-toolskel-row { animation: none; opacity: 0.55; }
+}

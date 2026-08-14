@@ -68,6 +68,20 @@ const TOOLS_ROW: (UtilityEntry & { run?: string })[] = [
     { id: "edit-generator",    label: "Edit Generator", icon: Clapperboard },
 ];
 
+/** Placeholder furniture for a tool that hasn't mounted yet. Bounded by the
+ *  mount, so it isn't one of the perpetual animations the home screen bans. */
+const ToolSkeleton = () => (
+    <div className="ls-toolskel" aria-label="Loading the tool">
+        <span className="ls-toolskel-title" />
+        <span className="ls-toolskel-sub" />
+        <div className="ls-toolskel-rows">
+            {[68, 92, 54, 80].map((w, i) => (
+                <span className="ls-toolskel-row" key={i} style={{ width: `${w}%`, animationDelay: `${i * 0.09}s` }} />
+            ))}
+        </div>
+    </div>
+);
+
 const toolDescription = (id: string): string =>
     TOOLS.find((t) => t.id === id)?.description || "";
 
@@ -191,7 +205,11 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
                     <div className="ls-frame">
                         <div className="ls-tool-wrap" style={env}>
                         <ToolErrorBoundary toolLabel={tool.label}>
-                            <Suspense fallback={<p className="hint" style={{ padding: "16px" }}>Loading…</p>}>
+                            {/* A SHAPE, not the word "Loading". This covers the gap before a tool's
+                                module has mounted -- every Localise tool passes through it, and a
+                                bare line of text on an otherwise empty pane reads as a panel that
+                                has hung rather than one that is working. */}
+                            <Suspense fallback={<ToolSkeleton />}>
                                 <div className="tool-content-header ls-tool-header" style={env}>
                                     <motion.span
                                         className="ls-header-icon"
