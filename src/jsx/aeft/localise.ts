@@ -4010,26 +4010,6 @@ function bespokeOrientation(name: string, w: number, h: number): string {
 }
 
 // =============================================================================
-// BESPOKE PROBE -- what actually lands when you import a master.
-//
-// REPORT ONLY. Nothing is created, moved or saved; the import itself is the
-// sanctioned read-only path (app.project.importFile), so the masters on disk
-// are never touched. Everything it does sits inside one undo group, so a single
-// Cmd+Z puts the project back.
-//
-// It exists because the answers here decide how the real builder is written and
-// none of them can be read off the code:
-//
-//   - importing an .aep brings its WHOLE project. How much, exactly?
-//   - which comp inside is "the master"? The convention says the one named like
-//     the file, but real masters wrap that in a comp called "_V01".
-//   - does the footage resolve on this machine, or does AE prompt?
-//   - do the frame rates agree, or will tiling silently retime one panel?
-//
-// Guessing any of those produces three panels that are subtly the wrong thing,
-// which is exactly the class of bug that does not announce itself.
-// =============================================================================
-// =============================================================================
 // BESPOKE BUILD -- assemble a composition from several masters.
 //
 // Everything here is settled by what the probe reported on a real master rather
@@ -4117,7 +4097,7 @@ function bespokeDropVersionWrappers(folderName: string): number {
   return doomed.length;
 }
 
-export const bespokeBuild = (planJson: string): { success: boolean; error?: string; report?: string } => {
+export const bespokeBuild = (planJson: string): { success: boolean; error?: string; report?: string; saved?: boolean; savedTo?: string } => {
   try {
     const plan = JSON.parse(planJson) as BespokePlan;
     if (!plan || !plan.segments || plan.segments.length === 0) {
@@ -4325,6 +4305,7 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
       let finished: CompItem = out;
       let frontcardOk = false;
       let saved = false;
+      let savedTo = "";
       try {
         const wrapped = frontcardWrap(out);
         finished = wrapped.comp;
@@ -4394,6 +4375,7 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
               lines.push("");
               lines.push("saved  " + outFile.fsName);
               saved = true;
+              savedTo = outFile.fsName;
             } catch (e) {
               lines.push("");
               lines.push("NOT SAVED: " + e.toString());
@@ -4452,128 +4434,12 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
     } finally {
       app.endUndoGroup();
     }
-    return { success: true, report: lines.join("\n") };
+    return { success: true, report: lines.join("\n"), saved: saved, savedTo: savedTo };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
 };
 
-export const bespokeProbeImport = (
-  pathsJson: string
-): { success: boolean; error?: string; report?: string } => {
-  try {
-    const raw = JSON.parse(pathsJson) as string[];
-    if (!raw || raw.length === 0) return { success: false, error: "Pick at least one master to probe." };
-
-    // ONE IMPORT PER MASTER, however many tiles use it. Three tiles of the same
-    // creative sent the same path three times and produced three complete
-    // copies of that project -- its comps, its precomps, its footage, all
-    // triplicated. The same master placed three times is three LAYERS pointing
-    // at one imported comp, not three imports.
-    const paths: string[] = [];
-    const uses: { [path: string]: number } = {};
-    for (let i = 0; i < raw.length; i++) {
-      const key = String(raw[i]);
-      if (uses[key] === undefined) {
-        uses[key] = 0;
-        paths.push(key);
-      }
-      uses[key]++;
-    }
-
-    const lines: string[] = [];
-    const root = app.project.rootFolder;
-
-    const before: { [id: string]: boolean } = {};
-    for (let i = 1; i <= app.project.numItems; i++) before[String(app.project.item(i).id)] = true;
-    lines.push("Project held " + app.project.numItems + " items before importing.");
-    if (paths.length < raw.length) {
-      lines.push(raw.length + " tiles reference " + paths.length + " distinct masters -- importing each once.");
-    }
-
-    app.beginUndoGroup("Bespoke probe (report only)");
-    try {
-      for (let p = 0; p < paths.length; p++) {
-        const file = new File(paths[p]);
-        const label = String(paths[p]).split("/").pop();
-        const used = uses[String(paths[p])] || 1;
-        lines.push("");
-        lines.push("=== " + label + (used > 1 ? "   (used by " + used + " tiles, imported once)" : "") + " ===");
-
-        const countBefore = app.project.numItems;
-        try {
-          app.project.importFile(new ImportOptions(file));
-        } catch (e) {
-          lines.push("  IMPORT FAILED: " + e.toString());
-          continue;
-        }
-        const added = app.project.numItems - countBefore;
-        lines.push("  added " + added + " project items");
-
-        // What is new, and what kind of thing each one is. Duck-typed
-        // throughout -- instanceof against an AE host class is not reliable.
-        const comps: CompItem[] = [];
-        let footage = 0;
-        let missing = 0;
-        let folderName = "";
-        for (let i = 1; i <= app.project.numItems; i++) {
-          const item = app.project.item(i);
-          if (before[String(item.id)]) continue;
-          if (typeof (item as CompItem).numLayers === "number") {
-            comps.push(item as CompItem);
-          } else if (typeof (item as FootageItem).mainSource !== "undefined") {
-            footage++;
-            if ((item as FootageItem).footageMissing) missing++;
-          } else if (typeof (item as FolderItem).numItems === "number") {
-            // The wrapper folder an imported project arrives in.
-            if (item.parentFolder === root && folderName === "") folderName = String(item.name);
-          }
-          before[String(item.id)] = true;
-        }
-
-        lines.push("  arrived in folder: " + (folderName || "(none at the root)"));
-        lines.push("  " + comps.length + " comps, " + footage + " footage items"
-          + (missing > 0 ? " -- " + missing + " MISSING ON THIS MACHINE" : ""));
-
-        // The comps a builder would have to choose between.
-        const stem = String(label).replace(/\.aep$/i, "");
-        for (let c = 0; c < comps.length; c++) {
-          const comp = comps[c];
-          let tag = "";
-          if (comp.name === stem) tag = "  <- named like the file";
-          if (/^_V\d+$/.test(comp.name)) tag = "  <- the _V01 wrapper";
-
-          // DOES THIS COMP CARRY A FRONTCARD? The whole tiling question turns
-          // on it: three panels must each be the CLEAN creative, with a single
-          // frontcard over the finished canvas -- not three frontcards side by
-          // side. The belief is that the versioned comp has one and the
-          // unversioned one does not; this is what settles it.
-          let frontcards = 0;
-          for (let L = 1; L <= comp.numLayers; L++) {
-            if (String(comp.layer(L).name).indexOf("Frontcard") !== -1) frontcards++;
-          }
-
-          lines.push("    " + comp.name + "  " + comp.width + "x" + comp.height
-            + "  " + Math.round(comp.duration * 1000) / 1000 + "s  "
-            + Math.round(comp.frameRate * 1000) / 1000 + "fps  "
-            + comp.numLayers + " layers"
-            + (frontcards > 0 ? "  [" + frontcards + " FRONTCARD]" : "  [clean]")
-            + tag);
-        }
-      }
-    } finally {
-      app.endUndoGroup();
-    }
-
-    lines.push("");
-    lines.push("Project now holds " + app.project.numItems + " items. Nothing was saved -- one undo puts it back.");
-    lines.push("");
-    lines.push("Tile from the [clean] comps; the [FRONTCARD] one is the render wrapper.");
-    return { success: true, report: lines.join("\n") };
-  } catch (e) {
-    return { success: false, error: e.toString() };
-  }
-};
 
 export const bespokeListMasters = (
   mastersRoot: string

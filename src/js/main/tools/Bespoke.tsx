@@ -28,7 +28,7 @@
 // step. Shipping a Build button that guessed would be worse than not having one.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { AlertCircle, Globe2, LayoutGrid, Layers, Library, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, Square as SquareIcon, Trash2, X } from "lucide-react";
+import { AlertCircle, Globe2, LayoutGrid, Library, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, Square as SquareIcon, Trash2, X } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
@@ -98,8 +98,7 @@ export const BespokeTool = () => {
     const [masters, setMasters] = useState<BespokeMaster[] | null>(null);
     const [loading, setLoading] = useState(false);
     const [status, setStatus] = useState<StatusMsg | null>(null);
-    const [probe, setProbe] = useState<string | null>(null);
-    const [probing, setProbing] = useState(false);
+    const [report, setReport] = useState<string | null>(null);
     const [building, setBuilding] = useState(false);
 
     // The deliverable being composed. Canvas and runtime come from the row this
@@ -247,45 +246,10 @@ export const BespokeTool = () => {
         }
     };
 
-    /**
-     * Imports the masters in this segment and reports what actually arrives.
-     *
-     * REPORT ONLY -- see bespokeProbeImport. It answers the questions the real
-     * builder cannot be written without: how much a master drags in with it,
-     * which comp inside is the one to place, whether footage resolves here, and
-     * whether the frame rates agree. Run it in a scratch project; one undo puts
-     * everything back.
-     */
-    const runProbe = async () => {
-        const seg0 = segments[current];
-        const paths = seg0 ? seg0.tiles.map((t) => t.path) : [];
-        if (paths.length === 0) {
-            setStatus({ text: "Add a master to this segment first — the probe imports what's in it.", type: "error" });
-            return;
-        }
-        setProbing(true);
-        setProbe(null);
-        setStatus(null);
-        try {
-            const res = (await evalTS("bespokeProbeImport", JSON.stringify(paths))) as unknown as
-                { success: boolean; error?: string; report?: string } | undefined;
-            if (res === undefined) throw new Error("no bridge");
-            if (!res.success) {
-                setStatus({ text: res.error || "The probe failed.", type: "error" });
-                return;
-            }
-            setProbe(res.report || "(no report)");
-        } catch {
-            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
-        } finally {
-            setProbing(false);
-        }
-    };
-
-    /** Assembles the whole composition. Imports read-only, saves nothing. */
+    /** Assembles the whole composition and, when a country is set, files it. */
     const runBuild = async () => {
         setBuilding(true);
-        setProbe(null);
+        setReport(null);
         setStatus(null);
         try {
             const plan = {
@@ -302,14 +266,21 @@ export const BespokeTool = () => {
                 })),
             };
             const res = (await evalTS("bespokeBuild", JSON.stringify(plan))) as unknown as
-                { success: boolean; error?: string; report?: string } | undefined;
+                { success: boolean; error?: string; report?: string; saved?: boolean; savedTo?: string } | undefined;
             if (res === undefined) throw new Error("no bridge");
             if (!res.success) {
                 setStatus({ text: res.error || "The build failed.", type: "error" });
                 return;
             }
-            setProbe(res.report || "(built)");
-            setStatus({ text: "Built. Nothing was saved — save it where you mean to.", type: "success" });
+            setReport(res.report || "(built)");
+            // What actually happened, from the host rather than inferred here --
+            // a territory being set is not the same as the save succeeding.
+            setStatus({
+                text: res.saved
+                    ? `Built and saved to ${(res.savedTo || "").split("/").slice(-2).join("/")}`
+                    : "Built — no country set, so it hasn't been filed.",
+                type: "success",
+            });
         } catch {
             setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
         } finally {
@@ -717,29 +688,20 @@ export const BespokeTool = () => {
             {/* Says plainly what this does NOT do yet, rather than offering a
                 Build button that would have to guess how masters are placed. */}
             <div className="bsp-pending">
-                <p className="bsp-pending-note">
-                    <Layers size={11} /> Masters are imported read-only and nothing is saved —
-                    one undo puts the project back.
-                </p>
-                <Tooltip text="Imports this segment's masters and reports what arrives, without building anything.">
-                    <button className="bsp-btn bsp-btn--ghost" onClick={runProbe} disabled={probing || building}>
-                        {probing ? "Probing…" : "Probe import"}
-                    </button>
-                </Tooltip>
                 <Tooltip text={blockers.length ? "Every segment needs at least one creative" : "Import the masters and assemble the composition"}>
-                    <button className="bsp-btn" onClick={runBuild} disabled={building || probing || blockers.length > 0}>
+                    <button className="bsp-btn" onClick={runBuild} disabled={building || blockers.length > 0}>
                         {building ? "Building…" : "Build composition"}
                     </button>
                 </Tooltip>
             </div>
 
-            {probe && (
+            {report && (
                 <div className="bsp-probe">
                     <div className="bsp-probe-head">
-                        <span>Report</span>
-                        <button className="bsp-probe-x" onClick={() => setProbe(null)} title="Dismiss"><X size={11} /></button>
+                        <span>What the build did</span>
+                        <button className="bsp-probe-x" onClick={() => setReport(null)} title="Dismiss"><X size={11} /></button>
                     </div>
-                    <pre className="bsp-probe-body">{probe}</pre>
+                    <pre className="bsp-probe-body">{report}</pre>
                 </div>
             )}
         </div>
