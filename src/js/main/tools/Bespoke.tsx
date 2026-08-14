@@ -34,6 +34,7 @@ import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
 import Dropdown from "../Dropdown";
 import CheckboxToggle from "../CheckboxToggle";
+import LoadingChatter from "../LoadingChatter";
 import "../shared.scss";
 import "./Bespoke.scss";
 
@@ -681,6 +682,18 @@ export const BespokeTool = () => {
                             <span className="bsp-skel-tag" />
                         </span>
                     ))}
+                    {loading && (
+                        <LoadingChatter
+                            className="bsp-chatter"
+                            lines={[
+                                "Walking the masters folder…",
+                                "Every .aep under it gets opened for its name",
+                                "On a big campaign this is a few hundred files",
+                                "It's cached after this — the next open is instant",
+                                "Still going…",
+                            ]}
+                        />
+                    )}
                     {!loading && !masters && <p className="bsp-none">Pick a masters folder to browse.</p>}
                     {!loading && masters && matches.length === 0 && <p className="bsp-none">No master matches those filters.</p>}
                     {!loading && matches.map((m) => (

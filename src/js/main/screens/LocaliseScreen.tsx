@@ -9,6 +9,7 @@
 import React, { Suspense, useState, useRef, useEffect } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import gsap from "gsap";
+import LoadingChatter from "../LoadingChatter";
 import {    Layers,
  ArrowLeft, ArrowRight, BookOpen, FileSignature, Stamp, ClipboardCheck, Clapperboard, FileText, Copy, Image as ImageIcon, FileSpreadsheet, Rabbit, ScanSearch, Repeat } from "lucide-react";
 import { TOOLS, categoryStyleVars, type ToolProps } from "../toolRegistry";
@@ -79,6 +80,13 @@ const ToolSkeleton = () => (
                 <span className="ls-toolskel-row" key={i} style={{ width: `${w}%`, animationDelay: `${i * 0.09}s` }} />
             ))}
         </div>
+        <LoadingChatter
+            lines={[
+                "Opening the tool…",
+                "Still opening — the panel bundle is a big one",
+            ]}
+            intervalMs={3200}
+        />
     </div>
 );
 
