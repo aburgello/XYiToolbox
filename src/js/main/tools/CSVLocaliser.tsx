@@ -18,6 +18,7 @@ import { motion, useReducedMotion } from "motion/react";
 import { territoryNameFlag } from "../lib/jobsFeed";
 import { takePendingBatch, type PendingBatch } from "../lib/localiseHandoff";
 import {
+    Layers,
     FolderSearch,
     FolderPlus,
     Share2,
@@ -32,7 +33,6 @@ import {
     ChevronDown,
     Check,
     Search,
-    ClipboardPaste,
     RefreshCw,
     Image as ImageIcon,
     Wand2,
@@ -46,6 +46,7 @@ import {
 
 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
+import type { ToolProps } from "../toolRegistry";
 import { fs, path } from "../../lib/cep/node";
 import CheckboxToggle from "../CheckboxToggle";
 import Tooltip from "../Tooltip";
@@ -546,7 +547,7 @@ function baseName(p: string): string {
     return bits[bits.length - 1] || "";
 }
 
-const CSVLocaliserTool = () => {
+const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
     const [campaignName, setCampaignName] = useState("");
     const [aepPath, setAepPath] = useState("");
@@ -1006,8 +1007,6 @@ const CSVLocaliserTool = () => {
     };
 
     // paste fallback
-    const [pasteOpen, setPasteOpen] = useState(false);
-    const [csvText, setCsvText] = useState("");
 
     const refreshCampaigns = async () => {
         try {
@@ -1560,27 +1559,6 @@ const CSVLocaliserTool = () => {
             if (!res.success) setNotice(res.error || "Couldn't open that folder.");
         } catch (e: any) {
             setNotice(e?.message || "No CEP bridge — open this panel inside After Effects.");
-        }
-    };
-
-    const runPaste = async () => {
-        setNotice(null);
-        setBusy(true);
-        try {
-            const res = await evalTS("csvLocaliserRun", aepPath, csvText, skipExisting, runMcIt);
-            if (res === undefined) throw new Error("no bridge");
-            if (res.success) {
-                const rows = (res as { rows?: CsvLocRow[] }).rows || [];
-                const problems = rows.filter((r) => r.status === "no-master" || r.status === "error").length;
-                setNotice((res.message || "Run finished.") + (problems ? ` — ${problems} row(s) had no master match.` : ""));
-                if (rows.length) showLocGenReport(csvResultToLocGenReport(res as any, "CSV Localiser (pasted)"));
-            } else {
-                setNotice(res.error || "Something went wrong.");
-            }
-        } catch (e) {
-            setNotice("No CEP bridge — open this panel inside After Effects to run it.");
-        } finally {
-            setBusy(false);
         }
     };
 
@@ -2348,12 +2326,32 @@ const CSVLocaliserTool = () => {
                 </div>
             )}
 
-            {/* Build-a-batch — visual alternative to Paste CSV */}
-            <div className="specs-fallback specs-build">
-                <button className="specs-fallback-toggle" onClick={() => setBuildOpen((v) => !v)}>
-                    {buildOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                    <Wand2 size={13} /> Build a batch
+            {/* TWO ROUTES, AS BUTTONS. These were disclosure triangles reading
+                "Build a batch" and "Paste a CSV instead" -- the second is gone
+                (nobody pastes a CSV now the builder exists) and the first was
+                doing too much work as a caret. Bespoke sits beside it because
+                it answers the same question a row poses: this one isn't a
+                single master. */}
+            <div className="specs-routes">
+                <button
+                    className={"specs-route" + (buildOpen ? " is-open" : "")}
+                    onClick={() => setBuildOpen((v) => !v)}
+                >
+                    <Wand2 size={14} />
+                    <span className="specs-route-t">Build a Batch</span>
+                    <span className="specs-route-s">Pick creatives and sizes by hand</span>
                 </button>
+                <button
+                    className="specs-route"
+                    onClick={() => onSelectTool?.("bespoke")}
+                >
+                    <Layers size={14} />
+                    <span className="specs-route-t">Bespoke It</span>
+                    <span className="specs-route-s">Several masters in one deliverable</span>
+                </button>
+            </div>
+
+            <div className="specs-fallback specs-build specs-build--headless">
                 {buildOpen && (
                     <div className="specs-fallback-body specs-build-body">
                         {handoff && (
@@ -2543,22 +2541,6 @@ const CSVLocaliserTool = () => {
                                 <PlayCircle size={14} /> Localise {buildComplete.length || ""} row{buildComplete.length === 1 ? "" : "s"}
                             </button>
                         </div>
-                    </div>
-                )}
-            </div>
-
-            {/* Paste-CSV fallback */}
-            <div className="specs-fallback">
-                <button className="specs-fallback-toggle" onClick={() => setPasteOpen((v) => !v)}>
-                    {pasteOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                    <ClipboardPaste size={13} /> Paste a CSV instead
-                </button>
-                {pasteOpen && (
-                    <div className="specs-fallback-body">
-                        <textarea value={csvText} onChange={(e) => setCsvText(e.target.value)} rows={8} placeholder="Paste a [METADATA] block + Artwork/Campaign/Size/Duration rows…" />
-                        <button disabled={busy || !csvText.trim() || !aepPath} onClick={runPaste}>
-                            <PlayCircle size={14} /> Run pasted CSV
-                        </button>
                     </div>
                 )}
             </div>

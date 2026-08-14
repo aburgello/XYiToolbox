@@ -3987,6 +3987,22 @@ export interface BespokeMaster {
   /** Bare digits, matching the rest of the toolbox. */
   duration: string;
   territory: string;
+  /** LANDSCAPE | PORTRAIT | SQUARE | QUAD. Derived HERE, not taken from the
+   *  masters index: that only ever emits Landscape or Portrait from the ratio,
+   *  which would leave the Square and Quad pills permanently empty. */
+  orientation: string;
+}
+
+/**
+ * QUAD IS A KEYWORD, NOT A RATIO -- a quad master is whatever the studio tagged
+ * QUAD in its name, and no width/height test finds it. Everything else falls
+ * out of the ratio.
+ */
+function bespokeOrientation(name: string, w: number, h: number): string {
+  if (String(name).toUpperCase().indexOf("QUAD") !== -1) return "QUAD";
+  if (!w || !h) return "";
+  if (w === h) return "SQUARE";
+  return w > h ? "LANDSCAPE" : "PORTRAIT";
 }
 
 export const bespokeListMasters = (
@@ -4023,6 +4039,7 @@ export const bespokeListMasters = (
         height: Number(wh[1]) || 0,
         duration: meta.duration ? meta.duration.replace("sec", "") : "",
         territory: meta.territory || "",
+        orientation: bespokeOrientation(stem, Number(wh[0]) || 0, Number(wh[1]) || 0),
       });
     }
     return { success: true, masters: out };

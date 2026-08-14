@@ -2472,3 +2472,56 @@ $rail-gap: 10px;   // exactly the flex gap between rows, so segments tile
     margin-top: 4px;
     color: #d9a441;
 }
+
+/* Two routes out of the localiser, as buttons rather than disclosure carets.
+   Nested under .specs-tool with the rest of the .specs-* rules -- they are
+   scoped, not global. */
+.specs-tool {
+    .specs-routes {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 10px;
+    }
+
+    .specs-route {
+        display: grid;
+        // A <button> that is a flex/grid container does not stretch its children
+        // in Chromium unless told to.
+        justify-items: start;
+        align-content: center;
+        gap: 1px;
+        padding: 10px 13px;
+        border: 1px solid var(--surface-border, #34383f);
+        border-radius: 8px;
+        // index.scss's global button:hover/:active paints over any custom
+        // button, so both are re-declared here.
+        background: var(--surface-1, #1c1f24);
+        color: #c8cdd4;
+        text-align: left;
+        cursor: pointer;
+
+        &:hover { background: #23272e; border-color: #4a5560; }
+        &:active { background: #191c21; }
+
+        &.is-open {
+            background: rgba(45, 212, 191, 0.1);
+            border-color: #2dd4bf;
+            color: #7fe7d8;
+        }
+        &.is-open:hover { background: rgba(45, 212, 191, 0.16); }
+
+        svg { margin-bottom: 3px; }
+    }
+
+    .specs-route-t { font-size: 12px; font-weight: 650; }
+    .specs-route-s { font-size: 10px; color: #767c88; }
+
+    /* The builder body keeps its own styling but loses its caret header, which
+       the route button above now owns. */
+    .specs-build--headless > .specs-fallback-body { margin-top: 8px; }
+
+    @media (max-width: 420px) {
+        .specs-routes { grid-template-columns: 1fr; }
+    }
+}

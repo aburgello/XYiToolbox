@@ -28,7 +28,7 @@
 // step. Shipping a Build button that guessed would be worse than not having one.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { AlertCircle, Layers, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { AlertCircle, LayoutGrid, Layers, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, Square as SquareIcon, Trash2, X } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
@@ -47,7 +47,18 @@ interface BespokeMaster {
     height: number;
     duration: string;
     territory: string;
+    orientation: string;
 }
+
+/** OV Library's four, same order and same icons, so the two read alike. */
+type OrientationKey = "LANDSCAPE" | "PORTRAIT" | "SQUARE" | "QUAD";
+const ORIENTATION_ORDER: OrientationKey[] = ["LANDSCAPE", "PORTRAIT", "SQUARE", "QUAD"];
+const ORIENTATION_ICON: Record<OrientationKey, React.ComponentType<{ size?: number }>> = {
+    LANDSCAPE: RectangleHorizontal,
+    PORTRAIT: RectangleVertical,
+    SQUARE: SquareIcon,
+    QUAD: LayoutGrid,
+};
 
 interface Segment {
     id: number;
@@ -89,8 +100,13 @@ export const BespokeTool = () => {
     const [segments, setSegments] = useState<Segment[]>([{ id: 0, tiles: [], seconds: 10 }]);
     const [current, setCurrent] = useState(0);
 
-    const [query, setQuery] = useState("");
-    const [sizeFilter, setSizeFilter] = useState("");
+    // FILTERS, in OV Library's shape: pick a creative, then narrow by
+    // orientation. A flat search box over 200 filenames was the thing that made
+    // this feel unlike the rest of the app -- you had to already know the name.
+    const [creative, setCreative] = useState("");
+    const [orients, setOrients] = useState<Record<OrientationKey, boolean>>({
+        LANDSCAPE: false, PORTRAIT: false, SQUARE: false, QUAD: false,
+    });
     const [durFilter, setDurFilter] = useState("");
 
     // --- masters -----------------------------------------------------------
@@ -145,32 +161,53 @@ export const BespokeTool = () => {
         }
     };
 
-    // --- filters, OV Library's three ---------------------------------------
-    const sizes = useMemo(() => {
-        const out: string[] = [];
-        for (const m of masters || []) if (m.size && out.indexOf(m.size) === -1) out.push(m.size);
-        return out.sort();
+    // --- filters ------------------------------------------------------------
+    /** Every creative on the shelf, with how many masters each has. */
+    const creatives = useMemo(() => {
+        const counts: Record<string, number> = {};
+        for (const m of masters || []) {
+            const key = m.creative || m.name;
+            counts[key] = (counts[key] || 0) + 1;
+        }
+        return Object.keys(counts).sort().map((name) => ({ name, count: counts[name] }));
     }, [masters]);
+
+    /** Orientation counts WITHIN the chosen creative, so a pill that would
+     *  return nothing reads as empty rather than looking available. */
+    const orientCounts = useMemo(() => {
+        const counts: Record<string, number> = { LANDSCAPE: 0, PORTRAIT: 0, SQUARE: 0, QUAD: 0 };
+        for (const m of masters || []) {
+            if (creative && (m.creative || m.name) !== creative) continue;
+            if (counts[m.orientation] !== undefined) counts[m.orientation]++;
+        }
+        return counts;
+    }, [masters, creative]);
 
     const durations = useMemo(() => {
         const out: string[] = [];
-        for (const m of masters || []) if (m.duration && out.indexOf(m.duration) === -1) out.push(m.duration);
+        for (const m of masters || []) {
+            if (creative && (m.creative || m.name) !== creative) continue;
+            if (m.duration && out.indexOf(m.duration) === -1) out.push(m.duration);
+        }
         return out.sort((a, b) => Number(a) - Number(b));
-    }, [masters]);
+    }, [masters, creative]);
+
+    const anyOrient = ORIENTATION_ORDER.some((k) => orients[k]);
 
     const matches = useMemo(() => {
-        const q = query.trim().toLowerCase();
         const out: BespokeMaster[] = [];
         for (const m of masters || []) {
-            if (sizeFilter && m.size !== sizeFilter) continue;
+            if (creative && (m.creative || m.name) !== creative) continue;
+            // No pill selected means no orientation filter, not "none of them".
+            if (anyOrient && !orients[m.orientation as OrientationKey]) continue;
             if (durFilter && m.duration !== durFilter) continue;
-            // indexOf, never a built regex -- these are real filenames.
-            if (q && m.name.toLowerCase().indexOf(q) === -1 && m.creative.toLowerCase().indexOf(q) === -1) continue;
             out.push(m);
             if (out.length >= MAX_MATCHES) break;
         }
-        return out;
-    }, [masters, query, sizeFilter, durFilter]);
+        // Widest first, then longest: a tile picker is usually reaching for the
+        // biggest thing that fits.
+        return out.sort((a, b) => b.width - a.width || Number(b.duration) - Number(a.duration));
+    }, [masters, creative, orients, anyOrient, durFilter]);
 
     // --- composition -------------------------------------------------------
     const seg = segments[Math.min(current, segments.length - 1)];
@@ -328,17 +365,43 @@ export const BespokeTool = () => {
             {/* --- the picker ----------------------------------------------- */}
             <p className="bsp-lbl bsp-lbl--section">Add a master to this segment</p>
             <div className="bsp-picker">
+                {/* Creative first, the way OV Library asks it -- the question is
+                    "which artwork", not "what was that file called". */}
+                <div className="bsp-creatives">
+                    <button
+                        className={"bsp-creative" + (creative === "" ? " is-on" : "")}
+                        onClick={() => setCreative("")}
+                    >
+                        All<em>{(masters || []).length}</em>
+                    </button>
+                    {creatives.map((c) => (
+                        <button
+                            key={c.name}
+                            className={"bsp-creative" + (creative === c.name ? " is-on" : "")}
+                            onClick={() => setCreative(creative === c.name ? "" : c.name)}
+                        >
+                            <span className="bsp-creative-sw" style={{ background: hueFor(c.name) }} />
+                            {c.name}<em>{c.count}</em>
+                        </button>
+                    ))}
+                </div>
+
                 <div className="bsp-filters">
-                    <input
-                        className="bsp-input"
-                        placeholder="Search creative or filename…"
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                    />
-                    <select className="bsp-input bsp-input--sel" value={sizeFilter} onChange={(e) => setSizeFilter(e.target.value)}>
-                        <option value="">Any size</option>
-                        {sizes.map((s) => <option key={s} value={s}>{s}</option>)}
-                    </select>
+                    {ORIENTATION_ORDER.map((key) => {
+                        const Icon = ORIENTATION_ICON[key];
+                        const n = orientCounts[key] || 0;
+                        return (
+                            <button
+                                key={key}
+                                className={"bsp-chip" + (orients[key] ? " is-on" : "")}
+                                disabled={n === 0}
+                                onClick={() => setOrients({ ...orients, [key]: !orients[key] })}
+                            >
+                                <Icon size={11} />
+                                {key.charAt(0) + key.slice(1).toLowerCase()}
+                            </button>
+                        );
+                    })}
                     <select className="bsp-input bsp-input--sel" value={durFilter} onChange={(e) => setDurFilter(e.target.value)}>
                         <option value="">Any duration</option>
                         {durations.map((d) => <option key={d} value={d}>{d}s</option>)}

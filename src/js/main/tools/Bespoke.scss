@@ -275,13 +275,85 @@
     padding: 9px;
 }
 
+/* Creative chips: the primary filter, the way OV Library asks it. Scrollable
+   rather than wrapping to five rows on a campaign with many creatives. */
+.bsp-creatives {
+    display: flex;
+    gap: 5px;
+    overflow-x: auto;
+    padding-bottom: 5px;
+    margin-bottom: 7px;
+}
+
+.bsp-creative {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    border: 1px solid var(--surface-border, #363636);
+    border-radius: 14px;
+    background: var(--surface-0, #121212);
+    color: #a8aeb6;
+    font-size: 10.5px;
+    white-space: nowrap;
+    cursor: pointer;
+
+    em {
+        font-style: normal;
+        font-family: ui-monospace, Menlo, monospace;
+        font-size: 9px;
+        color: #6f757f;
+    }
+
+    &:hover { background: #1c1c1c; color: #ddd; }
+    &:active { background: #101010; }
+
+    &.is-on {
+        background: rgba(45, 212, 191, 0.13);
+        border-color: #2dd4bf;
+        color: #7fe7d8;
+    }
+    // Beats the shared :hover, which would grey out the selected chip.
+    &.is-on:hover { background: rgba(45, 212, 191, 0.2); color: #a5f3e6; }
+    &.is-on em { color: #5eead4; }
+}
+
+.bsp-creative-sw { width: 7px; height: 7px; border-radius: 2px; flex: none; }
+
 .bsp-filters {
     display: flex;
-    gap: 6px;
+    align-items: center;
+    gap: 5px;
     flex-wrap: wrap;
     margin-bottom: 8px;
+}
 
-    .bsp-input:first-child { flex: 1; min-width: 120px; width: auto; }
+.bsp-chip {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 9px;
+    border: 1px solid var(--surface-border, #363636);
+    border-radius: 13px;
+    background: var(--surface-0, #121212);
+    color: #9aa1ac;
+    font-size: 10px;
+    cursor: pointer;
+
+    &:hover:not(:disabled) { background: #1c1c1c; color: #ddd; }
+    &:active:not(:disabled) { background: #101010; }
+
+    &.is-on {
+        background: rgba(45, 212, 191, 0.13);
+        border-color: #2dd4bf;
+        color: #7fe7d8;
+    }
+    &.is-on:hover { background: rgba(45, 212, 191, 0.2); }
+
+    // An orientation with nothing behind it reads as unavailable rather than
+    // as a filter that silently returns nothing.
+    &:disabled { opacity: 0.32; cursor: default; }
 }
 
 .bsp-list {
