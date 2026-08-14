@@ -143,6 +143,7 @@ export const BespokeTool = () => {
     // Constraints while dragging a corner. Ratio keeps a region from ever
     // introducing a crop it did not have; locking a side is for the common case
     // of a panel that must stay the full height or width of the screen.
+    const [refMismatch, setRefMismatch] = useState("");
     const [lockRatio, setLockRatio] = useState(true);
     const [lockW, setLockW] = useState(false);
     const [lockH, setLockH] = useState(false);
@@ -275,7 +276,21 @@ export const BespokeTool = () => {
     const pickReference = async () => {
         try {
             const picked = await evalTS("bespokeSelectReference");
-            if (typeof picked === "string" && picked) setRefPath(picked);
+            if (typeof picked === "string" && picked) {
+                setRefPath(picked);
+                setRefMismatch("");
+                // THE REFERENCE IS NAMED AFTER THE DELIVERABLE, so it carries
+                // the canvas, the runtime and the name -- typing them again
+                // from the same string is three chances to get one wrong.
+                // Both naming conventions, per the masters rule: size with or
+                // without "px", duration as "s" or "sec".
+                const stem = (picked.split("/").pop() || "").replace(/\.(jpe?g|png)$/i, "");
+                const size = stem.match(/(\d+)x(\d+)(?:px)?/);
+                if (size) { setCanvasW(size[1]); setCanvasH(size[2]); }
+                const dur = stem.match(/_(\d+)s(?:ec)?(?:_|$)/);
+                if (dur) setRuntime(dur[1]);
+                if (!nameTouched && stem) setOutName(stem);
+            }
         } catch {
             setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
         }
@@ -718,7 +733,29 @@ export const BespokeTool = () => {
                     >
                         {/* file:// because the panel is itself a file:// page --
                             CEP has no server to fetch a local image through. */}
-                        {refPath && <img className="bsp-canvas-ref" src={`file://${refPath}`} alt="" />}
+                        {refPath && (
+                            <img
+                                className="bsp-canvas-ref"
+                                src={`file://${refPath}`}
+                                alt=""
+                                // The FILENAME is the deliverable's spec, so it
+                                // wins; the image is checked against it rather
+                                // than trusted. A reference exported at the
+                                // wrong size would otherwise silently become
+                                // the thing everything is traced over.
+                                onLoad={(e) => {
+                                    const img = e.currentTarget;
+                                    const cw = Number(canvasW) || 0;
+                                    const ch = Number(canvasH) || 0;
+                                    setRefMismatch(
+                                        cw && ch && (img.naturalWidth !== cw || img.naturalHeight !== ch)
+                                            ? `Reference is ${img.naturalWidth}×${img.naturalHeight} but the name says ${cw}×${ch} — tracing over it will be off.`
+                                            : ""
+                                    );
+                                }}
+                                onError={() => setRefMismatch("Couldn't load that reference image.")}
+                            />
+                        )}
                         {regions.map((r, i) => {
                             const cw = Number(canvasW) || 1920;
                             const ch = Number(canvasH) || 1080;
@@ -756,6 +793,12 @@ export const BespokeTool = () => {
                             <span className="bsp-canvas-empty">Pick a master below to drop the first region in.</span>
                         )}
                     </div>
+
+                    {refMismatch !== "" && (
+                        <ul className="bsp-problems">
+                            <li><AlertCircle size={10} /> {refMismatch}</li>
+                        </ul>
+                    )}
 
                     {regions[selRegion] && (
                         <div className="bsp-segctl">
