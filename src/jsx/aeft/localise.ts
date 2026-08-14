@@ -4025,6 +4025,185 @@ function bespokeOrientation(name: string, w: number, h: number): string {
 // Guessing any of those produces three panels that are subtly the wrong thing,
 // which is exactly the class of bug that does not announce itself.
 // =============================================================================
+// =============================================================================
+// BESPOKE BUILD -- assemble a composition from several masters.
+//
+// Everything here is settled by what the probe reported on a real master rather
+// than assumed:
+//
+//   - ONE IMPORT PER MASTER. A master drags in ~70 project items; three tiles of
+//     the same creative are three LAYERS on one imported comp, not three copies.
+//   - THE COMP TO PLACE is the one in Composition/Main whose name is not _V<n>.
+//     Not "the clean one" -- the probe showed fourteen comps arrive and most are
+//     clean precomps. Not the _V01 wrapper either: that carries the 5s frontcard
+//     and runs 15s where the edit runs 10s, and three tiles would mean three
+//     frontcards side by side.
+//   - FRAME RATE comes from the first master rather than a default, since the
+//     probe showed 23.976 throughout and a comp built at 25 would retime silently.
+//
+// MASTERS ARE NEVER TOUCHED. importFile is the sanctioned read-only path, the
+// build creates a new comp in the CURRENT project, and nothing is saved -- the
+// artist saves where they mean to.
+// =============================================================================
+interface BespokePlanTile { path: string; }
+interface BespokePlanSegment { seconds: number; tiles: BespokePlanTile[]; }
+interface BespokePlan {
+  canvasWidth: number;
+  canvasHeight: number;
+  segments: BespokePlanSegment[];
+  name?: string;
+}
+
+/** The comp a tile should place: Composition/Main, minus the _V<n> wrapper. */
+function bespokeMainComp(folderName: string): CompItem | null {
+  let best: CompItem | null = null;
+  for (let i = 1; i <= app.project.numItems; i++) {
+    const item = app.project.item(i);
+    if (typeof (item as CompItem).numLayers !== "number") continue;
+    // Walk up to check this comp really came from THIS master's tree and sits
+    // in Main -- two masters in one project both have a "Main".
+    let folder = item.parentFolder;
+    if (!folder || String(folder.name) !== "Main") continue;
+    let top: FolderItem | null = folder;
+    while (top && top.parentFolder && String(top.parentFolder.name) !== "") {
+      if (String(top.name) === folderName) break;
+      top = top.parentFolder;
+    }
+    if (!top || String(top.name) !== folderName) continue;
+    if (/^_V\d+$/.test(String(item.name))) continue;   // the frontcard wrapper
+    if (!best) best = item as CompItem;
+  }
+  return best;
+}
+
+export const bespokeBuild = (planJson: string): { success: boolean; error?: string; report?: string } => {
+  try {
+    const plan = JSON.parse(planJson) as BespokePlan;
+    if (!plan || !plan.segments || plan.segments.length === 0) {
+      return { success: false, error: "Nothing to build -- add a segment first." };
+    }
+    const canvasW = Math.round(Number(plan.canvasWidth) || 0);
+    const canvasH = Math.round(Number(plan.canvasHeight) || 0);
+    if (canvasW <= 0 || canvasH <= 0) return { success: false, error: "Set a canvas size first." };
+
+    let total = 0;
+    for (let i = 0; i < plan.segments.length; i++) {
+      if (!plan.segments[i].tiles || plan.segments[i].tiles.length === 0) {
+        return { success: false, error: "Segment " + (i + 1) + " has no creatives in it." };
+      }
+      total += Number(plan.segments[i].seconds) || 0;
+    }
+    if (total <= 0) return { success: false, error: "The segments add up to no time at all." };
+
+    const lines: string[] = [];
+    app.beginUndoGroup("Bespoke build");
+    try {
+      // --- import each distinct master once -------------------------------
+      const compFor: { [path: string]: CompItem } = {};
+      for (let s = 0; s < plan.segments.length; s++) {
+        const tiles = plan.segments[s].tiles;
+        for (let t = 0; t < tiles.length; t++) {
+          const path = String(tiles[t].path);
+          if (compFor[path]) continue;
+          const file = new File(path);
+          const folderName = String(path).split("/").pop();
+          try {
+            app.project.importFile(new ImportOptions(file));
+          } catch (e) {
+            return { success: false, error: "Couldn't import " + folderName + ": " + e.toString() };
+          }
+          const main = bespokeMainComp(String(folderName));
+          if (!main) {
+            return { success: false, error: "Imported " + folderName + " but found no comp in its Composition/Main to place." };
+          }
+          compFor[path] = main;
+          lines.push("imported " + folderName + " -> placing " + main.name);
+        }
+      }
+
+      // Frame rate from the first master, never a default.
+      let fps = 25;
+      for (const k in compFor) { if (compFor.hasOwnProperty(k)) { fps = compFor[k].frameRate; break; } }
+
+      const outName = plan.name && plan.name !== "" ? plan.name : "Bespoke_" + canvasW + "x" + canvasH;
+      const out = app.project.items.addComp(outName, canvasW, canvasH, 1, total, fps);
+      // The duplicates live together rather than scattered through the root.
+      const panelFolder = app.project.items.addFolder(outName + " panels");
+      lines.push("");
+      lines.push("built " + outName + "  " + canvasW + "x" + canvasH + "  "
+        + Math.round(total * 1000) / 1000 + "s  " + Math.round(fps * 1000) / 1000 + "fps");
+
+      // --- lay the segments in ---------------------------------------------
+      let cursor = 0;
+      let scaled = 0;
+      for (let s = 0; s < plan.segments.length; s++) {
+        const seg = plan.segments[s];
+        const secs = Number(seg.seconds) || 0;
+        const n = seg.tiles.length;
+        const panelW = canvasW / n;
+        lines.push("");
+        lines.push("segment " + (s + 1) + ": " + n + " x " + Math.round(panelW) + "px for " + secs + "s");
+
+        // Added in reverse so the LEFTMOST tile ends up on top of the layer
+        // stack, matching how the panel draws them left to right.
+        for (let t = n - 1; t >= 0; t--) {
+          const src = compFor[String(seg.tiles[t].path)];
+
+          // ONE DUPLICATE PER TILE, not one comp shared by every layer. Sharing
+          // is cheaper, but it means retiming or trimming one panel silently
+          // changes the others -- and panels of the same creative almost always
+          // want to differ. duplicate() copies the comp, not its footage, so
+          // the ~70 imported items stay shared and this costs almost nothing.
+          const dup = src.duplicate();
+          dup.name = src.name + "_S" + (s + 1) + "P" + (t + 1);
+          dup.parentFolder = panelFolder;
+
+          const layer = out.layers.add(dup);
+
+          // Fit inside the panel without cropping. The probe's own case is
+          // exact (1080 into 1080), so this only ever engages on a mismatch --
+          // and says so, rather than quietly resizing artwork.
+          const ratio = Math.min(panelW / dup.width, canvasH / dup.height);
+          if (Math.abs(ratio - 1) > 0.0001) {
+            (layer.property("Scale") as Property).setValue([ratio * 100, ratio * 100]);
+            scaled++;
+            lines.push("  tile " + (t + 1) + " " + dup.name + " scaled to "
+              + Math.round(ratio * 1000) / 10 + "%");
+          }
+          (layer.property("Position") as Property).setValue([panelW * (t + 0.5), canvasH / 2]);
+
+          // Time: the layer starts when its segment does, and is trimmed to it.
+          // A master longer than its segment is cut; a shorter one leaves a gap
+          // that is reported rather than silently held.
+          layer.startTime = cursor;
+          layer.inPoint = cursor;
+          layer.outPoint = cursor + secs;
+          if (dup.duration < secs - 0.001) {
+            lines.push("  tile " + (t + 1) + " " + dup.name + " is only "
+              + Math.round(dup.duration * 100) / 100 + "s of the " + secs + "s segment");
+          }
+        }
+        cursor += secs;
+      }
+
+      lines.push("");
+      lines.push(scaled === 0
+        ? "Every tile sat at native size."
+        : scaled + " tile(s) were scaled to fit their panel -- worth a look.");
+      lines.push("Each panel is its own duplicate in \"" + outName + " panels\" -- retime one without touching the rest.");
+      lines.push("No frontcard added: it goes over the finished canvas at " + canvasW + "x" + canvasH + ".");
+      lines.push("Nothing saved.");
+
+      out.openInViewer();
+    } finally {
+      app.endUndoGroup();
+    }
+    return { success: true, report: lines.join("\n") };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
 export const bespokeProbeImport = (
   pathsJson: string
 ): { success: boolean; error?: string; report?: string } => {

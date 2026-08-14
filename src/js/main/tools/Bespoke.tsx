@@ -92,6 +92,7 @@ export const BespokeTool = () => {
     const [status, setStatus] = useState<StatusMsg | null>(null);
     const [probe, setProbe] = useState<string | null>(null);
     const [probing, setProbing] = useState(false);
+    const [building, setBuilding] = useState(false);
 
     // The deliverable being composed. Canvas and runtime come from the row this
     // is being built for; typed by hand until the row picker is wired.
@@ -195,6 +196,36 @@ export const BespokeTool = () => {
             setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
         } finally {
             setProbing(false);
+        }
+    };
+
+    /** Assembles the whole composition. Imports read-only, saves nothing. */
+    const runBuild = async () => {
+        setBuilding(true);
+        setProbe(null);
+        setStatus(null);
+        try {
+            const plan = {
+                canvasWidth: Number(canvasW) || 0,
+                canvasHeight: Number(canvasH) || 0,
+                segments: segments.map((sg) => ({
+                    seconds: sg.seconds,
+                    tiles: sg.tiles.map((t) => ({ path: t.path })),
+                })),
+            };
+            const res = (await evalTS("bespokeBuild", JSON.stringify(plan))) as unknown as
+                { success: boolean; error?: string; report?: string } | undefined;
+            if (res === undefined) throw new Error("no bridge");
+            if (!res.success) {
+                setStatus({ text: res.error || "The build failed.", type: "error" });
+                return;
+            }
+            setProbe(res.report || "(built)");
+            setStatus({ text: "Built. Nothing was saved — save it where you mean to.", type: "success" });
+        } catch {
+            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+        } finally {
+            setBuilding(false);
         }
     };
 
@@ -474,12 +505,17 @@ export const BespokeTool = () => {
                 Build button that would have to guess how masters are placed. */}
             <div className="bsp-pending">
                 <p className="bsp-pending-note">
-                    <Layers size={11} /> Composition only for now — assembling this into an AE
-                    project is the next step, once how masters sit in their panel is settled.
+                    <Layers size={11} /> Masters are imported read-only and nothing is saved —
+                    one undo puts the project back.
                 </p>
-                <Tooltip text="Imports this segment's masters and reports what arrives. Changes nothing — run it in a scratch project and undo once after.">
-                    <button className="bsp-btn bsp-btn--ghost" onClick={runProbe} disabled={probing}>
+                <Tooltip text="Imports this segment's masters and reports what arrives, without building anything.">
+                    <button className="bsp-btn bsp-btn--ghost" onClick={runProbe} disabled={probing || building}>
                         {probing ? "Probing…" : "Probe import"}
+                    </button>
+                </Tooltip>
+                <Tooltip text={problems.length ? "Fix what's flagged above first" : "Import the masters and assemble the composition"}>
+                    <button className="bsp-btn" onClick={runBuild} disabled={building || probing || problems.length > 0}>
+                        {building ? "Building…" : "Build composition"}
                     </button>
                 </Tooltip>
             </div>
@@ -487,7 +523,7 @@ export const BespokeTool = () => {
             {probe && (
                 <div className="bsp-probe">
                     <div className="bsp-probe-head">
-                        <span>What actually arrived</span>
+                        <span>Report</span>
                         <button className="bsp-probe-x" onClick={() => setProbe(null)} title="Dismiss"><X size={11} /></button>
                     </div>
                     <pre className="bsp-probe-body">{probe}</pre>
