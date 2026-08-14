@@ -4085,6 +4085,34 @@ function bespokeMainComp(folderName: string): CompItem | null {
   return best;
 }
 
+/**
+ * Removes the "_V01" frontcard wrappers that came in with an imported master.
+ *
+ * Scoped to comps sitting in that master's own Main folder and named exactly
+ * _V<digits> -- a build's own wrapper is "<deliverable>_V01" and cannot match.
+ * Returns how many went, so the report can say rather than imply.
+ */
+function bespokeDropVersionWrappers(folderName: string): number {
+  const doomed: CompItem[] = [];
+  for (let i = 1; i <= app.project.numItems; i++) {
+    const item = app.project.item(i);
+    if (typeof (item as CompItem).numLayers !== "number") continue;
+    if (!/^_V\d+$/.test(String(item.name))) continue;
+    let folder = item.parentFolder;
+    if (!folder || String(folder.name) !== "Main") continue;
+    let top: FolderItem | null = folder;
+    while (top && top.parentFolder) {
+      if (String(top.name) === folderName) break;
+      top = top.parentFolder;
+    }
+    if (top && String(top.name) === folderName) doomed.push(item as CompItem);
+  }
+  for (let d = 0; d < doomed.length; d++) {
+    try { doomed[d].remove(); } catch (e) { /* still referenced -- leave it */ }
+  }
+  return doomed.length;
+}
+
 export const bespokeBuild = (planJson: string): { success: boolean; error?: string; report?: string } => {
   try {
     const plan = JSON.parse(planJson) as BespokePlan;
@@ -4127,6 +4155,20 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
           }
           compFor[path] = main;
           lines.push("imported " + folderName + " -> placing " + main.name);
+
+          // THE MASTER'S OWN FRONTCARD WRAPPER IS DEAD WEIGHT HERE. Every
+          // master arrives with a comp named exactly "_V01" -- its 5s frontcard
+          // over its edit -- and we place the edit, never the wrapper. Left in,
+          // three masters put three identical "_V01" comps in Main, which is
+          // what was clobbering the folder.
+          //
+          // Matched on /^_V<digits>$/ so it can only ever be a master's own
+          // wrapper: the one this build creates is "<deliverable>_V01" and does
+          // not match, and it does not exist yet either.
+          const dropped = bespokeDropVersionWrappers(String(folderName));
+          if (dropped > 0) {
+            lines.push("  dropped " + dropped + " unused _V01 wrapper" + (dropped === 1 ? "" : "s"));
+          }
         }
       }
 
@@ -4203,12 +4245,16 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
           }
           (layer.property("Position") as Property).setValue([panelW * (t + 0.5), canvasH / 2]);
 
-          // Time: the layer starts when its segment does, and is trimmed to it.
-          // A master longer than its segment is cut; a shorter one leaves a gap
-          // that is reported rather than silently held.
-          layer.startTime = cursor;
+          // END-ALIGNED. A 10s master in a 3s closing segment shows its LAST
+          // three seconds, not its first three -- an endcard's payoff is at its
+          // end, and trimming from the front would show the run-up and cut
+          // before the point of it. So the master's end meets the segment's
+          // end, which for a master exactly as long as its segment is identical
+          // to starting at the top.
+          const segEnd = cursor + secs;
+          layer.startTime = segEnd - dup.duration;
           layer.inPoint = cursor;
-          layer.outPoint = cursor + secs;
+          layer.outPoint = segEnd;
           if (dup.duration < secs - 0.001) {
             lines.push("  tile " + (t + 1) + " " + dup.name + " is only "
               + Math.round(dup.duration * 100) / 100 + "s of the " + secs + "s segment");
