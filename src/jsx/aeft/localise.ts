@@ -4127,6 +4127,53 @@ export const bespokeSelectReference = (): string => {
   }
 };
 
+/**
+ * Every reference image sitting beside the picked one.
+ *
+ * One Wrike job is many bespoke deliverables and their references live in the
+ * same folder, so picking one file is really picking the set. Returning all of
+ * them lets the panel rotate between deliverables without a dialog each time.
+ *
+ * getFiles() with NO mask and a manual name compare, per the team-folder rule:
+ * a mask is unreliable on the NAS, and these references live there. Nothing is
+ * gated on .exists either -- the folder listing IS the answer.
+ */
+export const bespokeListReferences = (
+  fromPath: string
+): { success: boolean; error?: string; refs?: { path: string; name: string }[] } => {
+  try {
+    if (!fromPath) return { success: false, error: "No reference to look beside." };
+    const parent = new File(fromPath).parent;
+    if (!parent) return { success: false, error: "Couldn't find that reference's folder." };
+    const all = parent.getFiles();
+    const refs: { path: string; name: string }[] = [];
+    for (let i = 0; i < all.length; i++) {
+      const f = all[i];
+      // Duck-typed: a Folder has no fsName-bearing extension to read, and
+      // instanceof File is banned against host classes.
+      if (typeof (f as File).fsName !== "string") continue;
+      const nm = (f as File).name;
+      const low = nm.toLowerCase();
+      const isImage =
+        low.length > 4 &&
+        (low.substr(low.length - 4) === ".jpg" ||
+          low.substr(low.length - 4) === ".png" ||
+          low.substr(low.length - 5) === ".jpeg");
+      // Never .match() a filename -- real names carry ( + [ and it compiles
+      // as a regex. Leading dots are macOS resource forks.
+      if (!isImage || nm.indexOf(".") === 0) continue;
+      refs.push({ path: (f as File).fsName, name: nm });
+    }
+    refs.sort(function (a, b) {
+      if (a.name === b.name) return 0;
+      return a.name < b.name ? -1 : 1;
+    });
+    return { success: true, refs: refs };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+};
+
 export const bespokeBuildRegions = (
   planJson: string
 ): { success: boolean; error?: string; report?: string; saved?: boolean; savedTo?: string } => {

@@ -140,6 +140,13 @@ export const BespokeTool = () => {
     const [regions, setRegions] = useState<Region[]>([]);
     const [selRegion, setSelRegion] = useState(0);
     const [refPath, setRefPath] = useState("");
+    // EVERY REFERENCE IN THE PICKED FOLDER, because one job is many bespoke
+    // deliverables and they sit side by side. Each has its OWN canvas and its
+    // own regions -- a 3840x2816 board and a 13536x3072 ceiling share nothing
+    // but the campaign -- so the layouts are kept per reference path and
+    // restored on the way back, rather than carried across and quietly wrong.
+    const [refs, setRefs] = useState<{ path: string; name: string }[]>([]);
+    const [layouts, setLayouts] = useState<Record<string, { regions: Region[]; guidesX: number[]; guidesY: number[] }>>({});
     // Constraints while dragging a corner. Ratio keeps a region from ever
     // introducing a crop it did not have; locking a side is for the common case
     // of a panel that must stay the full height or width of the screen.
@@ -277,23 +284,56 @@ export const BespokeTool = () => {
         }
     };
 
+    /**
+     * Switches to a reference, banking the layout on the way out.
+     *
+     * THE REFERENCE IS NAMED AFTER THE DELIVERABLE, so it carries the canvas,
+     * the runtime and the name -- typing them again from the same string is
+     * three chances to get one wrong. Both naming conventions, per the masters
+     * rule: size with or without "px", duration as "s" or "sec".
+     */
+    const adoptReference = (path: string) => {
+        if (!path || path === refPath) return;
+        // Bank what is on screen FIRST. Rotating away and back is meant to be
+        // free; losing an hour of placement to a misclick is not.
+        if (refPath) {
+            setLayouts((prev) => ({ ...prev, [refPath]: { regions, guidesX, guidesY } }));
+        }
+        setRefPath(path);
+        setRefMismatch("");
+        const stem = (path.split("/").pop() || "").replace(/\.(jpe?g|png)$/i, "");
+        const size = stem.match(/(\d+)x(\d+)(?:px)?/);
+        if (size) { setCanvasW(size[1]); setCanvasH(size[2]); }
+        const dur = stem.match(/_(\d+)s(?:ec)?(?:_|$)/);
+        if (dur) setRuntime(dur[1]);
+        if (!nameTouched && stem) setOutName(stem);
+        const kept = layouts[path];
+        setRegions(kept ? kept.regions : []);
+        setGuidesX(kept ? kept.guidesX : []);
+        setGuidesY(kept ? kept.guidesY : []);
+        setSelRegion(0);
+    };
+
+    /** Where the current reference sits in the folder, or -1 if it is alone. */
+    const refIndex = refs.findIndex((r) => r.path === refPath);
+
     const pickReference = async () => {
         try {
             const picked = await evalTS("bespokeSelectReference");
             if (typeof picked === "string" && picked) {
-                setRefPath(picked);
-                setRefMismatch("");
-                // THE REFERENCE IS NAMED AFTER THE DELIVERABLE, so it carries
-                // the canvas, the runtime and the name -- typing them again
-                // from the same string is three chances to get one wrong.
-                // Both naming conventions, per the masters rule: size with or
-                // without "px", duration as "s" or "sec".
-                const stem = (picked.split("/").pop() || "").replace(/\.(jpe?g|png)$/i, "");
-                const size = stem.match(/(\d+)x(\d+)(?:px)?/);
-                if (size) { setCanvasW(size[1]); setCanvasH(size[2]); }
-                const dur = stem.match(/_(\d+)s(?:ec)?(?:_|$)/);
-                if (dur) setRuntime(dur[1]);
-                if (!nameTouched && stem) setOutName(stem);
+                adoptReference(picked);
+                // Picking one file is really picking the folder -- pull its
+                // siblings in so the rest of the job needs no more dialogs.
+                try {
+                    const listed = await evalTS("bespokeListReferences", picked);
+                    if (listed && listed.success && listed.refs && listed.refs.length > 0) {
+                        setRefs(listed.refs);
+                    } else {
+                        setRefs([{ path: picked, name: picked.split("/").pop() || picked }]);
+                    }
+                } catch {
+                    setRefs([{ path: picked, name: picked.split("/").pop() || picked }]);
+                }
             }
         } catch {
             setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
@@ -317,6 +357,24 @@ export const BespokeTool = () => {
             w: Math.max(24, w), h: Math.max(24, h),
         }]);
         setSelRegion(regions.length);
+    };
+
+    /**
+     * A short, unambiguous name for a master: its creative and its native size.
+     * Falls back through the filename stem so it is never blank, and never the
+     * full path, which does not fit in a region and tells you nothing new.
+     */
+    const regionLabel = (m: BespokeMaster) => {
+        const stem = (m.name || "").replace(/\.aep$/i, "");
+        let who = m.creative || "";
+        if (!who) {
+            // The orientation token and size are noise here; the creative is
+            // the third underscore field in the studio convention.
+            const bits = stem.split("_");
+            who = bits.length > 2 ? bits[2] : stem;
+        }
+        const size = m.width && m.height ? `${m.width}×${m.height}` : "";
+        return size ? `${who} · ${size}` : who;
     };
 
     /** Nearest guide within reach, or the value untouched. */
@@ -806,6 +864,40 @@ export const BespokeTool = () => {
                             {refPath ? refPath.split("/").pop() : "pick the reference JPG…"}
                         </button>
                     </p>
+                    {refs.length > 1 && (
+                        // THE WHOLE FOLDER, because a job is many deliverables.
+                        // Each keeps its own regions, so stepping through them
+                        // is free -- the dot marks the ones already laid out.
+                        <div className="bsp-refbar">
+                            <button
+                                className="bsp-refstep"
+                                disabled={refIndex <= 0}
+                                onClick={() => adoptReference(refs[refIndex - 1].path)}
+                                title="Previous reference"
+                            >‹</button>
+                            <select
+                                className="bsp-refpick"
+                                value={refPath}
+                                onChange={(e) => adoptReference(e.target.value)}
+                            >
+                                {refs.map((r) => (
+                                    <option key={r.path} value={r.path}>
+                                        {(layouts[r.path] && layouts[r.path].regions.length > 0) || (r.path === refPath && regions.length > 0) ? "● " : "○ "}
+                                        {r.name}
+                                    </option>
+                                ))}
+                            </select>
+                            <button
+                                className="bsp-refstep"
+                                disabled={refIndex < 0 || refIndex >= refs.length - 1}
+                                onClick={() => adoptReference(refs[refIndex + 1].path)}
+                                title="Next reference"
+                            >›</button>
+                            <span className="bsp-refcount">
+                                {refIndex >= 0 ? refIndex + 1 : "–"} / {refs.length}
+                            </span>
+                        </div>
+                    )}
                     <div
                         className="bsp-canvas"
                         ref={stageRef}
@@ -881,8 +973,14 @@ export const BespokeTool = () => {
                                         e.preventDefault();
                                     }}
                                 >
-                                    <span className="bsp-region-tag">
-                                        {r.master.creative || r.master.name}
+                                    <span className="bsp-region-tag" title={r.master.name}>
+                                        {/* WHICH MASTER THIS IS, not just its
+                                            campaign. Two regions of the same
+                                            creative at different sizes were
+                                            indistinguishable, and the creative
+                                            is empty often enough that this fell
+                                            back to the whole filename. */}
+                                        {regionLabel(r.master)}
                                         {lost > 0 ? ` · ${lost}% cropped` : ""}
                                     </span>
                                     {i === selRegion && ["nw", "ne", "sw", "se"].map((h) => (
@@ -939,7 +1037,7 @@ export const BespokeTool = () => {
                                 Clear
                             </button>
                         )}
-                        <span className="bsp-guidehint">drag to place · double-click to remove · edges snap while dragging</span>
+                        <span className="bsp-guidehint">drag to place · double-click to remove · select a master, then Fit to guides</span>
                     </div>
 
                     {refMismatch !== "" && (
@@ -994,7 +1092,7 @@ export const BespokeTool = () => {
                                 <CheckboxToggle checked={lockRatio} onChange={setLockRatio} label="Keep ratio" />
                                 <CheckboxToggle checked={lockW} onChange={setLockW} label="Lock width" />
                                 <CheckboxToggle checked={lockH} onChange={setLockH} label="Lock height" />
-                                <Tooltip text="Size this region to the guides either side of it — each axis independently">
+                                <Tooltip text={`Size ${regions[selRegion]?.master.name || "this region"} to the guides either side of it — each axis independently`}>
                                     <button className="bsp-btn bsp-btn--ghost" onClick={fitToGuides}>
                                         Fit to guides
                                     </button>

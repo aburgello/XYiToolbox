@@ -652,11 +652,79 @@
 
 .bsp-region {
     position: absolute;
-    border: 2px solid rgba(45, 212, 191, 0.75);
+    border: 2px solid rgba(45, 212, 191, 0.5);
     cursor: move;
-    opacity: 0.72;
+    opacity: 0.58;
 
-    &.is-on { border-color: #7fe7d8; opacity: 0.86; }
+    // WHICH ONE IS SELECTED HAS TO BE OBVIOUS. Every per-region action --
+    // Fit to guides, Match master ratio, the x/y/w/h fields -- acts on the
+    // selection and nothing else, so an unreadable selected state means
+    // pressing a button and watching the wrong master move. A brighter
+    // border alone did not survive a busy reference JPG behind it; this
+    // raises the region above its siblings, doubles the border and rings it
+    // in dark so the edge holds against whatever it is sitting on.
+    &.is-on {
+        border-color: #7fe7d8;
+        border-width: 3px;
+        opacity: 0.95;
+        z-index: 2;
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 11px rgba(126, 231, 216, 0.45);
+    }
+}
+
+.bsp-region.is-on .bsp-region-tag {
+    background: #7fe7d8;
+    color: #04211d;
+    font-weight: 600;
+}
+
+// Stepping between the deliverables of one job. Sits directly under the
+// reference link it belongs to.
+.bsp-refbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 7px;
+}
+
+.bsp-refstep {
+    flex: 0 0 auto;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    // index.scss puts a global button:hover/:active background on every
+    // button, so both states are re-declared here or they flash blue.
+    background: rgba(45, 212, 191, 0.1);
+    border: 1px solid rgba(45, 212, 191, 0.3);
+    border-radius: 4px;
+    color: #7fe7d8;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+
+    &:hover { background: rgba(45, 212, 191, 0.2); }
+    &:active { background: rgba(45, 212, 191, 0.28); }
+    &:disabled { opacity: 0.3; cursor: default; background: rgba(45, 212, 191, 0.1); }
+}
+
+.bsp-refpick {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 20px;
+    padding: 0 4px;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(45, 212, 191, 0.28);
+    border-radius: 4px;
+    color: #cfe9e4;
+    font-size: 10px;
+}
+
+.bsp-refcount {
+    flex: 0 0 auto;
+    color: #6f8b87;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 9px;
+    font-variant-numeric: tabular-nums;
 }
 
 .bsp-region-tag {
@@ -668,7 +736,7 @@
     background: rgba(0, 0, 0, 0.66);
     color: #d9f5f0;
     font-family: ui-monospace, Menlo, monospace;
-    font-size: 8.5px;
+    font-size: 9.5px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -717,6 +785,8 @@
 .bsp-guidehint { font-size: 9.5px; color: #6f757f; }
 
 .bsp-guide {
+    // above even a selected region, or a line under one cannot be grabbed
+    z-index: 3;
     position: absolute;
     background: #e0a04a;
     // Reaching a 1px line with a mouse is miserable, so the hit area is padded
