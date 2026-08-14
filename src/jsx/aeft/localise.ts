@@ -4115,6 +4115,8 @@ interface BespokeRegion {
   y: number;
   w: number;
   h: number;
+  /** Quarter turns only: 0, 90, 180, 270. */
+  rotation?: number;
 }
 
 /** Picks the reference JPG a region layout is traced over. */
@@ -4237,18 +4239,34 @@ export const bespokeBuildRegions = (
         const layer = out.layers.add(src);
         layer.name = "R" + (i + 1);
 
+        // A QUARTER TURN SWAPS WHAT THE CANVAS SEES. Bespoke screens are
+        // sometimes fed a master on its side, and every number below has to
+        // reason about the turned footprint rather than the file's own -- a
+        // 1080x1920 master at 90 degrees covers a region as if it were
+        // 1920x1080. Right angles only, so this stays a swap and never a
+        // trigonometric bounding box.
+        const turn = Math.round(Number(reg.rotation) || 0) % 360;
+        const turned = turn === 90 || turn === 270;
+        const faceW = turned ? src.height : src.width;
+        const faceH = turned ? src.width : src.height;
+
         // COVER, not fit: the larger of the two ratios, so no gap is ever left
         // inside the region and the excess is cropped by the mask below.
-        const cover = Math.max(reg.w / src.width, reg.h / src.height);
+        const cover = Math.max(reg.w / faceW, reg.h / faceH);
         (layer.property("Scale") as Property).setValue([cover * 100, cover * 100]);
         (layer.property("Position") as Property).setValue([reg.x + reg.w / 2, reg.y + reg.h / 2]);
+        // transform.rotation, never property("Rotation") -- display-name
+        // lookups collide across layer types.
+        if (turn !== 0) (layer.transform.rotation as Property).setValue(turn);
 
         // The crop itself. A rectangular mask in LAYER space, which is the
         // layer's own untransformed pixels -- so the region's size has to be
         // divided back out by the scale, or the mask would be cover-times too
-        // big and crop nothing.
-        const halfW = reg.w / cover / 2;
-        const halfH = reg.h / cover / 2;
+        // big and crop nothing. Masks live BENEATH the transform, so on a
+        // turned layer the region's width is measured along the layer's own
+        // HEIGHT axis: the two half-extents swap with it.
+        const halfW = (turned ? reg.h : reg.w) / cover / 2;
+        const halfH = (turned ? reg.w : reg.h) / cover / 2;
         const cx = src.width / 2;
         const cy = src.height / 2;
         const mask = (layer as AVLayer).Masks.addProperty("ADBE Mask Atom") as MaskPropertyGroup;
@@ -4263,7 +4281,7 @@ export const bespokeBuildRegions = (
         (mask.property("ADBE Mask Shape") as Property).setValue(shape);
         mask.name = "Crop";
 
-        const lost = Math.round((1 - Math.min(reg.w / (src.width * cover), reg.h / (src.height * cover))) * 100);
+        const lost = Math.round((1 - Math.min(reg.w / (faceW * cover), reg.h / (faceH * cover))) * 100);
         // The COMP's own duration, not the one parsed out of a filename --
         // this is the number AE will actually act on. A layer longer than its
         // comp renders its head and drops the tail without a word, so the
@@ -4273,6 +4291,7 @@ export const bespokeBuildRegions = (
         lines.push("  R" + (i + 1) + " " + src.name + " at " + reg.x + "," + reg.y
           + " " + reg.w + "x" + reg.h + " -- " + Math.round(cover * 1000) / 10 + "%"
           + (lost > 0 ? ", " + lost + "% cropped" : ", exact")
+          + (turn !== 0 ? ", turned " + turn + " deg" : "")
           + (over > 0 ? "  [" + Math.round(src.duration * 10) / 10 + "s from the start; last " + over + "s not rendered]" : ""));
       }
 

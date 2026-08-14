@@ -74,6 +74,13 @@ interface Region {
     y: number;
     w: number;
     h: number;
+    /**
+     * Quarter turns only -- 0, 90, 180, 270. Bespoke screens are sometimes fed
+     * a master turned on its side, and the studio only ever does right angles,
+     * so this stays an enumeration rather than a free angle: anything else
+     * would leave the region no longer axis-aligned with its own crop.
+     */
+    rotation: number;
 }
 
 interface Segment {
@@ -356,7 +363,7 @@ export const BespokeTool = () => {
         let h = Math.round(w / aspect);
         if (h > ch * 0.8) { h = Math.round(ch * 0.8); w = Math.round(h * aspect); }
         setRegions((prev) => [...prev, {
-            id: nextSegId++, master: m,
+            id: nextSegId++, master: m, rotation: 0,
             x: Math.round((cw - w) / 2), y: Math.round((ch - h) / 2),
             w: Math.max(24, w), h: Math.max(24, h),
         }]);
@@ -417,6 +424,22 @@ export const BespokeTool = () => {
         setSelRegion(at);
         setSwapTarget(-1);
         setStatus(null);
+    };
+
+    /**
+     * The master's dimensions AS THE CANVAS SEES THEM.
+     *
+     * A quarter turn swaps them, and everything downstream -- the aspect a new
+     * region takes, Match master ratio, the cover scale and the crop
+     * percentage -- has to reason about the turned footprint, not the file's
+     * own. Getting this wrong does not error; it silently crops the wrong axis.
+     */
+    const facing = (r: { master: BespokeMaster; rotation: number }) => {
+        const turned = r.rotation === 90 || r.rotation === 270;
+        return {
+            w: turned ? r.master.height : r.master.width,
+            h: turned ? r.master.width : r.master.height,
+        };
     };
 
     /** Nearest guide within reach, or the value untouched. */
@@ -578,7 +601,8 @@ export const BespokeTool = () => {
     const matchMasterRatio = () => {
         const r = regions[selRegion];
         if (!r || !r.master.width || !r.master.height) return;
-        const aspect = r.master.width / r.master.height;
+        const face = facing(r);
+        const aspect = face.w / face.h;
         // Keeps the region's area roughly as it was rather than jumping to the
         // master's pixel size, which on a 13536px master would fill the screen.
         const area = r.w * r.h;
@@ -598,7 +622,7 @@ export const BespokeTool = () => {
                 seconds: Number(runtime) || 0,
                 name: outName.trim(),
                 marketsRoot, territory, batch: batch.trim(),
-                regions: regions.map((r) => ({ path: r.master.path, x: r.x, y: r.y, w: r.w, h: r.h })),
+                regions: regions.map((r) => ({ path: r.master.path, x: r.x, y: r.y, w: r.w, h: r.h, rotation: r.rotation || 0 })),
             };
             const res = (await evalTS("bespokeBuildRegions", JSON.stringify(plan))) as unknown as
                 { success: boolean; error?: string; report?: string; saved?: boolean; savedTo?: string } | undefined;
@@ -995,8 +1019,9 @@ export const BespokeTool = () => {
                         {regions.map((r, i) => {
                             const cw = Number(canvasW) || 1920;
                             const ch = Number(canvasH) || 1080;
-                            const cover = Math.max(r.w / r.master.width, r.h / r.master.height);
-                            const lost = Math.round((1 - Math.min(r.w / (r.master.width * cover), r.h / (r.master.height * cover))) * 100);
+                            const face = facing(r);
+                            const cover = Math.max(r.w / face.w, r.h / face.h);
+                            const lost = Math.round((1 - Math.min(r.w / (face.w * cover), r.h / (face.h * cover))) * 100);
                             return (
                                 <div
                                     key={r.id}
@@ -1025,6 +1050,7 @@ export const BespokeTool = () => {
                                         {regionLabel(r.master)}
                                         {lost > 0 ? ` · ${lost}% cropped` : ""}
                                         {overrunOf(r.master) > 0 ? ` · ${r.master.duration}s in ${runtime}s` : ""}
+                                        {r.rotation ? ` · ${r.rotation}°` : ""}
                                     </span>
                                     {i === selRegion && ["nw", "ne", "sw", "se"].map((h) => (
                                         <span className={`bsp-h bsp-h--${h}`} data-h={h} key={h} />
@@ -1040,7 +1066,7 @@ export const BespokeTool = () => {
                                 onMouseDown={(e) => {
                                     const box = stageRef.current?.getBoundingClientRect();
                                     if (!box) return;
-                                    dragRef.current = { handle: `guideY:${i}`, sx: e.clientX, sy: e.clientY, box, start: { id: 0, master: regions[0]?.master as BespokeMaster, x: 0, y: g, w: 0, h: 0 } };
+                                    dragRef.current = { handle: `guideY:${i}`, sx: e.clientX, sy: e.clientY, box, start: { id: 0, master: regions[0]?.master as BespokeMaster, rotation: 0, x: 0, y: g, w: 0, h: 0 } };
                                     e.preventDefault();
                                 }}
                                 onDoubleClick={() => setGuidesY((gs) => gs.filter((_, n) => n !== i))}
@@ -1055,7 +1081,7 @@ export const BespokeTool = () => {
                                 onMouseDown={(e) => {
                                     const box = stageRef.current?.getBoundingClientRect();
                                     if (!box) return;
-                                    dragRef.current = { handle: `guideX:${i}`, sx: e.clientX, sy: e.clientY, box, start: { id: 0, master: regions[0]?.master as BespokeMaster, x: g, y: 0, w: 0, h: 0 } };
+                                    dragRef.current = { handle: `guideX:${i}`, sx: e.clientX, sy: e.clientY, box, start: { id: 0, master: regions[0]?.master as BespokeMaster, rotation: 0, x: g, y: 0, w: 0, h: 0 } };
                                     e.preventDefault();
                                 }}
                                 onDoubleClick={() => setGuidesX((gs) => gs.filter((_, n) => n !== i))}
@@ -1166,6 +1192,16 @@ export const BespokeTool = () => {
                                 <Tooltip text={`Size ${regions[selRegion]?.master.name || "this region"} to the guides either side of it — each axis independently`}>
                                     <button className="bsp-btn bsp-btn--ghost" onClick={fitToGuides}>
                                         Fit to guides
+                                    </button>
+                                </Tooltip>
+                                <Tooltip text="Turn the master a quarter clockwise inside this region — the region itself stays put">
+                                    <button
+                                        className="bsp-btn bsp-btn--ghost"
+                                        onClick={() => patchRegion(selRegion, {
+                                            rotation: ((regions[selRegion].rotation + 90) % 360),
+                                        })}
+                                    >
+                                        Rotate 90° {regions[selRegion].rotation ? `(${regions[selRegion].rotation}°)` : ""}
                                     </button>
                                 </Tooltip>
                                 <Tooltip text="Reshape this region to its master's own ratio, so nothing is cropped">
