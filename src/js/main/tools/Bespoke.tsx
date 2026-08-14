@@ -28,10 +28,11 @@
 // step. Shipping a Build button that guessed would be worse than not having one.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { AlertCircle, LayoutGrid, Layers, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, Square as SquareIcon, Trash2, X } from "lucide-react";
+import { AlertCircle, Globe2, LayoutGrid, Layers, Library, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, Square as SquareIcon, Trash2, X } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
+import Dropdown from "../Dropdown";
 import "../shared.scss";
 import "./Bespoke.scss";
 
@@ -451,20 +452,40 @@ export const BespokeTool = () => {
 
             {/* --- where it lands ------------------------------------------ */}
             <div className="bsp-dest">
-                <label className="bsp-field">
+                {/* The house Dropdown, the same one the localiser's campaign
+                    picker uses. A native <select> renders its popup through the
+                    OS, so no amount of CSS reaches the open list -- it arrived
+                    as a white system menu in the middle of a black panel. */}
+                <div className="bsp-field">
                     <span className="bsp-lbl">Campaign</span>
-                    <select className="bsp-input bsp-input--sel" value={campaign} onChange={(e) => setCampaign(e.target.value)}>
-                        {campaigns.length === 0 && <option value="">No campaigns saved</option>}
-                        {campaigns.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
-                    </select>
-                </label>
-                <label className="bsp-field">
+                    <Dropdown
+                        icon={<Library size={13} />}
+                        value={campaign}
+                        onChange={setCampaign}
+                        options={campaigns.map((c) => ({
+                            value: c.name,
+                            label: c.name,
+                            // Only claimed when the check actually ran: an
+                            // absent entry means "not asked", which must not
+                            // render as "not mounted".
+                            hint: c.reachable === false ? "not mounted" : undefined,
+                        }))}
+                        placeholder="Select a campaign…"
+                        emptyMessage="No campaigns yet — add one in the localiser."
+                    />
+                </div>
+                <div className="bsp-field">
                     <span className="bsp-lbl">Country</span>
-                    <select className="bsp-input bsp-input--sel" value={territory} onChange={(e) => setTerritory(e.target.value)}>
-                        <option value="">Build it here, don't file it</option>
-                        {territories.map((t) => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                </label>
+                    <Dropdown
+                        icon={<Globe2 size={13} />}
+                        value={territory}
+                        onChange={setTerritory}
+                        options={[{ value: "", label: "Build it here, don't file it" }]
+                            .concat(territories.map((t) => ({ value: t, label: t })))}
+                        placeholder="Build it here, don't file it"
+                        emptyMessage={marketsRoot ? "No territories in that campaign's markets folder." : "Pick a campaign first."}
+                    />
+                </div>
                 <label className="bsp-field">
                     <span className="bsp-lbl">Batch</span>
                     <input className="bsp-input bsp-input--b" value={batch} onChange={(e) => setBatch(e.target.value)} />
@@ -616,10 +637,15 @@ export const BespokeTool = () => {
                             </button>
                         );
                     })}
-                    <select className="bsp-input bsp-input--sel" value={durFilter} onChange={(e) => setDurFilter(e.target.value)}>
-                        <option value="">Any duration</option>
-                        {durations.map((d) => <option key={d} value={d}>{d}s</option>)}
-                    </select>
+                    <Dropdown
+                        className="bsp-dur"
+                        value={durFilter}
+                        onChange={setDurFilter}
+                        options={[{ value: "", label: "Any duration" }]
+                            .concat(durations.map((d) => ({ value: d, label: `${d}s` })))}
+                        placeholder="Any duration"
+                        emptyMessage="No durations to filter by."
+                    />
                 </div>
                 <div className="bsp-list">
                     {!masters && <p className="bsp-none">Pick a masters folder to browse.</p>}
