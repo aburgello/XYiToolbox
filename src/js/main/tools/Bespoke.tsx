@@ -413,7 +413,9 @@ export const BespokeTool = () => {
                 <div className="bsp-head-text">
                     <p className="bsp-masters">{mastersPath || "No masters folder set"}</p>
                     <p className="bsp-count">
-                        {loading ? "Reading masters…" : masters ? `${masters.length} masters` : "not loaded"}
+                        {loading
+                            ? "Walking the masters folder — slow the first time, instant after"
+                            : masters ? `${masters.length} masters` : "not loaded"}
                     </p>
                 </div>
                 <Tooltip text="Pick the AEP masters folder">
@@ -666,9 +668,22 @@ export const BespokeTool = () => {
                     />
                 </div>
                 <div className="bsp-list">
-                    {!masters && <p className="bsp-none">Pick a masters folder to browse.</p>}
-                    {masters && matches.length === 0 && <p className="bsp-none">No master matches those filters.</p>}
-                    {matches.map((m) => (
+                    {/* SKELETON, not a spinner. The walk is one synchronous
+                        evalTS -- ExtendScript blocks AE for its whole duration,
+                        so there is no channel to report progress through and a
+                        percentage would have to be invented. Showing the SHAPE
+                        of what is coming is honest about that, and the copy
+                        says why the wait happens once. */}
+                    {loading && Array.from({ length: 6 }).map((_, i) => (
+                        <span className="bsp-skel" key={i} style={{ animationDelay: reduced ? undefined : `${i * 0.08}s` }}>
+                            <span className="bsp-skel-sw" />
+                            <span className="bsp-skel-name" style={{ width: `${52 + ((i * 13) % 34)}%` }} />
+                            <span className="bsp-skel-tag" />
+                        </span>
+                    ))}
+                    {!loading && !masters && <p className="bsp-none">Pick a masters folder to browse.</p>}
+                    {!loading && masters && matches.length === 0 && <p className="bsp-none">No master matches those filters.</p>}
+                    {!loading && matches.map((m) => (
                         <button className="bsp-master" key={m.path} onClick={() => addTile(m)}>
                             <span className="bsp-master-sw" style={{ background: hueFor(m.creative) }} />
                             <span className="bsp-master-name">{m.creative || m.name}</span>

@@ -538,3 +538,37 @@
     color: #6f757f;
     word-break: break-all;
 }
+
+/* Loading skeletons for the master list. Bounded by the load itself, so this
+   is not one of the perpetual animations the home screen bans. */
+.bsp-skel {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    background: var(--surface-2, #1a1a1a);
+    animation: bsp-skel-pulse 1.25s ease-in-out infinite;
+}
+
+.bsp-skel-sw,
+.bsp-skel-name,
+.bsp-skel-tag {
+    height: 8px;
+    border-radius: 3px;
+    background: #2e3338;
+}
+
+.bsp-skel-sw { width: 8px; flex: none; }
+.bsp-skel-name { flex: none; }
+.bsp-skel-tag { width: 46px; flex: none; margin-left: auto; }
+
+@keyframes bsp-skel-pulse {
+    0%, 100% { opacity: 0.45; }
+    50% { opacity: 0.85; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .bsp-skel { animation: none; opacity: 0.6; }
+}
