@@ -4117,6 +4117,16 @@ interface BespokeRegion {
   h: number;
 }
 
+/** Picks the reference JPG a region layout is traced over. */
+export const bespokeSelectReference = (): string => {
+  try {
+    const f = File.openDialog("Select the reference JPG for this deliverable", "*.jpg;*.jpeg;*.png", false);
+    return f ? (f as File).fsName : "";
+  } catch (e) {
+    return "";
+  }
+};
+
 export const bespokeBuildRegions = (
   planJson: string
 ): { success: boolean; error?: string; report?: string; saved?: boolean; savedTo?: string } => {

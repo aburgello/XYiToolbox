@@ -574,3 +574,116 @@
 }
 
 .bsp-chatter { margin-top: 4px; padding: 0 2px; }
+
+/* --- mode tabs ------------------------------------------------------------ */
+.bsp-modes { display: flex; gap: 5px; }
+
+.bsp-mode {
+    flex: 1;
+    display: block;
+    padding: 8px 12px;
+    border: 1px solid var(--surface-border, #34383f);
+    border-radius: 7px;
+    background: var(--surface-1, #1e2126);
+    color: #9aa1ac;
+    text-align: left;
+    cursor: pointer;
+
+    b { display: block; font-size: 12px; font-weight: 650; color: #d4d9df; }
+    span { font-size: 9.5px; color: #767c88; }
+
+    &:hover { background: #23272e; }
+    &:active { background: #191c21; }
+
+    &.is-on { background: rgba(45, 212, 191, 0.12); border-color: #2dd4bf; }
+    &.is-on b { color: #7fe7d8; }
+    &.is-on:hover { background: rgba(45, 212, 191, 0.18); }
+}
+
+/* --- region canvas -------------------------------------------------------- */
+.bsp-reflink {
+    margin-left: 8px;
+    padding: 2px 8px;
+    border: 1px solid var(--surface-border, #363636);
+    border-radius: 4px;
+    background: var(--surface-0, #121212);
+    color: #8fb9b2;
+    font-size: 9.5px;
+    text-transform: none;
+    letter-spacing: 0;
+    cursor: pointer;
+
+    &:hover { background: #1c1c1c; color: #cfe6f2; }
+    &:active { background: #101010; }
+}
+
+.bsp-canvas {
+    position: relative;
+    width: 100%;
+    height: 0;
+    border: 1px solid var(--surface-border, #303030);
+    border-radius: 7px;
+    background: var(--surface-0, #0e0e0e);
+    overflow: hidden;
+}
+
+.bsp-canvas-ref {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    // The reference is 1:1 with the canvas, so it fills it exactly -- `fill`
+    // rather than `cover` so a mismatched export is visibly wrong instead of
+    // being quietly cropped to look right.
+    object-fit: fill;
+    opacity: 0.75;
+    pointer-events: none;
+}
+
+.bsp-canvas-empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10.5px;
+    color: #6f757f;
+}
+
+.bsp-region {
+    position: absolute;
+    border: 2px solid rgba(45, 212, 191, 0.75);
+    cursor: move;
+    opacity: 0.72;
+
+    &.is-on { border-color: #7fe7d8; opacity: 0.86; }
+}
+
+.bsp-region-tag {
+    position: absolute;
+    left: 0;
+    top: 0;
+    max-width: 100%;
+    padding: 1px 5px;
+    background: rgba(0, 0, 0, 0.66);
+    color: #d9f5f0;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 8.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+}
+
+.bsp-h {
+    position: absolute;
+    width: 11px;
+    height: 11px;
+    border-radius: 2px;
+    background: #7fe7d8;
+}
+
+.bsp-h--nw { left: -6px; top: -6px; cursor: nwse-resize; }
+.bsp-h--ne { right: -6px; top: -6px; cursor: nesw-resize; }
+.bsp-h--sw { left: -6px; bottom: -6px; cursor: nesw-resize; }
+.bsp-h--se { right: -6px; bottom: -6px; cursor: nwse-resize; }

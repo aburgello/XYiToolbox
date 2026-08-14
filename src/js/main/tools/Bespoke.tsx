@@ -67,6 +67,15 @@ const ORIENTATION_ICON: Record<OrientationKey, React.ComponentType<{ size?: numb
     QUAD: LayoutGrid,
 };
 
+interface Region {
+    id: number;
+    master: BespokeMaster;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+}
+
 interface Segment {
     id: number;
     /** Laid across the canvas, left to right. */
@@ -123,6 +132,16 @@ export const BespokeTool = () => {
     // creative, so editing it once should show up everywhere. Duplicating is
     // the opt-in, for when panels genuinely need to differ.
     const [duplicatePanels, setDuplicatePanels] = useState(false);
+
+    // TWO MODES. Multi Art is the equal-panel tiling that ships today; Bespoke
+    // places a master anywhere on the canvas, traced over the deliverable's own
+    // reference JPG. They share everything except the placement.
+    const [mode, setMode] = useState<"multi" | "regions">("multi");
+    const [regions, setRegions] = useState<Region[]>([]);
+    const [selRegion, setSelRegion] = useState(0);
+    const [refPath, setRefPath] = useState("");
+    const stageRef = React.useRef<HTMLDivElement>(null);
+    const dragRef = React.useRef<{ handle: string; sx: number; sy: number; box: DOMRect; start: Region } | null>(null);
     // The folder is a country NAME ("Germany"); the filename wants its code.
     // Resolved by the host's own getTerritoryCountryCode rather than guessed
     // here -- a wrong code on a deliverable is the bug that shipped BELGIUM
@@ -244,6 +263,99 @@ export const BespokeTool = () => {
             }
         } catch {
             setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+        }
+    };
+
+    const pickReference = async () => {
+        try {
+            const picked = await evalTS("bespokeSelectReference");
+            if (typeof picked === "string" && picked) setRefPath(picked);
+        } catch {
+            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+        }
+    };
+
+    const addRegion = (m: BespokeMaster) => {
+        const cw = Number(canvasW) || 1920;
+        const ch = Number(canvasH) || 1080;
+        setRegions((prev) => [...prev, {
+            id: nextSegId++, master: m,
+            x: Math.round(cw * 0.25), y: Math.round(ch * 0.25),
+            w: Math.round(cw * 0.5), h: Math.round(ch * 0.5),
+        }]);
+        setSelRegion(regions.length);
+    };
+
+    const patchRegion = (i: number, patch: Partial<Region>) =>
+        setRegions((prev) => prev.map((r, n) => (n === i ? { ...r, ...patch } : r)));
+
+    // Mouse events, not pointer: the macOS AE CEP host does not dispatch
+    // Pointer Events reliably, which is this codebase's standing rule for
+    // anything beyond a plain click.
+    useEffect(() => {
+        if (mode !== "regions") return;
+        const move = (e: MouseEvent) => {
+            const d = dragRef.current;
+            if (!d) return;
+            const cw = Number(canvasW) || 1920;
+            const ch = Number(canvasH) || 1080;
+            const dx = ((e.clientX - d.sx) / d.box.width) * cw;
+            const dy = ((e.clientY - d.sy) / d.box.height) * ch;
+            const s0 = d.start;
+            if (d.handle === "move") {
+                patchRegion(selRegion, { x: Math.round(s0.x + dx), y: Math.round(s0.y + dy) });
+            } else {
+                const west = d.handle.indexOf("w") !== -1;
+                const north = d.handle.indexOf("n") !== -1;
+                const nx = west ? Math.round(s0.x + dx) : s0.x;
+                const ny = north ? Math.round(s0.y + dy) : s0.y;
+                const nw = west ? Math.round(s0.w - dx) : Math.round(s0.w + dx);
+                const nh = north ? Math.round(s0.h - dy) : Math.round(s0.h + dy);
+                // A region below this collapses to nothing and cannot be grabbed again.
+                patchRegion(selRegion, {
+                    x: nx, y: ny,
+                    w: Math.max(24, nw), h: Math.max(24, nh),
+                });
+            }
+        };
+        const up = () => { dragRef.current = null; };
+        window.addEventListener("mousemove", move);
+        window.addEventListener("mouseup", up);
+        return () => {
+            window.removeEventListener("mousemove", move);
+            window.removeEventListener("mouseup", up);
+        };
+    }, [mode, selRegion, canvasW, canvasH]);
+
+    /** Assembles the region layout and, when a country is set, files it. */
+    const runBuildRegions = async () => {
+        setBuilding(true);
+        setReport(null);
+        setStatus(null);
+        try {
+            const plan = {
+                canvasWidth: Number(canvasW) || 0,
+                canvasHeight: Number(canvasH) || 0,
+                seconds: Number(runtime) || 0,
+                name: outName.trim(),
+                marketsRoot, territory, batch: batch.trim(),
+                regions: regions.map((r) => ({ path: r.master.path, x: r.x, y: r.y, w: r.w, h: r.h })),
+            };
+            const res = (await evalTS("bespokeBuildRegions", JSON.stringify(plan))) as unknown as
+                { success: boolean; error?: string; report?: string; saved?: boolean; savedTo?: string } | undefined;
+            if (res === undefined) throw new Error("no bridge");
+            if (!res.success) { setStatus({ text: res.error || "The build failed.", type: "error" }); return; }
+            setReport(res.report || "(built)");
+            setStatus({
+                text: res.saved
+                    ? `Built and saved to ${(res.savedTo || "").split("/").slice(-2).join("/")}`
+                    : "Built — no country set, so it hasn't been filed.",
+                type: "success",
+            });
+        } catch {
+            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+        } finally {
+            setBuilding(false);
         }
     };
 
@@ -448,6 +560,15 @@ export const BespokeTool = () => {
                 </label>
             </div>
 
+            <div className="bsp-modes">
+                <button className={"bsp-mode" + (mode === "multi" ? " is-on" : "")} onClick={() => setMode("multi")}>
+                    <b>Multi Art</b><span>Equal panels, segments over time</span>
+                </button>
+                <button className={"bsp-mode" + (mode === "regions" ? " is-on" : "")} onClick={() => setMode("regions")}>
+                    <b>Bespoke</b><span>A master anywhere on the canvas</span>
+                </button>
+            </div>
+
             {/* --- where it lands ------------------------------------------ */}
             <div className="bsp-dest">
                 {/* The house Dropdown, the same one the localiser's campaign
@@ -518,6 +639,86 @@ export const BespokeTool = () => {
                     : "No country chosen — it will be built and left unsaved."}
             </p>
 
+            {mode === "regions" && (
+                <>
+                    <p className="bsp-lbl bsp-lbl--section">
+                        Trace over the reference
+                        <button className="bsp-reflink" onClick={pickReference}>
+                            {refPath ? refPath.split("/").pop() : "pick the reference JPG…"}
+                        </button>
+                    </p>
+                    <div
+                        className="bsp-canvas"
+                        ref={stageRef}
+                        style={{ paddingBottom: `${((Number(canvasH) || 1080) / (Number(canvasW) || 1920)) * 100}%` }}
+                    >
+                        {/* file:// because the panel is itself a file:// page --
+                            CEP has no server to fetch a local image through. */}
+                        {refPath && <img className="bsp-canvas-ref" src={`file://${refPath}`} alt="" />}
+                        {regions.map((r, i) => {
+                            const cw = Number(canvasW) || 1920;
+                            const ch = Number(canvasH) || 1080;
+                            const cover = Math.max(r.w / r.master.width, r.h / r.master.height);
+                            const lost = Math.round((1 - Math.min(r.w / (r.master.width * cover), r.h / (r.master.height * cover))) * 100);
+                            return (
+                                <div
+                                    key={r.id}
+                                    className={"bsp-region" + (i === selRegion ? " is-on" : "")}
+                                    style={{
+                                        left: `${(r.x / cw) * 100}%`, top: `${(r.y / ch) * 100}%`,
+                                        width: `${(r.w / cw) * 100}%`, height: `${(r.h / ch) * 100}%`,
+                                        background: hueFor(r.master.creative || r.master.name),
+                                    }}
+                                    onMouseDown={(e) => {
+                                        const box = stageRef.current?.getBoundingClientRect();
+                                        if (!box) return;
+                                        setSelRegion(i);
+                                        const handle = (e.target as HTMLElement).getAttribute("data-h") || "move";
+                                        dragRef.current = { handle, sx: e.clientX, sy: e.clientY, box, start: r };
+                                        e.preventDefault();
+                                    }}
+                                >
+                                    <span className="bsp-region-tag">
+                                        {r.master.creative || r.master.name}
+                                        {lost > 0 ? ` · ${lost}% cropped` : ""}
+                                    </span>
+                                    {i === selRegion && ["nw", "ne", "sw", "se"].map((h) => (
+                                        <span className={`bsp-h bsp-h--${h}`} data-h={h} key={h} />
+                                    ))}
+                                </div>
+                            );
+                        })}
+                        {regions.length === 0 && (
+                            <span className="bsp-canvas-empty">Pick a master below to drop the first region in.</span>
+                        )}
+                    </div>
+
+                    {regions[selRegion] && (
+                        <div className="bsp-segctl">
+                            <span className="bsp-lbl">Region {selRegion + 1}</span>
+                            {(["x", "y", "w", "h"] as const).map((k) => (
+                                <input
+                                    key={k}
+                                    className="bsp-input bsp-input--n"
+                                    value={String(regions[selRegion][k])}
+                                    onChange={(e) => patchRegion(selRegion, { [k]: Math.round(Number(e.target.value) || 0) } as Partial<Region>)}
+                                />
+                            ))}
+                            <button
+                                className="bsp-btn bsp-btn--ghost"
+                                onClick={() => {
+                                    setRegions((prev) => prev.filter((_, n) => n !== selRegion));
+                                    setSelRegion((n) => Math.max(0, n - 1));
+                                }}
+                            >
+                                <Trash2 size={11} /> Remove region
+                            </button>
+                        </div>
+                    )}
+                </>
+            )}
+
+            {mode === "multi" && (<>
             {/* --- the frame ----------------------------------------------- */}
             <p className="bsp-lbl bsp-lbl--section">This segment fills the frame</p>
             <div className="bsp-stage">
@@ -607,7 +808,9 @@ export const BespokeTool = () => {
                 </Tooltip>
             </div>
 
-            {(blockers.length > 0 || notes.length > 0) && (
+            </>)}
+
+            {(mode === "multi") && (blockers.length > 0 || notes.length > 0) && (
                 <ul className="bsp-problems">
                     {blockers.map((p) => (
                         <li key={p}><AlertCircle size={10} /> {p}</li>
@@ -619,7 +822,9 @@ export const BespokeTool = () => {
             )}
 
             {/* --- the picker ----------------------------------------------- */}
-            <p className="bsp-lbl bsp-lbl--section">Add a master to this segment</p>
+            <p className="bsp-lbl bsp-lbl--section">
+                {mode === "regions" ? "Add a master as a region" : "Add a master to this segment"}
+            </p>
             <div className="bsp-picker">
                 {/* Creative first, the way OV Library asks it -- the question is
                     "which artwork", not "what was that file called". */}
@@ -697,7 +902,7 @@ export const BespokeTool = () => {
                     {!loading && !masters && <p className="bsp-none">Pick a masters folder to browse.</p>}
                     {!loading && masters && matches.length === 0 && <p className="bsp-none">No master matches those filters.</p>}
                     {!loading && matches.map((m) => (
-                        <button className="bsp-master" key={m.path} onClick={() => addTile(m)}>
+                        <button className="bsp-master" key={m.path} onClick={() => (mode === "regions" ? addRegion(m) : addTile(m))}>
                             <span className="bsp-master-sw" style={{ background: hueFor(m.creative) }} />
                             <span className="bsp-master-name">{m.creative || m.name}</span>
                             <span className="bsp-master-tag">{m.size || "?"}</span>
@@ -716,8 +921,14 @@ export const BespokeTool = () => {
             {/* Says plainly what this does NOT do yet, rather than offering a
                 Build button that would have to guess how masters are placed. */}
             <div className="bsp-pending">
-                <Tooltip text={blockers.length ? "Every segment needs at least one creative" : "Import the masters and assemble the composition"}>
-                    <button className="bsp-btn" onClick={runBuild} disabled={building || blockers.length > 0}>
+                <Tooltip text={mode === "regions"
+                    ? (regions.length ? "Import the masters and assemble the regions" : "Add a region first")
+                    : (blockers.length ? "Every segment needs at least one creative" : "Import the masters and assemble the composition")}>
+                    <button
+                        className="bsp-btn"
+                        onClick={mode === "regions" ? runBuildRegions : runBuild}
+                        disabled={building || (mode === "regions" ? regions.length === 0 : blockers.length > 0)}
+                    >
                         {building ? "Building…" : "Build composition"}
                     </button>
                 </Tooltip>
