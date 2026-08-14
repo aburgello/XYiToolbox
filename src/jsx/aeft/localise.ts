@@ -4097,6 +4097,284 @@ function bespokeDropVersionWrappers(folderName: string): number {
   return doomed.length;
 }
 
+// =============================================================================
+// BESPOKE REGIONS -- a master per rectangle, cropped to fill.
+//
+// The other mode lays equal panels edge to edge; this one puts a master
+// anywhere. Same import, same frontcard wrap, same filing -- only the placement
+// differs, so everything below reuses bespokeBuild's helpers rather than
+// restating them.
+//
+// CROP TO FILL, ALWAYS, and axis-aligned only: both settled with the studio.
+// A master is scaled until it COVERS its region and the overflow is cut, which
+// is the opposite of the tiled mode's fit-inside. Anchored centre.
+// =============================================================================
+interface BespokeRegion {
+  path: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export const bespokeBuildRegions = (
+  planJson: string
+): { success: boolean; error?: string; report?: string; saved?: boolean; savedTo?: string } => {
+  try {
+    const plan = JSON.parse(planJson) as {
+      canvasWidth: number; canvasHeight: number; seconds: number;
+      regions: BespokeRegion[]; name?: string;
+      marketsRoot?: string; territory?: string; batch?: string;
+    };
+    if (!plan || !plan.regions || plan.regions.length === 0) {
+      return { success: false, error: "Nothing to build -- add a region first." };
+    }
+    const canvasW = Math.round(Number(plan.canvasWidth) || 0);
+    const canvasH = Math.round(Number(plan.canvasHeight) || 0);
+    const seconds = Number(plan.seconds) || 0;
+    if (canvasW <= 0 || canvasH <= 0) return { success: false, error: "Set a canvas size first." };
+    if (seconds <= 0) return { success: false, error: "Set a runtime first." };
+
+    const lines: string[] = [];
+    let saved = false;
+    let savedTo = "";
+    app.beginUndoGroup("Bespoke build (regions)");
+    try {
+      // One import per master, however many regions use it -- same rule as the
+      // tiled mode, for the same reason: a master drags in ~70 project items.
+      const compFor: { [path: string]: CompItem } = {};
+      for (let r = 0; r < plan.regions.length; r++) {
+        const path = String(plan.regions[r].path);
+        if (compFor[path]) continue;
+        const folderName = String(path).split("/").pop();
+        try {
+          app.project.importFile(new ImportOptions(new File(path)));
+        } catch (e) {
+          return { success: false, error: "Couldn't import " + folderName + ": " + e.toString() };
+        }
+        const main = bespokeMainComp(String(folderName));
+        if (!main) {
+          return { success: false, error: "Imported " + folderName + " but found no comp in its Composition/Main to place." };
+        }
+        compFor[path] = main;
+        lines.push("imported " + folderName + " -> placing " + main.name);
+        const dropped = bespokeDropVersionWrappers(String(folderName));
+        if (dropped > 0) lines.push("  dropped " + dropped + " unused _V01 wrapper" + (dropped === 1 ? "" : "s"));
+      }
+
+      let fps = 25;
+      for (const k in compFor) { if (compFor.hasOwnProperty(k)) { fps = compFor[k].frameRate; break; } }
+
+      const outName = plan.name && plan.name !== "" ? plan.name : "Bespoke_" + canvasW + "x" + canvasH;
+      const out = app.project.items.addComp(outName, canvasW, canvasH, 1, seconds, fps);
+      out.label = 1;
+      lines.push("");
+      lines.push("built " + outName + "  " + canvasW + "x" + canvasH + "  "
+        + Math.round(seconds * 1000) / 1000 + "s  " + Math.round(fps * 1000) / 1000 + "fps");
+
+      // Added in reverse so region 1 ends on top of the layer stack, matching
+      // the order they are listed in the panel.
+      for (let i = plan.regions.length - 1; i >= 0; i--) {
+        const reg = plan.regions[i];
+        const src = compFor[String(reg.path)];
+        const layer = out.layers.add(src);
+        layer.name = "R" + (i + 1);
+
+        // COVER, not fit: the larger of the two ratios, so no gap is ever left
+        // inside the region and the excess is cropped by the mask below.
+        const cover = Math.max(reg.w / src.width, reg.h / src.height);
+        (layer.property("Scale") as Property).setValue([cover * 100, cover * 100]);
+        (layer.property("Position") as Property).setValue([reg.x + reg.w / 2, reg.y + reg.h / 2]);
+
+        // The crop itself. A rectangular mask in LAYER space, which is the
+        // layer's own untransformed pixels -- so the region's size has to be
+        // divided back out by the scale, or the mask would be cover-times too
+        // big and crop nothing.
+        const halfW = reg.w / cover / 2;
+        const halfH = reg.h / cover / 2;
+        const cx = src.width / 2;
+        const cy = src.height / 2;
+        const mask = (layer as AVLayer).Masks.addProperty("ADBE Mask Atom") as MaskPropertyGroup;
+        const shape = new Shape();
+        shape.vertices = [
+          [cx - halfW, cy - halfH],
+          [cx + halfW, cy - halfH],
+          [cx + halfW, cy + halfH],
+          [cx - halfW, cy + halfH],
+        ];
+        shape.closed = true;
+        (mask.property("ADBE Mask Shape") as Property).setValue(shape);
+        mask.name = "Crop";
+
+        const lost = Math.round((1 - Math.min(reg.w / (src.width * cover), reg.h / (src.height * cover))) * 100);
+        lines.push("  R" + (i + 1) + " " + src.name + " at " + reg.x + "," + reg.y
+          + " " + reg.w + "x" + reg.h + " -- " + Math.round(cover * 1000) / 10 + "%"
+          + (lost > 0 ? ", " + lost + "% cropped" : ", exact"));
+      }
+
+      const finish = bespokeFinishAndFile(out, outName, canvasW, canvasH, plan, lines);
+      saved = finish.saved;
+      savedTo = finish.savedTo;
+    } finally {
+      app.endUndoGroup();
+    }
+    return { success: true, report: lines.join("\n"), saved: saved, savedTo: savedTo };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/**
+ * Everything after the placement: frontcard, scale, file, stamp, tidy.
+ *
+ * Extracted so the tiled mode and the region mode finish IDENTICALLY. They
+ * differ only in how layers are positioned; a second copy of this would drift,
+ * and the copy that drifts is the one nobody looks at until a deliverable goes
+ * out wrong.
+ */
+function bespokeFinishAndFile(
+  out: CompItem,
+  outName: string,
+  canvasW: number,
+  canvasH: number,
+  plan: { marketsRoot?: string; territory?: string; batch?: string },
+  lines: string[]
+): { saved: boolean; savedTo: string } {
+  let saved = false;
+  let savedTo = "";
+        // Same frontcardWrap the Frontcard button uses, so the structure matches
+    // every master on disk: "<name>" is the edit, "<name>_V01" is the render
+    // comp with a 5s frontcard over it.
+    let finished: CompItem = out;
+    let frontcardOk = false;
+    try {
+      const wrapped = frontcardWrap(out);
+      finished = wrapped.comp;
+      frontcardOk = !!wrapped.frontcardItem;
+      lines.push("");
+      lines.push("wrapped as " + finished.name + " with a " + FRONTCARD_LEAD_IN_SECONDS + "s frontcard");
+
+      if (!frontcardOk) {
+        lines.push("  NO FRONTCARD FOUND in the brand template -- the wrapper is empty above the edit.");
+      } else {
+        // MULTI COMP SCALE, on the frontcard only. The template comes at a
+        // standard portrait/landscape size and this canvas is neither, so
+        // without it the frontcard sits at its own size in the corner. Same
+        // scaleCompToFit the Multi Comp Scale button calls.
+        for (let L = 1; L <= finished.numLayers; L++) {
+          const layer = finished.layer(L);
+          const src2 = (layer as AVLayer).source;
+          if (!src2 || typeof (src2 as CompItem).numLayers !== "number") continue;
+          if (String(layer.name).indexOf("Frontcard") === -1) continue;
+          if ((src2 as CompItem).width !== canvasW || (src2 as CompItem).height !== canvasH) {
+            scaleCompToFit(src2 as CompItem, canvasW, canvasH);
+            (layer as AVLayer).scale.setValue([100, 100]);
+            lines.push("  frontcard scaled to " + canvasW + "x" + canvasH);
+          }
+        }
+      }
+    } catch (e) {
+      lines.push("");
+      lines.push("Frontcard step failed: " + e.toString());
+    }
+
+    // --- where it lands ---------------------------------------------------
+    // Same convention as Build a Batch: <markets>/<territory>/AE/<batch>.
+    // Saved only when a destination was given; otherwise built and left for
+    // the artist to place, which is what it did before.
+    if (plan.marketsRoot && plan.territory) {
+      const territoryFolder = new Folder(String(plan.marketsRoot) + "/" + String(plan.territory));
+      if (!territoryFolder.exists) {
+        lines.push("");
+        lines.push("NOT SAVED: " + territoryFolder.fsName + " isn't reachable right now.");
+      } else {
+        // Folder.create() does not make intermediate levels -- each in turn.
+        const aeFolder = new Folder(territoryFolder.fsName + "/AE");
+        if (!aeFolder.exists) aeFolder.create();
+        const batchName = csvLocPadBatchNumber(String(plan.batch || "").replace(/^\s+|\s+$/g, ""));
+        const dest = batchName !== "" ? new Folder(aeFolder.fsName + "/" + batchName) : aeFolder;
+        if (!dest.exists) dest.create();
+
+        const outFile = new File(dest.fsName + "/" + outName + "_V01.aep");
+
+        // THE MASTERS GUARD, checked at WRITE time. A destination that sits
+        // anywhere under a master's own folder is refused outright -- the
+        // whole point of this design is that overwriting a studio master is
+        // structurally impossible, not merely unlikely.
+        let clash = "";
+        for (const k in compFor) {
+          if (!compFor.hasOwnProperty(k)) continue;
+          const masterDir = String(k).split("/").slice(0, -1).join("/");
+          if (outFile.fsName.indexOf(masterDir) === 0) { clash = masterDir; break; }
+        }
+        if (clash !== "") {
+          lines.push("");
+          lines.push("NOT SAVED: that destination sits inside a masters folder (" + clash + ").");
+        } else {
+          try {
+            app.project.save(outFile);
+            lines.push("");
+            lines.push("saved  " + outFile.fsName);
+            saved = true;
+            savedTo = outFile.fsName;
+          } catch (e) {
+            lines.push("");
+            lines.push("NOT SAVED: " + e.toString());
+          }
+        }
+      }
+    } else {
+      lines.push("Nothing saved -- no territory chosen, so it was built and left where it is.");
+    }
+
+    // --- stamp and tidy, in that order and only once saved ----------------
+    // CHEEKY T CANNOT RUN ON AN UNSAVED PROJECT. cheekyDTCheck returns "Save
+    // this project once first" before it parses anything -- it reads the
+    // project FILE path for the film title -- so running it before the save
+    // left every frontcard showing the template's placeholders. It also reads
+    // the ACTIVE comp, so the _V01 wrapper has to be both open and selected.
+    finished.openInViewer();
+    finished.selected = true;
+    if (!saved) {
+      lines.push("");
+      lines.push("Cheeky T skipped: it needs a saved project to read the film title from.");
+    } else if (!frontcardOk) {
+      lines.push("");
+      lines.push("Cheeky T skipped: there is no frontcard on the wrapper to stamp.");
+    } else {
+      // EVERY FIELD, not Cheeky T's four. Cheeky T deliberately leaves the
+      // title and campaign line alone because it cannot know them; here the
+      // comp name carries both, so writing them beats preserving a template
+      // placeholder. Argument order is title, artwork, version, campaign,
+      // duration, territory, date.
+      const stamped = cheekyDTCheck(true, true, true, true, true, true, true) as
+        { success: boolean; error?: string; message?: string };
+      lines.push("");
+      lines.push(stamped && stamped.success
+        ? "Cheeky T: " + (stamped.message || "stamped")
+        : "Cheeky T did not run: " + ((stamped && stamped.error) || "unknown"));
+    }
+
+    // Organise last, once every comp and folder this build creates exists.
+    try {
+      const tidied = organiseFolders() as { success: boolean; error?: string };
+      lines.push(tidied && tidied.success
+        ? "Organised into Composition/PreComp/Main."
+        : "Organise Folders did not run: " + ((tidied && tidied.error) || "unknown"));
+    } catch (e) {
+      lines.push("Organise Folders failed: " + e.toString());
+    }
+
+    // Re-saved so the tidy-up and the stamped frontcard are in the file on
+    // disk rather than only in the open project.
+    if (saved) {
+      try { app.project.save(); } catch (e) { lines.push("Couldn't re-save after tidying: " + e.toString()); }
+    }
+
+    finished.openInViewer();
+  return { saved: saved, savedTo: savedTo };
+}
+
 export const bespokeBuild = (planJson: string): { success: boolean; error?: string; report?: string; saved?: boolean; savedTo?: string } => {
   try {
     const plan = JSON.parse(planJson) as BespokePlan;
@@ -4305,137 +4583,9 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
         ? "Each panel is its own duplicate in \"" + outName + " panels\" -- retime one without touching the rest."
         : "Panels share one comp per master -- edit it once and every panel follows.");
       lines.push("No frontcard added: it goes over the finished canvas at " + canvasW + "x" + canvasH + ".");
-      // --- finish it the way a localised batch is finished ------------------
-      // Same frontcardWrap the Frontcard button uses, so the structure matches
-      // every master on disk: "<name>" is the edit, "<name>_V01" is the render
-      // comp with a 5s frontcard over it.
-      let finished: CompItem = out;
-      let frontcardOk = false;
-      try {
-        const wrapped = frontcardWrap(out);
-        finished = wrapped.comp;
-        frontcardOk = !!wrapped.frontcardItem;
-        lines.push("");
-        lines.push("wrapped as " + finished.name + " with a " + FRONTCARD_LEAD_IN_SECONDS + "s frontcard");
-
-        if (!frontcardOk) {
-          lines.push("  NO FRONTCARD FOUND in the brand template -- the wrapper is empty above the edit.");
-        } else {
-          // MULTI COMP SCALE, on the frontcard only. The template comes at a
-          // standard portrait/landscape size and this canvas is neither, so
-          // without it the frontcard sits at its own size in the corner. Same
-          // scaleCompToFit the Multi Comp Scale button calls.
-          for (let L = 1; L <= finished.numLayers; L++) {
-            const layer = finished.layer(L);
-            const src2 = (layer as AVLayer).source;
-            if (!src2 || typeof (src2 as CompItem).numLayers !== "number") continue;
-            if (String(layer.name).indexOf("Frontcard") === -1) continue;
-            if ((src2 as CompItem).width !== canvasW || (src2 as CompItem).height !== canvasH) {
-              scaleCompToFit(src2 as CompItem, canvasW, canvasH);
-              (layer as AVLayer).scale.setValue([100, 100]);
-              lines.push("  frontcard scaled to " + canvasW + "x" + canvasH);
-            }
-          }
-        }
-      } catch (e) {
-        lines.push("");
-        lines.push("Frontcard step failed: " + e.toString());
-      }
-
-      // --- where it lands ---------------------------------------------------
-      // Same convention as Build a Batch: <markets>/<territory>/AE/<batch>.
-      // Saved only when a destination was given; otherwise built and left for
-      // the artist to place, which is what it did before.
-      if (plan.marketsRoot && plan.territory) {
-        const territoryFolder = new Folder(String(plan.marketsRoot) + "/" + String(plan.territory));
-        if (!territoryFolder.exists) {
-          lines.push("");
-          lines.push("NOT SAVED: " + territoryFolder.fsName + " isn't reachable right now.");
-        } else {
-          // Folder.create() does not make intermediate levels -- each in turn.
-          const aeFolder = new Folder(territoryFolder.fsName + "/AE");
-          if (!aeFolder.exists) aeFolder.create();
-          const batchName = csvLocPadBatchNumber(String(plan.batch || "").replace(/^\s+|\s+$/g, ""));
-          const dest = batchName !== "" ? new Folder(aeFolder.fsName + "/" + batchName) : aeFolder;
-          if (!dest.exists) dest.create();
-
-          const outFile = new File(dest.fsName + "/" + outName + "_V01.aep");
-
-          // THE MASTERS GUARD, checked at WRITE time. A destination that sits
-          // anywhere under a master's own folder is refused outright -- the
-          // whole point of this design is that overwriting a studio master is
-          // structurally impossible, not merely unlikely.
-          let clash = "";
-          for (const k in compFor) {
-            if (!compFor.hasOwnProperty(k)) continue;
-            const masterDir = String(k).split("/").slice(0, -1).join("/");
-            if (outFile.fsName.indexOf(masterDir) === 0) { clash = masterDir; break; }
-          }
-          if (clash !== "") {
-            lines.push("");
-            lines.push("NOT SAVED: that destination sits inside a masters folder (" + clash + ").");
-          } else {
-            try {
-              app.project.save(outFile);
-              lines.push("");
-              lines.push("saved  " + outFile.fsName);
-              saved = true;
-              savedTo = outFile.fsName;
-            } catch (e) {
-              lines.push("");
-              lines.push("NOT SAVED: " + e.toString());
-            }
-          }
-        }
-      } else {
-        lines.push("Nothing saved -- no territory chosen, so it was built and left where it is.");
-      }
-
-      // --- stamp and tidy, in that order and only once saved ----------------
-      // CHEEKY T CANNOT RUN ON AN UNSAVED PROJECT. cheekyDTCheck returns "Save
-      // this project once first" before it parses anything -- it reads the
-      // project FILE path for the film title -- so running it before the save
-      // left every frontcard showing the template's placeholders. It also reads
-      // the ACTIVE comp, so the _V01 wrapper has to be both open and selected.
-      finished.openInViewer();
-      finished.selected = true;
-      if (!saved) {
-        lines.push("");
-        lines.push("Cheeky T skipped: it needs a saved project to read the film title from.");
-      } else if (!frontcardOk) {
-        lines.push("");
-        lines.push("Cheeky T skipped: there is no frontcard on the wrapper to stamp.");
-      } else {
-        // EVERY FIELD, not Cheeky T's four. Cheeky T deliberately leaves the
-        // title and campaign line alone because it cannot know them; here the
-        // comp name carries both, so writing them beats preserving a template
-        // placeholder. Argument order is title, artwork, version, campaign,
-        // duration, territory, date.
-        const stamped = cheekyDTCheck(true, true, true, true, true, true, true) as
-          { success: boolean; error?: string; message?: string };
-        lines.push("");
-        lines.push(stamped && stamped.success
-          ? "Cheeky T: " + (stamped.message || "stamped")
-          : "Cheeky T did not run: " + ((stamped && stamped.error) || "unknown"));
-      }
-
-      // Organise last, once every comp and folder this build creates exists.
-      try {
-        const tidied = organiseFolders() as { success: boolean; error?: string };
-        lines.push(tidied && tidied.success
-          ? "Organised into Composition/PreComp/Main."
-          : "Organise Folders did not run: " + ((tidied && tidied.error) || "unknown"));
-      } catch (e) {
-        lines.push("Organise Folders failed: " + e.toString());
-      }
-
-      // Re-saved so the tidy-up and the stamped frontcard are in the file on
-      // disk rather than only in the open project.
-      if (saved) {
-        try { app.project.save(); } catch (e) { lines.push("Couldn't re-save after tidying: " + e.toString()); }
-      }
-
-      finished.openInViewer();
+      const finish = bespokeFinishAndFile(out, outName, canvasW, canvasH, plan, lines);
+      saved = finish.saved;
+      savedTo = finish.savedTo;
     } finally {
       app.endUndoGroup();
     }
