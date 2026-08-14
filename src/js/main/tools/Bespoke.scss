@@ -687,3 +687,27 @@
 .bsp-h--ne { right: -6px; top: -6px; cursor: nesw-resize; }
 .bsp-h--sw { left: -6px; bottom: -6px; cursor: nesw-resize; }
 .bsp-h--se { right: -6px; bottom: -6px; cursor: nwse-resize; }
+
+/* --- align + constraints -------------------------------------------------- */
+.bsp-align { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+.bsp-align-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 15px);
+    grid-template-rows: repeat(3, 15px);
+    gap: 2px;
+    flex: none;
+}
+
+.bsp-anchor {
+    padding: 0;
+    border: 1px solid var(--surface-border, #363636);
+    border-radius: 3px;
+    background: var(--surface-0, #121212);
+    cursor: pointer;
+
+    &:hover { background: rgba(45, 212, 191, 0.2); border-color: #2dd4bf; }
+    &:active { background: rgba(45, 212, 191, 0.32); }
+}
+
+.bsp-locks { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

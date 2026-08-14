@@ -28,7 +28,7 @@
 // step. Shipping a Build button that guessed would be worse than not having one.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { AlertCircle, Globe2, LayoutGrid, Library, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, Square as SquareIcon, Trash2, X } from "lucide-react";
+import { AlertCircle, Copy, Globe2, LayoutGrid, Library, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, Square as SquareIcon, Trash2, X } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
@@ -140,6 +140,12 @@ export const BespokeTool = () => {
     const [regions, setRegions] = useState<Region[]>([]);
     const [selRegion, setSelRegion] = useState(0);
     const [refPath, setRefPath] = useState("");
+    // Constraints while dragging a corner. Ratio keeps a region from ever
+    // introducing a crop it did not have; locking a side is for the common case
+    // of a panel that must stay the full height or width of the screen.
+    const [lockRatio, setLockRatio] = useState(true);
+    const [lockW, setLockW] = useState(false);
+    const [lockH, setLockH] = useState(false);
     const stageRef = React.useRef<HTMLDivElement>(null);
     const dragRef = React.useRef<{ handle: string; sx: number; sy: number; box: DOMRect; start: Region } | null>(null);
     // The folder is a country NAME ("Germany"); the filename wants its code.
@@ -309,12 +315,31 @@ export const BespokeTool = () => {
                 const north = d.handle.indexOf("n") !== -1;
                 const nx = west ? Math.round(s0.x + dx) : s0.x;
                 const ny = north ? Math.round(s0.y + dy) : s0.y;
-                const nw = west ? Math.round(s0.w - dx) : Math.round(s0.w + dx);
-                const nh = north ? Math.round(s0.h - dy) : Math.round(s0.h + dy);
-                // A region below this collapses to nothing and cannot be grabbed again.
+                let nw = west ? Math.round(s0.w - dx) : Math.round(s0.w + dx);
+                let nh = north ? Math.round(s0.h - dy) : Math.round(s0.h + dy);
+
+                // A locked side simply does not move; ratio drives the other
+                // axis from the one being dragged, using the region's CURRENT
+                // shape so a lock preserves what you already have rather than
+                // snapping it to the master's.
+                if (lockW) nw = s0.w;
+                if (lockH) nh = s0.h;
+                if (lockRatio && !lockW && !lockH) {
+                    const aspect = s0.w / Math.max(1, s0.h);
+                    if (Math.abs(nw - s0.w) >= Math.abs(nh - s0.h)) nh = Math.round(nw / aspect);
+                    else nw = Math.round(nh * aspect);
+                }
+
+                // Below this a region collapses and can never be grabbed again.
+                const fw = Math.max(24, nw);
+                const fh = Math.max(24, nh);
                 patchRegion(selRegion, {
-                    x: nx, y: ny,
-                    w: Math.max(24, nw), h: Math.max(24, nh),
+                    // A west/north handle moves the origin by however much the
+                    // size actually changed, not by the raw pointer delta --
+                    // otherwise a constrained drag detaches from the cursor.
+                    x: west ? Math.round(s0.x + (s0.w - fw)) : nx,
+                    y: north ? Math.round(s0.y + (s0.h - fh)) : ny,
+                    w: fw, h: fh,
                 });
             }
         };
@@ -325,7 +350,46 @@ export const BespokeTool = () => {
             window.removeEventListener("mousemove", move);
             window.removeEventListener("mouseup", up);
         };
-    }, [mode, selRegion, canvasW, canvasH]);
+    }, [mode, selRegion, canvasW, canvasH, lockRatio, lockW, lockH]);
+
+    /** Snaps a region to one of the canvas's nine anchor points. */
+    const alignRegion = (hx: 0 | 0.5 | 1, vy: 0 | 0.5 | 1) => {
+        const r = regions[selRegion];
+        if (!r) return;
+        const cw = Number(canvasW) || 1920;
+        const ch = Number(canvasH) || 1080;
+        patchRegion(selRegion, {
+            x: Math.round((cw - r.w) * hx),
+            y: Math.round((ch - r.h) * vy),
+        });
+    };
+
+    /** Same master, same size, nudged clear so it can be grabbed. */
+    const duplicateRegion = () => {
+        const r = regions[selRegion];
+        if (!r) return;
+        const cw = Number(canvasW) || 1920;
+        const ch = Number(canvasH) || 1080;
+        const step = Math.round(Math.min(cw, ch) * 0.03);
+        setRegions((prev) => [...prev, {
+            ...r, id: nextSegId++,
+            x: Math.min(r.x + step, Math.max(0, cw - r.w)),
+            y: Math.min(r.y + step, Math.max(0, ch - r.h)),
+        }]);
+        setSelRegion(regions.length);
+    };
+
+    /** Reshapes the region to its master's native ratio, so nothing is cropped. */
+    const matchMasterRatio = () => {
+        const r = regions[selRegion];
+        if (!r || !r.master.width || !r.master.height) return;
+        const aspect = r.master.width / r.master.height;
+        // Keeps the region's area roughly as it was rather than jumping to the
+        // master's pixel size, which on a 13536px master would fill the screen.
+        const area = r.w * r.h;
+        const w = Math.round(Math.sqrt(area * aspect));
+        patchRegion(selRegion, { w, h: Math.round(w / aspect) });
+    };
 
     /** Assembles the region layout and, when a country is set, files it. */
     const runBuildRegions = async () => {
@@ -704,6 +768,9 @@ export const BespokeTool = () => {
                                     onChange={(e) => patchRegion(selRegion, { [k]: Math.round(Number(e.target.value) || 0) } as Partial<Region>)}
                                 />
                             ))}
+                            <button className="bsp-btn bsp-btn--ghost" onClick={duplicateRegion}>
+                                <Copy size={11} /> Duplicate
+                            </button>
                             <button
                                 className="bsp-btn bsp-btn--ghost"
                                 onClick={() => {
@@ -713,6 +780,35 @@ export const BespokeTool = () => {
                             >
                                 <Trash2 size={11} /> Remove region
                             </button>
+                        </div>
+                    )}
+
+                    {regions[selRegion] && (
+                        <div className="bsp-align">
+                            {/* Nine anchors, laid out as they sit on the canvas --
+                                a 3x3 grid needs no labels to be read. */}
+                            <span className="bsp-align-grid">
+                                {([0, 0.5, 1] as const).map((vy) =>
+                                    ([0, 0.5, 1] as const).map((hx) => (
+                                        <button
+                                            key={`${hx}-${vy}`}
+                                            className="bsp-anchor"
+                                            title={`Snap to ${vy === 0 ? "top" : vy === 1 ? "bottom" : "middle"} ${hx === 0 ? "left" : hx === 1 ? "right" : "centre"}`}
+                                            onClick={() => alignRegion(hx, vy)}
+                                        />
+                                    ))
+                                )}
+                            </span>
+                            <span className="bsp-locks">
+                                <CheckboxToggle checked={lockRatio} onChange={setLockRatio} label="Keep ratio" />
+                                <CheckboxToggle checked={lockW} onChange={setLockW} label="Lock width" />
+                                <CheckboxToggle checked={lockH} onChange={setLockH} label="Lock height" />
+                                <Tooltip text="Reshape this region to its master's own ratio, so nothing is cropped">
+                                    <button className="bsp-btn bsp-btn--ghost" onClick={matchMasterRatio}>
+                                        Match master ratio
+                                    </button>
+                                </Tooltip>
+                            </span>
                         </div>
                     )}
                 </>
