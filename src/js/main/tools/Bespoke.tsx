@@ -33,6 +33,7 @@ import { evalTS } from "../../lib/utils/bolt";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
 import Dropdown from "../Dropdown";
+import CheckboxToggle from "../CheckboxToggle";
 import "../shared.scss";
 import "./Bespoke.scss";
 
@@ -118,6 +119,10 @@ export const BespokeTool = () => {
     // produces a name with no site token at all.
     const [site, setSite] = useState("");
     const [siteTouched, setSiteTouched] = useState(false);
+    // Shared by default: most of the time every panel of a master is the same
+    // creative, so editing it once should show up everywhere. Duplicating is
+    // the opt-in, for when panels genuinely need to differ.
+    const [duplicatePanels, setDuplicatePanels] = useState(false);
     // The folder is a country NAME ("Germany"); the filename wants its code.
     // Resolved by the host's own getTerritoryCountryCode rather than guessed
     // here -- a wrong code on a deliverable is the bug that shipped BELGIUM
@@ -290,6 +295,7 @@ export const BespokeTool = () => {
                 marketsRoot,
                 territory,
                 batch: batch.trim(),
+                duplicatePanels,
                 segments: segments.map((sg) => ({
                     seconds: sg.seconds,
                     tiles: sg.tiles.map((t) => ({ path: t.path })),
@@ -413,15 +419,21 @@ export const BespokeTool = () => {
         setCurrent((c) => Math.max(0, c - 1));
     };
 
-    // Everything wrong with the composition, said plainly and live rather than
-    // discovered at build time.
-    const problems: string[] = [];
-    if (segments.some((s) => s.tiles.length === 0)) problems.push("a segment has no creatives in it");
+    // BLOCKERS vs NOTES. Only a segment with nothing in it genuinely cannot be
+    // built; everything else is a layout the artist may well have meant. Tiles
+    // that do not fill the canvas are centred with space around them, which is
+    // a legitimate composition rather than an error to refuse.
+    const blockers: string[] = [];
+    if (segments.some((s) => s.tiles.length === 0)) blockers.push("a segment has no creatives in it");
+
+    const notes: string[] = [];
     if (wantSecs > 0 && Math.abs(totalSecs - wantSecs) > 0.001) {
-        problems.push(`segments total ${totalSecs}s, the row asks for ${wantSecs}s`);
+        notes.push(`segments total ${totalSecs}s, the row asks for ${wantSecs}s`);
     }
     if (seg && seg.tiles.length > 0 && canvasWidth > 0 && naturalWidth !== canvasWidth) {
-        problems.push(`this segment's masters total ${naturalWidth}px across a ${canvasWidth}px canvas`);
+        notes.push(naturalWidth > canvasWidth
+            ? `this segment is ${naturalWidth}px across a ${canvasWidth}px canvas — it will be scaled down to fit`
+            : `this segment is ${naturalWidth}px across a ${canvasWidth}px canvas — it will be centred with space either side`);
     }
 
     return (
@@ -577,6 +589,17 @@ export const BespokeTool = () => {
                 <button className="bsp-btn bsp-btn--ghost" onClick={removeSegment} disabled={segments.length <= 1}>
                     <Trash2 size={11} /> Remove segment
                 </button>
+                <Tooltip text={duplicatePanels
+                    ? "Each panel gets its own copy — edit one without touching the others"
+                    : "Every panel of a master shares one comp — edit it once and they all follow"}>
+                    <span className="bsp-toggle">
+                        <CheckboxToggle
+                            checked={duplicatePanels}
+                            onChange={setDuplicatePanels}
+                            label="Separate comp per panel"
+                        />
+                    </span>
+                </Tooltip>
             </div>
 
             {/* --- running order ------------------------------------------- */}
@@ -610,10 +633,13 @@ export const BespokeTool = () => {
                 </Tooltip>
             </div>
 
-            {problems.length > 0 && (
+            {(blockers.length > 0 || notes.length > 0) && (
                 <ul className="bsp-problems">
-                    {problems.map((p) => (
+                    {blockers.map((p) => (
                         <li key={p}><AlertCircle size={10} /> {p}</li>
+                    ))}
+                    {notes.map((p) => (
+                        <li className="is-note" key={p}><AlertCircle size={10} /> {p}</li>
                     ))}
                 </ul>
             )}
@@ -700,8 +726,8 @@ export const BespokeTool = () => {
                         {probing ? "Probing…" : "Probe import"}
                     </button>
                 </Tooltip>
-                <Tooltip text={problems.length ? "Fix what's flagged above first" : "Import the masters and assemble the composition"}>
-                    <button className="bsp-btn" onClick={runBuild} disabled={building || probing || problems.length > 0}>
+                <Tooltip text={blockers.length ? "Every segment needs at least one creative" : "Import the masters and assemble the composition"}>
+                    <button className="bsp-btn" onClick={runBuild} disabled={building || probing || blockers.length > 0}>
                         {building ? "Building…" : "Build composition"}
                     </button>
                 </Tooltip>

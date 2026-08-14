@@ -4061,6 +4061,10 @@ interface BespokePlan {
   marketsRoot?: string;
   territory?: string;
   batch?: string;
+  /** True gives every tile its OWN duplicate of the edit comp; false (the
+   *  default) points them all at the one imported comp, so editing it once
+   *  shows up in every panel. */
+  duplicatePanels?: boolean;
 }
 
 /** The comp a tile should place: Composition/Main, minus the _V<n> wrapper. */
@@ -4179,7 +4183,11 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
       const outName = plan.name && plan.name !== "" ? plan.name : "Bespoke_" + canvasW + "x" + canvasH;
       const out = app.project.items.addComp(outName, canvasW, canvasH, 1, total, fps);
       // The duplicates live together rather than scattered through the root.
-      const panelFolder = app.project.items.addFolder(outName + " panels");
+      const duplicatePanels = plan.duplicatePanels === true;
+      // Only created when there are duplicates to put in it -- an empty folder
+      // in every shared build would be its own clutter.
+      let panelFolder: FolderItem | null = null;
+      if (duplicatePanels) panelFolder = app.project.items.addFolder(outName + " panels");
       // AE label 1 is red, 10 is purple. The two comps that ARE the deliverable
       // (the edit and its _V01 wrapper) read red like every other delivery comp
       // in this codebase; the per-panel working duplicates are purple so a
@@ -4196,24 +4204,59 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
         const seg = plan.segments[s];
         const secs = Number(seg.seconds) || 0;
         const n = seg.tiles.length;
-        const panelW = canvasW / n;
+
+        // LAID SIDE BY SIDE AT NATIVE SIZE, THEN CENTRED. Dividing the canvas
+        // into n equal panels and scaling each to fit forced every tile to the
+        // canvas whether it belonged there or not. Tiles now keep their own
+        // size, sit next to each other, and the group is centred -- leaving
+        // space when they do not fill it, which is a legitimate layout rather
+        // than an error to refuse.
+        //
+        // Scaled DOWN only when the row would overflow, never up: enlarging a
+        // master past its native size is how a deliverable goes soft.
+        let natural = 0;
+        let tallest = 0;
+        for (let m = 0; m < n; m++) {
+          const c = compFor[String(seg.tiles[m].path)];
+          natural += c.width;
+          if (c.height > tallest) tallest = c.height;
+        }
+        let fit = 1;
+        if (natural > canvasW) fit = canvasW / natural;
+        if (tallest * fit > canvasH) fit = canvasH / tallest;
+
+        // Offsets computed UP FRONT, not accumulated in the loop: the tiles are
+        // added in reverse so the leftmost ends on top of the layer stack, and a
+        // running cursor would lay them out backwards.
+        const centreX: number[] = [];
+        let walk = (canvasW - natural * fit) / 2;
+        for (let m = 0; m < n; m++) {
+          const c = compFor[String(seg.tiles[m].path)];
+          centreX.push(walk + (c.width * fit) / 2);
+          walk += c.width * fit;
+        }
         lines.push("");
-        lines.push("segment " + (s + 1) + ": " + n + " x " + Math.round(panelW) + "px for " + secs + "s");
+        lines.push("segment " + (s + 1) + ": " + n + " tile(s), " + Math.round(natural * fit)
+          + "px of a " + canvasW + "px canvas for " + secs + "s"
+          + (fit < 1 ? "  (scaled to " + Math.round(fit * 1000) / 10 + "% to fit)" : ""));
 
         // Added in reverse so the LEFTMOST tile ends up on top of the layer
         // stack, matching how the panel draws them left to right.
         for (let t = n - 1; t >= 0; t--) {
           const src = compFor[String(seg.tiles[t].path)];
 
-          // ONE DUPLICATE PER TILE, not one comp shared by every layer. Sharing
-          // is cheaper, but it means retiming or trimming one panel silently
-          // changes the others -- and panels of the same creative almost always
-          // want to differ. duplicate() copies the comp, not its footage, so
-          // the ~70 imported items stay shared and this costs almost nothing.
-          const dup = src.duplicate();
-          dup.name = src.name + "_S" + (s + 1) + "P" + (t + 1);
-          dup.parentFolder = panelFolder;
-          dup.label = 10;
+          // SHARED BY DEFAULT. Every tile of a master points at the ONE
+          // imported comp, so editing it once shows up in every panel -- which
+          // is what happens most of the time. Duplicating is the opt-in, for
+          // when panels genuinely need to differ; it costs little, since
+          // duplicate() copies the comp and not its footage.
+          let dup = src;
+          if (duplicatePanels) {
+            dup = src.duplicate();
+            dup.name = src.name + "_S" + (s + 1) + "P" + (t + 1);
+            if (panelFolder) dup.parentFolder = panelFolder;
+            dup.label = 10;
+          }
 
           const layer = out.layers.add(dup);
           // WHERE IT SITS, not what it is called. The source name already says
@@ -4236,14 +4279,13 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
           // Fit inside the panel without cropping. The probe's own case is
           // exact (1080 into 1080), so this only ever engages on a mismatch --
           // and says so, rather than quietly resizing artwork.
-          const ratio = Math.min(panelW / dup.width, canvasH / dup.height);
-          if (Math.abs(ratio - 1) > 0.0001) {
-            (layer.property("Scale") as Property).setValue([ratio * 100, ratio * 100]);
+          if (fit < 1) {
+            (layer.property("Scale") as Property).setValue([fit * 100, fit * 100]);
             scaled++;
-            lines.push("  tile " + (t + 1) + " " + dup.name + " scaled to "
-              + Math.round(ratio * 1000) / 10 + "%");
           }
-          (layer.property("Position") as Property).setValue([panelW * (t + 0.5), canvasH / 2]);
+          // Placed left to right from the centred start, each tile taking its
+          // own width. Vertically centred whatever its height.
+          (layer.property("Position") as Property).setValue([centreX[t], canvasH / 2]);
 
           // END-ALIGNED. A 10s master in a 3s closing segment shows its LAST
           // three seconds, not its first three -- an endcard's payoff is at its
@@ -4266,8 +4308,10 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
       lines.push("");
       lines.push(scaled === 0
         ? "Every tile sat at native size."
-        : scaled + " tile(s) were scaled to fit their panel -- worth a look.");
-      lines.push("Each panel is its own duplicate in \"" + outName + " panels\" -- retime one without touching the rest.");
+        : scaled + " tile(s) were scaled down to fit the canvas -- worth a look.");
+      lines.push(duplicatePanels
+        ? "Each panel is its own duplicate in \"" + outName + " panels\" -- retime one without touching the rest."
+        : "Panels share one comp per master -- edit it once and every panel follows.");
       lines.push("No frontcard added: it goes over the finished canvas at " + canvasW + "x" + canvasH + ".");
       // --- finish it the way a localised batch is finished ------------------
       // Same frontcardWrap the Frontcard button uses, so the structure matches
