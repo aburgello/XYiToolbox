@@ -4287,14 +4287,19 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
           // own width. Vertically centred whatever its height.
           (layer.property("Position") as Property).setValue([centreX[t], canvasH / 2]);
 
-          // END-ALIGNED. A 10s master in a 3s closing segment shows its LAST
-          // three seconds, not its first three -- an endcard's payoff is at its
-          // end, and trimming from the front would show the run-up and cut
-          // before the point of it. So the master's end meets the segment's
-          // end, which for a master exactly as long as its segment is identical
-          // to starting at the top.
+          // THE MASTER RUNS ON THE COMP'S OWN CLOCK. startTime 0 means its 0s
+          // is the comp's 0s, so a segment simply shows whatever that master is
+          // doing at that moment: the opening 0-7s segment shows the master's
+          // 0-7s, and a 7-10s segment of the SAME length master shows its
+          // 7-10s. Both of those are what was asked for, and they are the same
+          // rule rather than two.
+          //
+          // A master too SHORT to reach its segment is the exception -- at
+          // startTime 0 a 3s endcard placed at 7-10s would have finished long
+          // before anyone saw it -- so those end-align instead, their last
+          // frame meeting the segment's end.
           const segEnd = cursor + secs;
-          layer.startTime = segEnd - dup.duration;
+          layer.startTime = dup.duration >= segEnd ? 0 : segEnd - dup.duration;
           layer.inPoint = cursor;
           layer.outPoint = segEnd;
           if (dup.duration < secs - 0.001) {
@@ -4414,7 +4419,13 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
         lines.push("");
         lines.push("Cheeky T skipped: there is no frontcard on the wrapper to stamp.");
       } else {
-        const stamped = cheekyTCheck() as { success: boolean; error?: string; message?: string };
+        // EVERY FIELD, not Cheeky T's four. Cheeky T deliberately leaves the
+        // title and campaign line alone because it cannot know them; here the
+        // comp name carries both, so writing them beats preserving a template
+        // placeholder. Argument order is title, artwork, version, campaign,
+        // duration, territory, date.
+        const stamped = cheekyDTCheck(true, true, true, true, true, true, true) as
+          { success: boolean; error?: string; message?: string };
         lines.push("");
         lines.push(stamped && stamped.success
           ? "Cheeky T: " + (stamped.message || "stamped")

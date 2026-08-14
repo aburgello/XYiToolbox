@@ -1286,7 +1286,7 @@ export const cheekyDTCheck = (
     const projPath = String(app.project.file);
     const filmTitle = projPath.split("/Digital")[0].split("/").slice(-1)[0].split("_").join(" ");
     const artworkType = meta.artworkType;
-    let campaign = campaignWords(meta.campaign) + " ";
+    let campaign = campaignWords(meta.campaign);
     let duration = meta.duration.replace("sec", "");
     const version = meta.version;
 
@@ -1318,12 +1318,22 @@ export const cheekyDTCheck = (
         if (doVersion) (source.layer(idx.version).property("Source Text") as Property).setValue(String(version));
 
         const campaignLineProp = source.layer(idx.campaignLine).property("Source Text") as Property;
-        let ender = String(campaignLineProp.value).split(" ").pop() as string;
-        ender = ender.slice(0, -1);
-        if (!doCampaign) campaign = String(campaignLineProp.value).split(ender)[0];
-        if (!doDuration) duration = ender;
-        ender = String(campaignLineProp.value).slice(-1);
-        campaignLineProp.setValue(String(campaign + "" + duration + ender));
+        const existingLine = String(campaignLineProp.value);
+        const split = splitCampaignLine(existingLine);
+        const mark = inchMarkOf(existingLine, "\u201D");
+
+        // PRESERVE WHAT WE ARE NOT WRITING, without the old string surgery.
+        //
+        // That took the line's last word, dropped its final character to get the
+        // duration, then used the result as a SPLIT DELIMITER to recover the
+        // campaign. On the brand template's placeholder -- CREATIVE NAME " --
+        // the last word is the inch mark alone, so the "duration" came out as an
+        // empty string and split("") exploded the line into characters: the
+        // campaign became its first letter and the card read C". splitCampaignLine
+        // answers both halves properly and returns blanks when it cannot.
+        if (!doCampaign) campaign = split.campaign;
+        if (!doDuration) duration = split.duration;
+        campaignLineProp.setValue(String(campaign + " " + duration + mark).replace(/^ +/, "").replace(/  +/g, " "));
 
         // NEVER stamp an unresolved territory. This used to write whatever
         // String(null) gave it, so a name the parser couldn't read put a
