@@ -114,6 +114,10 @@ export const BespokeTool = () => {
     const [territories, setTerritories] = useState<string[]>([]);
     const [territory, setTerritory] = useState("");
     const [batch, setBatch] = useState("Batch_1");
+    // The media site, same field Build a Batch offers. Blank is legitimate and
+    // produces a name with no site token at all.
+    const [site, setSite] = useState("");
+    const [siteTouched, setSiteTouched] = useState(false);
     // The folder is a country NAME ("Germany"); the filename wants its code.
     // Resolved by the host's own getTerritoryCountryCode rather than guessed
     // here -- a wrong code on a deliverable is the bug that shipped BELGIUM
@@ -363,18 +367,26 @@ export const BespokeTool = () => {
         const first = segments[0]?.tiles[0];
         if (!first) return "";
         const code = territoryCode || first.territory || "OV";
+        const siteToken = site.trim();
         const bits = [
             first.film || "",
             first.region || "INTL",
             "MultipleArt",
             first.artwork || "DOOH",
-            first.site || "",
+            siteToken,
             `${canvasW}x${canvasH}px`,
             `${Math.round(Number(runtime) || 0)}s`,
             code,
         ].filter((b) => b !== "");
         return bits.join("_");
-    }, [segments, territoryCode, canvasW, canvasH, runtime]);
+    }, [segments, territoryCode, canvasW, canvasH, runtime, site]);
+
+    // Prefilled from the first tile's own site, then left alone once touched --
+    // the masters usually carry the right one already.
+    useEffect(() => {
+        const first = segments[0]?.tiles[0];
+        if (!siteTouched && first && first.site) setSite(first.site);
+    }, [segments, siteTouched]);
 
     useEffect(() => {
         if (!nameTouched) setOutName(suggestedName);
@@ -489,6 +501,15 @@ export const BespokeTool = () => {
                 <label className="bsp-field">
                     <span className="bsp-lbl">Batch</span>
                     <input className="bsp-input bsp-input--b" value={batch} onChange={(e) => setBatch(e.target.value)} />
+                </label>
+                <label className="bsp-field">
+                    <span className="bsp-lbl">Site</span>
+                    <input
+                        className="bsp-input bsp-input--b"
+                        value={site}
+                        placeholder="METROBUS"
+                        onChange={(e) => { setSite(e.target.value); setSiteTouched(true); }}
+                    />
                 </label>
             </div>
 

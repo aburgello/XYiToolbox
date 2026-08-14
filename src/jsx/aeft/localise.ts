@@ -6,7 +6,7 @@
 // see its header comment for context.
 // =============================================================================
 import { scaleCompToFit } from "./deliver";
-import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, parseFilenameMeta, frontcardWrap, cheekyTCheck, FRONTCARD_LEAD_IN_SECONDS, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, scanMastersForBestMatch } from "./tools";
+import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, parseFilenameMeta, frontcardWrap, cheekyTCheck, organiseFolders, FRONTCARD_LEAD_IN_SECONDS, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, scanMastersForBestMatch } from "./tools";
 import { makeParentLayerOfAllUnparented, scaleAllCameraZooms } from "./deliver";
 import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, saveLocGenReport, buildDeliverableName, durationForMasterLookup, sanitiseSiteToken, camelCaseToken, camelCaseName } from "./shared";
 import { loadCampaignsRaw, loadLastCampaign as loadOVLastCampaign } from "./review";
@@ -4138,6 +4138,11 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
       const out = app.project.items.addComp(outName, canvasW, canvasH, 1, total, fps);
       // The duplicates live together rather than scattered through the root.
       const panelFolder = app.project.items.addFolder(outName + " panels");
+      // AE label 1 is red, 10 is purple. The two comps that ARE the deliverable
+      // (the edit and its _V01 wrapper) read red like every other delivery comp
+      // in this codebase; the per-panel working duplicates are purple so a
+      // glance at the project separates what ships from what feeds it.
+      out.label = 1;
       lines.push("");
       lines.push("built " + outName + "  " + canvasW + "x" + canvasH + "  "
         + Math.round(total * 1000) / 1000 + "s  " + Math.round(fps * 1000) / 1000 + "fps");
@@ -4166,6 +4171,7 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
           const dup = src.duplicate();
           dup.name = src.name + "_S" + (s + 1) + "P" + (t + 1);
           dup.parentFolder = panelFolder;
+          dup.label = 10;
 
           const layer = out.layers.add(dup);
           // WHERE IT SITS, not what it is called. The source name already says
@@ -4222,13 +4228,16 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
       // every master on disk: "<name>" is the edit, "<name>_V01" is the render
       // comp with a 5s frontcard over it.
       let finished: CompItem = out;
+      let frontcardOk = false;
+      let saved = false;
       try {
         const wrapped = frontcardWrap(out);
         finished = wrapped.comp;
+        frontcardOk = !!wrapped.frontcardItem;
         lines.push("");
         lines.push("wrapped as " + finished.name + " with a " + FRONTCARD_LEAD_IN_SECONDS + "s frontcard");
 
-        if (!wrapped.frontcardItem) {
+        if (!frontcardOk) {
           lines.push("  NO FRONTCARD FOUND in the brand template -- the wrapper is empty above the edit.");
         } else {
           // MULTI COMP SCALE, on the frontcard only. The template comes at a
@@ -4247,15 +4256,6 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
             }
           }
         }
-
-        // CHEEKY T, so the frontcard carries the right artwork, version,
-        // territory and date instead of the template's placeholders. It reads
-        // the ACTIVE comp, so the wrapper has to be in front of it first.
-        finished.openInViewer();
-        const stamped = cheekyTCheck() as { success: boolean; error?: string; message?: string };
-        lines.push(stamped && stamped.success
-          ? "  Cheeky T: " + (stamped.message || "stamped")
-          : "  Cheeky T did not run: " + ((stamped && stamped.error) || "unknown"));
       } catch (e) {
         lines.push("");
         lines.push("Frontcard step failed: " + e.toString());
@@ -4298,6 +4298,7 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
               app.project.save(outFile);
               lines.push("");
               lines.push("saved  " + outFile.fsName);
+              saved = true;
             } catch (e) {
               lines.push("");
               lines.push("NOT SAVED: " + e.toString());
@@ -4306,6 +4307,44 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
         }
       } else {
         lines.push("Nothing saved -- no territory chosen, so it was built and left where it is.");
+      }
+
+      // --- stamp and tidy, in that order and only once saved ----------------
+      // CHEEKY T CANNOT RUN ON AN UNSAVED PROJECT. cheekyDTCheck returns "Save
+      // this project once first" before it parses anything -- it reads the
+      // project FILE path for the film title -- so running it before the save
+      // left every frontcard showing the template's placeholders. It also reads
+      // the ACTIVE comp, so the _V01 wrapper has to be both open and selected.
+      finished.openInViewer();
+      finished.selected = true;
+      if (!saved) {
+        lines.push("");
+        lines.push("Cheeky T skipped: it needs a saved project to read the film title from.");
+      } else if (!frontcardOk) {
+        lines.push("");
+        lines.push("Cheeky T skipped: there is no frontcard on the wrapper to stamp.");
+      } else {
+        const stamped = cheekyTCheck() as { success: boolean; error?: string; message?: string };
+        lines.push("");
+        lines.push(stamped && stamped.success
+          ? "Cheeky T: " + (stamped.message || "stamped")
+          : "Cheeky T did not run: " + ((stamped && stamped.error) || "unknown"));
+      }
+
+      // Organise last, once every comp and folder this build creates exists.
+      try {
+        const tidied = organiseFolders() as { success: boolean; error?: string };
+        lines.push(tidied && tidied.success
+          ? "Organised into Composition/PreComp/Main."
+          : "Organise Folders did not run: " + ((tidied && tidied.error) || "unknown"));
+      } catch (e) {
+        lines.push("Organise Folders failed: " + e.toString());
+      }
+
+      // Re-saved so the tidy-up and the stamped frontcard are in the file on
+      // disk rather than only in the open project.
+      if (saved) {
+        try { app.project.save(); } catch (e) { lines.push("Couldn't re-save after tidying: " + e.toString()); }
       }
 
       finished.openInViewer();
