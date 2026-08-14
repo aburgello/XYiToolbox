@@ -499,3 +499,23 @@
     overflow-wrap: break-word;
     white-space: pre-wrap;
 }
+
+.bsp-dest {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+
+    .bsp-field { flex: 1 1 150px; min-width: 0; }
+    // width:auto on a select would collapse it inside a flex child.
+    .bsp-input--sel { width: 100%; }
+}
+
+.bsp-input--b { width: 100%; }
+
+.bsp-path {
+    margin: 0;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 9px;
+    color: #6f757f;
+    word-break: break-all;
+}

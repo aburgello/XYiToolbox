@@ -3987,6 +3987,9 @@ export interface BespokeMaster {
   /** Bare digits, matching the rest of the toolbox. */
   duration: string;
   territory: string;
+  /** For composing the OUTPUT name: the film identifier and INTL/DOM. */
+  film: string;
+  region: string;
   /** LANDSCAPE | PORTRAIT | SQUARE | QUAD. Derived HERE, not taken from the
    *  masters index: that only ever emits Landscape or Portrait from the ratio,
    *  which would leave the Square and Quad pills permanently empty. */
@@ -4052,6 +4055,11 @@ interface BespokePlan {
   canvasHeight: number;
   segments: BespokePlanSegment[];
   name?: string;
+  /** Where the batch lands. Same convention Build a Batch uses:
+   *  <marketsRoot>/<territory>/AE/<padded batch>/ */
+  marketsRoot?: string;
+  territory?: string;
+  batch?: string;
 }
 
 /** The comp a tile should place: Composition/Main, minus the _V<n> wrapper. */
@@ -4192,7 +4200,52 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
         : scaled + " tile(s) were scaled to fit their panel -- worth a look.");
       lines.push("Each panel is its own duplicate in \"" + outName + " panels\" -- retime one without touching the rest.");
       lines.push("No frontcard added: it goes over the finished canvas at " + canvasW + "x" + canvasH + ".");
-      lines.push("Nothing saved.");
+      // --- where it lands ---------------------------------------------------
+      // Same convention as Build a Batch: <markets>/<territory>/AE/<batch>.
+      // Saved only when a destination was given; otherwise built and left for
+      // the artist to place, which is what it did before.
+      if (plan.marketsRoot && plan.territory) {
+        const territoryFolder = new Folder(String(plan.marketsRoot) + "/" + String(plan.territory));
+        if (!territoryFolder.exists) {
+          lines.push("");
+          lines.push("NOT SAVED: " + territoryFolder.fsName + " isn't reachable right now.");
+        } else {
+          // Folder.create() does not make intermediate levels -- each in turn.
+          const aeFolder = new Folder(territoryFolder.fsName + "/AE");
+          if (!aeFolder.exists) aeFolder.create();
+          const batchName = csvLocPadBatchNumber(String(plan.batch || "").replace(/^\s+|\s+$/g, ""));
+          const dest = batchName !== "" ? new Folder(aeFolder.fsName + "/" + batchName) : aeFolder;
+          if (!dest.exists) dest.create();
+
+          const outFile = new File(dest.fsName + "/" + outName + "_V01.aep");
+
+          // THE MASTERS GUARD, checked at WRITE time. A destination that sits
+          // anywhere under a master's own folder is refused outright -- the
+          // whole point of this design is that overwriting a studio master is
+          // structurally impossible, not merely unlikely.
+          let clash = "";
+          for (const k in compFor) {
+            if (!compFor.hasOwnProperty(k)) continue;
+            const masterDir = String(k).split("/").slice(0, -1).join("/");
+            if (outFile.fsName.indexOf(masterDir) === 0) { clash = masterDir; break; }
+          }
+          if (clash !== "") {
+            lines.push("");
+            lines.push("NOT SAVED: that destination sits inside a masters folder (" + clash + ").");
+          } else {
+            try {
+              app.project.save(outFile);
+              lines.push("");
+              lines.push("saved  " + outFile.fsName);
+            } catch (e) {
+              lines.push("");
+              lines.push("NOT SAVED: " + e.toString());
+            }
+          }
+        }
+      } else {
+        lines.push("Nothing saved -- no territory chosen, so it was built and left where it is.");
+      }
 
       out.openInViewer();
     } finally {
@@ -4355,6 +4408,8 @@ export const bespokeListMasters = (
         height: Number(wh[1]) || 0,
         duration: meta.duration ? meta.duration.replace("sec", "") : "",
         territory: meta.territory || "",
+        film: meta.filmTitle || "",
+        region: meta.region || "",
         orientation: bespokeOrientation(stem, Number(wh[0]) || 0, Number(wh[1]) || 0),
       });
     }

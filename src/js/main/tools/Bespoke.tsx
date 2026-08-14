@@ -47,8 +47,12 @@ interface BespokeMaster {
     height: number;
     duration: string;
     territory: string;
+    film: string;
+    region: string;
     orientation: string;
 }
+
+interface Campaign { name: string; marketsRoot: string; reachable?: boolean }
 
 /** OV Library's four, same order and same icons, so the two read alike. */
 type OrientationKey = "LANDSCAPE" | "PORTRAIT" | "SQUARE" | "QUAD";
@@ -83,6 +87,8 @@ function hueFor(creative: string): string {
 const MAX_MATCHES = 40;
 let nextSegId = 1;
 
+
+
 export const BespokeTool = () => {
     const reduced = useReducedMotion();
 
@@ -99,6 +105,21 @@ export const BespokeTool = () => {
     const [canvasW, setCanvasW] = useState("3240");
     const [canvasH, setCanvasH] = useState("1920");
     const [runtime, setRuntime] = useState("10");
+
+    // WHERE IT LANDS. Same three answers Build a Batch asks for, and the same
+    // convention underneath: <marketsRoot>/<territory>/AE/<batch>.
+    const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+    const [campaign, setCampaign] = useState("");
+    const [territories, setTerritories] = useState<string[]>([]);
+    const [territory, setTerritory] = useState("");
+    const [batch, setBatch] = useState("Batch_1");
+    // The folder is a country NAME ("Germany"); the filename wants its code.
+    // Resolved by the host's own getTerritoryCountryCode rather than guessed
+    // here -- a wrong code on a deliverable is the bug that shipped BELGIUM
+    // GERMAN, and there is no reason to have two answers to one question.
+    const [territoryCode, setTerritoryCode] = useState("");
+    const [outName, setOutName] = useState("");
+    const [nameTouched, setNameTouched] = useState(false);
 
     const [segments, setSegments] = useState<Segment[]>([{ id: 0, tiles: [], seconds: 10 }]);
     const [current, setCurrent] = useState(0);
@@ -151,6 +172,58 @@ export const BespokeTool = () => {
             }
         })();
     }, [load]);
+
+    // Campaigns, then that campaign's territories -- the same two host calls
+    // the localiser makes, so the two always offer the same list.
+    useEffect(() => {
+        (async () => {
+            try {
+                const camps = (await evalTS("loadLocLibCampaigns")) as unknown as Campaign[] | undefined;
+                if (camps && camps.length) {
+                    setCampaigns(camps);
+                    const last = await evalTS("csvLocaliserLoadLastCampaign");
+                    const pick = typeof last === "string" && last
+                        && camps.some((c) => c.name === last) ? last : camps[0].name;
+                    setCampaign(pick);
+                }
+            } catch {
+                /* no bridge -- the composer still works, it just can't file it */
+            }
+        })();
+    }, []);
+
+    const marketsRoot = useMemo(
+        () => campaigns.find((c) => c.name === campaign)?.marketsRoot || "",
+        [campaigns, campaign]
+    );
+
+    useEffect(() => {
+        if (!marketsRoot) { setTerritories([]); return; }
+        (async () => {
+            try {
+                const terrs = (await evalTS("scanTerritories", marketsRoot)) as unknown as string[] | undefined;
+                setTerritories(terrs || []);
+                // An unreachable share is a normal state, not an error -- leave
+                // whatever was chosen rather than clearing it.
+                if (terrs && terrs.length && !terrs.some((t) => t === territory)) setTerritory("");
+            } catch {
+                setTerritories([]);
+            }
+        })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [marketsRoot]);
+
+    useEffect(() => {
+        if (!territory) { setTerritoryCode(""); return; }
+        (async () => {
+            try {
+                const code = await evalTS("getTerritoryCountryCode", territory);
+                setTerritoryCode(typeof code === "string" ? code : "");
+            } catch {
+                setTerritoryCode("");
+            }
+        })();
+    }, [territory]);
 
     const pickFolder = async () => {
         try {
@@ -208,6 +281,10 @@ export const BespokeTool = () => {
             const plan = {
                 canvasWidth: Number(canvasW) || 0,
                 canvasHeight: Number(canvasH) || 0,
+                name: outName.trim(),
+                marketsRoot,
+                territory,
+                batch: batch.trim(),
                 segments: segments.map((sg) => ({
                     seconds: sg.seconds,
                     tiles: sg.tiles.map((t) => ({ path: t.path })),
@@ -279,6 +356,28 @@ export const BespokeTool = () => {
 
     // --- composition -------------------------------------------------------
     const seg = segments[Math.min(current, segments.length - 1)];
+
+    /** The output name, composed the way every other deliverable name is. */
+    const suggestedName = useMemo(() => {
+        const first = segments[0]?.tiles[0];
+        if (!first) return "";
+        const code = territoryCode || first.territory || "OV";
+        const bits = [
+            first.film || "",
+            first.region || "INTL",
+            "MultipleArt",
+            first.artwork || "DOOH",
+            first.site || "",
+            `${canvasW}x${canvasH}px`,
+            `${Math.round(Number(runtime) || 0)}s`,
+            code,
+        ].filter((b) => b !== "");
+        return bits.join("_");
+    }, [segments, territoryCode, canvasW, canvasH, runtime]);
+
+    useEffect(() => {
+        if (!nameTouched) setOutName(suggestedName);
+    }, [suggestedName, nameTouched]);
     const totalSecs = segments.reduce((n, s) => n + s.seconds, 0);
     const wantSecs = Number(runtime) || 0;
     const canvasWidth = Number(canvasW) || 0;
@@ -349,6 +448,47 @@ export const BespokeTool = () => {
                     </span>
                 </label>
             </div>
+
+            {/* --- where it lands ------------------------------------------ */}
+            <div className="bsp-dest">
+                <label className="bsp-field">
+                    <span className="bsp-lbl">Campaign</span>
+                    <select className="bsp-input bsp-input--sel" value={campaign} onChange={(e) => setCampaign(e.target.value)}>
+                        {campaigns.length === 0 && <option value="">No campaigns saved</option>}
+                        {campaigns.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+                    </select>
+                </label>
+                <label className="bsp-field">
+                    <span className="bsp-lbl">Country</span>
+                    <select className="bsp-input bsp-input--sel" value={territory} onChange={(e) => setTerritory(e.target.value)}>
+                        <option value="">Build it here, don't file it</option>
+                        {territories.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                </label>
+                <label className="bsp-field">
+                    <span className="bsp-lbl">Batch</span>
+                    <input className="bsp-input bsp-input--b" value={batch} onChange={(e) => setBatch(e.target.value)} />
+                </label>
+            </div>
+
+            <label className="bsp-field">
+                <span className="bsp-lbl">Deliverable name</span>
+                <input
+                    className="bsp-input"
+                    value={outName}
+                    placeholder="Add a master to compose a name"
+                    onChange={(e) => { setOutName(e.target.value); setNameTouched(true); }}
+                />
+            </label>
+
+            {/* The exact path, before anything is written. A batch that lands in
+                the wrong market is a redelivery, and this is the one place it
+                can be caught for free. */}
+            <p className="bsp-path">
+                {territory && marketsRoot
+                    ? `${marketsRoot}/${territory}/AE/${batch.trim() || "AE"}/${outName || "…"}_V01.aep`
+                    : "No country chosen — it will be built and left unsaved."}
+            </p>
 
             {/* --- the frame ----------------------------------------------- */}
             <p className="bsp-lbl bsp-lbl--section">This segment fills the frame</p>
