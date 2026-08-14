@@ -4264,9 +4264,16 @@ export const bespokeBuildRegions = (
         mask.name = "Crop";
 
         const lost = Math.round((1 - Math.min(reg.w / (src.width * cover), reg.h / (src.height * cover))) * 100);
+        // The COMP's own duration, not the one parsed out of a filename --
+        // this is the number AE will actually act on. A layer longer than its
+        // comp renders its head and drops the tail without a word, so the
+        // overrun is stated here even though the panel warned before the
+        // build: the report is what gets read when a delivery comes back.
+        const over = Math.round((src.duration - seconds) * 10) / 10;
         lines.push("  R" + (i + 1) + " " + src.name + " at " + reg.x + "," + reg.y
           + " " + reg.w + "x" + reg.h + " -- " + Math.round(cover * 1000) / 10 + "%"
-          + (lost > 0 ? ", " + lost + "% cropped" : ", exact"));
+          + (lost > 0 ? ", " + lost + "% cropped" : ", exact")
+          + (over > 0 ? "  [" + Math.round(src.duration * 10) / 10 + "s from the start; last " + over + "s not rendered]" : ""));
       }
 
       const finish = bespokeFinishAndFile(out, outName, canvasW, canvasH, plan, lines);

@@ -146,6 +146,10 @@ export const BespokeTool = () => {
     // but the campaign -- so the layouts are kept per reference path and
     // restored on the way back, rather than carried across and quietly wrong.
     const [refs, setRefs] = useState<{ path: string; name: string }[]>([]);
+    // Which region is waiting for a replacement master, or -1. Swapping keeps
+    // the region's coordinates, so a placement traced by eye is not lost just
+    // because the master in it turned out to be the wrong length.
+    const [swapTarget, setSwapTarget] = useState(-1);
     const [layouts, setLayouts] = useState<Record<string, { regions: Region[]; guidesX: number[]; guidesY: number[] }>>({});
     // Constraints while dragging a corner. Ratio keeps a region from ever
     // introducing a crop it did not have; locking a side is for the common case
@@ -375,6 +379,44 @@ export const BespokeTool = () => {
         }
         const size = m.width && m.height ? `${m.width}×${m.height}` : "";
         return size ? `${who} · ${size}` : who;
+    };
+
+    /**
+     * Seconds a master runs past the board, or 0.
+     *
+     * The runtime comes from the reference filename, so a 15s master in a 10s
+     * board is a real mismatch and not a rounding artefact. AE happily lets the
+     * layer outlive the comp -- it simply renders the first 10s and drops the
+     * rest, which on these deliverables is the endcard, the logo and the legal.
+     * Nothing anywhere said so, which is the actual defect: the build looked
+     * like it worked.
+     */
+    const overrunOf = (m: BespokeMaster) => {
+        const have = Number(m.duration);
+        const want = Number(runtime);
+        if (!have || !want || have <= want) return 0;
+        return Math.round((have - want) * 10) / 10;
+    };
+
+    const overrunRegions = regions
+        .map((r, i) => ({ i, r, over: overrunOf(r.master) }))
+        .filter((x) => x.over > 0);
+
+    /**
+     * Puts a different master into a region, KEEPING ITS COORDINATES.
+     *
+     * The position is the expensive part -- it was traced against the
+     * reference by hand -- and it is independent of which master fills it.
+     * The ratio may now differ, so the crop is recomputed and shown, but
+     * nothing moves.
+     */
+    const swapRegion = (m: BespokeMaster) => {
+        if (swapTarget < 0) return;
+        const at = swapTarget;
+        setRegions((prev) => prev.map((r, i) => (i === at ? { ...r, master: m } : r)));
+        setSelRegion(at);
+        setSwapTarget(-1);
+        setStatus(null);
     };
 
     /** Nearest guide within reach, or the value untouched. */
@@ -982,6 +1024,7 @@ export const BespokeTool = () => {
                                             back to the whole filename. */}
                                         {regionLabel(r.master)}
                                         {lost > 0 ? ` · ${lost}% cropped` : ""}
+                                        {overrunOf(r.master) > 0 ? ` · ${r.master.duration}s in ${runtime}s` : ""}
                                     </span>
                                     {i === selRegion && ["nw", "ne", "sw", "se"].map((h) => (
                                         <span className={`bsp-h bsp-h--${h}`} data-h={h} key={h} />
@@ -1040,10 +1083,38 @@ export const BespokeTool = () => {
                         <span className="bsp-guidehint">drag to place · double-click to remove · select a master, then Fit to guides</span>
                     </div>
 
-                    {refMismatch !== "" && (
+                    {(refMismatch !== "" || overrunRegions.length > 0) && (
                         <ul className="bsp-problems">
-                            <li><AlertCircle size={10} /> {refMismatch}</li>
+                            {refMismatch !== "" && <li><AlertCircle size={10} /> {refMismatch}</li>}
+                            {/* SAID OUT LOUD, BEFORE THE BUILD. AE renders the
+                                first N seconds of an over-long layer without
+                                complaint, so the only thing standing between a
+                                dropped endcard and a delivered file is this
+                                line. Both ways out are offered rather than one
+                                being chosen silently. */}
+                            {overrunRegions.map(({ i, r, over }) => (
+                                <li key={r.id}>
+                                    <AlertCircle size={10} />
+                                    <span>
+                                        R{i + 1} {regionLabel(r.master)} is {r.master.duration}s in a {runtime}s board —
+                                        its last {over}s won't render.
+                                    </span>
+                                    <button
+                                        className="bsp-swaplink"
+                                        onClick={() => { setSwapTarget(i); setSelRegion(i); }}
+                                    >
+                                        swap the master
+                                    </button>
+                                    <span className="bsp-problems-or">or keep it and it plays from the start</span>
+                                </li>
+                            ))}
                         </ul>
+                    )}
+                    {swapTarget >= 0 && (
+                        <p className="bsp-swapbar">
+                            Pick a master below to drop into R{swapTarget + 1}. Its position and size stay put.
+                            <button className="bsp-swaplink" onClick={() => setSwapTarget(-1)}>cancel</button>
+                        </p>
                     )}
 
                     {regions[selRegion] && (
@@ -1213,7 +1284,9 @@ export const BespokeTool = () => {
 
             {/* --- the picker ----------------------------------------------- */}
             <p className="bsp-lbl bsp-lbl--section">
-                {mode === "regions" ? "Add a master as a region" : "Add a master to this segment"}
+                {swapTarget >= 0
+                    ? `Choose a replacement for R${swapTarget + 1} — its position is kept`
+                    : mode === "regions" ? "Add a master as a region" : "Add a master to this segment"}
             </p>
             <div className="bsp-picker">
                 {/* Creative first, the way OV Library asks it -- the question is
@@ -1292,7 +1365,15 @@ export const BespokeTool = () => {
                     {!loading && !masters && <p className="bsp-none">Pick a masters folder to browse.</p>}
                     {!loading && masters && matches.length === 0 && <p className="bsp-none">No master matches those filters.</p>}
                     {!loading && matches.map((m) => (
-                        <button className="bsp-master" key={m.path} onClick={() => (mode === "regions" ? addRegion(m) : addTile(m))}>
+                        <button
+                            className={"bsp-master" + (swapTarget >= 0 ? " is-swap" : "")}
+                            key={m.path}
+                            onClick={() => {
+                                if (swapTarget >= 0) { swapRegion(m); return; }
+                                if (mode === "regions") { addRegion(m); return; }
+                                addTile(m);
+                            }}
+                        >
                             <span className="bsp-master-sw" style={{ background: hueFor(m.creative) }} />
                             <span className="bsp-master-name">{m.creative || m.name}</span>
                             <span className="bsp-master-tag">{m.size || "?"}</span>

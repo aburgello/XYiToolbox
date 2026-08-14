@@ -727,6 +727,46 @@
     font-variant-numeric: tabular-nums;
 }
 
+.bsp-swaplink {
+    margin-left: 5px;
+    padding: 0;
+    background: none;
+    border: 0;
+    color: #7fe7d8;
+    font-size: 10px;
+    text-decoration: underline;
+    cursor: pointer;
+
+    // index.scss's global button:hover/:active paints over any custom button.
+    &:hover { background: none; color: #a5f3e6; }
+    &:active { background: none; }
+}
+
+.bsp-problems-or {
+    margin-left: 5px;
+    color: #7d8b89;
+    font-size: 10px;
+}
+
+.bsp-swapbar {
+    margin: 0 0 7px;
+    padding: 5px 7px;
+    background: rgba(45, 212, 191, 0.09);
+    border: 1px dashed rgba(45, 212, 191, 0.4);
+    border-radius: 4px;
+    color: #cfe9e4;
+    font-size: 10px;
+}
+
+// While a swap is pending the list is a picker for one region, not the
+// add-a-region list -- it has to look different or the next click is a
+// surprise.
+.bsp-master.is-swap {
+    border-color: rgba(45, 212, 191, 0.5);
+
+    &:hover { background: rgba(45, 212, 191, 0.16); }
+}
+
 .bsp-region-tag {
     position: absolute;
     left: 0;
