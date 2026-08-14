@@ -284,7 +284,12 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
                             </div>
                         </div>
                         <div className="ls-main-surface">
-                            {pane === "csv" && <CSVLocaliserTool />}
+                            {/* onSelectTool is what makes the localiser's own
+                                "Bespoke It" button able to navigate. The drilled
+                                tool at the top of this file already receives it;
+                                the LANDING pane did not, so that button silently
+                                did nothing. */}
+                            {pane === "csv" && <CSVLocaliserTool onSelectTool={handleSelect} />}
                             {pane === "batch" && <CampaignLocaliserTool />}
                         </div>
                     </div>

@@ -1781,6 +1781,15 @@
         padding-top: 10px;
     }
 
+    /* The builder body no longer has a caret header above it, and with
+       Paste-CSV gone there is nothing below it either -- so the rule was
+       dividing the two route buttons from empty space. */
+    .specs-build--headless {
+        margin-top: 0;
+        border-top: 0;
+        padding-top: 0;
+    }
+
     .specs-fallback-toggle {
         display: inline-flex;
         align-items: center;
