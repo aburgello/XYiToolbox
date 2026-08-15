@@ -1908,12 +1908,19 @@ export const BespokeTool = () => {
                             swapping={swapTarget >= 0}
                             used={regions.filter((r) => r.master.path === m.path).length}
                             onPick={() => {
-                                // Shuts behind you: the master is placed and the
-                                // canvas is what you need to see next.
+                                // WHETHER THIS SHUTS DEPENDS ON THE MODE, because
+                                // the two workflows are opposites.
+                                //
+                                // A swap is one action, and a region is placed
+                                // and then immediately positioned on the canvas
+                                // -- so both close, putting the canvas back in
+                                // view. Multi Art builds a segment out of SEVERAL
+                                // artworks picked in a row; closing after each one
+                                // made adding a second master a three-click job
+                                // and lost the filters you had set.
                                 if (swapTarget >= 0) { swapRegion(m); setPickerOpen(false); return; }
                                 if (mode === "regions") { addRegion(m); setPickerOpen(false); return; }
                                 addTile(m);
-                                setPickerOpen(false);
                             }}
                         />
                     ))}
