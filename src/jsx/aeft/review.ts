@@ -4,7 +4,7 @@
 // now a thin barrel -- see its header comment for context.
 // =============================================================================
 import { Result, SETTINGS_SECTION, decode } from "./shared";
-import { getMastersIndex, pickBestMasterFromIndex } from "./tools";
+import { getMastersIndex, pickBestMasterFromIndex, mastersSkipFolder } from "./tools";
 
 
 
@@ -328,11 +328,17 @@ function findAllFiles(rootFolder: Folder): File[] {
   function walk(folder: Folder) {
     const items = folder.getFiles();
     for (let i = 0; i < items.length; i++) {
-      if (items[i] instanceof Folder) {
-        const nm = items[i].name;
-        if (nm === "_old" || nm === "_archive" || nm.indexOf("Auto-Save") !== -1) continue;
+      // DUCK-TYPED, not instanceof: two accesses to the same AE object return
+      // different wrappers, so instanceof against a host class is banned
+      // (CLAUDE.md section 2). A Folder is the thing that can list itself.
+      if (typeof (items[i] as Folder).getFiles === "function") {
+        // mastersSkipFolder, shared with buildMastersIndex, instead of the
+        // exact lowercase compare this used to do -- `_Old` and `_Archive` are
+        // the studio's actual casing and never matched, so this walked the
+        // archives in full and let archived masters into the library.
+        if (mastersSkipFolder((items[i] as Folder).name)) continue;
         walk(items[i] as Folder);
-      } else if (items[i] instanceof File) {
+      } else {
         out.push(items[i] as File);
       }
     }

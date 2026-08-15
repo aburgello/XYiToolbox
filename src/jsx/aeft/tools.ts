@@ -3284,11 +3284,28 @@ export const invalidateMastersIndex = (mastersRoot?: string): Result => {
 // one of these tokens is still excluded exactly as before.
 const MASTERS_SKIP_FOLDERS = ["Auto-Save", "_Archive", "_Old", "_DEV"];
 
-function mastersSkipFolder(name: string): boolean {
+/**
+ * Shared by BOTH masters scanners -- this index and OV Library's own walk in
+ * review.ts, which had drifted to its own list.
+ *
+ * CASE-INSENSITIVE. OV Library compared `nm === "_old"` and `nm === "_archive"`
+ * exactly and in lowercase, so the studio's real folders -- `_Old`, `_Archive`
+ * -- never matched and it walked them in full, both paying for the scan and
+ * surfacing archived masters in the library. `_DEV` was absent from its list
+ * entirely.
+ *
+ * Widening this also makes exclusion consistent here: a lowercase `_old`
+ * folder used to be pruned by neither the folder walk nor the file filter, so
+ * its contents were indexed as live masters. They now aren't. That is the
+ * intent of the list, but it IS a behaviour change -- a master genuinely
+ * living under a lowercase archive folder stops being found.
+ */
+export function mastersSkipFolder(name: string): boolean {
+  // indexOf, never .match() -- a folder name is not a regex and real ones
+  // carry ( + [.
+  const lower = String(name).toLowerCase();
   for (let i = 0; i < MASTERS_SKIP_FOLDERS.length; i++) {
-    // indexOf, never .match() -- a folder name is not a regex and real ones
-    // carry ( + [.
-    if (String(name).indexOf(MASTERS_SKIP_FOLDERS[i]) !== -1) return true;
+    if (lower.indexOf(MASTERS_SKIP_FOLDERS[i].toLowerCase()) !== -1) return true;
   }
   return false;
 }
