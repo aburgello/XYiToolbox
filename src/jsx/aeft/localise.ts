@@ -4278,8 +4278,7 @@ export const bespokeBuildRegions = (
         // is rotated.
         const matte = out.layers.addSolid([1, 1, 1], "R" + (i + 1) + " crop", Math.round(reg.w), Math.round(reg.h), 1);
         (matte.property("Position") as Property).setValue([reg.x + reg.w / 2, reg.y + reg.h / 2]);
-        // The matte is hidden but still mattes -- that is what a track matte
-        // is. Left UNLOCKED on purpose: adjusting the window is the point.
+        // The matte is hidden but still mattes -- that is what a track matte is.
         matte.enabled = false;
         // Same label on both halves of a pair, so 8 regions read as 8 pairs
         // rather than 16 loose layers.
@@ -4300,6 +4299,16 @@ export const bespokeBuildRegions = (
           // above the master it was created for.
           (layer as AVLayer).trackMatteType = TrackMatteType.ALPHA;
         }
+
+        // LOCKED LAST, after every property it needs is set -- a locked layer
+        // refuses further changes, so locking earlier would silently drop the
+        // position, the label or the matte assignment itself.
+        //
+        // The window is what defines the deliverable's framing, and it is an
+        // invisible layer sitting directly above the artwork: nudging it by
+        // accident changes the crop with nothing on screen to show for it.
+        // Deliberately adjusting it is still one click away in the timeline.
+        matte.locked = true;
 
         const lost = Math.round((1 - Math.min(reg.w / (faceW * cover), reg.h / (faceH * cover))) * 100);
         // The COMP's own duration, not the one parsed out of a filename --
