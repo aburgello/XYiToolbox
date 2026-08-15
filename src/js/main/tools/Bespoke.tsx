@@ -114,6 +114,23 @@ const MasterCard: React.FC<{ master: BespokeMaster; swapping: boolean; used: num
 /** Below this a region collapses and can never be grabbed again. */
 const MIN_REGION = 24;
 
+interface BespokeTemplate {
+    id: string;
+    name: string;
+    territory: string;
+    site: string;
+    canvasW: number;
+    canvasH: number;
+    guidesX: number[];
+    guidesY: number[];
+    slots: {
+        x: number; y: number; w: number; h: number; rotation: number;
+        masterW: number; masterH: number; masterDuration: string;
+    }[];
+    savedBy: string;
+    stamp: string;
+}
+
 interface Region {
     id: number;
     master: BespokeMaster;
@@ -212,6 +229,11 @@ export const BespokeTool = () => {
     const [selGuide, setSelGuide] = useState<{ axis: "x" | "y"; i: number } | null>(null);
     const [destOpen, setDestOpen] = useState(false);
     const [pickerOpen, setPickerOpen] = useState(false);
+    // Saved layouts. The screen is the stable thing; the campaign is what
+    // changes -- see bespokeTemplateSave in team.ts.
+    const [templates, setTemplates] = useState<BespokeTemplate[]>([]);
+    const [saving, setSaving] = useState(false);
+    const [tplName, setTplName] = useState("");
     const [layouts, setLayouts] = useState<Record<string, { regions: Region[]; guidesX: number[]; guidesY: number[] }>>({});
     // Constraints while dragging a corner. Ratio keeps a region from ever
     // introducing a crop it did not have; locking a side is for the common case
@@ -376,6 +398,99 @@ export const BespokeTool = () => {
         setGuidesX(kept ? kept.guidesX : []);
         setGuidesY(kept ? kept.guidesY : []);
         setSelRegion(0);
+    };
+
+    // Quietly: an unmounted share is a normal state and must never toast.
+    useEffect(() => {
+        if (!mode) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await evalTS("bespokeTemplateList");
+                if (!cancelled && res && res.success && res.templates) setTemplates(res.templates);
+            } catch {
+                /* no bridge, or no share -- the feature simply is not there */
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [mode]);
+
+    /**
+     * Saves geometry and the SHAPE of each master, never the master itself.
+     * That is the whole point: the next campaign brings different artwork to
+     * the same peculiar screen.
+     */
+    const saveTemplate = async () => {
+        const name = tplName.trim();
+        if (!name) return;
+        const entry: BespokeTemplate = {
+            id: `${territory || "ANY"}::${name}`.toUpperCase(),
+            name,
+            territory,
+            site: site.trim(),
+            canvasW: Number(canvasW) || 0,
+            canvasH: Number(canvasH) || 0,
+            guidesX, guidesY,
+            slots: regions.map((r) => ({
+                x: r.x, y: r.y, w: r.w, h: r.h, rotation: r.rotation || 0,
+                masterW: r.master.width, masterH: r.master.height, masterDuration: r.master.duration,
+            })),
+            savedBy: "", stamp: new Date().toISOString().slice(0, 10),
+        };
+        const res = await evalTS("bespokeTemplateSave", JSON.stringify(entry));
+        if (res && res.success) {
+            setStatus({ text: `Saved "${name}" — ${entry.slots.length} region${entry.slots.length === 1 ? "" : "s"} and ${guidesX.length + guidesY.length} guides.`, type: "success" });
+            setSaving(false);
+            setTplName("");
+            const listed = await evalTS("bespokeTemplateList");
+            if (listed && listed.success && listed.templates) setTemplates(listed.templates);
+        } else {
+            setStatus({ text: (res && res.error) || "Couldn't save that layout.", type: "error" });
+        }
+    };
+
+    /**
+     * Rebuilds a saved layout with THIS campaign's masters.
+     *
+     * Each slot remembers the size and duration it wants, so a matching master
+     * in the selected creative drops straight in. A slot with no match is NOT
+     * skipped -- the geometry is the expensive part and losing it would defeat
+     * the feature -- it takes the nearest master by aspect and is named in the
+     * status, so the crop badge and a swap are one click away.
+     */
+    const loadTemplate = (t: BespokeTemplate) => {
+        const pool = (masters || []).filter((m) => !creative || (m.creative || m.name) === creative);
+        if (pool.length === 0) {
+            setStatus({ text: "No masters in this creative to fill the layout with.", type: "error" });
+            return;
+        }
+        const unmatched: string[] = [];
+        const next: Region[] = [];
+        t.slots.forEach((sl, i) => {
+            let hit = pool.filter((m) => m.width === sl.masterW && m.height === sl.masterH && m.duration === sl.masterDuration)[0];
+            if (!hit) hit = pool.filter((m) => m.width === sl.masterW && m.height === sl.masterH)[0];
+            if (!hit) {
+                const want = sl.masterW / Math.max(1, sl.masterH);
+                let best = pool[0];
+                let diff = Infinity;
+                for (const m of pool) {
+                    const d = Math.abs(m.width / Math.max(1, m.height) - want);
+                    if (d < diff) { diff = d; best = m; }
+                }
+                hit = best;
+                unmatched.push(`R${i + 1} wanted ${sl.masterW}×${sl.masterH}`);
+            }
+            next.push({ id: nextSegId++, master: hit, x: sl.x, y: sl.y, w: sl.w, h: sl.h, rotation: sl.rotation || 0 });
+        });
+        if (t.canvasW) setCanvasW(String(t.canvasW));
+        if (t.canvasH) setCanvasH(String(t.canvasH));
+        setGuidesX(t.guidesX || []);
+        setGuidesY(t.guidesY || []);
+        setRegions(next);
+        setSelRegion(0);
+        setStatus(unmatched.length
+            ? { text: `Loaded "${t.name}" — ${unmatched.join(", ")}; filled with the nearest, swap where needed.`, type: "error" }
+            : { text: `Loaded "${t.name}" — ${next.length} region${next.length === 1 ? "" : "s"} matched exactly.`, type: "success" });
     };
 
     /** Where the current reference sits in the folder, or -1 if it is alone. */
@@ -1181,6 +1296,27 @@ export const BespokeTool = () => {
                             <input className="bsp-input bsp-input--n" value={runtime} onChange={(e) => setRuntime(e.target.value)} title="Runtime in seconds" />
                             <span className="bsp-x">s</span>
                         </span>
+                        {templates.length > 0 && (
+                            <>
+                                <span className="bsp-bar-sep" />
+                                <span className="bsp-bar-lbl">Layout</span>
+                                <select
+                                    className="bsp-refpick bsp-tpl-pick"
+                                    value=""
+                                    onChange={(e) => {
+                                        const t = templates.filter((x) => x.id === e.target.value)[0];
+                                        if (t) loadTemplate(t);
+                                    }}
+                                >
+                                    <option value="">load a saved screen…</option>
+                                    {templates.map((t) => (
+                                        <option key={t.id} value={t.id}>
+                                            {t.name}{t.territory ? ` · ${t.territory}` : ""} · {t.slots.length}r
+                                        </option>
+                                    ))}
+                                </select>
+                            </>
+                        )}
                         <span className="bsp-bar-sep" />
                         <span className="bsp-bar-lbl">Guides</span>
                         <button className="bsp-btn bsp-btn--ghost" onClick={() => setGuidesY((g) => [...g, Math.round((Number(canvasH) || 1080) / 2)])}>
@@ -1792,6 +1928,36 @@ export const BespokeTool = () => {
 
             {/* Says plainly what this does NOT do yet, rather than offering a
                 Build button that would have to guess how masters are placed. */}
+            {/* SAVING A LAYOUT IS NOT BUILDING ONE, so it does not get a
+                primary button. Ghost weight, to the left of Build. */}
+            {mode === "regions" && regions.length > 0 && (
+                <div className="bsp-tpl">
+                    {saving ? (
+                        <>
+                            <input
+                                className="bsp-input bsp-tpl-name"
+                                value={tplName}
+                                autoFocus
+                                placeholder={site.trim() || "name this screen"}
+                                onChange={(e) => setTplName(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter") saveTemplate(); if (e.key === "Escape") setSaving(false); }}
+                            />
+                            <button className="bsp-btn bsp-btn--ghost" onClick={saveTemplate} disabled={!tplName.trim()}>
+                                Save
+                            </button>
+                            <button className="bsp-swaplink" onClick={() => setSaving(false)}>cancel</button>
+                        </>
+                    ) : (
+                        <button
+                            className="bsp-btn bsp-btn--ghost"
+                            onClick={() => { setTplName(site.trim()); setSaving(true); }}
+                        >
+                            Save this layout
+                        </button>
+                    )}
+                </div>
+            )}
+
             <div className="bsp-pending" hidden={!mode}>
                 <Tooltip text={mode === "regions"
                     ? (regions.length ? "Import the masters and assemble the regions" : "Add a region first")

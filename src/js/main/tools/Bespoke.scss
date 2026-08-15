@@ -655,6 +655,25 @@
     &.is-error { color: #e0857a; }
 }
 
+// Saving a layout sits beside Build but never competes with it.
+.bsp-tpl {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    row-gap: 6px;
+    flex-wrap: wrap;
+}
+
+.bsp-tpl-name {
+    width: auto;
+    flex: 1 1 180px;
+    min-width: 0;
+    height: 24px;
+    font-size: var(--t-sm);
+}
+
+.bsp-tpl-pick { max-width: 220px; }
+
 .bsp-pending {
     display: flex;
     align-items: center;

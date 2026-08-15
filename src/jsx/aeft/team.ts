@@ -751,6 +751,94 @@ const ARCADE_DIR = MISC_DIR + "/arcade";
 
 // Which shared files belong to the arcade. Kept as one list rather than a flag
 // per call site so adding a game means touching exactly this line.
+// Bespoke layouts. THE SCREEN IS THE STABLE THING and the campaign is what
+// changes: two campaigns on the same peculiar screen want the same regions and
+// the same guides, with different artwork in them. So a layout stores geometry
+// and the SHAPE of the master each region wants -- never the master itself.
+const SHARED_BESPOKE_FILE = "shared-bespoke-layouts.json";
+const SHARED_BESPOKE_TYPE = "bespoke-layouts";
+
+export interface BespokeTemplate {
+  id: string;
+  name: string;
+  territory: string;
+  site: string;
+  canvasW: number;
+  canvasH: number;
+  guidesX: number[];
+  guidesY: number[];
+  /** Geometry plus what KIND of master goes there, never which one. */
+  slots: {
+    x: number; y: number; w: number; h: number; rotation: number;
+    masterW: number; masterH: number; masterDuration: string;
+  }[];
+  savedBy: string;
+  stamp: string;
+}
+
+/** NULL MEANS "COULD NOT READ", never "there are none". */
+export const bespokeTemplateList = (): { success: boolean; templates?: BespokeTemplate[]; error?: string } => {
+  try {
+    const entries = readSharedFile<BespokeTemplate>(SHARED_BESPOKE_FILE, SHARED_BESPOKE_TYPE);
+    if (entries === null) {
+      // An unmounted share is a normal state, not an error toast.
+      return { success: true, templates: [] };
+    }
+    return { success: true, templates: entries };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/**
+ * Upsert by id, read-modify-write.
+ *
+ * Last writer wins on the whole file, the same as every other shared list
+ * here. A failed READ must not be treated as "the file is empty" -- that
+ * would republish one layout over everyone else's, so it refuses instead.
+ */
+export const bespokeTemplateSave = (entryJson: string): { success: boolean; error?: string; count?: number } => {
+  try {
+    const entry = JSON.parse(entryJson) as BespokeTemplate;
+    if (!entry || !entry.id || !entry.name) return { success: false, error: "A layout needs a name." };
+    const existing = readSharedFile<BespokeTemplate>(SHARED_BESPOKE_FILE, SHARED_BESPOKE_TYPE);
+    const out: BespokeTemplate[] = [];
+    let replaced = false;
+    if (existing !== null) {
+      for (let i = 0; i < existing.length; i++) {
+        if (String(existing[i].id) === String(entry.id)) { out.push(entry); replaced = true; }
+        else out.push(existing[i]);
+      }
+    }
+    if (!replaced) out.push(entry);
+    if (!writeSharedFile<BespokeTemplate>(SHARED_BESPOKE_FILE, SHARED_BESPOKE_TYPE, out)) {
+      return { success: false, error: "Couldn't write to the team folder -- is the share mounted?" };
+    }
+    return { success: true, count: out.length };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+export const bespokeTemplateDelete = (id: string): { success: boolean; error?: string } => {
+  try {
+    const existing = readSharedFile<BespokeTemplate>(SHARED_BESPOKE_FILE, SHARED_BESPOKE_TYPE);
+    // Distinguish "nothing there" from "couldn't read": deleting against a
+    // failed read would write back a file missing everyone else's layouts.
+    if (existing === null) return { success: false, error: "Couldn't read the saved layouts -- nothing was changed." };
+    const out: BespokeTemplate[] = [];
+    for (let i = 0; i < existing.length; i++) {
+      if (String(existing[i].id) !== String(id)) out.push(existing[i]);
+    }
+    if (!writeSharedFile<BespokeTemplate>(SHARED_BESPOKE_FILE, SHARED_BESPOKE_TYPE, out)) {
+      return { success: false, error: "Couldn't write to the team folder." };
+    }
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
 function isArcadeFile(fileName: string): boolean {
   return (
     fileName === SHARED_WORDGAME_FILE ||
@@ -830,6 +918,7 @@ function sharedTypeNoun(expectedType: string, count: number): string {
     : expectedType === SHARED_EXPRESSIONS_TYPE ? "expression"
     : expectedType === SHARED_TOOLS_TYPE ? "custom tool"
     : expectedType === SHARED_CAMPAIGNS_TYPE ? "campaign"
+    : expectedType === SHARED_BESPOKE_TYPE ? "saved layout"
     : expectedType === SHARED_WORDGAME_TYPE ? "result"
     : expectedType === SHARED_POSTERGAME_TYPE ? "result"
     : expectedType === SHARED_NERDLE_INVITES_TYPE ? "invite"
