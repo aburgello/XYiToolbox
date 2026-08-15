@@ -4184,6 +4184,7 @@ export const bespokeBuildRegions = (
       canvasWidth: number; canvasHeight: number; seconds: number;
       regions: BespokeRegion[]; name?: string;
       marketsRoot?: string; territory?: string; batch?: string;
+      refPath?: string; guidesX?: number[]; guidesY?: number[];
     };
     if (!plan || !plan.regions || plan.regions.length === 0) {
       return { success: false, error: "Nothing to build -- add a region first." };
@@ -4251,7 +4252,7 @@ export const bespokeBuildRegions = (
         const faceH = turned ? src.width : src.height;
 
         // COVER, not fit: the larger of the two ratios, so no gap is ever left
-        // inside the region and the excess is cropped by the mask below.
+        // inside the region and the excess is trimmed by the matte below.
         const cover = Math.max(reg.w / faceW, reg.h / faceH);
         (layer.property("Scale") as Property).setValue([cover * 100, cover * 100]);
         (layer.property("Position") as Property).setValue([reg.x + reg.w / 2, reg.y + reg.h / 2]);
@@ -4259,27 +4260,46 @@ export const bespokeBuildRegions = (
         // lookups collide across layer types.
         if (turn !== 0) (layer.transform.rotation as Property).setValue(turn);
 
-        // The crop itself. A rectangular mask in LAYER space, which is the
-        // layer's own untransformed pixels -- so the region's size has to be
-        // divided back out by the scale, or the mask would be cover-times too
-        // big and crop nothing. Masks live BENEATH the transform, so on a
-        // turned layer the region's width is measured along the layer's own
-        // HEIGHT axis: the two half-extents swap with it.
-        const halfW = (turned ? reg.h : reg.w) / cover / 2;
-        const halfH = (turned ? reg.w : reg.h) / cover / 2;
-        const cx = src.width / 2;
-        const cy = src.height / 2;
-        const mask = (layer as AVLayer).Masks.addProperty("ADBE Mask Atom") as MaskPropertyGroup;
-        const shape = new Shape();
-        shape.vertices = [
-          [cx - halfW, cy - halfH],
-          [cx + halfW, cy - halfH],
-          [cx + halfW, cy + halfH],
-          [cx - halfW, cy + halfH],
-        ];
-        shape.closed = true;
-        (mask.property("ADBE Mask Shape") as Property).setValue(shape);
-        mask.name = "Crop";
+        // ── The crop, as a track matte ────────────────────────────────────
+        // This used to be a rectangular mask in the master's own layer space,
+        // which welded the crop to the content: reframing the artwork inside
+        // its window meant dragging mask vertices, because moving the layer
+        // moved the hole with it.
+        //
+        // A solid the size of the region, used as an alpha matte, separates
+        // them. Move the SOLID and the window moves; move the MASTER and the
+        // artwork reframes inside it -- and because both live in the output
+        // comp, that reframing happens while the neighbouring regions are
+        // still on screen, which is what a board of abutting panels needs.
+        //
+        // It also removes the mask's worst property: masks live beneath the
+        // transform, so a turned layer needed its half-extents swapped. A
+        // matte sits in COMP space and does not care how the layer under it
+        // is rotated.
+        const matte = out.layers.addSolid([1, 1, 1], "R" + (i + 1) + " crop", Math.round(reg.w), Math.round(reg.h), 1);
+        (matte.property("Position") as Property).setValue([reg.x + reg.w / 2, reg.y + reg.h / 2]);
+        // The matte is hidden but still mattes -- that is what a track matte
+        // is. Left UNLOCKED on purpose: adjusting the window is the point.
+        matte.enabled = false;
+        // Same label on both halves of a pair, so 8 regions read as 8 pairs
+        // rather than 16 loose layers.
+        const pairLabel = (i % 16) + 1;
+        matte.label = pairLabel;
+        (layer as AVLayer).label = pairLabel;
+
+        // AE 23.0 replaced "the matte is whatever layer sits directly above"
+        // with an explicit reference. Duck-typed rather than version-sniffed,
+        // and the fallback is the adjacency model this codebase uses in its
+        // five other matte call sites. The explicit form matters here: an
+        // artist reordering layers in a 16-layer comp silently repoints an
+        // adjacency matte at the wrong master.
+        if (typeof (layer as any).setTrackMatte === "function") {
+          (layer as any).setTrackMatte(matte, TrackMatteType.ALPHA);
+        } else {
+          // addSolid inserts at the top, so the solid is already directly
+          // above the master it was created for.
+          (layer as AVLayer).trackMatteType = TrackMatteType.ALPHA;
+        }
 
         const lost = Math.round((1 - Math.min(reg.w / (faceW * cover), reg.h / (faceH * cover))) * 100);
         // The COMP's own duration, not the one parsed out of a filename --
@@ -4293,6 +4313,60 @@ export const bespokeBuildRegions = (
           + (lost > 0 ? ", " + lost + "% cropped" : ", exact")
           + (turn !== 0 ? ", turned " + turn + " deg" : "")
           + (over > 0 ? "  [" + Math.round(src.duration * 10) / 10 + "s from the start; last " + over + "s not rendered]" : ""));
+      }
+
+      // ── The reference, as a guide layer ───────────────────────────────
+      // Imported read-only and parked at the BOTTOM with the eye off, so the
+      // comp opens looking like the panel it was traced in. guideLayer means
+      // it can never reach a render even if somebody toggles it back on to
+      // check alignment -- which is the whole reason it is safe to include.
+      //
+      // Failing to attach it must never fail the build: the deliverable is the
+      // regions, and the reference is a convenience.
+      if (plan.refPath) {
+        try {
+          const io = new ImportOptions(new File(plan.refPath));
+          const refItem = app.project.importFile(io) as FootageItem;
+          const refLayer = out.layers.add(refItem) as AVLayer;
+          refLayer.name = "REFERENCE";
+          // The JPG comes out of the guide PDF at whatever size the export
+          // felt like -- 8000x5867 for a 3840x2816 board is normal -- so it is
+          // scaled to the comp rather than trusted to arrive at 1:1.
+          if (refItem.width && refItem.height) {
+            (refLayer.property("Scale") as Property).setValue([
+              (canvasW / refItem.width) * 100,
+              (canvasH / refItem.height) * 100,
+            ]);
+          }
+          refLayer.guideLayer = true;
+          refLayer.enabled = false;
+          refLayer.moveToEnd();
+          refLayer.locked = true;
+          lines.push("  reference attached as a locked guide layer (eye off)");
+        } catch (e) {
+          lines.push("  reference could not be attached: " + e.toString());
+        }
+      }
+
+      // ── The rulers ───────────────────────────────────────────
+      // Duck-typed, never version-sniffed. addGuide has been present since AE
+      // 17.1 -- EARLIER than the CompItem.guides array that Guide Scale reads,
+      // which is 23.0+ -- so asking whether the method exists is both simpler
+      // and more accurate than asking which AE this is. 0 is horizontal and 1
+      // is vertical, matching how guideScale() reads them back.
+      const guidesX = plan.guidesX || [];
+      const guidesY = plan.guidesY || [];
+      if (typeof (out as any).addGuide === "function") {
+        let added = 0;
+        for (let gi = 0; gi < guidesX.length; gi++) {
+          try { (out as any).addGuide(1, Math.round(guidesX[gi])); added++; } catch (e) { /* one bad guide is not a failed build */ }
+        }
+        for (let gi = 0; gi < guidesY.length; gi++) {
+          try { (out as any).addGuide(0, Math.round(guidesY[gi])); added++; } catch (e) { /* as above */ }
+        }
+        if (added > 0) lines.push("  " + added + " ruler guide" + (added === 1 ? "" : "s") + " placed");
+      } else if (guidesX.length > 0 || guidesY.length > 0) {
+        lines.push("  ruler guides skipped -- this After Effects has no addGuide (needs 17.1+)");
       }
 
       const finish = bespokeFinishAndFile(out, outName, canvasW, canvasH, plan, lines);
