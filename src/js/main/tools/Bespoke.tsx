@@ -28,7 +28,7 @@
 // step. Shipping a Build button that guessed would be worse than not having one.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { AlertCircle, Copy, Globe2, LayoutGrid, Library, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, Square as SquareIcon, Trash2, X } from "lucide-react";
+import { AlertCircle, ChevronRight, Copy, Globe2, Layers, LayoutGrid, Library, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, Square as SquareIcon, Trash2, X } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
@@ -111,6 +111,9 @@ const MasterCard: React.FC<{ master: BespokeMaster; swapping: boolean; used: num
     );
 };
 
+/** Below this a region collapses and can never be grabbed again. */
+const MIN_REGION = 24;
+
 interface Region {
     id: number;
     master: BespokeMaster;
@@ -187,7 +190,10 @@ export const BespokeTool = () => {
     // TWO MODES. Multi Art is the equal-panel tiling that ships today; Bespoke
     // places a master anywhere on the canvas, traced over the deliverable's own
     // reference JPG. They share everything except the placement.
-    const [mode, setMode] = useState<"multi" | "regions">("multi");
+    // UNSET until chosen. Which kind of build this is gets decided once per
+    // deliverable and never revisited, so it is a question asked at the door
+    // rather than a switch sat permanently above the work.
+    const [mode, setMode] = useState<"multi" | "regions" | null>(null);
     const [regions, setRegions] = useState<Region[]>([]);
     const [selRegion, setSelRegion] = useState(0);
     const [refPath, setRefPath] = useState("");
@@ -204,6 +210,8 @@ export const BespokeTool = () => {
     // Which ruler is selected, so it can be typed rather than dragged. Dragging
     // is fine for roughing a line in and useless for landing it on 2380.
     const [selGuide, setSelGuide] = useState<{ axis: "x" | "y"; i: number } | null>(null);
+    const [destOpen, setDestOpen] = useState(false);
+    const [pickerOpen, setPickerOpen] = useState(false);
     const [layouts, setLayouts] = useState<Record<string, { regions: Region[]; guidesX: number[]; guidesY: number[] }>>({});
     // Constraints while dragging a corner. Ratio keeps a region from ever
     // introducing a crop it did not have; locking a side is for the common case
@@ -214,8 +222,6 @@ export const BespokeTool = () => {
     const [guidesX, setGuidesX] = useState<number[]>([]);
     const [guidesY, setGuidesY] = useState<number[]>([]);
     const [lockRatio, setLockRatio] = useState(true);
-    const [lockW, setLockW] = useState(false);
-    const [lockH, setLockH] = useState(false);
     const stageRef = React.useRef<HTMLDivElement>(null);
     const dragRef = React.useRef<{ handle: string; sx: number; sy: number; box: DOMRect; start: Region } | null>(null);
     // The folder is a country NAME ("Germany"); the filename wants its code.
@@ -489,10 +495,26 @@ export const BespokeTool = () => {
         };
     };
 
-    /** Moves a guide to an exact pixel, clamped inside the canvas. */
+    /**
+     * A guide off the board is a line you can snap to but never see, and it
+     * drags region edges to coordinates the build cannot honour. Same rule as
+     * the regions themselves: the reference IS the extent of the work.
+     *
+     * Used by BOTH the numeric field and the drag, so the mouse cannot reach
+     * anywhere the keyboard is refused. It previously fell back to 1920/1080
+     * when the canvas fields were mid-edit, which would pin a guide to the
+     * wrong span on a 3840-wide board the moment someone cleared the box to
+     * retype it; an unparsable canvas now leaves the value alone instead.
+     */
+    const clampGuide = (axis: "x" | "y", value: number) => {
+        const span = axis === "x" ? Number(canvasW) : Number(canvasH);
+        if (!span || span <= 0) return Math.round(value);
+        return Math.max(0, Math.min(span, Math.round(value)));
+    };
+
+    /** Moves a guide to an exact pixel, held inside the canvas. */
     const setGuideAt = (axis: "x" | "y", i: number, value: number) => {
-        const span = axis === "x" ? Number(canvasW) || 1920 : Number(canvasH) || 1080;
-        const at = Math.max(0, Math.min(span, Math.round(value)));
+        const at = clampGuide(axis, value);
         if (axis === "x") setGuidesX((g) => g.map((v, n) => (n === i ? at : v)));
         else setGuidesY((g) => g.map((v, n) => (n === i ? at : v)));
     };
@@ -509,8 +531,40 @@ export const BespokeTool = () => {
         return best;
     };
 
+    /**
+     * The only way a region ever changes, so it is the only place the board
+     * edge has to be enforced: dragging, the corner handles, the x/y/w/h
+     * fields, Fit to guides, Match master ratio, align and rotate all come
+     * through here. Clamping at the choke point means no path can put a
+     * region somewhere the build cannot honour.
+     *
+     * A region outside the board is not a layout, it is a mistake -- the
+     * canvas IS the deliverable, so anything past its edge renders as
+     * nothing. Stuck to a corner now means stuck.
+     *
+     * NOT clamped while the canvas fields are mid-edit. Clearing the width
+     * box to retype it would otherwise fall back to a default and quietly
+     * crush every region to fit a board size nobody asked for.
+     */
     const patchRegion = (i: number, patch: Partial<Region>) =>
-        setRegions((prev) => prev.map((r, n) => (n === i ? { ...r, ...patch } : r)));
+        setRegions((prev) => prev.map((r, n) => {
+            if (n !== i) return r;
+            const merged = { ...r, ...patch };
+            const cw = Number(canvasW);
+            const ch = Number(canvasH);
+            if (!cw || !ch || cw <= 0 || ch <= 0) return merged;
+            // Size first: a region can be no larger than the board, and never
+            // so small it cannot be grabbed again.
+            const w = Math.max(MIN_REGION, Math.min(merged.w, cw));
+            const h = Math.max(MIN_REGION, Math.min(merged.h, ch));
+            // Then position, against the size that survived.
+            return {
+                ...merged,
+                w, h,
+                x: Math.max(0, Math.min(merged.x, cw - w)),
+                y: Math.max(0, Math.min(merged.y, ch - h)),
+            };
+        }));
 
     // Mouse events, not pointer: the macOS AE CEP host does not dispatch
     // Pointer Events reliably, which is this codebase's standing rule for
@@ -528,8 +582,15 @@ export const BespokeTool = () => {
             if (d.handle.indexOf("guide") === 0) {
                 const bits = d.handle.split(":");
                 const i = Number(bits[1]);
-                if (bits[0] === "guideX") setGuidesX((g) => g.map((v, n) => (n === i ? Math.round(d.start.x + dx) : v)));
-                else setGuidesY((g) => g.map((v, n) => (n === i ? Math.round(d.start.y + dy) : v)));
+                // Through the same clamp the field uses -- dragging must not
+                // reach where typing is refused.
+                if (bits[0] === "guideX") {
+                    const at = clampGuide("x", d.start.x + dx);
+                    setGuidesX((g) => g.map((v, n) => (n === i ? at : v)));
+                } else {
+                    const at = clampGuide("y", d.start.y + dy);
+                    setGuidesY((g) => g.map((v, n) => (n === i ? at : v)));
+                }
             } else if (d.handle === "move") {
                 // Both edges are offered to the ruler, so a region can land
                 // flush against a line from either side.
@@ -548,8 +609,15 @@ export const BespokeTool = () => {
                 const north = d.handle.indexOf("n") !== -1;
                 // The moving EDGE snaps, not the size -- that is what lets a
                 // height sit exactly between two horizontal guides.
-                const edgeX = snapTo(west ? Math.round(s0.x + dx) : Math.round(s0.x + s0.w + dx), guidesX, cw);
-                const edgeY = snapTo(north ? Math.round(s0.y + dy) : Math.round(s0.y + s0.h + dy), guidesY, ch);
+                // The edge is held inside the board before anything is derived
+                // from it. patchRegion clamps as a backstop, but doing it here
+                // too keeps w/h honest: an unclamped edge dragged past 0 makes
+                // a width larger than the canvas, which then gets clamped and
+                // detaches the box from the cursor.
+                const edgeX = Math.max(0, Math.min(cw,
+                    snapTo(west ? Math.round(s0.x + dx) : Math.round(s0.x + s0.w + dx), guidesX, cw)));
+                const edgeY = Math.max(0, Math.min(ch,
+                    snapTo(north ? Math.round(s0.y + dy) : Math.round(s0.y + s0.h + dy), guidesY, ch)));
                 const nx = west ? edgeX : s0.x;
                 const ny = north ? edgeY : s0.y;
                 let nw = west ? s0.x + s0.w - edgeX : edgeX - s0.x;
@@ -559,17 +627,15 @@ export const BespokeTool = () => {
                 // axis from the one being dragged, using the region's CURRENT
                 // shape so a lock preserves what you already have rather than
                 // snapping it to the master's.
-                if (lockW) nw = s0.w;
-                if (lockH) nh = s0.h;
-                if (lockRatio && !lockW && !lockH) {
+                if (lockRatio) {
                     const aspect = s0.w / Math.max(1, s0.h);
                     if (Math.abs(nw - s0.w) >= Math.abs(nh - s0.h)) nh = Math.round(nw / aspect);
                     else nw = Math.round(nh * aspect);
                 }
 
                 // Below this a region collapses and can never be grabbed again.
-                const fw = Math.max(24, nw);
-                const fh = Math.max(24, nh);
+                const fw = Math.max(MIN_REGION, nw);
+                const fh = Math.max(MIN_REGION, nh);
                 patchRegion(selRegion, {
                     // A west/north handle moves the origin by however much the
                     // size actually changed, not by the raw pointer delta --
@@ -587,7 +653,7 @@ export const BespokeTool = () => {
             window.removeEventListener("mousemove", move);
             window.removeEventListener("mouseup", up);
         };
-    }, [mode, selRegion, canvasW, canvasH, lockRatio, lockW, lockH, guidesX, guidesY]);
+    }, [mode, selRegion, canvasW, canvasH, lockRatio, guidesX, guidesY]);
 
     /** Snaps a region to one of the canvas's nine anchor points. */
     const alignRegion = (hx: 0 | 0.5 | 1, vy: 0 | 0.5 | 1) => {
@@ -617,6 +683,60 @@ export const BespokeTool = () => {
     };
 
     /**
+     * The bounds either side of a point on one axis, or null.
+     *
+     * THE BOARD'S OWN EDGES COUNT AS GUIDES. Regions are already clamped to
+     * the reference, so its edges are real boundaries and not merely where the
+     * picture stops -- one horizontal and one vertical guide divide the board
+     * into four usable cells, and it took two more guides laid along the top
+     * and left to say what the edges already said.
+     *
+     * They only count once there is at least one REAL guide on the axis: with
+     * none, the answer is "this axis has nothing to say", not "fill the whole
+     * board", which would turn Fit to guides into a maximise button.
+     *
+     * Shared by Fit to guides and the on-canvas highlight, so what is drawn is
+     * literally the rectangle the button produces rather than a second guess
+     * at it -- two implementations of "which pair" would eventually disagree,
+     * and that would surface as the button doing something other than what you
+     * were looking at.
+     */
+    const bracketGuides = (guides: number[], centre: number, span: number) => {
+        if (guides.length === 0) return null;
+        if (!span || span <= 0) return null;
+        let lo = 0;
+        let hi = span;
+        for (const g of guides) {
+            if (g <= centre && g > lo) lo = g;
+            if (g >= centre && g < hi) hi = g;
+        }
+        if (hi - lo < MIN_REGION) return null;
+        return { lo, hi };
+    };
+
+    /**
+     * The cell the selected region would land in, or null.
+     *
+     * Exactly what fitToGuides will do: an axis with no bracketing pair keeps
+     * the region's current position and size on that axis, so the highlight
+     * shows the real outcome including the parts that will not move.
+     */
+    const guideCell = () => {
+        const r = regions[selRegion];
+        if (!r) return null;
+        if (guidesX.length === 0 && guidesY.length === 0) return null;
+        const v = bracketGuides(guidesY, r.y + r.h / 2, Number(canvasH));
+        const h = bracketGuides(guidesX, r.x + r.w / 2, Number(canvasW));
+        if (!v && !h) return null;
+        return {
+            x: h ? h.lo : r.x,
+            w: h ? h.hi - h.lo : r.w,
+            y: v ? v.lo : r.y,
+            h: v ? v.hi - v.lo : r.h,
+        };
+    };
+
+    /**
      * Sizes the region to span the guides that BRACKET it, per axis.
      *
      * Dragging an edge onto a line was the only way to use a guide, which meant
@@ -630,19 +750,10 @@ export const BespokeTool = () => {
     const fitToGuides = () => {
         const r = regions[selRegion];
         if (!r) return;
-        const bracket = (guides: number[], centre: number) => {
-            let lo = -Infinity;
-            let hi = Infinity;
-            for (const g of guides) {
-                if (g <= centre && g > lo) lo = g;
-                if (g >= centre && g < hi) hi = g;
-            }
-            return lo === -Infinity || hi === Infinity || hi - lo < 24 ? null : { lo, hi };
-        };
-        const v = bracket(guidesY, r.y + r.h / 2);
-        const h = bracket(guidesX, r.x + r.w / 2);
+        const v = bracketGuides(guidesY, r.y + r.h / 2, Number(canvasH));
+        const h = bracketGuides(guidesX, r.x + r.w / 2, Number(canvasW));
         if (!v && !h) {
-            setStatus({ text: "Put a guide either side of the region first — it fits between a pair.", type: "error" });
+            setStatus({ text: "Add a guide first — a region fits between two guides, or between a guide and the edge of the board.", type: "error" });
             return;
         }
         setStatus(null);
@@ -678,6 +789,13 @@ export const BespokeTool = () => {
                 name: outName.trim(),
                 marketsRoot, territory, batch: batch.trim(),
                 regions: regions.map((r) => ({ path: r.master.path, x: r.x, y: r.y, w: r.w, h: r.h, rotation: r.rotation || 0 })),
+                // The reference and the rulers travel with the plan so the
+                // built comp opens looking like the panel it was traced in.
+                // Arrays of scalars survive the bridge; the whole plan is
+                // already a JSON string, which is the rule for anything nested.
+                refPath: refPath,
+                guidesX: guidesX,
+                guidesY: guidesY,
             };
             const res = (await evalTS("bespokeBuildRegions", JSON.stringify(plan))) as unknown as
                 { success: boolean; error?: string; report?: string; saved?: boolean; savedTo?: string } | undefined;
@@ -877,7 +995,10 @@ export const BespokeTool = () => {
 
     return (
         <div className="form-tool bsp">
-            <div className="bsp-head">
+            {/* The masters folder belongs to the work, not to the question at the
+                door -- picking a build type has nothing to do with which folder
+                the masters came from. */}
+            <div className="bsp-head" hidden={!mode}>
                 <div className="bsp-head-text">
                     <p className="bsp-masters">{mastersPath || "No masters folder set"}</p>
                     <p className="bsp-count">
@@ -896,36 +1017,45 @@ export const BespokeTool = () => {
                 </Tooltip>
             </div>
 
-            {/* --- the deliverable being built ------------------------------ */}
-            <div className="bsp-target">
-                <label className="bsp-field">
-                    <span className="bsp-lbl">Canvas</span>
-                    <span className="bsp-size">
-                        <input className="bsp-input bsp-input--n" value={canvasW} onChange={(e) => setCanvasW(e.target.value)} />
-                        <span className="bsp-x">×</span>
-                        <input className="bsp-input bsp-input--n" value={canvasH} onChange={(e) => setCanvasH(e.target.value)} />
-                    </span>
-                </label>
-                <label className="bsp-field">
-                    <span className="bsp-lbl">Runtime</span>
-                    <span className="bsp-size">
-                        <input className="bsp-input bsp-input--n" value={runtime} onChange={(e) => setRuntime(e.target.value)} />
-                        <span className="bsp-x">s</span>
-                    </span>
-                </label>
-            </div>
+            {!mode && (
+                <div className="bsp-choose">
+                    <p className="bsp-choose-ask">What kind of build is this?</p>
+                    <div className="bsp-choose-cards">
+                        {/* Name and icon only. The team already knows which is
+                            which, and two paragraphs at the door is reading
+                            imposed on someone who has decided before arriving. */}
+                        <button className="bsp-choose-card" onClick={() => setMode("multi")}>
+                            <LayoutGrid size={30} />
+                            <b>Multi Art</b>
+                        </button>
+                        <button className="bsp-choose-card" onClick={() => setMode("regions")}>
+                            <Layers size={30} />
+                            <b>Bespoke</b>
+                        </button>
+                    </div>
+                </div>
+            )}
 
-            <div className="bsp-modes">
-                <button className={"bsp-mode" + (mode === "multi" ? " is-on" : "")} onClick={() => setMode("multi")}>
-                    <b>Multi Art</b><span>Equal panels, segments over time</span>
-                </button>
-                <button className={"bsp-mode" + (mode === "regions" ? " is-on" : "")} onClick={() => setMode("regions")}>
-                    <b>Bespoke</b><span>A master anywhere on the canvas</span>
-                </button>
-            </div>
 
             {/* --- where it lands ------------------------------------------ */}
-            <div className="bsp-dest">
+            {/* COLLAPSED BY DEFAULT. Four fields that are set once per batch
+                and then ignored were taking a quarter of the panel above the
+                thing you actually work in. The summary line keeps the answer
+                visible while closed, so nothing is hidden -- only folded. */}
+            <button
+                className={"bsp-fold" + (destOpen ? " is-on" : "")}
+                onClick={() => setDestOpen((v) => !v)}
+                hidden={!mode}
+            >
+                <ChevronRight size={11} className="bsp-fold-caret" />
+                <span className="bsp-fold-label">Where it lands</span>
+                <span className="bsp-fold-summary">
+                    {territory
+                        ? `${territory}${batch.trim() ? " · " + batch.trim() : ""}${site.trim() ? " · " + site.trim() : ""}`
+                        : "no country chosen"}
+                </span>
+            </button>
+            <div className="bsp-dest" hidden={!mode || !destOpen}>
                 {/* The house Dropdown, the same one the localiser's campaign
                     picker uses. A native <select> renders its popup through the
                     OS, so no amount of CSS reaches the open list -- it arrived
@@ -975,7 +1105,7 @@ export const BespokeTool = () => {
                 </label>
             </div>
 
-            <label className="bsp-field">
+            <label className="bsp-field" hidden={!mode}>
                 <span className="bsp-lbl">Deliverable name</span>
                 <input
                     className="bsp-input"
@@ -988,20 +1118,83 @@ export const BespokeTool = () => {
             {/* The exact path, before anything is written. A batch that lands in
                 the wrong market is a redelivery, and this is the one place it
                 can be caught for free. */}
-            <p className="bsp-path">
+            <p className="bsp-path" hidden={!mode}>
                 {territory && marketsRoot
                     ? `${marketsRoot}/${territory}/AE/${batch.trim() || "AE"}/${outName || "…"}_V01.aep`
                     : "No country chosen — it will be built and left unsaved."}
             </p>
 
+            {/* CANVAS AND RUNTIME SIT WITH THE PANE THEY DESCRIBE, not at the
+                top of the form. In Bespoke both are read straight off the
+                reference filename, so asking for them before the reference has
+                even been picked put the answer above the question -- there they
+                live in the bar above the canvas instead, which is why this
+                renders for Multi Art only. */}
+            <div className="bsp-target" hidden={mode !== "multi"}>
+                <label className="bsp-field">
+                    <span className="bsp-lbl">Canvas</span>
+                    <span className="bsp-size">
+                        <input className="bsp-input bsp-input--n" value={canvasW} onChange={(e) => setCanvasW(e.target.value)} />
+                        <span className="bsp-x">×</span>
+                        <input className="bsp-input bsp-input--n" value={canvasH} onChange={(e) => setCanvasH(e.target.value)} />
+                    </span>
+                </label>
+                <label className="bsp-field">
+                    <span className="bsp-lbl">Runtime</span>
+                    <span className="bsp-size">
+                        <input className="bsp-input bsp-input--n" value={runtime} onChange={(e) => setRuntime(e.target.value)} />
+                        <span className="bsp-x">s</span>
+                    </span>
+                </label>
+            </div>
+
             {mode === "regions" && (
                 <>
-                    <p className="bsp-lbl bsp-lbl--section">
-                        Trace over the reference
-                        <button className="bsp-reflink" onClick={pickReference}>
-                            {refPath ? refPath.split("/").pop() : "pick the reference JPG…"}
+                    {/* ONE BAR. "Trace over the reference" as a heading said
+                        nothing the file name below it did not, and each of the
+                        reference, the canvas and the guides had its own row --
+                        three bands of chrome above the thing being worked in.
+                        They are one wrapping row now, ordered the way they are
+                        used: pick the reference, confirm what it says the board
+                        is, then lay lines on it. */}
+                    <div className="bsp-bar">
+                        {/* Once a reference is chosen the button stops being a
+                            call to action and becomes a statement of fact, so
+                            it changes colour and shortens to the stem -- the
+                            full path is on hover. */}
+                        <button
+                            className={"bsp-reflink" + (refPath ? " is-set" : "")}
+                            onClick={pickReference}
+                            title={refPath || "Pick the reference JPG for this deliverable"}
+                        >
+                            {refPath
+                                ? (refPath.split("/").pop() || "").replace(/\.(jpe?g|png)$/i, "")
+                                : "Pick the reference JPG…"}
                         </button>
-                    </p>
+                        <span className="bsp-bar-sep" />
+                        <span className="bsp-size">
+                            <input className="bsp-input bsp-input--n" value={canvasW} onChange={(e) => setCanvasW(e.target.value)} title="Canvas width" />
+                            <span className="bsp-x">×</span>
+                            <input className="bsp-input bsp-input--n" value={canvasH} onChange={(e) => setCanvasH(e.target.value)} title="Canvas height" />
+                        </span>
+                        <span className="bsp-size">
+                            <input className="bsp-input bsp-input--n" value={runtime} onChange={(e) => setRuntime(e.target.value)} title="Runtime in seconds" />
+                            <span className="bsp-x">s</span>
+                        </span>
+                        <span className="bsp-bar-sep" />
+                        <span className="bsp-bar-lbl">Guides</span>
+                        <button className="bsp-btn bsp-btn--ghost" onClick={() => setGuidesY((g) => [...g, Math.round((Number(canvasH) || 1080) / 2)])}>
+                            + Horizontal
+                        </button>
+                        <button className="bsp-btn bsp-btn--ghost" onClick={() => setGuidesX((g) => [...g, Math.round((Number(canvasW) || 1920) / 2)])}>
+                            + Vertical
+                        </button>
+                        {(guidesX.length > 0 || guidesY.length > 0) && (
+                            <button className="bsp-btn bsp-btn--ghost" onClick={() => { setGuidesX([]); setGuidesY([]); setSelGuide(null); }}>
+                                Clear
+                            </button>
+                        )}
+                    </div>
                     {refs.length > 1 && (
                         // THE WHOLE FOLDER, because a job is many deliverables.
                         // Each keeps its own regions, so stepping through them
@@ -1088,6 +1281,28 @@ export const BespokeTool = () => {
                                 onError={() => setRefMismatch("Couldn't load that reference image.")}
                             />
                         )}
+                        {(() => {
+                            // THE AREA A REGION WOULD SNAP INTO, drawn before
+                            // the regions so it reads as ground rather than as
+                            // another box on top of them. Nothing interactive:
+                            // it is a preview of Fit to guides, computed by the
+                            // same bracket the button uses.
+                            const cell = guideCell();
+                            if (!cell) return null;
+                            const cw = Number(canvasW) || 1920;
+                            const ch = Number(canvasH) || 1080;
+                            return (
+                                <span
+                                    className="bsp-cell"
+                                    style={{
+                                        left: `${(cell.x / cw) * 100}%`,
+                                        top: `${(cell.y / ch) * 100}%`,
+                                        width: `${(cell.w / cw) * 100}%`,
+                                        height: `${(cell.h / ch) * 100}%`,
+                                    }}
+                                />
+                            );
+                        })()}
                         {regions.map((r, i) => {
                             const cw = Number(canvasW) || 1920;
                             const ch = Number(canvasH) || 1080;
@@ -1136,6 +1351,22 @@ export const BespokeTool = () => {
                                     />
                                     )}
                                     <span className={`bsp-region-top bsp-region-top--${r.rotation || 0}`} />
+                                    {/* WHICH WAY IS UP, stated outright. On a
+                                        SQUARE master a quarter turn changes no
+                                        geometry at all -- same footprint, same
+                                        crop, identical extent box -- so the
+                                        edge bar was the only cue, and it sat in
+                                        the guides' own colour. An arrow that
+                                        turns with the master is unambiguous
+                                        whatever its shape. */}
+                                    {r.rotation ? (
+                                        <span
+                                            className="bsp-region-up"
+                                            style={{ transform: `rotate(${r.rotation}deg)` }}
+                                        >
+                                            ↑
+                                        </span>
+                                    ) : null}
                                     <span className="bsp-region-tag" title={r.master.name}>
                                         {/* WHICH MASTER THIS IS, not just its
                                             campaign. Two regions of the same
@@ -1191,14 +1422,10 @@ export const BespokeTool = () => {
                         )}
                     </div>
 
+                    {/* What is LEFT of the old guides row: the buttons moved
+                        into the bar above, so this appears only when there is
+                        something to say about a guide you have selected. */}
                     <div className="bsp-guidebar">
-                        <span className="bsp-lbl">Guides</span>
-                        <button className="bsp-btn bsp-btn--ghost" onClick={() => setGuidesY((g) => [...g, Math.round((Number(canvasH) || 1080) / 2)])}>
-                            + Horizontal
-                        </button>
-                        <button className="bsp-btn bsp-btn--ghost" onClick={() => setGuidesX((g) => [...g, Math.round((Number(canvasW) || 1920) / 2)])}>
-                            + Vertical
-                        </button>
                         {selGuide && (
                             // TYPED, NOT DRAGGED. Dragging roughs a line in;
                             // landing it on an exact pixel from a brief is what
@@ -1228,12 +1455,11 @@ export const BespokeTool = () => {
                                 </button>
                             </span>
                         )}
-                        {(guidesX.length > 0 || guidesY.length > 0) && (
-                            <button className="bsp-btn bsp-btn--ghost" onClick={() => { setGuidesX([]); setGuidesY([]); }}>
-                                Clear
-                            </button>
-                        )}
-                        <span className="bsp-guidehint">drag to place · double-click to remove · select a master, then Fit to guides</span>
+                        <span className="bsp-guidehint">
+                            {selGuide
+                                ? "drag to place · double-click to remove"
+                                : "add a guide, then select a master and Fit to guides"}
+                        </span>
                     </div>
 
                     {(refMismatch !== "" || overrunRegions.length > 0) && (
@@ -1314,8 +1540,6 @@ export const BespokeTool = () => {
                             </span>
                             <span className="bsp-locks">
                                 <CheckboxToggle checked={lockRatio} onChange={setLockRatio} label="Keep ratio" />
-                                <CheckboxToggle checked={lockW} onChange={setLockW} label="Lock width" />
-                                <CheckboxToggle checked={lockH} onChange={setLockH} label="Lock height" />
                                 <Tooltip text={`Size ${regions[selRegion]?.master.name || "this region"} to the guides either side of it — each axis independently`}>
                                     <button className="bsp-btn bsp-btn--ghost" onClick={fitToGuides}>
                                         Fit to guides
@@ -1446,12 +1670,32 @@ export const BespokeTool = () => {
             )}
 
             {/* --- the picker ----------------------------------------------- */}
-            <p className="bsp-lbl bsp-lbl--section">
-                {swapTarget >= 0
-                    ? `Choose a replacement for R${swapTarget + 1} — its position is kept`
-                    : mode === "regions" ? "Add a master as a region" : "Add a master to this segment"}
-            </p>
-            <div className="bsp-picker">
+            {/* FOLDED BY DEFAULT. The grid is the tallest thing in the tool and
+                it is only needed at the moment you add a master -- the rest of
+                the time it pushes the canvas off screen. The summary carries
+                the state that matters while it is shut: which creative is
+                filtered, and how many masters that leaves.
+                It opens itself for a SWAP, because a swap is a request to pick
+                something and closing the list you were sent to would be
+                perverse. */}
+            <button
+                className={"bsp-fold" + (pickerOpen || swapTarget >= 0 ? " is-on" : "")}
+                onClick={() => setPickerOpen((v) => !v)}
+                hidden={!mode}
+            >
+                <ChevronRight size={11} className="bsp-fold-caret" />
+                <span className="bsp-fold-label">
+                    {swapTarget >= 0
+                        ? `Replace R${swapTarget + 1}`
+                        : mode === "regions" ? "Add a master as a region" : "Add a master to this segment"}
+                </span>
+                <span className="bsp-fold-summary">
+                    {swapTarget >= 0
+                        ? "its position is kept"
+                        : `${creative || "no creative"} · ${matches.length} master${matches.length === 1 ? "" : "s"}`}
+                </span>
+            </button>
+            <div className="bsp-picker" hidden={!mode || (!pickerOpen && swapTarget < 0)}>
                 {/* Creative first, the way OV Library asks it -- the question is
                     "which artwork", not "what was that file called". */}
                 <div className="bsp-creatives">
@@ -1528,9 +1772,12 @@ export const BespokeTool = () => {
                             swapping={swapTarget >= 0}
                             used={regions.filter((r) => r.master.path === m.path).length}
                             onPick={() => {
-                                if (swapTarget >= 0) { swapRegion(m); return; }
-                                if (mode === "regions") { addRegion(m); return; }
+                                // Shuts behind you: the master is placed and the
+                                // canvas is what you need to see next.
+                                if (swapTarget >= 0) { swapRegion(m); setPickerOpen(false); return; }
+                                if (mode === "regions") { addRegion(m); setPickerOpen(false); return; }
                                 addTile(m);
+                                setPickerOpen(false);
                             }}
                         />
                     ))}
@@ -1545,7 +1792,7 @@ export const BespokeTool = () => {
 
             {/* Says plainly what this does NOT do yet, rather than offering a
                 Build button that would have to guess how masters are placed. */}
-            <div className="bsp-pending">
+            <div className="bsp-pending" hidden={!mode}>
                 <Tooltip text={mode === "regions"
                     ? (regions.length ? "Import the masters and assemble the regions" : "Add a region first")
                     : (blockers.length ? "Every segment needs at least one creative" : "Import the masters and assemble the composition")}>

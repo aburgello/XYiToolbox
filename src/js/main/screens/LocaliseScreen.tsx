@@ -57,7 +57,7 @@ const PANES: { id: Pane; label: string; icon: React.ComponentType<{ size?: numbe
 // whose only content is that button.
 const TOOLS_ROW: (UtilityEntry & { run?: string })[] = [
     { id: "ov-swap",           label: "OV Swap",        icon: Repeat },
-    { id: "bespoke",           label: "Bespoke",        icon: Layers },
+    { id: "bespoke",           label: "It's Bespokin' Time", icon: Layers },
     { id: "pdf-to-csv",        label: "PDF to CSV",     icon: FileSpreadsheet, run: "pdfToCsvGenerate" },
     { id: "jpeg-loc",          label: "JPEG Loc",       icon: ImageIcon,       run: "jpegLoc" },
     { id: "aep-thief",         label: "AEP Thief",      icon: Copy,            run: "copyAep" },

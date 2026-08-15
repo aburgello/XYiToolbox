@@ -22,6 +22,16 @@
     box-sizing: border-box;
 }
 
+// `hidden` is honoured by the UA as `[hidden] { display: none }`, which ANY
+// explicit display in a class rule outranks. Both .bsp-dest and .bsp-target
+// set `display: flex`, so hidden={...} moved the caret and hid nothing --
+// Canvas and Runtime rendered twice at once, and "Where it lands" folded to
+// no effect. Scoped to this tool, and !important because the whole point is
+// to beat a class rule that will always be more specific than [hidden].
+.bsp [hidden] {
+    display: none !important;
+}
+
 .bsp {
     // ── Tokens ──────────────────────────────────────────────────────────
     // Scoped to the tool, NOT :root. Category tint (--cat-*) already
@@ -124,6 +134,49 @@
     padding: 0;
 }
 
+// A section that folds to one line, keeping its answer visible while closed.
+.bsp-fold {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 5px 7px;
+    border: 1px solid var(--surface-border, #2b3230);
+    border-radius: var(--r-sm);
+    // index.scss's global button:hover/:active paints over any custom button,
+    // so both states are re-declared or this flashes blue.
+    background: var(--surface-1, #141414);
+    color: #9fb3b0;
+    cursor: pointer;
+    text-align: left;
+
+    &:hover { background: #172422; border-color: #2dd4bf; }
+    &:active { background: #12201e; }
+}
+
+.bsp-fold-caret {
+    flex: none;
+    transition: transform var(--dur) var(--ease-snap);
+}
+
+.bsp-fold.is-on .bsp-fold-caret { transform: rotate(90deg); }
+
+.bsp-fold-label {
+    flex: none;
+    font-size: var(--t-sm);
+    letter-spacing: 0.02em;
+}
+
+.bsp-fold-summary {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: #6f8b87;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: var(--t-micro);
+}
+
 .bsp-target {
     display: flex;
     gap: 16px;
@@ -141,7 +194,12 @@
     color: #767c88;
 }
 
-.bsp-lbl--section { margin: 4px 0 -4px; }
+// Was `margin: 4px 0 -4px`. The parent .bsp is a flex column with gap:10px,
+// and margins ADD to gap rather than collapse into it -- so a section heading
+// sat 14px below what preceded it and 6px above what it labelled. A heading
+// belongs to what follows it, so the space goes above, and the gap alone
+// handles below.
+.bsp-lbl--section { margin: 2px 0 0; }
 
 .bsp-input {
     box-sizing: border-box;
@@ -725,6 +783,78 @@
 .bsp-chatter { margin-top: 4px; padding: 0 2px; }
 
 /* --- mode tabs ------------------------------------------------------------ */
+// The door. Which kind of build this is, asked once, with enough room to say
+// what each one actually produces -- the old strip gave Bespoke four words.
+.bsp-choose {
+    padding: 18px 16px 20px;
+    border: 1px solid var(--surface-border, #2b3230);
+    border-radius: var(--r-md);
+    background: var(--surface-1, #141414);
+}
+
+.bsp-choose-ask {
+    margin: 0 0 14px;
+    color: #cfe9e4;
+    font-size: var(--t-xl);
+    letter-spacing: -0.01em;
+}
+
+.bsp-choose-cards {
+    // Two side by side, dropping to one column before either gets too narrow
+    // to read its own description.
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 12px;
+}
+
+.bsp-choose-card {
+    display: flex;
+    flex-direction: column;
+    // A button that is a flex container does not stretch its children in
+    // Chromium unless told to.
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    min-width: 0;
+    // The only two things on screen at this point, and the screen is otherwise
+    // empty -- they should read as a choice, not as two toolbar buttons.
+    min-height: 150px;
+    padding: 26px 18px;
+    border: 1px solid var(--surface-border, #2b3230);
+    border-radius: var(--r-md);
+    background: var(--surface-0, #101010);
+    cursor: pointer;
+    transition:
+        border-color var(--dur) var(--ease-snap),
+        background-color var(--dur) var(--ease-snap),
+        transform var(--dur) var(--ease-snap);
+
+    // index.scss's global button:hover/:active would otherwise paint this blue.
+    &:hover {
+        border-color: #2dd4bf;
+        background: #172422;
+        transform: translateY(-1px);
+    }
+    &:active { background: #12201e; transform: translateY(0); }
+
+    svg { color: #2dd4bf; }
+
+    b {
+        color: #e6f2f0;
+        font-size: var(--t-2xl);
+        font-weight: 600;
+        letter-spacing: -0.01em;
+    }
+}
+
+
+
+
+@media (prefers-reduced-motion: reduce) {
+    .bsp-choose-card { transition: none; }
+    .bsp-choose-card:hover, .bsp-choose-card:active { transform: none; }
+}
+
 .bsp-modes { display: flex; gap: 5px; }
 
 .bsp-mode {
@@ -750,6 +880,17 @@
 }
 
 /* --- region canvas -------------------------------------------------------- */
+.bsp-reflink.is-set {
+    // Answered, not asking.
+    border-color: rgba(45, 212, 191, 0.45);
+    background: rgba(45, 212, 191, 0.1);
+    color: #7fe7d8;
+    max-width: 320px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
 .bsp-reflink {
     margin-left: 8px;
     padding: 2px 8px;
@@ -797,6 +938,17 @@
     justify-content: center;
     font-size: var(--t-sm);
     color: #6f757f;
+}
+
+// The cell between the guides bracketing the selected region -- what Fit to
+// guides would fill. Sits under the regions and takes no pointer events, so it
+// can never be grabbed instead of the thing on top of it.
+.bsp-cell {
+    position: absolute;
+    z-index: 0;
+    background: rgba(224, 160, 74, 0.13);
+    border: 1px solid rgba(224, 160, 74, 0.42);
+    pointer-events: none;
 }
 
 .bsp-region {
@@ -929,7 +1081,30 @@
 // The master's own top edge, walking round the sides as it turns.
 .bsp-region-top {
     position: absolute;
-    background: #ffd68a;
+    // NOT the guides' amber (#e0a04a). At 90 degrees this draws down the
+    // region's right edge, which is exactly where a vertical guide tends to
+    // be, and in the same hue it read as one more guide instead of as
+    // orientation.
+    background: #ffffff;
+    opacity: 0.85;
+    pointer-events: none;
+}
+
+// Points the way the master's own top faces. Transform is safe here: nothing
+// Framer-animates this element, so no inline style of its own can win.
+.bsp-region-up {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    margin: -9px 0 0 -6px;
+    width: 12px;
+    height: 18px;
+    color: #ffffff;
+    font-size: var(--t-lg);
+    line-height: 18px;
+    text-align: center;
+    text-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
+    opacity: 0.75;
     pointer-events: none;
 }
 
@@ -1001,7 +1176,9 @@
 .bsp-h--se { right: -6px; bottom: -6px; cursor: nwse-resize; }
 
 /* --- align + constraints -------------------------------------------------- */
-.bsp-align { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+// One gap, not 12 outside and 10 inside. The nested rows were the reason the
+// space either side of "Keep ratio" did not match.
+.bsp-align { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 6px; }
 
 .bsp-align-grid {
     display: grid;
@@ -1022,10 +1199,40 @@
     &:active { background: rgba(45, 212, 191, 0.32); }
 }
 
-.bsp-locks { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.bsp-locks { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 6px; }
 
 /* --- guides --------------------------------------------------------------- */
-.bsp-guidebar { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+// The one bar above the canvas: reference, board size, runtime, guides.
+.bsp-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    row-gap: 6px;
+    flex-wrap: wrap;
+    padding: 6px 8px;
+    border: 1px solid var(--surface-border, #2b3230);
+    border-radius: var(--r-md);
+    background: var(--surface-1, #141414);
+}
+
+// A hairline between groups, so a wrapping row still reads as three things
+// rather than nine loose controls.
+.bsp-bar-lbl {
+    flex: none;
+    color: #6f757f;
+    font-size: var(--t-micro);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.bsp-bar-sep {
+    flex: none;
+    width: 1px;
+    height: 16px;
+    background: var(--surface-border, #2b3230);
+}
+
+.bsp-guidebar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 6px; }
 .bsp-guidehint { font-size: var(--t-micro); color: #6f757f; }
 
 .bsp-guide {
@@ -1106,6 +1313,8 @@
 
 // Keyboard focus was invisible throughout this tool. A ring that only shows
 // for keyboard users leaves the mouse path untouched.
+.bsp-choose-card:focus-visible,
+.bsp-fold:focus-visible,
 .bsp-master:focus-visible,
 .bsp-btn:focus-visible,
 .bsp-refstep:focus-visible,

@@ -320,11 +320,11 @@ export const TOOLS: ToolEntry[] = [
         // be renamed once it ships without orphaning anything saved under it,
         // and this section is meant to grow past MultipleArt.
         id: "bespoke",
-        label: "Bespoke",
+        label: "It's Bespokin' Time",
         categories: ["localise"],
         icon: Layers,
         Component: BespokeTool,
-        actions: ["Bespoke", "Multiple Art", "Add segment", "Remove segment"],
+        actions: ["Bespoke", "Bespokin", "Multiple Art", "Add segment", "Remove segment"],
         description: "Compose a deliverable from several masters — creatives tiled across the frame, segments played in order. For MultipleArt rows, where no single master fits.",
     },
     {
