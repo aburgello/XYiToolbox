@@ -1521,25 +1521,9 @@
     background: var(--surface-1, #141414);
 }
 
-// NOT .bsp-lbl. That class uppercases and adds 0.11em of tracking, which turns
-// a short label into spaced-out capitals -- fine for "WHERE IT LANDS" over a
-// field group, wrong for a name sitting inline with the controls it names.
-.bsp-rtools-id {
-    flex: none;
-    color: #9fb3b0;
-    font-size: var(--t-sm);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-}
-
-// Says what the nine squares beside it are. They are read by POSITION, so they
-// need no per-square label -- but with nothing at all, a 3x3 of blank squares in
-// a row of buttons is a puzzle rather than a control.
-.bsp-align-lbl {
-    flex: none;
-    color: #6f757f;
-    font-size: var(--t-micro);
-}
+// (.bsp-rtools-id and .bsp-align-lbl were the "Region N" and "Align" labels.
+//  Both dropped: the row only exists with a region selected and highlighted on
+//  the board, and the anchor grid reads from its shape once drawn correctly.)
 
 /* Destructive pair, pushed to the far end of the row. `margin-left: auto` on a
    wrapped flex row still works per LINE, so on a narrow panel these end up at
@@ -1583,6 +1567,37 @@
     grid-template-rows: repeat(3, 13px);
     gap: 2px;
     flex: none;
+}
+
+/* ── THE SPECIFICITY THAT WAS EATING THIS FILE ──────────────────────────────
+   This tool's root element is `className="form-tool bsp"`, and formTool.scss
+   carries:
+
+       .form-tool button { padding: 8px 12px; border-radius: 5px; ... }
+
+   which is (0,1,1). Every button rule in THIS file is a single class, (0,1,0),
+   so the shared form-tool skin quietly outranked all of them regardless of
+   source order.
+
+   Two visible symptoms, one cause. The anchors took 8px/12px of padding and
+   came out as wide rounded pills instead of 13px squares -- and no amount of
+   `width` fixed that, since padding is what was setting the floor. And
+   `.bsp-btn--icon`'s `padding: 0` lost the same way, leaving a 26px-wide button
+   with 24px of padding: the icon had about nothing to render into, which is why
+   Duplicate and Remove read as empty squares you had to hover to identify.
+
+   Re-asserted here at (0,2,0). Scoped narrowly to the two rules that were
+   actually broken rather than swept across the file -- see the note in
+   docs/HISTORY.md about the rest of .bsp-btn's skin, which is a bigger change
+   than a bug fix should make on its own. */
+.bsp .bsp-anchor {
+    padding: 0;
+    border-radius: var(--r-xs);
+    background: var(--surface-0, #121212);
+}
+
+.bsp .bsp-btn--icon {
+    padding: 0;
 }
 
 .bsp-anchor {

@@ -2732,19 +2732,16 @@ export const BespokeTool = () => {
                         of always taking two. */}
                     {regions[selRegion] && (
                         <div className="bsp-rtools">
-                            {/* "Region 1", not "R1". The short form went through
-                                .bsp-lbl's uppercase + 0.11em letter-spacing and
-                                came out as "R 1", which reads as a stray letter
-                                next to a stray number rather than as a label.
-                                Saving four characters was never worth being the
-                                one thing on the row nobody could identify. */}
-                            <span className="bsp-rtools-id">Region {selRegion + 1}</span>
-                            {/* Nine anchors, laid out as they sit on the canvas --
-                                a 3x3 grid needs no labels to be read. Their
-                                `title`s are left alone: a Tooltip wrapper would
-                                become the grid item and each anchor is 15px of
-                                pure position anyway. */}
-                            <span className="bsp-align-lbl">Align</span>
+                            {/* NO "Region N", AND NO "Align" CAPTION.
+                                This row only appears with a region selected, and
+                                that region is the bright one on the board a few
+                                pixels above -- naming it here was labelling the
+                                obvious. Same for the anchors: nine squares laid
+                                out as they sit on the canvas are read by SHAPE,
+                                and they only needed a caption while they were
+                                rendering as chunky pills, which was the actual
+                                fault. Their `title`s are left alone -- a Tooltip
+                                wrapper would become the grid item. */}
                             <span className="bsp-align-grid">
                                 {([0, 0.5, 1] as const).map((vy) =>
                                     ([0, 0.5, 1] as const).map((hx) => (
