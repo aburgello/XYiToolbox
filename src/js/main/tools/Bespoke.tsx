@@ -26,11 +26,12 @@
 // deliverable, and that is a studio decision rather than a coding one. The
 // composition is designed, checked and saved here; building it is the next
 // step. Shipping a Build button that guessed would be worse than not having one.
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { AlertCircle, ChevronRight, Copy, Globe2, Layers, LayoutGrid, Library, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, RotateCcw, Square as SquareIcon, Trash2, X } from "lucide-react";
 import { csi, evalTS } from "../../lib/utils/bolt";
 import { deriveMastersFromMarkets } from "../lib/mastersRoot";
+import { usePosterFrame, pickPreviewRender, isImageFile, type RenderEntry } from "../lib/renderPreview";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
 import Dropdown from "../Dropdown";
@@ -82,46 +83,212 @@ const ORIENTATION_ICON: Record<OrientationKey, React.ComponentType<{ size?: numb
  * and this builds for chrome74 — and the padding-box trick can't express
  * "fit inside a square box either way round" without a wrapper per case.
  */
-const MasterCard: React.FC<{ master: BespokeMaster; swapping: boolean; used: number; onPick: () => void }> = ({
-    master, swapping, used, onPick,
-}) => {
+const MasterCard: React.FC<{
+    master: BespokeMaster;
+    /** What tells this master apart from its siblings — see distinguish(). */
+    label: string;
+    /** Its render, if one was found beside it. "" means show the proxy. */
+    preview: string;
+    swapping: boolean;
+    used: number;
+    onPick: () => void;
+}> = ({ master, label, preview, swapping, used, onPick }) => {
     const BOX = 38;
     const aspect = master.width && master.height ? master.width / master.height : 1;
     const pw = aspect >= 1 ? BOX : Math.max(4, BOX * aspect);
     const ph = aspect >= 1 ? Math.max(4, BOX / aspect) : BOX;
     const tint = hueFor(master.creative || master.name);
+
+    // THE FRAME ITSELF, WHERE THERE IS ONE. A master is an .aep with no
+    // thumbnail, so this card used to be a grey rectangle whose only content
+    // was the aspect ratio -- which the size label directly beneath it already
+    // states. The proxy was therefore saying nothing, and the one thing needed
+    // to choose between two masters of the same creative (what the artwork
+    // looks like) was absent, in a panel where OV Library shows exactly that
+    // for exactly these files.
+    //
+    // A render that cannot be decoded falls back to the proxy rather than to an
+    // empty black box: `preload="metadata"` means a broken source usually
+    // errors before a frame is ever wanted, and 25 cards of black would be
+    // worse than the grey rectangle this replaces.
+    const videoRef = useRef<HTMLVideoElement | null>(null);
+    const [broken, setBroken] = useState(false);
+    const poster = usePosterFrame(videoRef, () => {});
+    const showPreview = !!preview && !broken;
+    const asImage = showPreview && isImageFile(preview);
+
+    const play = () => {
+        const v = videoRef.current;
+        if (!v) return;
+        v.currentTime = 0;
+        v.play().catch(() => { /* autoplay refused -- the poster frame stands */ });
+    };
+
     return (
-        // THE WHOLE FILENAME, ON HOVER. The card shows the creative, the size
-        // and the duration, each ellipsised into a 112px track -- which is the
-        // right summary and no help at all when two masters differ somewhere
-        // further along the name. The native `title` this replaces never
-        // rendered: CEP's host is not browser chrome and shows none.
+        // THE WHOLE FILENAME, ON HOVER. The card shows a fragment of the name,
+        // the size and the duration, each ellipsised into its track -- the right
+        // summary, and no help at all when two masters differ somewhere further
+        // along the name. Replaces a native `title`, which never appeared here.
         //
-        // `grow` is REQUIRED here, unlike the creative rail. This button is a
-        // GRID CELL, and Tooltip's wrapper otherwise hugs its content and lets
-        // the card shrink out of its track (CLAUDE.md's stretch-sized trap).
+        // `grow` is REQUIRED, unlike the creative rail. This button is a GRID
+        // CELL, and Tooltip's wrapper otherwise hugs its content and lets the
+        // card shrink out of its track (CLAUDE.md's stretch-sized trap).
         <Tooltip text={master.name} delay={220} grow>
         <button
             className={"bsp-master" + (swapping ? " is-swap" : "") + (used > 0 ? " is-used" : "")}
             onClick={onPick}
+            onMouseEnter={showPreview && !asImage ? play : undefined}
+            onMouseLeave={showPreview && !asImage ? poster.restToPoster : undefined}
         >
-            <span className="bsp-master-proxy">
-                <span style={{ width: `${pw}px`, height: `${ph}px`, background: tint }} />
-                {/* ALREADY ON THE CANVAS. Twenty near-identical cards and no
-                    memory of which have been placed is how a region gets added
-                    twice, or a master gets missed entirely on a board with
-                    eight of them. */}
-                {used > 0 && <span className="bsp-master-used">{used > 1 ? `×${used}` : "✓"}</span>}
-            </span>
+            {showPreview ? (
+                <span className="bsp-master-thumb">
+                    {asImage ? (
+                        <img src={fileUrl(preview)} alt="" onError={() => setBroken(true)} />
+                    ) : (
+                        <video
+                            ref={videoRef}
+                            src={fileUrl(preview)}
+                            muted
+                            playsInline
+                            loop
+                            preload="metadata"
+                            onLoadedMetadata={poster.onLoadedMetadata}
+                            onSeeked={poster.onSeeked}
+                            onLoadedData={poster.onLoadedData}
+                            onError={() => setBroken(true)}
+                        />
+                    )}
+                    {used > 0 && <span className="bsp-master-used">{used > 1 ? `×${used}` : "✓"}</span>}
+                </span>
+            ) : (
+                <span className="bsp-master-proxy">
+                    <span style={{ width: `${pw}px`, height: `${ph}px`, background: tint }} />
+                    {/* ALREADY ON THE CANVAS. Twenty near-identical cards and no
+                        memory of which have been placed is how a region gets added
+                        twice, or a master gets missed entirely on a board with
+                        eight of them. */}
+                    {used > 0 && <span className="bsp-master-used">{used > 1 ? `×${used}` : "✓"}</span>}
+                </span>
+            )}
             <span className="bsp-master-size">{master.size || "?"}</span>
             <span className="bsp-master-meta">
-                <span className="bsp-master-name">{master.creative || master.name}</span>
+                {/* NOT the creative. Inside a chosen creative every card would
+                    print the same word the rail is already showing, on the one
+                    full-width readable line the card has. */}
+                <span className="bsp-master-name">{label}</span>
                 <span className="bsp-master-dur">{master.duration ? `${master.duration}s` : "?"}</span>
             </span>
         </button>
         </Tooltip>
     );
 };
+
+/**
+ * ONE FRAME OF THE MASTER, INSIDE THE REGION ITSELF.
+ *
+ * The board was flat colour blocks, so a layout of four panels told you where
+ * things sat and nothing about whether it read -- which is the actual question
+ * being answered on a bespoke screen. The render is already fetched for the
+ * picker, so this costs one more element per region and no extra I/O.
+ *
+ * Deliberately STILL: no autoplay, no hover-play. Four videos looping under a
+ * board being dragged on is noise, and the still frame is what a layout is
+ * judged against anyway.
+ *
+ * THE GEOMETRY MATCHES THE BUILD, which is the whole point of showing it:
+ *   - object-fit: cover, the same "fill the window and trim the excess" the
+ *     matte does host-side;
+ *   - at 90/270 the box is SWAPPED (width becomes the region's height as a
+ *     percentage, and vice versa) and then rotated about its centre, which is
+ *     exactly bespokeBuildRegions' faceW/faceH swap before the cover scale.
+ * Anything else here would be a picture of a layout nobody is going to get.
+ */
+const RegionShot: React.FC<{ src: string; rotation: number; w: number; h: number }> = ({
+    src, rotation, w, h,
+}) => {
+    const videoRef = useRef<HTMLVideoElement | null>(null);
+    const [broken, setBroken] = useState(false);
+    const poster = usePosterFrame(videoRef, () => {});
+    if (!src || broken) return null;
+
+    const turned = rotation === 90 || rotation === 270;
+    return (
+        <span className="bsp-region-clip">
+            <span
+                className="bsp-region-shot"
+                style={{
+                    width: turned ? `${(h / Math.max(1, w)) * 100}%` : "100%",
+                    height: turned ? `${(w / Math.max(1, h)) * 100}%` : "100%",
+                    transform: `translate(-50%, -50%) rotate(${rotation || 0}deg)`,
+                }}
+            >
+                {isImageFile(src) ? (
+                    <img src={fileUrl(src)} alt="" onError={() => setBroken(true)} />
+                ) : (
+                    <video
+                        ref={videoRef}
+                        src={fileUrl(src)}
+                        muted
+                        playsInline
+                        preload="metadata"
+                        onLoadedMetadata={poster.onLoadedMetadata}
+                        onSeeked={poster.onSeeked}
+                        onLoadedData={poster.onLoadedData}
+                        onError={() => setBroken(true)}
+                    />
+                )}
+            </span>
+        </span>
+    );
+};
+
+/**
+ * WHAT TELLS A GROUP OF MASTERS APART.
+ *
+ * Sibling masters share nearly all of their name: campaign, creative, artwork
+ * type, often a site. Printing the whole stem in a 150px track shows only the
+ * shared half and ellipsises away the half that differs, and printing the
+ * CREATIVE (which is what this did) repeats what the rail beside it already
+ * says. Neither lets you tell two cards apart.
+ *
+ * So: drop the leading and trailing name tokens that EVERY master in the group
+ * shares, and keep the rest. The tokens are underscore-separated per the studio
+ * convention, and the comparison is per whole token -- a character-level common
+ * prefix would cut a name mid-word.
+ *
+ * Returns how many tokens to drop from each end; distinguish() applies it.
+ */
+function commonTokenEdges(stems: string[]): { pre: number; suf: number } {
+    if (!stems || stems.length < 2) return { pre: 0, suf: 0 };
+    const split: string[][] = [];
+    for (const s of stems) split.push(String(s).split("_"));
+    const shortest = split.reduce((n, t) => Math.min(n, t.length), Infinity);
+
+    let pre = 0;
+    while (pre < shortest && split.every((t) => t[pre] === split[0][pre])) pre++;
+
+    let suf = 0;
+    while (
+        suf < shortest - pre &&
+        split.every((t) => t[t.length - 1 - suf] === split[0][split[0].length - 1 - suf])
+    ) suf++;
+
+    return { pre, suf };
+}
+
+// The size and the duration have their OWN fields on every card and tile, so a
+// token that only restates one of them is noise here. Both naming conventions,
+// per the masters rule: size with or without "px", duration as "s" or "sec".
+const SIZE_TOKEN = /^\d+x\d+(px)?$/i;
+const DURATION_TOKEN = /^\d+(s|sec)$/i;
+
+/** Applies commonTokenEdges to one stem. "" when nothing is left to say. */
+function distinguish(stem: string, edges: { pre: number; suf: number }): string {
+    const bits = String(stem).split("_");
+    const kept = bits.slice(edges.pre, bits.length - edges.suf)
+        .filter((t) => !SIZE_TOKEN.test(t) && !DURATION_TOKEN.test(t));
+    return kept.join("_");
+}
 
 /** Below this a region collapses and can never be grabbed again. */
 const MIN_REGION = 24;
@@ -222,6 +389,9 @@ export const BespokeTool = () => {
     // not swallowed: a shelf that is quietly narrower than the folder is the
     // thing that sends someone hunting for a master that is right there.
     const [outsideAE, setOutsideAE] = useState(0);
+    // Master stem (lower-cased) -> the best render found beside it. Empty is a
+    // normal state, not a failure: it just means grey proxies.
+    const [renders, setRenders] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(false);
     const [status, setStatus] = useState<StatusMsg | null>(null);
     const [report, setReport] = useState<string | null>(null);
@@ -365,6 +535,36 @@ export const BespokeTool = () => {
             }
             setMasters(res.masters || []);
             setOutsideAE(res.outsideAE || 0);
+
+            // THE RENDERS, for the card thumbnails. A separate, QUIET call:
+            // previews are decoration, so a campaign with no Renders tree, or a
+            // share that drops out between the two calls, must leave the shelf
+            // exactly as it is rather than reporting anything. Keyed by stem
+            // because that is the master<->render pairing the studio uses, and
+            // lower-cased because only the .aep side's case is guaranteed.
+            //
+            // scanAllRenders is campaign-wide in one walk, which is the whole
+            // reason this is one call and not one per creative.
+            try {
+                const found = (await evalTS("scanAllRenders", root)) as unknown as RenderEntry[] | undefined;
+                if (found && found.length) {
+                    const byStem: Record<string, RenderEntry[]> = {};
+                    for (const r of found) {
+                        const k = String(r.stem).toLowerCase();
+                        (byStem[k] = byStem[k] || []).push(r);
+                    }
+                    const best: Record<string, string> = {};
+                    // pickPreviewRender, not the first hit: a stem can have both
+                    // a ProRes MOV Chromium cannot decode and the MP4 it can.
+                    for (const k in byStem) {
+                        const pick = pickPreviewRender(byStem[k]);
+                        if (pick) best[k] = pick.path;
+                    }
+                    setRenders(best);
+                }
+            } catch {
+                /* no renders, or no share -- the cards fall back to the proxy */
+            }
             if (!res.masters || res.masters.length === 0) {
                 // A folder with .aeps in it that are all OUTSIDE `AE/` is a
                 // different problem from an empty one, and saying "no masters"
@@ -1318,9 +1518,21 @@ export const BespokeTool = () => {
      * into four usable cells, and it took two more guides laid along the top
      * and left to say what the edges already said.
      *
-     * They only count once there is at least one REAL guide on the axis: with
-     * none, the answer is "this axis has nothing to say", not "fill the whole
-     * board", which would turn Fit to guides into a maximise button.
+     * AN AXIS WITH NO GUIDES ON IT TAKES THE WHOLE SPAN.
+     *
+     * This used to return null there, on the reasoning that an empty axis has
+     * "nothing to say" and filling it would turn the button into a maximise.
+     * In use that is backwards: one vertical guide down a board means a panel
+     * running the FULL HEIGHT and stopping at that line -- the studio's most
+     * common bespoke shape -- and leaving the height untouched meant setting it
+     * by hand every single time, which is the drag-an-edge-to-a-hairline the
+     * button exists to remove. The board's own edges are already treated as
+     * guides here, so the empty axis is simply the case where both bounds come
+     * from the edges.
+     *
+     * The "maximise" worry is handled where it actually matters: fitToGuides
+     * refuses when there are no guides ANYWHERE, so nothing can maximise a
+     * region by accident on a board with no rulers on it.
      *
      * Shared by Fit to guides and the on-canvas highlight, so what is drawn is
      * literally the rectangle the button produces rather than a second guess
@@ -1329,7 +1541,6 @@ export const BespokeTool = () => {
      * were looking at.
      */
     const bracketGuides = (guides: number[], centre: number, span: number) => {
-        if (guides.length === 0) return null;
         if (!span || span <= 0) return null;
         let lo = 0;
         let hi = span;
@@ -1377,16 +1588,60 @@ export const BespokeTool = () => {
     const fitToGuides = () => {
         const r = regions[selRegion];
         if (!r) return;
+        // THE ONE PLACE "no guides" IS REFUSED. bracketGuides now fills an empty
+        // axis edge to edge, so without this a board with no rulers at all would
+        // answer this button by maximising the region -- which is the only case
+        // where filling both axes is certainly not what was meant.
+        if (guidesX.length === 0 && guidesY.length === 0) {
+            setStatus({ text: "Add a guide first — a region fits between two guides, or between a guide and the edge of the board.", type: "error" });
+            return;
+        }
         const v = bracketGuides(guidesY, r.y + r.h / 2, Number(canvasH));
         const h = bracketGuides(guidesX, r.x + r.w / 2, Number(canvasW));
         if (!v && !h) {
-            setStatus({ text: "Add a guide first — a region fits between two guides, or between a guide and the edge of the board.", type: "error" });
+            setStatus({ text: "Nothing to fit to — the board has no width or height yet.", type: "error" });
             return;
         }
         setStatus(null);
         patchRegion(selRegion, {
             ...(h ? { x: h.lo, w: h.hi - h.lo } : {}),
             ...(v ? { y: v.lo, h: v.hi - v.lo } : {}),
+        });
+    };
+
+    /**
+     * A QUARTER TURN TURNS THE WINDOW, NOT JUST THE ARTWORK.
+     *
+     * This used to set `rotation` alone, which meant a rotated region kept the
+     * shape it had been given for the UNROTATED master: turn a 5760x1440 into a
+     * tall cell and the master, still covering an axis-aligned landscape window,
+     * lost most of itself to the crop. The only visible sign was the dashed
+     * extent box growing -- the region itself never moved, so the tool looked
+     * like it had ignored the button.
+     *
+     * Swapping w/h about the CENTRE is what makes the turn physical: the window
+     * ends up where the artwork now is, so a landscape master turned 90 degrees
+     * gets a portrait window and covers it with the crop it had before.
+     *
+     * The centre, not the origin -- turning about the top-left would walk a
+     * region across the board every time it was rotated, and a region already
+     * sitting in a guide cell would leave it in a direction nobody chose.
+     *
+     * A swap CAN take a region outside its guide cell, and deliberately so: the
+     * cell was measured for the old shape. patchRegion still clamps it to the
+     * board, and Fit to guides re-seats it in one press.
+     */
+    const rotateRegion = () => {
+        const r = regions[selRegion];
+        if (!r) return;
+        const cx = r.x + r.w / 2;
+        const cy = r.y + r.h / 2;
+        patchRegion(selRegion, {
+            rotation: (r.rotation + 90) % 360,
+            w: r.h,
+            h: r.w,
+            x: Math.round(cx - r.h / 2),
+            y: Math.round(cy - r.w / 2),
         });
     };
 
@@ -1494,6 +1749,44 @@ export const BespokeTool = () => {
         }
         return Object.keys(counts).sort().map((name) => ({ name, count: counts[name] }));
     }, [masters]);
+
+    /**
+     * The short label for every master, worked out PER CREATIVE.
+     *
+     * Grouped by creative rather than by whatever the filters currently show,
+     * so a card's name does not change under the cursor when an orientation
+     * pill is toggled -- a label that moves while you are reading it is worse
+     * than a long one.
+     */
+    const shortNames = useMemo(() => {
+        const groups: Record<string, string[]> = {};
+        for (const m of masters || []) {
+            const k = m.creative || m.name;
+            (groups[k] = groups[k] || []).push(m.name);
+        }
+        const edges: Record<string, { pre: number; suf: number }> = {};
+        for (const k in groups) edges[k] = commonTokenEdges(groups[k]);
+
+        const out: Record<string, string> = {};
+        for (const m of masters || []) {
+            const k = m.creative || m.name;
+            // Falls back through the creative to the stem so it is never blank:
+            // a group of one, or a set of names identical apart from their size
+            // and duration tokens, legitimately has nothing left to print.
+            out[m.path] = distinguish(m.name, edges[k]) || m.creative || m.name;
+        }
+        return out;
+    }, [masters]);
+
+    /** The label and the render for one master, for the card and the tiles. */
+    const shortNameOf = useCallback(
+        (m: BespokeMaster) => shortNames[m.path] || m.creative || m.name,
+        [shortNames]
+    );
+    const previewOf = useCallback(
+        (m: BespokeMaster) => renders[String(m.name).toLowerCase()] || "",
+        [renders]
+    );
 
     // ONE CREATIVE IS ALWAYS SELECTED. A bespoke board is built from one
     // campaign's masters, so "All" only ever offered a mixed list nobody
@@ -1682,7 +1975,20 @@ export const BespokeTool = () => {
                 campaign resolved nothing to show. */}
             <div className="bsp-head" hidden={!mode}>
                 <div className="bsp-head-text">
-                    <p className="bsp-masters">{mastersPath || "No masters folder — pick a campaign below"}</p>
+                    {/* THE CAMPAIGN, not the path. The folder follows the
+                        campaign now, so the path is derived state rather than
+                        anything anyone set here -- and it was the largest thing
+                        in the header, in a monospace grey, wrapping across two
+                        lines of a docked panel to say what "PP3" says. It is
+                        still one hover away, which is where a value you only
+                        check when something looks wrong belongs. */}
+                    <Tooltip text={mastersPath || "No masters folder resolved yet"}>
+                        <p className="bsp-masters">
+                            {mastersPinned
+                                ? (mastersPath.split("/").pop() || mastersPath)
+                                : campaign || (mastersPath.split("/").pop() || "No masters folder — pick a campaign below")}
+                        </p>
+                    </Tooltip>
                     <p className="bsp-count">
                         {loading
                             ? "Walking the masters folder — slow the first time, instant after"
@@ -1870,6 +2176,18 @@ export const BespokeTool = () => {
                 </label>
             </div>
 
+            {/* BOARD AND SHELF, SIDE BY SIDE when there is room for it.
+                These are the two surfaces the job alternates between, and they
+                were stacked with the shelf folded underneath -- so every master
+                added was expand, scroll down, pick, scroll back up to place it.
+                Docked wide they simply sit next to each other, and none of that
+                scrolling exists.
+
+                A plain @media on the panel width, not @container (Chrome 105,
+                against a chrome74 target). Below the breakpoint this collapses
+                back to exactly the stack it was. */}
+            <div className="bsp-work">
+            <div className="bsp-work-main">
             {mode === "regions" && (
                 <>
                     {/* ONE BAR. "Trace over the reference" as a heading said
@@ -1955,25 +2273,31 @@ export const BespokeTool = () => {
                                 rather than pushing the panel, so a 1:5 pillar
                                 can be worked on without every other board
                                 becoming a scroll. */}
-                            <button
-                                className="bsp-btn bsp-btn--ghost bsp-btn--key"
-                                onClick={() => stepZoom(-1)}
-                                disabled={zoom <= ZOOM_LADDER[0]}
-                                title="Zoom out (−)"
-                            >−</button>
-                            <button
-                                className="bsp-btn bsp-btn--ghost bsp-btn--zoom"
-                                onClick={() => setZoom(1)}
-                                title="Back to fit (0)"
-                            >
-                                {zoom === 1 ? "Fit" : `${zoom}×`}
-                            </button>
-                            <button
-                                className="bsp-btn bsp-btn--ghost bsp-btn--key"
-                                onClick={() => stepZoom(1)}
-                                disabled={zoom >= ZOOM_LADDER[ZOOM_LADDER.length - 1]}
-                                title="Zoom in (+)"
-                            >＋</button>
+                            {/* Tooltip, not `title` — these carry the keyboard
+                                shortcut, which is the one thing on the button
+                                that is not written on its face. */}
+                            <Tooltip text="Zoom out (−)">
+                                <button
+                                    className="bsp-btn bsp-btn--ghost bsp-btn--key"
+                                    onClick={() => stepZoom(-1)}
+                                    disabled={zoom <= ZOOM_LADDER[0]}
+                                >−</button>
+                            </Tooltip>
+                            <Tooltip text="Back to fit (0)">
+                                <button
+                                    className="bsp-btn bsp-btn--ghost bsp-btn--zoom"
+                                    onClick={() => setZoom(1)}
+                                >
+                                    {zoom === 1 ? "Fit" : `${zoom}×`}
+                                </button>
+                            </Tooltip>
+                            <Tooltip text="Zoom in (+)">
+                                <button
+                                    className="bsp-btn bsp-btn--ghost bsp-btn--key"
+                                    onClick={() => stepZoom(1)}
+                                    disabled={zoom >= ZOOM_LADDER[ZOOM_LADDER.length - 1]}
+                                >＋</button>
+                            </Tooltip>
                             {(guidesX.length > 0 || guidesY.length > 0) && (
                                 <button className="bsp-btn bsp-btn--ghost" onClick={() => { setGuidesX([]); setGuidesY([]); setSelGuide(null); }}>
                                     Clear
@@ -1987,12 +2311,13 @@ export const BespokeTool = () => {
                         // Each keeps its own regions, so stepping through them
                         // is free -- the dot marks the ones already laid out.
                         <div className="bsp-refbar">
-                            <button
-                                className="bsp-refstep"
-                                disabled={refIndex <= 0}
-                                onClick={() => adoptReference(refs[refIndex - 1].path)}
-                                title="Previous reference"
-                            >‹</button>
+                            <Tooltip text="Previous reference">
+                                <button
+                                    className="bsp-refstep"
+                                    disabled={refIndex <= 0}
+                                    onClick={() => adoptReference(refs[refIndex - 1].path)}
+                                >‹</button>
+                            </Tooltip>
                             <select
                                 className="bsp-refpick"
                                 value={refPath}
@@ -2005,12 +2330,13 @@ export const BespokeTool = () => {
                                     </option>
                                 ))}
                             </select>
-                            <button
-                                className="bsp-refstep"
-                                disabled={refIndex < 0 || refIndex >= refs.length - 1}
-                                onClick={() => adoptReference(refs[refIndex + 1].path)}
-                                title="Next reference"
-                            >›</button>
+                            <Tooltip text="Next reference">
+                                <button
+                                    className="bsp-refstep"
+                                    disabled={refIndex < 0 || refIndex >= refs.length - 1}
+                                    onClick={() => adoptReference(refs[refIndex + 1].path)}
+                                >›</button>
+                            </Tooltip>
                             <span className="bsp-refcount">
                                 {refIndex >= 0 ? refIndex + 1 : "–"} / {refs.length}
                             </span>
@@ -2042,30 +2368,34 @@ export const BespokeTool = () => {
                     {refAlts.length > 1 && (
                         <div className={"bsp-refalts" + (refBroken ? " is-broken" : "")}>
                             <span className="bsp-bar-lbl">Reference</span>
-                            <button
-                                className="bsp-refstep"
-                                disabled={refAlts.indexOf(refPath) <= 0}
-                                onClick={() => {
-                                    const i = refAlts.indexOf(refPath);
-                                    if (i > 0) swapReference(refAlts[i - 1]);
-                                }}
-                                title="Previous candidate"
-                            >‹</button>
+                            <Tooltip text="Previous candidate">
+                                <button
+                                    className="bsp-refstep"
+                                    disabled={refAlts.indexOf(refPath) <= 0}
+                                    onClick={() => {
+                                        const i = refAlts.indexOf(refPath);
+                                        if (i > 0) swapReference(refAlts[i - 1]);
+                                    }}
+                                >‹</button>
+                            </Tooltip>
                             <span className="bsp-refcount">
                                 {refAlts.indexOf(refPath) + 1} / {refAlts.length}
                             </span>
-                            <button
-                                className="bsp-refstep"
-                                disabled={refAlts.indexOf(refPath) >= refAlts.length - 1}
-                                onClick={() => {
-                                    const i = refAlts.indexOf(refPath);
-                                    if (i >= 0 && i < refAlts.length - 1) swapReference(refAlts[i + 1]);
-                                }}
-                                title="Next candidate"
-                            >›</button>
-                            <span className="bsp-refalt-name" title={refPath}>
-                                {(refPath.split("/").pop() || "")}
-                            </span>
+                            <Tooltip text="Next candidate">
+                                <button
+                                    className="bsp-refstep"
+                                    disabled={refAlts.indexOf(refPath) >= refAlts.length - 1}
+                                    onClick={() => {
+                                        const i = refAlts.indexOf(refPath);
+                                        if (i >= 0 && i < refAlts.length - 1) swapReference(refAlts[i + 1]);
+                                    }}
+                                >›</button>
+                            </Tooltip>
+                            <Tooltip text={refPath}>
+                                <span className="bsp-refalt-name">
+                                    {(refPath.split("/").pop() || "")}
+                                </span>
+                            </Tooltip>
                         </div>
                     )}
                     {/* The wrap is what gets measured, and what centres a board
@@ -2211,12 +2541,16 @@ export const BespokeTool = () => {
                                         e.preventDefault();
                                     }}
                                 >
-                                    {/* A MASTER IS AN .aep WITH NO THUMBNAIL, so
-                                        there is no artwork in here to turn --
-                                        the region is a flat colour block and a
-                                        rotated block looks identical. These two
-                                        marks are what a quarter turn can
-                                        visibly move: the dashed outline is the
+                                    {/* The master's own frame, where a render was
+                                        found beside it. Behind everything else
+                                        and click-through, so dragging the region
+                                        still hits the region. */}
+                                    <RegionShot src={previewOf(r.master)} rotation={r.rotation || 0} w={r.w} h={r.h} />
+                                    {/* The marks below are what a quarter turn
+                                        moves when there is NO artwork to turn --
+                                        a flat colour block looks identical
+                                        rotated. They still earn their place with
+                                        a thumbnail present: the dashed outline is the
                                         master's WHOLE footprint at the cover
                                         scale, so it flips portrait to landscape
                                         and shows exactly what is spilling out
@@ -2381,33 +2715,33 @@ export const BespokeTool = () => {
                         </p>
                     )}
 
-                    {regions[selRegion] && (
-                        <div className="bsp-segctl">
-                            <span className="bsp-lbl">Region {selRegion + 1}</span>
-                            {(["x", "y", "w", "h"] as const).map((k) => (
-                                <input
-                                    key={k}
-                                    className="bsp-input bsp-input--n"
-                                    value={String(regions[selRegion][k])}
-                                    onChange={(e) => patchRegion(selRegion, { [k]: Math.round(Number(e.target.value) || 0) } as Partial<Region>)}
-                                />
-                            ))}
-                            <button className="bsp-btn bsp-btn--ghost" onClick={duplicateRegion}>
-                                <Copy size={11} /> Duplicate
-                            </button>
-                            <button
-                                className="bsp-btn bsp-btn--ghost"
-                                onClick={removeSelectedRegion}
-                            >
-                                <Trash2 size={11} /> Remove region
-                            </button>
-                        </div>
-                    )}
+                    {/* ONE BLOCK, NOT TWO ROWS OF WIDE BUTTONS.
+                        Selecting a region used to open a "Region N" row of four
+                        unlabelled 66px number boxes with two full-width word
+                        buttons after them, and then a SECOND row for the anchor
+                        grid and three more -- roughly 90px of chrome between the
+                        board and the shelf, on a docked panel that has to hold
+                        both plus a warnings list.
 
+                        Three things buy that back without removing a control:
+                        the numbers are labelled and half the width (they were
+                        sized for nothing in particular -- a board coordinate is
+                        four digits), the two destructive actions are icons with
+                        tooltips rather than words, and the whole thing is one
+                        wrapping row so it reflows to the width available instead
+                        of always taking two. */}
                     {regions[selRegion] && (
-                        <div className="bsp-align">
-                            {/* Nine anchors, laid out as they sit on the canvas --
-                                a 3x3 grid needs no labels to be read. */}
+                        <div className="bsp-rtools">
+                            {/* NO "Region N", AND NO "Align" CAPTION.
+                                This row only appears with a region selected, and
+                                that region is the bright one on the board a few
+                                pixels above -- naming it here was labelling the
+                                obvious. Same for the anchors: nine squares laid
+                                out as they sit on the canvas are read by SHAPE,
+                                and they only needed a caption while they were
+                                rendering as chunky pills, which was the actual
+                                fault. Their `title`s are left alone -- a Tooltip
+                                wrapper would become the grid item. */}
                             <span className="bsp-align-grid">
                                 {([0, 0.5, 1] as const).map((vy) =>
                                     ([0, 0.5, 1] as const).map((hx) => (
@@ -2420,26 +2754,47 @@ export const BespokeTool = () => {
                                     ))
                                 )}
                             </span>
-                            <span className="bsp-locks">
-                                <CheckboxToggle checked={lockRatio} onChange={setLockRatio} label="Keep ratio" />
-                                <Tooltip text={`Size ${regions[selRegion]?.master.name || "this region"} to the guides either side of it — each axis independently`}>
-                                    <button className="bsp-btn bsp-btn--ghost" onClick={fitToGuides}>
-                                        Fit to guides
+                            {/* WHICH BOX IS WHICH. Four bare numbers in a row is
+                                a guess every time -- and x/y/w/h is the order
+                                they are stored in, not an order anyone reads. */}
+                            {(["x", "y", "w", "h"] as const).map((k) => (
+                                <label className="bsp-num" key={k}>
+                                    <span className="bsp-num-k">{k}</span>
+                                    <input
+                                        className="bsp-input bsp-input--n"
+                                        value={String(regions[selRegion][k])}
+                                        onChange={(e) => patchRegion(selRegion, { [k]: Math.round(Number(e.target.value) || 0) } as Partial<Region>)}
+                                    />
+                                </label>
+                            ))}
+                            <CheckboxToggle checked={lockRatio} onChange={setLockRatio} label="Keep ratio" />
+                            <Tooltip text={`Size ${regions[selRegion]?.master.name || "this region"} to the guides either side of it — each axis independently, and an axis with no guides takes the full span`}>
+                                <button className="bsp-btn bsp-btn--ghost" onClick={fitToGuides}>
+                                    Fit to guides
+                                </button>
+                            </Tooltip>
+                            <Tooltip text="Turn this region and its master a quarter clockwise — the region's width and height swap about its centre">
+                                <button className="bsp-btn bsp-btn--ghost" onClick={rotateRegion}>
+                                    Rotate 90° {regions[selRegion].rotation ? `(${regions[selRegion].rotation}°)` : ""}
+                                </button>
+                            </Tooltip>
+                            <Tooltip text="Reshape this region to its master's own ratio, so nothing is cropped">
+                                <button className="bsp-btn bsp-btn--ghost" onClick={matchMasterRatio}>
+                                    Match master ratio
+                                </button>
+                            </Tooltip>
+                            {/* Pushed to the far end, away from the shaping
+                                controls: one of these deletes the region and it
+                                should not sit under a cursor aiming for Rotate. */}
+                            <span className="bsp-rtools-end">
+                                <Tooltip text="Duplicate this region">
+                                    <button className="bsp-btn bsp-btn--icon" onClick={duplicateRegion}>
+                                        <Copy size={12} />
                                     </button>
                                 </Tooltip>
-                                <Tooltip text="Turn the master a quarter clockwise inside this region — the region itself stays put">
-                                    <button
-                                        className="bsp-btn bsp-btn--ghost"
-                                        onClick={() => patchRegion(selRegion, {
-                                            rotation: ((regions[selRegion].rotation + 90) % 360),
-                                        })}
-                                    >
-                                        Rotate 90° {regions[selRegion].rotation ? `(${regions[selRegion].rotation}°)` : ""}
-                                    </button>
-                                </Tooltip>
-                                <Tooltip text="Reshape this region to its master's own ratio, so nothing is cropped">
-                                    <button className="bsp-btn bsp-btn--ghost" onClick={matchMasterRatio}>
-                                        Match master ratio
+                                <Tooltip text="Remove this region">
+                                    <button className="bsp-btn bsp-btn--icon bsp-btn--danger" onClick={removeSelectedRegion}>
+                                        <Trash2 size={12} />
                                     </button>
                                 </Tooltip>
                             </span>
@@ -2462,9 +2817,18 @@ export const BespokeTool = () => {
                             animate={{ opacity: 1, scale: 1 }}
                             transition={{ duration: 0.18, ease: "easeOut" }}
                         >
-                            <span className="bsp-tile-name">{m.creative || m.name}</span>
+                            {/* What tells this tile from its neighbours, not the
+                                creative -- three tiles of one creative used to
+                                read as the same word three times. */}
+                            <span className="bsp-tile-name">{shortNameOf(m)}</span>
                             <span className="bsp-tile-spec">{m.size} · {m.duration}s</span>
-                            <button className="bsp-tile-x" onClick={() => removeTile(i)} title="Remove from this segment">
+                            {/* NOT wrapped in <Tooltip>: this button is
+                                position:absolute against the tile, and the
+                                wrapper's own position:relative would re-anchor
+                                it into the flow. An X on a tile needs no
+                                caption anyway -- the dead native `title` it
+                                carried is simply gone. */}
+                            <button className="bsp-tile-x" onClick={() => removeTile(i)}>
                                 <X size={9} />
                             </button>
                         </motion.div>
@@ -2560,6 +2924,8 @@ export const BespokeTool = () => {
                 It opens itself for a SWAP, because a swap is a request to pick
                 something and closing the list you were sent to would be
                 perverse. */}
+            </div>
+            <div className="bsp-work-side">
             <button
                 className={"bsp-fold" + (pickerOpen || swapTarget >= 0 ? " is-on" : "")}
                 onClick={() => setPickerOpen((v) => !v)}
@@ -2676,6 +3042,8 @@ export const BespokeTool = () => {
                         <MasterCard
                             key={m.path}
                             master={m}
+                            label={shortNameOf(m)}
+                            preview={previewOf(m)}
                             swapping={swapTarget >= 0}
                             used={regions.filter((r) => r.master.path === m.path).length}
                             onPick={() => {
@@ -2701,6 +3069,8 @@ export const BespokeTool = () => {
                     ))}
                 </div>
                 </div>
+            </div>
+            </div>
             </div>
 
             {status && (
