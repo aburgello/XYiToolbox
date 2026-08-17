@@ -205,7 +205,7 @@
 }
 
 // A section that folds to one line, keeping its answer visible while closed.
-.bsp-fold {
+.bsp .bsp-fold {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -229,7 +229,7 @@
     transition: transform var(--dur) var(--ease-snap);
 }
 
-.bsp-fold.is-on .bsp-fold-caret { transform: rotate(90deg); }
+.bsp .bsp-fold.is-on .bsp-fold-caret { transform: rotate(90deg); }
 
 .bsp-fold-label {
     flex: none;
@@ -359,7 +359,7 @@
     color: rgba(255, 255, 255, 0.55);
 }
 
-.bsp-tile-x {
+.bsp .bsp-tile-x {
     position: absolute;
     top: 3px;
     right: 3px;
@@ -419,7 +419,7 @@
     min-width: 0;
 }
 
-.bsp-seg {
+.bsp .bsp-seg {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -457,7 +457,7 @@
     white-space: nowrap;
 }
 
-.bsp-seg.is-on .bsp-seg-name { color: #7fe7d8; }
+.bsp .bsp-seg.is-on .bsp-seg-name { color: #7fe7d8; }
 .bsp-seg-secs {
     font-family: ui-monospace, Menlo, monospace;
     font-size: var(--t-micro);
@@ -465,7 +465,7 @@
     color: #767c88;
 }
 
-.bsp-seg-add {
+.bsp .bsp-seg-add {
     // Matches the segments' own height rather than the old fixed strip.
     align-self: stretch;
     flex: 0 0 36px;
@@ -603,11 +603,11 @@
     width: 100%;
 }
 
-.bsp-creatives .ov-tooltip-content > .bsp-creative {
+.bsp .bsp-creatives .ov-tooltip-content > .bsp-creative {
     width: 100%;
 }
 
-.bsp-creative {
+.bsp .bsp-creative {
     flex: none;
     display: flex;
     align-items: center;
@@ -664,7 +664,7 @@
     margin-bottom: 8px;
 }
 
-.bsp-chip {
+.bsp .bsp-chip {
     display: flex;
     align-items: center;
     gap: 4px;
@@ -726,7 +726,7 @@
     grid-column: 1 / -1;
 }
 
-.bsp-master {
+.bsp .bsp-master {
     display: flex;
     flex-direction: column;
     // A <button> that is a flex container does not stretch its children in
@@ -784,7 +784,7 @@
     line-height: 13px;
 }
 
-.bsp-master.is-used {
+.bsp .bsp-master.is-used {
     border-color: rgba(45, 212, 191, 0.35);
 }
 
@@ -933,7 +933,7 @@
     span { flex: 1; }
 }
 
-.bsp-probe-x {
+.bsp .bsp-probe-x {
     flex: none;
     display: flex;
     align-items: center;
@@ -1044,7 +1044,7 @@
     gap: 12px;
 }
 
-.bsp-choose-card {
+.bsp .bsp-choose-card {
     display: flex;
     flex-direction: column;
     // A button that is a flex container does not stretch its children in
@@ -1117,7 +1117,7 @@
 }
 
 /* --- region canvas -------------------------------------------------------- */
-.bsp-reflink.is-set {
+.bsp .bsp-reflink.is-set {
     // Answered, not asking.
     border-color: rgba(45, 212, 191, 0.45);
     background: rgba(45, 212, 191, 0.1);
@@ -1128,7 +1128,7 @@
     text-overflow: ellipsis;
 }
 
-.bsp-reflink {
+.bsp .bsp-reflink {
     margin-left: 8px;
     padding: 2px 8px;
     border: 1px solid var(--surface-border, #363636);
@@ -1328,7 +1328,7 @@
     margin: 0 0 7px;
 }
 
-.bsp-refstep {
+.bsp .bsp-refstep {
     flex: 0 0 auto;
     width: 20px;
     height: 20px;
@@ -1368,7 +1368,7 @@
     font-variant-numeric: tabular-nums;
 }
 
-.bsp-swaplink {
+.bsp .bsp-swaplink {
     margin-left: 5px;
     padding: 0;
     background: none;
@@ -1402,7 +1402,7 @@
 // While a swap is pending the list is a picker for one region, not the
 // add-a-region list -- it has to look different or the next click is a
 // surprise.
-.bsp-master.is-swap {
+.bsp .bsp-master.is-swap {
     border-color: rgba(45, 212, 191, 0.5);
 
     &:hover { background: rgba(45, 212, 191, 0.16); }
@@ -1751,7 +1751,7 @@
 // the vendored skill prescribes.
 // ─────────────────────────────────────────────────────────────────────────
 
-.bsp-master {
+.bsp .bsp-master {
     transition:
         border-color var(--dur) var(--ease-snap),
         background-color var(--dur) var(--ease-snap),
@@ -1772,10 +1772,10 @@
     }
 }
 
-.bsp-btn,
-.bsp-refstep,
-.bsp-reflink,
-.bsp-swaplink {
+.bsp .bsp-btn,
+.bsp .bsp-refstep,
+.bsp .bsp-reflink,
+.bsp .bsp-swaplink {
     transition:
         background-color var(--dur) var(--ease-snap),
         border-color var(--dur) var(--ease-snap),
@@ -1796,13 +1796,13 @@
 
 // Keyboard focus was invisible throughout this tool. A ring that only shows
 // for keyboard users leaves the mouse path untouched.
-.bsp-choose-card:focus-visible,
-.bsp-fold:focus-visible,
-.bsp-master:focus-visible,
-.bsp-btn:focus-visible,
-.bsp-refstep:focus-visible,
-.bsp-reflink:focus-visible,
-.bsp-swaplink:focus-visible {
+.bsp .bsp-choose-card:focus-visible,
+.bsp .bsp-fold:focus-visible,
+.bsp .bsp-master:focus-visible,
+.bsp .bsp-btn:focus-visible,
+.bsp .bsp-refstep:focus-visible,
+.bsp .bsp-reflink:focus-visible,
+.bsp .bsp-swaplink:focus-visible {
     outline: 2px solid #7fe7d8;
     outline-offset: 1px;
 }
