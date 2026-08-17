@@ -138,6 +138,32 @@
     padding: 0;
 }
 
+// THE ICON, SIZED IN CSS RATHER THAN LEFT TO THE SVG'S OWN ATTRIBUTES.
+//
+// lucide writes width="12" height="12" onto the <svg> and nothing else, which
+// leaves an engine free to treat it as a flex item with an intrinsic ratio and
+// shrink it -- and an icon-only button, with zero padding and a hard 26px
+// width, is exactly where that shows up as an empty square you have to hover to
+// identify. `flex: none` stops the shrink, and the explicit box on the icon-only
+// variant means the glyph cannot come out at some other size either.
+.bsp-btn svg { flex: none; }
+
+.bsp-btn--icon svg {
+    width: 14px;
+    height: 14px;
+}
+
+// A DESTRUCTIVE ACTION SHOULD NOT LOOK LIKE ITS NEIGHBOUR. Remove sits one
+// button from Duplicate, and as an unlabelled icon the only thing separating
+// "copy this region" from "delete it" was the picture. It now reads red the
+// moment the cursor is on it, before the click.
+.bsp-btn--danger:hover {
+    border-color: #a35555;
+    background: #3a1c1c;
+    color: #ffd7d7;
+}
+.bsp-btn--danger:active { background: #2a1414; }
+
 // Named after the key that does the same thing, so it reads as a shortcut
 // rather than a label. Monospace keeps ＋H and ＋V the same width.
 // Where a layout is about to be filed, shown while naming it.
@@ -1495,9 +1521,24 @@
     background: var(--surface-1, #141414);
 }
 
+// NOT .bsp-lbl. That class uppercases and adds 0.11em of tracking, which turns
+// a short label into spaced-out capitals -- fine for "WHERE IT LANDS" over a
+// field group, wrong for a name sitting inline with the controls it names.
 .bsp-rtools-id {
     flex: none;
+    color: #9fb3b0;
+    font-size: var(--t-sm);
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+// Says what the nine squares beside it are. They are read by POSITION, so they
+// need no per-square label -- but with nothing at all, a 3x3 of blank squares in
+// a row of buttons is a puzzle rather than a control.
+.bsp-align-lbl {
+    flex: none;
+    color: #6f757f;
+    font-size: var(--t-micro);
 }
 
 /* Destructive pair, pushed to the far end of the row. `margin-left: auto` on a
@@ -1538,13 +1579,27 @@
 
 .bsp-align-grid {
     display: grid;
-    grid-template-columns: repeat(3, 15px);
-    grid-template-rows: repeat(3, 15px);
+    grid-template-columns: repeat(3, 13px);
+    grid-template-rows: repeat(3, 13px);
     gap: 2px;
     flex: none;
 }
 
 .bsp-anchor {
+    // SIZED EXPLICITLY, not stretched into its track.
+    //
+    // These carried no width or height and relied on a grid item's default
+    // `stretch` to take the 15px track. A <button> brings its own intrinsic
+    // minimum with it (the global `button` rule in index.scss sets a font size
+    // and padding, and `min-width: auto` on a grid item respects min-content),
+    // so they came out wider than they were tall -- nine chunky pills where a
+    // 3x3 of small squares was meant, overlapping the field beside them.
+    //
+    // width/height plus `min-width: 0` says the size outright and leaves the
+    // engine nothing to infer.
+    width: 13px;
+    height: 13px;
+    min-width: 0;
     padding: 0;
     border: 1px solid var(--surface-border, #363636);
     border-radius: var(--r-xs);
