@@ -1531,6 +1531,42 @@ export const BespokeTool = () => {
         });
     };
 
+    /**
+     * A QUARTER TURN TURNS THE WINDOW, NOT JUST THE ARTWORK.
+     *
+     * This used to set `rotation` alone, which meant a rotated region kept the
+     * shape it had been given for the UNROTATED master: turn a 5760x1440 into a
+     * tall cell and the master, still covering an axis-aligned landscape window,
+     * lost most of itself to the crop. The only visible sign was the dashed
+     * extent box growing -- the region itself never moved, so the tool looked
+     * like it had ignored the button.
+     *
+     * Swapping w/h about the CENTRE is what makes the turn physical: the window
+     * ends up where the artwork now is, so a landscape master turned 90 degrees
+     * gets a portrait window and covers it with the crop it had before.
+     *
+     * The centre, not the origin -- turning about the top-left would walk a
+     * region across the board every time it was rotated, and a region already
+     * sitting in a guide cell would leave it in a direction nobody chose.
+     *
+     * A swap CAN take a region outside its guide cell, and deliberately so: the
+     * cell was measured for the old shape. patchRegion still clamps it to the
+     * board, and Fit to guides re-seats it in one press.
+     */
+    const rotateRegion = () => {
+        const r = regions[selRegion];
+        if (!r) return;
+        const cx = r.x + r.w / 2;
+        const cy = r.y + r.h / 2;
+        patchRegion(selRegion, {
+            rotation: (r.rotation + 90) % 360,
+            w: r.h,
+            h: r.w,
+            x: Math.round(cx - r.h / 2),
+            y: Math.round(cy - r.w / 2),
+        });
+    };
+
     /** Reshapes the region to its master's native ratio, so nothing is cropped. */
     const matchMasterRatio = () => {
         const r = regions[selRegion];
@@ -2643,12 +2679,10 @@ export const BespokeTool = () => {
                                         Fit to guides
                                     </button>
                                 </Tooltip>
-                                <Tooltip text="Turn the master a quarter clockwise inside this region — the region itself stays put">
+                                <Tooltip text="Turn this region and its master a quarter clockwise — the region's width and height swap about its centre">
                                     <button
                                         className="bsp-btn bsp-btn--ghost"
-                                        onClick={() => patchRegion(selRegion, {
-                                            rotation: ((regions[selRegion].rotation + 90) % 360),
-                                        })}
+                                        onClick={rotateRegion}
                                     >
                                         Rotate 90° {regions[selRegion].rotation ? `(${regions[selRegion].rotation}°)` : ""}
                                     </button>
