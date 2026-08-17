@@ -41,8 +41,15 @@ const REPORT_ROOT = "Library/Application Support/XYi/aep-tools/reports";
  *  `_`-prefixed ones — a folder called `aep-tools` would show up in the Team
  *  menu as a person named "aep-tools" with "no setup yet". Don't rename it. */
 const SCRIPT_CANDIDATES = [
-    "/Volumes/newmedia/_Motion/MotionAssets/_Scripts/Team_Folder/_aep-tools/aep_layers.py",
+    // THE FOLDER IS `_aep_tools`, WITH AN UNDERSCORE. This list led with the
+    // hyphenated spelling, which does not exist on the server, so the team
+    // candidate never resolved and every machine silently fell through to the
+    // _Personal path below -- i.e. the master check only worked for people who
+    // could see one artist's personal folder, and told everyone else the script
+    // was missing. The hyphenated form is kept last in case it is ever created.
+    "/Volumes/newmedia/_Motion/MotionAssets/_Scripts/Team_Folder/_aep_tools/aep_layers.py",
     "/Volumes/newmedia/_Motion/MotionAssets/_Personal/_Antonio/PYTHON_TEST/_aep_report/aep_layers.py",
+    "/Volumes/newmedia/_Motion/MotionAssets/_Scripts/Team_Folder/_aep-tools/aep_layers.py",
 ];
 
 export interface MasterCheckResult {

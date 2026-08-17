@@ -25,7 +25,7 @@
 // PROFILE_KEYS too.
 // =============================================================================
 import { Result, SETTINGS_SECTION } from "./shared";
-import { expressionsBankLoad, expressionsBankSave, loadCustomTools, saveCustomTools } from "./tools";
+import { expressionsBankLoad, expressionsBankSave, loadCustomTools, saveCustomTools, mastersSkipFolder } from "./tools";
 import { loadCombos, saveCombos, EffectComboEntry } from "./effects";
 import { loadCampaignsRaw, saveCampaign, loadCampaignBanner, setCampaignBanner } from "./review";
 import { loadLocLibCampaigns, saveLocLibCampaign } from "./localise";
@@ -774,21 +774,87 @@ export interface BespokeTemplate {
   }[];
   savedBy: string;
   stamp: string;
+
+  // ── Added with the screen library. ALL OPTIONAL, and read defensively
+  // everywhere, because entries written before it shipped are already on the
+  // share and must keep loading unchanged. Absent `kind` means "layout" --
+  // that is all there was.
+  /**
+   * "layout" carries real geometry and draws a wireframe. "template" is an
+   * INDEX CARD over an .aep in the old templates folder: it knows where the
+   * file is and nothing about what is inside it.
+   */
+  kind?: "layout" | "template";
+  /** kind:"template" only -- the .aep this points at. */
+  templatePath?: string;
+  /** The venue folder ("GRAND_REX"). `name` stays the display name. */
+  screen?: string;
+  /**
+   * The in-situ / spec image found INSIDE the template by aep_screens.py --
+   * the thing an artist would otherwise go hunting for. Bespoke adopts it as
+   * the reference when the screen is loaded, so a template becomes traceable
+   * without anybody opening it.
+   */
+  referencePath?: string;
+  /**
+   * EVERY plausible reference in that template, best first, `referencePath`
+   * being the current pick. The scoring is a heuristic and gets it wrong often
+   * enough that the artist has to be able to step to the next one -- with a
+   * single stored path a wrong guess meant the screen was a dead end.
+   */
+  referencePaths?: string[];
+  /** Retired screens stay in the file and drop out of the default view. */
+  status?: "active" | "archive";
 }
 
-/** NULL MEANS "COULD NOT READ", never "there are none". */
-export const bespokeTemplateList = (): { success: boolean; templates?: BespokeTemplate[]; error?: string } => {
+/**
+ * NULL MEANS "COULD NOT READ", never "there are none".
+ *
+ * `read` carries that distinction to the panel, the same way teamCampaignBoard
+ * and teamLoadWordBoard do. It matters more since the library shipped: an
+ * EMPTY library still needs its front door, because seeding is how it stops
+ * being empty -- but an UNREACHABLE one must show nothing at all. Collapsing
+ * both to `templates: []` made those two states indistinguishable.
+ */
+export const bespokeTemplateList = (): { success: boolean; read?: boolean; templates?: BespokeTemplate[]; error?: string } => {
   try {
     const entries = readSharedFile<BespokeTemplate>(SHARED_BESPOKE_FILE, SHARED_BESPOKE_TYPE);
-    if (entries === null) {
-      // An unmounted share is a normal state, not an error toast.
-      return { success: true, templates: [] };
-    }
-    return { success: true, templates: entries };
+    if (entries !== null) return { success: true, read: true, templates: entries };
+
+    // NULL IS THREE DIFFERENT THINGS HERE, and only one of them should hide
+    // the library. readSharedFile returns null for an unreachable share, for a
+    // corrupt file AND for a file that has simply never been written -- and
+    // that last case is the NORMAL state of a studio that has not saved a
+    // layout yet, which is exactly who needs the seeding button most. Reporting
+    // it as unreadable hid the feature from everybody it was built for.
+    //
+    // The real question is whether the team folder is reachable, and that is a
+    // DIRECTORY, which is the one place .exists can be trusted (section 2).
+    const reachable = teamFolder() !== null;
+    return { success: true, read: reachable, templates: [] };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
 };
+
+/**
+ * Has this shared file ever been written?
+ *
+ * readSharedFile() collapses three states into one null: share unreachable,
+ * file corrupt, and file simply not there yet. Only the last one is safe to
+ * treat as "an empty list" -- the other two mean a write would DESTROY rows
+ * we failed to read. Attempting the read and believing its failure is the
+ * section 2 rule; `.exists` is not consulted on the file itself.
+ */
+function sharedFileIsAbsent(fileName: string): boolean {
+  const root = teamFolder();
+  if (!root) return false; // unreachable, not absent -- never safe to overwrite
+  const dir = sharedDirFor(fileName);
+  if (readTextFile(new File(root.fsName + "/" + dir + "/" + fileName))) return false;
+  if (dir !== MISC_DIR && readTextFile(new File(root.fsName + "/" + MISC_DIR + "/" + fileName))) return false;
+  if (readTextFile(new File(root.fsName + "/" + fileName))) return false;
+  return true;
+}
 
 /**
  * Upsert by id, read-modify-write.
@@ -801,7 +867,20 @@ export const bespokeTemplateSave = (entryJson: string): { success: boolean; erro
   try {
     const entry = JSON.parse(entryJson) as BespokeTemplate;
     if (!entry || !entry.id || !entry.name) return { success: false, error: "A layout needs a name." };
+    // WHO SAVED IT, from the machine tag rather than the panel. `savedBy` was
+    // always written as "" from the frontend, so the library could not say who
+    // laid a screen out -- and an untagged machine simply leaves it blank rather
+    // than refusing, because a layout is the artist's own work, not a post to a
+    // shared board.
+    if (!entry.savedBy) entry.savedBy = loadLocalSetting(MACHINE_OWNER_KEY);
     const existing = readSharedFile<BespokeTemplate>(SHARED_BESPOKE_FILE, SHARED_BESPOKE_TYPE);
+    // A null read that is NOT simply "no file yet" must never be treated as an
+    // empty list: writing the result would replace everyone else's layouts with
+    // this one. Previously any null fell through to the loop below being
+    // skipped and `out` being written as a single entry.
+    if (existing === null && !sharedFileIsAbsent(SHARED_BESPOKE_FILE)) {
+      return { success: false, error: "Couldn't read the saved layouts -- nothing was changed." };
+    }
     const out: BespokeTemplate[] = [];
     let replaced = false;
     if (existing !== null) {
@@ -837,6 +916,477 @@ export const bespokeTemplateDelete = (id: string): { success: boolean; error?: s
   } catch (e) {
     return { success: false, error: e.toString() };
   }
+};
+
+// =============================================================================
+// THE SCREEN LIBRARY -- seeding it from the templates folder.
+//
+// SEEDING, NOT CONVERTING. Most spec folders have no reference JPG, so a
+// layout cannot be derived from disk: the geometry only exists inside the
+// template .aep, and getting it out means opening one, which section 1 of
+// CLAUDE.md does not let us do casually. So the library starts as an INDEX
+// over the templates folder -- territory, screen, filename, walked from the
+// path -- and nothing is opened, copied or written to that folder at any
+// point below.
+//
+// A template entry therefore has no slots and draws no wireframe, and that
+// is deliberate and visible: a screen reads as UN-TRACED until somebody lays
+// it out in Bespoke and saves, at which point the layout supersedes the
+// template and the folder has one less reason to exist. The library is the
+// index first and the replacement second, so it is useful on day one without
+// anybody migrating anything.
+// =============================================================================
+
+export interface BespokeScanCandidate {
+  id: string;
+  territory: string;
+  screen: string;
+  name: string;
+  templatePath: string;
+  canvasW: number;
+  canvasH: number;
+  /** Already in the library -- seeding skips these rather than re-adding. */
+  known: boolean;
+  /** Already in the library AS A LAYOUT -- seeding must never overwrite it. */
+  superseded: boolean;
+}
+
+/**
+ * The screen's name and size, out of the .aep FILENAME.
+ *
+ * Both naming conventions, per section 5. Size is zero when it does not parse
+ * -- a template that cannot be sized is still a template, and dropping it
+ * silently is exactly the failure that rule warns about. A literal regex over
+ * a filename is the established idiom here (parseMasterFilename does the
+ * same); the banned thing is passing a NAME as the regex argument.
+ *
+ * NOT the parent folder. A survey of the real tree (103 templates) settled
+ * this: the folders are 19 files at Country/x.aep, 46 at Country/Venue/x.aep
+ * and 38 deeper still, so no fixed depth names the screen and the shallow ones
+ * would every one of them be called after their country. The filename carries
+ * the identity in 80% of cases and is present in 100% -- it is the only part
+ * of the path that is consistently about the SCREEN.
+ *
+ *   Template_INTL_DGTL_DOOH_5_TOTEM_5400x1920_15sec_FR  ->  5_TOTEM
+ *   template_INTL_DGTL_DOOH_MALL_PLAZA_VESPUCIO_2390x…  ->  MALL_PLAZA_VESPUCIO
+ *   Template_INTL_DGTL_LED_GATE_3840x1080_10sec_HU      ->  LED_GATE
+ *   chongqing                                           ->  chongqing
+ *
+ * Everything before the size token is the name; the studio's fixed prefix
+ * tokens are then dropped. LED is NOT in that list -- `LED_GATE` is a screen
+ * called LED Gate, not a stray prefix.
+ */
+const TEMPLATE_NAME_PREFIXES = ["TEMPLATED", "TEMPLATE", "INTL", "DOM", "DGTL", "DOOH", "DINTH", "DFOH"];
+
+/** Folder levels that are scaffolding rather than a venue. */
+const TEMPLATE_BOILERPLATE_DIRS = [
+  "AE", "AEP", "AE_TEMPLATE", "AE_TEMPLATES", "AE_BESPOKE", "AE_BESPOKES",
+  "TEMPLATE", "TEMPLATES", "PROJECT", "PROJECTS", "WORKING", "FOLDER",
+];
+
+/** A name that does not say WHICH screen this is. */
+const TEMPLATE_GENERIC_NAMES = ["", "BESPOKE", "AE", "TEMPLATE", "INSITU", "PROJECT", "COMP_1"];
+
+function isInList(value: string, list: string[]): boolean {
+  const up = String(value).toUpperCase();
+  for (let i = 0; i < list.length; i++) if (up === list[i]) return true;
+  return false;
+}
+
+/**
+ * SIZE IS PART OF THE IDENTITY, not just a detail on the card.
+ *
+ * Verified against the real tree: `BARCO_PANORAMA` alone named FIVE different
+ * screens (1920x1080, 2160x3840, 3840x2160 ×9, 3840x2160 ×16, 5760x1080) and
+ * merging them into one card would have lost four. The tokens between size and
+ * duration (`X9_SCREENS`, `X16_SCREENS`) separate the two that share a size.
+ *
+ * With name + size + that discriminator, 103 template files resolve to 95
+ * screens, the 8 collapses all being duration variants of one screen
+ * (…_15sec / …_20sec), which is exactly what should collapse.
+ */
+function parseTemplateFileName(fileName: string): { name: string; w: number; h: number } {
+  const stem = String(fileName).replace(/\.aep$/i, "").replace(/^\s+/, "").replace(/\s+$/, "");
+  const m = stem.match(/^(.*?)_(\d{2,5})x(\d{2,5})(?:px)?_(.*)$/i);
+  let head = m ? m[1] : stem;
+  const w = m ? parseInt(m[2], 10) : 0;
+  const h = m ? parseInt(m[3], 10) : 0;
+
+  let mid = "";
+  if (m) {
+    // Whatever sits between the size and the duration discriminates two
+    // screens of identical pixel size.
+    const d = m[4].match(/^(.*?)_?\d{1,4}(?:sec|s)(?:_|$)/i);
+    if (d && d[1]) mid = d[1].replace(/^_+/, "").replace(/_+$/, "");
+  }
+
+  // Prefix tokens are dropped WHEREVER they appear, not only leading: a file
+  // named after a campaign (CR2_INTL_DGTL_DOOH_CHENGDU…) keeps the whole
+  // boilerplate otherwise, because position 0 is the campaign code.
+  // `filter` is polyfilled (shared.ts); `some`/`includes` are not.
+  let parts = head.split(/[_\s]+/).filter((t: string) => !!t && !isInList(t, TEMPLATE_NAME_PREFIXES));
+  // A leading BESPOKE is noise ONLY when something survives it --
+  // `Template_INTL_DGTL_BESPOKE_1824x164_15sec_DK` has nothing else to be
+  // called, so it keeps it.
+  if (parts.length > 1 && parts[0].toUpperCase() === "BESPOKE") parts = parts.slice(1);
+  // Trailing version / "folder" noise, e.g. `…_TW_V01 folder`.
+  while (parts.length > 1 && /^(v\d+|folder)$/i.test(parts[parts.length - 1])) parts.pop();
+
+  // Separate statements, never a nested ternary: parentheses do not survive
+  // the ES3 emit (audit-jsx-precedence.cjs enforces this).
+  const base = parts.join("_");
+  let name = base;
+  if (mid) {
+    if (base) name = base + "_" + mid;
+    else name = mid;
+  }
+  return { name: name, w: w, h: h };
+}
+
+/**
+ * The screen, from the WHOLE PATH -- because neither end of it is reliable
+ * alone, and the two real trees disagree about which end carries the name:
+ *
+ *   DOOH_AE_Bespoke_Templates : Country/<descriptive file>.aep   -> the FILE
+ *   DOOH_Specs                : Country/Venue/AE_Template/<generic file>.aep
+ *                                                                -> the FOLDER
+ *
+ * Seeding DOOH_Specs with a filename-first rule produced AE_TEMPLATE,
+ * AE_PROJECT and AE as screen names; seeding the templates tree with a
+ * folder-first rule named every screen after its country. So: the venue folder
+ * when there is one and it says something, the filename otherwise, with the
+ * same cleaner over whichever wins -- venue folders are themselves sometimes
+ * filename-shaped (`…/Template_INTL_DGTL_DOOH_BESPOKE_4000x128_10sec_UA/`).
+ *
+ * The SIZE always comes from the file first: a venue folder often has none.
+ *
+ * Verified over both real trees -- 103 files -> 89 screens, 223 -> 177, with
+ * the only remaining generic names being screens genuinely called BESPOKE that
+ * have no venue folder at all. Those stay distinct because size is in the id.
+ *
+ * `midDirs` is the folder path between the territory and the file.
+ */
+function deriveTemplateScreen(
+  midDirs: string[],
+  fileName: string
+): { name: string; w: number; h: number } {
+  let venue = "";
+  for (let i = 0; i < midDirs.length; i++) {
+    const d = String(midDirs[i]).replace(/^\s+/, "").replace(/\s+$/, "");
+    if (!isInList(d, TEMPLATE_BOILERPLATE_DIRS)) venue = d;
+  }
+
+  const fromFile = parseTemplateFileName(fileName);
+  const fromVenue = venue ? parseTemplateFileName(venue) : { name: "", w: 0, h: 0 };
+
+  let name = fromVenue.name;
+  if (isInList(name, TEMPLATE_GENERIC_NAMES)) name = fromFile.name;
+  // If BOTH reduce to something generic, keep the generic word rather than
+  // falling back to a raw folder string -- size is part of the id, so
+  // UKRAINE::BESPOKE::4000x128 and ::6592x96 stay distinct anyway.
+  if (isInList(name, TEMPLATE_GENERIC_NAMES)) {
+    name = fromVenue.name || fromFile.name || String(fileName).replace(/\.aep$/i, "");
+  }
+
+  return { name: name, w: fromFile.w || fromVenue.w, h: fromFile.h || fromVenue.h };
+}
+
+/**
+ * Walks a templates root and reports what it found. WRITES NOTHING -- the
+ * panel shows the candidates and the artist commits them, so a mis-picked
+ * folder costs a look rather than 400 junk rows on everyone's share.
+ *
+ * Territory is the first level under the root and screen is the folder the
+ * .aep actually sits in, which is the shape of DOOH_Specs (Country/Venue).
+ * A template loose in the territory folder takes its own stem as the screen
+ * rather than being skipped.
+ */
+export const bespokeLibraryScan = (
+  rootPath: string
+): { success: boolean; candidates?: BespokeScanCandidate[]; scanned?: number; error?: string } => {
+  try {
+    if (!rootPath) return { success: false, error: "No templates folder given." };
+    const root = new Folder(rootPath);
+    // .exists on a DIRECTORY is the one trustworthy case (section 2).
+    if (!root.exists) return { success: false, error: "That folder isn't reachable:\n" + rootPath };
+
+    const existing = readSharedFile<BespokeTemplate>(SHARED_BESPOKE_FILE, SHARED_BESPOKE_TYPE);
+    const knownIds: string[] = [];
+    const layoutIds: string[] = [];
+    if (existing !== null) {
+      for (let i = 0; i < existing.length; i++) {
+        const id = String(existing[i].id);
+        knownIds.push(id);
+        // Absent kind means layout -- that is all there was before this.
+        if (!existing[i].kind || existing[i].kind === "layout") layoutIds.push(id);
+      }
+    }
+
+    const out: BespokeScanCandidate[] = [];
+    let scanned = 0;
+
+    // Depth-first, plain for loops, duck-typed folder test -- no forEach, no
+    // instanceof, per section 2.
+    // `midDirs` is the folder path BELOW the territory -- the venue lives in
+    // there, and which level it is varies by tree, so the whole path is
+    // carried rather than a fixed depth being assumed.
+    const walk = (folder: Folder, territory: string, midDirs: string[], depth: number) => {
+      // A templates tree is Country/Venue/[Batch]/file. Six is generous and
+      // stops a stray symlink loop dead.
+      if (depth > 6) return;
+      const items = folder.getFiles();
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (typeof (item as Folder).getFiles === "function") {
+          // DECODED. Folder.name / File.name come back URI-ENCODED from
+          // ExtendScript, so a folder called "AE Template" arrives as
+          // "AE%20Template" and got filed as a screen under that name -- along
+          // with every territory and venue containing a space or an accent
+          // ("ICONICO DA SÉ"). tools.ts:5854 already does this; the scan did
+          // not.
+          const fname = decodeURI((item as Folder).name);
+          // The house rule: `_` folders are out of every scan. That takes
+          // `_archive` and `_Template` with it, which is the intent -- an
+          // archived screen is not a template anybody wants offered.
+          if (fname.substring(0, 1) === "_") continue;
+          if (mastersSkipFolder(fname)) continue;
+          // The FIRST level below the root is the territory; everything deeper
+          // is path on the way to the file.
+          if (!territory) walk(item as Folder, fname, [], depth + 1);
+          else walk(item as Folder, territory, midDirs.concat([fname]), depth + 1);
+        } else {
+          const fileName = decodeURI((item as File).name);
+          const dot = fileName.lastIndexOf(".");
+          if (dot === -1) continue;
+          if (fileName.substring(dot + 1).toLowerCase() !== "aep") continue;
+          scanned++;
+          const parsed = deriveTemplateScreen(midDirs, fileName);
+          const screen = parsed.name;
+          const size = { w: parsed.w, h: parsed.h };
+          const id = (territory + "::" + screen + "::" + (parsed.w ? parsed.w + "x" + parsed.h : "?")).toUpperCase();
+          let dupe = false;
+          for (let k = 0; k < out.length; k++) if (out[k].id === id) { dupe = true; break; }
+          // Two files that reduce to the same screen name in the same territory
+          // are versions of one screen, so the first wins and the rest are not
+          // new rows. Different screens in one folder now stay distinct, which
+          // they did not when the FOLDER supplied the name.
+          if (dupe) continue;
+          out.push({
+            id: id,
+            territory: territory,
+            screen: screen,
+            name: screen,
+            templatePath: (item as File).fsName,
+            canvasW: size.w,
+            canvasH: size.h,
+            known: knownIds.indexOf(id) !== -1,
+            superseded: layoutIds.indexOf(id) !== -1,
+          });
+        }
+      }
+    };
+
+    walk(root, "", [], 0);
+    return { success: true, candidates: out, scanned: scanned };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/**
+ * Commits scanned candidates as kind:"template" entries.
+ *
+ * A LAYOUT IS NEVER OVERWRITTEN BY A TEMPLATE. That is the whole direction of
+ * this feature -- layouts supersede templates, never the reverse -- and a
+ * re-scan after somebody has traced a screen must not undo their work. Same
+ * refusal-on-failed-read contract as every other shared write here: null is
+ * "couldn't read", not "the file is empty", and republishing over everyone
+ * else's library is worse than doing nothing.
+ */
+export const bespokeLibrarySeed = (
+  entriesJson: string
+): { success: boolean; added?: number; skipped?: number; error?: string } => {
+  try {
+    const incoming = JSON.parse(entriesJson) as BespokeScanCandidate[];
+    if (!incoming || !incoming.length) return { success: false, error: "Nothing to add." };
+
+    const existing = readSharedFile<BespokeTemplate>(SHARED_BESPOKE_FILE, SHARED_BESPOKE_TYPE);
+    // THE FIRST SEED HAPPENS AGAINST NO FILE AT ALL, which is the whole point
+    // of seeding -- refusing every null made the feature impossible to use for
+    // exactly the studio it was built for. An unreachable or corrupt library
+    // still refuses, because writing over it would lose real rows.
+    if (existing === null && !sharedFileIsAbsent(SHARED_BESPOKE_FILE)) {
+      return { success: false, error: "Couldn't read the library -- nothing was changed." };
+    }
+
+    const me = loadLocalSetting(MACHINE_OWNER_KEY);
+    const out: BespokeTemplate[] = [];
+    if (existing !== null) for (let i = 0; i < existing.length; i++) out.push(existing[i]);
+
+    let added = 0;
+    let skipped = 0;
+    for (let i = 0; i < incoming.length; i++) {
+      const c = incoming[i];
+      if (!c || !c.id) { skipped++; continue; }
+      let clash = -1;
+      for (let k = 0; k < out.length; k++) if (String(out[k].id) === String(c.id)) { clash = k; break; }
+      if (clash !== -1) {
+        const kind = out[clash].kind;
+        // Absent kind means layout. Leave it alone.
+        if (!kind || kind === "layout") { skipped++; continue; }
+        // An existing template row just gets its path refreshed -- the file
+        // may well have moved inside the folder since the last scan.
+        out[clash].templatePath = c.templatePath;
+        out[clash].canvasW = c.canvasW;
+        out[clash].canvasH = c.canvasH;
+        skipped++;
+        continue;
+      }
+      out.push({
+        id: c.id,
+        name: c.name || c.screen,
+        territory: c.territory || "",
+        site: c.screen || "",
+        screen: c.screen || "",
+        canvasW: c.canvasW || 0,
+        canvasH: c.canvasH || 0,
+        guidesX: [],
+        guidesY: [],
+        slots: [],
+        savedBy: me || "",
+        // Sliced to the date, so a seeded row and a saved layout carry the
+        // same shape of stamp and sort against each other.
+        stamp: nowStamp().slice(0, 10),
+        kind: "template",
+        templatePath: c.templatePath,
+        status: "active",
+      });
+      added++;
+    }
+
+    if (!writeSharedFile<BespokeTemplate>(SHARED_BESPOKE_FILE, SHARED_BESPOKE_TYPE, out)) {
+      return { success: false, error: "Couldn't write to the team folder -- is the share mounted?" };
+    }
+    return { success: true, added: added, skipped: skipped };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/**
+ * Files the references aep_screens.py found back onto their entries.
+ *
+ * Takes `[{id, referencePath}]` as JSON, and touches NOTHING else on the row --
+ * enrichment is additive, so re-running it can never disturb geometry somebody
+ * has traced by hand. Same refusal-on-unreadable contract as every other write
+ * here; an absent file is fine, an unreadable one is not.
+ */
+export const bespokeLibrarySetReferences = (
+  entriesJson: string
+): { success: boolean; updated?: number; error?: string } => {
+  try {
+    const incoming = JSON.parse(entriesJson) as {
+      id: string; referencePath: string; referencePaths?: string[];
+    }[];
+    if (!incoming || !incoming.length) return { success: false, error: "Nothing to file." };
+
+    const existing = readSharedFile<BespokeTemplate>(SHARED_BESPOKE_FILE, SHARED_BESPOKE_TYPE);
+    if (existing === null) {
+      return { success: false, error: "Couldn't read the library -- nothing was changed." };
+    }
+
+    // An EMPTY referencePath is an instruction to CLEAR, not a row to skip.
+    // Without that a re-run could never correct itself: 23 screens were filed
+    // with a .psd reference the panel cannot display, and once the scoring was
+    // fixed to reject those formats they simply stopped appearing in the
+    // results -- so the stale path would have sat there forever.
+    let updated = 0;
+    let cleared = 0;
+    for (let i = 0; i < incoming.length; i++) {
+      const row = incoming[i];
+      if (!row || !row.id) continue;
+      for (let k = 0; k < existing.length; k++) {
+        if (String(existing[k].id) !== String(row.id)) continue;
+        if (row.referencePath) {
+          existing[k].referencePath = row.referencePath;
+          if (row.referencePaths && row.referencePaths.length) {
+            existing[k].referencePaths = row.referencePaths;
+          }
+          updated++;
+        } else if (existing[k].referencePath) {
+          existing[k].referencePath = "";
+          existing[k].referencePaths = [];
+          cleared++;
+        }
+        break;
+      }
+    }
+    if (updated === 0 && cleared === 0) return { success: true, updated: 0 };
+
+    if (!writeSharedFile<BespokeTemplate>(SHARED_BESPOKE_FILE, SHARED_BESPOKE_TYPE, existing)) {
+      return { success: false, error: "Couldn't write to the team folder." };
+    }
+    return { success: true, updated: updated };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/**
+ * Brings a template into the CURRENT project, read-only.
+ *
+ * importFile() is the blessed path in section 1: the template is never
+ * opened as its own editable project, never saved, and its bytes are never
+ * written. The artist gets its comps to work from and the master on the
+ * server is untouchable by construction -- no copy step to get wrong, no
+ * destination to validate, no save-as to forget.
+ */
+export const bespokeLibraryImport = (
+  templatePath: string
+): { success: boolean; name?: string; error?: string } => {
+  try {
+    if (!templatePath) return { success: false, error: "This entry has no template file." };
+    if (!app.project) return { success: false, error: "No project is open to import into." };
+    const f = new File(templatePath);
+    // Attempt the operation and let it fail -- .exists lies on the NAS for
+    // files (section 2), so gating on it would refuse reachable templates.
+    let item: any = null;
+    try {
+      item = app.project.importFile(new ImportOptions(f));
+    } catch (inner) {
+      return {
+        success: false,
+        error: "Couldn't import that template -- is the share mounted?\n" + templatePath,
+      };
+    }
+    if (!item) return { success: false, error: "After Effects imported nothing from:\n" + templatePath };
+    return { success: true, name: item.name };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/** Selects the template in Finder/Explorer rather than opening it. */
+export const bespokeLibraryReveal = (templatePath: string): Result => {
+  try {
+    if (!templatePath) return { success: false, error: "This entry has no template file." };
+    const f = new File(templatePath);
+    const p = f.fsName;
+    if ($.os.indexOf("Windows") !== -1) {
+      system.callSystem('explorer /select,"' + p + '"');
+    } else {
+      system.callSystem('open -R "' + p + '"');
+    }
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/** Folder picker for the templates root. Empty string on cancel, never an error. */
+export const bespokeSelectTemplatesRoot = (): string => {
+  const picked = Folder.selectDialog("Choose the folder your bespoke templates live in");
+  return picked ? picked.fsName : "";
 };
 
 function isArcadeFile(fileName: string): boolean {

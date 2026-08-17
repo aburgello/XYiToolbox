@@ -1,0 +1,500 @@
+// Screen library -- the picker that replaces the templates folder.
+//
+// Lives inside .bsp and consumes ITS tokens (--r-*, --t-*, --ease-*, --dur*)
+// rather than declaring a second scale. Fallbacks are present only for the
+// case where this ever mounts outside Bespoke; a var() fallback does not
+// apply when the variable IS defined, so inside .bsp the tool's scale wins.
+//
+// No color-mix(), no clamp(), no aspect-ratio, no :has() -- chrome74 target.
+// Every blend below is a precomputed literal.
+//
+// TWO ACCENTS, doing one job. Teal is a traced screen (a real layout); amber
+// is one still pointing at an old template. That pairing is the whole read of
+// the grid -- how much of the folder has been absorbed -- so it is carried
+// consistently through the card border, the wireframe and the progress bar,
+// and used for nothing else.
+
+.scl,
+.scl *,
+.scl *::before,
+.scl *::after {
+    // This app has no global box-sizing reset; Bespoke sets it per tool. Set
+    // it here too so the component is correct even if it is ever mounted
+    // somewhere that has not.
+    box-sizing: border-box;
+}
+
+.scl {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    border: 1px solid var(--surface-border, #333);
+    border-radius: var(--r-md, 7px);
+    background: var(--surface-1, #141414);
+    padding: 9px;
+}
+
+/* ── Head ──────────────────────────────────────────────────────────────── */
+
+.scl-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.scl-title {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: var(--t-md, 11px);
+    color: #d7dce3;
+    white-space: nowrap;
+}
+
+.scl-search {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    // Takes the slack in the head row, so the buttons stay pinned right.
+    flex: 1;
+    min-width: 0;
+    padding: 0 8px;
+    border: 1px solid var(--surface-border, #363636);
+    border-radius: var(--r-pill, 999px);
+    background: var(--surface-0, #121212);
+    color: #6f757f;
+
+    &:focus-within {
+        border-color: #2dd4bf;
+        color: #7fe7d8;
+    }
+}
+
+.scl-search-in {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: none;
+    padding: 5px 0;
+    color: #ddd;
+    font-size: var(--t-sm, 10px);
+    outline: none;
+
+    &::placeholder { color: #5c626b; }
+}
+
+.scl-ghost {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex: none;
+    padding: 5px 10px;
+    border: 1px solid var(--surface-border, #363636);
+    border-radius: var(--r-sm, 5px);
+    background: var(--surface-0, #121212);
+    color: #a8aeb6;
+    font-size: var(--t-sm, 10px);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background var(--dur-fast, 110ms) var(--ease-out, ease),
+                color var(--dur-fast, 110ms) var(--ease-out, ease);
+
+    // index.scss's global button:hover/:active ($active #20639b) paints over
+    // any custom button, so both states are re-declared. Every button here
+    // does the same.
+    &:hover:not(:disabled) { background: #1c1c1c; color: #ddd; }
+    &:active:not(:disabled) { background: #101010; }
+    &:disabled { opacity: 0.4; cursor: default; }
+}
+
+.scl-x {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: 1px solid transparent;
+    border-radius: var(--r-sm, 5px);
+    background: none;
+    color: #7b828c;
+    cursor: pointer;
+
+    &:hover { background: #1c1c1c; color: #ddd; }
+    &:active { background: #101010; }
+}
+
+/* ── Scan report ───────────────────────────────────────────────────────── */
+
+.scl-scan {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 7px 9px;
+    border: 1px solid rgba(45, 212, 191, 0.34);
+    border-radius: var(--r-sm, 5px);
+    // Precomputed teal wash, not color-mix.
+    background: rgba(45, 212, 191, 0.07);
+}
+
+.scl-scan-say {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+    font-size: var(--t-sm, 10px);
+    color: #b6bcc4;
+
+    em { font-style: normal; color: #d7dce3; }
+    strong { font-weight: 600; color: #7fe7d8; }
+}
+
+.scl-scan-do {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex: none;
+}
+
+/* ── Body: territory rail + card grid ──────────────────────────────────── */
+
+.scl-body {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+    min-height: 0;
+}
+
+.scl-rail {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: none;
+    width: 108px;
+    max-height: 320px;
+    overflow-y: auto;
+    padding-right: 2px;
+}
+
+.scl-terr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 5px;
+    flex: none;
+    padding: 5px 8px;
+    border: 1px solid transparent;
+    border-radius: var(--r-sm, 5px);
+    background: none;
+    color: #9aa1ac;
+    font-size: var(--t-sm, 10px);
+    text-align: left;
+    cursor: pointer;
+    // A long bucket name ("Football Super Boards") ellipsises rather than
+    // widening the rail and squeezing the grid.
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+
+    em {
+        flex: none;
+        font-style: normal;
+        font-family: ui-monospace, Menlo, monospace;
+        font-size: var(--t-micro, 9px);
+        color: #6f757f;
+    }
+
+    &:hover { background: #1c1c1c; color: #ddd; }
+    &:active { background: #101010; }
+
+    &.is-on {
+        background: rgba(45, 212, 191, 0.13);
+        border-color: rgba(45, 212, 191, 0.55);
+        color: #7fe7d8;
+    }
+    &.is-on:hover { background: rgba(45, 212, 191, 0.2); color: #a5f3e6; }
+    &.is-on em { color: #5eead4; }
+}
+
+.scl-grid {
+    // grid gap is Chrome 66, comfortably under the chrome74 target.
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+    gap: 6px;
+    align-items: start;
+    flex: 1;
+    min-width: 0;
+    max-height: 320px;
+    overflow-y: auto;
+    padding-right: 2px;
+}
+
+.scl-none {
+    grid-column: 1 / -1;
+    margin: 0;
+    padding: 18px 10px;
+    color: #6f757f;
+    font-size: var(--t-sm, 10px);
+    text-align: center;
+}
+
+.scl-cell { min-width: 0; }
+
+/* ── Card ──────────────────────────────────────────────────────────────── */
+
+.scl-card {
+    // Anchors the corner remove button.
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: 7px 7px 6px;
+    border: 1px solid var(--surface-edge, #2b3230);
+    border-radius: var(--r-sm, 5px);
+    background: var(--surface-2, #1a1a1a);
+    overflow: hidden;
+    transition: border-color var(--dur-fast, 110ms) var(--ease-out, ease);
+
+    &.is-layout:hover { border-color: rgba(45, 212, 191, 0.6); }
+    &.is-template:hover { border-color: rgba(201, 154, 78, 0.6); }
+
+    // WHICH SCREEN IS ON THE BOARD. The library stays open now, so without a
+    // mark the grid gives no clue which of 177 cards you are currently looking
+    // at the reference for.
+    &.is-active {
+        border-color: #2dd4bf;
+        background: #172422;
+    }
+}
+
+// Fixed band, so every card in a row lines its name up with its neighbours
+// however extreme the screen's ratio is -- and DOOH ratios are extreme.
+.scl-card-art {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 56px;
+    margin-bottom: 6px;
+    border-radius: var(--r-xs, 3px);
+    background: #101010;
+    overflow: hidden;
+}
+
+.scl-wire {
+    display: block;
+    overflow: visible;
+    color: #6f757f;
+}
+
+.scl-wire-canvas {
+    fill: none;
+    stroke: #3a4148;
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+}
+
+.scl-wire-guide {
+    stroke: rgba(125, 133, 143, 0.4);
+    stroke-width: 1;
+    stroke-dasharray: 2 2;
+}
+
+.scl-wire-slot {
+    fill: rgba(45, 212, 191, 0.22);
+    stroke: #2dd4bf;
+    stroke-width: 1;
+}
+
+.scl-wire.is-untraced {
+    color: rgba(201, 154, 78, 0.5);
+
+    .scl-wire-canvas { stroke: rgba(201, 154, 78, 0.55); }
+}
+
+.scl-card-name {
+    font-size: var(--t-sm, 10px);
+    color: #d7dce3;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.scl-card-meta {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 5px;
+    margin-top: 2px;
+    font-size: var(--t-micro, 9px);
+    color: #6f757f;
+}
+
+.scl-card-size {
+    font-family: ui-monospace, Menlo, monospace;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.scl-card-regions { flex: none; color: #5eead4; }
+.scl-card-untraced { flex: none; color: #c99a4e; }
+// Amber still (it is not a layout yet) but stated positively -- a template with
+// its in-situ image found is one click from being traceable.
+.scl-card-hasref { flex: none; color: #dcb476; }
+
+/* The template reader's own progress. Reading a few hundred .aep binaries off
+   the NAS takes real time and there is no percentage to invent, so it shows
+   the file it is on. One line, ellipsised -- never a growing log. */
+.scl-progress {
+    margin: 0;
+    padding: 5px 8px;
+    border-radius: var(--r-sm, 5px);
+    background: rgba(201, 154, 78, 0.1);
+    color: #dcb476;
+    font-size: var(--t-micro, 9px);
+    font-family: ui-monospace, Menlo, monospace;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.scl-card-do {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 6px;
+}
+
+.scl-do {
+    // Fills the row; the icon buttons beside it are flex:none. Not wrapped in
+    // a Tooltip -- Tooltip's span carries flex:0 0 auto !important and would
+    // silently defeat this.
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border: 1px solid rgba(45, 212, 191, 0.45);
+    border-radius: var(--r-xs, 3px);
+    background: rgba(45, 212, 191, 0.13);
+    color: #7fe7d8;
+    font-size: var(--t-sm, 10px);
+    white-space: nowrap;
+    cursor: pointer;
+
+    &:hover:not(:disabled) { background: rgba(45, 212, 191, 0.22); color: #a5f3e6; }
+    &:active:not(:disabled) { background: rgba(45, 212, 191, 0.1); }
+    &:disabled { opacity: 0.4; cursor: default; }
+}
+
+// A template is a starting point, not a result, so its action is weighted
+// below a layout's rather than competing with it.
+.scl-do--alt {
+    border-color: rgba(201, 154, 78, 0.45);
+    background: rgba(201, 154, 78, 0.12);
+    color: #dcb476;
+
+    &:hover:not(:disabled) { background: rgba(201, 154, 78, 0.2); color: #f0cd93; }
+    &:active:not(:disabled) { background: rgba(201, 154, 78, 0.09); }
+}
+
+.scl-icon {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: 1px solid var(--surface-border, #363636);
+    border-radius: var(--r-xs, 3px);
+    background: var(--surface-0, #121212);
+    color: #7b828c;
+    cursor: pointer;
+
+    // An SVG is a flex item like any other, and Chromium will shrink it to
+    // nothing inside a fixed-size flex button. Pinning it is what keeps these
+    // reading as icons rather than as empty boxes.
+    svg { flex: none; display: block; }
+
+    &:hover:not(:disabled) { background: #1c1c1c; color: #ddd; }
+    &:active:not(:disabled) { background: #101010; }
+    &:disabled { opacity: 0.4; cursor: default; }
+}
+
+/* Remove, in the card's top-right corner. Out of the action row so the primary
+   button gets its full label, and quiet until the card is hovered -- it is the
+   only destructive control here and should not compete with Trace.
+   z-index because .scl-card-art paints a background behind it. */
+.scl-card-x {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-xs, 3px);
+    background: rgba(10, 10, 10, 0.72);
+    color: #6f757f;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity var(--dur-fast, 110ms) var(--ease-out, ease);
+
+    svg { flex: none; display: block; }
+
+    &:hover { background: rgba(220, 90, 90, 0.28); color: #f2a6a6; }
+    &:active { background: rgba(220, 90, 90, 0.18); }
+    // Keyboard users never hover, so focus has to reveal it too.
+    &:focus { opacity: 1; }
+    &:disabled { cursor: default; }
+}
+
+.scl-card:hover .scl-card-x { opacity: 1; }
+
+.scl-icon--warn {
+    &:hover:not(:disabled) { background: rgba(220, 90, 90, 0.16); color: #f2a6a6; border-color: rgba(220, 90, 90, 0.5); }
+    &:active:not(:disabled) { background: rgba(220, 90, 90, 0.1); }
+}
+
+/* ── Foot: the migration, stated ───────────────────────────────────────── */
+
+.scl-foot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.scl-bar {
+    flex: none;
+    position: relative;
+    width: 108px;
+    height: 3px;
+    border-radius: var(--r-pill, 999px);
+    background: rgba(201, 154, 78, 0.28);
+    overflow: hidden;
+}
+
+.scl-bar-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    background: #2dd4bf;
+    border-radius: var(--r-pill, 999px);
+    transition: width var(--dur, 150ms) var(--ease-out, ease);
+}
+
+.scl-foot-say {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--t-micro, 9px);
+    color: #6f757f;
+}
