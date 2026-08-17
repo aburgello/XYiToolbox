@@ -1234,6 +1234,48 @@
     }
 }
 
+/* THE MASTER'S OWN FRAME INSIDE THE REGION.
+
+   The clip is a separate element rather than `overflow: hidden` on the region
+   itself, because the region has to keep painting the dashed extent box OUTSIDE
+   its own bounds -- that outline is the whole point of the rotation preview and
+   clipping the region would swallow it.
+
+   Explicit top/right/bottom/left, not `inset` (Chrome 87, target chrome74).
+
+   pointer-events: none matters: the region is dragged and resized by mousedown
+   on itself and on its `data-h` handles, and a media element on top would eat
+   the first press of every drag. */
+.bsp-region-clip {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+/* Sized and turned inline (the swap at 90/270 is a ratio only React knows) and
+   centred with a transform. Safe here specifically because regions are plain
+   divs -- CLAUDE.md's rule is about elements Framer Motion animates x/y/scale/
+   rotate on, whose inline style would win. */
+.bsp-region-shot {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    display: block;
+
+    img,
+    video {
+        display: block;
+        width: 100%;
+        height: 100%;
+        // The same "fill the window, trim the excess" the build's matte does.
+        object-fit: cover;
+    }
+}
+
 .bsp-region.is-on .bsp-region-tag {
     background: #7fe7d8;
     color: #04211d;
@@ -1439,7 +1481,60 @@
 /* --- align + constraints -------------------------------------------------- */
 // One gap, not 12 outside and 10 inside. The nested rows were the reason the
 // space either side of "Keep ratio" did not match.
-.bsp-align { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 6px; }
+/* The whole per-region toolbar, as ONE wrapping row. Replaces .bsp-segctl plus
+   .bsp-align, which were two blocks that each always took a full line. */
+.bsp-rtools {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    row-gap: 5px;
+    flex-wrap: wrap;
+    padding: 5px 7px;
+    border: 1px solid var(--surface-border, #2b3230);
+    border-radius: var(--r-md);
+    background: var(--surface-1, #141414);
+}
+
+.bsp-rtools-id {
+    flex: none;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Destructive pair, pushed to the far end of the row. `margin-left: auto` on a
+   wrapped flex row still works per LINE, so on a narrow panel these end up at
+   the right of whichever line they land on rather than jammed against Match
+   master ratio. */
+.bsp-rtools-end {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    flex: none;
+}
+
+/* A labelled number box. The label is INSIDE the field's frame rather than
+   above it, so naming the four coordinates costs no extra row height. */
+.bsp-num {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    flex: none;
+
+    .bsp-num-k {
+        color: #6f757f;
+        font-size: var(--t-micro);
+        font-family: ui-monospace, Menlo, monospace;
+        text-transform: uppercase;
+    }
+
+    /* Half the old 66px: these hold a board coordinate, which is four digits at
+       most on a 13536px master. */
+    .bsp-input--n { width: 46px; }
+}
+
+// (.bsp-align and .bsp-locks were the two wrappers .bsp-rtools replaced.
+//  Deleted rather than left behind: an unused rule is one a future reader has
+//  to prove is unused before touching anything near it.)
 
 .bsp-align-grid {
     display: grid;
@@ -1460,7 +1555,6 @@
     &:active { background: rgba(45, 212, 191, 0.32); }
 }
 
-.bsp-locks { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 6px; }
 
 /* --- guides --------------------------------------------------------------- */
 // The one bar above the canvas: reference, board size, runtime, guides.

@@ -184,6 +184,65 @@ const MasterCard: React.FC<{
 };
 
 /**
+ * ONE FRAME OF THE MASTER, INSIDE THE REGION ITSELF.
+ *
+ * The board was flat colour blocks, so a layout of four panels told you where
+ * things sat and nothing about whether it read -- which is the actual question
+ * being answered on a bespoke screen. The render is already fetched for the
+ * picker, so this costs one more element per region and no extra I/O.
+ *
+ * Deliberately STILL: no autoplay, no hover-play. Four videos looping under a
+ * board being dragged on is noise, and the still frame is what a layout is
+ * judged against anyway.
+ *
+ * THE GEOMETRY MATCHES THE BUILD, which is the whole point of showing it:
+ *   - object-fit: cover, the same "fill the window and trim the excess" the
+ *     matte does host-side;
+ *   - at 90/270 the box is SWAPPED (width becomes the region's height as a
+ *     percentage, and vice versa) and then rotated about its centre, which is
+ *     exactly bespokeBuildRegions' faceW/faceH swap before the cover scale.
+ * Anything else here would be a picture of a layout nobody is going to get.
+ */
+const RegionShot: React.FC<{ src: string; rotation: number; w: number; h: number }> = ({
+    src, rotation, w, h,
+}) => {
+    const videoRef = useRef<HTMLVideoElement | null>(null);
+    const [broken, setBroken] = useState(false);
+    const poster = usePosterFrame(videoRef, () => {});
+    if (!src || broken) return null;
+
+    const turned = rotation === 90 || rotation === 270;
+    return (
+        <span className="bsp-region-clip">
+            <span
+                className="bsp-region-shot"
+                style={{
+                    width: turned ? `${(h / Math.max(1, w)) * 100}%` : "100%",
+                    height: turned ? `${(w / Math.max(1, h)) * 100}%` : "100%",
+                    transform: `translate(-50%, -50%) rotate(${rotation || 0}deg)`,
+                }}
+            >
+                {isImageFile(src) ? (
+                    <img src={fileUrl(src)} alt="" onError={() => setBroken(true)} />
+                ) : (
+                    <video
+                        ref={videoRef}
+                        src={fileUrl(src)}
+                        muted
+                        playsInline
+                        preload="metadata"
+                        onLoadedMetadata={poster.onLoadedMetadata}
+                        onSeeked={poster.onSeeked}
+                        onLoadedData={poster.onLoadedData}
+                        onError={() => setBroken(true)}
+                    />
+                )}
+            </span>
+        </span>
+    );
+};
+
+/**
  * WHAT TELLS A GROUP OF MASTERS APART.
  *
  * Sibling masters share nearly all of their name: campaign, creative, artwork
@@ -1459,9 +1518,21 @@ export const BespokeTool = () => {
      * into four usable cells, and it took two more guides laid along the top
      * and left to say what the edges already said.
      *
-     * They only count once there is at least one REAL guide on the axis: with
-     * none, the answer is "this axis has nothing to say", not "fill the whole
-     * board", which would turn Fit to guides into a maximise button.
+     * AN AXIS WITH NO GUIDES ON IT TAKES THE WHOLE SPAN.
+     *
+     * This used to return null there, on the reasoning that an empty axis has
+     * "nothing to say" and filling it would turn the button into a maximise.
+     * In use that is backwards: one vertical guide down a board means a panel
+     * running the FULL HEIGHT and stopping at that line -- the studio's most
+     * common bespoke shape -- and leaving the height untouched meant setting it
+     * by hand every single time, which is the drag-an-edge-to-a-hairline the
+     * button exists to remove. The board's own edges are already treated as
+     * guides here, so the empty axis is simply the case where both bounds come
+     * from the edges.
+     *
+     * The "maximise" worry is handled where it actually matters: fitToGuides
+     * refuses when there are no guides ANYWHERE, so nothing can maximise a
+     * region by accident on a board with no rulers on it.
      *
      * Shared by Fit to guides and the on-canvas highlight, so what is drawn is
      * literally the rectangle the button produces rather than a second guess
@@ -1470,7 +1541,6 @@ export const BespokeTool = () => {
      * were looking at.
      */
     const bracketGuides = (guides: number[], centre: number, span: number) => {
-        if (guides.length === 0) return null;
         if (!span || span <= 0) return null;
         let lo = 0;
         let hi = span;
@@ -1518,10 +1588,18 @@ export const BespokeTool = () => {
     const fitToGuides = () => {
         const r = regions[selRegion];
         if (!r) return;
+        // THE ONE PLACE "no guides" IS REFUSED. bracketGuides now fills an empty
+        // axis edge to edge, so without this a board with no rulers at all would
+        // answer this button by maximising the region -- which is the only case
+        // where filling both axes is certainly not what was meant.
+        if (guidesX.length === 0 && guidesY.length === 0) {
+            setStatus({ text: "Add a guide first — a region fits between two guides, or between a guide and the edge of the board.", type: "error" });
+            return;
+        }
         const v = bracketGuides(guidesY, r.y + r.h / 2, Number(canvasH));
         const h = bracketGuides(guidesX, r.x + r.w / 2, Number(canvasW));
         if (!v && !h) {
-            setStatus({ text: "Add a guide first — a region fits between two guides, or between a guide and the edge of the board.", type: "error" });
+            setStatus({ text: "Nothing to fit to — the board has no width or height yet.", type: "error" });
             return;
         }
         setStatus(null);
@@ -2463,12 +2541,16 @@ export const BespokeTool = () => {
                                         e.preventDefault();
                                     }}
                                 >
-                                    {/* A MASTER IS AN .aep WITH NO THUMBNAIL, so
-                                        there is no artwork in here to turn --
-                                        the region is a flat colour block and a
-                                        rotated block looks identical. These two
-                                        marks are what a quarter turn can
-                                        visibly move: the dashed outline is the
+                                    {/* The master's own frame, where a render was
+                                        found beside it. Behind everything else
+                                        and click-through, so dragging the region
+                                        still hits the region. */}
+                                    <RegionShot src={previewOf(r.master)} rotation={r.rotation || 0} w={r.w} h={r.h} />
+                                    {/* The marks below are what a quarter turn
+                                        moves when there is NO artwork to turn --
+                                        a flat colour block looks identical
+                                        rotated. They still earn their place with
+                                        a thumbnail present: the dashed outline is the
                                         master's WHOLE footprint at the cover
                                         scale, so it flips portrait to landscape
                                         and shows exactly what is spilling out
@@ -2633,33 +2715,29 @@ export const BespokeTool = () => {
                         </p>
                     )}
 
-                    {regions[selRegion] && (
-                        <div className="bsp-segctl">
-                            <span className="bsp-lbl">Region {selRegion + 1}</span>
-                            {(["x", "y", "w", "h"] as const).map((k) => (
-                                <input
-                                    key={k}
-                                    className="bsp-input bsp-input--n"
-                                    value={String(regions[selRegion][k])}
-                                    onChange={(e) => patchRegion(selRegion, { [k]: Math.round(Number(e.target.value) || 0) } as Partial<Region>)}
-                                />
-                            ))}
-                            <button className="bsp-btn bsp-btn--ghost" onClick={duplicateRegion}>
-                                <Copy size={11} /> Duplicate
-                            </button>
-                            <button
-                                className="bsp-btn bsp-btn--ghost"
-                                onClick={removeSelectedRegion}
-                            >
-                                <Trash2 size={11} /> Remove region
-                            </button>
-                        </div>
-                    )}
+                    {/* ONE BLOCK, NOT TWO ROWS OF WIDE BUTTONS.
+                        Selecting a region used to open a "Region N" row of four
+                        unlabelled 66px number boxes with two full-width word
+                        buttons after them, and then a SECOND row for the anchor
+                        grid and three more -- roughly 90px of chrome between the
+                        board and the shelf, on a docked panel that has to hold
+                        both plus a warnings list.
 
+                        Three things buy that back without removing a control:
+                        the numbers are labelled and half the width (they were
+                        sized for nothing in particular -- a board coordinate is
+                        four digits), the two destructive actions are icons with
+                        tooltips rather than words, and the whole thing is one
+                        wrapping row so it reflows to the width available instead
+                        of always taking two. */}
                     {regions[selRegion] && (
-                        <div className="bsp-align">
+                        <div className="bsp-rtools">
+                            <span className="bsp-lbl bsp-rtools-id">R{selRegion + 1}</span>
                             {/* Nine anchors, laid out as they sit on the canvas --
-                                a 3x3 grid needs no labels to be read. */}
+                                a 3x3 grid needs no labels to be read. Their
+                                `title`s are left alone: a Tooltip wrapper would
+                                become the grid item and each anchor is 15px of
+                                pure position anyway. */}
                             <span className="bsp-align-grid">
                                 {([0, 0.5, 1] as const).map((vy) =>
                                     ([0, 0.5, 1] as const).map((hx) => (
@@ -2672,24 +2750,47 @@ export const BespokeTool = () => {
                                     ))
                                 )}
                             </span>
-                            <span className="bsp-locks">
-                                <CheckboxToggle checked={lockRatio} onChange={setLockRatio} label="Keep ratio" />
-                                <Tooltip text={`Size ${regions[selRegion]?.master.name || "this region"} to the guides either side of it — each axis independently`}>
-                                    <button className="bsp-btn bsp-btn--ghost" onClick={fitToGuides}>
-                                        Fit to guides
+                            {/* WHICH BOX IS WHICH. Four bare numbers in a row is
+                                a guess every time -- and x/y/w/h is the order
+                                they are stored in, not an order anyone reads. */}
+                            {(["x", "y", "w", "h"] as const).map((k) => (
+                                <label className="bsp-num" key={k}>
+                                    <span className="bsp-num-k">{k}</span>
+                                    <input
+                                        className="bsp-input bsp-input--n"
+                                        value={String(regions[selRegion][k])}
+                                        onChange={(e) => patchRegion(selRegion, { [k]: Math.round(Number(e.target.value) || 0) } as Partial<Region>)}
+                                    />
+                                </label>
+                            ))}
+                            <CheckboxToggle checked={lockRatio} onChange={setLockRatio} label="Keep ratio" />
+                            <Tooltip text={`Size ${regions[selRegion]?.master.name || "this region"} to the guides either side of it — each axis independently, and an axis with no guides takes the full span`}>
+                                <button className="bsp-btn bsp-btn--ghost" onClick={fitToGuides}>
+                                    Fit to guides
+                                </button>
+                            </Tooltip>
+                            <Tooltip text="Turn this region and its master a quarter clockwise — the region's width and height swap about its centre">
+                                <button className="bsp-btn bsp-btn--ghost" onClick={rotateRegion}>
+                                    Rotate 90° {regions[selRegion].rotation ? `(${regions[selRegion].rotation}°)` : ""}
+                                </button>
+                            </Tooltip>
+                            <Tooltip text="Reshape this region to its master's own ratio, so nothing is cropped">
+                                <button className="bsp-btn bsp-btn--ghost" onClick={matchMasterRatio}>
+                                    Match master ratio
+                                </button>
+                            </Tooltip>
+                            {/* Pushed to the far end, away from the shaping
+                                controls: one of these deletes the region and it
+                                should not sit under a cursor aiming for Rotate. */}
+                            <span className="bsp-rtools-end">
+                                <Tooltip text="Duplicate this region">
+                                    <button className="bsp-btn bsp-btn--icon" onClick={duplicateRegion}>
+                                        <Copy size={12} />
                                     </button>
                                 </Tooltip>
-                                <Tooltip text="Turn this region and its master a quarter clockwise — the region's width and height swap about its centre">
-                                    <button
-                                        className="bsp-btn bsp-btn--ghost"
-                                        onClick={rotateRegion}
-                                    >
-                                        Rotate 90° {regions[selRegion].rotation ? `(${regions[selRegion].rotation}°)` : ""}
-                                    </button>
-                                </Tooltip>
-                                <Tooltip text="Reshape this region to its master's own ratio, so nothing is cropped">
-                                    <button className="bsp-btn bsp-btn--ghost" onClick={matchMasterRatio}>
-                                        Match master ratio
+                                <Tooltip text="Remove this region">
+                                    <button className="bsp-btn bsp-btn--icon" onClick={removeSelectedRegion}>
+                                        <Trash2 size={12} />
                                     </button>
                                 </Tooltip>
                             </span>
