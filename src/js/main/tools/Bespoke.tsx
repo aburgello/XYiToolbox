@@ -26,11 +26,12 @@
 // deliverable, and that is a studio decision rather than a coding one. The
 // composition is designed, checked and saved here; building it is the next
 // step. Shipping a Build button that guessed would be worse than not having one.
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { AlertCircle, ChevronRight, Copy, Globe2, Layers, LayoutGrid, Library, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, RotateCcw, Square as SquareIcon, Trash2, X } from "lucide-react";
 import { csi, evalTS } from "../../lib/utils/bolt";
 import { deriveMastersFromMarkets } from "../lib/mastersRoot";
+import { usePosterFrame, pickPreviewRender, isImageFile, type RenderEntry } from "../lib/renderPreview";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
 import Dropdown from "../Dropdown";
@@ -82,46 +83,153 @@ const ORIENTATION_ICON: Record<OrientationKey, React.ComponentType<{ size?: numb
  * and this builds for chrome74 — and the padding-box trick can't express
  * "fit inside a square box either way round" without a wrapper per case.
  */
-const MasterCard: React.FC<{ master: BespokeMaster; swapping: boolean; used: number; onPick: () => void }> = ({
-    master, swapping, used, onPick,
-}) => {
+const MasterCard: React.FC<{
+    master: BespokeMaster;
+    /** What tells this master apart from its siblings — see distinguish(). */
+    label: string;
+    /** Its render, if one was found beside it. "" means show the proxy. */
+    preview: string;
+    swapping: boolean;
+    used: number;
+    onPick: () => void;
+}> = ({ master, label, preview, swapping, used, onPick }) => {
     const BOX = 38;
     const aspect = master.width && master.height ? master.width / master.height : 1;
     const pw = aspect >= 1 ? BOX : Math.max(4, BOX * aspect);
     const ph = aspect >= 1 ? Math.max(4, BOX / aspect) : BOX;
     const tint = hueFor(master.creative || master.name);
+
+    // THE FRAME ITSELF, WHERE THERE IS ONE. A master is an .aep with no
+    // thumbnail, so this card used to be a grey rectangle whose only content
+    // was the aspect ratio -- which the size label directly beneath it already
+    // states. The proxy was therefore saying nothing, and the one thing needed
+    // to choose between two masters of the same creative (what the artwork
+    // looks like) was absent, in a panel where OV Library shows exactly that
+    // for exactly these files.
+    //
+    // A render that cannot be decoded falls back to the proxy rather than to an
+    // empty black box: `preload="metadata"` means a broken source usually
+    // errors before a frame is ever wanted, and 25 cards of black would be
+    // worse than the grey rectangle this replaces.
+    const videoRef = useRef<HTMLVideoElement | null>(null);
+    const [broken, setBroken] = useState(false);
+    const poster = usePosterFrame(videoRef, () => {});
+    const showPreview = !!preview && !broken;
+    const asImage = showPreview && isImageFile(preview);
+
+    const play = () => {
+        const v = videoRef.current;
+        if (!v) return;
+        v.currentTime = 0;
+        v.play().catch(() => { /* autoplay refused -- the poster frame stands */ });
+    };
+
     return (
-        // THE WHOLE FILENAME, ON HOVER. The card shows the creative, the size
-        // and the duration, each ellipsised into a 112px track -- which is the
-        // right summary and no help at all when two masters differ somewhere
-        // further along the name. The native `title` this replaces never
-        // rendered: CEP's host is not browser chrome and shows none.
+        // THE WHOLE FILENAME, ON HOVER. The card shows a fragment of the name,
+        // the size and the duration, each ellipsised into its track -- the right
+        // summary, and no help at all when two masters differ somewhere further
+        // along the name. Replaces a native `title`, which never appeared here.
         //
-        // `grow` is REQUIRED here, unlike the creative rail. This button is a
-        // GRID CELL, and Tooltip's wrapper otherwise hugs its content and lets
-        // the card shrink out of its track (CLAUDE.md's stretch-sized trap).
+        // `grow` is REQUIRED, unlike the creative rail. This button is a GRID
+        // CELL, and Tooltip's wrapper otherwise hugs its content and lets the
+        // card shrink out of its track (CLAUDE.md's stretch-sized trap).
         <Tooltip text={master.name} delay={220} grow>
         <button
             className={"bsp-master" + (swapping ? " is-swap" : "") + (used > 0 ? " is-used" : "")}
             onClick={onPick}
+            onMouseEnter={showPreview && !asImage ? play : undefined}
+            onMouseLeave={showPreview && !asImage ? poster.restToPoster : undefined}
         >
-            <span className="bsp-master-proxy">
-                <span style={{ width: `${pw}px`, height: `${ph}px`, background: tint }} />
-                {/* ALREADY ON THE CANVAS. Twenty near-identical cards and no
-                    memory of which have been placed is how a region gets added
-                    twice, or a master gets missed entirely on a board with
-                    eight of them. */}
-                {used > 0 && <span className="bsp-master-used">{used > 1 ? `×${used}` : "✓"}</span>}
-            </span>
+            {showPreview ? (
+                <span className="bsp-master-thumb">
+                    {asImage ? (
+                        <img src={fileUrl(preview)} alt="" onError={() => setBroken(true)} />
+                    ) : (
+                        <video
+                            ref={videoRef}
+                            src={fileUrl(preview)}
+                            muted
+                            playsInline
+                            loop
+                            preload="metadata"
+                            onLoadedMetadata={poster.onLoadedMetadata}
+                            onSeeked={poster.onSeeked}
+                            onLoadedData={poster.onLoadedData}
+                            onError={() => setBroken(true)}
+                        />
+                    )}
+                    {used > 0 && <span className="bsp-master-used">{used > 1 ? `×${used}` : "✓"}</span>}
+                </span>
+            ) : (
+                <span className="bsp-master-proxy">
+                    <span style={{ width: `${pw}px`, height: `${ph}px`, background: tint }} />
+                    {/* ALREADY ON THE CANVAS. Twenty near-identical cards and no
+                        memory of which have been placed is how a region gets added
+                        twice, or a master gets missed entirely on a board with
+                        eight of them. */}
+                    {used > 0 && <span className="bsp-master-used">{used > 1 ? `×${used}` : "✓"}</span>}
+                </span>
+            )}
             <span className="bsp-master-size">{master.size || "?"}</span>
             <span className="bsp-master-meta">
-                <span className="bsp-master-name">{master.creative || master.name}</span>
+                {/* NOT the creative. Inside a chosen creative every card would
+                    print the same word the rail is already showing, on the one
+                    full-width readable line the card has. */}
+                <span className="bsp-master-name">{label}</span>
                 <span className="bsp-master-dur">{master.duration ? `${master.duration}s` : "?"}</span>
             </span>
         </button>
         </Tooltip>
     );
 };
+
+/**
+ * WHAT TELLS A GROUP OF MASTERS APART.
+ *
+ * Sibling masters share nearly all of their name: campaign, creative, artwork
+ * type, often a site. Printing the whole stem in a 150px track shows only the
+ * shared half and ellipsises away the half that differs, and printing the
+ * CREATIVE (which is what this did) repeats what the rail beside it already
+ * says. Neither lets you tell two cards apart.
+ *
+ * So: drop the leading and trailing name tokens that EVERY master in the group
+ * shares, and keep the rest. The tokens are underscore-separated per the studio
+ * convention, and the comparison is per whole token -- a character-level common
+ * prefix would cut a name mid-word.
+ *
+ * Returns how many tokens to drop from each end; distinguish() applies it.
+ */
+function commonTokenEdges(stems: string[]): { pre: number; suf: number } {
+    if (!stems || stems.length < 2) return { pre: 0, suf: 0 };
+    const split: string[][] = [];
+    for (const s of stems) split.push(String(s).split("_"));
+    const shortest = split.reduce((n, t) => Math.min(n, t.length), Infinity);
+
+    let pre = 0;
+    while (pre < shortest && split.every((t) => t[pre] === split[0][pre])) pre++;
+
+    let suf = 0;
+    while (
+        suf < shortest - pre &&
+        split.every((t) => t[t.length - 1 - suf] === split[0][split[0].length - 1 - suf])
+    ) suf++;
+
+    return { pre, suf };
+}
+
+// The size and the duration have their OWN fields on every card and tile, so a
+// token that only restates one of them is noise here. Both naming conventions,
+// per the masters rule: size with or without "px", duration as "s" or "sec".
+const SIZE_TOKEN = /^\d+x\d+(px)?$/i;
+const DURATION_TOKEN = /^\d+(s|sec)$/i;
+
+/** Applies commonTokenEdges to one stem. "" when nothing is left to say. */
+function distinguish(stem: string, edges: { pre: number; suf: number }): string {
+    const bits = String(stem).split("_");
+    const kept = bits.slice(edges.pre, bits.length - edges.suf)
+        .filter((t) => !SIZE_TOKEN.test(t) && !DURATION_TOKEN.test(t));
+    return kept.join("_");
+}
 
 /** Below this a region collapses and can never be grabbed again. */
 const MIN_REGION = 24;
@@ -222,6 +330,9 @@ export const BespokeTool = () => {
     // not swallowed: a shelf that is quietly narrower than the folder is the
     // thing that sends someone hunting for a master that is right there.
     const [outsideAE, setOutsideAE] = useState(0);
+    // Master stem (lower-cased) -> the best render found beside it. Empty is a
+    // normal state, not a failure: it just means grey proxies.
+    const [renders, setRenders] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(false);
     const [status, setStatus] = useState<StatusMsg | null>(null);
     const [report, setReport] = useState<string | null>(null);
@@ -365,6 +476,36 @@ export const BespokeTool = () => {
             }
             setMasters(res.masters || []);
             setOutsideAE(res.outsideAE || 0);
+
+            // THE RENDERS, for the card thumbnails. A separate, QUIET call:
+            // previews are decoration, so a campaign with no Renders tree, or a
+            // share that drops out between the two calls, must leave the shelf
+            // exactly as it is rather than reporting anything. Keyed by stem
+            // because that is the master<->render pairing the studio uses, and
+            // lower-cased because only the .aep side's case is guaranteed.
+            //
+            // scanAllRenders is campaign-wide in one walk, which is the whole
+            // reason this is one call and not one per creative.
+            try {
+                const found = (await evalTS("scanAllRenders", root)) as unknown as RenderEntry[] | undefined;
+                if (found && found.length) {
+                    const byStem: Record<string, RenderEntry[]> = {};
+                    for (const r of found) {
+                        const k = String(r.stem).toLowerCase();
+                        (byStem[k] = byStem[k] || []).push(r);
+                    }
+                    const best: Record<string, string> = {};
+                    // pickPreviewRender, not the first hit: a stem can have both
+                    // a ProRes MOV Chromium cannot decode and the MP4 it can.
+                    for (const k in byStem) {
+                        const pick = pickPreviewRender(byStem[k]);
+                        if (pick) best[k] = pick.path;
+                    }
+                    setRenders(best);
+                }
+            } catch {
+                /* no renders, or no share -- the cards fall back to the proxy */
+            }
             if (!res.masters || res.masters.length === 0) {
                 // A folder with .aeps in it that are all OUTSIDE `AE/` is a
                 // different problem from an empty one, and saying "no masters"
@@ -1495,6 +1636,44 @@ export const BespokeTool = () => {
         return Object.keys(counts).sort().map((name) => ({ name, count: counts[name] }));
     }, [masters]);
 
+    /**
+     * The short label for every master, worked out PER CREATIVE.
+     *
+     * Grouped by creative rather than by whatever the filters currently show,
+     * so a card's name does not change under the cursor when an orientation
+     * pill is toggled -- a label that moves while you are reading it is worse
+     * than a long one.
+     */
+    const shortNames = useMemo(() => {
+        const groups: Record<string, string[]> = {};
+        for (const m of masters || []) {
+            const k = m.creative || m.name;
+            (groups[k] = groups[k] || []).push(m.name);
+        }
+        const edges: Record<string, { pre: number; suf: number }> = {};
+        for (const k in groups) edges[k] = commonTokenEdges(groups[k]);
+
+        const out: Record<string, string> = {};
+        for (const m of masters || []) {
+            const k = m.creative || m.name;
+            // Falls back through the creative to the stem so it is never blank:
+            // a group of one, or a set of names identical apart from their size
+            // and duration tokens, legitimately has nothing left to print.
+            out[m.path] = distinguish(m.name, edges[k]) || m.creative || m.name;
+        }
+        return out;
+    }, [masters]);
+
+    /** The label and the render for one master, for the card and the tiles. */
+    const shortNameOf = useCallback(
+        (m: BespokeMaster) => shortNames[m.path] || m.creative || m.name,
+        [shortNames]
+    );
+    const previewOf = useCallback(
+        (m: BespokeMaster) => renders[String(m.name).toLowerCase()] || "",
+        [renders]
+    );
+
     // ONE CREATIVE IS ALWAYS SELECTED. A bespoke board is built from one
     // campaign's masters, so "All" only ever offered a mixed list nobody
     // wants -- 34 masters across six unrelated creatives, with the twenty
@@ -1682,7 +1861,20 @@ export const BespokeTool = () => {
                 campaign resolved nothing to show. */}
             <div className="bsp-head" hidden={!mode}>
                 <div className="bsp-head-text">
-                    <p className="bsp-masters">{mastersPath || "No masters folder — pick a campaign below"}</p>
+                    {/* THE CAMPAIGN, not the path. The folder follows the
+                        campaign now, so the path is derived state rather than
+                        anything anyone set here -- and it was the largest thing
+                        in the header, in a monospace grey, wrapping across two
+                        lines of a docked panel to say what "PP3" says. It is
+                        still one hover away, which is where a value you only
+                        check when something looks wrong belongs. */}
+                    <Tooltip text={mastersPath || "No masters folder resolved yet"}>
+                        <p className="bsp-masters">
+                            {mastersPinned
+                                ? (mastersPath.split("/").pop() || mastersPath)
+                                : campaign || (mastersPath.split("/").pop() || "No masters folder — pick a campaign below")}
+                        </p>
+                    </Tooltip>
                     <p className="bsp-count">
                         {loading
                             ? "Walking the masters folder — slow the first time, instant after"
@@ -1870,6 +2062,18 @@ export const BespokeTool = () => {
                 </label>
             </div>
 
+            {/* BOARD AND SHELF, SIDE BY SIDE when there is room for it.
+                These are the two surfaces the job alternates between, and they
+                were stacked with the shelf folded underneath -- so every master
+                added was expand, scroll down, pick, scroll back up to place it.
+                Docked wide they simply sit next to each other, and none of that
+                scrolling exists.
+
+                A plain @media on the panel width, not @container (Chrome 105,
+                against a chrome74 target). Below the breakpoint this collapses
+                back to exactly the stack it was. */}
+            <div className="bsp-work">
+            <div className="bsp-work-main">
             {mode === "regions" && (
                 <>
                     {/* ONE BAR. "Trace over the reference" as a heading said
@@ -1955,25 +2159,31 @@ export const BespokeTool = () => {
                                 rather than pushing the panel, so a 1:5 pillar
                                 can be worked on without every other board
                                 becoming a scroll. */}
-                            <button
-                                className="bsp-btn bsp-btn--ghost bsp-btn--key"
-                                onClick={() => stepZoom(-1)}
-                                disabled={zoom <= ZOOM_LADDER[0]}
-                                title="Zoom out (−)"
-                            >−</button>
-                            <button
-                                className="bsp-btn bsp-btn--ghost bsp-btn--zoom"
-                                onClick={() => setZoom(1)}
-                                title="Back to fit (0)"
-                            >
-                                {zoom === 1 ? "Fit" : `${zoom}×`}
-                            </button>
-                            <button
-                                className="bsp-btn bsp-btn--ghost bsp-btn--key"
-                                onClick={() => stepZoom(1)}
-                                disabled={zoom >= ZOOM_LADDER[ZOOM_LADDER.length - 1]}
-                                title="Zoom in (+)"
-                            >＋</button>
+                            {/* Tooltip, not `title` — these carry the keyboard
+                                shortcut, which is the one thing on the button
+                                that is not written on its face. */}
+                            <Tooltip text="Zoom out (−)">
+                                <button
+                                    className="bsp-btn bsp-btn--ghost bsp-btn--key"
+                                    onClick={() => stepZoom(-1)}
+                                    disabled={zoom <= ZOOM_LADDER[0]}
+                                >−</button>
+                            </Tooltip>
+                            <Tooltip text="Back to fit (0)">
+                                <button
+                                    className="bsp-btn bsp-btn--ghost bsp-btn--zoom"
+                                    onClick={() => setZoom(1)}
+                                >
+                                    {zoom === 1 ? "Fit" : `${zoom}×`}
+                                </button>
+                            </Tooltip>
+                            <Tooltip text="Zoom in (+)">
+                                <button
+                                    className="bsp-btn bsp-btn--ghost bsp-btn--key"
+                                    onClick={() => stepZoom(1)}
+                                    disabled={zoom >= ZOOM_LADDER[ZOOM_LADDER.length - 1]}
+                                >＋</button>
+                            </Tooltip>
                             {(guidesX.length > 0 || guidesY.length > 0) && (
                                 <button className="bsp-btn bsp-btn--ghost" onClick={() => { setGuidesX([]); setGuidesY([]); setSelGuide(null); }}>
                                     Clear
@@ -1987,12 +2197,13 @@ export const BespokeTool = () => {
                         // Each keeps its own regions, so stepping through them
                         // is free -- the dot marks the ones already laid out.
                         <div className="bsp-refbar">
-                            <button
-                                className="bsp-refstep"
-                                disabled={refIndex <= 0}
-                                onClick={() => adoptReference(refs[refIndex - 1].path)}
-                                title="Previous reference"
-                            >‹</button>
+                            <Tooltip text="Previous reference">
+                                <button
+                                    className="bsp-refstep"
+                                    disabled={refIndex <= 0}
+                                    onClick={() => adoptReference(refs[refIndex - 1].path)}
+                                >‹</button>
+                            </Tooltip>
                             <select
                                 className="bsp-refpick"
                                 value={refPath}
@@ -2005,12 +2216,13 @@ export const BespokeTool = () => {
                                     </option>
                                 ))}
                             </select>
-                            <button
-                                className="bsp-refstep"
-                                disabled={refIndex < 0 || refIndex >= refs.length - 1}
-                                onClick={() => adoptReference(refs[refIndex + 1].path)}
-                                title="Next reference"
-                            >›</button>
+                            <Tooltip text="Next reference">
+                                <button
+                                    className="bsp-refstep"
+                                    disabled={refIndex < 0 || refIndex >= refs.length - 1}
+                                    onClick={() => adoptReference(refs[refIndex + 1].path)}
+                                >›</button>
+                            </Tooltip>
                             <span className="bsp-refcount">
                                 {refIndex >= 0 ? refIndex + 1 : "–"} / {refs.length}
                             </span>
@@ -2042,30 +2254,34 @@ export const BespokeTool = () => {
                     {refAlts.length > 1 && (
                         <div className={"bsp-refalts" + (refBroken ? " is-broken" : "")}>
                             <span className="bsp-bar-lbl">Reference</span>
-                            <button
-                                className="bsp-refstep"
-                                disabled={refAlts.indexOf(refPath) <= 0}
-                                onClick={() => {
-                                    const i = refAlts.indexOf(refPath);
-                                    if (i > 0) swapReference(refAlts[i - 1]);
-                                }}
-                                title="Previous candidate"
-                            >‹</button>
+                            <Tooltip text="Previous candidate">
+                                <button
+                                    className="bsp-refstep"
+                                    disabled={refAlts.indexOf(refPath) <= 0}
+                                    onClick={() => {
+                                        const i = refAlts.indexOf(refPath);
+                                        if (i > 0) swapReference(refAlts[i - 1]);
+                                    }}
+                                >‹</button>
+                            </Tooltip>
                             <span className="bsp-refcount">
                                 {refAlts.indexOf(refPath) + 1} / {refAlts.length}
                             </span>
-                            <button
-                                className="bsp-refstep"
-                                disabled={refAlts.indexOf(refPath) >= refAlts.length - 1}
-                                onClick={() => {
-                                    const i = refAlts.indexOf(refPath);
-                                    if (i >= 0 && i < refAlts.length - 1) swapReference(refAlts[i + 1]);
-                                }}
-                                title="Next candidate"
-                            >›</button>
-                            <span className="bsp-refalt-name" title={refPath}>
-                                {(refPath.split("/").pop() || "")}
-                            </span>
+                            <Tooltip text="Next candidate">
+                                <button
+                                    className="bsp-refstep"
+                                    disabled={refAlts.indexOf(refPath) >= refAlts.length - 1}
+                                    onClick={() => {
+                                        const i = refAlts.indexOf(refPath);
+                                        if (i >= 0 && i < refAlts.length - 1) swapReference(refAlts[i + 1]);
+                                    }}
+                                >›</button>
+                            </Tooltip>
+                            <Tooltip text={refPath}>
+                                <span className="bsp-refalt-name">
+                                    {(refPath.split("/").pop() || "")}
+                                </span>
+                            </Tooltip>
                         </div>
                     )}
                     {/* The wrap is what gets measured, and what centres a board
@@ -2462,9 +2678,18 @@ export const BespokeTool = () => {
                             animate={{ opacity: 1, scale: 1 }}
                             transition={{ duration: 0.18, ease: "easeOut" }}
                         >
-                            <span className="bsp-tile-name">{m.creative || m.name}</span>
+                            {/* What tells this tile from its neighbours, not the
+                                creative -- three tiles of one creative used to
+                                read as the same word three times. */}
+                            <span className="bsp-tile-name">{shortNameOf(m)}</span>
                             <span className="bsp-tile-spec">{m.size} · {m.duration}s</span>
-                            <button className="bsp-tile-x" onClick={() => removeTile(i)} title="Remove from this segment">
+                            {/* NOT wrapped in <Tooltip>: this button is
+                                position:absolute against the tile, and the
+                                wrapper's own position:relative would re-anchor
+                                it into the flow. An X on a tile needs no
+                                caption anyway -- the dead native `title` it
+                                carried is simply gone. */}
+                            <button className="bsp-tile-x" onClick={() => removeTile(i)}>
                                 <X size={9} />
                             </button>
                         </motion.div>
@@ -2560,6 +2785,8 @@ export const BespokeTool = () => {
                 It opens itself for a SWAP, because a swap is a request to pick
                 something and closing the list you were sent to would be
                 perverse. */}
+            </div>
+            <div className="bsp-work-side">
             <button
                 className={"bsp-fold" + (pickerOpen || swapTarget >= 0 ? " is-on" : "")}
                 onClick={() => setPickerOpen((v) => !v)}
@@ -2676,6 +2903,8 @@ export const BespokeTool = () => {
                         <MasterCard
                             key={m.path}
                             master={m}
+                            label={shortNameOf(m)}
+                            preview={previewOf(m)}
                             swapping={swapTarget >= 0}
                             used={regions.filter((r) => r.master.path === m.path).length}
                             onPick={() => {
@@ -2701,6 +2930,8 @@ export const BespokeTool = () => {
                     ))}
                 </div>
                 </div>
+            </div>
+            </div>
             </div>
 
             {status && (

@@ -84,12 +84,16 @@
 
 .bsp-head-text { flex: 1; min-width: 0; }
 
+// The campaign, not a path -- so it reads as a name in the panel's own type
+// rather than as machine output in monospace, and it no longer needs
+// `word-break: break-all`, which existed purely to wrap a NAS path.
 .bsp-masters {
     margin: 0;
-    font-family: ui-monospace, Menlo, monospace;
-    font-size: var(--t-micro);
-    color: #8b9199;
-    word-break: break-all;
+    font-size: var(--t-md);
+    color: #d2d6dc;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
 }
 
 .bsp-count {
@@ -466,6 +470,46 @@
 .bsp-toggle { display: inline-flex; align-items: center; }
 
 /* --- picker --------------------------------------------------------------- */
+/* BOARD AND SHELF.
+
+   Stacked by default -- a narrow docked panel has no room for two columns, and
+   this is the layout the tool has always had.
+
+   NO FLEX `gap` HERE. Flex gap is Chrome 84 and the build target is chrome74;
+   CLAUDE.md has 413 existing declarations of it filed as an open question, and
+   adding the 414th to a brand-new layout is how a question becomes a habit. The
+   side column carries a margin instead, which works everywhere. */
+.bsp-work-main { min-width: 0; }
+
+/* 1400, not 1100. The shelf is a 156px rail PLUS a grid of 150px cards, so a
+   column narrower than about 460px fits one card per row -- which is a worse
+   shelf than the full-width one it replaced. The breakpoint is therefore set by
+   what the shelf needs to stay a grid, not by what the board could survive. */
+@media (min-width: 1400px) {
+    .bsp-work {
+        display: flex;
+        // Two columns of different natural heights: a short board must not
+        // stretch the shelf, and vice versa.
+        align-items: flex-start;
+    }
+
+    .bsp-work-main {
+        flex: 1;
+        // Not the flex-item default of `auto`, or a wide board (a 13536px
+        // master's stage) pushes the shelf off the panel instead of fitting.
+        min-width: 0;
+    }
+
+    .bsp-work-side {
+        flex: 0 0 460px;
+        margin-left: 10px;
+        // Follows the board down as it is worked on, so the shelf is in reach
+        // from anywhere in a tall layout.
+        position: sticky;
+        top: 0;
+    }
+}
+
 .bsp-picker {
     border: 1px solid var(--surface-border, #333);
     border-radius: var(--r-md);
@@ -619,7 +663,10 @@
     // grid gap is Chrome 66, safely under the chrome74 target -- unlike flex
     // gap, which is 84 and is the open question in CLAUDE.md.
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+    // 112px was sized for a card whose picture was a 38px grey proxy. The cards
+    // now carry a real frame off the master's render, and a thumbnail that small
+    // shows nothing a colour swatch didn't.
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 6px;
     align-items: start;
     // Takes the width left by the creative rail beside it. min-width:0 rather
@@ -702,6 +749,37 @@
 
 .bsp-master.is-used {
     border-color: rgba(45, 212, 191, 0.35);
+}
+
+// THE REAL FRAME, where the master has a render beside it. Takes the proxy's
+// slot and a little more height, since the point of it is to be legible.
+//
+// Fixed height with object-fit rather than an aspect box: the cards sit in a
+// grid and a per-card ratio would make every row a different height. The frame
+// is a means of recognising the artwork, not of judging its shape -- the size
+// label directly underneath is what states the ratio.
+.bsp-master-thumb {
+    position: relative;
+    display: block;
+    height: 58px;
+    margin-bottom: 4px;
+    border-radius: var(--r-xs);
+    // The card clips its own corners already, but the thumbnail has its own
+    // radius and a video paints right through a parent's rounding.
+    overflow: hidden;
+    // Shows through while a NAS video is still pulling its first frame, so a
+    // slow share fades in rather than flashing white.
+    background: #0d1211;
+
+    img,
+    video {
+        display: block;
+        width: 100%;
+        height: 100%;
+        // COVER, matching how the master is placed into a region -- a card that
+        // letterboxes what the build will crop is showing the wrong picture.
+        object-fit: cover;
+    }
 }
 
 .bsp-master-size {

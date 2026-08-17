@@ -39,6 +39,11 @@ import Droplet from "../Droplet";
 import { alertDialog, confirmDialog, promptDialog } from "../Dialog";
 import { hasUserTheme } from "../themes";
 import { runMasterCheck, openReport } from "../lib/masterCheck";
+// Preview plumbing shared with Bespoke's master cards -- extension preference,
+// image-vs-video detection and the poster-frame seek. It was written here and
+// lives in lib/ now so both grids get the same answers; see the file header for
+// why each of the three exists.
+import { usePosterFrame, pickPreviewRender, isImageFile, type RenderEntry } from "../lib/renderPreview";
 import "../shared.scss";
 import "./OVLibrary.scss";
 
@@ -59,10 +64,6 @@ interface MasterRecord {
     aepPath: string;
 }
 
-interface RenderEntry {
-    stem: string;
-    path: string;
-}
 
 type OrientationKey = "LANDSCAPE" | "PORTRAIT" | "SQUARE" | "QUAD";
 const ORIENTATION_ORDER: OrientationKey[] = ["LANDSCAPE", "PORTRAIT", "SQUARE", "QUAD"];
@@ -254,116 +255,6 @@ function toFileUrl(p: string): string {
         normalized = normalized.substring(2);
     }
     return "file://" + encodeURI(normalized);
-}
-
-// A thumbnail source (auto-detected render OR a manual override -- the
-// override file picker has no type filter, so it can be a still image) can
-// be either a video or an image file. The two card/hero renderers below
-// need to know which, since a <video> tag simply shows nothing for an
-// image src (no error, no fallback -- confirmed the actual failure mode
-// when a PNG/JPG override didn't display anything).
-const IMAGE_EXTS = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff"];
-function isImageFile(path: string): boolean {
-    const dot = path.lastIndexOf(".");
-    if (dot === -1) return false;
-    return IMAGE_EXTS.indexOf(path.substring(dot + 1).toLowerCase()) !== -1;
-}
-
-// Auto-detected preview picker: prefers a web-playable extension over
-// scanRendersForCreative()'s raw "first found in an arbitrary recursive
-// scan" order. Real studio Renders folders commonly mix MOV (often a
-// professional/ProRes intermediate codec Chromium's <video> tag can't
-// decode at all) alongside MP4 (near-always H.264, reliably playable) --
-// letting the scan's arbitrary order land on an undecodable MOV produced
-// exactly the "wrong/blank thumbnail" symptom this was written to fix.
-// Doesn't guarantee correctness (still not "the OV master specifically"),
-// just meaningfully reduces how often the pick is something that can't
-// even render at all.
-const RENDER_EXT_PREFERENCE = ["mp4", "m4v", "mov", "mxf", "avi", "mts"];
-function pickPreviewRender(renders: RenderEntry[]): RenderEntry | undefined {
-    if (!renders || renders.length === 0) return undefined;
-    let best = renders[0];
-    let bestRank = RENDER_EXT_PREFERENCE.length;
-    for (const r of renders) {
-        const dot = r.path.lastIndexOf(".");
-        const ext = dot === -1 ? "" : r.path.substring(dot + 1).toLowerCase();
-        const rank = RENDER_EXT_PREFERENCE.indexOf(ext);
-        const effectiveRank = rank === -1 ? RENDER_EXT_PREFERENCE.length : rank;
-        if (effectiveRank < bestRank) {
-            best = r;
-            bestRank = effectiveRank;
-        }
-    }
-    return best;
-}
-
-// How far into a render to park the thumbnail. A <video> at rest shows
-// frame 0, and frame 0 of a DOOH render is routinely the worst frame in the
-// clip -- these ads open on a white flash, a black hold or an empty plate,
-// so the grid was full of blank cards for footage that looks fine a second
-// later. A quarter of the way in clears the intro on the 10s and 15s
-// durations the studio actually ships.
-const POSTER_FRAME_FRACTION = 0.25;
-
-// Parks a preview <video> on a representative frame instead of frame 0, and
-// tells the caller when a frame worth sampling for the accent colour has
-// decoded.
-//
-// Shared by CreativeCard and VariantBlock deliberately: they had two
-// byte-identical copies of the old handler, which is exactly the setup where
-// one gets fixed and the other quietly doesn't.
-//
-// Sequencing matters. `loadedmetadata` is the first point `duration` exists,
-// so the seek is issued there; the frame only actually exists after `seeked`,
-// which is where the colour sample belongs. `loadeddata` is kept purely as
-// the fallback for a clip whose duration never resolves (a stream, or a
-// codec Chromium half-supports) -- in that case there is no seek coming and
-// frame 0 is all there is.
-function usePosterFrame(videoRef: React.RefObject<HTMLVideoElement | null>, onFrameReady: () => void) {
-    const posterTimeRef = useRef(0);
-    const seekPendingRef = useRef(false);
-
-    const onLoadedMetadata = () => {
-        const v = videoRef.current;
-        if (!v) return;
-        const d = v.duration;
-        // NaN until metadata resolves, Infinity for a stream -- both mean
-        // "can't compute an offset", so leave it on frame 0 rather than
-        // throwing a bad currentTime at the element.
-        if (!isFinite(d) || d <= 0) return;
-        posterTimeRef.current = d * POSTER_FRAME_FRACTION;
-        seekPendingRef.current = true;
-        try {
-            v.currentTime = posterTimeRef.current;
-        } catch (e) {
-            seekPendingRef.current = false;
-        }
-    };
-
-    const onSeeked = () => {
-        seekPendingRef.current = false;
-        onFrameReady();
-    };
-
-    const onLoadedData = () => {
-        if (seekPendingRef.current) return; // the seeked frame is the one to sample
-        onFrameReady();
-    };
-
-    // Called on mouse-leave: stop, and go back to the poster frame rather
-    // than leaving the card sitting on whatever frame the hover stopped on.
-    const restToPoster = () => {
-        const v = videoRef.current;
-        if (!v) return;
-        v.pause();
-        try {
-            v.currentTime = posterTimeRef.current;
-        } catch (e) {
-            /* nothing to restore to */
-        }
-    };
-
-    return { onLoadedMetadata, onSeeked, onLoadedData, restToPoster };
 }
 
 // Samples an approximate dominant color off a loaded <video>'s current
