@@ -2004,13 +2004,13 @@ export const BespokeTool = () => {
                 )}
                 {mastersPinned && (
                     <Tooltip text="Go back to the campaign's own masters folder">
-                        <button className="bsp-btn bsp-btn--icon" onClick={() => setMastersPinned(false)}>
+                        <button className="bsp-btn bsp-btn--ghost bsp-btn--icon" onClick={() => setMastersPinned(false)}>
                             <RotateCcw size={12} />
                         </button>
                     </Tooltip>
                 )}
                 <Tooltip text="Re-read the masters folder">
-                    <button className="bsp-btn bsp-btn--icon" onClick={() => load(mastersPath)} disabled={loading || !mastersPath}>
+                    <button className="bsp-btn bsp-btn--ghost bsp-btn--icon" onClick={() => load(mastersPath)} disabled={loading || !mastersPath}>
                         <RefreshCw size={12} className={loading ? "spin" : ""} />
                     </button>
                 </Tooltip>
@@ -2788,12 +2788,12 @@ export const BespokeTool = () => {
                                 should not sit under a cursor aiming for Rotate. */}
                             <span className="bsp-rtools-end">
                                 <Tooltip text="Duplicate this region">
-                                    <button className="bsp-btn bsp-btn--icon" onClick={duplicateRegion}>
+                                    <button className="bsp-btn bsp-btn--ghost bsp-btn--icon" onClick={duplicateRegion}>
                                         <Copy size={12} />
                                     </button>
                                 </Tooltip>
                                 <Tooltip text="Remove this region">
-                                    <button className="bsp-btn bsp-btn--icon bsp-btn--danger" onClick={removeSelectedRegion}>
+                                    <button className="bsp-btn bsp-btn--ghost bsp-btn--icon bsp-btn--danger" onClick={removeSelectedRegion}>
                                         <Trash2 size={12} />
                                     </button>
                                 </Tooltip>

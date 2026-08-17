@@ -102,7 +102,18 @@
     color: #6f757f;
 }
 
-.bsp-btn {
+/* ── EVERY RULE IN THIS FAMILY IS SCOPED `.bsp ` ON PURPOSE ─────────────────
+   `.form-tool button` (formTool.scss) is (0,1,1) and this tool's root carries
+   BOTH classes, so a bare `.bsp-btn` at (0,1,0) lost its background, border,
+   colour, padding and radius to the shared form-tool skin. The visible result
+   was that the tool had no primary action at all: `Build composition` -- the
+   one bare .bsp-btn in the file, and the only button here that finishes the
+   job -- rendered in exactly the same grey as `Fit to guides`.
+
+   Scoped as a whole family rather than one rule at a time, so their order
+   relative to each other is unchanged: base, then --ghost, then --icon, then
+   --danger's hover last. Change one and the rest have to move with it. */
+.bsp .bsp-btn {
     flex: none;
     display: flex;
     align-items: center;
@@ -123,7 +134,7 @@
     &:disabled { opacity: 0.4; cursor: default; }
 }
 
-.bsp-btn--ghost {
+.bsp .bsp-btn--ghost {
     border-color: var(--surface-border, #3a3a3a);
     background: var(--surface-2, #212121);
     color: #9aa1ac;
@@ -132,7 +143,7 @@
     &:active { background: #1b1b1b; }
 }
 
-.bsp-btn--icon {
+.bsp .bsp-btn--icon {
     justify-content: center;
     width: 26px;
     padding: 0;
@@ -146,9 +157,9 @@
 // width, is exactly where that shows up as an empty square you have to hover to
 // identify. `flex: none` stops the shrink, and the explicit box on the icon-only
 // variant means the glyph cannot come out at some other size either.
-.bsp-btn svg { flex: none; }
+.bsp .bsp-btn svg { flex: none; }
 
-.bsp-btn--icon svg {
+.bsp .bsp-btn--icon svg {
     width: 14px;
     height: 14px;
 }
@@ -157,12 +168,12 @@
 // button from Duplicate, and as an unlabelled icon the only thing separating
 // "copy this region" from "delete it" was the picture. It now reads red the
 // moment the cursor is on it, before the click.
-.bsp-btn--danger:hover {
+.bsp .bsp-btn--danger:hover {
     border-color: #a35555;
     background: #3a1c1c;
     color: #ffd7d7;
 }
-.bsp-btn--danger:active { background: #2a1414; }
+.bsp .bsp-btn--danger:active { background: #2a1414; }
 
 // Named after the key that does the same thing, so it reads as a shortcut
 // rather than a label. Monospace keeps ＋H and ＋V the same width.
@@ -175,7 +186,7 @@
     white-space: nowrap;
 }
 
-.bsp-btn--key {
+.bsp .bsp-btn--key {
     justify-content: center;
     padding: 0 9px;
     font-family: ui-monospace, Menlo, monospace;
@@ -185,7 +196,7 @@
 
 // Fixed width so stepping Fit → 1.5× → 8× does not shuffle the buttons either
 // side of it under the cursor.
-.bsp-btn--zoom {
+.bsp .bsp-btn--zoom {
     justify-content: center;
     width: 44px;
     padding: 0;
@@ -1596,9 +1607,7 @@
     background: var(--surface-0, #121212);
 }
 
-.bsp .bsp-btn--icon {
-    padding: 0;
-}
+// (.bsp .bsp-btn--icon's padding is now carried by the scoped family above.)
 
 .bsp-anchor {
     // SIZED EXPLICITLY, not stretched into its track.
