@@ -841,11 +841,12 @@ export const BespokeTool = () => {
      * the feature -- it takes the nearest master by aspect and is named in the
      * status, so the crop badge and a swap are one click away.
      */
-    const loadTemplate = (t: BespokeTemplate) => {
+    /** Returns whether a layout was actually adopted -- the library closes on it. */
+    const loadTemplate = (t: BespokeTemplate): boolean => {
         const pool = (masters || []).filter((m) => !creative || (m.creative || m.name) === creative);
         if (pool.length === 0) {
             setStatus({ text: "No masters in this creative to fill the layout with.", type: "error" });
-            return;
+            return false;
         }
         const unmatched: string[] = [];
         const next: Region[] = [];
@@ -875,6 +876,10 @@ export const BespokeTool = () => {
         setStatus(unmatched.length
             ? { text: `Loaded "${t.name}" — ${unmatched.join(", ")}; filled with the nearest, swap where needed.`, type: "error" }
             : { text: `Loaded "${t.name}" — ${next.length} region${next.length === 1 ? "" : "s"} matched exactly.`, type: "success" });
+        // True even when slots went unmatched: the layout IS on the board, and
+        // the status says which regions need swapping. Only "there was nothing
+        // to fill it with" counts as not having loaded.
+        return true;
     };
 
     /**
@@ -964,10 +969,11 @@ export const BespokeTool = () => {
      * pixel scale. adoptReference parses what it can from the filename; these
      * two assignments are applied after it so the entry wins.
      */
-    const traceTemplate = (t: BespokeTemplate) => {
+    /** Returns whether tracing actually started -- the library closes on it. */
+    const traceTemplate = (t: BespokeTemplate): boolean => {
         if (!t.referencePath) {
             setStatus({ text: `No reference was found inside "${t.name}".`, type: "error" });
-            return;
+            return false;
         }
         // The whole candidate list comes with it, so a wrong first guess is one
         // click to step past rather than a dead screen.
@@ -983,6 +989,7 @@ export const BespokeTool = () => {
             text: `Tracing "${t.name}" — ${t.canvasW && t.canvasH ? `${t.canvasW}×${t.canvasH}, ` : ""}draw the regions over the reference.`,
             type: "success",
         });
+        return true;
     };
 
     // ── board shortcuts, deliberately OPT-IN ────────────────────────────────
@@ -2342,19 +2349,36 @@ export const BespokeTool = () => {
                             </span>
                         </div>
                     )}
-                    {/* DIRECTLY ABOVE THE BOARD IT FEEDS, and it STAYS OPEN.
-                        It used to sit down with the master picker and close
-                        itself on Trace, which threw away the country, the
-                        search and the scroll position every time -- so doing
-                        two things to one screen, or working through a country,
-                        meant navigating back from the top on each one. Closing
-                        is now only ever something you ask for. */}
+                    {/* DIRECTLY ABOVE THE BOARD IT FEEDS, and it CLOSES ONCE A
+                        SCREEN HAS BEEN TAKEN FROM IT.
+
+                        This reverses an earlier decision to leave it open, which
+                        was made because closing "threw away the country, the
+                        search and the scroll position". That reasoning no longer
+                        holds for the first two: this component is rendered
+                        unconditionally and returns null when shut, so its own
+                        useState survives being closed and reopens on the same
+                        country and the same search. Only the scroll position and
+                        the in-situ scan are lost, and the scan is dropped by the
+                        X button just the same.
+
+                        Against that: picking a screen is the end of the question
+                        the library was opened to answer, and it then sat over the
+                        board it had just filled -- so every load or trace was
+                        followed by closing it by hand before any of the work
+                        could be seen.
+
+                        Closed only when something was actually taken. Both
+                        callbacks refuse in one case each (no masters to fill the
+                        layout with, no reference inside the entry), and closing
+                        on a refusal would mean reopening to try the screen beside
+                        it. */}
                     <ScreenLibrary
                         open={libraryOpen && !!mode}
                         entries={templates}
                         onClose={() => setLibraryOpen(false)}
-                        onLoad={loadTemplate}
-                        onTrace={traceTemplate}
+                        onLoad={(t) => { if (loadTemplate(t)) setLibraryOpen(false); }}
+                        onTrace={(t) => { if (traceTemplate(t)) setLibraryOpen(false); }}
                         activeId={activeScreen ? activeScreen.id : ""}
                         onReload={refreshTemplates}
                         onStatus={(text, type) => setStatus({ text, type })}
