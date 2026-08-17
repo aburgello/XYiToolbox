@@ -4176,6 +4176,152 @@ export const bespokeListReferences = (
   }
 };
 
+/**
+ * Reads the ACTIVE COMP's layout straight off the layers.
+ *
+ * The artist already has the answer open: a template comp with three solids in
+ * it IS the region layout, drawn by hand by whoever built the screen. Tracing
+ * it again over a photo is redoing work that exists. This turns those layers
+ * into regions, ready to have masters swapped into them.
+ *
+ * Much more reliable than the py-aep enrichment pass, and for structural
+ * reasons rather than better code: this reads the LIVE comp the artist chose,
+ * so there is no guessing which comp is the screen, no parse failures on newer
+ * AE versions, and no recursion heuristic. Where that pass is right about 42%
+ * of the time, this is right whenever the artist has the right comp open.
+ *
+ * x/y are the TOP-LEFT in comp space. AE gives position relative to the anchor
+ * point, so the anchor is subtracted at the layer's own scale.
+ */
+/**
+ * The creative a master belongs to, from the studio's folder convention:
+ *
+ *   <mastersRoot>/AE/<Creative>/<stem>.aep
+ *
+ * The segment straight after an `AE` folder is the creative. Deeper nesting is
+ * ignored -- a master in `AE/Creative/Batch_2/x.aep` still belongs to Creative,
+ * which is what OV Library's scanCreatives() reports too.
+ *
+ * Empty when the path has no `AE` level, so the caller can fall back rather
+ * than inventing a creative out of a folder that is not one.
+ */
+function creativeFromPath(fsPath: string): string {
+  // BOTH SEPARATORS. This reads `entry.path`, which is a File.fsName -- POSIX
+  // on the Mac the studio runs, but backslash-separated on Windows. Splitting
+  // on "/" alone gives Windows one giant segment, no "AE" in it, and silently
+  // returns to the one-row-per-master bug this function exists to fix.
+  const parts = String(fsPath).split(/[\/\\]/);
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (parts[i].toUpperCase() !== "AE") continue;
+    const next = parts[i + 1];
+    // The last segment is the FILE, so a creative has to have something after
+    // it -- otherwise `.../AE/master.aep` would name the master as a creative.
+    if (i + 1 >= parts.length - 1) return "";
+    if (!next || next.charAt(0) === "_") return "";
+    // fsName is already decoded, so this only matters for a caller passing a
+    // URI -- and a bare "%" in a real folder name ("50%_OFF") makes decodeURI
+    // THROW, which would take the whole masters listing down with it. The raw
+    // name is a fine answer; a failed listing is not.
+    try {
+      return decodeURI(next);
+    } catch (e) {
+      return next;
+    }
+  }
+  return "";
+}
+
+export const bespokeRegionsFromComp = (): {
+  success: boolean;
+  error?: string;
+  name?: string;
+  width?: number;
+  height?: number;
+  seconds?: number;
+  slots?: { name: string; x: number; y: number; w: number; h: number; rotation: number }[];
+} => {
+  try {
+    const item = app.project ? app.project.activeItem : null;
+    // DUCK-TYPED, never instanceof against a host class (section 2).
+    if (!item || typeof (item as CompItem).layers === "undefined") {
+      return { success: false, error: "Open the comp you want to read, then try again." };
+    }
+    const comp = item as CompItem;
+    const total = comp.numLayers;
+    if (!total) return { success: false, error: "That comp has no layers." };
+
+    const slots: { name: string; x: number; y: number; w: number; h: number; rotation: number }[] = [];
+    for (let i = 1; i <= total; i++) {
+      const layer = comp.layer(i);
+      if (!layer) continue;
+      // Cameras and lights have no transform.scale and no size; they are also
+      // never a region. Duck-type on the property we are about to read rather
+      // than on the class.
+      const tr = layer.transform;
+      if (!tr || !tr.scale) continue;
+      if (layer.enabled === false) continue;
+      // A guide, a null or an adjustment layer is rigging, not a panel.
+      if ((layer as AVLayer).guideLayer) continue;
+      if ((layer as AVLayer).nullLayer) continue;
+      if ((layer as AVLayer).adjustmentLayer) continue;
+
+      const src = (layer as AVLayer).source;
+      let sw = 0;
+      let sh = 0;
+      if (src && typeof src.width === "number") { sw = src.width; sh = src.height; }
+      if (!sw || !sh) {
+        // A shape or text layer has no source; measure what it actually draws.
+        if (typeof (layer as AVLayer).sourceRectAtTime === "function") {
+          const r = (layer as AVLayer).sourceRectAtTime(comp.time, false);
+          sw = r.width; sh = r.height;
+        }
+      }
+      if (!sw || !sh) continue;
+
+      const pos = tr.position.value as number[];
+      const anc = tr.anchorPoint.value as number[];
+      const scl = tr.scale.value as number[];
+      const fx = (scl[0] || 100) / 100;
+      const fy = (scl[1] || 100) / 100;
+      const w = sw * fx;
+      const h = sh * fy;
+      const x = pos[0] - anc[0] * fx;
+      const y = pos[1] - anc[1] * fy;
+
+      let rot = 0;
+      if (tr.rotation && typeof tr.rotation.value === "number") rot = Math.round(tr.rotation.value) % 360;
+      if (rot < 0) rot = rot + 360;
+
+      slots.push({
+        name: decodeURI(String(layer.name)),
+        x: Math.round(x), y: Math.round(y),
+        w: Math.round(w), h: Math.round(h),
+        rotation: rot,
+      });
+    }
+
+    if (slots.length === 0) {
+      return { success: false, error: "No usable layers in that comp -- nulls, guides and adjustment layers are skipped." };
+    }
+    // AE reports layers top-first; a layout reads left-to-right, top-to-bottom.
+    slots.sort(function (a, b) {
+      if (a.y !== b.y) return a.y - b.y;
+      return a.x - b.x;
+    });
+
+    return {
+      success: true,
+      name: decodeURI(String(comp.name)),
+      width: comp.width,
+      height: comp.height,
+      seconds: comp.duration,
+      slots: slots,
+    };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
 export const bespokeBuildRegions = (
   planJson: string
 ): { success: boolean; error?: string; report?: string; saved?: boolean; savedTo?: string } => {
@@ -4764,7 +4910,7 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
 
 export const bespokeListMasters = (
   mastersRoot: string
-): { success: boolean; error?: string; masters?: BespokeMaster[] } => {
+): { success: boolean; error?: string; masters?: BespokeMaster[]; outsideAE?: number } => {
   try {
     if (!mastersRoot) return { success: false, error: "No masters folder set." };
     const index = getMastersIndex(mastersRoot);
@@ -4777,8 +4923,25 @@ export const bespokeListMasters = (
     }
 
     const out: BespokeMaster[] = [];
+    // Files the shared index found that are NOT under `AE/<Creative>/`. Counted
+    // rather than dropped in silence -- see the filter below.
+    let outsideAE = 0;
     for (let i = 0; i < index.length; i++) {
       const entry = index[i];
+
+      // ONLY WHAT LIVES UNDER `<mastersRoot>/AE/<Creative>/`, which is what OV
+      // Library shows and therefore what "the masters" means to the artist.
+      //
+      // getMastersIndex walks the WHOLE masters root, because its other caller
+      // (CSV Localiser) resolves one named deliverable and wants the widest net.
+      // Here that net dragged in the print artwork sitting alongside AE --
+      // `Print_Rock_30_48_Sheet_RGB_OV`, `PPD_1...` -- which are not motion
+      // masters, cannot be composited into a segment, and turned a rail of
+      // three real creatives into six. Scoping is done HERE rather than in the
+      // index so CSV Localiser's reach is unchanged.
+      const creative = creativeFromPath(entry.path);
+      if (!creative) { outsideAE++; continue; }
+
       const stem = String(entry.name).replace(/\.aep$/i, "");
       const meta = parseFilenameMeta(stem);
       // A master that does not parse is still SHOWN -- with blank fields -- so
@@ -4788,7 +4951,22 @@ export const bespokeListMasters = (
       out.push({
         path: entry.path,
         name: stem,
-        creative: meta.campaign || "",
+        // THE CREATIVE IS THE FOLDER, not something parsed out of the filename.
+        //
+        // This read `meta.campaign`, which parseFilenameMeta only fills for
+        // names carrying the tokens it expects. A campaign like
+        // `PP3_INTL_JungleTunnelGutter_DOOH_ThePillar_720x3840px_10s_DEN` gives
+        // it nothing, so every master arrived with creative "" and the picker's
+        // rail -- which falls back to the filename -- showed ONE ROW PER
+        // MASTER, each counting 1.
+        //
+        // OV Library never had this problem because it uses the studio
+        // convention instead: `<mastersRoot>/AE/<Creative>/<stem>.aep`, i.e.
+        // scanCreatives() lists the FOLDERS under AE. Same answer here, taken
+        // off the path. No filename fallback: the AE filter above already
+        // guarantees this is non-empty, and a filename fallback is exactly what
+        // produced one rail row per master.
+        creative: creative,
         artwork: meta.artworkType || "",
         site: meta.siteName || "",
         size: meta.size || "",
@@ -4801,7 +4979,7 @@ export const bespokeListMasters = (
         orientation: bespokeOrientation(stem, Number(wh[0]) || 0, Number(wh[1]) || 0),
       });
     }
-    return { success: true, masters: out };
+    return { success: true, masters: out, outsideAE: outsideAE };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

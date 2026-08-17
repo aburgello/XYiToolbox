@@ -134,6 +134,35 @@
     padding: 0;
 }
 
+// Named after the key that does the same thing, so it reads as a shortcut
+// rather than a label. Monospace keeps ＋H and ＋V the same width.
+// Where a layout is about to be filed, shown while naming it.
+.bsp-tpl-dest {
+    flex: none;
+    font-size: var(--t-micro);
+    font-family: ui-monospace, Menlo, monospace;
+    color: #6f8b87;
+    white-space: nowrap;
+}
+
+.bsp-btn--key {
+    justify-content: center;
+    padding: 0 9px;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: var(--t-sm);
+    letter-spacing: 0.04em;
+}
+
+// Fixed width so stepping Fit → 1.5× → 8× does not shuffle the buttons either
+// side of it under the cursor.
+.bsp-btn--zoom {
+    justify-content: center;
+    width: 44px;
+    padding: 0;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: var(--t-sm);
+}
+
 // A section that folds to one line, keeping its answer visible while closed.
 .bsp-fold {
     display: flex;
@@ -216,6 +245,24 @@
 }
 
 .bsp-input--n { width: 66px; flex: none; }
+
+/* Duration, narrower than the size fields -- but NOT two digits wide.
+   The real estate has 180sec (Fed Square) and 600sec (Printworks) masters in
+   it, so three has to fit or those become untypeable. */
+.bsp-input--s { width: 46px; flex: none; text-align: center; }
+
+/* Name, canvas and duration on one row: the deliverable's specification, all
+   three of which come off the reference filename together. */
+.bsp-namerow {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+}
+
+// The name takes whatever the two fixed-width fields leave. min-width:0 or a
+// long deliverable name pushes the row wider than the panel instead of
+// scrolling inside its own input.
+.bsp-field--grow { flex: 1; min-width: 0; }
 
 // Dropdown renders its own trigger; these only place it. The wrapper is a
 // block so the trigger can fill the field it sits in.
@@ -426,14 +473,57 @@
     padding: 9px;
 }
 
-/* Creative chips: the primary filter, the way OV Library asks it. Scrollable
-   rather than wrapping to five rows on a campaign with many creatives. */
+/* Rail + grid, the same shape the screen library uses.
+
+   WAS A HORIZONTAL SCROLLER of pills. Creative is the primary question -- which
+   artwork, not what the file was called -- and a scroller hid every creative
+   past the fourth behind a drag, while still spending a full row of the
+   picker's height to show four. A vertical rail shows a dozen at once and
+   gives that height back to the cards. */
+.bsp-picker-body {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+    min-height: 0;
+}
+
 .bsp-creatives {
     display: flex;
-    gap: 5px;
-    overflow-x: auto;
-    padding-bottom: 5px;
-    margin-bottom: 7px;
+    flex-direction: column;
+    gap: 2px;
+    flex: none;
+    // 108px fitted about six characters and a count, which turned real studio
+    // creative names into "GUTTE…" and "JUNG…" side by side -- a rail you
+    // cannot read is not a filter. 156px clears the common names outright; the
+    // tooltip covers the rest.
+    width: 156px;
+    max-height: 320px;
+    overflow-y: auto;
+    padding-right: 2px;
+}
+
+// EACH CHIP IS WRAPPED IN <Tooltip>, so the rail's flex children are its
+// wrapper spans, not the buttons. Two things have to be handed back through
+// that wrapper: the cross-axis stretch the buttons had from the column's
+// default align-items, and their own full width.
+//
+// Tooltip's `grow` prop is NOT the tool for this -- it sets `flex: 1`, which in
+// a column means "fill the HEIGHT", and the six chips would share 320px between
+// them. The !important is matching Tooltip.scss's own on `flex: 0 0 auto`,
+// which a shorter selector cannot beat; the flex value here is deliberately the
+// same one -- only the width is being changed.
+.bsp-creatives > .ov-tooltip-wrapper {
+    flex: none;
+    align-self: stretch;
+}
+
+.bsp-creatives > .ov-tooltip-wrapper > .ov-tooltip-content {
+    flex: 0 0 auto !important;
+    width: 100%;
+}
+
+.bsp-creatives .ov-tooltip-content > .bsp-creative {
+    width: 100%;
 }
 
 .bsp-creative {
@@ -441,16 +531,22 @@
     display: flex;
     align-items: center;
     gap: 5px;
-    padding: 5px 10px;
-    border: 1px solid var(--surface-border, #363636);
-    border-radius: var(--r-pill);
-    background: var(--surface-0, #121212);
+    padding: 5px 8px;
+    border: 1px solid transparent;
+    border-radius: var(--r-sm);
+    background: none;
     color: #a8aeb6;
     font-size: var(--t-sm);
     white-space: nowrap;
+    text-align: left;
     cursor: pointer;
+    // A long creative name ellipsises inside the rail rather than widening it
+    // and squeezing the grid.
+    overflow: hidden;
 
     em {
+        flex: none;
+        margin-left: auto;
         font-style: normal;
         font-family: ui-monospace, Menlo, monospace;
         font-size: var(--t-micro);
@@ -462,12 +558,19 @@
 
     &.is-on {
         background: rgba(45, 212, 191, 0.13);
-        border-color: #2dd4bf;
+        border-color: rgba(45, 212, 191, 0.55);
         color: #7fe7d8;
     }
     // Beats the shared :hover, which would grey out the selected chip.
     &.is-on:hover { background: rgba(45, 212, 191, 0.2); color: #a5f3e6; }
     &.is-on em { color: #5eead4; }
+}
+
+// The name is its own element so it can ellipsise while the count stays put.
+.bsp-creative-nm {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .bsp-creative-sw { width: 7px; height: 7px; border-radius: var(--r-xs); flex: none; }
@@ -519,6 +622,11 @@
     grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
     gap: 6px;
     align-items: start;
+    // Takes the width left by the creative rail beside it. min-width:0 rather
+    // than the flex-item default of auto, or a long card name would push the
+    // grid wider than the picker instead of ellipsising inside it.
+    flex: 1;
+    min-width: 0;
     // Tall enough to browse in, short enough to leave the canvas on screen --
     // this panel is docked beside a comp, not a full page.
     max-height: 320px;
@@ -630,17 +738,12 @@
     font-variant-numeric: tabular-nums;
 }
 
-
-.bsp-master-name {
-    flex: 1;
-    min-width: 0;
-    font-size: var(--t-sm);
-    color: #d2d6dc;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
+// (A second `.bsp-master-name` block used to sit here, later in the file and
+// therefore winning: it set the name back to `--t-sm` in near-white with
+// `flex: 1`. That undid the block above it -- the name rendered at the size of
+// the card's headline rather than receding under it, and being both larger and
+// greedier it clipped several characters earlier in a 112px track. Deleted, not
+// merged: the surviving rule above is the intended one.)
 
 .bsp-none { margin: 4px 2px; font-size: var(--t-sm); color: #6f757f; }
 
@@ -926,9 +1029,70 @@
     &:active { background: #101010; }
 }
 
+/* Centres a board that has been fitted by HEIGHT rather than width. A tall
+   portrait screen (768x3408 is real) would otherwise sit hard left with a lot
+   of dead space beside it. */
+.bsp-stagewrap {
+    // `relative` so the invisible keygrab input can be parked inside it rather
+    // than scrolling the panel when it takes focus.
+    position: relative;
+
+    // A CAPPED, SCROLLING VIEWPORT -- not a flex row.
+    //
+    // Zoom means the board can be larger than the space for it, and a flex
+    // child centred with `justify-content` gets its start edge CLIPPED AND
+    // UNREACHABLE once it overflows. `text-align: center` on a block parent with
+    // an inline-block child centres correctly and still scrolls to both edges.
+    //
+    // The cap lives on the VIEWPORT now, so zooming in scrolls here instead of
+    // pushing every control below the board off the panel.
+    // KEEP IN STEP WITH Bespoke.tsx's MAX_STAGE_H. Two copies of one number,
+    // because the fit calculation needs it in JS and the viewport needs it in
+    // CSS; if they drift, a fitted board either scrolls when it should not or
+    // leaves a gap where it should fill.
+    display: block;
+    text-align: center;
+    overflow: auto;
+    max-height: 460px;
+
+    // The board owns the arrow keys right now. Deliberately quiet -- a ring
+    // around the work would compete with the regions themselves.
+    &.is-armed .bsp-canvas { border-color: rgba(45, 212, 191, 0.5); }
+}
+
+// Genuinely focusable and genuinely invisible. display:none and
+// visibility:hidden cannot hold focus, and holding focus IS the mechanism.
+.bsp-keygrab {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    border: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.bsp-keyhint {
+    font-size: var(--t-micro);
+    font-family: ui-monospace, Menlo, monospace;
+    color: #5eead4;
+}
+
 .bsp-canvas {
     position: relative;
+    // Width AND height are set inline in px once the wrap has been measured
+    // (see stageBox). `height: 0` here is only the pre-measure fallback, which
+    // pairs with an inline percentage padding-bottom -- and that percentage is
+    // exactly why the cap has to be done in px: percentage padding resolves
+    // against the CONTAINING BLOCK's width, so constraining this element's own
+    // width leaves its height untouched.
+    // inline-block so `text-align: center` on the wrap centres it, which is
+    // what keeps both edges reachable when zoomed past the viewport.
+    display: inline-block;
     width: 100%;
+    flex: none;
     height: 0;
     border: 1px solid var(--surface-border, #303030);
     border-radius: var(--r-md);
@@ -1251,8 +1415,57 @@
     background: var(--surface-border, #2b3230);
 }
 
+/**
+ * A group that wraps as ONE THING.
+ *
+ * The bar is flex-wrap and its children were loose, so a break could land
+ * between a label and the control it names -- "SCREENS" ended a line and
+ * "Library" started the next one, which reads as two unrelated controls and
+ * makes the separators actively misleading. The bar now breaks BETWEEN groups
+ * and never inside one.
+ */
+.bsp-bar-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    // Shrinks before it wraps, but never wraps internally.
+    flex: 0 1 auto;
+    min-width: 0;
+    flex-wrap: nowrap;
+}
+
+/* Candidate reference scrubber. Amber, matching the screen library's "this is
+   a template, not a traced layout" language, and turning red only when the
+   current candidate genuinely will not paint. */
+.bsp-refalts {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+    padding: 4px 8px;
+    border: 1px solid rgba(201, 154, 78, 0.34);
+    border-radius: var(--r-sm);
+    background: rgba(201, 154, 78, 0.08);
+
+    &.is-broken {
+        border-color: rgba(220, 90, 90, 0.45);
+        background: rgba(220, 90, 90, 0.09);
+    }
+}
+
+.bsp-refalt-name {
+    // Takes the slack so the stepper stays put as the filename changes length.
+    flex: 1;
+    min-width: 0;
+    font-size: var(--t-micro);
+    font-family: ui-monospace, Menlo, monospace;
+    color: #9aa1ac;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
 .bsp-guidebar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 6px; }
-.bsp-guidehint { font-size: var(--t-micro); color: #6f757f; }
 
 .bsp-guide {
     // above even a selected region, or a line under one cannot be grabbed

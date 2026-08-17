@@ -28,13 +28,15 @@
 // step. Shipping a Build button that guessed would be worse than not having one.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { AlertCircle, ChevronRight, Copy, Globe2, Layers, LayoutGrid, Library, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, Square as SquareIcon, Trash2, X } from "lucide-react";
-import { evalTS } from "../../lib/utils/bolt";
+import { AlertCircle, ChevronRight, Copy, Globe2, Layers, LayoutGrid, Library, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, RotateCcw, Square as SquareIcon, Trash2, X } from "lucide-react";
+import { csi, evalTS } from "../../lib/utils/bolt";
+import { deriveMastersFromMarkets } from "../lib/mastersRoot";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
 import Dropdown from "../Dropdown";
 import CheckboxToggle from "../CheckboxToggle";
 import LoadingChatter from "../LoadingChatter";
+import ScreenLibrary, { ScreenEntry } from "./ScreenLibrary";
 import "../shared.scss";
 import "./Bespoke.scss";
 
@@ -89,10 +91,19 @@ const MasterCard: React.FC<{ master: BespokeMaster; swapping: boolean; used: num
     const ph = aspect >= 1 ? Math.max(4, BOX / aspect) : BOX;
     const tint = hueFor(master.creative || master.name);
     return (
+        // THE WHOLE FILENAME, ON HOVER. The card shows the creative, the size
+        // and the duration, each ellipsised into a 112px track -- which is the
+        // right summary and no help at all when two masters differ somewhere
+        // further along the name. The native `title` this replaces never
+        // rendered: CEP's host is not browser chrome and shows none.
+        //
+        // `grow` is REQUIRED here, unlike the creative rail. This button is a
+        // GRID CELL, and Tooltip's wrapper otherwise hugs its content and lets
+        // the card shrink out of its track (CLAUDE.md's stretch-sized trap).
+        <Tooltip text={master.name} delay={220} grow>
         <button
             className={"bsp-master" + (swapping ? " is-swap" : "") + (used > 0 ? " is-used" : "")}
             onClick={onPick}
-            title={master.name}
         >
             <span className="bsp-master-proxy">
                 <span style={{ width: `${pw}px`, height: `${ph}px`, background: tint }} />
@@ -108,28 +119,41 @@ const MasterCard: React.FC<{ master: BespokeMaster; swapping: boolean; used: num
                 <span className="bsp-master-dur">{master.duration ? `${master.duration}s` : "?"}</span>
             </span>
         </button>
+        </Tooltip>
     );
 };
 
 /** Below this a region collapses and can never be grabbed again. */
 const MIN_REGION = 24;
 
-interface BespokeTemplate {
-    id: string;
-    name: string;
-    territory: string;
-    site: string;
-    canvasW: number;
-    canvasH: number;
-    guidesX: number[];
-    guidesY: number[];
-    slots: {
-        x: number; y: number; w: number; h: number; rotation: number;
-        masterW: number; masterH: number; masterDuration: string;
-    }[];
-    savedBy: string;
-    stamp: string;
-}
+/**
+ * An fs path as a `file://` URL the panel can actually load.
+ *
+ * A RAW PATH IS NOT A URL. `file:///Volumes/…/Tower Ref.jpg` fails in Chromium
+ * the moment the path contains a space, a `#` or an accent -- and these are NAS
+ * paths written by artists, so most of them do. References pulled out of a
+ * template were silently showing as broken images for exactly this reason.
+ *
+ * encodeURI, not encodeURIComponent: the slashes must survive. Anything
+ * already encoded is decoded first so a double pass cannot turn %20 into %2520.
+ */
+const fileUrl = (fsPath: string): string => {
+    if (!fsPath) return "";
+    let raw = fsPath;
+    try {
+        raw = decodeURI(fsPath);
+    } catch {
+        // Not valid percent-encoding -- a literal % in the name. Use it as-is.
+    }
+    return "file://" + encodeURI(raw).replace(/#/g, "%23").replace(/\?/g, "%3F");
+};
+
+/**
+ * One definition, in ScreenLibrary.tsx, which is the thing that has to know
+ * about both kinds of entry. This file only ever writes layouts, so it keeps
+ * the old name and lets the optional fields default.
+ */
+type BespokeTemplate = ScreenEntry;
 
 interface Region {
     id: number;
@@ -175,8 +199,29 @@ let nextSegId = 1;
 export const BespokeTool = () => {
     const reduced = useReducedMotion();
 
+    // THE MASTERS FOLDER IS NOT A QUESTION THIS TOOL ASKS ANY MORE.
+    //
+    // It followed the campaign all along -- the artist picks PP3 in "where it
+    // lands" and then had to go and find PP3's masters by hand at the top of
+    // the same screen, which is the same answer typed twice and one more place
+    // for them to disagree. It is now DERIVED from whichever campaign is
+    // selected, exactly as the localise screen derives it, and the manual pick
+    // survives only as an escape hatch for when derivation finds nothing.
     const [mastersPath, setMastersPath] = useState("");
+    // Set once the artist overrides the derived folder by hand, so the next
+    // campaign-driven derive doesn't quietly pull it back.
+    const [mastersPinned, setMastersPinned] = useState(false);
+    // OV LIBRARY'S SEPARATE CAMPAIGN STORE -- `loadCampaigns`, which carries a
+    // mastersRoot outright. A DIFFERENT store from loadLocLibCampaigns below:
+    // that one carries a marketsRoot and answers "where does the build land".
+    // Only consulted as the second guess, by name, when a campaign's Markets
+    // root has no Masters sibling to derive from.
+    const [mastersCampaigns, setMastersCampaigns] = useState<{ name: string; mastersRoot: string }[]>([]);
     const [masters, setMasters] = useState<BespokeMaster[] | null>(null);
+    // How many .aeps the walk found OUTSIDE `AE/` and therefore left out. Shown,
+    // not swallowed: a shelf that is quietly narrower than the folder is the
+    // thing that sends someone hunting for a master that is right there.
+    const [outsideAE, setOutsideAE] = useState(0);
     const [loading, setLoading] = useState(false);
     const [status, setStatus] = useState<StatusMsg | null>(null);
     const [report, setReport] = useState<string | null>(null);
@@ -184,8 +229,15 @@ export const BespokeTool = () => {
 
     // The deliverable being composed. Canvas and runtime come from the row this
     // is being built for; typed by hand until the row picker is wired.
-    const [canvasW, setCanvasW] = useState("3240");
-    const [canvasH, setCanvasH] = useState("1920");
+    //
+    // 2000x1000 is a DELIBERATELY SMALL, DELIBERATELY NEUTRAL starting board.
+    // It was 3240x1920, which is a real screen (a three-panel metrobus) -- and
+    // that was the problem twice over: it drew a big working area before anyone
+    // had said what they were building, and being a plausible size it could be
+    // mistaken for one that had been set rather than defaulted. A round 2:1
+    // reads as a placeholder.
+    const [canvasW, setCanvasW] = useState("2000");
+    const [canvasH, setCanvasH] = useState("1000");
     const [runtime, setRuntime] = useState("10");
 
     // WHERE IT LANDS. Same three answers Build a Batch asks for, and the same
@@ -235,6 +287,22 @@ export const BespokeTool = () => {
     const [saving, setSaving] = useState(false);
     const [tplName, setTplName] = useState("");
     const [layouts, setLayouts] = useState<Record<string, { regions: Region[]; guidesX: number[]; guidesY: number[] }>>({});
+    const [libraryOpen, setLibraryOpen] = useState(false);
+    // Candidate references pulled out of a template, best first. More than one
+    // because picking the right in-situ image out of an .aep is a heuristic:
+    // it lands on a camera roll JPG or a screenshot often enough that the
+    // artist has to be able to step to the next one.
+    const [refAlts, setRefAlts] = useState<string[]>([]);
+    // Set when the current reference will not paint -- a path that has moved,
+    // or a format Chromium cannot decode. Distinguishing the two matters:
+    // "next candidate" fixes one and nothing fixes the other.
+    const [refBroken, setRefBroken] = useState(false);
+    // WHICH LIBRARY SCREEN THE BOARD CAME FROM, whole -- not just its id.
+    // Saving needs its TERRITORY and NAME, because the country in "Where it
+    // lands" is a different thing (see saveTemplate) and is usually unset.
+    const [activeScreen, setActiveScreen] = useState<{ id: string; territory: string; name: string } | null>(null);
+    // Not "is it empty" -- "did the read work at all". See refreshTemplates.
+    const [libraryReadable, setLibraryReadable] = useState(false);
     // Constraints while dragging a corner. Ratio keeps a region from ever
     // introducing a crop it did not have; locking a side is for the common case
     // of a panel that must stay the full height or width of the screen.
@@ -245,6 +313,13 @@ export const BespokeTool = () => {
     const [guidesY, setGuidesY] = useState<number[]>([]);
     const [lockRatio, setLockRatio] = useState(true);
     const stageRef = React.useRef<HTMLDivElement>(null);
+    // Width of the area the board sits in, measured. Needed because the stage
+    // is sized with the padding-box trick (height:0 + padding-bottom:%), so its
+    // HEIGHT is a function of its WIDTH -- and a 768x3408 shopfront therefore
+    // came out 443% of the panel width tall, which is the endless scroll.
+    // Capping the height means capping the width, and that needs pixels.
+    const stageWrapRef = React.useRef<HTMLDivElement>(null);
+    const [stageWrapW, setStageWrapW] = useState(0);
     const dragRef = React.useRef<{ handle: string; sx: number; sy: number; box: DOMRect; start: Region } | null>(null);
     // The folder is a country NAME ("Germany"); the filename wants its code.
     // Resolved by the host's own getTerritoryCountryCode rather than guessed
@@ -261,9 +336,16 @@ export const BespokeTool = () => {
     // orientation. A flat search box over 200 filenames was the thing that made
     // this feel unlike the rest of the app -- you had to already know the name.
     const [creative, setCreative] = useState("");
-    const [orients, setOrients] = useState<Record<OrientationKey, boolean>>({
-        LANDSCAPE: false, PORTRAIT: false, SQUARE: false, QUAD: false,
-    });
+    // EXCLUSIVE, not a set of checkboxes. Additive orientation filters meant
+    // clicking Landscape while Portrait was already on showed BOTH, so the
+    // control did the opposite of what pressing it looks like it should do --
+    // you had to notice the stale pill and turn it off first. One at a time;
+    // clicking the active one clears it back to everything. "" is no filter.
+    const [orient, setOrient] = useState<OrientationKey | "">("");
+    // Once the artist picks an orientation themselves, the automatic guess
+    // stands down for good -- same contract as nameTouched. A filter that keeps
+    // re-deciding what you just decided is worse than no filter.
+    const [orientTouched, setOrientTouched] = useState(false);
     const [durFilter, setDurFilter] = useState("");
 
     // --- masters -----------------------------------------------------------
@@ -273,7 +355,7 @@ export const BespokeTool = () => {
         setStatus(null);
         try {
             const res = (await evalTS("bespokeListMasters", root)) as unknown as
-                { success: boolean; error?: string; masters?: BespokeMaster[] } | undefined;
+                { success: boolean; error?: string; masters?: BespokeMaster[]; outsideAE?: number } | undefined;
             if (res === undefined) throw new Error("no bridge");
             if (!res.success) {
                 setStatus({ text: res.error || "Couldn't read the masters folder.", type: "error" });
@@ -282,8 +364,18 @@ export const BespokeTool = () => {
                 return;
             }
             setMasters(res.masters || []);
+            setOutsideAE(res.outsideAE || 0);
             if (!res.masters || res.masters.length === 0) {
-                setStatus({ text: "No masters found in that folder.", type: "error" });
+                // A folder with .aeps in it that are all OUTSIDE `AE/` is a
+                // different problem from an empty one, and saying "no masters"
+                // to someone looking at a folder full of them is how a wrong
+                // folder gets picked next. Name what was skipped and why.
+                setStatus({
+                    text: res.outsideAE
+                        ? `No masters under AE/ in that folder — ${res.outsideAE} .aep${res.outsideAE === 1 ? "" : "s"} sit outside it and aren't motion masters.`
+                        : "No masters found in that folder.",
+                    type: "error",
+                });
             }
         } catch {
             setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
@@ -358,10 +450,57 @@ export const BespokeTool = () => {
         })();
     }, [territory]);
 
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const camps = await evalTS("loadCampaigns");
+                if (!cancelled && camps && camps.length) {
+                    setMastersCampaigns(camps as unknown as { name: string; mastersRoot: string }[]);
+                }
+            } catch {
+                /* no bridge -- the folder button is still there */
+            }
+        })();
+        return () => { cancelled = true; };
+    }, []);
+
+    /**
+     * THE MASTERS FOLDER FOLLOWS THE CAMPAIGN.
+     *
+     * Same derivation the localise screen makes, from the same shared helper:
+     * a campaign records its Markets root, and Masters is its sibling. Second
+     * guess is OV Library's own campaign store, which holds a mastersRoot
+     * outright -- a campaign added there but whose Markets root has no Masters
+     * sibling still resolves.
+     *
+     * Silent when neither answers. An unmounted share is a normal state and
+     * must never toast; what the artist sees is the header offering the manual
+     * pick, which is a door rather than an error.
+     */
+    useEffect(() => {
+        if (mastersPinned) return;
+        if (!marketsRoot && !campaign) return;
+        const derived = marketsRoot ? deriveMastersFromMarkets(marketsRoot) : "";
+        const byName = derived
+            ? ""
+            : (mastersCampaigns.filter((c) => c.name === campaign)[0] || { mastersRoot: "" }).mastersRoot;
+        const next = derived || byName;
+        // A failed derive must NOT wipe a folder already loaded -- "couldn't
+        // work it out" and "there is nothing here" are different answers, and
+        // only one of them is worth throwing away a loaded shelf for.
+        if (!next || next === mastersPath) return;
+        setMastersPath(next);
+        load(next);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [marketsRoot, campaign, mastersCampaigns, mastersPinned]);
+
+    /** The escape hatch, shown only when the campaign didn't resolve one. */
     const pickFolder = async () => {
         try {
             const picked = await evalTS("selectCsvLocaliserAepFolder");
             if (typeof picked === "string" && picked) {
+                setMastersPinned(true);
                 setMastersPath(picked);
                 load(picked);
             }
@@ -400,42 +539,86 @@ export const BespokeTool = () => {
         setSelRegion(0);
     };
 
-    // Quietly: an unmounted share is a normal state and must never toast.
+    /**
+     * Quietly: an unmounted share is a normal state and must never toast.
+     *
+     * AN EMPTY OR FAILED READ MUST NOT REPLACE WHAT IS ON SCREEN. The backend
+     * already distinguishes the two -- it only returns `templates` when the
+     * read itself worked -- so guarding on its presence keeps the last good
+     * library up when the NAS drops out mid-session.
+     */
+    const refreshTemplates = useCallback(async () => {
+        try {
+            const res = await evalTS("bespokeTemplateList");
+            if (res && res.success && res.templates) setTemplates(res.templates);
+            // `read` separates "the library is empty" from "the share is not
+            // there". An EMPTY library still needs its front door -- seeding is
+            // how it stops being empty -- but an unreachable one shows nothing.
+            if (res && res.success) setLibraryReadable(res.read !== false);
+        } catch {
+            /* no bridge, or no share -- the feature simply is not there */
+        }
+    }, []);
+
     useEffect(() => {
         if (!mode) return;
-        let cancelled = false;
-        (async () => {
-            try {
-                const res = await evalTS("bespokeTemplateList");
-                if (!cancelled && res && res.success && res.templates) setTemplates(res.templates);
-            } catch {
-                /* no bridge, or no share -- the feature simply is not there */
-            }
-        })();
-        return () => { cancelled = true; };
-    }, [mode]);
+        refreshTemplates();
+    }, [mode, refreshTemplates]);
 
     /**
      * Saves geometry and the SHAPE of each master, never the master itself.
      * That is the whole point: the next campaign brings different artwork to
      * the same peculiar screen.
      */
+    /**
+     * WHICH COUNTRY A SAVED LAYOUT LANDS IN.
+     *
+     * Two different countries are in play and conflating them was the bug:
+     *
+     *   `territory`            -- the "Where it lands" dropdown, read from the
+     *                            MARKETS tree. It says where the built .aep gets
+     *                            filed, it is frequently left unset, and it has
+     *                            nothing to do with where the screen IS.
+     *   `activeScreen.territory` -- the country of the library screen this board
+     *                            was traced from, i.e. the SPEC tree. This is
+     *                            the one that answers "which country is this
+     *                            screen in".
+     *
+     * The traced screen wins, and the markets dropdown is the fallback for a
+     * board built from scratch. Without this, tracing Austria's Cineplexx_Welle
+     * and saving filed the layout under whatever happened to be in the dropdown
+     * -- usually nothing, so it landed in "Unfiled".
+     */
+    const saveTerritory = (activeScreen && activeScreen.territory) || territory;
+
     const saveTemplate = async () => {
         const name = tplName.trim();
         if (!name) return;
+        const w = Number(canvasW) || 0;
+        const h = Number(canvasH) || 0;
         const entry: BespokeTemplate = {
-            id: `${territory || "ANY"}::${name}`.toUpperCase(),
+            // SAME ID SHAPE AS THE SCAN, which is what makes a layout SUPERSEDE
+            // the template it was traced from rather than sitting beside it as a
+            // duplicate. When the scan grew `::WxH` (so five different
+            // BARCO_PANORAMA screens stopped collapsing into one) this was left
+            // on the old two-part shape, so no layout could ever match a
+            // template and the "traced" count could never move.
+            id: `${saveTerritory || "ANY"}::${name}::${w ? `${w}x${h}` : "?"}`.toUpperCase(),
             name,
-            territory,
+            territory: saveTerritory,
             site: site.trim(),
-            canvasW: Number(canvasW) || 0,
-            canvasH: Number(canvasH) || 0,
+            canvasW: w,
+            canvasH: h,
             guidesX, guidesY,
             slots: regions.map((r) => ({
                 x: r.x, y: r.y, w: r.w, h: r.h, rotation: r.rotation || 0,
                 masterW: r.master.width, masterH: r.master.height, masterDuration: r.master.duration,
             })),
             savedBy: "", stamp: new Date().toISOString().slice(0, 10),
+            // Explicit from here on. Entries written before the library shipped
+            // have no `kind` and are read as layouts, which is what they are --
+            // so this is additive, not a migration.
+            kind: "layout", screen: name, status: "active",
         };
         const res = await evalTS("bespokeTemplateSave", JSON.stringify(entry));
         if (res && res.success) {
@@ -486,12 +669,311 @@ export const BespokeTool = () => {
         if (t.canvasH) setCanvasH(String(t.canvasH));
         setGuidesX(t.guidesX || []);
         setGuidesY(t.guidesY || []);
+        setActiveScreen({ id: t.id, territory: t.territory || "", name: t.name });
         setRegions(next);
         setSelRegion(0);
         setStatus(unmatched.length
             ? { text: `Loaded "${t.name}" — ${unmatched.join(", ")}; filled with the nearest, swap where needed.`, type: "error" }
             : { text: `Loaded "${t.name}" — ${next.length} region${next.length === 1 ? "" : "s"} matched exactly.`, type: "success" });
     };
+
+    /**
+     * Turns the comp the artist has open into regions.
+     *
+     * A template comp with three solids in it already IS the layout -- somebody
+     * drew it when the screen was built, and tracing it again over a photo is
+     * redoing work that exists. Each layer becomes a region and takes the
+     * nearest master by aspect, so the board arrives ready to swap rather than
+     * ready to draw.
+     *
+     * Masters are matched, never invented: a slot with nothing close still gets
+     * the nearest one and is named in the status, same contract as loading a
+     * saved layout. Losing the geometry would defeat the point.
+     */
+    const regionsFromComp = async () => {
+        const pool = (masters || []).filter((m) => !creative || (m.creative || m.name) === creative);
+        if (pool.length === 0) {
+            setStatus({ text: "Pick a masters folder and a creative first — the regions need something to hold.", type: "error" });
+            return;
+        }
+        try {
+            const res = await evalTS("bespokeRegionsFromComp");
+            if (!res || !res.success || !res.slots) {
+                setStatus({ text: (res && res.error) || "Couldn't read that comp.", type: "error" });
+                return;
+            }
+            const next: Region[] = [];
+            const loose: string[] = [];
+            res.slots.forEach((s: { name: string; x: number; y: number; w: number; h: number; rotation: number }) => {
+                const want = s.w / Math.max(1, s.h);
+                let best = pool[0];
+                let diff = Infinity;
+                for (const m of pool) {
+                    const d = Math.abs(m.width / Math.max(1, m.height) - want);
+                    if (d < diff) { diff = d; best = m; }
+                }
+                // 2% of aspect is a comfortable match; past that the crop badge
+                // and a swap are the honest answer.
+                if (diff / Math.max(0.0001, want) > 0.02) loose.push(s.name || `${s.w}×${s.h}`);
+                next.push({ id: nextSegId++, master: best, x: s.x, y: s.y, w: s.w, h: s.h, rotation: s.rotation || 0 });
+            });
+            if (res.width) setCanvasW(String(res.width));
+            if (res.height) setCanvasH(String(res.height));
+            if (res.seconds) setRuntime(String(Math.round(res.seconds)));
+            setRegions(next);
+            setSelRegion(0);
+            setStatus({
+                text: loose.length
+                    ? `Read ${next.length} regions from "${res.name}" — ${loose.join(", ")} had no close master, swap where needed.`
+                    : `Read ${next.length} regions from "${res.name}".`,
+                type: loose.length ? "error" : "success",
+            });
+        } catch {
+            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+        }
+    };
+
+    /**
+     * Swaps WHICH PICTURE is behind the board, and nothing else.
+     *
+     * Deliberately not adoptReference: that one is for changing DELIVERABLE, so
+     * it banks the current regions, restores the incoming reference's own, and
+     * re-reads canvas size and runtime from the filename. Stepping between
+     * candidate images for the SAME screen must do none of that -- the regions
+     * are the expensive part, the canvas came from the library entry, and a
+     * candidate called "Tower Ref.jpg" has no size to re-read anyway.
+     */
+    const swapReference = (path: string) => {
+        if (!path || path === refPath) return;
+        setRefBroken(false);
+        setRefMismatch("");
+        setRefPath(path);
+    };
+
+    /**
+     * Starts a board on a template's OWN in-situ image.
+     *
+     * This is what the enrichment pass is for. The reference was found inside
+     * the .aep by aep_screens.py, so the artist gets the screen diagram on the
+     * canvas without opening the template, hunting the spec folder, or knowing
+     * the image existed -- which for most of these screens they would not.
+     *
+     * The canvas comes from the LIBRARY ENTRY, not from the image: a spec
+     * drawing is often a scaled copy of the screen (1744x792 for a 7200x1240
+     * board), and sizing the canvas from it would put every region at the wrong
+     * pixel scale. adoptReference parses what it can from the filename; these
+     * two assignments are applied after it so the entry wins.
+     */
+    const traceTemplate = (t: BespokeTemplate) => {
+        if (!t.referencePath) {
+            setStatus({ text: `No reference was found inside "${t.name}".`, type: "error" });
+            return;
+        }
+        // The whole candidate list comes with it, so a wrong first guess is one
+        // click to step past rather than a dead screen.
+        setRefAlts(t.referencePaths && t.referencePaths.length ? t.referencePaths : [t.referencePath]);
+        setActiveScreen({ id: t.id, territory: t.territory || "", name: t.name });
+        adoptReference(t.referencePath);
+        if (t.canvasW) setCanvasW(String(t.canvasW));
+        if (t.canvasH) setCanvasH(String(t.canvasH));
+        if (!nameTouched && t.name) setOutName(t.name);
+        setRegions([]);
+        setSelRegion(0);
+        setStatus({
+            text: `Tracing "${t.name}" — ${t.canvasW && t.canvasH ? `${t.canvasW}×${t.canvasH}, ` : ""}draw the regions over the reference.`,
+            type: "success",
+        });
+    };
+
+    // ── board shortcuts, deliberately OPT-IN ────────────────────────────────
+    // AE binds the arrow keys to "nudge the selected LAYER in the comp", so a
+    // panel that grabbed them permanently would quietly break that for the rest
+    // of the session. The board claims them only while it holds focus -- click
+    // the board to arm, click away to release -- which is the same contract
+    // Edit in Context uses for its nudge pad.
+    //
+    // Two mechanisms, both required: registerKeyEventsInterest tells the host to
+    // route these combos to the extension, and a FOCUSED editable field is what
+    // actually gets keystrokes delivered on macOS AE. Hence the invisible input.
+    const keyGrabRef = React.useRef<HTMLInputElement>(null);
+    const [boardArmed, setBoardArmed] = useState(false);
+
+    const boardInterest = () => {
+        const out: Array<Record<string, unknown>> = [];
+        // arrows, delete, backspace, H, V, minus, equals, 0, numpad -/+
+        const codes = [37, 38, 39, 40, 46, 8, 72, 86, 189, 187, 48, 109, 107];
+        for (let i = 0; i < codes.length; i++) {
+            out.push({ keyCode: codes[i], shiftKey: false });
+            out.push({ keyCode: codes[i], shiftKey: true });
+        }
+        return JSON.stringify(out);
+    };
+    const claimBoard = () => {
+        try { csi.registerKeyEventsInterest(boardInterest()); } catch (e) { /* no host in preview */ }
+        setBoardArmed(true);
+    };
+    const releaseBoard = () => {
+        try { csi.registerKeyEventsInterest("[]"); } catch (e) { /* nothing to release */ }
+        setBoardArmed(false);
+    };
+    // Never leave AE without its arrow keys if the tool unmounts while armed.
+    useEffect(() => () => { try { csi.registerKeyEventsInterest("[]"); } catch (e) { /* no host */ } }, []);
+
+    /**
+     * ONE STEP IS ONE PIXEL, ten with Shift. Not acceleration.
+     *
+     * A ramp is the wrong tool for this job: these boards are traced against a
+     * spec, so the moves that matter are "off by one" and "off by exactly the
+     * gap between two panels" -- both of which you want to land on, not slide
+     * past. An accelerating arrow overshoots precisely when you are closest to
+     * right, and the far travel it buys is already covered by typing the number
+     * into the region fields. 1 and 10 are also what every other design tool
+     * does, so it needs no learning.
+     */
+    const onBoardKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        const step = e.shiftKey ? 10 : 1;
+        const key = e.key;
+
+        if (key === "Delete" || key === "Backspace") {
+            e.preventDefault();
+            // A selected guide is the more specific selection, so it goes first
+            // -- otherwise selecting a guide and pressing Delete would silently
+            // bin the region behind it.
+            if (selGuide) removeSelectedGuide();
+            else if (regions.length) removeSelectedRegion();
+            return;
+        }
+        if (key === "h" || key === "H") { e.preventDefault(); addGuide("y"); return; }
+        if (key === "v" || key === "V") { e.preventDefault(); addGuide("x"); return; }
+        // Zoom on the same keys every editor uses. "0" is back to fit.
+        if (key === "+" || key === "=") { e.preventDefault(); stepZoom(1); return; }
+        if (key === "-" || key === "_") { e.preventDefault(); stepZoom(-1); return; }
+        if (key === "0") { e.preventDefault(); setZoom(1); return; }
+
+        let dx = 0;
+        let dy = 0;
+        if (key === "ArrowLeft") dx = -step;
+        else if (key === "ArrowRight") dx = step;
+        else if (key === "ArrowUp") dy = -step;
+        else if (key === "ArrowDown") dy = step;
+        else return;
+        e.preventDefault();
+
+        // A selected guide moves on its own axis; across it, nothing happens
+        // rather than something surprising.
+        if (selGuide) {
+            const along = selGuide.axis === "x" ? dx : dy;
+            if (!along) return;
+            const cur = selGuide.axis === "x" ? guidesX[selGuide.i] : guidesY[selGuide.i];
+            setGuideAt(selGuide.axis, selGuide.i, cur + along);
+            return;
+        }
+        if (regions.length) nudgeRegion(dx, dy);
+    };
+
+    /**
+     * IS THERE ANYTHING TO WORK ON YET?
+     *
+     * The bar carries two different jobs and they are never both wanted. On an
+     * empty board it should offer the WAYS IN and nothing else -- pick a
+     * reference, read a comp, open the library -- because guides on a board
+     * with no reference and no regions are meaningless. Once something is
+     * loaded those entry points are clutter, and one of them (From comp) would
+     * quietly replace the work if pressed by accident.
+     *
+     * The library stays in both states: it is how you move between screens, not
+     * just how you start.
+     */
+    const hasBoard = !!refPath || regions.length > 0;
+
+    /**
+     * TALLEST THE BOARD IS ALLOWED TO DRAW, in px.
+     *
+     * This panel is docked beside a comp, not a page you scroll. A portrait
+     * screen is not "a bit taller" here -- DOOH portraits run to 1:4.4 and
+     * beyond, so filling the width made the stage several screens tall and
+     * every control below it unreachable without a long scroll. Past this
+     * height the board is fitted by HEIGHT instead and centred, which is what
+     * every other image viewer does and what people expect.
+     */
+    // KEEP IN STEP WITH Bespoke.scss's .bsp-stagewrap max-height.
+    const MAX_STAGE_H = 460;
+
+    useEffect(() => {
+        const el = stageWrapRef.current;
+        if (!el || typeof ResizeObserver === "undefined") return;
+        // ResizeObserver is Chrome 64, comfortably under the chrome74 target.
+        const ro = new ResizeObserver((entries) => {
+            if (entries.length) setStageWrapW(entries[0].contentRect.width);
+        });
+        ro.observe(el);
+        setStageWrapW(el.clientWidth);
+        return () => ro.disconnect();
+    }, [mode]);
+
+    /**
+     * The stage's size in px, both axes, or null before the wrap is measured.
+     *
+     * BOTH AXES EXPLICITLY, and that is the whole fix. The stage used to be
+     * sized by the padding-box trick (`height: 0` + `padding-bottom: <ratio>%`)
+     * and the cap only set a px WIDTH -- which does nothing, because a
+     * PERCENTAGE PADDING RESOLVES AGAINST THE CONTAINING BLOCK'S WIDTH, not
+     * against the element's own. So a 720x3840 pillar drew a correctly narrow
+     * strip that was still `533% of the panel width` tall, i.e. exactly as
+     * unusable as before. Once the wrap is measured there is no reason to keep
+     * the ratio trick at all: compute the rectangle and set it.
+     *
+     * Regions are positioned as PERCENTAGES of the stage and dragging measures
+     * it with getBoundingClientRect, so resizing the stage keeps every
+     * coordinate correct -- nothing downstream needs to know this happened.
+     */
+    const stageFit = useMemo(() => {
+        const cw = Number(canvasW) || 0;
+        const ch = Number(canvasH) || 0;
+        if (!cw || !ch || !stageWrapW) return null;
+        let w = stageWrapW;
+        let h = stageWrapW * (ch / cw);
+        if (h > MAX_STAGE_H) {
+            h = MAX_STAGE_H;
+            w = MAX_STAGE_H * (cw / ch);
+        }
+        return { w: Math.max(24, Math.round(w)), h: Math.max(24, Math.round(h)) };
+    }, [canvasW, canvasH, stageWrapW]);
+
+    /**
+     * ZOOM, as a multiple of the fitted size. 1 is "fit".
+     *
+     * A fit that respects the height cap is right for seeing a board and wrong
+     * for working on one: a 720x3840 pillar fits at 86px wide, which is correct
+     * and far too narrow to place an edge in. Rather than pick a taller cap --
+     * which trades every board's reachability for one shape's precision -- the
+     * VIEWPORT stays capped and the board grows inside it and scrolls. Same
+     * answer any image editor gives.
+     *
+     * A ladder rather than free zoom: these are steps you take to see something,
+     * not a value worth tuning, and discrete steps are reversible by eye.
+     */
+    const ZOOM_LADDER = [1, 1.5, 2, 3, 4, 6, 8];
+    const [zoom, setZoom] = useState(1);
+
+    // A new board is a new question, so it opens fitted. Keyed on the canvas
+    // rather than the reference: swapping between candidate images for the same
+    // screen should not throw away the zoom you just set.
+    useEffect(() => { setZoom(1); }, [canvasW, canvasH]);
+
+    const stepZoom = (dir: 1 | -1) => {
+        setZoom((cur) => {
+            let i = 0;
+            for (let n = 0; n < ZOOM_LADDER.length; n++) if (ZOOM_LADDER[n] <= cur + 0.001) i = n;
+            const next = Math.max(0, Math.min(ZOOM_LADDER.length - 1, i + dir));
+            return ZOOM_LADDER[next];
+        });
+    };
+
+    const stageBox = useMemo(() => {
+        if (!stageFit) return null;
+        return { w: Math.round(stageFit.w * zoom), h: Math.round(stageFit.h * zoom) };
+    }, [stageFit, zoom]);
 
     /** Where the current reference sits in the folder, or -1 if it is alone. */
     const refIndex = refs.findIndex((r) => r.path === refPath);
@@ -632,6 +1114,36 @@ export const BespokeTool = () => {
         const at = clampGuide(axis, value);
         if (axis === "x") setGuidesX((g) => g.map((v, n) => (n === i ? at : v)));
         else setGuidesY((g) => g.map((v, n) => (n === i ? at : v)));
+    };
+
+    /** Removes whichever thing is selected. Shared by the buttons and Delete. */
+    const removeSelectedGuide = () => {
+        if (!selGuide) return;
+        if (selGuide.axis === "y") setGuidesY((g) => g.filter((_, n) => n !== selGuide.i));
+        else setGuidesX((g) => g.filter((_, n) => n !== selGuide.i));
+        setSelGuide(null);
+    };
+    const removeSelectedRegion = () => {
+        setRegions((prev) => prev.filter((_, n) => n !== selRegion));
+        setSelRegion((n) => Math.max(0, n - 1));
+    };
+
+    /** Adds a guide down the middle, which is where both bar buttons put one. */
+    const addGuide = (axis: "x" | "y") => {
+        if (axis === "y") setGuidesY((g) => [...g, Math.round((Number(canvasH) || 1080) / 2)]);
+        else setGuidesX((g) => [...g, Math.round((Number(canvasW) || 1920) / 2)]);
+    };
+
+    /** Moves the selected region, clamped to the board. */
+    const nudgeRegion = (dx: number, dy: number) => {
+        const cw = Number(canvasW) || 1920;
+        const ch = Number(canvasH) || 1080;
+        setRegions((prev) => prev.map((r, n) => {
+            if (n !== selRegion) return r;
+            const x = Math.max(0, Math.min(cw - r.w, r.x + dx));
+            const y = Math.max(0, Math.min(ch - r.h, r.y + dy));
+            return { ...r, x: Math.round(x), y: Math.round(y) };
+        }));
     };
 
     /** Nearest guide within reach, or the value untouched. */
@@ -1011,6 +1523,58 @@ export const BespokeTool = () => {
         return counts;
     }, [masters, creative]);
 
+    /**
+     * THE REGIONS DECIDE, NOT THE CANVAS -- and that distinction is the whole
+     * point of doing this properly.
+     *
+     * A 3240x1920 board is landscape, but it is three 1080x1920 PORTRAIT panels
+     * side by side, and portrait is what you want the picker showing. Guessing
+     * from the canvas would hand you exactly the wrong list on the most common
+     * bespoke screen there is. So: when the board has regions -- traced, loaded
+     * from a layout, or read off a comp -- their majority orientation wins, and
+     * only a board with nothing on it yet falls back to its own shape.
+     *
+     * Classified exactly as review.ts's detectOrientation does (w<h portrait,
+     * w>h landscape, equal square) so the guess and the masters agree. QUAD is
+     * never guessed: it is a filename keyword, not a ratio.
+     */
+    const suggestedOrient = useMemo<OrientationKey | "">(() => {
+        const shapeOf = (w: number, h: number): OrientationKey | "" => {
+            if (!w || !h) return "";
+            if (w < h) return "PORTRAIT";
+            if (w > h) return "LANDSCAPE";
+            return "SQUARE";
+        };
+
+        if (regions.length > 0) {
+            const tally: Record<string, number> = { LANDSCAPE: 0, PORTRAIT: 0, SQUARE: 0 };
+            for (const r of regions) {
+                const k = shapeOf(r.w, r.h);
+                if (k) tally[k]++;
+            }
+            let best: OrientationKey | "" = "";
+            let most = 0;
+            for (const k of ["PORTRAIT", "LANDSCAPE", "SQUARE"] as OrientationKey[]) {
+                if (tally[k] > most) { most = tally[k]; best = k; }
+            }
+            return best;
+        }
+        return shapeOf(Number(canvasW) || 0, Number(canvasH) || 0);
+    }, [regions, canvasW, canvasH]);
+
+    useEffect(() => {
+        if (orientTouched) return;
+        if (!suggestedOrient) return;
+        // NEVER select a filter with nothing behind it. The chip is disabled at
+        // zero, so auto-selecting one would leave an empty picker and no
+        // obvious way back -- worse than simply not guessing.
+        if (!orientCounts[suggestedOrient]) return;
+        setOrient(suggestedOrient);
+        // `orient` is deliberately not a dependency: this sets it, and reacting
+        // to its own write is how an effect loops.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [suggestedOrient, orientCounts, orientTouched]);
+
     const durations = useMemo(() => {
         const out: string[] = [];
         for (const m of masters || []) {
@@ -1020,14 +1584,12 @@ export const BespokeTool = () => {
         return out.sort((a, b) => Number(a) - Number(b));
     }, [masters, creative]);
 
-    const anyOrient = ORIENTATION_ORDER.some((k) => orients[k]);
-
     const matches = useMemo(() => {
         const out: BespokeMaster[] = [];
         for (const m of masters || []) {
             if (creative && (m.creative || m.name) !== creative) continue;
             // No pill selected means no orientation filter, not "none of them".
-            if (anyOrient && !orients[m.orientation as OrientationKey]) continue;
+            if (orient && m.orientation !== orient) continue;
             if (durFilter && m.duration !== durFilter) continue;
             out.push(m);
             if (out.length >= MAX_MATCHES) break;
@@ -1035,7 +1597,7 @@ export const BespokeTool = () => {
         // Widest first, then longest: a tile picker is usually reaching for the
         // biggest thing that fits.
         return out.sort((a, b) => b.width - a.width || Number(b.duration) - Number(a.duration));
-    }, [masters, creative, orients, anyOrient, durFilter]);
+    }, [masters, creative, orient, durFilter]);
 
     // --- composition -------------------------------------------------------
     const seg = segments[Math.min(current, segments.length - 1)];
@@ -1112,19 +1674,35 @@ export const BespokeTool = () => {
         <div className="form-tool bsp">
             {/* The masters folder belongs to the work, not to the question at the
                 door -- picking a build type has nothing to do with which folder
-                the masters came from. */}
+                the masters came from.
+
+                IT IS A READOUT, NOT A CONTROL. The folder is whichever one the
+                selected campaign owns, so the header's job is to show which
+                one that turned out to be -- the pick only reappears when the
+                campaign resolved nothing to show. */}
             <div className="bsp-head" hidden={!mode}>
                 <div className="bsp-head-text">
-                    <p className="bsp-masters">{mastersPath || "No masters folder set"}</p>
+                    <p className="bsp-masters">{mastersPath || "No masters folder — pick a campaign below"}</p>
                     <p className="bsp-count">
                         {loading
                             ? "Walking the masters folder — slow the first time, instant after"
-                            : masters ? `${masters.length} masters` : "not loaded"}
+                            : masters
+                                ? `${masters.length} masters under AE/${outsideAE ? ` · ${outsideAE} skipped outside it` : ""}`
+                                : "not loaded"}
                     </p>
                 </div>
-                <Tooltip text="Pick the AEP masters folder">
-                    <button className="bsp-btn bsp-btn--ghost" onClick={pickFolder}>Folder</button>
-                </Tooltip>
+                {(!mastersPath || mastersPinned) && (
+                    <Tooltip text="Pick the AEP masters folder by hand">
+                        <button className="bsp-btn bsp-btn--ghost" onClick={pickFolder}>Folder</button>
+                    </Tooltip>
+                )}
+                {mastersPinned && (
+                    <Tooltip text="Go back to the campaign's own masters folder">
+                        <button className="bsp-btn bsp-btn--icon" onClick={() => setMastersPinned(false)}>
+                            <RotateCcw size={12} />
+                        </button>
+                    </Tooltip>
+                )}
                 <Tooltip text="Re-read the masters folder">
                     <button className="bsp-btn bsp-btn--icon" onClick={() => load(mastersPath)} disabled={loading || !mastersPath}>
                         <RefreshCw size={12} className={loading ? "spin" : ""} />
@@ -1211,24 +1789,53 @@ export const BespokeTool = () => {
                 </label>
                 <label className="bsp-field">
                     <span className="bsp-lbl">Site</span>
+                    {/* Says what the field IS, not one example of what could go
+                        in it. "METROBUS" is a real site name, so as a
+                        placeholder it read like a value already set -- and it
+                        quietly suggested that a bus wrap is the expected answer
+                        on a screen that might be a mall ceiling. Blank is a
+                        legitimate value here and produces a name with no site
+                        token at all, which the prompt should not argue with. */}
                     <input
                         className="bsp-input bsp-input--b"
                         value={site}
-                        placeholder="METROBUS"
+                        placeholder="Site name"
                         onChange={(e) => { setSite(e.target.value); setSiteTouched(true); }}
                     />
                 </label>
             </div>
 
-            <label className="bsp-field" hidden={!mode}>
-                <span className="bsp-lbl">Deliverable name</span>
-                <input
-                    className="bsp-input"
-                    value={outName}
-                    placeholder="Add a master to compose a name"
-                    onChange={(e) => { setOutName(e.target.value); setNameTouched(true); }}
-                />
-            </label>
+            {/* NAME AND SPEC ON ONE ROW. Size and duration used to sit in the
+                toolbar below, which meant the bar carried both "what am I
+                building" and "how do I work on it" and wrapped to two lines.
+                They belong with the name: all three are the deliverable's
+                specification, and all three are read straight off the reference
+                filename together. */}
+            <div className="bsp-namerow" hidden={!mode}>
+                <label className="bsp-field bsp-field--grow">
+                    <span className="bsp-lbl">Deliverable name</span>
+                    <input
+                        className="bsp-input"
+                        value={outName}
+                        placeholder="Add a master to compose a name"
+                        onChange={(e) => { setOutName(e.target.value); setNameTouched(true); }}
+                    />
+                </label>
+                <label className="bsp-field">
+                    <span className="bsp-lbl">Canvas</span>
+                    <span className="bsp-size">
+                        <input className="bsp-input bsp-input--n" value={canvasW} onChange={(e) => setCanvasW(e.target.value)} title="Canvas width" />
+                        <span className="bsp-x">×</span>
+                        <input className="bsp-input bsp-input--n" value={canvasH} onChange={(e) => setCanvasH(e.target.value)} title="Canvas height" />
+                    </span>
+                </label>
+                <label className="bsp-field">
+                    <span className="bsp-lbl">Secs</span>
+                    <span className="bsp-size">
+                        <input className="bsp-input bsp-input--s" value={runtime} onChange={(e) => setRuntime(e.target.value)} title="Runtime in seconds" />
+                    </span>
+                </label>
+            </div>
 
             {/* The exact path, before anything is written. A batch that lands in
                 the wrong market is a redelivery, and this is the one place it
@@ -1286,49 +1893,93 @@ export const BespokeTool = () => {
                                 ? (refPath.split("/").pop() || "").replace(/\.(jpe?g|png)$/i, "")
                                 : "Pick the reference JPG…"}
                         </button>
-                        <span className="bsp-bar-sep" />
-                        <span className="bsp-size">
-                            <input className="bsp-input bsp-input--n" value={canvasW} onChange={(e) => setCanvasW(e.target.value)} title="Canvas width" />
-                            <span className="bsp-x">×</span>
-                            <input className="bsp-input bsp-input--n" value={canvasH} onChange={(e) => setCanvasH(e.target.value)} title="Canvas height" />
-                        </span>
-                        <span className="bsp-size">
-                            <input className="bsp-input bsp-input--n" value={runtime} onChange={(e) => setRuntime(e.target.value)} title="Runtime in seconds" />
-                            <span className="bsp-x">s</span>
-                        </span>
-                        {templates.length > 0 && (
-                            <>
+                        {/* WAS A <select> OF NAMES, which is the same problem
+                            the templates folder has: GRAND_REX and BEAUGRENELLE
+                            are equally meaningless as strings and completely
+                            distinct as shapes. The library draws them.
+
+                            Shown even when the library is empty, because the
+                            way it stops being empty is in there. It only
+                            disappears when the share is unreachable, and that
+                            is silent by design. */}
+                        {/* GROUPED, so the bar breaks between groups and never
+                            between a label and the control it names. */}
+                        {/* THE COMP THE ARTIST ALREADY HAS OPEN is often the
+                            answer -- a template with three solids in it IS the
+                            layout. Regions mode only: Multi Art tiles equally
+                            and has nothing to read. */}
+                        {mode === "regions" && !hasBoard && (
+                            <span className="bsp-bar-group">
                                 <span className="bsp-bar-sep" />
-                                <span className="bsp-bar-lbl">Layout</span>
-                                <select
-                                    className="bsp-refpick bsp-tpl-pick"
-                                    value=""
-                                    onChange={(e) => {
-                                        const t = templates.filter((x) => x.id === e.target.value)[0];
-                                        if (t) loadTemplate(t);
-                                    }}
-                                >
-                                    <option value="">load a saved screen…</option>
-                                    {templates.map((t) => (
-                                        <option key={t.id} value={t.id}>
-                                            {t.name}{t.territory ? ` · ${t.territory}` : ""} · {t.slots.length}r
-                                        </option>
-                                    ))}
-                                </select>
-                            </>
+                                <Tooltip text="Read the comp open in After Effects — its layers become the regions">
+                                    <button className="bsp-btn bsp-btn--ghost" onClick={regionsFromComp}>
+                                        <Layers size={11} /> From comp
+                                    </button>
+                                </Tooltip>
+                            </span>
                         )}
-                        <span className="bsp-bar-sep" />
-                        <span className="bsp-bar-lbl">Guides</span>
-                        <button className="bsp-btn bsp-btn--ghost" onClick={() => setGuidesY((g) => [...g, Math.round((Number(canvasH) || 1080) / 2)])}>
-                            + Horizontal
-                        </button>
-                        <button className="bsp-btn bsp-btn--ghost" onClick={() => setGuidesX((g) => [...g, Math.round((Number(canvasW) || 1920) / 2)])}>
-                            + Vertical
-                        </button>
-                        {(guidesX.length > 0 || guidesY.length > 0) && (
-                            <button className="bsp-btn bsp-btn--ghost" onClick={() => { setGuidesX([]); setGuidesY([]); setSelGuide(null); }}>
-                                Clear
+                        {libraryReadable && (
+                            <span className="bsp-bar-group">
+                                <span className="bsp-bar-sep" />
+                                <span className="bsp-bar-lbl">Screens</span>
+                                <button
+                                    className={"bsp-btn bsp-btn--ghost" + (libraryOpen ? " is-on" : "")}
+                                    onClick={() => setLibraryOpen((v) => !v)}
+                                >
+                                    <Library size={11} />
+                                    {templates.length > 0 ? `Library (${templates.length})` : "Library"}
+                                </button>
+                            </span>
+                        )}
+                        {hasBoard && (
+                        <span className="bsp-bar-group">
+                            <span className="bsp-bar-sep" />
+                            {/* SHORT LABELS THAT ARE ALSO THE SHORTCUT. These
+                                were "+ Horizontal" and "+ Vertical" behind a
+                                GUIDES label -- three items and most of a row to
+                                say what H and V now do. Naming the buttons after
+                                the keys teaches the shortcut instead of needing
+                                a legend for it. */}
+                            <Tooltip text="Add a horizontal guide (H)">
+                                <button className="bsp-btn bsp-btn--ghost bsp-btn--key" onClick={() => addGuide("y")}>
+                                    ＋H
+                                </button>
+                            </Tooltip>
+                            <Tooltip text="Add a vertical guide (V)">
+                                <button className="bsp-btn bsp-btn--ghost bsp-btn--key" onClick={() => addGuide("x")}>
+                                    ＋V
+                                </button>
+                            </Tooltip>
+                            <span className="bsp-bar-sep" />
+                            {/* ZOOM. The board grows inside a capped viewport
+                                rather than pushing the panel, so a 1:5 pillar
+                                can be worked on without every other board
+                                becoming a scroll. */}
+                            <button
+                                className="bsp-btn bsp-btn--ghost bsp-btn--key"
+                                onClick={() => stepZoom(-1)}
+                                disabled={zoom <= ZOOM_LADDER[0]}
+                                title="Zoom out (−)"
+                            >−</button>
+                            <button
+                                className="bsp-btn bsp-btn--ghost bsp-btn--zoom"
+                                onClick={() => setZoom(1)}
+                                title="Back to fit (0)"
+                            >
+                                {zoom === 1 ? "Fit" : `${zoom}×`}
                             </button>
+                            <button
+                                className="bsp-btn bsp-btn--ghost bsp-btn--key"
+                                onClick={() => stepZoom(1)}
+                                disabled={zoom >= ZOOM_LADDER[ZOOM_LADDER.length - 1]}
+                                title="Zoom in (+)"
+                            >＋</button>
+                            {(guidesX.length > 0 || guidesY.length > 0) && (
+                                <button className="bsp-btn bsp-btn--ghost" onClick={() => { setGuidesX([]); setGuidesY([]); setSelGuide(null); }}>
+                                    Clear
+                                </button>
+                            )}
+                        </span>
                         )}
                     </div>
                     {refs.length > 1 && (
@@ -1365,17 +2016,98 @@ export const BespokeTool = () => {
                             </span>
                         </div>
                     )}
+                    {/* DIRECTLY ABOVE THE BOARD IT FEEDS, and it STAYS OPEN.
+                        It used to sit down with the master picker and close
+                        itself on Trace, which threw away the country, the
+                        search and the scroll position every time -- so doing
+                        two things to one screen, or working through a country,
+                        meant navigating back from the top on each one. Closing
+                        is now only ever something you ask for. */}
+                    <ScreenLibrary
+                        open={libraryOpen && !!mode}
+                        entries={templates}
+                        onClose={() => setLibraryOpen(false)}
+                        onLoad={loadTemplate}
+                        onTrace={traceTemplate}
+                        activeId={activeScreen ? activeScreen.id : ""}
+                        onReload={refreshTemplates}
+                        onStatus={(text, type) => setStatus({ text, type })}
+                    />
+
+                    {/* CANDIDATE SCRUBBER. Picking the in-situ image out of a
+                        template is a heuristic and it misses -- a camera-roll
+                        JPG or a screenshot outranks the real diagram often
+                        enough that one guess is not enough. Only shown when
+                        there is somewhere to go. */}
+                    {refAlts.length > 1 && (
+                        <div className={"bsp-refalts" + (refBroken ? " is-broken" : "")}>
+                            <span className="bsp-bar-lbl">Reference</span>
+                            <button
+                                className="bsp-refstep"
+                                disabled={refAlts.indexOf(refPath) <= 0}
+                                onClick={() => {
+                                    const i = refAlts.indexOf(refPath);
+                                    if (i > 0) swapReference(refAlts[i - 1]);
+                                }}
+                                title="Previous candidate"
+                            >‹</button>
+                            <span className="bsp-refcount">
+                                {refAlts.indexOf(refPath) + 1} / {refAlts.length}
+                            </span>
+                            <button
+                                className="bsp-refstep"
+                                disabled={refAlts.indexOf(refPath) >= refAlts.length - 1}
+                                onClick={() => {
+                                    const i = refAlts.indexOf(refPath);
+                                    if (i >= 0 && i < refAlts.length - 1) swapReference(refAlts[i + 1]);
+                                }}
+                                title="Next candidate"
+                            >›</button>
+                            <span className="bsp-refalt-name" title={refPath}>
+                                {(refPath.split("/").pop() || "")}
+                            </span>
+                        </div>
+                    )}
+                    {/* The wrap is what gets measured, and what centres a board
+                        that has been fitted by height rather than width. */}
+                    <div
+                        className={"bsp-stagewrap" + (boardArmed ? " is-armed" : "")}
+                        ref={stageWrapRef}
+                        // Arming on mousedown rather than click so the keys are
+                        // live before a drag even finishes. preventDefault is
+                        // NOT used here -- the regions' own drag handlers need
+                        // the event -- so focus is moved explicitly instead.
+                        onMouseDown={() => { if (keyGrabRef.current) keyGrabRef.current.focus(); }}
+                    >
+                        {/* Genuinely focusable and genuinely invisible: display:none
+                            and visibility:hidden cannot hold focus, which is the
+                            whole mechanism. */}
+                        <input
+                            ref={keyGrabRef}
+                            className="bsp-keygrab"
+                            aria-label="Board shortcuts"
+                            readOnly
+                            onFocus={claimBoard}
+                            onBlur={releaseBoard}
+                            onKeyDown={onBoardKey}
+                        />
                     <div
                         className="bsp-canvas"
                         ref={stageRef}
-                        style={{ paddingBottom: `${((Number(canvasH) || 1080) / (Number(canvasW) || 1920)) * 100}%` }}
+                        // Measured: an explicit rectangle, no ratio trick.
+                        // Unmeasured (first paint): fall back to the padding-box
+                        // ratio so the board still appears at the right shape
+                        // for the one frame before the ResizeObserver fires.
+                        style={stageBox
+                            ? { width: `${stageBox.w}px`, height: `${stageBox.h}px`, paddingBottom: 0 }
+                            : { width: "100%", paddingBottom: `${((Number(canvasH) || 1080) / (Number(canvasW) || 1920)) * 100}%` }}
                     >
                         {/* file:// because the panel is itself a file:// page --
                             CEP has no server to fetch a local image through. */}
                         {refPath && (
                             <img
                                 className="bsp-canvas-ref"
-                                src={`file://${refPath}`}
+                                src={fileUrl(refPath)}
                                 alt=""
                                 // The FILENAME is the deliverable's spec, so it
                                 // wins; the image is checked against it rather
@@ -1396,6 +2128,7 @@ export const BespokeTool = () => {
                                 // SHAPE, where the image really is skewed against
                                 // the canvas and tracing off it lands wide.
                                 onLoad={(e) => {
+                                    setRefBroken(false);
                                     const img = e.currentTarget;
                                     const cw = Number(canvasW) || 0;
                                     const ch = Number(canvasH) || 0;
@@ -1414,7 +2147,22 @@ export const BespokeTool = () => {
                                             : ""
                                     );
                                 }}
-                                onError={() => setRefMismatch("Couldn't load that reference image.")}
+                                // A reference that will not paint is a normal
+                                // outcome here, not a bug: the path stored in
+                                // the .aep may have moved, and a PSD or TIFF
+                                // cannot be decoded by Chromium at all. Say
+                                // which, and point at the way out.
+                                onError={() => {
+                                    setRefBroken(true);
+                                    const ext = (refPath.split(".").pop() || "").toLowerCase();
+                                    const undecodable = ext === "psd" || ext === "tif" || ext === "tiff";
+                                    const more = refAlts.length > 1 ? " Try the next candidate." : "";
+                                    setRefMismatch(
+                                        undecodable
+                                            ? `This reference is a .${ext}, which the panel can't display.${more}`
+                                            : `Couldn't load that reference — the file may have moved.${more}`
+                                    );
+                                }}
                             />
                         )}
                         {(() => {
@@ -1557,6 +2305,7 @@ export const BespokeTool = () => {
                             <span className="bsp-canvas-empty">Pick a master below to drop the first region in.</span>
                         )}
                     </div>
+                    </div>
 
                     {/* What is LEFT of the old guides row: the buttons moved
                         into the bar above, so this appears only when there is
@@ -1581,21 +2330,21 @@ export const BespokeTool = () => {
                                 </span>
                                 <button
                                     className="bsp-swaplink"
-                                    onClick={() => {
-                                        if (selGuide.axis === "y") setGuidesY((g) => g.filter((_, n) => n !== selGuide.i));
-                                        else setGuidesX((g) => g.filter((_, n) => n !== selGuide.i));
-                                        setSelGuide(null);
-                                    }}
+                                    onClick={removeSelectedGuide}
                                 >
                                     remove
                                 </button>
                             </span>
                         )}
-                        <span className="bsp-guidehint">
-                            {selGuide
-                                ? "drag to place · double-click to remove"
-                                : "add a guide, then select a master and Fit to guides"}
-                        </span>
+                        {/* The two descriptive hints that used to live here are
+                            gone. They cost a permanent row in a docked panel to
+                            say something you learn once, and the shortcuts they
+                            described are now on the keyboard. */}
+                        {boardArmed && (
+                            <span className="bsp-keyhint">
+                                ← → ↑ ↓ move · ⇧ ×10 · H / V guide · ⌫ remove · + − 0 zoom
+                            </span>
+                        )}
                     </div>
 
                     {(refMismatch !== "" || overrunRegions.length > 0) && (
@@ -1648,10 +2397,7 @@ export const BespokeTool = () => {
                             </button>
                             <button
                                 className="bsp-btn bsp-btn--ghost"
-                                onClick={() => {
-                                    setRegions((prev) => prev.filter((_, n) => n !== selRegion));
-                                    setSelRegion((n) => Math.max(0, n - 1));
-                                }}
+                                onClick={removeSelectedRegion}
                             >
                                 <Trash2 size={11} /> Remove region
                             </button>
@@ -1832,21 +2578,6 @@ export const BespokeTool = () => {
                 </span>
             </button>
             <div className="bsp-picker" hidden={!mode || (!pickerOpen && swapTarget < 0)}>
-                {/* Creative first, the way OV Library asks it -- the question is
-                    "which artwork", not "what was that file called". */}
-                <div className="bsp-creatives">
-                    {creatives.map((c) => (
-                        <button
-                            key={c.name}
-                            className={"bsp-creative" + (creative === c.name ? " is-on" : "")}
-                            onClick={() => setCreative(c.name)}
-                        >
-                            <span className="bsp-creative-sw" style={{ background: hueFor(c.name) }} />
-                            {c.name}<em>{c.count}</em>
-                        </button>
-                    ))}
-                </div>
-
                 <div className="bsp-filters">
                     {ORIENTATION_ORDER.map((key) => {
                         const Icon = ORIENTATION_ICON[key];
@@ -1854,9 +2585,15 @@ export const BespokeTool = () => {
                         return (
                             <button
                                 key={key}
-                                className={"bsp-chip" + (orients[key] ? " is-on" : "")}
+                                className={"bsp-chip" + (orient === key ? " is-on" : "")}
                                 disabled={n === 0}
-                                onClick={() => setOrients({ ...orients, [key]: !orients[key] })}
+                                // Clicking the active one clears back to all,
+                                // and either way the automatic guess stands
+                                // down -- an explicit choice outranks it.
+                                onClick={() => {
+                                    setOrientTouched(true);
+                                    setOrient((cur) => (cur === key ? "" : key));
+                                }}
                             >
                                 <Icon size={11} />
                                 {key.charAt(0) + key.slice(1).toLowerCase()}
@@ -1873,6 +2610,40 @@ export const BespokeTool = () => {
                         emptyMessage="No durations to filter by."
                     />
                 </div>
+                {/* SAME SHAPE AS THE SCREEN LIBRARY: the primary axis is a
+                    vertical rail, the results are a grid beside it. Creative is
+                    to masters what territory is to screens -- the question you
+                    answer first -- and it was previously a horizontal scroller,
+                    which hid every creative past the fourth on a busy campaign
+                    and cost the grid a whole row of height to do it. */}
+                <div className="bsp-picker-body">
+                <div className="bsp-creatives">
+                    {/* THE FULL NAME, ON HOVER. The rail ellipsises -- it has to,
+                        or one long creative name widens it and squeezes the
+                        grid -- and "GUTTE…" next to "JUNG…" is not a choice
+                        anyone can make. The native `title` this replaces never
+                        appeared: CEP's host is not a browser chrome and does
+                        not render them. Not Tooltip's `grow` prop, which sets
+                        `flex: 1` -- in this COLUMN rail that fills the height,
+                        not the width (CLAUDE.md); the width is carried through
+                        by a scoped rule in Bespoke.scss instead.
+
+                        The delay is per Tooltip's own note: the cursor sweeps
+                        this rail on the way to the grid, and a bubble firing
+                        under it at every row passed reads as spam, not help. */}
+                    {creatives.map((c) => (
+                        <Tooltip key={c.name} text={c.name} delay={220}>
+                            <button
+                                className={"bsp-creative" + (creative === c.name ? " is-on" : "")}
+                                onClick={() => setCreative(c.name)}
+                            >
+                                <span className="bsp-creative-sw" style={{ background: hueFor(c.name) }} />
+                                <span className="bsp-creative-nm">{c.name}</span><em>{c.count}</em>
+                            </button>
+                        </Tooltip>
+                    ))}
+                </div>
+
                 <div className="bsp-list">
                     {/* SKELETON, not a spinner. The walk is one synchronous
                         evalTS -- ExtendScript blocks AE for its whole duration,
@@ -1908,22 +2679,27 @@ export const BespokeTool = () => {
                             swapping={swapTarget >= 0}
                             used={regions.filter((r) => r.master.path === m.path).length}
                             onPick={() => {
-                                // WHETHER THIS SHUTS DEPENDS ON THE MODE, because
-                                // the two workflows are opposites.
+                                // ONLY A SWAP CLOSES THIS, because only a swap is
+                                // finished when it is done -- it was opened by a
+                                // specific region asking to be replaced, and that
+                                // question has now been answered.
                                 //
-                                // A swap is one action, and a region is placed
-                                // and then immediately positioned on the canvas
-                                // -- so both close, putting the canvas back in
-                                // view. Multi Art builds a segment out of SEVERAL
-                                // artworks picked in a row; closing after each one
-                                // made adding a second master a three-click job
-                                // and lost the filters you had set.
+                                // ADDING stays open in BOTH modes. It used to
+                                // close in regions mode, on the reasoning that a
+                                // region is placed and then positioned on the
+                                // canvas -- but a bespoke board is several regions
+                                // picked in a row just as much as a segment is, so
+                                // that cost a reopen and the filters you had set
+                                // for every region after the first. Multi Art
+                                // already worked this way; this is the same rule
+                                // applied to both.
                                 if (swapTarget >= 0) { swapRegion(m); setPickerOpen(false); return; }
-                                if (mode === "regions") { addRegion(m); setPickerOpen(false); return; }
+                                if (mode === "regions") { addRegion(m); return; }
                                 addTile(m);
                             }}
                         />
                     ))}
+                </div>
                 </div>
             </div>
 
@@ -1949,6 +2725,16 @@ export const BespokeTool = () => {
                                 onChange={(e) => setTplName(e.target.value)}
                                 onKeyDown={(e) => { if (e.key === "Enter") saveTemplate(); if (e.key === "Escape") setSaving(false); }}
                             />
+                            {/* SAYS WHERE IT IS ABOUT TO GO. Which country a
+                                layout lands in was invisible and guessable-wrong
+                                -- and "Unfiled" is what you get with no traced
+                                screen and no country chosen, which is worth
+                                seeing BEFORE pressing Save rather than
+                                discovering in the rail afterwards. */}
+                            <span className="bsp-tpl-dest">
+                                → {saveTerritory || "Unfiled"}
+                                {activeScreen && activeScreen.territory ? " (from the screen)" : ""}
+                            </span>
                             <button className="bsp-btn bsp-btn--ghost" onClick={saveTemplate} disabled={!tplName.trim()}>
                                 Save
                             </button>
@@ -1957,7 +2743,11 @@ export const BespokeTool = () => {
                     ) : (
                         <button
                             className="bsp-btn bsp-btn--ghost"
-                            onClick={() => { setTplName(site.trim()); setSaving(true); }}
+                            // Defaults to the traced screen's own name, so
+                            // re-saving it keeps the same id and REPLACES the
+                            // template rather than making a near-duplicate. The
+                            // site is the fallback for a board built fresh.
+                            onClick={() => { setTplName((activeScreen && activeScreen.name) || site.trim()); setSaving(true); }}
                         >
                             Save this layout
                         </button>

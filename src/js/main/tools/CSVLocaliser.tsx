@@ -55,6 +55,7 @@ import { alertDialog, confirmDialog, promptDialog } from "../Dialog";
 import { showMcItReport, type McReport } from "../McItReportModal";
 import { showLocGenReport, type LocGenReport, type LocGenRow } from "../LocGenReportModal";
 import { specRowWarnings, type SpecRow } from "../lib/pdfSpecs";
+import { deriveMastersFromMarkets } from "../lib/mastersRoot";
 
 // One row of the team's shared campaign board (team.ts's TeamCampaignRow).
 // Only what this picker needs: the name, and who retired it if anyone.
@@ -86,26 +87,9 @@ interface CsvLocRow {
     imagesNote?: string;
 }
 
-// The campaign root (e.g. .../INT) holds sibling *_Markets and *_Masters folders
-// sharing a stem. Given the saved Markets path, find its Masters sibling: strip
-// the "XY####_" prefix and "_Markets" suffix to get the stem, then match the
-// sibling ending "…Masters" that contains that stem (XY numbers differ between
-// the two, so compare on the stem, alphanumerics only).
-function deriveMastersFromMarkets(marketsRoot: string): string {
-    try {
-        const parent = path.dirname(marketsRoot);
-        const marketsName = path.basename(marketsRoot);
-        const stem = marketsName.replace(/^XY\d+[_-]?/i, "").replace(/[_-]?markets$/i, "");
-        const canon = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
-        const stemC = canon(stem);
-        const kids = fs.readdirSync(parent, { withFileTypes: true }).filter((d: any) => d.isDirectory());
-        let ms = kids.find((d: any) => /masters$/i.test(d.name) && stemC && canon(d.name).indexOf(stemC) !== -1);
-        if (!ms) ms = kids.find((d: any) => /masters$/i.test(d.name) && !/markets$/i.test(d.name));
-        return ms ? path.join(parent, ms.name) : "";
-    } catch (e) {
-        return "";
-    }
-}
+// The Markets-root → Masters-sibling derivation now lives in lib/mastersRoot.ts,
+// imported above: Bespoke derives the same folder from the same campaign, and a
+// second copy of a path convention drifts silently.
 import "../shared.scss";
 import "./formTool.scss";
 

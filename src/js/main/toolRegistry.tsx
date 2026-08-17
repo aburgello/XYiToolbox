@@ -324,7 +324,7 @@ export const TOOLS: ToolEntry[] = [
         categories: ["localise"],
         icon: Layers,
         Component: BespokeTool,
-        actions: ["Bespoke", "Bespokin", "Multiple Art", "Add segment", "Remove segment"],
+        actions: ["Bespoke", "Bespokin", "Multiple Art", "Add segment", "Remove segment", "Screen library", "Library", "Seed from templates", "Find references", "Trace", "Save this layout"],
         description: "Compose a deliverable from several masters — creatives tiled across the frame, segments played in order. For MultipleArt rows, where no single master fits.",
     },
     {

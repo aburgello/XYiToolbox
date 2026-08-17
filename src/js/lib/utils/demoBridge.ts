@@ -91,7 +91,189 @@ const DEMO_ARCADE_SCORES = [
 
 // Functions whose caller reads structured fields off the result. Values here
 // are chosen to render a believable, non-broken demo.
+// --- Bespoke screen library --------------------------------------------------
+//
+// MUTABLE AT MODULE SCOPE, like demoBattleRooms above: seeding, saving and
+// removing have to actually change what the grid shows or the demo can't
+// demonstrate the one thing the library is about -- templates being replaced
+// by layouts over time. A reload starts fresh, which is right for a demo.
+//
+// The geometry is real enough to be worth looking at: three portrait panels on
+// a metrobus, a four-slot ceiling at 4.4:1, and an asymmetric atrium. Those
+// are the shapes the wireframes exist to tell apart, so a demo with three
+// identical 16:9 boxes would prove nothing.
+interface DemoScreen {
+    id: string;
+    name: string;
+    territory: string;
+    site: string;
+    canvasW: number;
+    canvasH: number;
+    guidesX: number[];
+    guidesY: number[];
+    slots: {
+        x: number; y: number; w: number; h: number; rotation: number;
+        masterW: number; masterH: number; masterDuration: string;
+    }[];
+    savedBy: string;
+    stamp: string;
+    kind: "layout" | "template";
+    templatePath?: string;
+    screen: string;
+    status: "active" | "archive";
+}
+
+const demoLayout = (
+    territory: string, screen: string, canvasW: number, canvasH: number,
+    guidesX: number[], slots: [number, number, number, number][], savedBy: string, stamp: string
+): DemoScreen => ({
+    id: `${territory}::${screen}`.toUpperCase(),
+    name: screen,
+    territory,
+    site: screen,
+    canvasW,
+    canvasH,
+    guidesX,
+    guidesY: [],
+    slots: slots.map((s) => ({
+        x: s[0], y: s[1], w: s[2], h: s[3], rotation: 0,
+        masterW: s[2], masterH: s[3], masterDuration: "10",
+    })),
+    savedBy,
+    stamp,
+    kind: "layout",
+    screen,
+    status: "active",
+});
+
+const demoTemplate = (
+    territory: string, screen: string, canvasW: number, canvasH: number, file: string
+): DemoScreen => ({
+    id: `${territory}::${screen}`.toUpperCase(),
+    name: screen,
+    territory,
+    site: screen,
+    canvasW,
+    canvasH,
+    guidesX: [],
+    guidesY: [],
+    slots: [],
+    savedBy: "",
+    stamp: "2026-08-17",
+    kind: "template",
+    templatePath: `/Volumes/newmedia/_Motion/DOOH/DOOH_Specs/${territory}/${screen}/${file}`,
+    screen,
+    status: "active",
+});
+
+let demoScreens: DemoScreen[] = [
+    // Traced — three portrait panels across a metrobus.
+    demoLayout("France", "GRAND_REX", 3240, 1920, [1080, 2160],
+        [[0, 0, 1080, 1920], [1080, 0, 1080, 1920], [2160, 0, 1080, 1920]], "Antonio", "2026-08-14"),
+    // Traced — a 4.4:1 ceiling, four slots with gaps between them.
+    demoLayout("France", "BEAUGRENELLE", 13536, 3072, [3456, 6912, 10368],
+        [[0, 0, 3168, 3072], [3456, 0, 3168, 3072], [6912, 0, 3168, 3072], [10368, 0, 3168, 3072]], "Fran", "2026-08-11"),
+    // Traced — an asymmetric atrium: banner over two stacked panels.
+    demoLayout("Domestic", "WESTFIELD_ATRIUM", 3840, 2816, [1920],
+        [[0, 0, 3840, 1600], [0, 1600, 1900, 1216], [1940, 1600, 1900, 1216]], "Antonio", "2026-08-09"),
+    // Untraced — still pointing at the old templates folder.
+    demoTemplate("France", "DIGITAL_DREAM_2024", 2160, 3840, "DIGITAL_DREAM_2160x3840px_10s.aep"),
+    demoTemplate("Germany", "SONY_CENTER", 5760, 1080, "SONY_CENTER_5760x1080_10sec.aep"),
+    demoTemplate("Germany", "ZEIL_FRANKFURT", 1920, 1080, "ZEIL_1920x1080px_15s.aep"),
+    demoTemplate("Italy", "DUOMO_WRAP", 7680, 2160, "DUOMO_WRAP_7680x2160px_10s.aep"),
+    demoTemplate("MENA", "DUBAI_MALL_LED", 8192, 2304, "DUBAI_MALL_8192x2304px_15s.aep"),
+    // Deliberately unparseable filename -- draws a neutral box rather than
+    // vanishing, which is the section 5 rule applied to the card.
+    demoTemplate("Football Super Boards", "PERIMETER_BOARD", 0, 0, "PERIMETER_master_FINAL_v3.aep"),
+];
+
+/** What a scan of the templates folder would turn up. */
+const DEMO_SCAN: { territory: string; screen: string; file: string; w: number; h: number }[] = [
+    { territory: "France", screen: "GRAND_REX", file: "GRAND_REX_3240x1920px_10s.aep", w: 3240, h: 1920 },
+    { territory: "France", screen: "DIGITAL_DREAM_2024", file: "DIGITAL_DREAM_2160x3840px_10s.aep", w: 2160, h: 3840 },
+    { territory: "Germany", screen: "SONY_CENTER", file: "SONY_CENTER_5760x1080_10sec.aep", w: 5760, h: 1080 },
+    { territory: "Italy", screen: "GALLERIA_LED", file: "GALLERIA_3840x1080px_10s.aep", w: 3840, h: 1080 },
+    { territory: "Japan", screen: "SHIBUYA_CROSS", file: "SHIBUYA_5120x1440px_15s.aep", w: 5120, h: 1440 },
+    { territory: "Japan", screen: "SHINJUKU_3D", file: "SHINJUKU_3840x2160px_15s.aep", w: 3840, h: 2160 },
+    { territory: "Poland", screen: "ZLOTE_TARASY", file: "ZLOTE_2880x1620px_10s.aep", w: 2880, h: 1620 },
+    { territory: "Australia", screen: "QV_MELBOURNE", file: "QV_4096x2304px_10s.aep", w: 4096, h: 2304 },
+];
+
 const SHAPED: Record<string, (args: unknown[]) => unknown> = {
+    // --- Bespoke screen library ---------------------------------------------
+    // `read: true` on purpose: an unreadable share hides the Library button
+    // entirely, and a demo that hid the feature it is demonstrating would be
+    // worse than useless.
+    bespokeTemplateList: () => ({ success: true, read: true, templates: demoScreens }),
+
+    bespokeTemplateSave: (args) => {
+        try {
+            const entry = JSON.parse(String(args[0])) as DemoScreen;
+            demoScreens = demoScreens.filter((s) => s.id !== entry.id).concat([entry]);
+            return ok({ count: demoScreens.length });
+        } catch {
+            return { success: false, error: "Demo mode couldn't parse that layout." };
+        }
+    },
+
+    bespokeTemplateDelete: (args) => {
+        demoScreens = demoScreens.filter((s) => s.id !== String(args[0]));
+        return ok();
+    },
+
+    bespokeSelectTemplatesRoot: () => "/Volumes/newmedia/_Motion/DOOH/DOOH_Specs",
+
+    bespokeLibraryScan: () => ({
+        success: true,
+        scanned: DEMO_SCAN.length + 4, // a few venues hold more than one .aep
+        candidates: DEMO_SCAN.map((c) => {
+            const id = `${c.territory}::${c.screen}`.toUpperCase();
+            const hit = demoScreens.filter((s) => s.id === id)[0];
+            return {
+                id,
+                territory: c.territory,
+                screen: c.screen,
+                name: c.screen,
+                templatePath: `/Volumes/newmedia/_Motion/DOOH/DOOH_Specs/${c.territory}/${c.screen}/${c.file}`,
+                canvasW: c.w,
+                canvasH: c.h,
+                known: !!hit,
+                superseded: !!hit && hit.kind === "layout",
+            };
+        }),
+    }),
+
+    bespokeLibrarySeed: (args) => {
+        try {
+            const incoming = JSON.parse(String(args[0])) as {
+                id: string; territory: string; screen: string; name: string;
+                templatePath: string; canvasW: number; canvasH: number;
+            }[];
+            let added = 0;
+            let skipped = 0;
+            for (const c of incoming) {
+                const at = demoScreens.filter((s) => s.id === c.id)[0];
+                if (at) {
+                    // A layout is never overwritten by a template — same rule
+                    // the real backend enforces, worth showing here.
+                    if (at.kind === "template") at.templatePath = c.templatePath;
+                    skipped++;
+                    continue;
+                }
+                demoScreens = demoScreens.concat([
+                    demoTemplate(c.territory, c.screen, c.canvasW, c.canvasH, c.templatePath.split("/").pop() || "template.aep"),
+                ]);
+                added++;
+            }
+            return ok({ added, skipped });
+        } catch {
+            return { success: false, error: "Demo mode couldn't parse that scan." };
+        }
+    },
+
+    bespokeLibraryImport: (args) => ok({ name: String(args[0] || "").split("/").pop() || "template.aep" }),
+    bespokeLibraryReveal: () => ok(),
+
     delivery: () => ok({ compIds: [9001, 9002] }),
     deliveryChecklistLoadComps: () => ok({ comps: DEMO_COMPS }),
     deliveryChecklistLoadCompsByIds: () => ok({ comps: DEMO_COMPS }),
