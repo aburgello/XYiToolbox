@@ -60,6 +60,14 @@ export function buildCapabilityList(): string {
             line += ` — ${d}`;
         }
 
+        // THE FIELD IDS, or fill_fields is unusable: the model would have to
+        // invent them from on-screen labels, and the two do not match by
+        // design -- "Slug Description" is `site`. That is the same failure the
+        // tool id note above describes, one field down.
+        if (t.fillableFields && t.fillableFields.length) {
+            line += ` Fillable: ${t.fillableFields.join(", ")}.`;
+        }
+
         if (t.actions && t.actions.length) {
             const shown = t.actions.slice(0, MAX_ACTIONS);
             const more = t.actions.length > shown.length ? ", …" : "";

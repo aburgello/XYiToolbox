@@ -6,7 +6,8 @@
 // those names back into the fields (Detect Name). Pure metadata rename of
 // the selected project item(s) -- never touches a file on disk.
 // =============================================================================
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { takePendingFill } from "../lib/agent/fieldHandoff";
 import { Wand2, ScanSearch, RotateCcw } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import StatusIcon from "../StatusIcon";
@@ -31,6 +32,61 @@ const NameGeneratorTool = () => {
     const [territory, setTerritory] = useState("");
     const [status, setStatus] = useState<StatusMsg | null>(null);
     const [busy, setBusy] = useState(false);
+
+    /**
+     * VALUES THE AGENT PROPOSED, PICKED UP AS THIS MOUNTS.
+     *
+     * A proposal, not an application: they land in the fields, the artist reads
+     * them, and Generate Name is still theirs to press. The agent cannot press
+     * it -- the registry leaves that button unlisted, which defaults to "write".
+     *
+     * ONLY EMPTY FIELDS ARE FILLED, and the rest are named in the status line.
+     * Overwriting something the artist typed is the one way a proposal turns
+     * destructive, and it is invisible while it happens: a field looks equally
+     * filled whoever filled it. Held back and said out loud is the only version
+     * of this that can be trusted.
+     *
+     * Take-once, keyed by tool id, so coming back here later cannot silently
+     * re-fill a form already dealt with.
+     */
+    useEffect(() => {
+        const fill = takePendingFill("name-generator");
+        if (!fill) return;
+
+        const setters: Record<string, [string, (v: string) => void]> = {
+            filmTitle: [filmTitle, setFilmTitle],
+            artworkType: [artworkType, setArtworkType],
+            campaign: [campaign, setCampaign],
+            site: [site, setSite],
+            territory: [territory, setTerritory],
+        };
+
+        const filled: string[] = [];
+        const kept: string[] = [];
+        for (const key in fill) {
+            if (!Object.prototype.hasOwnProperty.call(fill, key)) continue;
+            const slot = setters[key];
+            if (!slot) continue;
+            const [current, set] = slot;
+            if (current.trim()) { kept.push(key); continue; }
+            set(fill[key]);
+            filled.push(key);
+        }
+
+        if (!filled.length && !kept.length) return;
+        setStatus({
+            type: kept.length ? "error" : "success",
+            text: [
+                filled.length ? `Filled ${filled.join(", ")} — check them and press Generate Name.` : "",
+                kept.length ? `Left your own ${kept.join(", ")} alone.` : "",
+                "Nothing has been generated yet.",
+            ].filter(Boolean).join(" "),
+        });
+        // Once, as this mounts. The pending fill is cleared by the read above,
+        // so re-running on a field change could only ever be a no-op -- but it
+        // would also mean this effect's own setState re-entered it.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const run = async (label: string, fn: () => Promise<any>, onResult?: (r: any) => void) => {
         setStatus(null);

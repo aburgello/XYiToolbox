@@ -22,7 +22,11 @@
 // transit (CLAUDE.md §2). Keep every input_schema one level deep.
 // =============================================================================
 import { evalTS } from "../../../lib/utils/bolt";
+import { setPendingFill, takePendingFill } from "./fieldHandoff";
 import { navigateToTool } from "./navigation";
+// The registry is the single source of truth for what may be filled;
+// capabilities.ts reads the same list to tell the model the field ids.
+import { TOOLS as PANEL_TOOLS } from "../../toolRegistry";
 import {
     fetchJobs,
     parseJobTitle,
@@ -39,7 +43,26 @@ export interface ToolDef {
     description: string;
     input_schema: {
         type: "object";
-        properties: Record<string, { type: string; description: string }>;
+        properties: Record<string, {
+            type: string;
+            description: string;
+            /**
+             * A value-type for an object argument, i.e. one level of nesting.
+             *
+             * THE FLAT-SCALAR RULE AT THE TOP OF THIS FILE IS A BRIDGE RULE.
+             * It exists because arguments are JSON.stringify'd and spliced into
+             * eval'd ExtendScript source, where nested arrays-of-objects lose
+             * their values in transit. A tool whose input never reaches
+             * ExtendScript is not subject to it: fill_fields stages values in a
+             * frontend module and navigates, and nothing it receives is ever
+             * marshalled across evalTS.
+             *
+             * So: allowed, and only for tools that stay panel-side. If a tool
+             * taking one of these ever grows a bridge call, its argument has to
+             * become a JSON string first (CLAUDE.md §2).
+             */
+            additionalProperties?: { type: string };
+        }>;
         required: string[];
     };
 }
@@ -176,6 +199,33 @@ export const TOOLS: ToolDef[] = [
                 },
             },
             required: ["toolId"],
+        },
+    },
+    {
+        name: "fill_fields",
+        description:
+            "Put values into a panel tool's fields and open it, so the artist can check them and press " +
+            "the button themselves. This FILLS A FORM — it generates nothing, writes no files and " +
+            "touches no project. Only the fields listed for a tool can be filled; anything else is " +
+            "refused. Fields the artist has already typed into are left alone and reported back, so " +
+            "say which ones you filled and which you did not. Never say you have run, generated or " +
+            "saved anything — you have filled a form and stopped.",
+        input_schema: {
+            type: "object",
+            properties: {
+                toolId: {
+                    type: "string",
+                    description: "The tool's id from the PANEL TOOLS list, e.g. 'name-generator'.",
+                },
+                values: {
+                    type: "object",
+                    description:
+                        "Field id to value, e.g. {\"campaign\": \"ODY\", \"territory\": \"Turkey\"}. " +
+                        "Use the field ids given in FILLABLE FIELDS, not the on-screen labels.",
+                    additionalProperties: { type: "string" },
+                },
+            },
+            required: ["toolId", "values"],
         },
     },
     {
@@ -446,6 +496,85 @@ export async function runTool(name: string, input: any): Promise<ToolResult> {
             // The label goes back so the model can confirm what it opened by
             // name rather than echoing the id at the artist.
             return { ok: true, data: { opened: nav.label, pressed: nav.pressed } };
+        }
+
+        case "fill_fields": {
+            if (!input || typeof input.toolId !== "string" || !input.toolId) {
+                return { ok: false, reason: "fill_fields needs a toolId from the PANEL TOOLS list." };
+            }
+            if (!input.values || typeof input.values !== "object" || Array.isArray(input.values)) {
+                return { ok: false, reason: "fill_fields needs a values object of field id to value." };
+            }
+
+            const entry = PANEL_TOOLS.filter((t) => t.id === input.toolId)[0];
+            if (!entry) {
+                return { ok: false, reason: `No panel tool with id "${input.toolId}".` };
+            }
+
+            // THE GATE. Fail-closed on BOTH axes: a tool that declares no
+            // fillable fields has none, and a field not on its list is not
+            // fillable. Nothing becomes agent-fillable by having been forgotten
+            // in the registry -- same rule as run_action's, for the same reason.
+            const allowed = entry.fillableFields || [];
+            if (!allowed.length) {
+                return {
+                    ok: false,
+                    reason:
+                        `${entry.label} has no fields I'm allowed to fill. I can open it and tell you ` +
+                        `what to put in.`,
+                };
+            }
+
+            const accepted: Record<string, string> = {};
+            const refused: string[] = [];
+            for (const key in input.values) {
+                if (!Object.prototype.hasOwnProperty.call(input.values, key)) continue;
+                if (allowed.indexOf(key) === -1) { refused.push(key); continue; }
+                const v = input.values[key];
+                // Values cross into a form the artist reads and acts on, so a
+                // non-string here is a bug worth refusing rather than coercing:
+                // String(undefined) puts the word "undefined" in a filename.
+                if (typeof v !== "string") { refused.push(key); continue; }
+                accepted[key] = v;
+            }
+
+            if (!Object.keys(accepted).length) {
+                return {
+                    ok: false,
+                    reason:
+                        `None of those are fields I can fill in ${entry.label}. Fillable: ` +
+                        `${allowed.join(", ")}.`,
+                };
+            }
+
+            // Staged BEFORE navigating: the tool reads its pending fill as it
+            // mounts, so a value set afterwards would arrive to a component
+            // that had already looked.
+            setPendingFill({ toolId: entry.id, values: accepted });
+
+            const nav = navigateToTool(entry.id);
+            if (!nav.ok) {
+                // Nothing is left staged for a tool that never opened -- it
+                // would surface on some unrelated later visit.
+                takePendingFill(entry.id);
+                return { ok: false, reason: nav.reason || "Couldn't open that tool." };
+            }
+
+            return {
+                ok: true,
+                data: {
+                    opened: nav.label,
+                    // What was HANDED OVER, not what landed. The tool fills only
+                    // its empty fields and shows the artist what it held back,
+                    // so claiming these were all applied would be claiming more
+                    // than this call knows.
+                    offered: accepted,
+                    refused: refused.length ? refused : undefined,
+                    note:
+                        "Values are in the form, not applied to anything. Anything the artist had " +
+                        "already typed is left as it was and flagged in the tool.",
+                },
+            };
         }
 
         case "scan_renders": {

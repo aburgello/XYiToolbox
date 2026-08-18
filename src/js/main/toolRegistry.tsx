@@ -340,6 +340,20 @@ export const TOOLS: ToolEntry[] = [
         Component: NameGeneratorTool,
         actions: ["Generate Name", "Detect Name", "Reset"],
         description: "Builds a standardised comp/filename from these fields for every selected item, or reverse-parses a selected item's existing name back into them (\"Detect Name\").",
+        // THE FIRST FILLABLE TOOL, and a deliberately unexciting one. Five short
+        // text fields, each bounded by what it is: a film title, an artwork
+        // type, a campaign, a site, a country. The worst case is a wrong word
+        // sitting in front of you before you press anything.
+        //
+        // Ids, not labels. actionSafety is keyed by label because a button is
+        // identified by its visible text and there is no other handle; a field
+        // has a real one, and keying these by label would break the moment
+        // "Film Title" was retitled.
+        //
+        // Generate Name is NOT in actionSafety, so it defaults to "write" and
+        // the agent cannot press it. That is the whole shape of this feature:
+        // it fills the form and stops.
+        fillableFields: ["filmTitle", "artworkType", "campaign", "site", "territory"],
     },
     {
         id: "campaign-localiser",

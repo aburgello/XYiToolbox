@@ -4,10 +4,15 @@ The agent can open a tool and it can press a small graded set of one-click
 actions. It cannot put a value into a field. This is the sketch for the rung
 between those two, and the argument for where it stops.
 
-**Status: sketch.** `ToolEntry.fillableFields` exists and is typed, and Script
-Playground carries an explicit empty entry. No tool declares a fillable field
-yet and there is no filler tool — so nothing is fillable today, which is the
-correct state until the plumbing below is built.
+**Status: built, one tool wired.** `fill_fields` is live and gated;
+`lib/agent/fieldHandoff.ts` is the take-once pipe; Name Generator is the first
+and so far only receiver. Script Playground carries an explicit empty entry and
+never gets one.
+
+Verified against the real registry rather than by inspection: two valid fields
+are accepted, an unlisted field is dropped while the valid ones through, a
+non-string value is refused, Script Playground is refused on its explicit empty
+list, and a tool with no list at all is refused.
 
 ---
 
@@ -90,16 +95,33 @@ opt out of them:
 
 ---
 
-## 5. WHAT IS LEFT TO BUILD
+## 5. HOW IT IS BUILT
 
-- A `fill_fields` agent tool: `{ toolId, values: Record<fieldId, string> }`,
-  gated against `fillableFields` before anything reaches the UI.
-- A per-tool receiver. `localiseHandoff.ts` is the shape to copy: a module
-  variable, taken once, cleared as it is read — so navigating back later cannot
-  silently re-fill a form with a job already dealt with.
-- Field ids per tool, stable and independent of labels. Labels are display
-  strings and get retitled; `actionSafety` is keyed by label because buttons are
-  identified by their visible text, but a field has no such requirement and
-  should not inherit that fragility.
-- A conflict answer for the "field already has a value" case: probably fill the
-  empty ones, list the ones held back, and let the artist ask for the rest.
+- **`fill_fields`** (`lib/agent/tools.ts`) — `{ toolId, values }`. Resolves the
+  tool in the registry, drops any key not on its `fillableFields`, drops any
+  non-string value (`String(undefined)` puts the word "undefined" in a
+  filename), stages what survives, then navigates. If navigation fails it
+  *un-stages*, so nothing is left waiting for a tool that never opened.
+- **`lib/agent/fieldHandoff.ts`** — the pipe. A module variable, taken once,
+  cleared as it is read, and keyed by tool id so a fill meant for one tool
+  cannot be swallowed by whatever mounted first. It decides nothing; the gate
+  is upstream, so there is only one place policy lives.
+- **The receiver** (`NameGenerator.tsx`) — reads its pending fill on mount,
+  fills only the fields that are **empty**, and names the ones it held back in
+  the status line. It also says "Nothing has been generated yet", because the
+  form looking full is exactly when someone assumes it ran.
+- **Field ids, not labels.** `actionSafety` is keyed by label because a button
+  is identified by its visible text and there is no other handle. A field has a
+  real one, and keying by label would break the moment "Film Title" is
+  retitled — or worse, silently stop matching and quietly fill nothing.
+- **The model is told the ids** via the capability list; without that it would
+  infer them from on-screen labels, and they deliberately differ ("Slug
+  Description" is `site`).
+
+### Adding the next tool
+
+1. Add `fillableFields: [...]` to its registry entry, ids only, and apply the
+   worst-plausible-value test to each one.
+2. Copy the mount effect from `NameGenerator.tsx`. Fill empty fields only, and
+   report what was held back.
+3. Nothing else. The tool, the gate and the prompt are already general.
