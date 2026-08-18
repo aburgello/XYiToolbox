@@ -29,7 +29,7 @@ export interface ModelReply {
     /** Raw content blocks, passed straight back into the next turn's history. */
     content: any[];
     stopReason: string;
-    usage: { input: number; output: number; cacheRead: number; cacheWrite: number };
+    usage: { input: number; output: number; cacheRead: number; cacheWrite: number; raw?: Record<string, unknown> };
 }
 
 const MAX_TOKENS = 2048;
@@ -64,8 +64,21 @@ export interface Provider {
     auth: "x-api-key" | "bearer";
     /** Send Anthropic's cache-breakpoint fields. Harmlessly ignored elsewhere. */
     explicitCache: boolean;
-    /** USD per million tokens, for the running-cost readout. */
+    /** USD per million tokens. Off-peak, where a provider has such a thing. */
     rates: { input: number; output: number; cacheRead: number; cacheWrite: number };
+    /**
+     * Providers that charge more at busy hours.
+     *
+     * NOT A DETAIL. DeepSeek's peak windows are 01:00-04:00 and 06:00-10:00
+     * UTC, and the second is 07:00-11:00 in London -- the studio's whole
+     * morning. Billing every call off-peak would be wrong by 2x for exactly
+     * the hours artists use it, and wrong in the flattering direction.
+     */
+    peak?: {
+        rates: { input: number; output: number; cacheRead: number; cacheWrite: number };
+        /** [startHourUTC, endHourUTC) pairs. */
+        windowsUtc: number[][];
+    };
     /** Anything worth knowing before trusting the numbers. */
     note?: string;
 }
@@ -94,10 +107,12 @@ export const PROVIDERS: Provider[] = [
         // honest about what it is asking for, and so a strict endpoint cannot
         // reject an unknown field.
         explicitCache: false,
-        // OFF-PEAK rates. Peak is double, so the readout UNDERSTATES by up to 2x
-        // during peak hours -- stated rather than quietly wrong.
         rates: { input: 0.22, output: 0.66, cacheRead: 0.007, cacheWrite: 0.22 },
-        note: "Off-peak rates; peak is ~2x. Untested from a CEP panel — if calls fail, suspect CORS before the key.",
+        peak: {
+            rates: { input: 0.44, output: 1.32, cacheRead: 0.014, cacheWrite: 0.44 },
+            windowsUtc: [[1, 4], [6, 10]],
+        },
+        note: "Peak 01:00–04:00 and 06:00–10:00 UTC bills 2x; the readout follows the clock.",
     },
 ];
 
@@ -204,15 +219,40 @@ export async function callModel(call: ModelCall): Promise<ModelReply> {
         content: json.content || [],
         stopReason: json.stop_reason || "end_turn",
         usage: {
-            input: json.usage?.input_tokens ?? 0,
+            // DEDUCT CACHE HITS WHERE THE VENDOR INCLUDES THEM. DeepSeek's
+            // prompt_tokens is hits PLUS misses, so billing input_tokens at the
+            // miss rate AND cacheRead at the hit rate would charge the cached
+            // tokens twice. Anthropic already reports these separately, so its
+            // numbers are untouched.
+            input: Math.max(
+                0,
+                (json.usage?.input_tokens ?? 0) -
+                    (json.usage?.cache_read_input_tokens === undefined
+                        ? (json.usage?.prompt_cache_hit_tokens ?? 0)
+                        : 0)
+            ),
             output: json.usage?.output_tokens ?? 0,
-            cacheRead: json.usage?.cache_read_input_tokens ?? 0,
+            // BOTH SPELLINGS. Anthropic reports cache_read_input_tokens;
+            // DeepSeek's own field is prompt_cache_hit_tokens, and its
+            // Anthropic-compatible endpoint may pass either through. Reading
+            // only the Anthropic name meant every cached token was billed at
+            // the full miss rate -- which is why the panel read $0.028 against
+            // a dashboard showing $0.02 for MORE requests than that.
+            cacheRead:
+                json.usage?.cache_read_input_tokens ??
+                json.usage?.prompt_cache_hit_tokens ??
+                0,
             // A SEPARATE FIELD, and it was being dropped. input_tokens does NOT
             // include cache writes, so the readout has been understating every
             // session that ever wrote a cache entry -- by the whole prefix, on
             // the first call of each one. It matters more now, since a 1h write
             // is billed at 2x rather than 1.25x.
             cacheWrite: json.usage?.cache_creation_input_tokens ?? 0,
+            // THE RAW OBJECT, kept so the panel can show exactly which fields
+            // came back. Guessing at another vendor's usage shape is how a cost
+            // readout drifts from the bill without anyone noticing; this makes
+            // the answer observable instead.
+            raw: json.usage || {},
         },
     };
 }
@@ -222,10 +262,30 @@ export async function callModel(call: ModelCall): Promise<ModelReply> {
  * rather than leaving you to guess. Haiku-tier rates, USD per million tokens.
  * Update alongside MODEL.
  */
+/**
+ * The rates in force RIGHT NOW, read per call rather than once per session so
+ * a session straddling 10:00 UTC bills each half correctly.
+ */
+export function activeRates(p: Provider, now?: Date): Provider["rates"] {
+    if (!p.peak) return p.rates;
+    const hour = (now || new Date()).getUTCHours();
+    for (let i = 0; i < p.peak.windowsUtc.length; i++) {
+        const w = p.peak.windowsUtc[i];
+        if (hour >= w[0] && hour < w[1]) return p.peak.rates;
+    }
+    return p.rates;
+}
+
+/** True when the active provider is charging its peak rate right now. */
+export function isPeakNow(now?: Date): boolean {
+    const p = getProvider();
+    return !!p.peak && activeRates(p, now) === p.peak.rates;
+}
+
 export function estimateCost(u: { input: number; output: number; cacheRead: number; cacheWrite?: number }): number {
     // The ACTIVE provider's rates. Hardcoding Haiku's would have over-reported
     // a DeepSeek session by roughly 5x -- a readout nobody can act on.
-    const r = getProvider().rates;
+    const r = activeRates(getProvider());
     return (
         (u.input / 1e6) * r.input +
         (u.output / 1e6) * r.output +

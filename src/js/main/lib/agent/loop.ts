@@ -400,6 +400,16 @@ export interface AskResult {
     steps: Step[];
     costUsd: number;
     /**
+     * The tokens this turn actually used, as the service reported them.
+     *
+     * CARRIED SO THE COST READOUT CAN BE CHECKED rather than believed. Working
+     * out whether a $0.028 estimate matched a $0.02 bill took reading a
+     * provider's dashboard hour by hour, because the panel showed a dollar
+     * figure and hid every number behind it. A cache-hit count is the one
+     * figure that says whether caching is working at all.
+     */
+    usage: { input: number; output: number; cacheRead: number; cacheWrite: number };
+    /**
      * Every message this turn added, question first and the assistant's answer
      * last. The caller keeps these and hands them back as `history` next time.
      *
@@ -431,10 +441,15 @@ export async function ask(
     const turnStart = messages.length - 1;
     const steps: Step[] = [];
     let cost = 0;
+    const used = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
     for (let i = 0; i < MAX_STEPS; i++) {
         const reply = await callModel({ system: systemPrompt(), tools: TOOLS, messages });
         cost += estimateCost(reply.usage);
+        used.input += reply.usage.input;
+        used.output += reply.usage.output;
+        used.cacheRead += reply.usage.cacheRead;
+        used.cacheWrite += reply.usage.cacheWrite || 0;
 
         messages.push({ role: "assistant", content: reply.content });
 
@@ -447,7 +462,7 @@ export async function ask(
                 .join("")
                 .trim();
 
-            if (answer) return { answer, steps, costUsd: cost, messages: messages.slice(turnStart) };
+            if (answer) return { answer, steps, costUsd: cost, usage: used, messages: messages.slice(turnStart) };
 
             // NO TEXT AND NO TOOL CALL. Seen after a successful open_tool: the
             // model considers the job done and says nothing. "(no answer)" made
@@ -458,7 +473,7 @@ export async function ask(
                 last && last.ok
                     ? `Done — ${last.name} ran, but I didn't get a summary back (turn ended: ${reply.stopReason}).`
                     : `I didn't get an answer back (turn ended: ${reply.stopReason}).`;
-            return { answer: fallback, steps, costUsd: cost, messages: messages.slice(turnStart) };
+            return { answer: fallback, steps, costUsd: cost, usage: used, messages: messages.slice(turnStart) };
         }
 
         const results: any[] = [];
@@ -494,6 +509,7 @@ export async function ask(
         answer: `I ran out of steps (${MAX_STEPS}) before finishing that one.`,
         steps,
         costUsd: cost,
+        usage: used,
         messages: messages.slice(turnStart),
     };
 }

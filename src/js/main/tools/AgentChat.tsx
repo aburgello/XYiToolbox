@@ -22,7 +22,7 @@ import { Send, KeyRound, Loader2, CornerDownLeft } from "lucide-react";
 import StatusIcon from "../StatusIcon";
 import { ask, type Step } from "../lib/agent/loop";
 import { buildContextLine } from "../lib/agent/context";
-import { getApiKey, setApiKey, getProvider, setProvider, PROVIDERS } from "../lib/agent/provider";
+import { getApiKey, setApiKey, getProvider, setProvider, PROVIDERS, isPeakNow } from "../lib/agent/provider";
 import "../shared.scss";
 import "./formTool.scss";
 import "./AgentChat.scss";
@@ -39,6 +39,7 @@ interface Turn {
     answer: string;
     error?: string;
     costUsd: number;
+    usage?: { input: number; output: number; cacheRead: number; cacheWrite: number };
     /**
      * This turn's raw messages, kept so the NEXT question can see it. Whole
      * turns only -- see AskResult.messages for why they must not be sliced.
@@ -181,6 +182,7 @@ const AgentChat: React.FC<Props> = ({ focusKey, headerSlot }) => {
                 steps: res.steps,
                 answer: res.answer,
                 costUsd: res.costUsd,
+                usage: res.usage,
                 messages: res.messages,
             }]);
         } catch (e: any) {
@@ -198,6 +200,22 @@ const AgentChat: React.FC<Props> = ({ focusKey, headerSlot }) => {
     };
 
     const sessionCost = turns.reduce((n, t) => n + t.costUsd, 0);
+    // Totals behind the dollar figure, so the estimate can be CHECKED against a
+    // provider's own dashboard rather than taken on trust. cacheRead is the
+    // telling one: if it stays at zero the prefix is being paid for in full
+    // every call, and no amount of tuning the TTL will show up in the price.
+    const sessionUsage = turns.reduce(
+        (a, t) => ({
+            input: a.input + (t.usage?.input || 0),
+            output: a.output + (t.usage?.output || 0),
+            cacheRead: a.cacheRead + (t.usage?.cacheRead || 0),
+            cacheWrite: a.cacheWrite + (t.usage?.cacheWrite || 0),
+        }),
+        { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+    );
+    const cachedShare = sessionUsage.input + sessionUsage.cacheRead > 0
+        ? Math.round((sessionUsage.cacheRead / (sessionUsage.input + sessionUsage.cacheRead)) * 100)
+        : 0;
 
     const headerControls = (
         <>
@@ -249,6 +267,16 @@ const AgentChat: React.FC<Props> = ({ focusKey, headerSlot }) => {
 
             {keyOpen && getProvider().note && (
                 <p className="agentchat-provider-note">{getProvider().note}</p>
+            )}
+
+            {keyOpen && sessionUsage.output > 0 && (
+                <p className="agentchat-provider-note">
+                    This session: {sessionUsage.input.toLocaleString()} in ·{" "}
+                    {sessionUsage.output.toLocaleString()} out ·{" "}
+                    {sessionUsage.cacheRead.toLocaleString()} cached ({cachedShare}%)
+                    {sessionUsage.cacheWrite > 0 && <> · {sessionUsage.cacheWrite.toLocaleString()} written</>}
+                    {isPeakNow() && <> — peak rates right now</>}
+                </p>
             )}
 
             {keyOpen && (
