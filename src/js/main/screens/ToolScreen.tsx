@@ -12,6 +12,7 @@ import { ArrowLeft } from "lucide-react";
 import { TOOLS, categoryStyleVars } from "../toolRegistry";
 import { ToolErrorBoundary } from "../ToolErrorBoundary";
 import { PaletteTrigger, triggerPalette } from "../CommandPalette";
+import { navigateToTool } from "../lib/agent/navigation";
 
 interface Props {
     toolId: string;
@@ -55,7 +56,13 @@ export const ToolScreen: React.FC<Props> = ({ toolId, onBack }) => {
                                     </div>
                                 )}
                                 <div className="tool-content-body">
-                                    <tool.Component />
+                                    {/* Tools reached through the registry used to get NO props, so
+                                        any tool handing off to another one (CSV Localiser's
+                                        "Bespoke It", MyTools' picker) had a silently dead button on
+                                        this path -- it only worked from the bespoke screens that
+                                        pass their own handler. Strictly additive: this prop was
+                                        previously always undefined here. */}
+                                    <tool.Component onSelectTool={(id: string) => navigateToTool(id)} />
                                 </div>
                             </Suspense>
                         </ToolErrorBoundary>

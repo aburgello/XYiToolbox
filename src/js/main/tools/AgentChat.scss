@@ -1,0 +1,254 @@
+// =============================================================================
+// src/js/main/tools/AgentChat.scss
+// -----------------------------------------------------------------------------
+// Build target is chrome74 (CLAUDE.md §3), so: no color-mix(), no :has(), no
+// aspect-ratio, no min()/max()/clamp(), no @container. Spacing uses margins
+// rather than flex `gap` -- gap is Chrome 84 and whether the real CEF host
+// supports it is still the open question in §3.
+//
+// EVERY BUTTON HERE WITH ITS OWN BACKGROUND RE-DECLARES :hover AND :active.
+// index.scss sets a global button:hover/:active ($active: #20639b) that
+// otherwise paints straight over them.
+// =============================================================================
+
+.agentchat {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0; // lets .agentchat-scroll actually scroll instead of pushing
+
+    // --- key row --------------------------------------------------------
+
+    .agentchat-keybtn {
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: inherit;
+
+        &:hover  { background: rgba(255, 255, 255, 0.11); }
+        &:active { background: rgba(255, 255, 255, 0.16); }
+    }
+
+    .agentchat-cost {
+        margin-left: 10px;
+        align-self: center;
+        font-size: 11px;
+        opacity: 0.55;
+    }
+
+    .agentchat-keyrow {
+        display: flex;
+        margin: 8px 0 4px;
+
+        input {
+            flex: 1;
+            margin-right: 6px;
+        }
+    }
+
+    // --- transcript -----------------------------------------------------
+
+    .agentchat-scroll {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 4px 2px 8px;
+    }
+
+    .agentchat-empty {
+        padding: 22px 8px;
+        text-align: center;
+        opacity: 0.75;
+    }
+
+    .agentchat-empty-title {
+        margin: 0 0 6px;
+        font-size: 13px;
+        font-weight: 600;
+    }
+
+    .agentchat-empty-body {
+        margin: 0 auto 14px;
+        max-width: 320px;
+        font-size: 11.5px;
+        line-height: 1.5;
+        opacity: 0.7;
+    }
+
+    .agentchat-examples {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .agentchat-example {
+        margin-bottom: 6px;
+        padding: 6px 12px;
+        font-size: 11.5px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.10);
+        border-radius: 14px;
+        color: inherit;
+        cursor: pointer;
+
+        &:hover  { background: rgba(255, 255, 255, 0.10); }
+        &:active { background: rgba(255, 255, 255, 0.15); }
+    }
+
+    .agentchat-turn {
+        margin-bottom: 14px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+
+        &:last-child { border-bottom: none; }
+    }
+
+    .agentchat-turn--live { opacity: 0.9; }
+
+    .agentchat-q {
+        display: flex;
+        align-items: center;
+        margin-bottom: 8px;
+        font-size: 12px;
+        font-weight: 600;
+
+        svg {
+            margin-right: 6px;
+            opacity: 0.5;
+            flex: 0 0 auto;
+        }
+    }
+
+    // --- tool steps -----------------------------------------------------
+    //
+    // Visible on purpose. When an answer is wrong the first question is always
+    // "what did it actually call", and hiding that turns every debug session
+    // into guesswork.
+
+    .agentchat-step {
+        display: flex;
+        align-items: baseline;
+        margin: 0 0 3px 4px;
+        padding: 3px 8px;
+        font-size: 11px;
+        border-left: 2px solid var(--ov-accent, #68a2d9);
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 0 3px 3px 0;
+
+        &.is-fail {
+            border-left-color: #d9695f;
+            background: rgba(217, 105, 95, 0.09);
+        }
+    }
+
+    .agentchat-step-name {
+        font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        margin-right: 8px;
+        flex: 0 0 auto;
+        opacity: 0.9;
+    }
+
+    .agentchat-step-detail {
+        opacity: 0.6;
+        word-break: break-word;
+    }
+
+    .agentchat-a {
+        margin-top: 8px;
+        font-size: 12px;
+        line-height: 1.55;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .agentchat-thinking {
+        display: flex;
+        align-items: center;
+        margin-top: 6px;
+        font-size: 11px;
+        opacity: 0.6;
+
+        svg { margin-right: 6px; }
+    }
+
+    .agentchat-spin {
+        animation: agentchat-rotate 900ms linear infinite;
+    }
+
+    // --- ask row --------------------------------------------------------
+    //
+    // Mirrors .search-box in main.scss: the WRAPPER carries the surface,
+    // border and radius; the input inside is transparent and borderless.
+    // Same surface tokens, so it reads as part of the panel rather than as a
+    // form control someone dropped in.
+
+    .agentchat-ask {
+        padding-top: 8px;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        flex: 0 0 auto;
+    }
+
+    .agentchat-askbox {
+        display: flex;
+        align-items: center;
+        background: var(--surface-1, #262626);
+        border: 1px solid var(--surface-border, #444);
+        border-radius: 3px;
+        padding: 3px 3px 3px 8px;
+        transition: border-color 120ms ease;
+
+        // The accent belongs on the FOCUSED field, not on a button shouting
+        // for attention next to it.
+        &:focus-within { border-color: var(--ov-accent, #68a2d9); }
+        &.is-busy      { opacity: 0.6; }
+
+        input {
+            flex: 1;
+            min-width: 0;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: #ddd;
+            font-size: 12px;
+            padding: 3px 0;
+            box-sizing: border-box;
+
+            &::placeholder { color: #777; }
+        }
+    }
+
+    // Icon-only, and quiet until it can actually do something. The label was
+    // redundant next to a placeholder that already says "Ask…", and a solid
+    // accent block made a submit button the loudest thing in the panel.
+    .agentchat-send {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        padding: 0;
+        margin-left: 4px;
+
+        background: transparent;
+        border: none;
+        border-radius: 3px;
+        color: var(--ov-accent, #68a2d9);
+        cursor: pointer;
+        transition: background-color 120ms ease;
+
+        &:hover  { background: rgba(255, 255, 255, 0.08); }
+        &:active { background: rgba(255, 255, 255, 0.13); }
+
+        &:disabled {
+            background: transparent;
+            color: #5a5a5a;
+            cursor: default;
+        }
+    }
+}
+
+@keyframes agentchat-rotate {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}

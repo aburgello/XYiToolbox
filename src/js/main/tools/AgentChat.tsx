@@ -1,0 +1,237 @@
+// =============================================================================
+// src/js/main/tools/AgentChat.tsx
+// -----------------------------------------------------------------------------
+// ASK — a read-only agent over three existing backend scans.
+//
+// The prototype described in docs/AGENT-THREE-TOOL-PROTOTYPE.md. It exists to
+// answer one question end to end ("which masters have no render yet?") by
+// chaining two tool calls, and thereby to find out whether an agent over this
+// backend is worth building properly. It is not a shipped feature.
+//
+// It reads. It cannot write, build, render, localise or delete, and the three
+// tools it holds are the entire surface -- see lib/agent/tools.ts.
+//
+// TESTING: run `node scripts/make-test-masters.cjs` and point it at the
+// generated tree. No real campaign names, no client creative, so AI Policy
+// §2.1 does not bite while you are prototyping. Real campaigns go through an
+// approved tool only.
+// =============================================================================
+import React, { useState, useRef, useEffect } from "react";
+import { Send, KeyRound, Loader2, CornerDownLeft } from "lucide-react";
+import StatusIcon from "../StatusIcon";
+import { ask, type Step } from "../lib/agent/loop";
+import { getApiKey, setApiKey } from "../lib/agent/provider";
+import "../shared.scss";
+import "./formTool.scss";
+import "./AgentChat.scss";
+
+const EXAMPLES = [
+    "Which masters in ODY have no render yet?",
+    "How many masters are in ODY?",
+    "What campaigns do we have?",
+];
+
+interface Turn {
+    question: string;
+    steps: Step[];
+    answer: string;
+    error?: string;
+    costUsd: number;
+}
+
+interface Props {
+    /**
+     * Bumped by the host to say "you were just shown" -- the panel stays
+     * mounted while hidden (so the transcript survives), so there is no mount
+     * event to hang focus off.
+     */
+    focusKey?: number;
+}
+
+const AgentChat: React.FC<Props> = ({ focusKey }) => {
+    const [question, setQuestion] = useState("");
+    const [turns, setTurns] = useState<Turn[]>([]);
+    const [live, setLive] = useState<Step[] | null>(null);
+    const [busy, setBusy] = useState(false);
+    const [keyOpen, setKeyOpen] = useState(false);
+    const [keyDraft, setKeyDraft] = useState("");
+    const [hasKey, setHasKey] = useState(false);
+    const [status, setStatus] = useState<{ type: "success" | "error"; text: string } | null>(null);
+    const scrollRef = useRef<HTMLDivElement | null>(null);
+    const askRef = useRef<HTMLInputElement | null>(null);
+
+    useEffect(() => { setHasKey(!!getApiKey()); }, []);
+
+    // KEEP THE CARET IN THE ASK BOX. Focus on being shown, and again once an
+    // answer lands, so a follow-up is always just typing -- without this you
+    // have to click back into the field after every single turn.
+    //
+    // rAF because the panel animates in: focusing a still-hidden element is a
+    // no-op in Chromium, and the CEP host is fussier about it than a browser.
+    useEffect(() => {
+        if (busy) return;
+        const id = requestAnimationFrame(() => askRef.current?.focus());
+        return () => cancelAnimationFrame(id);
+    }, [focusKey, busy, turns.length]);
+
+    // Keep the newest turn in view as steps stream in.
+    useEffect(() => {
+        const el = scrollRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
+    }, [turns, live]);
+
+    const saveKey = () => {
+        setApiKey(keyDraft);
+        setHasKey(!!keyDraft.trim());
+        setKeyDraft("");
+        setKeyOpen(false);
+        setStatus({ type: "success", text: "Key saved to this machine only." });
+    };
+
+    const send = async (q?: string) => {
+        const text = (q ?? question).trim();
+        if (!text || busy) return;
+        setBusy(true);
+        setStatus(null);
+        setQuestion("");
+        const collected: Step[] = [];
+        setLive([]);
+
+        try {
+            const res = await ask(text, (s) => {
+                collected.push(s);
+                setLive([...collected]);
+            });
+            setTurns((t) => [...t, { question: text, steps: res.steps, answer: res.answer, costUsd: res.costUsd }]);
+        } catch (e: any) {
+            setTurns((t) => [...t, {
+                question: text,
+                steps: collected,
+                answer: "",
+                error: e?.message || "Something went wrong.",
+                costUsd: 0,
+            }]);
+        } finally {
+            setLive(null);
+            setBusy(false);
+        }
+    };
+
+    const sessionCost = turns.reduce((n, t) => n + t.costUsd, 0);
+
+    return (
+        <div className="form-tool agentchat">
+
+            <div className="button-row">
+                <button
+                    className="agentchat-keybtn"
+                    onClick={() => setKeyOpen((v) => !v)}
+                    title={hasKey ? "An API key is set on this machine" : "No API key set yet"}
+                >
+                    <KeyRound size={14} /> {hasKey ? "API key set" : "Set API key"}
+                </button>
+                {sessionCost > 0 && (
+                    <span className="agentchat-cost">this session ≈ ${sessionCost.toFixed(3)}</span>
+                )}
+            </div>
+
+            {keyOpen && (
+                <div className="agentchat-keyrow">
+                    <input
+                        type="password"
+                        placeholder="Paste an API key — stored on this machine only, never on the team share"
+                        value={keyDraft}
+                        onChange={(e) => setKeyDraft(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") saveKey(); }}
+                    />
+                    <button onClick={saveKey} disabled={!keyDraft.trim()}>Save</button>
+                </div>
+            )}
+
+            {status && (
+                <div className={`loc-status loc-status-${status.type}`}>
+                    <StatusIcon type={status.type} />
+                    <span>{status.text}</span>
+                </div>
+            )}
+
+            <div className="agentchat-scroll" ref={scrollRef}>
+                {turns.length === 0 && !live && (
+                    <div className="agentchat-empty">
+                        <p className="agentchat-empty-title">Ask about the master library.</p>
+                        <p className="agentchat-empty-body">
+                            Read-only — it can list campaigns, list masters, and check which have renders.
+                            It cannot change anything.
+                        </p>
+                        <div className="agentchat-examples">
+                            {EXAMPLES.map((ex) => (
+                                <button key={ex} className="agentchat-example" onClick={() => send(ex)}>
+                                    {ex}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {turns.map((t, i) => (
+                    <div className="agentchat-turn" key={i}>
+                        <div className="agentchat-q"><CornerDownLeft size={12} /> {t.question}</div>
+                        {t.steps.map((s, j) => (
+                            <div className={"agentchat-step" + (s.ok ? "" : " is-fail")} key={j}>
+                                <span className="agentchat-step-name">{s.name}</span>
+                                <span className="agentchat-step-detail">{s.detail}</span>
+                            </div>
+                        ))}
+                        {t.error
+                            ? <div className="loc-status loc-status-error"><StatusIcon type="error" /><span>{t.error}</span></div>
+                            : <div className="agentchat-a">{t.answer}</div>}
+                    </div>
+                ))}
+
+                {live && (
+                    <div className="agentchat-turn agentchat-turn--live">
+                        {live.map((s, j) => (
+                            <div className={"agentchat-step" + (s.ok ? "" : " is-fail")} key={j}>
+                                <span className="agentchat-step-name">{s.name}</span>
+                                <span className="agentchat-step-detail">{s.detail}</span>
+                            </div>
+                        ))}
+                        <div className="agentchat-thinking">
+                            <Loader2 size={13} className="agentchat-spin" /> working…
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* The bordered surface is the WRAPPER, with a bare transparent
+                input inside — the same shape as .search-box in main.scss.
+                Styling the input directly is what made this look like an
+                unstyled form control dropped into the panel. */}
+            <div className="agentchat-ask">
+                <div className={"agentchat-askbox" + (busy ? " is-busy" : "")}>
+                    <input
+                        ref={askRef}
+                        type="text"
+                        placeholder="Ask about campaigns, masters or renders…"
+                        value={question}
+                        disabled={busy}
+                        onChange={(e) => setQuestion(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") send(); }}
+                    />
+                    <button
+                        className="agentchat-send"
+                        onClick={() => send()}
+                        disabled={busy || !question.trim()}
+                        title="Ask"
+                        aria-label="Ask"
+                    >
+                        <Send size={14} />
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    );
+};
+
+export default AgentChat;
