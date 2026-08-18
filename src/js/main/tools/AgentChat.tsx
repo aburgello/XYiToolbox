@@ -23,6 +23,7 @@ import StatusIcon from "../StatusIcon";
 import { ask, type Step } from "../lib/agent/loop";
 import { buildContextLine } from "../lib/agent/context";
 import { getApiKey, setApiKey, getProvider, setProvider, PROVIDERS, isPeakNow } from "../lib/agent/provider";
+import { takePendingQuestion, subscribeToBubble } from "../lib/agent/bubbleControl";
 import "../shared.scss";
 import "./formTool.scss";
 import "./AgentChat.scss";
@@ -106,6 +107,11 @@ const AgentChat: React.FC<Props> = ({ focusKey, headerSlot }) => {
     const [turns, setTurns] = useState<Turn[]>([]);
     const [live, setLive] = useState<Step[] | null>(null);
     const [busy, setBusy] = useState(false);
+    // Refreshed every render rather than closed over: the hand-off effect below
+    // re-subscribes each render, and a stale `busy` there would let a second
+    // question fire on top of one still running.
+    const busyRef = useRef(false);
+    busyRef.current = busy;
     const [keyOpen, setKeyOpen] = useState(false);
     const [keyDraft, setKeyDraft] = useState("");
     const [hasKey, setHasKey] = useState(false);
@@ -118,6 +124,12 @@ const AgentChat: React.FC<Props> = ({ focusKey, headerSlot }) => {
     const askRef = useRef<HTMLInputElement | null>(null);
 
     useEffect(() => { setHasKey(!!getApiKey()); }, []);
+
+    // A QUESTION HANDED OVER FROM ELSEWHERE IN THE PANEL, e.g. the spec report's
+    // own "what's wrong with this?" button. Kept in a ref and read by the
+    // subscription below, because `send` is defined further down and an effect
+    // declared here cannot see it yet.
+    const pendingRef = useRef<string>("");
 
     // KEEP THE CARET IN THE ASK BOX. Focus on being shown, and again once an
     // answer lands, so a follow-up is always just typing -- without this you
@@ -220,6 +232,23 @@ const AgentChat: React.FC<Props> = ({ focusKey, headerSlot }) => {
             setBusy(false);
         }
     };
+
+    // Picked up when the bubble opens with a question waiting. Subscribed rather
+    // than read once, because the bubble is hidden with CSS rather than
+    // unmounted -- a mount effect would fire exactly once per session and every
+    // later hand-off would be silently dropped. Same trap as the field handoff.
+    useEffect(() => {
+        const run = () => {
+            const q = takePendingQuestion();
+            if (!q || busyRef.current) return;
+            pendingRef.current = q;
+            setQuestion(q);
+            // Sent, not just typed in. The whole point is not having to ask.
+            void send(q);
+        };
+        run();
+        return subscribeToBubble(run);
+    });
 
     const sessionCost = turns.reduce((n, t) => n + t.costUsd, 0);
     // Totals behind the dollar figure, so the estimate can be CHECKED against a

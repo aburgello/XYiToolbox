@@ -57,6 +57,19 @@ B.toggleAgentEnabled();
 check("re-enabling does not resurrect a stale panel state — it opens fresh",
       B.isAgentEnabled() === true && B.isBubbleOpen() === true);
 
+console.log("\n=== a question handed over from elsewhere in the panel ===");
+B.setAgentEnabled(false);
+check("does nothing while the agent is off", B.askAgent("check these specs") === false);
+check("and leaves no question waiting", B.takePendingQuestion() === "");
+check("the feature stays off — a button must not switch it on", B.isAgentEnabled() === false);
+
+B.setAgentEnabled(true);
+B.setBubbleOpen(false);
+check("handing one over opens the bubble", B.askAgent("check these specs") === true && B.isBubbleOpen());
+check("the question is waiting", B.takePendingQuestion() === "check these specs");
+check("take-once — a second read gets nothing", B.takePendingQuestion() === "");
+check("an empty question is refused", B.askAgent("   ") === false);
+
 console.log("\n=== subscribers ===");
 let seen = 0;
 const stop = B.subscribeToBubble(() => seen++);

@@ -34,6 +34,8 @@ type Listener = () => void;
 
 let enabled = readEnabled();
 let open = false;
+/** A question handed in from elsewhere in the panel, waiting to be asked. */
+let pendingQuestion = "";
 const listeners: Listener[] = [];
 
 function readEnabled(): boolean {
@@ -93,6 +95,36 @@ export function setBubbleOpen(next: boolean): void {
 
 export function toggleBubble(): void {
     setBubbleOpen(!open);
+}
+
+/**
+ * ASK SOMETHING FROM WHEREVER THE ARTIST ALREADY IS.
+ *
+ * A tool that has just produced something worth a second opinion -- a spec
+ * table, say -- can hand the question over rather than making somebody open the
+ * bubble and work out how to phrase it. The two frictions this removes are
+ * knowing the agent can help here at all, and finding the words.
+ *
+ * TAKE-ONCE, like the field handoff: whoever reads it gets it, and a later
+ * mount cannot re-ask a question already answered.
+ *
+ * IT DOES NOTHING WHILE THE AGENT IS OFF. A button that silently turned the
+ * feature on would make the opt-in meaningless -- see the note at the top.
+ */
+export function askAgent(question: string): boolean {
+    if (!enabled) return false;
+    const q = String(question || "").trim();
+    if (!q) return false;
+    pendingQuestion = q;
+    open = true;
+    announce();
+    return true;
+}
+
+export function takePendingQuestion(): string {
+    const q = pendingQuestion;
+    pendingQuestion = "";
+    return q;
 }
 
 /** Returns an unsubscribe. */

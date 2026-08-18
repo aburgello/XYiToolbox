@@ -981,3 +981,13 @@
     min-width: 130px;
     opacity: 0.72;
 }
+
+// The footer carries the caveat and, when the agent is on, its button.
+.dh-specreport .dh-specreport-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+
+    span { flex: 1; }
+}
