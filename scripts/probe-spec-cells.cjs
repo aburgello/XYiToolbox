@@ -21,7 +21,9 @@ const ROOT = path.join(__dirname, "..");
 const OUT = path.join(os.tmpdir(), "xyi-specs-probe.cjs");
 execFileSync("npx", ["esbuild", path.join(ROOT, "src/js/main/lib/pdfSpecs.ts"),
     "--bundle", "--format=cjs", "--platform=node", "--outfile=" + OUT,
-    "--external:canvas", "--log-level=error"], { cwd: ROOT });
+    "--alias:canvas=" + path.join(__dirname, "empty-module.cjs"),
+    "--alias:path2d-polyfill=" + path.join(__dirname, "empty-module.cjs"),
+    "--log-level=error"], { cwd: ROOT });
 const S = require(OUT);
 
 let pass = 0, fail = 0;

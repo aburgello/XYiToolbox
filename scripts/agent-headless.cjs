@@ -34,8 +34,11 @@ function loadAgent() {
 
     execFileSync("npx", ["esbuild", entry, "--bundle", "--format=cjs", "--platform=node",
         "--outfile=" + out,
-        // pdfjs reaches for node-canvas on this path and never uses it here.
-        "--external:canvas",
+        // pdfjs reaches for node-canvas to render pages to a bitmap. These
+        // scripts only read text, so it is aliased to an empty module rather
+        // than left external -- external made it warn twice on every run.
+        "--alias:canvas=" + path.join(__dirname, "empty-module.cjs"),
+        "--alias:path2d-polyfill=" + path.join(__dirname, "empty-module.cjs"),
         "--loader:.scss=empty", "--loader:.css=empty", "--loader:.gif=text", "--loader:.png=text",
         "--loader:.svg=text", "--loader:.jpg=text", "--loader:.mp4=text", "--loader:.webm=text",
         "--loader:.mp3=text", "--loader:.wav=text", "--log-level=error"], { cwd: ROOT });
@@ -57,6 +60,12 @@ function loadAgent() {
         body: { appendChild: () => {} },
     };
 
+    // pdfjs is reachable from the agent's tool table now (read_delivery_specs
+    // -> deliverySpecMatch -> pdfSpecs), and it warns on stderr about a missing
+    // node-canvas it will never use here. Silenced across the require only, so
+    // a real warning from anything else still gets through afterwards.
+    // Filtered at the stream, not via console.warn: pdfjs writes this one
+    // straight to stderr and overriding console did nothing.
     cached = require(out);
     return cached;
 }

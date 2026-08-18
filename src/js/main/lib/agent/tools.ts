@@ -23,6 +23,7 @@
 // =============================================================================
 import { evalTS } from "../../../lib/utils/bolt";
 import { setPendingFill, takePendingFill } from "./fieldHandoff";
+import { readSpecReport } from "../deliverySpecMatch";
 import { navigateToTool } from "./navigation";
 // The registry is the single source of truth for what may be filled;
 // capabilities.ts reads the same list to tell the model the field ids.
@@ -834,6 +835,33 @@ export const TOOLS: ToolDef[] = [
         },
     },
     {
+        name: "read_delivery_specs",
+        description:
+            "Read the client spec PDFs for a campaign and return every row: pixel size, duration, " +
+            "bitrate, frame rate, max file size, sound, and the SPECIFIC VIDEO REQUIREMENTS cell " +
+            "verbatim. Read-only — it changes nothing and fills nothing in.\n" +
+            "USE IT TO CHECK THE SHEET, not just to look a number up. These tables are filled in by " +
+            "hand and arrive miscollated: a bitrate in the frame-rate column, a file size and a " +
+            "bitrate in one cell, a container name where a size should be. Each row carries `flags` " +
+            "— the parser's own doubts — and `notes`, the free text it could not parse. The notes are " +
+            "where the real limit often hides: one sheet writes MP4 under FILE SIZE and puts \"Max " +
+            "size 21mb\" in the requirements column. Read them.\n" +
+            "Say what the sheet SAYS and what looks wrong about it. Never state a limit the sheet " +
+            "does not give, and quote the cell when the answer came from free text.",
+        input_schema: {
+            type: "object",
+            properties: {
+                mastersRoot: {
+                    type: "string",
+                    description:
+                        "Any path inside the campaign — the mastersRoot from list_campaigns does. " +
+                        "The specs are found in Masters/Specs above it.",
+                },
+            },
+            required: ["mastersRoot"],
+        },
+    },
+    {
         name: "scan_renders",
         description:
             "Find every rendered video file under a campaign's masters root and return each render's " +
@@ -1530,6 +1558,30 @@ export async function runTool(name: string, input: any): Promise<ToolResult> {
                     note:
                         "Values are in the form, not applied to anything. Anything the artist had " +
                         "already typed is left as it was and flagged in the tool.",
+                },
+            };
+        }
+
+        case "read_delivery_specs": {
+            if (!input || typeof input.mastersRoot !== "string" || !input.mastersRoot) {
+                return { ok: false, reason: "read_delivery_specs needs a path inside the campaign. Call list_campaigns first." };
+            }
+            const report = await readSpecReport(input.mastersRoot).catch((e) => ({
+                folder: "", files: [], note: "Couldn't read the specs: " + String(e && e.message ? e.message : e),
+            }));
+            // The NOTE is returned even when there are no rows: "no specs folder
+            // next to this campaign" and "the PDFs are unreadable prose" are
+            // different answers, and an empty list conveys neither.
+            return {
+                ok: true,
+                data: {
+                    folder: report.folder,
+                    note: report.note,
+                    files: report.files.map((f) => ({
+                        file: f.file,
+                        error: f.error,
+                        rows: f.rows,
+                    })),
                 },
             };
         }
