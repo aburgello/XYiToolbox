@@ -682,26 +682,29 @@ export const TOOLS: ToolEntry[] = [
         Component: ScriptPlaygroundTool,
         actions: ["Run Script", "Clear Output"],
         description: "Run arbitrary ExtendScript directly in After Effects from a textarea.",
-        // NEVER FILLABLE, AND SAID OUT LOUD RATHER THAN LEFT UNSAID.
+        // FILLABLE AFTER ALL, and the earlier refusal is kept here because the
+        // reasoning behind it was wrong in a specific, reusable way.
         //
-        // The empty array is doing real work here. Every other tool is not
-        // fillable by omission, which is correct but silent; this one has to be
-        // unfillable ON PURPOSE and be seen to be, because it is the single
-        // place where the rule would look most helpful to break.
+        // It ran: filling this textarea grants `runScript` through the front
+        // end. It does not. The agent can already author arbitrary
+        // ExtendScript — it does that in chat and the artist pastes it — so
+        // filling the box adds no capability, it removes a clipboard
+        // round-trip. What grants execution is the RUN button, and that is
+        // still the artist's: "Run Script" is absent from actionSafety, so it
+        // defaults to "write" and navigation.ts refuses to press it. None of
+        // that changed.
         //
-        // That textarea is the argument to `runScript` — the bare eval
-        // CLAUDE.md §1 and docs/AGENT-READONLY-SLICE.md both single out as
-        // never exposed, because anything holding it can do anything,
-        // including overwriting a studio master. Filling it would hand that
-        // over through the front end: the tool list would still honestly say
-        // runScript is not exposed while the capability had been granted, and
-        // the only remaining gate would be an artist skimming code they did
-        // not write. That is not a gate.
+        // What was RIGHT in the objection is narrower, and is handled in the
+        // receiver rather than here: a filled box reads as READY where a chat
+        // message reads as a suggestion. So the tool fills only an untouched
+        // box, never over the artist's own work, and says plainly that what is
+        // in there was written by the agent and has not been run.
         //
-        // No actionSafety either, so "Run Script" falls to the default of
-        // "write" and the agent cannot press it. Do not add one to mark
-        // "Clear Output" clickable — the button is not worth the precedent.
-        fillableFields: [],
+        // Still no actionSafety: neither "Run Script" nor "Clear Output" is
+        // agent-clickable. And "Save as Tool" stays out of reach — a saved
+        // custom tool re-runs later on one click with nobody reading it, which
+        // is a different and worse thing than a filled box.
+        fillableFields: ["code"],
     },
     {
         id: "my-tools",

@@ -1,13 +1,13 @@
-# Filling fields — design sketch
+# Filling fields
 
-The agent can open a tool and it can press a small graded set of one-click
-actions. It cannot put a value into a field. This is the sketch for the rung
-between those two, and the argument for where it stops.
+The agent can open a tool and press a small graded set of one-click actions.
+This is the rung between those two: putting values into a form and stopping —
+and the argument for where it stops.
 
-**Status: built, one tool wired.** `fill_fields` is live and gated;
-`lib/agent/fieldHandoff.ts` is the take-once pipe; Name Generator is the first
-and so far only receiver. Script Playground carries an explicit empty entry and
-never gets one.
+**Status: built, two tools wired.** `fill_fields` is live and gated;
+`lib/agent/fieldHandoff.ts` is the take-once pipe; Name Generator and Script
+Playground are the receivers. See §3 for why the Playground's exclusion was
+reversed.
 
 Verified against the real registry rather than by inspection: two valid fields
 are accepted, an unlisted field is dropped while the valid ones through, a
@@ -57,23 +57,36 @@ wrong size is a wrong comp. A wrong script is anything at all.
 
 ---
 
-## 3. SCRIPT PLAYGROUND IS EXCLUDED PERMANENTLY
+## 3. SCRIPT PLAYGROUND — THE ARGUMENT, AND THE REVERSAL
 
-Its textarea is the argument to `runScript` — the bare eval that CLAUDE.md §1
-and `AGENT-READONLY-SLICE.md` both single out as never exposed, in this slice or
-any later one.
+This section first said the Playground was excluded permanently. It is not, and
+the reasoning is kept because it was wrong in a way worth not repeating.
 
-Filling it would grant that capability through the front end. The tool list
-would still honestly report that `runScript` is not exposed, while the only
-remaining gate was an artist skimming forty lines of code they did not write.
-An audit of the tool set would come back clean and be wrong.
+**The argument that ran:** its textarea is the argument to `runScript`, so
+filling it grants that capability through the front end — the tool list would
+still honestly report `runScript` as unexposed while the only remaining gate was
+an artist skimming code they did not write.
 
-Hence the explicit `fillableFields: []` on that entry rather than leaving it
-absent: every other tool is unfillable by omission, which is correct but silent.
-This one has to be unfillable on purpose, and be seen to be, because it is the
-one place where breaking the rule would look most helpful.
+**Why that is wrong:** the agent can already author arbitrary ExtendScript. It
+writes it in chat and the artist pastes it. Filling the box adds no capability
+it does not have; it removes a clipboard round-trip. The thing that grants
+execution is the **Run** button, and that is untouched — "Run Script" is absent
+from `actionSafety`, so it defaults to `write` and `navigation.ts` refuses to
+press it. The gate never moved.
 
----
+That conflated *authoring* with *executing*. They are different, and only one of
+them was ever gated.
+
+**What survives, and where it lives:** a filled box reads as **ready**, where a
+chat message reads as a suggestion. That is a real difference and it is a
+presentation problem, so it is fixed in the receiver, not by refusal —
+`ScriptPlayground.tsx` fills only an untouched box, never over the artist's own
+work, and says who wrote the script and that it has not run.
+
+**What is still out of reach:** *Save as Tool*. A saved custom tool re-runs later
+on one click with nobody reading it, and CLAUDE.md §1 already flags that a saved
+custom tool can do anything. A filled box is read before it runs, once. A saved
+tool is read once and run forever. Those are not the same risk.
 
 ## 4. THE RULES THE FILLER ENFORCES REGARDLESS
 
