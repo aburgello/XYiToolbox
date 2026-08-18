@@ -807,19 +807,34 @@ export function territoryCheck(input: string): string | null {
 }
 
 
+/** The most of the frame a title box may grow to occupy. */
+const FRONTCARD_BOX_MAX = 0.9;
+
 /**
- * Shrinks a BOX text layer's type until its text fits the box it was given.
+ * Makes a BOX text layer's title fit -- by WIDENING THE BOX FIRST, and only
+ * shrinking the type if the box has run out of frame to grow into.
  *
  * The brand template's title is box text sized for a short film name, so
  * "Forgotten Island" wrapped and the second word fell outside -- the card read
  * FORGOTTEN. Nothing warned, because a text layer that overflows its box still
  * renders perfectly happily.
  *
- * Only ever makes type SMALLER, and only on box text: point text has no box to
- * overflow, and growing a title past its designed size would be a worse
- * surprise than a small one. Bails out unchanged if the measurement is not
- * telling it anything -- an unfixed title is better than one shrunk to nothing
- * by a loop that could not see what it was doing.
+ * SHRINKING WAS THE WRONG FIRST MOVE. It was all this did, and what artists
+ * actually did by hand was drag the box wider and recentre it -- because the
+ * type size is the designer's decision and the box is just the container it
+ * was given. A title set two points smaller than every other card in the
+ * campaign is a subtle inconsistency nobody catches; a wider box is invisible.
+ * So: grow, recentre, and only then shrink.
+ *
+ * THE BOX GROWS ABOUT ITS OWN CENTRE, which is the recentring step. boxTextPos
+ * is the box's TOP-LEFT, so widening alone would push the text right rather
+ * than out both ways -- the layer would fit and sit off-centre, which is worse
+ * than overflowing because it looks deliberate.
+ *
+ * Bounded by the comp, not by taste: it will not widen past FRONTCARD_BOX_MAX
+ * of the frame. Bails out unchanged if the measurement is not telling it
+ * anything -- an unfixed title is better than one mangled by a loop that could
+ * not see what it was doing.
  */
 function fitFrontcardText(layer: Layer, time: number): string {
   try {
@@ -830,23 +845,84 @@ function fitFrontcardText(layer: Layer, time: number): string {
 
     const boxHeight = doc.boxTextSize[1];
     const startSize = doc.fontSize;
+    const startWidth = doc.boxTextSize[0];
     if (!boxHeight || !startSize) return "";
 
+    // How wide the box may grow. The comp is the only honest bound -- a title
+    // box running to the frame edge is a different bug from one that wraps.
+    let maxWidth = startWidth;
+    try {
+      const comp = (layer as AVLayer).containingComp;
+      if (comp && comp.width) maxWidth = comp.width * FRONTCARD_BOX_MAX;
+    } catch (e) {
+      // No reachable comp: no widening, and the shrink below still applies.
+    }
+
+    const overflows = () => {
+      const rect = (layer as AVLayer).sourceRectAtTime(time, false);
+      if (!rect || !rect.height) return null;   // not measurable
+      return rect.height > boxHeight;
+    };
+
+    // --- 1. widen, recentring as it goes -----------------------------------
     let guard = 0;
+    while (guard < 40 && startWidth > 0) {
+      const over = overflows();
+      if (over === null) return "";
+      if (!over) break;
+      const next = prop.value as TextDocument;
+      const size = next.boxTextSize;
+      if (size[0] >= maxWidth) break;
+      // STEPPED BY THE DISTANCE LEFT TO TRAVEL, not by the starting width. A
+      // step of 5%-of-start took 40 tries to cross a wide gap and the guard
+      // stopped it short of the cap, so a very long title shrank its type
+      // while the box still had room to grow -- the exact ordering this is
+      // meant to prevent. Twenty steps reaches the cap from anywhere.
+      const step = Math.max(8, Math.round((maxWidth - startWidth) / 20));
+      const grown = Math.min(maxWidth, size[0] + step);
+      const delta = grown - size[0];
+      if (delta <= 0) break;
+      try {
+        const pos = next.boxTextPos;
+        next.boxTextSize = [grown, size[1]];
+        // Half the growth taken off the left edge, so the box expands about
+        // its centre instead of only rightwards.
+        next.boxTextPos = [pos[0] - delta / 2, pos[1]];
+        prop.setValue(next);
+      } catch (e) {
+        // boxTextPos/boxTextSize not writable on this host: stop widening
+        // rather than leaving the box grown but shifted off-centre.
+        break;
+      }
+      guard++;
+    }
+
+    // --- 2. only now, shrink ------------------------------------------------
+    guard = 0;
     while (guard < 30) {
       guard++;
-      const rect = (layer as AVLayer).sourceRectAtTime(time, false);
-      // Not measurable -- leave the layer exactly as it was.
-      if (!rect || !rect.height) return "";
-      if (rect.height <= boxHeight) break;
+      const over = overflows();
+      if (over === null) return "";
+      if (!over) break;
       const next = prop.value as TextDocument;
       if (next.fontSize <= 10) break;
       next.fontSize = next.fontSize - 2;
       prop.setValue(next);
     }
-    const endSize = (prop.value as TextDocument).fontSize;
-    if (endSize < startSize) return "shrunk from " + startSize + "pt to " + endSize + "pt to fit its box";
-    return "";
+
+    const endDoc = prop.value as TextDocument;
+    const endSize = endDoc.fontSize;
+    const endWidth = endDoc.boxTextSize[0];
+    const notes: string[] = [];
+    if (endWidth > startWidth) {
+      notes.push("box widened from " + Math.round(startWidth) + "px to " + Math.round(endWidth) + "px and recentred");
+    }
+    if (endSize < startSize) {
+      // SAID SEPARATELY, and second, because it is the compromise. A card whose
+      // type no longer matches its siblings is worth a human look.
+      notes.push("type shrunk from " + startSize + "pt to " + endSize + "pt -- it would not fit even at full width");
+    }
+    return notes.join("; ");
   } catch (e) {
     return "";
   }
@@ -917,14 +993,21 @@ function frontcardTargets(comp: CompItem): FrontcardTarget[] {
   return out;
 }
 
-function frontcardSet(target: FrontcardTarget, which: string, value: string): void {
+function frontcardSet(target: FrontcardTarget, which: string, value: string): string {
   const idx = (target.idx as any)[which];
-  if (!idx) return;
+  if (!idx) return "";
   const layer = target.source.layer(idx);
-  if (!layer) return;
+  if (!layer) return "";
   const prop = layer.property("Source Text") as Property;
-  if (!prop) return;
+  if (!prop) return "";
   prop.setValue(String(value));
+  // THE FIT BELONGS HERE, not at the call sites. Cheeky T fitted its title and
+  // Cheeky DT did not, so typing a real name into the panel overflowed the box
+  // and had to be dragged wider by hand -- the same card, the same layer, two
+  // different behaviours depending on which button wrote it. Doing it inside
+  // the setter means every write path gets it, including any added later.
+  if (which === "title") return fitFrontcardText(layer, 0);
+  return "";
 }
 
 // =============================================================================
@@ -1167,10 +1250,17 @@ export const frontcardWriteFields = (payload: string): Result => {
       return v.hasOwnProperty(k) && String(v[k]) !== "";
     };
 
+    // What the fit had to do, so the panel can say it. WAS READ OUT OF
+    // cheekyDTCheck'S SCOPE by mistake -- the same unbound-identifier bug as
+    // compFor, caught this time by scripts/audit-unbound-globals.cjs.
+    let titleNote = "";
     app.beginUndoGroup("Frontcard fields");
     try {
       for (let i = 0; i < targets.length; i++) {
-        if (has("title")) frontcardSet(targets[i], "title", v.title);
+        if (has("title")) {
+          const fitted = frontcardSet(targets[i], "title", v.title);
+          if (fitted !== "") titleNote = " Title " + fitted + ".";
+        }
         if (has("artwork")) frontcardSet(targets[i], "artwork", v.artwork);
         if (has("version")) frontcardSet(targets[i], "version", v.version);
         if (has("territory")) frontcardSet(targets[i], "territory", "(" + v.territory + ")");
@@ -1190,7 +1280,7 @@ export const frontcardWriteFields = (payload: string): Result => {
     } finally {
       app.endUndoGroup();
     }
-    return { success: true };
+    return { success: true, message: titleNote !== "" ? "Title" + titleNote.replace(" Title", "") : undefined };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

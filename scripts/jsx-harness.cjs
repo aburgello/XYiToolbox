@@ -97,12 +97,17 @@ function mkComp(layers, opts = {}) {
 /**
  * Loads the bundle into a fresh sandbox holding `comp` as the active item.
  * Returns the panel's exported namespace, plus the sandbox so a test can see
- * how many undo groups were opened and closed.
+ * how many undo groups were opened and closed. `opts.project` merges extra
+ * fields onto app.project.
  */
-function loadBundle(comp) {
+function loadBundle(comp, opts) {
+  const project = { activeItem: comp };
+  // Extra project fields a given entry point insists on -- e.g. `file`, since
+  // anything that writes to the open project refuses on an unsaved one.
+  if (opts && opts.project) for (const k in opts.project) project[k] = opts.project[k];
   const s = {
     app: {
-      project: { activeItem: comp },
+      project: project,
       beginUndoGroup(n) { s.__undo.push(n); },
       endUndoGroup() { s.__ends++; },
     },
