@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { takePendingFill } from "../lib/agent/fieldHandoff";
+import React, { useState } from "react";
+import { usePendingFill } from "../lib/agent/fieldHandoff";
 import { Play, Trash2, Save, Pencil, X, Terminal, LayoutList, MousePointerClick, Check } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import StatusIcon from "../StatusIcon";
@@ -47,11 +47,16 @@ const ScriptPlayground: React.FC = () => {
      * suggestion — so the status line says who wrote it and that it has not
      * run. That is the whole mitigation, and it is why this is allowed.
      */
-    useEffect(() => {
-        const fill = takePendingFill("script-playground");
-        if (!fill || typeof fill.code !== "string" || !fill.code.trim()) return;
+    usePendingFill("script-playground", (fill) => {
+        if (typeof fill.code !== "string" || !fill.code.trim()) return;
 
-        if (code.trim() && code !== DEFAULT_SCRIPT) {
+        // An EMPTY box counts as untouched too, not just the starting default.
+        // Clearing a script that misbehaved and asking for another is the most
+        // obvious thing to do next, and treating the empty result as "the
+        // artist's work" refused to fill it — which is precisely how this was
+        // reported.
+        const untouched = !code.trim() || code === DEFAULT_SCRIPT;
+        if (!untouched) {
             setStatus({
                 type: "error",
                 text: "Ask wrote a script for you, but there was already one in the box — yours is untouched. Clear it and ask again if you want theirs.",
@@ -60,15 +65,12 @@ const ScriptPlayground: React.FC = () => {
         }
 
         setCode(fill.code);
+        setOutput(null);
         setStatus({
             type: "success",
             text: "Ask wrote this — read it before you run it. Nothing has run yet.",
         });
-        // Once, on mount. takePendingFill clears as it reads, so re-running on
-        // a code change could only be a no-op -- but it would also mean this
-        // effect's own setCode re-entered it.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    });
 
     // Save-as-tool: a script saved here either becomes a one-click Toolset
     // grid button (Toolset.tsx auto-adds every "button"-kind entry to its

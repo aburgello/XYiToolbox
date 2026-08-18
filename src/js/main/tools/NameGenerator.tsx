@@ -6,8 +6,8 @@
 // those names back into the fields (Detect Name). Pure metadata rename of
 // the selected project item(s) -- never touches a file on disk.
 // =============================================================================
-import React, { useEffect, useState } from "react";
-import { takePendingFill } from "../lib/agent/fieldHandoff";
+import React, { useState } from "react";
+import { usePendingFill } from "../lib/agent/fieldHandoff";
 import { Wand2, ScanSearch, RotateCcw } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import StatusIcon from "../StatusIcon";
@@ -49,10 +49,7 @@ const NameGeneratorTool = () => {
      * Take-once, keyed by tool id, so coming back here later cannot silently
      * re-fill a form already dealt with.
      */
-    useEffect(() => {
-        const fill = takePendingFill("name-generator");
-        if (!fill) return;
-
+    usePendingFill("name-generator", (fill) => {
         const setters: Record<string, [string, (v: string) => void]> = {
             filmTitle: [filmTitle, setFilmTitle],
             artworkType: [artworkType, setArtworkType],
@@ -82,11 +79,7 @@ const NameGeneratorTool = () => {
                 "Nothing has been generated yet.",
             ].filter(Boolean).join(" "),
         });
-        // Once, as this mounts. The pending fill is cleared by the read above,
-        // so re-running on a field change could only ever be a no-op -- but it
-        // would also mean this effect's own setState re-entered it.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    });
 
     const run = async (label: string, fn: () => Promise<any>, onResult?: (r: any) => void) => {
         setStatus(null);

@@ -21,6 +21,8 @@
 // pipe, and a pipe that also decided policy would be a second place to check.
 // =============================================================================
 
+import { useEffect, useRef } from "react";
+
 export interface PendingFill {
     /** The registry id of the tool these values are for. */
     toolId: string;
@@ -30,8 +32,35 @@ export interface PendingFill {
 
 let pending: PendingFill | null = null;
 
+/**
+ * Receivers waiting for a fill.
+ *
+ * A MOUNT-ONLY READ IS NOT ENOUGH, and this is the bug that shipped: asking a
+ * second time while already ON the tool filled nothing at all. navigateToTool
+ * sets the screen, and if that screen is already showing, React reconciles
+ * rather than remounting -- so an effect with a `[]` dependency never runs
+ * again and the staged value just sits there. Worse than doing nothing: it
+ * would surface on some later, unrelated visit to that tool, which is exactly
+ * the "the panel typed into my form by itself" failure take-once exists to
+ * prevent.
+ *
+ * So receivers subscribe as well as reading on mount. The pipe tells them a
+ * value has arrived; it still holds no policy.
+ */
+const listeners = new Set<() => void>();
+
 export function setPendingFill(fill: PendingFill): void {
     pending = fill;
+    // Copied before iterating: a receiver is free to unsubscribe from inside
+    // its own callback, and mutating the set mid-iteration would skip the next
+    // one along.
+    for (const l of Array.from(listeners)) l();
+}
+
+/** Returns its own unsubscribe, for a useEffect cleanup to call. */
+export function subscribeToFills(fn: () => void): () => void {
+    listeners.add(fn);
+    return () => { listeners.delete(fn); };
 }
 
 /**
@@ -46,4 +75,34 @@ export function takePendingFill(toolId: string): Record<string, string> | null {
     const values = pending.values;
     pending = null;
     return values;
+}
+
+/**
+ * The receiver side, so a tool needs four lines rather than this reasoning.
+ *
+ * Runs `apply` for anything staged before it mounted, and again for anything
+ * staged while it is up — the second half being what makes asking twice work.
+ *
+ * `apply` is held in a REF and refreshed every render. A receiver's logic reads
+ * the tool's current state to decide whether a field is the artist's work, and
+ * a callback captured once on mount would be comparing against whatever that
+ * state was at mount time — so clearing the box and asking again would still be
+ * judged against the box's original contents. That is the same class of bug as
+ * the mount-only read this fixes, one layer in.
+ */
+export function usePendingFill(
+    toolId: string,
+    apply: (values: Record<string, string>) => void
+): void {
+    const applyRef = useRef(apply);
+    applyRef.current = apply;
+
+    useEffect(() => {
+        const run = () => {
+            const values = takePendingFill(toolId);
+            if (values) applyRef.current(values);
+        };
+        run();
+        return subscribeToFills(run);
+    }, [toolId]);
 }
