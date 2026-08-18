@@ -408,6 +408,48 @@ export const TOOLS: ToolDef[] = [
         },
     },
     {
+        name: "list_ease_presets",
+        description:
+            "The studio's saved easing presets, built-in and custom, with the ids apply_ease_preset " +
+            "needs. Read-only. Call this before applying one — the id is the only way to name a " +
+            "preset and this is where it comes from.",
+        input_schema: { type: "object", properties: {}, required: [] },
+    },
+    {
+        name: "apply_ease",
+        description:
+            "Apply standard easing to the SELECTED KEYFRAMES, using XYTools. 'in' eases the incoming " +
+            "side, 'out' the outgoing, 'both' does both. Select keyframes in the timeline first, not " +
+            "layers. Undoable with one Ctrl+Z.",
+        input_schema: {
+            type: "object",
+            properties: { mode: { type: "string", description: "'in', 'out' or 'both'." } },
+            required: ["mode"],
+        },
+    },
+    {
+        name: "apply_ease_preset",
+        description:
+            "Apply one of the studio's saved easing presets to the selected keyframes. Get the id " +
+            "from list_ease_presets. Undoable with one Ctrl+Z.",
+        input_schema: {
+            type: "object",
+            properties: { id: { type: "string", description: "The preset's id from list_ease_presets." } },
+            required: ["id"],
+        },
+    },
+    {
+        name: "trim_layers",
+        description:
+            "Trim the selected layers to the playhead, using XYTools. 'in' pulls the layer's start to " +
+            "the current time, 'out' pushes its end there. Undoable with one Ctrl+Z.",
+        input_schema: {
+            type: "object",
+            properties: { edge: { type: "string", description: "'in' or 'out'." } },
+            required: ["edge"],
+        },
+    },
+    {
         name: "preflight_project",
         description:
             "Run the panel's own Pre-Flight audit on the open project: missing footage, missing " +
@@ -1002,6 +1044,9 @@ export async function runTool(name: string, input: any): Promise<ToolResult> {
         case "sequence_layers":
         case "fade_layers":
         case "set_anchor":
+        case "apply_ease":
+        case "apply_ease_preset":
+        case "trim_layers":
         case "set_comp_duration":
         case "set_expression": {
             const write = WRITE_TOOLS[name];
@@ -1038,6 +1083,30 @@ export async function runTool(name: string, input: any): Promise<ToolResult> {
             // verbatim is what keeps the agent honest about what exists.
             const { success, ...report } = res;
             return { ok: true, data: { ...report, safety: write.safety } };
+        }
+
+        case "list_ease_presets": {
+            const res = (await evalTS("motionToolsListEasePresets").catch(() => undefined)) as
+                | { success: boolean; error?: string; presets?: any[] }
+                | undefined;
+            if (res === undefined) return mockOr({ ok: true, data: { presets: [] } });
+            if (!res.success) return { ok: false, reason: res.error || "Couldn't read the ease presets." };
+            return {
+                ok: true,
+                data: {
+                    presets: (res.presets || []).map((p) => ({
+                        id: p.id,
+                        name: p.name,
+                        builtIn: p.isBuiltIn,
+                        // Influence only, never speed: a preset stores influence
+                        // because it is portable, while speed is absolute and
+                        // tied to one keyframe. Reporting speed would invite the
+                        // agent to talk about a number that does not travel.
+                        inInfluence: p.inInfluence,
+                        outInfluence: p.outInfluence,
+                    })),
+                },
+            };
         }
 
         case "preflight_project": {
@@ -1673,6 +1742,32 @@ const WRITE_TOOLS: Record<
                 }
             }
             return [i.relX, i.relY];
+        },
+    },
+    apply_ease: {
+        safety: "undoable",
+        backend: "motionToolsApplyEase",
+        args: (i) => {
+            const MODES = ["in", "out", "both"];
+            if (MODES.indexOf(i.mode) === -1) return `apply_ease mode must be one of: ${MODES.join(", ")}.`;
+            return [i.mode];
+        },
+    },
+    apply_ease_preset: {
+        safety: "undoable",
+        backend: "motionToolsApplyEasePreset",
+        args: (i) => {
+            const id = typeof i.id === "string" ? i.id.trim() : "";
+            if (!id) return "apply_ease_preset needs a preset id — call list_ease_presets first.";
+            return [id];
+        },
+    },
+    trim_layers: {
+        safety: "undoable",
+        backend: "motionToolsTrim",
+        args: (i) => {
+            if (i.edge !== "in" && i.edge !== "out") return "trim_layers edge must be 'in' or 'out'.";
+            return [i.edge];
         },
     },
     set_comp_duration: {
