@@ -222,6 +222,114 @@ export const TOOLS: ToolDef[] = [
         },
     },
     {
+        name: "precompose_selected",
+        description:
+            "Precompose the layers the artist has selected in the comp they have open. Undoable with " +
+            "one Ctrl+Z. Attributes move into the new comp by default, which is also the only option " +
+            "when more than one layer is selected. If nothing is selected you are told so — say that " +
+            "rather than guessing which layers were meant.",
+        input_schema: {
+            type: "object",
+            properties: {
+                name: { type: "string", description: "Name for the new precomp." },
+                moveAllAttributes: {
+                    type: "boolean",
+                    description:
+                        "Move attributes into the precomp. Defaults true. Only honoured for a single " +
+                        "layer — with several selected it is forced true and reported back.",
+                },
+            },
+            required: ["name"],
+        },
+    },
+    {
+        name: "add_solid",
+        description:
+            "Add a solid layer to the comp the artist has open. Comp-sized unless a width and height " +
+            "are given. Undoable with one Ctrl+Z.",
+        input_schema: {
+            type: "object",
+            properties: {
+                name: { type: "string", description: "Name for the solid." },
+                hexColour: { type: "string", description: "Colour as hex, e.g. #1A1A1A." },
+                width: { type: "number", description: "Optional. Defaults to the comp's width." },
+                height: { type: "number", description: "Optional. Defaults to the comp's height." },
+            },
+            required: ["name", "hexColour"],
+        },
+    },
+    {
+        name: "add_adjustment_layer",
+        description:
+            "Add a comp-sized adjustment layer to the comp the artist has open. Undoable with one Ctrl+Z.",
+        input_schema: {
+            type: "object",
+            properties: {
+                name: { type: "string", description: "Optional name. Defaults to 'Adjustment Layer'." },
+            },
+            required: [],
+        },
+    },
+    {
+        name: "add_null",
+        description:
+            "Add a null object to the comp the artist has open, for parenting. Undoable with one Ctrl+Z.",
+        input_schema: {
+            type: "object",
+            properties: {
+                name: { type: "string", description: "Optional name for the null." },
+            },
+            required: [],
+        },
+    },
+    {
+        name: "rename_selected",
+        description:
+            "Rename the selected layers in the comp the artist has open. One layer takes the name as " +
+            "given; several get a numbered suffix, so say that when you report it. Undoable with one " +
+            "Ctrl+Z.",
+        input_schema: {
+            type: "object",
+            properties: {
+                name: { type: "string", description: "The name, or the base name when several layers are selected." },
+            },
+            required: ["name"],
+        },
+    },
+    {
+        name: "label_selected",
+        description:
+            "Set the label colour on the selected layers, for organising a comp. 0 is None, 1-16 are " +
+            "After Effects' label swatches. Undoable with one Ctrl+Z.",
+        input_schema: {
+            type: "object",
+            properties: {
+                label: { type: "number", description: "0 for none, or 1-16 for a label swatch." },
+            },
+            required: ["label"],
+        },
+    },
+    {
+        name: "duplicate_selected",
+        description:
+            "Duplicate the selected layers in the comp the artist has open. Undoable with one Ctrl+Z.",
+        input_schema: { type: "object", properties: {}, required: [] },
+    },
+    {
+        name: "set_comp_duration",
+        description:
+            "Set the duration of the comp the artist has open. Shortening does not delete anything — " +
+            "layers past the new end still exist, they just fall outside the comp. Undoable with one " +
+            "Ctrl+Z.",
+        input_schema: {
+            type: "object",
+            properties: {
+                seconds: { type: "number", description: "New duration in seconds." },
+            },
+            required: ["seconds"],
+        },
+    },
+    {
         name: "locate_campaign",
         description:
             "Find which campaign owns a filename token. Deliverable names carry a campaign token " +
@@ -562,60 +670,52 @@ export async function runTool(name: string, input: any): Promise<ToolResult> {
             return { ok: true, data: { opened: nav.label, pressed: nav.pressed } };
         }
 
-        case "create_comp": {
-            // THE WRITE GATE. Separate from run_action's, because these are a
-            // different kind of thing: run_action presses a button somebody
-            // already built and graded, this calls a parameterised write
-            // function. Same fail-closed shape though -- a write tool not on
-            // this list is not callable, so adding a function to
-            // agentWrites.ts does not by itself make it reachable.
+        // EVERY WRITE TOOL, through one gate. Listed before the read tools so
+        // the branch that can change the artist's project is the first thing
+        // anyone reads in this dispatcher.
+        case "create_comp":
+        case "precompose_selected":
+        case "add_solid":
+        case "add_adjustment_layer":
+        case "add_null":
+        case "rename_selected":
+        case "label_selected":
+        case "duplicate_selected":
+        case "set_comp_duration": {
             const write = WRITE_TOOLS[name];
-            if (!write) {
-                return { ok: false, reason: `"${name}" is not a write tool I'm allowed to run.` };
-            }
+            // Unreachable while the case list and the map agree — and here
+            // precisely so that when they stop agreeing, the answer is a
+            // refusal rather than an unchecked call.
+            if (!write) return { ok: false, reason: `"${name}" is not a write tool I'm allowed to run.` };
 
-            if (!input || typeof input.name !== "string" || !input.name.trim()) {
-                return { ok: false, reason: "create_comp needs a name for the comp." };
-            }
-            // Checked here AND in ExtendScript. Not redundant: this one gives
-            // the model a correctable error without a bridge round trip, and
-            // the host one is the gate that actually holds, since it is the
-            // only side that cannot be talked out of it.
-            for (const k of ["width", "height", "frameRate", "seconds"]) {
-                if (typeof input[k] !== "number" || !isFinite(input[k]) || input[k] <= 0) {
-                    return { ok: false, reason: `create_comp needs a positive number for ${k}.` };
-                }
-            }
+            const built = write.args(input || {});
+            // Checked here AND in ExtendScript. Not redundant: this gives the
+            // model a correctable error without a bridge round trip, while the
+            // host check is the gate that actually holds, since it is the only
+            // side that cannot be talked out of it.
+            if (typeof built === "string") return { ok: false, reason: built };
 
-            const res = (await evalTS(
-                "agentCreateComp",
-                input.name.trim(),
-                input.width,
-                input.height,
-                input.frameRate,
-                input.seconds
-            ).catch(() => undefined)) as
-                | { success: boolean; error?: string; name?: string; width?: number; height?: number; frameRate?: number; seconds?: number; undo?: string }
+            // The cast is on the ARGUMENTS only, and it is unavoidable:
+            // evalTS correlates each name with that function's own parameter
+            // tuple, which cannot hold when the name is chosen at runtime. The
+            // NAME is still checked -- `backend` is typed as evalTS's union
+            // above -- so a misspelled export still fails the build. What is
+            // given up is per-call arity checking, which is why every `args`
+            // builder above is written next to the signature it feeds.
+            const callBackend = evalTS as unknown as (fn: string, ...a: any[]) => Promise<any>;
+            const res = (await callBackend(write.backend, ...built).catch(() => undefined)) as
+                | (Record<string, any> & { success: boolean; error?: string })
                 | undefined;
 
-            if (res === undefined) return { ok: false, reason: "No bridge to After Effects — nothing was created." };
-            if (!res.success) return { ok: false, reason: res.error || "Couldn't create the comp." };
+            if (res === undefined) return { ok: false, reason: "No bridge to After Effects — nothing was changed." };
+            if (!res.success) return { ok: false, reason: res.error || "That didn't work." };
 
-            return {
-                ok: true,
-                data: {
-                    created: res.name,
-                    // Read back off the comp host-side, not echoed from the
-                    // request: AE quantises duration to the frame, and the
-                    // agent should report what exists rather than what it asked
-                    // for.
-                    size: `${res.width}x${res.height}`,
-                    frameRate: res.frameRate,
-                    seconds: res.seconds,
-                    undo: res.undo,
-                    safety: write.safety,
-                },
-            };
+            // The host's own report, passed through unchanged apart from
+            // dropping `success`. Every one of these reads its values back off
+            // the thing it made rather than echoing the request, so relaying it
+            // verbatim is what keeps the agent honest about what exists.
+            const { success, ...report } = res;
+            return { ok: true, data: { ...report, safety: write.safety } };
         }
 
         case "locate_campaign": {
@@ -857,16 +957,117 @@ async function loadJobs(): Promise<{ ok: true; res: Awaited<ReturnType<typeof fe
  * project. Keeping the two lists apart means neither can quietly inherit the
  * other's permissiveness.
  *
- * FAIL-CLOSED, like everything else here: a case in the dispatch below is not
- * enough on its own — a write tool absent from this map is refused, so adding a
- * function to agentWrites.ts does not by itself make it reachable.
+ * FAIL-CLOSED: a tool absent from this map is refused, so adding a function to
+ * agentWrites.ts does not by itself make it reachable, and neither does adding
+ * a ToolDef above.
  *
  * `undoable` is the only tier that belongs here. Anything whose worst case is
  * more than one Ctrl+Z is not a thing the agent does; it is a thing the agent
  * opens the panel for.
+ *
+ * ONE DISPATCHER, not one case each. Seven near-identical branches is seven
+ * places for the gate to be forgotten; `args` returns either the argument list
+ * to send or a string explaining what is wrong with the input, so validation
+ * and marshalling stay together and the gate is passed exactly once.
  */
-const WRITE_TOOLS: Record<string, { safety: "undoable" }> = {
-    create_comp: { safety: "undoable" },
+const WRITE_TOOLS: Record<
+    string,
+    {
+        safety: "undoable";
+        /**
+         * Typed as evalTS's own name union, not `string`. That makes the
+         * CLAUDE.md audit rule -- every evalTS name resolves to a real export
+         * -- a COMPILE error rather than something to remember to grep for. A
+         * typo here fails `yarn build`, which is where it should fail.
+         */
+        backend: Parameters<typeof evalTS>[0];
+        args: (i: any) => any[] | string;
+    }
+> = {
+    create_comp: {
+        safety: "undoable",
+        backend: "agentCreateComp",
+        args: (i) => {
+            const name = typeof i.name === "string" ? i.name.trim() : "";
+            if (!name) return "create_comp needs a name for the comp.";
+            for (const k of ["width", "height", "frameRate", "seconds"]) {
+                if (typeof i[k] !== "number" || !isFinite(i[k]) || i[k] <= 0) {
+                    return `create_comp needs a positive number for ${k}.`;
+                }
+            }
+            return [name, i.width, i.height, i.frameRate, i.seconds];
+        },
+    },
+    precompose_selected: {
+        safety: "undoable",
+        backend: "agentPrecomposeSelected",
+        args: (i) => {
+            const name = typeof i.name === "string" ? i.name.trim() : "";
+            if (!name) return "precompose_selected needs a name for the precomp.";
+            // Defaults to true, which is both AE's default and the only legal
+            // value for more than one layer.
+            return [name, i.moveAllAttributes !== false];
+        },
+    },
+    add_solid: {
+        safety: "undoable",
+        backend: "agentAddSolid",
+        args: (i) => {
+            const name = typeof i.name === "string" ? i.name.trim() : "";
+            if (!name) return "add_solid needs a name.";
+            const hex = typeof i.hexColour === "string" ? i.hexColour.trim() : "";
+            if (!hex) return "add_solid needs a hex colour like #1A1A1A.";
+            // null means "comp-sized", which the host resolves — it knows the
+            // comp's dimensions and this side does not.
+            const w = typeof i.width === "number" ? i.width : null;
+            const h = typeof i.height === "number" ? i.height : null;
+            return [name, hex, w, h];
+        },
+    },
+    add_adjustment_layer: {
+        safety: "undoable",
+        backend: "agentAddAdjustmentLayer",
+        args: (i) => [typeof i.name === "string" ? i.name.trim() : ""],
+    },
+    add_null: {
+        safety: "undoable",
+        backend: "agentAddNull",
+        args: (i) => [typeof i.name === "string" ? i.name.trim() : ""],
+    },
+    rename_selected: {
+        safety: "undoable",
+        backend: "agentRenameSelected",
+        args: (i) => {
+            const name = typeof i.name === "string" ? i.name.trim() : "";
+            if (!name) return "rename_selected needs a name.";
+            return [name];
+        },
+    },
+    label_selected: {
+        safety: "undoable",
+        backend: "agentLabelSelected",
+        args: (i) => {
+            if (typeof i.label !== "number" || !isFinite(i.label)) {
+                return "label_selected needs a label number from 0 (none) to 16.";
+            }
+            return [i.label];
+        },
+    },
+    duplicate_selected: {
+        safety: "undoable",
+        backend: "agentDuplicateSelected",
+        args: () => [],
+    },
+    set_comp_duration: {
+        safety: "undoable",
+        backend: "agentSetCompDuration",
+        args: (i) => {
+            if (typeof i.seconds !== "number" || !isFinite(i.seconds) || i.seconds <= 0) {
+                return "set_comp_duration needs a positive number of seconds.";
+            }
+            return [i.seconds];
+        },
+    },
 };
 
 /**
