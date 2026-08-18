@@ -14,7 +14,16 @@ import { callModel, estimateCost } from "./provider";
 import { buildCapabilityList, buildRunnableActionList } from "./capabilities";
 
 /** Hard ceiling on tool calls per question. A runaway loop is a runaway bill. */
-const MAX_STEPS = 6;
+// Raised from 6. The useful chains are genuinely longer now: "is this batch
+// ready, and if it is, set it up" is list_active_jobs -> job_subtasks ->
+// list_campaigns -> resolve_masters -> prefill_batch, which is five before a
+// single retry. Six left no room to recover from one bad argument, and running
+// out of steps mid-chain reads to the artist as the agent giving up.
+//
+// Still bounded, and cheaply so: every step re-sends the turn's tool results,
+// so the cost of a long chain is superlinear and the ceiling is what stops a
+// confused loop spending real money.
+const MAX_STEPS = 10;
 
 /**
  * A FUNCTION, NOT A CONST, so the panel-tool section is appended lazily via
@@ -62,6 +71,17 @@ export function systemPrompt(): string {
         "run button when you're happy' — and never imply a batch has been generated or is running.",
         "Always report what it skipped and why: a row dropped for a missing campaign is a deliverable",
         "the artist still has to deal with.",
+        "",
+        "IS A BATCH READY?",
+        "resolve_masters answers that, and it is the only thing that answers it properly. It runs the",
+        "same lookup the panel's own row icons use, so its verdict is what the artist will see. Do NOT",
+        "answer it by listing masters and comparing sizes yourself: both naming conventions are live",
+        "(1920x858_10sec and 1920x858px_10s), and eyeballing a list of hundreds is how you say a master",
+        "is there when it is not.",
+        "It needs the campaign's mastersRoot, so call list_campaigns first if you do not have it.",
+        "Report the rows with no master by name. A row offering couldCutFrom has no exact master but a",
+        "longer one that divides evenly — say it is an option the artist can opt into, never that the",
+        "row is fine.",
         "",
         "FILLING IN A FORM",
         "fill_fields puts values into a tool's fields and opens it. Only the fields marked Fillable in",

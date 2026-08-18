@@ -202,6 +202,29 @@ export const TOOLS: ToolDef[] = [
         },
     },
     {
+        name: "resolve_masters",
+        description:
+            "Check whether a Wrike job's deliverables have masters to build from, BEFORE anything is " +
+            "filled in or run. Returns per row whether an exact master was found, and where none was, " +
+            "whether a longer master could be cut down to it. Read-only: it looks at the masters " +
+            "folder and reports, and changes nothing. Use this when asked whether a batch is ready, " +
+            "or before prefill_batch when the artist wants to know if it is worth doing.",
+        input_schema: {
+            type: "object",
+            properties: {
+                jobId: {
+                    type: "string",
+                    description: "The job's id, exactly as returned by list_active_jobs.",
+                },
+                mastersRoot: {
+                    type: "string",
+                    description: "The campaign's masters root, from list_campaigns.",
+                },
+            },
+            required: ["jobId", "mastersRoot"],
+        },
+    },
+    {
         name: "fill_fields",
         description:
             "Put values into a panel tool's fields and open it, so the artist can check them and press " +
@@ -496,6 +519,86 @@ export async function runTool(name: string, input: any): Promise<ToolResult> {
             // The label goes back so the model can confirm what it opened by
             // name rather than echoing the id at the artist.
             return { ok: true, data: { opened: nav.label, pressed: nav.pressed } };
+        }
+
+        case "resolve_masters": {
+            if (!input || typeof input.jobId !== "string" || !input.jobId) {
+                return { ok: false, reason: "resolve_masters needs a jobId from list_active_jobs." };
+            }
+            if (typeof input.mastersRoot !== "string" || !input.mastersRoot) {
+                return { ok: false, reason: "resolve_masters needs a mastersRoot from list_campaigns." };
+            }
+
+            const feed = await loadJobs();
+            if (!feed.ok) return feed;
+            const job = feed.res.jobs.filter((j) => j.id === input.jobId)[0];
+            if (!job) {
+                return { ok: false, reason: `No job with id "${input.jobId}". Call list_active_jobs first.` };
+            }
+            if (feed.res.mock) {
+                return {
+                    ok: false,
+                    reason:
+                        "The live jobs feed is unreachable, so this job is sample data. Resolving " +
+                        "invented deliverables against real masters would tell you nothing.",
+                };
+            }
+
+            const rows = await loadJobRows(job);
+            const { sendable } = classifyRows(rows);
+            if (!sendable.length) {
+                return { ok: false, reason: `Nothing in "${job.title}" has a campaign, size and duration to look up.` };
+            }
+
+            // BUILT HERE, NOT VIA stageBatchFromJob. That function calls
+            // setPendingBatch -- asking whether the masters exist would
+            // otherwise stage a batch as a side effect, and the artist would
+            // arrive at a pre-filled form they never asked for.
+            const lookups = sendable.map((r) => ({
+                campaign: (r.parsed && r.parsed.campaign) || "",
+                size: r.size,
+                duration: (r.parsed && r.parsed.duration) || "",
+            }));
+
+            // THE SAME RESOLVER THE ROW ICONS USE, deliberately. The model
+            // comparing a size against a list of hundreds of masters by eye is
+            // exactly where it says "found" about a 1080x1920 when the folder
+            // holds 1080x1920px -- and this function already knows both
+            // conventions. One answer, one place.
+            const res = (await evalTS(
+                "csvLocaliserResolveMasters",
+                input.mastersRoot,
+                JSON.stringify(lookups)
+            ).catch(() => undefined)) as
+                | { success: boolean; error?: string; indexed?: number; rows?: any[] }
+                | undefined;
+
+            if (res === undefined) return mockOr({ ok: false, reason: "No bridge — can't check masters in the browser." });
+            if (!res.success) return { ok: false, reason: res.error || "Couldn't read the masters folder." };
+
+            const out = (res.rows || []).map((row, i) => ({
+                deliverable: sendable[i] ? sendable[i].name : "",
+                found: !!row.master,
+                master: row.master || null,
+                // Only offered when there is no exact match: a longer master
+                // that divides evenly and could be cut down. An OFFER, not a
+                // plan -- the run ignores it unless the artist opts that row in.
+                couldCutFrom: row.multiples && row.multiples.length
+                    ? row.multiples.map((m: any) => `${m.factor}× ${m.duration} (${m.master})`)
+                    : undefined,
+            }));
+
+            const missing = out.filter((r) => !r.found);
+            return {
+                ok: true,
+                data: {
+                    job: job.title,
+                    mastersIndexed: res.indexed,
+                    allFound: missing.length === 0,
+                    missingCount: missing.length,
+                    rows: out,
+                },
+            };
         }
 
         case "fill_fields": {
