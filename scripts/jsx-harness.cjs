@@ -84,6 +84,10 @@ function mkLayer(name, opts = {}) {
 }
 function mkComp(layers, opts = {}) {
   const C = {
+    // activeComp() duck-types on this rather than using instanceof, so a mock
+    // without it reads as "no composition is open" -- which is what every
+    // function in agentWrites.ts will tell you, confusingly, if it is missing.
+    layers: layers,
     name: opts.name || "Main", duration: opts.duration || 10,
     frameDuration: 1 / (opts.fps || 25), time: 0,
     numLayers: layers.length, layer: n => layers[n-1],

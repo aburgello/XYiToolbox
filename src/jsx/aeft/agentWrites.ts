@@ -778,7 +778,18 @@ function findPropByMatchName(group: PropertyGroup, matchName: string, depth: num
 }
 
 /**
- * Sets an expression on one property of one effect, across the selected layers.
+ * Sets an expression on one property, across the targeted layers.
+ *
+ * EFFECT PARAMETERS OR A TRANSFORM PROPERTY. It used to be effects only, and
+ * the gap showed the first time somebody asked for a random rotation: the
+ * Expressions Bank had exactly the right expression, the agent found it, and
+ * then had to explain that it could not put it on Rotation. Leave
+ * effectMatchName empty and propertyMatchName is read as a transform --
+ * position, scale, rotation, opacity, anchor.
+ *
+ * Transforms go through transformProperty, the SAME helper agentAnimateProperty
+ * uses, so there is one answer to "which property is Rotation on a 3D layer"
+ * and one place that refuses to hand back a camera's Point of Interest.
  *
  * A LAYER THAT DOES NOT HAVE THE EFFECT IS SKIPPED AND NAMED, never silently
  * passed over: "applied to 3 layers" when four were selected is the kind of
@@ -803,8 +814,16 @@ export const agentSetExpression = (
 
     const fxMatch = String(effectMatchName == null ? "" : effectMatchName).replace(/^\s+|\s+$/g, "");
     const propMatch = String(propertyMatchName == null ? "" : propertyMatchName).replace(/^\s+|\s+$/g, "");
-    if (!fxMatch) return { success: false, error: "Which effect? Give its matchName, from list_effects." };
-    if (!propMatch) return { success: false, error: "Which property? Give its matchName, from list_effects." };
+    // An empty effect is not a mistake now -- it means "a transform property".
+    const onTransform = fxMatch === "" || fxMatch.toLowerCase() === "transform";
+    if (!propMatch) {
+      return {
+        success: false,
+        error: onTransform
+          ? "Which transform property? position, scale, rotation, opacity or anchor."
+          : "Which property? Give its matchName, from list_effects.",
+      };
+    }
 
     const expr = String(expression == null ? "" : expression);
 
@@ -815,6 +834,29 @@ export const agentSetExpression = (
     try {
       for (let i = 0; i < layers.length; i++) {
         const layer = layers[i];
+
+        if (onTransform) {
+          const got = transformProperty(layer, propMatch);
+          if (got.error || !got.prop) {
+            // NAMED, not skipped silently -- and the whole call refuses on a
+            // property that does not exist at all, since that is a mistake in
+            // the request rather than a fact about one layer.
+            if (String(got.error).indexOf("is not an animatable transform") !== -1) {
+              app.endUndoGroup();
+              return { success: false, error: got.error };
+            }
+            skipped.push({ layer: layer.name, why: "has no " + propMatch });
+            continue;
+          }
+          if (!got.prop.canSetExpression) {
+            skipped.push({ layer: layer.name, why: "that property cannot take an expression" });
+            continue;
+          }
+          got.prop.expression = expr;
+          applied.push({ layer: layer.name, property: got.label || propMatch });
+          continue;
+        }
+
         const parade = layer.property("ADBE Effect Parade") as PropertyGroup;
         if (!parade || typeof parade.numProperties !== "number") {
           skipped.push({ layer: layer.name, why: "has no effects" });
@@ -1240,8 +1282,13 @@ export const agentAnimateProperty = (
   replaceExisting: boolean
 ): AnimateResult => {
   try {
-    const comp = app.project.activeItem;
-    if (!(comp instanceof CompItem)) return needComp() as AnimateResult;
+    // activeComp(), not `instanceof CompItem`. Every other function in this
+    // file already goes through it, and the note above it says why: instanceof
+    // against an AE host class is banned (CLAUDE.md section 2) because two
+    // accesses to the same object return different wrappers. This one slipped
+    // through as the file's only violation.
+    const comp = activeComp();
+    if (!comp) return needComp() as AnimateResult;
 
     const start = Number(startSeconds);
     const dur = Number(durationSeconds);

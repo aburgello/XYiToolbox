@@ -718,21 +718,26 @@ export const TOOLS: ToolDef[] = [
     {
         name: "set_expression",
         description:
-            "Put an expression on one property of one effect, on every selected layer that has it. " +
-            "Undoable with one Ctrl+Z. Address the effect and the property by matchName from " +
-            "list_effects — never by the name shown in the timeline, which differs between After " +
-            "Effects versions and languages. Layers without that effect are skipped and named back to " +
-            "you; say which. Pass an empty string to clear an expression.",
+            "Put an expression on a property of the targeted layers — either an EFFECT parameter, or " +
+            "a TRANSFORM property (leave effectMatchName out for that). Layers that don't have the " +
+            "effect are skipped and named back to you; say which. Empty expression clears one. One " +
+            "Ctrl+Z.",
         input_schema: {
             type: "object",
             properties: {
                 effectMatchName: {
                     type: "string",
-                    description: "The effect's matchName from list_effects, e.g. 'ADBE 4ColorGradient'.",
+                    description:
+                        "The effect's matchName from list_effects, e.g. 'ADBE 4ColorGradient'. Leave " +
+                        "out to target a transform property instead.",
                 },
                 propertyMatchName: {
                     type: "string",
-                    description: "The property's matchName from list_effects, e.g. 'ADBE 4ColorGradient-0002'.",
+                    description:
+                        "With an effect: that parameter's matchName from list_effects, e.g. 'ADBE " +
+                        "4ColorGradient-0002' — never the timeline name, which changes between After " +
+                        "Effects versions and languages. Without one: position, scale, rotation, " +
+                        "opacity or anchor.",
                 },
                 expression: {
                     type: "string",
@@ -752,7 +757,9 @@ export const TOOLS: ToolDef[] = [
                         "says. Leave out for 'selected'.",
                 },
             },
-            required: ["effectMatchName", "propertyMatchName", "expression"],
+            // effectMatchName is NOT required: omitting it is how a transform
+            // property is addressed.
+            required: ["propertyMatchName", "expression"],
         },
     },
     {
@@ -1751,8 +1758,13 @@ const WRITE_TOOLS: Record<
         args: (i) => {
             const fx = typeof i.effectMatchName === "string" ? i.effectMatchName.trim() : "";
             const prop = typeof i.propertyMatchName === "string" ? i.propertyMatchName.trim() : "";
-            if (!fx) return "set_expression needs the effect's matchName — call list_effects first.";
-            if (!prop) return "set_expression needs the property's matchName — call list_effects first.";
+            // No effect means a TRANSFORM property, which is a legitimate call
+            // and not a missing argument.
+            if (!prop) {
+                return fx
+                    ? "set_expression needs the property's matchName — call list_effects first."
+                    : "set_expression needs a property: position, scale, rotation, opacity or anchor.";
+            }
             // An empty expression is legal: it clears one. Only a missing field
             // is an error, which is why this checks the type and not the value.
             if (typeof i.expression !== "string") return "set_expression needs an expression string.";
