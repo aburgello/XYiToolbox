@@ -160,6 +160,38 @@ export function setApiKey(key: string): void {
     try { window.localStorage.setItem(keyStorageFor(getProvider()), key.trim()); } catch { /* private mode — session only */ }
 }
 
+/**
+ * A copy of `messages` with a cache breakpoint on the final content block.
+ *
+ * COPIED, NOT MUTATED: the caller keeps these arrays as conversation history
+ * and hands them back next turn. Stamping cache_control into them would make
+ * the stored history differ from what was sent, and the byte-for-byte prefix
+ * match this whole scheme depends on would drift a little further every turn.
+ */
+function withConversationBreakpoint(messages: any[]): any[] {
+    if (!messages.length) return messages;
+    const out = messages.slice();
+    const last = out[out.length - 1];
+    const mark = { type: "ephemeral", ttl: "1h" };
+
+    if (typeof last.content === "string") {
+        out[out.length - 1] = {
+            ...last,
+            content: [{ type: "text", text: last.content, cache_control: mark }],
+        };
+        return out;
+    }
+    if (Object.prototype.toString.call(last.content) === "[object Array]" && last.content.length) {
+        const blocks = last.content.slice();
+        blocks[blocks.length - 1] = { ...blocks[blocks.length - 1], cache_control: mark };
+        out[out.length - 1] = { ...last, content: blocks };
+        return out;
+    }
+    // An unfamiliar content shape: send it exactly as it came rather than
+    // guess where a marker belongs.
+    return messages;
+}
+
 export async function callModel(call: ModelCall): Promise<ModelReply> {
     const key = getApiKey();
     if (!key) throw new Error("No API key set. Open Settings in the tool and paste one in.");
@@ -198,31 +230,29 @@ export async function callModel(call: ModelCall): Promise<ModelReply> {
             // right because the reads now actually land. If the panel ever
             // becomes something people fire one question at and close, this is
             // the line to reconsider.
-            // TOP-LEVEL, so the marker lands on the LAST cacheable block rather
-            // than on the system prompt.
+            // TWO BREAKPOINTS, and the second one alone was a mistake.
             //
-            // A breakpoint means "cache everything up to here". Ours sat on the
-            // system block, so the cached region was tools + system -- the ~12k
-            // that never changes -- and the conversation after it was charged
-            // fresh on every single call. Measured against a real hour of use:
-            // 12k of cached prefix and 7.4k of history and tool results per
-            // request, with only the first of those two actually cached. That
-            // uncached tail was 64% of the bill.
+            // A breakpoint means "cache up to here", and a READ only happens
+            // against a position that was previously written. Moving the single
+            // marker to the end of the messages therefore deleted the one that
+            // covered tools + system -- and because every question's text
+            // differs, no written position ever matched on the first call of a
+            // new question. Measured across six questions: the first call of
+            // each one cached NOTHING and rewrote the whole 17.6k prefix at the
+            // 2x write rate. The 1h TTL was buying nothing at all.
             //
-            // Placed at the end of the messages instead, each call pays full
-            // price only for what is genuinely new since the last one, and
-            // re-reads everything before it at a tenth. The write premium
-            // applies only to the delta rather than to a fresh copy of the
-            // whole prefix.
+            //   1. On the system block: tools + system, byte-identical for the
+            //      whole session, so every call after the first reads it.
+            //   2. On the last message: the conversation, so a follow-up call
+            //      within a question re-reads the tool results before it
+            //      instead of paying full price for them.
             //
-            // STILL A PREFIX MATCH, so the byte-stability rule below matters
-            // more now, not less: anything volatile early in the request
-            // invalidates the entire conversation behind it, not just the
-            // system prompt.
-            ...(provider.explicitCache ? { cache_control: { type: "ephemeral", ttl: "1h" } } : {}),
-            system: call.system,
+            // Anthropic allows four; two is what this shape needs.
+            system: provider.explicitCache
+                ? [{ type: "text", text: call.system, cache_control: { type: "ephemeral", ttl: "1h" } }]
+                : call.system,
             tools: call.tools,
-            messages: call.messages,
+            messages: provider.explicitCache ? withConversationBreakpoint(call.messages) : call.messages,
         }),
     });
 

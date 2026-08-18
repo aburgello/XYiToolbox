@@ -113,8 +113,27 @@ async function callOnce(p, key, system, tools, messages) {
     if (p.auth === "bearer") headers.authorization = "Bearer " + key;
     else headers["x-api-key"] = key;
 
-    const body = { model: p.model, max_tokens: 2048, system, tools, messages };
-    if (p.explicitCache) body.cache_control = { type: "ephemeral", ttl: "1h" };
+    // Mirrors provider.ts exactly: two breakpoints for Anthropic (the stable
+    // tools+system prefix, and the growing conversation), none for a service
+    // that caches automatically. A benchmark that priced a different request
+    // shape from the panel would be measuring the wrong thing.
+    let body;
+    if (p.explicitCache) {
+        const mark = { type: "ephemeral", ttl: "1h" };
+        const msgs = messages.slice();
+        const last = msgs[msgs.length - 1];
+        if (typeof last.content === "string") {
+            msgs[msgs.length - 1] = { ...last, content: [{ type: "text", text: last.content, cache_control: mark }] };
+        } else if (Array.isArray(last.content) && last.content.length) {
+            const blocks = last.content.slice();
+            blocks[blocks.length - 1] = { ...blocks[blocks.length - 1], cache_control: mark };
+            msgs[msgs.length - 1] = { ...last, content: blocks };
+        }
+        body = { model: p.model, max_tokens: 2048,
+                 system: [{ type: "text", text: system, cache_control: mark }], tools, messages: msgs };
+    } else {
+        body = { model: p.model, max_tokens: 2048, system, tools, messages };
+    }
 
     const res = await fetch(p.endpoint, { method: "POST", headers, body: JSON.stringify(body) });
     if (!res.ok) throw new Error(p.label + " " + res.status + ": " + (await res.text()).slice(0, 200));
