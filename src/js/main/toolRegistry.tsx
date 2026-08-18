@@ -507,7 +507,15 @@ export const TOOLS: ToolEntry[] = [
         //                    no Ctrl+Z brings them back, so with work in
         //                    progress the receiver opens the library instead
         //                    and says why.
-        fillableFields: ["mode", "libraryOpen", "libraryTerritory", "screenName"],
+        //   mastersRoot      point the shelf at a campaign, using the path
+        //                    list_campaigns returned
+        //   segments         a Multi Art running order, as a JSON array of
+        //                    {seconds, count, creative, orientation, size}.
+        //                    Matched against the loaded shelf by
+        //                    lib/agent/multiArt.ts, which forgives spelling and
+        //                    refuses ambiguity. Same empty-board rule as
+        //                    screenName, and it never presses Build.
+        fillableFields: ["mode", "libraryOpen", "libraryTerritory", "screenName", "mastersRoot", "segments"],
         description: "Compose a deliverable from several masters — creatives tiled across the frame, segments played in order. For MultipleArt rows, where no single master fits.",
     },
     {

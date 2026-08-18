@@ -32,6 +32,7 @@ import { AlertCircle, ChevronRight, Copy, Globe2, Layers, LayoutGrid, Library, P
 import { csi, evalTS } from "../../lib/utils/bolt";
 import { deriveMastersFromMarkets } from "../lib/mastersRoot";
 import { usePendingFill } from "../lib/agent/fieldHandoff";
+import { parseSegmentSpec, planSegments } from "../lib/agent/multiArt";
 import { usePosterFrame, pickPreviewRender, isImageFile, type RenderEntry } from "../lib/renderPreview";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
@@ -459,6 +460,11 @@ export const BespokeTool = () => {
     // A screen the agent asked for, held until the library has actually been
     // read. See the resolver below.
     const [pendingScreen, setPendingScreen] = useState("");
+    // A Multi Art running order the agent proposed, held until the masters
+    // shelf has actually been read. Same reason as pendingScreen: matching
+    // creatives against an empty shelf answers "no such creative" about a
+    // campaign nobody has opened yet.
+    const [pendingSegments, setPendingSegments] = useState("");
     const [saving, setSaving] = useState(false);
     const [tplName, setTplName] = useState("");
     const [layouts, setLayouts] = useState<Record<string, { regions: Region[]; guidesX: number[]; guidesY: number[] }>>({});
@@ -1032,6 +1038,23 @@ export const BespokeTool = () => {
         }
         if (fill.libraryTerritory) setLibraryTerritory(fill.libraryTerritory);
 
+        // POINTED AT A CAMPAIGN, using the path list_campaigns already handed
+        // the agent. Pinned, because arriving with a folder chosen and then
+        // having the campaign effect quietly derive a different one underneath
+        // is the kind of thing nobody notices until the wrong artwork builds.
+        if (fill.mastersRoot) {
+            setMastersPinned(true);
+            setMastersPath(fill.mastersRoot);
+            load(fill.mastersRoot);
+            asked.push("the masters folder");
+        }
+
+        // A running order implies Multi Art. Held for the resolver below.
+        if (fill.segments) {
+            setMode("multi");
+            setPendingSegments(fill.segments);
+        }
+
         // A screen name implies the library, and implies Bespoke mode -- asking
         // for a layout and landing on the mode chooser would be the same
         // half-arrival this exists to fix.
@@ -1098,6 +1121,76 @@ export const BespokeTool = () => {
         if (traceTemplate(hit)) setLibraryOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pendingScreen, templatesRead, templates, libraryReadable]);
+
+    /**
+     * THE RUNNING ORDER, resolved against the masters actually on the shelf.
+     *
+     * The model reads the sentence; this decides what the words point at. See
+     * lib/agent/multiArt.ts for why that split is the whole design -- the
+     * spelling of a creative is forgiven, the identity of one never is.
+     *
+     * WAITS FOR THE SHELF, and can tell the three reasons it might be empty
+     * apart: no campaign chosen, a read still running, or a campaign that
+     * genuinely has no masters. Answering "no creative called Trio" while the
+     * folder is still being read is the same confidently-wrong failure the
+     * screen resolver above exists to avoid.
+     *
+     * ONLY ONTO AN EMPTY BOARD. Segments are panel state and no Ctrl+Z brings
+     * them back, so work already laid out is never replaced -- the request is
+     * refused and the artist is told, exactly as with a traced screen.
+     *
+     * IT DOES NOT BUILD. Assembling the running order is the tedious part;
+     * pressing Build is the part with consequences, and that stays the
+     * artist's -- Bespoke advertises no actionSafety, so the agent cannot
+     * press it.
+     */
+    useEffect(() => {
+        if (!pendingSegments) return;
+        if (!mastersPath && !loading) {
+            setPendingSegments("");
+            setStatus({
+                text: "No campaign is loaded here, so there's nothing to build a running order from — pick one first.",
+                type: "error",
+            });
+            return;
+        }
+        if (loading || masters === null) return;   // the read is still running
+        setPendingSegments("");
+
+        const parsed = parseSegmentSpec(pendingSegments);
+        if (!parsed.ok) { setStatus({ text: parsed.error, type: "error" }); return; }
+
+        if (segments.some((sg) => sg.tiles.length > 0)) {
+            setStatus({
+                text: "You already have creatives in the running order, so I've left it alone — clear the segments first if you want me to lay this out.",
+                type: "error",
+            });
+            return;
+        }
+
+        const plan = planSegments(parsed.specs, masters);
+        if (!plan.ok) { setStatus({ text: plan.error, type: "error" }); return; }
+
+        // nextSegId, NOT the index. That counter is shared with regions and
+        // already past 0, so index ids would collide with the very next
+        // "Add segment" -- two segments with one id, which is a duplicate
+        // React key and a segment that edits its twin.
+        setSegments(plan.segments.map((sg) => ({ id: nextSegId++, tiles: sg.tiles as BespokeMaster[], seconds: sg.seconds })));
+        setCurrent(0);
+
+        const total = plan.segments.reduce((n, sg) => n + sg.seconds, 0);
+        const shape = plan.segments
+            .map((sg) => `${sg.seconds}s of ${sg.tiles.length} ${sg.tiles[0].creative || sg.tiles[0].name}`)
+            .join(", then ");
+        setStatus({
+            // The notes are not a footnote. A master placed more than once is
+            // the difference between three panels and one repeated three
+            // times, and it is invisible on a board of identically-sized tiles.
+            text: `Laid out ${shape} — ${total}s in total. ${plan.notes.join(" ")} Check it and press Build.`.replace(/\s+/g, " ").trim(),
+            type: plan.notes.length ? "error" : "success",
+        });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pendingSegments, masters, loading, mastersPath, segments]);
 
     // ── board shortcuts, deliberately OPT-IN ────────────────────────────────
     // AE binds the arrow keys to "nudge the selected LAYER in the comp", so a
