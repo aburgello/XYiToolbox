@@ -93,10 +93,70 @@
 .agent-bubble-head {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    // `margin-left: auto` on the slot below does the separating now, so this no
+    // longer needs space-between -- with three children that rule would have
+    // pushed the slot to the middle of the bar rather than over to the close.
     padding: 8px 10px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     flex: 0 0 auto;
+}
+
+// Where AgentChat portals its cost readout and key button. Everything after the
+// title is pushed right, so the bar reads: what this is · what it costs · the
+// key · close.
+.agent-bubble-head-slot {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    margin-right: 6px;
+    // Empty until the portal lands, and an empty flex box with a gap still
+    // takes its margins -- min-width keeps it from reserving anything.
+    min-width: 0;
+}
+
+/* THE PORTALLED CONTROLS NEED THEIR OWN RULES, and this is the whole catch of
+   moving them. AgentChat.scss styles `.agentchat-keybtn` and `.agentchat-cost`
+   NESTED INSIDE `.agentchat` -- once they render through a portal into this
+   header they are no longer inside that element, so not one of those
+   declarations reaches them and they would arrive wearing index.scss's global
+   button skin (grey fill, blue hover).
+
+   Both states are re-declared for exactly that reason: that global rule paints
+   over any custom button unless :hover and :active are restated (CLAUDE.md §3). */
+.agent-bubble-head-slot {
+    .agentchat-cost {
+        font-size: 10px;
+        font-variant-numeric: tabular-nums;
+        color: rgba(255, 255, 255, 0.45);
+        white-space: nowrap;
+    }
+
+    // ICON ONLY. "API key set" was the widest thing in the strip and it said
+    // less than the key does -- whether one is set is carried by the icon's
+    // colour, and what it is for by the tooltip. Click still expands the full
+    // row in the body, where the input and the save have to live.
+    .agentchat-keybtn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        padding: 0;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 5px;
+        background: rgba(255, 255, 255, 0.06);
+        color: rgba(255, 255, 255, 0.5);
+        cursor: pointer;
+
+        &:hover  { background: rgba(255, 255, 255, 0.13); color: rgba(255, 255, 255, 0.85); }
+        &:active { background: rgba(255, 255, 255, 0.18); }
+
+        // A key that IS set reads as settled rather than as a prompt.
+        &.is-set { color: #7fe7d8; border-color: rgba(127, 231, 216, 0.35); }
+
+        svg { flex: none; }
+    }
 }
 
 .agent-bubble-title {

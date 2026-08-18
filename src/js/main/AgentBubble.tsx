@@ -30,6 +30,9 @@ const AgentBubble: React.FC = () => {
     // do this job -- the panel is hidden with CSS rather than unmounted, so it
     // only ever mounts once.
     const [focusKey, setFocusKey] = useState(0);
+    // The header node AgentChat renders its status controls into. See the slot
+    // in the markup below for why this is state and not a ref.
+    const [headSlot, setHeadSlot] = useState<HTMLElement | null>(null);
 
     const toggle = () => {
         if (!mounted) setMounted(true);
@@ -45,6 +48,13 @@ const AgentBubble: React.FC = () => {
                 <div className={"agent-bubble-panel" + (open ? " is-open" : "")} aria-hidden={!open}>
                     <div className="agent-bubble-head">
                         <span className="agent-bubble-title"><Bot size={14} /> Ask</span>
+                        {/* AgentChat portals its key button and running cost in
+                            here. A callback ref rather than useRef, because a
+                            ref object does not re-render on attach and the
+                            portal would have nothing to target on first paint
+                            -- the controls would only appear after some other
+                            state change happened to re-render the panel. */}
+                        <span className="agent-bubble-head-slot" ref={setHeadSlot} />
                         <button
                             className="agent-bubble-close"
                             onClick={() => setOpen(false)}
@@ -55,7 +65,7 @@ const AgentBubble: React.FC = () => {
                         </button>
                     </div>
                     <div className="agent-bubble-body">
-                        <AgentChat focusKey={focusKey} />
+                        <AgentChat focusKey={focusKey} headerSlot={headSlot} />
                     </div>
                 </div>
             )}

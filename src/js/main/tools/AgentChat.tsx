@@ -17,6 +17,7 @@
 // approved tool only.
 // =============================================================================
 import React, { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Send, KeyRound, Loader2, CornerDownLeft } from "lucide-react";
 import StatusIcon from "../StatusIcon";
 import { ask, type Step } from "../lib/agent/loop";
@@ -63,9 +64,24 @@ interface Props {
      * event to hang focus off.
      */
     focusKey?: number;
+    /**
+     * A node in the SURROUNDING header to render the key button and the running
+     * cost into. The bubble is a small floating panel and those two took a full
+     * row of it to say "key set" and a number -- both are status, and status
+     * belongs on the title bar that is already there.
+     *
+     * Portalled rather than lifted: cost is derived from `turns` and the key
+     * state is this component's, so hoisting them into AgentBubble would move
+     * three pieces of state up to reposition two elements. Same pattern Tooltip
+     * and Dialog already use here.
+     *
+     * Optional on purpose. With no slot the controls render inline exactly as
+     * before, so this component still stands on its own.
+     */
+    headerSlot?: HTMLElement | null;
 }
 
-const AgentChat: React.FC<Props> = ({ focusKey }) => {
+const AgentChat: React.FC<Props> = ({ focusKey, headerSlot }) => {
     const [question, setQuestion] = useState("");
     const [turns, setTurns] = useState<Turn[]>([]);
     const [live, setLive] = useState<Step[] | null>(null);
@@ -151,21 +167,38 @@ const AgentChat: React.FC<Props> = ({ focusKey }) => {
 
     const sessionCost = turns.reduce((n, t) => n + t.costUsd, 0);
 
+    const headerControls = (
+        <>
+            {sessionCost > 0 && (
+                <span className="agentchat-cost" title="Estimated spend this session">
+                    ≈ ${sessionCost.toFixed(3)}
+                </span>
+            )}
+            <button
+                className={"agentchat-keybtn" + (headerSlot ? " agentchat-keybtn--icon" : "") + (hasKey ? " is-set" : "")}
+                onClick={() => setKeyOpen((v) => !v)}
+                title={hasKey ? "An API key is set on this machine — click to change it" : "No API key set yet — click to add one"}
+                aria-label={hasKey ? "Change the API key" : "Set an API key"}
+            >
+                <KeyRound size={14} />
+                {!headerSlot && <span>{hasKey ? "API key set" : "Set API key"}</span>}
+            </button>
+        </>
+    );
+
     return (
         <div className="form-tool agentchat">
 
-            <div className="button-row">
-                <button
-                    className="agentchat-keybtn"
-                    onClick={() => setKeyOpen((v) => !v)}
-                    title={hasKey ? "An API key is set on this machine" : "No API key set yet"}
-                >
-                    <KeyRound size={14} /> {hasKey ? "API key set" : "Set API key"}
-                </button>
-                {sessionCost > 0 && (
-                    <span className="agentchat-cost">this session ≈ ${sessionCost.toFixed(3)}</span>
-                )}
-            </div>
+            {/* IN THE HEADER WHERE THERE IS ONE. Key state and spend are both
+                status about the session rather than things you do to it, and in
+                a panel this small they were costing a whole row of transcript to
+                say so. The button is the KEY ALONE up there -- what it is for is
+                carried by the icon and its tooltip, and the words "API key set"
+                were the widest thing in the strip. It still expands the same row
+                below, which is where the input and the save have to live. */}
+            {headerSlot
+                ? createPortal(headerControls, headerSlot)
+                : <div className="button-row">{headerControls}</div>}
 
             {keyOpen && (
                 <div className="agentchat-keyrow">
