@@ -11,7 +11,7 @@
 // =============================================================================
 import { TOOLS, runTool } from "./tools";
 import { callModel, estimateCost } from "./provider";
-import { buildCapabilityList } from "./capabilities";
+import { buildCapabilityList, buildRunnableActionList } from "./capabilities";
 
 /** Hard ceiling on tool calls per question. A runaway loop is a runaway bill. */
 const MAX_STEPS = 6;
@@ -99,6 +99,19 @@ export function systemPrompt(): string {
         "This list is informational only — you cannot invoke any of these tools yourself.",
         "",
         buildCapabilityList(),
+        "",
+        "RUNNABLE ACTIONS",
+        "One-click actions you CAN run yourself with run_action, against the artist's open project.",
+        "Each is tagged with how to back out of it: (undoable) means one Ctrl+Z, and",
+        "(creates new files — overwrites nothing) means the worst case is something to delete.",
+        "Actions that modify or rename existing files are not listed and cannot be run; for those, open",
+        "the Toolset and tell the artist to press it.",
+        "Most act on the ACTIVE COMP or the CURRENT SELECTION. If a request depends on something being",
+        "selected, say so rather than running it and hoping.",
+        "After running one, say what it did and how to reverse it — the tool result tells you which.",
+        "Do not call a new file 'undoable', and do not call an undoable edit permanent.",
+        "",
+        buildRunnableActionList(),
     ].join("\n");
 }
 

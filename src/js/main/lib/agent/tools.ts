@@ -32,6 +32,7 @@ import {
     type WrikeJob,
 } from "../jobsFeed";
 import { loadJobRows, classifyRows, stageBatchFromJob } from "../jobRows";
+import { ACTIONS } from "../../tools/Toolset";
 
 export interface ToolDef {
     name: string;
@@ -106,6 +107,29 @@ export const TOOLS: ToolDef[] = [
                 },
             },
             required: ["jobId"],
+        },
+    },
+    {
+        name: "run_action",
+        description:
+            "Run one of the panel's one-click Toolset actions against the artist's open After Effects " +
+            "project — scaling, rotating, organising, renaming comps, applying effects and so on. " +
+            "Only actions listed under RUNNABLE ACTIONS can be run: those change nothing, change the " +
+            "open project in a way Ctrl+Z reverses, or create new files without touching existing " +
+            "ones. Anything that modifies or renames files already on disk is refused. Most act on " +
+            "the ACTIVE COMP or the CURRENT SELECTION, so say what the artist needs selected if it " +
+            "matters.",
+        input_schema: {
+            type: "object",
+            properties: {
+                actionId: {
+                    type: "string",
+                    description:
+                        "The action's id from the RUNNABLE ACTIONS list, e.g. 'rotate-90cc'. " +
+                        "Lower-case with hyphens, not the display label.",
+                },
+            },
+            required: ["actionId"],
         },
     },
     {
@@ -297,6 +321,64 @@ export async function runTool(name: string, input: any): Promise<ToolResult> {
             };
         }
 
+        case "run_action": {
+            if (!input || typeof input.actionId !== "string" || !input.actionId) {
+                return { ok: false, reason: "run_action needs an actionId from the RUNNABLE ACTIONS list." };
+            }
+            const entry = ACTIONS.filter((a) => a.id === input.actionId)[0];
+            if (!entry) {
+                return {
+                    ok: false,
+                    reason:
+                        `No action with id "${input.actionId}". Runnable ids: ` +
+                        ACTIONS.filter(isRunnable).map((a) => a.id).join(", "),
+                };
+            }
+            // THE GATE. Enforced here, never in the prompt -- an unclassified
+            // action is treated as a write, so nothing becomes runnable by
+            // having been forgotten in Toolset.tsx.
+            if (!isRunnable(entry)) {
+                return {
+                    ok: false,
+                    reason:
+                        `"${entry.label}" modifies or renames files that already exist, which cannot ` +
+                        `be undone, so I can't run it. Open the Toolset and press it yourself if ` +
+                        `that's what you want.`,
+                };
+            }
+
+            try {
+                const result = await entry.run();
+                // null is the picker-cancelled sentinel, distinct from a
+                // failure and from evalTSSafe's own "no bridge" undefined --
+                // reporting a cancel as success is how an agent claims work
+                // it did not do.
+                if (result === null) {
+                    return { ok: true, data: { ran: entry.label, outcome: "cancelled by the artist" } };
+                }
+                if (result === undefined) {
+                    return { ok: false, reason: `No bridge to After Effects — ${entry.label} did not run.` };
+                }
+                return {
+                    ok: true,
+                    data: {
+                        ran: entry.label,
+                        outcome: entry.successText(result),
+                        // So the model can tell the artist how to back out,
+                        // and does not describe a new file as "undoable".
+                        howToReverse:
+                            entry.safety === "undoable"
+                                ? "Ctrl+Z / Cmd+Z in After Effects"
+                                : entry.safety === "additive"
+                                ? "nothing was overwritten — delete what it created if it was wrong"
+                                : "nothing to reverse, this only reported",
+                    },
+                };
+            } catch (e: any) {
+                return { ok: false, reason: `${entry.label} failed: ${e?.message || e}` };
+            }
+        }
+
         case "prefill_batch": {
             if (!input || typeof input.jobId !== "string" || !input.jobId) {
                 return { ok: false, reason: "prefill_batch needs a jobId from list_active_jobs." };
@@ -405,6 +487,20 @@ async function loadJobs(): Promise<{ ok: true; res: Awaited<ReturnType<typeof fe
     } catch (e: any) {
         return { ok: false, reason: `Couldn't reach the jobs feed: ${e?.message || e}` };
     }
+}
+
+/**
+ * May the agent run this one-click action?
+ *
+ * Everything except "destructive" -- i.e. anything whose worst case is a
+ * Ctrl+Z or a folder you delete. An action with no `safety` at all counts as
+ * destructive, so nothing becomes runnable by having been forgotten. See the
+ * field's note in Toolset.tsx for what each tier means.
+ */
+export function isRunnable(a: {
+    safety?: "read" | "undoable" | "additive" | "destructive";
+}): boolean {
+    return a.safety === "read" || a.safety === "undoable" || a.safety === "additive";
 }
 
 /** One job, flattened -- the title is parsed the same way the card parses it. */

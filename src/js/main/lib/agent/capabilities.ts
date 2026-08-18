@@ -24,6 +24,7 @@
 // question pays full input price.
 // =============================================================================
 import { TOOLS as PANEL_TOOLS, CATEGORIES } from "../../toolRegistry";
+import { ACTIONS } from "../../tools/Toolset";
 
 let cached: string | null = null;
 
@@ -88,4 +89,44 @@ export function buildCapabilityList(): string {
 
     cached = lines.join("\n");
     return cached;
+}
+
+let cachedActions: string | null = null;
+
+/**
+ * The one-click Toolset actions the agent may actually run.
+ *
+ * These live in Toolset.tsx's own ACTIONS array rather than in toolRegistry --
+ * per CLAUDE.md §4, a one-click action with no inputs goes there instead of
+ * getting a TOOLS entry. That is why the agent could not see a single one of
+ * them: the capability list is built from TOOLS, and these were never in it.
+ *
+ * DESTRUCTIVE ACTIONS ARE NOT LISTED AT ALL. Naming an action it will be
+ * refused anyway only invites it to try, and then to explain the refusal to
+ * an artist who never asked. The refusal path still exists in tools.ts for an
+ * id the model invents or remembers.
+ *
+ * Memoised for the same cache-prefix reason as buildCapabilityList.
+ */
+export function buildRunnableActionList(): string {
+    if (cachedActions !== null) return cachedActions;
+
+    const TAG: Record<string, string> = {
+        undoable: " (undoable)",
+        additive: " (creates new files — overwrites nothing)",
+    };
+
+    const rows = ACTIONS.filter(
+        (a) => a.safety === "read" || a.safety === "undoable" || a.safety === "additive"
+    ).map((a) => {
+        const tag = TAG[a.safety || ""] || "";
+        const d =
+            a.description.length > MAX_DESC
+                ? a.description.slice(0, MAX_DESC).replace(/\s+\S*$/, "") + "…"
+                : a.description;
+        return `- ${a.label} (id: ${a.id})${tag} — ${d}`;
+    });
+
+    cachedActions = rows.join("\n");
+    return cachedActions;
 }

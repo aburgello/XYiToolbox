@@ -368,9 +368,11 @@ export const TOOLS: ToolEntry[] = [
             // is safe.
             "Build a Batch": "read",
             "Add row": "read",
-            // Navigates to another tool. Harmless, but it moves the artist's
-            // screen out from under them, so it stays a human decision.
-            "Bespoke It": "write",
+            // Navigates to the Bespoke tool. Marked "write" at first on the
+            // grounds that it moves the artist's screen -- which is not what
+            // this field is for. The test is whether you can get back, and
+            // Back is a click.
+            "Bespoke It": "read",
         },
     },
     {
