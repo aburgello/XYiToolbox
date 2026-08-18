@@ -29,7 +29,7 @@ export interface ModelReply {
     /** Raw content blocks, passed straight back into the next turn's history. */
     content: any[];
     stopReason: string;
-    usage: { input: number; output: number; cacheRead: number };
+    usage: { input: number; output: number; cacheRead: number; cacheWrite: number };
 }
 
 const ENDPOINT = "https://api.anthropic.com/v1/messages";
@@ -82,7 +82,18 @@ export async function callModel(call: ModelCall): Promise<ModelReply> {
             // input bills at a fraction of fresh input. Keep it byte-stable:
             // no timestamps, no machine tag, no per-artist interpolation, or
             // this silently never reads and you pay full price forever.
-            system: [{ type: "text", text: call.system, cache_control: { type: "ephemeral" } }],
+            // ttl "1h", NOT THE 5-MINUTE DEFAULT. The prefix is ~12k tokens and
+            // it was expiring between questions: an artist asks something, goes
+            // and works in AE for ten minutes, asks again -- and pays full
+            // price for a prefix that had already been cached and thrown away.
+            // Panel use is bursty by nature, so the default TTL was close to
+            // paying the write premium for nothing.
+            //
+            // A 1h write costs 2x base against 1.25x for 5m, so this is only
+            // right because the reads now actually land. If the panel ever
+            // becomes something people fire one question at and close, this is
+            // the line to reconsider.
+            system: [{ type: "text", text: call.system, cache_control: { type: "ephemeral", ttl: "1h" } }],
             tools: call.tools,
             messages: call.messages,
         }),
@@ -101,6 +112,12 @@ export async function callModel(call: ModelCall): Promise<ModelReply> {
             input: json.usage?.input_tokens ?? 0,
             output: json.usage?.output_tokens ?? 0,
             cacheRead: json.usage?.cache_read_input_tokens ?? 0,
+            // A SEPARATE FIELD, and it was being dropped. input_tokens does NOT
+            // include cache writes, so the readout has been understating every
+            // session that ever wrote a cache entry -- by the whole prefix, on
+            // the first call of each one. It matters more now, since a 1h write
+            // is billed at 2x rather than 1.25x.
+            cacheWrite: json.usage?.cache_creation_input_tokens ?? 0,
         },
     };
 }
@@ -110,6 +127,14 @@ export async function callModel(call: ModelCall): Promise<ModelReply> {
  * rather than leaving you to guess. Haiku-tier rates, USD per million tokens.
  * Update alongside MODEL.
  */
-export function estimateCost(u: { input: number; output: number; cacheRead: number }): number {
-    return (u.input / 1e6) * 1.0 + (u.output / 1e6) * 5.0 + (u.cacheRead / 1e6) * 0.1;
+export function estimateCost(u: { input: number; output: number; cacheRead: number; cacheWrite?: number }): number {
+    return (
+        (u.input / 1e6) * 1.0 +
+        (u.output / 1e6) * 5.0 +
+        (u.cacheRead / 1e6) * 0.1 +
+        // 2x base for a 1h write. Counted at all now: leaving it out made the
+        // panel report a number that was always too low, which is the wrong
+        // direction for a figure someone is deciding a budget on.
+        ((u.cacheWrite || 0) / 1e6) * 2.0
+    );
 }
