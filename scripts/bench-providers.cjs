@@ -30,6 +30,29 @@ const ROOT = path.join(__dirname, "..");
 
 const { loadAgent } = require("./agent-headless.cjs");
 
+// --- keys ------------------------------------------------------------------
+// Read from .env.local (already covered by the *.local rule in .gitignore) so
+// a key never has to be typed onto a command line, where it would end up in
+// shell history and in any transcript of the session running it. Environment
+// variables still win if they are set.
+function loadEnvFile() {
+    const file = path.join(ROOT, ".env.local");
+    let text = "";
+    try { text = fs.readFileSync(file, "utf8"); } catch { return; }
+    for (const line of text.split("\n")) {
+        const t = line.trim();
+        if (!t || t.charAt(0) === "#") continue;
+        const eq = t.indexOf("=");
+        if (eq < 1) continue;
+        const k = t.slice(0, eq).trim();
+        // Never override a real environment variable, and strip the quotes
+        // people reflexively put round a pasted key.
+        if (process.env[k]) continue;
+        process.env[k] = t.slice(eq + 1).trim().replace(/^["']|["']$/g, "");
+    }
+}
+loadEnvFile();
+
 // --- the two services -------------------------------------------------------
 const PROVIDERS = {
     anthropic: {
@@ -156,7 +179,12 @@ async function askOne(p, key, system, tools, question) {
     for (const id of picked) {
         const p = PROVIDERS[id];
         const key = process.env[p.keyEnv];
-        if (!key) { console.log(`  ${p.label}: no ${p.keyEnv} in the environment — skipped\n`); continue; }
+        if (!key) {
+            console.log(`  ${p.label}: skipped — no ${p.keyEnv}.`);
+            console.log(`    Put it in .env.local at the repo root, as a line reading  ${p.keyEnv}=your-key`);
+            console.log(`    That file is gitignored.\n`);
+            continue;
+        }
         console.log(p.label);
         results[id] = [];
         for (const q of questions) {
