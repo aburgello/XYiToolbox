@@ -61,21 +61,32 @@
         bottom: -2px;
         border-radius: 50%;
         z-index: -1;
+        // TEAL AND CYAN, AND ONLY TEAL AND CYAN. Neighbours on the wheel, so
+        // what rotates is a sheen travelling round the rim rather than a wheel
+        // of colours going past -- the difference between "subtle" and "a
+        // loading spinner". The darkest stop is what gives it somewhere to
+        // travel; without it a ring of near-identical teals reads as flat and
+        // the motion disappears entirely.
         background: conic-gradient(
             from 0deg,
-            #6366f1,
-            #a855f7,
-            #ec4899,
+            #2dd4bf,
             #22d3ee,
-            #34d399,
-            #6366f1
+            #5eead4,
+            #0e7490,
+            #22d3ee,
+            #2dd4bf
         );
-        // ONE-SHOT, and this is the same decision the home screen's ambient
-        // background already made: a docked panel sits beside a comp all day,
-        // and something turning forever in the corner of it is not delight, it
-        // is a thing to look away from. It introduces itself on mount, then
-        // stops. Hover is where it moves again, because that is you asking.
-        animation: agent-fab-ring 2.6s cubic-bezier(0.16, 1, 0.3, 1) 1 both;
+        // SUBTLE MEANS SLOW, not faint. 14s is about six degrees a second:
+        // present if you look at it, never something moving in the corner of
+        // your eye while you work -- which is the thing a perpetual animation
+        // in a docked panel has to earn.
+        //
+        // Linear, and the first and last stops are the same colour, so the
+        // loop has no seam to hesitate at.
+        animation: agent-fab-ring 14s linear infinite;
+        // Held back at rest so it reads as a rim rather than a light source.
+        opacity: 0.75;
+        transition: opacity 160ms ease;
     }
 
     // The face, painted over the middle of the ring. A real element rather than
@@ -94,14 +105,16 @@
 
     &:hover {
         color: #ffffff;
-        box-shadow: 0 2px 14px rgba(0, 0, 0, 0.5), 0 0 16px rgba(139, 92, 246, 0.35);
+        box-shadow: 0 2px 14px rgba(0, 0, 0, 0.5), 0 0 16px rgba(45, 212, 191, 0.4);
 
-        // NOW it turns, for as long as you are pointing at it. Linear, because
-        // an eased rotation visibly hesitates at the seam of the loop.
-        &::before { animation: agent-fab-ring 3.2s linear infinite; }
+        // Picks up when you point at it -- still unhurried, just awake.
+        &::before {
+            animation-duration: 5s;
+            opacity: 1;
+        }
     }
 
-    &:active::before { animation-duration: 1.1s; }
+    &:active::before { animation-duration: 2s; }
 
     // index.scss's global button:hover/:active paints over any custom button,
     // so both states are re-declared (CLAUDE.md §3). The face is a pseudo, so
