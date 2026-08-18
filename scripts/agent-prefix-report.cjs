@@ -47,18 +47,33 @@ function toolDefs() {
     let i = s.indexOf("export const TOOLS: ToolDef[] = [");
     if (i === -1) throw new Error("TOOLS array not found — has it been renamed?");
     i = s.indexOf("= [", i) + 2;
-    let depth = 0, j = i, instr = null, esc = false;
-    for (;;) {
-        const c = s[j];
+    // Tracks strings AND comments. Skipping comments is not fussiness: an
+    // apostrophe in a prose comment ("the prompt's ANIMATING SOMETHING
+    // section") reads as an opening quote, swallows the rest of the file, and
+    // the bracket count never balances -- the scan runs off the end and hangs.
+    // Which is exactly what it did the first time a comment with an apostrophe
+    // was added to the array.
+    let depth = 0, j = i, instr = null, esc = false, comment = null;
+    for (; j < s.length; j++) {
+        const c = s[j], next = s[j + 1];
+        if (comment) {
+            if (comment === "//" && c === "\n") comment = null;
+            else if (comment === "/*" && c === "*" && next === "/") { comment = null; j++; }
+            continue;
+        }
         if (instr) {
             if (esc) esc = false;
             else if (c === "\\") esc = true;
             else if (c === instr) instr = null;
-        } else if (c === '"' || c === "'") instr = c;
-        else if (c === "[") depth++;
+            continue;
+        }
+        if (c === "/" && next === "/") { comment = "//"; j++; continue; }
+        if (c === "/" && next === "*") { comment = "/*"; j++; continue; }
+        if (c === '"' || c === "'" || c === "`") { instr = c; continue; }
+        if (c === "[") depth++;
         else if (c === "]" && --depth === 0) break;
-        j++;
     }
+    if (depth !== 0) throw new Error("TOOLS array did not close — the scanner lost track.");
     // eslint-disable-next-line no-new-func
     return new Function("return " + s.slice(i, j + 1))();
 }

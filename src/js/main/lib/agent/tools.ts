@@ -45,7 +45,17 @@ export interface ToolDef {
         type: "object";
         properties: Record<string, {
             type: string;
-            description: string;
+            /** Optional when `enum` already says what the values are. */
+            description?: string;
+            /**
+             * The allowed values, when there is a closed set of them.
+             *
+             * CHEAPER AND SAFER THAN PROSE. Spelling the options out in a
+             * description costs more tokens on every call and still lets the
+             * model invent a sixth one; an enum is shorter and the API rejects
+             * anything outside it. Prefer it wherever the set is fixed.
+             */
+            enum?: string[];
             /**
              * A value-type for an object argument, i.e. one level of nesting.
              *
@@ -289,73 +299,46 @@ export const TOOLS: ToolDef[] = [
     },
     {
         name: "animate_layers",
+        // TERSE ON PURPOSE. Every behavioural steer this used to carry -- use
+        // `relative` for moves, `stagger` for "one after another", reach for a
+        // studio ease preset afterwards, say what you made -- is already in the
+        // system prompt's ANIMATING SOMETHING section. Saying it twice cost 643
+        // tokens on EVERY model call, making this 10% of the whole tool surface,
+        // to repeat advice the model read two thousand tokens earlier.
+        //
+        // The division that survives: WHEN to reach for a tool belongs in the
+        // prompt, where it is prose and read once. WHAT its arguments mean
+        // belongs here. Enums do both jobs at once -- shorter than describing
+        // the allowed values, and the model cannot invent one.
         description:
-            "MAKE AN ANIMATION: two keyframes on one transform property, across the targeted layers. " +
-            "This is how you actually move something — fade a layer up, slide it in, scale it on, spin " +
-            "it. Property is position, scale, rotation, opacity or anchor. Set `relative` for offsets " +
-            "from where the layer is now, which is what 'slide in from 200 below' means and saves you " +
-            "needing to know where anything sits. `stagger` walks the start along per layer so 'these " +
-            "three, one after another' is one call. Refuses rather than writing over a property that " +
-            "is already animated. The keyframes it makes are left SELECTED, so call " +
-            "apply_ease_preset straight after to give the move the studio's own feel — prefer that " +
-            "over the plain `ease` argument, which is only After Effects' stock Easy Ease. Undoable " +
-            "with one Ctrl+Z.",
+            "Animate a transform property on the targeted layers: two keyframes, from `from` " +
+            "(default: its current value) to `to`. Leaves the new keys selected, ready for " +
+            "apply_ease_preset. Refuses if the property is already animated. One Ctrl+Z.",
         input_schema: {
             type: "object",
             properties: {
-                property: {
-                    type: "string",
-                    description: "position, scale, rotation, opacity or anchor.",
-                },
+                property: { type: "string", enum: ["position", "scale", "rotation", "opacity", "anchor"] },
                 to: {
                     type: "string",
                     description:
-                        "The end value, as JSON. A number for rotation and opacity ('100'), an array " +
-                        "for position, scale and anchor ('[960,540]'). Two numbers are enough for a " +
-                        "3D property — the third is left as it is.",
+                        "End value as JSON: a number ('100'), or an array ('[960,540]'). A short " +
+                        "array keeps the property's remaining dimensions.",
                 },
-                from: {
-                    type: "string",
-                    description:
-                        "Optional start value, same shape as `to`. Left out, the animation starts " +
-                        "from wherever the layer already is.",
-                },
-                startSeconds: { type: "number", description: "When the first keyframe sits. Defaults to 0." },
-                durationSeconds: { type: "number", description: "How long the move takes. Required." },
+                from: { type: "string", description: "Start value, same shape. Omitted = start where it is." },
+                startSeconds: { type: "number", description: "First keyframe, in seconds. Default 0." },
+                durationSeconds: { type: "number", description: "Length of the move, in seconds." },
                 relative: {
                     type: "boolean",
-                    description:
-                        "Read `from`/`to` as offsets from the layer's current value rather than " +
-                        "absolute coordinates. Use this for 'slide up by 200' or 'scale up 20%'.",
+                    description: "Read from/to as offsets from the current value — 'slide up 200', 'scale up 20%'.",
                 },
-                stagger: {
-                    type: "number",
-                    description: "Seconds between each layer's start. 0 (default) animates them together.",
-                },
-                ease: {
-                    type: "string",
-                    description:
-                        "'none' (default), 'in', 'out' or 'both' — After Effects' stock Easy Ease. " +
-                        "A studio preset via apply_ease_preset is usually the better answer.",
-                },
+                stagger: { type: "number", description: "Seconds between each layer's start. Default 0, together." },
+                ease: { type: "string", enum: ["none", "in", "out", "both"], description: "Stock Easy Ease. Default none." },
                 replaceExisting: {
                     type: "boolean",
-                    description:
-                        "Only set this when the artist has explicitly said to replace animation that " +
-                        "is already on the property. It removes their keyframes.",
+                    description: "Destroys keyframes already on the property. Only if the artist said to.",
                 },
-                targetKind: {
-                    type: "string",
-                    description:
-                        "Which layers: 'selected' (default), 'name', 'index' or 'label'. Use " +
-                        "list_layers to see what is in the comp.",
-                },
-                targetValue: {
-                    type: "string",
-                    description:
-                        "The layer name, the 1-based index, or the label number — whichever targetKind " +
-                        "says. Leave out for 'selected'.",
-                },
+                targetKind: { type: "string", enum: ["selected", "name", "index", "label"], description: "Default selected." },
+                targetValue: { type: "string", description: "Layer name, 1-based index, or label number." },
             },
             required: ["property", "to", "durationSeconds"],
         },
