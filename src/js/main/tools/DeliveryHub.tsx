@@ -3,11 +3,11 @@
 // =============================================================================
 import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence, useAnimate, useReducedMotion } from "motion/react";
-import { Truck, ListPlus, Trash2, ChevronsDown, Send, AlertCircle, AlertTriangle, Check, X, Volume2, VolumeX, Folder, RotateCcw } from "lucide-react";
+import { Truck, ListPlus, Trash2, ChevronsDown, Send, AlertCircle, AlertTriangle, Check, X, Volume2, VolumeX, Folder, FileText, RotateCcw } from "lucide-react";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import { evalTS } from "../../lib/utils/bolt";
 import { sfx } from "../../lib/utils/sfx";
-import { suggestForComp, type SpecSuggestion } from "../lib/deliverySpecMatch";
+import { suggestForComp, readSpecReport, type SpecSuggestion, type SpecReport } from "../lib/deliverySpecMatch";
 import { child_process } from "../../lib/cep/node";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
@@ -416,6 +416,30 @@ const DeliveryHubTool = () => {
     // nobody gets numbers they didn't ask for.
     const [suggestions, setSuggestions] = useState<Record<number, SpecSuggestion>>({});
     const [suggestBusy, setSuggestBusy] = useState(false);
+    // WHAT THE SHEETS ACTUALLY SAY, as a document rather than a per-row answer.
+    // suggestForComp refuses when a match is ambiguous, which is right for
+    // filling a field and useless when you want to know whether the PDF is
+    // silent, wrong, or simply describes sizes nobody ordered.
+    const [report, setReport] = useState<SpecReport | null>(null);
+    const [reportBusy, setReportBusy] = useState(false);
+
+    const runReport = async () => {
+        // sourcePath is nullable, and `filter` does not narrow it -- read it out
+        // explicitly so the call cannot be handed a null it would treat as a
+        // path and then report as "no specs folder".
+        const withPath = rows.filter((r) => !!r.sourcePath)[0];
+        const from = withPath ? withPath.sourcePath : null;
+        if (!from) { setCheckError("Add a row with a rendered file first — the specs are found next to its project."); return; }
+        setReportBusy(true);
+        setCheckError(null);
+        try {
+            setReport(await readSpecReport(from));
+        } catch (e) {
+            setCheckError("Couldn't read the specs: " + String((e as Error).message || e));
+        } finally {
+            setReportBusy(false);
+        }
+    };
 
     const runSuggest = async () => {
         setSuggestBusy(true);
@@ -446,6 +470,11 @@ const DeliveryHubTool = () => {
                     ...r,
                     sizeMB: r.sizeMB === "" && s.sizeMB ? s.sizeMB : r.sizeMB,
                     maxMbps: r.maxMbps === "" && s.maxMbps ? s.maxMbps : r.maxMbps,
+                    // fps too, now that the suggestion carries it. Same
+                    // empty-only rule: it is the one value nobody can infer
+                    // from a filename, and it was being read off the PDF and
+                    // thrown away.
+                    fps: r.fps === "" && s.fps ? s.fps : r.fps,
                     includeAudio: r.audioTouched ? r.includeAudio : s.audio === "yes",
                 };
             }));
@@ -809,6 +838,19 @@ const DeliveryHubTool = () => {
                                     <Folder size={14} />
                                 </button>
                             </Tooltip>
+                            {/* READING THE SHEET, as opposed to answering one
+                                row from it. Separate button because it answers
+                                a different question: not "what should this be"
+                                but "what does the document actually say". */}
+                            <Tooltip text="Read the spec PDFs and show every bitrate, fps and file size in them">
+                                <button
+                                    className={"dh-icon-btn" + (report ? " is-on" : "")}
+                                    disabled={checkBusy || reportBusy || rows.length === 0}
+                                    onClick={() => (report ? setReport(null) : runReport())}
+                                >
+                                    <FileText size={14} />
+                                </button>
+                            </Tooltip>
                             <button
                                 className="dh-icon-btn"
                                 disabled={checkBusy}
@@ -1075,6 +1117,84 @@ const DeliveryHubTool = () => {
                     <QueueButton busy={checkBusy} disabled={checkBusy || rows.length === 0} onClick={queueAll} />
                 </div>
             )}
+
+            {/* ── What the spec PDFs say ─────────────────────────── */}
+            <AnimatePresence>
+                {report && (
+                    <motion.div
+                        className="dh-specreport"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.18 }}
+                    >
+                        <div className="dh-specreport-head">
+                            <FileText size={12} />
+                            <span>{report.folder || "no specs folder"}</span>
+                            <button onClick={() => setReport(null)}><X size={11} /></button>
+                        </div>
+
+                        {report.note && <p className="dh-specreport-note">{report.note}</p>}
+
+                        {report.files.map((f) => (
+                            <div className="dh-specreport-file" key={f.file}>
+                                <p className="dh-specreport-name">
+                                    {f.file}
+                                    {/* A PDF that could not be read is LISTED, not
+                                        omitted. Leaving it out is indistinguishable
+                                        from never having looked at it. */}
+                                    {f.error && <em> — {f.error}</em>}
+                                    {!f.error && <em> — {f.rows.length} row{f.rows.length === 1 ? "" : "s"}</em>}
+                                </p>
+                                {f.rows.length > 0 && (
+                                    <div className="dh-specreport-scroll">
+                                        <table className="dh-specreport-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Size</th><th>Secs</th><th>Bitrate</th>
+                                                    <th>Fps</th><th>Max file</th><th>Sound</th><th>Site</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {f.rows.map((r, i) => (
+                                                    <tr key={i} className={r.flags ? "is-flagged" : undefined}>
+                                                        <td>{r.size || "—"}</td>
+                                                        <td>{r.duration || "—"}</td>
+                                                        <td>{r.bitRate ? r.bitRate + " Mbps" : "—"}</td>
+                                                        <td>{r.fps || "—"}</td>
+                                                        <td>{r.fileSize ? r.fileSize + " MB" : "—"}</td>
+                                                        <td>{r.sound || "—"}</td>
+                                                        <td>{r.site || r.country || "—"}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                                {/* THE PARSER'S OWN DOUBTS, said out loud. These
+                                    tables are filled in by hand and routinely put
+                                    the fps in the bitrate column; pdfSpecs flags
+                                    that rather than silently correcting it, and
+                                    hiding the flag here would undo the point. */}
+                                {f.rows.some((r) => r.flags) && (
+                                    <ul className="dh-specreport-flags">
+                                        {f.rows.filter((r) => r.flags).map((r, i) => (
+                                            <li key={i}>
+                                                <AlertTriangle size={10} /> {r.size || "?"} · {r.duration || "?"}s — {r.flags}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+                        ))}
+
+                        <p className="dh-specreport-foot">
+                            Read straight off the PDFs. Nothing here has been filled into a row —
+                            use the folder button for that.
+                        </p>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* ── Error + log ────────────────────────────────────── */}
             <AnimatePresence>

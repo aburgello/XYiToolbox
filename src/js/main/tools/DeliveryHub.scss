@@ -868,3 +868,109 @@
 @media (prefers-reduced-motion: reduce) {
     .dh-render-watch-dot { animation: none; }
 }
+
+// --- what the spec PDFs say -------------------------------------------------
+// Reading the document, not answering one row from it. Sits under the toolbar
+// and above the errors, because it is reference material rather than a result.
+.dh-specreport {
+    overflow: hidden;
+    margin: 6px 0 2px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.03);
+
+    .dh-specreport-head {
+        display: flex;
+        align-items: center;
+        padding: 6px 8px;
+        font-size: 10.5px;
+        opacity: 0.8;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+
+        span {
+            flex: 1;
+            margin-left: 6px;
+            // A NAS path is long and must not push the close button off the
+            // row. `break-word`, not `anywhere` -- Chromium 74 is the target.
+            overflow-wrap: break-word;
+            word-break: break-all;
+        }
+
+        button {
+            background: none;
+            border: none;
+            padding: 2px;
+            cursor: pointer;
+            color: inherit;
+            opacity: 0.7;
+            // index.scss's global button:hover/:active paints over any custom
+            // button, so both states are re-declared here.
+            &:hover, &:active { background: none; opacity: 1; }
+        }
+    }
+
+    .dh-specreport-note,
+    .dh-specreport-foot {
+        margin: 6px 8px;
+        font-size: 10px;
+        line-height: 1.45;
+        opacity: 0.62;
+    }
+
+    .dh-specreport-file { padding: 6px 8px 2px; }
+
+    .dh-specreport-name {
+        margin: 0 0 4px;
+        font-size: 10.5px;
+        font-weight: 600;
+        overflow-wrap: break-word;
+
+        em { font-weight: 400; font-style: normal; opacity: 0.6; }
+    }
+
+    // Seven columns of numbers in a panel that can be docked narrow: the table
+    // scrolls inside its own box rather than widening the page.
+    .dh-specreport-scroll { overflow-x: auto; }
+
+    .dh-specreport-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 10px;
+        font-variant-numeric: tabular-nums;
+
+        th {
+            text-align: left;
+            font-weight: 600;
+            opacity: 0.55;
+            padding: 2px 8px 2px 0;
+            white-space: nowrap;
+        }
+
+        td {
+            padding: 2px 8px 2px 0;
+            white-space: nowrap;
+            opacity: 0.9;
+        }
+
+        // A row the parser doubted. Tinted rather than hidden, and the reason
+        // is spelled out underneath.
+        tr.is-flagged td { color: #e0b050; }
+    }
+
+    .dh-specreport-flags {
+        margin: 5px 0 2px;
+        padding: 0 0 0 2px;
+        list-style: none;
+        font-size: 10px;
+        line-height: 1.5;
+        color: #e0b050;
+
+        li {
+            display: flex;
+            align-items: flex-start;
+            overflow-wrap: break-word;
+
+            svg { flex: none; margin: 3px 5px 0 0; }
+        }
+    }
+}

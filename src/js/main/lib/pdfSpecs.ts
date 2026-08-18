@@ -297,6 +297,42 @@ function looksLikeFps(n: number): boolean {
   return false;
 }
 
+/**
+ * EVERY number in a cell, with whatever unit was written beside it.
+ *
+ * firstNumber() takes the first and silently drops the rest, which is wrong
+ * whenever a client crams two values into one column -- "50MB / 8Mbps" in the
+ * bitrate cell reads as a bitrate of 50, and the sheet looks like it was parsed
+ * cleanly. Silent truncation of somebody's spec is exactly the failure this
+ * file exists to prevent.
+ *
+ * The unit is evidence, not a guess: a number the client themselves labelled
+ * "Mbps" is a bitrate whichever column it landed in.
+ */
+interface CellNumber { value: number; unit: string; raw: string }
+
+function cellNumbers(v: string): CellNumber[] {
+  const out: CellNumber[] = [];
+  const text = String(v || "");
+  // Unit first where one is written; the alternation is longest-first so
+  // "mbps" is not read as "mb" with a stray "ps".
+  const re = /(\d+(?:[.,]\d+)?)\s*(mbit\/s|mbits|mbps|kbps|kbit\/s|gb|mb|kb|fps|hz|p)?/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const n = parseFloat(m[1].replace(",", "."));
+    if (isNaN(n)) continue;
+    out.push({ value: n, unit: (m[2] || "").toLowerCase(), raw: m[0].trim() });
+    if (re.lastIndex === m.index) re.lastIndex++;   // never spin on an empty match
+  }
+  return out;
+}
+
+/** The number whose unit matches one of `units`, or null when none is labelled. */
+function pickByUnit(nums: CellNumber[], units: string[]): CellNumber | null {
+  for (const n of nums) if (n.unit && units.indexOf(n.unit) !== -1) return n;
+  return null;
+}
+
 /** First number in a string, or null. */
 function firstNumber(v: string): number | null {
   const m = String(v || "").match(/\d+(?:[.,]\d+)?/);
@@ -309,6 +345,24 @@ function firstNumber(v: string): number | null {
 function normaliseFileSize(v: string): { mb: number | null; note: string } {
   const raw = String(v || "").trim();
   if (!raw) return { mb: null, note: "" };
+  const nums = cellNumbers(raw);
+  if (nums.length > 1) {
+    const sz = pickByUnit(nums, ["gb", "mb", "kb"]);
+    if (sz) {
+      const mb = sz.unit === "gb" ? sz.value * 1000 : sz.unit === "kb" ? sz.value / 1000 : sz.value;
+      return { mb, note: `file size cell reads "${raw}" — took ${sz.raw}` };
+    }
+    return {
+      mb: nums[0].value,
+      note: `file size cell reads "${raw}" — more than one value and no unit to tell them apart; took ${nums[0].raw}`,
+    };
+  }
+
+  const solo = nums.length === 1 ? nums[0] : null;
+  if (solo && (solo.unit === "mbps" || solo.unit === "kbps" || solo.unit === "mbit/s" || solo.unit === "mbits")) {
+    return { mb: solo.value, note: `file size column holds "${raw}", which is a bitrate` };
+  }
+
   const n = firstNumber(raw);
   if (n === null) return { mb: null, note: "" };
   if (/\bg(b|ig)/i.test(raw)) return { mb: n * 1000, note: "" };
@@ -324,6 +378,34 @@ function normaliseFileSize(v: string): { mb: number | null; note: string } {
 function normaliseBitrate(v: string): { mbps: number | null; note: string } {
   const raw = String(v || "").trim();
   if (!raw) return { mbps: null, note: "" };
+
+  // TWO VALUES IN ONE CELL. Take the one the client labelled as a rate, and say
+  // so -- "50MB / 8Mbps" is a real thing to find in a bitrate column, and
+  // reading it as 50 Mbps would send a file out at six times the cap.
+  const nums = cellNumbers(raw);
+  if (nums.length > 1) {
+    const rate = pickByUnit(nums, ["mbps", "kbps", "mbit/s", "mbits", "kbit/s"]);
+    if (rate) {
+      const mbps = /k/.test(rate.unit) ? rate.value / 1000 : rate.value;
+      return { mbps, note: `bitrate cell reads "${raw}" — took ${rate.raw}` };
+    }
+    return {
+      mbps: nums[0].value,
+      note: `bitrate cell reads "${raw}" — more than one value and no unit to tell them apart; took ${nums[0].raw}`,
+    };
+  }
+
+  // ONE value, wrong unit: "50MB" sitting in the bitrate column. The client
+  // labelled it themselves, so this is reading the sheet rather than guessing
+  // at it -- but it is still reported, never quietly relabelled.
+  const solo = nums.length === 1 ? nums[0] : null;
+  if (solo && (solo.unit === "mb" || solo.unit === "gb" || solo.unit === "kb")) {
+    return { mbps: solo.value, note: `bitrate column holds "${raw}", which is a file size` };
+  }
+  if (solo && (solo.unit === "fps" || solo.unit === "hz")) {
+    return { mbps: solo.value, note: `bitrate column holds "${raw}", which is a frame rate` };
+  }
+
   const n = firstNumber(raw);
   if (n === null) return { mbps: null, note: "" };
   if (/\bk(b|ilo)/i.test(raw)) return { mbps: n / 1000, note: "" };
@@ -379,7 +461,23 @@ export function reshapeSpecs(rawSpecs: RawSpec[], territory: string): SpecRow[] 
 
     const fs = normaliseFileSize(String(row.fileSize || ""));
     const br = normaliseBitrate(String(row.bitRate || ""));
-    const fpsNum = firstNumber(String(row.frameRate || ""));
+    const fpsRaw = String(row.frameRate || "").trim();
+    const fpsNums = cellNumbers(fpsRaw);
+    const fpsNum = firstNumber(fpsRaw);
+    // The fps column had no shape check at all, so a bitrate parked in it was
+    // read as a frame rate and only caught later if the number happened to be
+    // implausible. A written unit settles it outright.
+    let fpsNote = "";
+    if (fpsNums.length > 1) {
+      fpsNote = `frame rate cell reads "${fpsRaw}" — more than one value; took ${fpsNums[0].raw}`;
+    } else if (fpsNums.length === 1) {
+      const u = fpsNums[0].unit;
+      if (u === "mbps" || u === "kbps" || u === "mbit/s" || u === "mbits") {
+        fpsNote = `frame rate column holds "${fpsRaw}", which is a bitrate`;
+      } else if (u === "mb" || u === "gb" || u === "kb") {
+        fpsNote = `frame rate column holds "${fpsRaw}", which is a file size`;
+      }
+    }
 
     const trim = (n: number) => String(Math.round(n * 1000) / 1000);
 
@@ -397,8 +495,11 @@ export function reshapeSpecs(rawSpecs: RawSpec[], territory: string): SpecRow[] 
       // stays "" so an odd value is treated as "the sheet didn't say" rather
       // than silently becoming a no.
       Sound: soundFromCell(row.soundReq),
-      // Filled in below, once the row exists to be checked.
-      Flags: "",
+      // PARSE-TIME NOTES, which used to be computed and thrown away: every
+      // normaliser returned a `note` and no caller ever read one, so "read as
+      // kbps" and "no unit -- KB?" have been invisible all along. The
+      // row-shape warnings are appended to these below.
+      Flags: [fs.note, br.note, fpsNote].filter(Boolean).join(" · "),
     };
   });
 
@@ -415,7 +516,11 @@ export function reshapeSpecs(rawSpecs: RawSpec[], territory: string): SpecRow[] 
 
   return mapped.map((r) => {
     const withCampaign = { ...r, Campaign: r.Campaign || dominant || "UNKNOWN" };
-    return { ...withCampaign, Flags: specRowWarnings(withCampaign).join(" · ") };
+    const parseNotes = withCampaign.Flags ? [withCampaign.Flags] : [];
+    return {
+        ...withCampaign,
+        Flags: parseNotes.concat(specRowWarnings(withCampaign)).join(" · "),
+    };
   });
 }
 

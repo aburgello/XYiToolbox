@@ -134,6 +134,11 @@ export interface SpecSuggestion {
     /** "" when nothing was found -- always safe to render. */
     sizeMB: string;
     maxMbps: string;
+    /** Frame rate off the sheet. WAS PARSED AND THEN DROPPED: pdfSpecs has read
+     *  Fps off these tables all along, and this interface simply never carried
+     *  it, so the one field an artist cannot infer from the filename was the one
+     *  the panel threw away. */
+    fps?: string;
     /** Human sentence naming where this came from. "" when nothing found. */
     source: string;
     /** Tier 2: the spec document to open, when nothing could be extracted. */
@@ -199,6 +204,7 @@ export async function suggestForComp(compName: string, sourcePath: string): Prom
             return {
                 sizeMB: hits[0].FileSize || "",
                 maxMbps: hits[0].BitRate || "",
+                fps: hits[0].Fps || "",
                 audio: hits[0].Sound || "",
                 source: `${parts.size} · ${parts.duration}s in ${file}`,
                 openPath: path.join(specsDir, file),
@@ -214,11 +220,13 @@ export async function suggestForComp(compName: string, sourcePath: string): Prom
             matchedButSilent = {
                 ...EMPTY,
                 searched: true,
+                fps: hits[0].Fps || "",
                 audio: hits[0].Sound || "",
                 // Says what it DID find, since a sheet with no numbers often
                 // still answers the sound question.
                 source: `${parts.size} · ${parts.duration}s found in ${file}`
                     + (hits[0].Sound ? ` — sound: ${hits[0].Sound}` : "")
+                    + (hits[0].Fps ? `, ${hits[0].Fps}fps` : "")
                     + ", but no size or bitrate",
                 openPath: path.join(specsDir, file),
             };
@@ -258,5 +266,105 @@ export async function suggestForComp(compName: string, sourcePath: string): Prom
         ...EMPTY,
         searched: true,
         source: `Nothing in ${pdfs.length === 1 ? "the spec PDF" : `the ${pdfs.length} spec PDFs`} matches ${parts.size} · ${parts.duration}s`,
+    };
+}
+
+// =============================================================================
+// THE WHOLE SHEET, NOT ONE ROW.
+//
+// suggestForComp answers "what should THIS deliverable be", and refuses when
+// the answer is ambiguous -- which is right for filling a field, and useless
+// when what you actually want is to read the document. An artist looking at a
+// row that came back blank has no way to tell whether the PDF is silent, wrong,
+// or simply describes a size nobody asked for.
+//
+// This reads every spec PDF beside the campaign and reports what each row says
+// about bitrate, fps and file size. It fills nothing in and decides nothing.
+// =============================================================================
+
+export interface SpecReportRow {
+    size: string;
+    duration: string;
+    site: string;
+    country: string;
+    bitRate: string;
+    fps: string;
+    fileSize: string;
+    sound: string;
+    /** The parser's own doubts about this row -- a bitrate in the fps column and
+     *  so on. Surfaced rather than hidden: these tables are filled in by hand. */
+    flags: string;
+}
+
+export interface SpecReportFile {
+    file: string;
+    rows: SpecReportRow[];
+    /** Set when this PDF could not be read at all. */
+    error?: string;
+}
+
+export interface SpecReport {
+    /** "" when no specs folder was found. */
+    folder: string;
+    files: SpecReportFile[];
+    /** Why there is nothing to show, when there is nothing to show. */
+    note: string;
+}
+
+export async function readSpecReport(sourcePath: string): Promise<SpecReport> {
+    const specsDir = findSpecsFolder(sourcePath);
+    if (!specsDir) {
+        return { folder: "", files: [], note: "No specs folder next to this campaign." };
+    }
+
+    let pdfs: string[] = [];
+    try {
+        pdfs = fs.readdirSync(specsDir).filter((f: string) => /\.pdf$/i.test(f) && !f.startsWith("."));
+    } catch {
+        return { folder: specsDir, files: [], note: `Couldn't read ${specsDir}.` };
+    }
+    if (!pdfs.length) {
+        return { folder: specsDir, files: [], note: "That specs folder has no PDFs in it." };
+    }
+
+    const files: SpecReportFile[] = [];
+    for (const file of pdfs) {
+        try {
+            const bytes = new Uint8Array(fs.readFileSync(path.join(specsDir, file)));
+            const raw = await parsePdfDeliverySpecs(bytes);
+            if (!raw) {
+                // A PDF with no readable table is a normal thing -- plenty are
+                // a page of prose -- and saying so beats omitting the file and
+                // leaving somebody wondering whether it was even looked at.
+                files.push({ file, rows: [], error: "no table this parser could read" });
+                continue;
+            }
+            // "" rather than a country code: the report is the document's
+            // contents, not one territory's slice of it.
+            const rows = reshapeSpecs(raw, "");
+            files.push({
+                file,
+                rows: rows.map((r) => ({
+                    size: r.Size || "",
+                    duration: String(r.Duration || ""),
+                    site: r.Site || "",
+                    country: r.Country || "",
+                    bitRate: r.BitRate || "",
+                    fps: r.Fps || "",
+                    fileSize: r.FileSize || "",
+                    sound: r.Sound || "",
+                    flags: r.Flags || "",
+                })),
+            });
+        } catch (e) {
+            files.push({ file, rows: [], error: String((e as Error).message || e) });
+        }
+    }
+
+    const total = files.reduce((n, f) => n + f.rows.length, 0);
+    return {
+        folder: specsDir,
+        files,
+        note: total ? "" : "Found the PDFs, but no readable spec table in any of them.",
     };
 }
