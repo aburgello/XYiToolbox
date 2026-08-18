@@ -212,6 +212,39 @@ export interface ToolEntry {
      */
     actionSafety?: Record<string, "read" | "write">;
     /**
+     * WHICH OF THIS TOOL'S FIELDS THE AGENT MAY FILL IN, keyed by a stable
+     * field id the tool itself understands.
+     *
+     * Filling a field is not a write and not an undoable edit -- it is a
+     * PROPOSAL. It changes React state, it is visible before it does anything,
+     * it can be typed over, and it is inert until the artist presses the
+     * button. That is a stronger guarantee than "undoable": undoable means it
+     * happened and you reversed it; this means it has not happened yet.
+     * prefill_batch already works exactly this way.
+     *
+     * THE RISK IS NOT THE FILLING, IT IS WHAT THE FIELD FEEDS. Two kinds:
+     *
+     *   A size, a duration, a territory, a batch row — the field's own type
+     *   bounds the damage. The worst case is a wrong value you can see. These
+     *   are what this list is for.
+     *
+     *   A script body, an output path, a filename that decides where files
+     *   land — the field bounds nothing. Filling one is not proposing a value,
+     *   it is authoring the action, and the button afterwards is a formality
+     *   rather than a decision. These are never listed.
+     *
+     * UNLISTED FIELDS, AND UNLISTED TOOLS, ARE NOT FILLABLE. Same fail-closed
+     * rule as actionSafety: a field must not become agent-fillable by having
+     * been forgotten here.
+     *
+     * Two rules the filler enforces regardless of what this list says: the
+     * agent fills and STOPS -- it never fills and submits, even for a button
+     * graded "read" -- and it never silently replaces a value the artist
+     * already typed, because overwriting your work is where a proposal turns
+     * into a destructive act.
+     */
+    fillableFields?: string[];
+    /**
      * Set when this tool's real home is a category's bespoke screen rather
      * than its own tool page. Navigating an artist here should land them on
      * that screen, where the tool sits in context with its siblings.
@@ -635,6 +668,26 @@ export const TOOLS: ToolEntry[] = [
         Component: ScriptPlaygroundTool,
         actions: ["Run Script", "Clear Output"],
         description: "Run arbitrary ExtendScript directly in After Effects from a textarea.",
+        // NEVER FILLABLE, AND SAID OUT LOUD RATHER THAN LEFT UNSAID.
+        //
+        // The empty array is doing real work here. Every other tool is not
+        // fillable by omission, which is correct but silent; this one has to be
+        // unfillable ON PURPOSE and be seen to be, because it is the single
+        // place where the rule would look most helpful to break.
+        //
+        // That textarea is the argument to `runScript` — the bare eval
+        // CLAUDE.md §1 and docs/AGENT-READONLY-SLICE.md both single out as
+        // never exposed, because anything holding it can do anything,
+        // including overwriting a studio master. Filling it would hand that
+        // over through the front end: the tool list would still honestly say
+        // runScript is not exposed while the capability had been granted, and
+        // the only remaining gate would be an artist skimming code they did
+        // not write. That is not a gate.
+        //
+        // No actionSafety either, so "Run Script" falls to the default of
+        // "write" and the agent cannot press it. Do not add one to mark
+        // "Clear Output" clickable — the button is not worth the precedent.
+        fillableFields: [],
     },
     {
         id: "my-tools",
