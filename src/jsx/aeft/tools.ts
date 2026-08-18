@@ -258,14 +258,19 @@ export const organiseFolders = (): Result => {
       if (item.name === "PNG") png = item as FolderItem;
     }
 
-    if (!isValid(composition)) composition = app.project.items.addFolder("Composition");
-    if (!isValid(preComp)) preComp = app.project.items.addFolder("PreComp");
-    if (!isValid(main)) main = app.project.items.addFolder("Main");
-    if (!isValid(assets)) assets = app.project.items.addFolder("Footage");
-    if (!isValid(footage)) footage = app.project.items.addFolder("MOVs");
-    if (!isValid(artwork)) artwork = app.project.items.addFolder("Artwork");
-    if (!isValid(solids)) solids = app.project.items.addFolder("Solids");
-    if (!isValid(png)) png = app.project.items.addFolder("PNG");
+    // WAS `isValid(...)`, WHICH IS NOT A GLOBAL. ExtendScript exposes
+    // Object.isValid(), not a bare isValid(), so every one of these threw a
+    // ReferenceError and Organise Folders could never have run to completion.
+    // These are `FolderItem | undefined` filled by the loop above, so "did we
+    // find one" is plain truthiness.
+    if (!composition) composition = app.project.items.addFolder("Composition");
+    if (!preComp) preComp = app.project.items.addFolder("PreComp");
+    if (!main) main = app.project.items.addFolder("Main");
+    if (!assets) assets = app.project.items.addFolder("Footage");
+    if (!footage) footage = app.project.items.addFolder("MOVs");
+    if (!artwork) artwork = app.project.items.addFolder("Artwork");
+    if (!solids) solids = app.project.items.addFolder("Solids");
+    if (!png) png = app.project.items.addFolder("PNG");
 
     preComp!.parentFolder = composition!;
     main!.parentFolder = composition!;
