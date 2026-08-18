@@ -59,6 +59,24 @@ interface Turn {
  */
 const HISTORY_TURNS = 6;
 
+/**
+ * HOW OFTEN THE HISTORY WINDOW IS ALLOWED TO MOVE.
+ *
+ * Caching is a PREFIX match, and the cache marker now sits at the end of the
+ * messages rather than on the system prompt -- so the conversation itself is
+ * part of the cached prefix. A window that drops its oldest turn on every turn
+ * would therefore change the prefix on every turn, and every question past the
+ * sixth would be a total cache miss AND a fresh write of the whole conversation
+ * at the 2x write rate. That is dearer than not caching the tail at all, which
+ * is the trap this exists to avoid.
+ *
+ * So the window moves in BLOCKS: it grows turn by turn, and every fourth turn
+ * it drops four at once. History oscillates between HISTORY_TURNS and
+ * HISTORY_TURNS + BLOCK - 1, the prefix holds still for four turns at a
+ * stretch, and the cost of a slide is paid once instead of every time.
+ */
+const HISTORY_TRIM_BLOCK = 4;
+
 interface Props {
     /**
      * Bumped by the host to say "you were just shown" -- the panel stays
@@ -162,9 +180,13 @@ const AgentChat: React.FC<Props> = ({ focusKey, headerSlot }) => {
             // what keeps every tool_use next to its tool_result -- trimming by
             // message count would eventually orphan one and the API would
             // reject the request outright.
-            const history = turns
-                .filter((t) => t.messages && t.messages.length)
-                .slice(-HISTORY_TURNS)
+            const usable = turns.filter((t) => t.messages && t.messages.length);
+            // Dropped in whole blocks so the prefix stays byte-identical
+            // between slides -- see HISTORY_TRIM_BLOCK.
+            const over = usable.length - HISTORY_TURNS;
+            const drop = over > 0 ? Math.floor(over / HISTORY_TRIM_BLOCK) * HISTORY_TRIM_BLOCK : 0;
+            const history = usable
+                .slice(drop)
                 .reduce<any[]>((acc, t) => acc.concat(t.messages as any[]), []);
 
             // GATHERED HERE, at send time, and appended to the question rather

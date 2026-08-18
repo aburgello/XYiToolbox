@@ -198,9 +198,29 @@ export async function callModel(call: ModelCall): Promise<ModelReply> {
             // right because the reads now actually land. If the panel ever
             // becomes something people fire one question at and close, this is
             // the line to reconsider.
-            system: provider.explicitCache
-                ? [{ type: "text", text: call.system, cache_control: { type: "ephemeral", ttl: "1h" } }]
-                : [{ type: "text", text: call.system }],
+            // TOP-LEVEL, so the marker lands on the LAST cacheable block rather
+            // than on the system prompt.
+            //
+            // A breakpoint means "cache everything up to here". Ours sat on the
+            // system block, so the cached region was tools + system -- the ~12k
+            // that never changes -- and the conversation after it was charged
+            // fresh on every single call. Measured against a real hour of use:
+            // 12k of cached prefix and 7.4k of history and tool results per
+            // request, with only the first of those two actually cached. That
+            // uncached tail was 64% of the bill.
+            //
+            // Placed at the end of the messages instead, each call pays full
+            // price only for what is genuinely new since the last one, and
+            // re-reads everything before it at a tenth. The write premium
+            // applies only to the delta rather than to a fresh copy of the
+            // whole prefix.
+            //
+            // STILL A PREFIX MATCH, so the byte-stability rule below matters
+            // more now, not less: anything volatile early in the request
+            // invalidates the entire conversation behind it, not just the
+            // system prompt.
+            ...(provider.explicitCache ? { cache_control: { type: "ephemeral", ttl: "1h" } } : {}),
+            system: call.system,
             tools: call.tools,
             messages: call.messages,
         }),
