@@ -18,8 +18,10 @@
 // artist who never uses it never pays for it.
 // =============================================================================
 import React, { useEffect, useRef, useState } from "react";
-import { Bot, X } from "lucide-react";
+import { X } from "lucide-react";
+import AskIcon from "./AskIcon";
 import AgentChat from "./tools/AgentChat";
+import { isAgentEnabled, isBubbleOpen, setBubbleOpen, subscribeToBubble } from "./lib/agent/bubbleControl";
 import "./AgentBubble.scss";
 
 const SIZE_KEY = "xyi.agent.panelSize";
@@ -48,7 +50,17 @@ function clampSize(w: number, h: number): { w: number; h: number } {
 }
 
 const AgentBubble: React.FC = () => {
-    const [open, setOpen] = useState(false);
+    // OPEN AND ENABLED BOTH LIVE OUTSIDE THIS COMPONENT, in bubbleControl.
+    // Enabled is an opt-in the home screen owns; open is changed from three
+    // places (the launcher, this panel's X, and enabling it). Mirroring the
+    // shared state into React state here is what makes all three agree.
+    const [enabled, setEnabled] = useState(isAgentEnabled);
+    const [open, setOpenState] = useState(isBubbleOpen);
+    useEffect(() => subscribeToBubble(() => {
+        setEnabled(isAgentEnabled());
+        setOpenState(isBubbleOpen());
+    }), []);
+    const setOpen = (v: boolean) => setBubbleOpen(v);
     // Stays true once opened: see the header note on why this never unmounts.
     const [mounted, setMounted] = useState(false);
     // Bumped on every open so the ask box takes focus. A mount effect cannot
@@ -122,11 +134,24 @@ const AgentBubble: React.FC = () => {
 
     const toggle = () => {
         if (!mounted) setMounted(true);
-        setOpen((v) => {
-            if (!v) setFocusKey((k) => k + 1);
-            return !v;
-        });
+        if (!open) setFocusKey((k) => k + 1);
+        setOpen(!open);
     };
+
+    // Enabling from the home screen opens it, and that arrives through the
+    // subscription rather than through `toggle` -- so the focus bump has to
+    // happen here too, or the ask box would not take the caret on the one
+    // route most likely to be somebody's first ever use of it.
+    useEffect(() => {
+        if (!open) return;
+        if (!mounted) setMounted(true);
+        setFocusKey((k) => k + 1);
+    }, [open]);
+
+    // NOTHING AT ALL WHEN IT IS OFF -- no panel, no launcher, no keygrab.
+    // "Opt in" has to mean the screen is unchanged for somebody who never
+    // wanted it, otherwise it is just a collapsed version of the same thing.
+    if (!enabled) return null;
 
     return (
         <>
@@ -147,7 +172,7 @@ const AgentBubble: React.FC = () => {
                         aria-hidden="true"
                     />
                     <div className="agent-bubble-head">
-                        <span className="agent-bubble-title"><Bot size={14} /> Ask</span>
+                        <span className="agent-bubble-title"><AskIcon size={14} /> Ask</span>
                         {/* AgentChat portals its key button and running cost in
                             here. A callback ref rather than useRef, because a
                             ref object does not re-render on attach and the
@@ -181,7 +206,7 @@ const AgentBubble: React.FC = () => {
                     title="Ask about campaigns, masters and tools"
                     aria-label="Ask"
                 >
-                    <Bot size={18} />
+                    <AskIcon size={18} />
                 </button>
             )}
         </>
