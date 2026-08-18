@@ -787,10 +787,17 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
     // Localise"), consumed once on mount. Kept in state only so the notice
     // below can name the job it came from.
     const [handoff, setHandoff] = useState<PendingBatch | null>(null);
+    // The same value as a ref, set in the same breath as the state. The
+    // territory scan below needs to know a handoff is pending WITHOUT taking it
+    // as a dependency -- as a dep it would re-scan the markets root the moment
+    // the handoff landed, and reading the state directly there would close over
+    // null on the render that matters.
+    const handoffRef = useRef<PendingBatch | null>(null);
 
     useEffect(() => {
         const pending = takePendingBatch();
         if (!pending || !pending.rows.length) return;
+        handoffRef.current = pending;
         setHandoff(pending);
         setBuildRows(
             pending.rows.map((r, i) => ({
@@ -822,16 +829,52 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
     }, []);
 
     // Resolve the handoff's territory code against the scanned folder names,
-    // once those exist. Exact, then prefix -- "IT" matching "Italy" is a guess
-    // worth making, "IT" matching "ITALY_ARCHIVE" is not, so anything
-    // ambiguous is left for the user to pick.
+    // once those exist.
+    //
+    // THE PREFIX GUESS IS NOT ENOUGH, and that is not an edge case. A Wrike
+    // title carries an ISO code ("TR") while the picker lists folders
+    // ("Turkey"), and the code is only a prefix of the name by coincidence --
+    // it holds for IT/Italy and misses for TR/Turkey, DE/Germany, ES/Spain,
+    // GB/United Kingdom, and most of the rest. Every miss fell through to the
+    // alphabetically first folder, so a Turkish batch arrived saying Australia:
+    // a confident wrong answer, which is worse than an empty box.
+    //
+    // matchTerritoryFolder puts the CODE and every FOLDER NAME through the same
+    // host resolver (territoryCheck), which is exact-code-then-exact-name and
+    // carries the fix that stopped "DE" matching Belgium German. One call, and
+    // it answers "exactly one folder is this country" or nothing at all.
+    //
+    // Order: an exact folder-name match first (a folder literally called "TR"
+    // means itself), then the country table, then the old prefix rule as a last
+    // resort for folders the table does not know. Anything ambiguous is left
+    // for the user, which is what the banner already asks them to check.
     useEffect(() => {
         if (!handoff || !handoff.territory || !buildTerritories.length) return;
-        const code = handoff.territory.toLowerCase();
+        const code = handoff.territory.trim().toLowerCase();
+        if (!code) return;
+
         const exact = buildTerritories.find((t) => t.toLowerCase() === code);
-        const prefixed = buildTerritories.filter((t) => t.toLowerCase().indexOf(code) === 0);
-        const hit = exact || (prefixed.length === 1 ? prefixed[0] : "");
-        if (hit) setBuildTerritory(hit);
+        if (exact) { setBuildTerritory(exact); return; }
+
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await evalTS("matchTerritoryFolder", handoff.territory, JSON.stringify(buildTerritories));
+                if (cancelled) return;
+                // `ambiguous` is a deliberate non-answer, not a failure: two
+                // folders resolved to the same country and the artist picks.
+                if (res && res.success) {
+                    if (res.match) { setBuildTerritory(res.match); return; }
+                    if (res.ambiguous) return;
+                }
+            } catch (e) {
+                /* no bridge -- fall through to the prefix rule below */
+            }
+            if (cancelled) return;
+            const prefixed = buildTerritories.filter((t) => t.toLowerCase().indexOf(code) === 0);
+            if (prefixed.length === 1) setBuildTerritory(prefixed[0]);
+        })();
+        return () => { cancelled = true; };
     }, [handoff, buildTerritories]);
     // Master lookup for the builder's rows, keyed by ROW ID (not position --
     // rows are added and removed, and a positional key would smear one row's
@@ -863,7 +906,19 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                     const terrs: string[] = (await evalTS("scanTerritories", marketsRoot)) || [];
                     if (cancelled) return;
                     setBuildTerritories(terrs);
-                    setBuildTerritory((cur) => (cur && terrs.indexOf(cur) !== -1 ? cur : terrs[0] || ""));
+                    setBuildTerritory((cur) => {
+                        if (cur && terrs.indexOf(cur) !== -1) return cur;
+                        // A HANDOFF NAMES ITS OWN TERRITORY, so defaulting to
+                        // the alphabetically first folder here is not a
+                        // convenience -- it is the wrong answer, pre-selected,
+                        // for a batch that said which country it was for. The
+                        // resolver above fills this in or deliberately leaves it
+                        // empty; Localise stays disabled until it is set, which
+                        // is the behaviour the "check the territory" banner is
+                        // asking for.
+                        if (handoffRef.current) return "";
+                        return terrs[0] || "";
+                    });
                 }
             } catch (e) { /* no bridge / no territories */ }
             try {

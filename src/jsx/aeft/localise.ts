@@ -6,7 +6,7 @@
 // see its header comment for context.
 // =============================================================================
 import { scaleCompToFit } from "./deliver";
-import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, parseFilenameMeta, frontcardWrap, cheekyTCheck, organiseFolders, FRONTCARD_LEAD_IN_SECONDS, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, scanMastersForBestMatch } from "./tools";
+import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, territoryCheck, parseFilenameMeta, frontcardWrap, cheekyTCheck, organiseFolders, FRONTCARD_LEAD_IN_SECONDS, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, scanMastersForBestMatch } from "./tools";
 import { makeParentLayerOfAllUnparented, scaleAllCameraZooms } from "./deliver";
 import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, saveLocGenReport, buildDeliverableName, durationForMasterLookup, sanitiseSiteToken, camelCaseToken, camelCaseName } from "./shared";
 import { loadCampaignsRaw, loadLastCampaign as loadOVLastCampaign } from "./review";
@@ -2190,6 +2190,58 @@ export const getTerritoryCountryCode = (territoryName: string): string | null =>
   const userInput = territoryName.toLowerCase().replace("_", " ");
   const bestMatch = findBestComponentFile(userInput, TC_COUNTRIES);
   return bestMatch ? bestMatch.code : null;
+};
+
+/**
+ * WHICH MARKETS FOLDER A TERRITORY CODE MEANS.
+ *
+ * A Wrike job title carries a code ("TR"); the localiser's picker lists FOLDER
+ * names ("Turkey"). Nothing mapped between them, so the builder fell back to
+ * the alphabetically first folder and a Turkish batch arrived pre-set to
+ * Australia -- a confident wrong answer, which is worse than an empty box.
+ *
+ * Both sides go through territoryCheck, so this cannot disagree with the rest
+ * of the codebase about what a country is. That matters more than it sounds:
+ * that function is exact-code-then-exact-name for a reason, and the reason is
+ * that a substring match once sent a German batch out with BELGIUM GERMAN burnt
+ * into its frontcard. findBestComponentFile -- which getTerritoryCountryCode
+ * uses to produce the code that goes into a FILENAME -- is deliberately NOT
+ * used here: it is a fuzzy scorer with a 0.01 accept threshold, so it returns
+ * something for almost any input, and "returns something" is exactly what an
+ * auto-selection must not do.
+ *
+ * ONE MATCH OR NOTHING. Two folders resolving to the same country (an archive
+ * copy, a second spelling) is a question for the artist, not a coin toss -- and
+ * an unresolved pick leaves Localise disabled, which is the safe end.
+ *
+ * The folder list arrives as a JSON STRING per CLAUDE.md.
+ */
+export const matchTerritoryFolder = (
+  wantedCode: string,
+  territoriesJson: string
+): { success: boolean; error?: string; match?: string; ambiguous?: boolean } => {
+  try {
+    const want = territoryCheck(String(wantedCode || ""));
+    if (!want) return { success: true, match: "" };
+
+    let names: string[];
+    try {
+      names = JSON.parse(territoriesJson);
+    } catch (e) {
+      return { success: false, error: "Could not read the territory list." };
+    }
+    if (!names || !names.length) return { success: true, match: "" };
+
+    const hits: string[] = [];
+    for (let i = 0; i < names.length; i++) {
+      const nm = String(names[i]);
+      if (territoryCheck(nm) === want) hits.push(nm);
+    }
+    if (hits.length === 1) return { success: true, match: hits[0] };
+    return { success: true, match: "", ambiguous: hits.length > 1 };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
 };
 
 // =============================================================================
