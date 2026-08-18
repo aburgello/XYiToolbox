@@ -61,6 +61,7 @@ const OVSwapTool            = React.lazy(() => import("./tools/OVSwap"));
 const RandomLayersTool      = React.lazy(() => import("./tools/RandomLayers"));
 const NameGeneratorTool     = React.lazy(() => import("./tools/NameGenerator"));
 const CampaignLocaliserTool = React.lazy(() => import("./tools/CampaignLocaliser"));
+const CSVLocaliserTool      = React.lazy(() => import("./tools/CSVLocaliser"));
 const EditGeneratorTool     = React.lazy(() => import("./tools/EditGenerator"));
 const GenerateCueSheetTool  = React.lazy(() => import("./tools/GenerateCueSheet"));
 const CheekyDTTool          = React.lazy(() => import("./tools/CheekyDT"));
@@ -98,6 +99,8 @@ const MaskSeparatorTool      = React.lazy(() => import("./tools/MaskSeparator"))
 const ReplicatorTool         = React.lazy(() => import("./tools/Replicator"));
 const QuickFXTool            = React.lazy(() => import("./tools/QuickFX"));
 const DarkenTool             = React.lazy(() => import("./tools/Darken"));
+// Ask is not lazily imported here any more -- it is mounted directly by
+// AgentBubble.tsx from main.tsx's shell, so it can outlive screen changes.
 // WrikeTasksTool intentionally NOT imported here -- see the "Wrike Tasks
 // (unhooked)" note near the end of CLAUDE.md before re-adding it.
 
@@ -111,6 +114,7 @@ const PREFETCH_MAP: Record<string, () => Promise<any>> = {
     "random-layers":      () => import("./tools/RandomLayers"),
     "name-generator":     () => import("./tools/NameGenerator"),
     "campaign-localiser": () => import("./tools/CampaignLocaliser"),
+    "csv-localiser":      () => import("./tools/CSVLocaliser"),
     "edit-generator":     () => import("./tools/EditGenerator"),
     "generate-cue-sheet": () => import("./tools/GenerateCueSheet"),
     "cheeky-dt":          () => import("./tools/CheekyDT"),
@@ -170,6 +174,49 @@ export interface ToolEntry {
     actions?: string[];
     /** Short description shown in the tool content header. */
     description?: string;
+    /**
+     * What each button in `actions` actually DOES, keyed by its exact label.
+     *
+     * A PARALLEL FIELD rather than richer `actions` entries, because
+     * CommandPalette and HomeScreen both iterate `actions` as plain strings
+     * for search -- changing that type breaks both.
+     *
+     * Read by the Ask agent (lib/agent/capabilities.ts). Without it the agent
+     * has a button's NAME and nothing else, so anything it says about what a
+     * button does is inferred from the label: it told an artist "Bespoke It"
+     * was for "custom territory handling" when it is for several masters in
+     * one deliverable. Optional and sparse on purpose -- fill it in where a
+     * label alone is misleading, not everywhere for completeness.
+     */
+    actionNotes?: Record<string, string>;
+    /**
+     * Whether the Ask agent may press a button itself, keyed by exact label.
+     *
+     *   "read"  — inspects, scans, refreshes, or opens a form. Changes nothing
+     *             on disk or in the project. The agent may click it.
+     *   "write" — generates, saves, renders, deletes, or otherwise produces
+     *             work. The agent NEVER clicks it: it opens the page and says
+     *             which button to press.
+     *
+     * UNLISTED LABELS DEFAULT TO "write". Unknown means don't touch — a new
+     * button should not become agent-clickable by having been forgotten here.
+     *
+     * The dangerous case is not an empty form, it is a LOADED one: an artist
+     * who has already set their roots and picked a campaign is exactly the
+     * artist most likely to be talking to the agent, and "press Generate" then
+     * runs against real config with no picker to catch it.
+     *
+     * Filling a form's FIELDS is neither of these -- see the note on
+     * localiseHandoff.ts. It changes React state, nothing else, and the artist
+     * still presses the button.
+     */
+    actionSafety?: Record<string, "read" | "write">;
+    /**
+     * Set when this tool's real home is a category's bespoke screen rather
+     * than its own tool page. Navigating an artist here should land them on
+     * that screen, where the tool sits in context with its siblings.
+     */
+    livesIn?: string;
 }
 
 export interface CategoryDef {
@@ -269,6 +316,62 @@ export const TOOLS: ToolEntry[] = [
         Component: CampaignLocaliserTool,
         actions: ["Generate Files", "Generate Files (don't replace)", "Trott 2.0"],
         description: "",
+        // All three WRITE — they open a master and save to a new _V01.aep,
+        // never over the master itself (CLAUDE.md §1). Worth the agent being
+        // able to say so, since "generate" alone does not tell an artist
+        // whether anything of theirs is at risk.
+        actionNotes: {
+            "Generate Files": "Generates the localised files for the campaign. Writes new _V01.aep files; the master itself is never written to.",
+            "Generate Files (don't replace)": "Same as Generate Files, but skips any deliverable that already exists instead of regenerating it.",
+            "Trott 2.0": "A generation variant that also writes to new _V01.aep files rather than the master.",
+        },
+        // All three generate deliverables. None is ever agent-clickable.
+        actionSafety: {
+            "Generate Files": "write",
+            "Generate Files (don't replace)": "write",
+            "Trott 2.0": "write",
+        },
+    },
+    {
+        // REGISTERED LATE. This tool shipped reachable only as a pane inside
+        // LocaliseScreen's TOOLS_ROW ("Big Guy Localiser"), with no entry
+        // here -- so it was invisible to home search, to ⌘K, and to anything
+        // else that reads TOOLS, exactly as CLAUDE.md's "live but
+        // unregistered, and therefore unfindable" note warned. A Localise
+        // tool needs BOTH; the TOOLS_ROW half was already there.
+        //
+        // `label` is what artists actually call it and what the tab says.
+        // "CSV" lives in the description so searching either term finds it.
+        id: "csv-localiser",
+        label: "Big Guy Localiser",
+        categories: ["localise"],
+        icon: FileSpreadsheet,
+        Component: CSVLocaliserTool,
+        actions: ["Scan territories", "Re-scan", "Build a Batch", "Bespoke It", "Add row"],
+        description: "The main CSV-driven batch localiser: scan a campaign's territories, see what each one still needs, and generate the batch. Build a Batch picks creatives and sizes by hand.",
+        // It is the DEFAULT pane of the Localise screen, so that is where an
+        // artist should be sent -- in context with the rest of the pipeline,
+        // not on an isolated tool page.
+        livesIn: "localise",
+        actionNotes: {
+            "Scan territories": "Walks the campaign's markets root and reports what each territory still needs. Read-only — nothing is generated.",
+            "Re-scan": "Same as Scan territories, shown once a scan already exists. Refreshes it.",
+            "Build a Batch": "Opens a row builder for picking creatives and sizes by hand, when there is no CSV to drive the batch.",
+            "Bespoke It": "Hands off to the Bespoke tool, for a deliverable made of SEVERAL masters at once (e.g. three portrait panels on one metrobus). Not for territory handling.",
+            "Add row": "Adds one more deliverable row inside Build a Batch.",
+        },
+        actionSafety: {
+            "Scan territories": "read",
+            "Re-scan": "read",
+            // Opens the row builder. Building a batch is not running one --
+            // nothing is generated until a separate run, so opening the form
+            // is safe.
+            "Build a Batch": "read",
+            "Add row": "read",
+            // Navigates to another tool. Harmless, but it moves the artist's
+            // screen out from under them, so it stays a human decision.
+            "Bespoke It": "write",
+        },
     },
     {
         id: "aep-thief",
@@ -591,6 +694,14 @@ export const TOOLS: ToolEntry[] = [
         ],
         description: "One-click apply for a curated list of AE effects to the selected layer(s) -- a faster alternative to AE's own Effects & Presets search.",
     },
+    // "ask" is deliberately NOT registered as a tool. It moved to a floating
+    // panel mounted in main.tsx (AgentBubble.tsx) so it survives navigation --
+    // as a tool page, opening a tool for the artist unmounted the tool doing
+    // the opening and threw away the conversation. Registering it as well
+    // would put a SECOND, separate instance on the Tools rail with its own
+    // transcript, which is worse than not being in search at all: a floating
+    // button on every screen is already about as discoverable as it gets.
+    //
     // wrike-tasks entry intentionally removed -- unhooked, not deleted, see
     // CLAUDE.md's "Wrike Tasks (unhooked)" note.
 ];
