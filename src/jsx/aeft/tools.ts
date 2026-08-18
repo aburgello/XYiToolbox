@@ -759,7 +759,12 @@ function tcNormalise(s: string): string {
   return String(s).toLowerCase().replace(/[_\-\s]+/g, " ").replace(/^ +/, "").replace(/ +$/, "");
 }
 
-function territoryCheck(input: string): string | null {
+// Exported so CSV Localiser can canonicalise a Wrike territory code and a
+// markets FOLDER NAME through the same resolver, rather than inventing a second
+// answer to "which country is this". Everything below -- exact code, then exact
+// name, then a length-guarded substring -- is the fix that stopped "DE" hitting
+// BE_DE; a caller reimplementing any of it would reintroduce it.
+export function territoryCheck(input: string): string | null {
   const want = tcNormalise(input);
   if (want === "") return null;
 
