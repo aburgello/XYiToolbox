@@ -24,62 +24,20 @@
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { X, AlertTriangle, CheckCircle2 } from "lucide-react";
-import { evalTS } from "../lib/utils/bolt";
 import { parseJobTitle, type WrikeJob } from "./lib/jobsFeed";
-import { setPendingBatch, type HandoffRow } from "./lib/localiseHandoff";
-
-// Mirrors NameDetectResult host-side.
-interface ParsedName {
-    success: boolean;
-    filmTitle?: string;
-    artworkType?: string;
-    campaign?: string;
-    territory?: string;
-    duration?: string;
-    site?: string;
-    version?: string;
-    error?: string;
-    // True when the name carries an isolated OV token -- i.e. it is the
-    // un-localised master, not a deliverable.
-    isOv?: boolean;
-}
-
-interface Row {
-    name: string;
-    status: string;
-    /** Custom workflow status when the feed sends one; falls back to `status`
-     *  for display. */
-    customStatusName?: string;
-    parsed: ParsedName | null;
-    // Size is not part of nameGeneratorParse's output, so it is read straight
-    // off the filename here rather than pretending the parser supplies it.
-    size: string;
-    missing: string[];
-}
-
-const SIZE_RE = /_(\d+)x(\d+)(?:px)?_/;
-
-function buildRow(name: string, status: string, parsed: ParsedName | null, customStatusName?: string): Row {
-    const sizeMatch = name.match(SIZE_RE);
-    const size = sizeMatch ? `${sizeMatch[1]}x${sizeMatch[2]}` : "";
-    const missing: string[] = [];
-    if (!parsed || !parsed.success) missing.push("unparseable");
-    else if (parsed.isOv) {
-        // Not a gap in the name -- it is a perfectly good MASTER name. It just
-        // is not something to localise, and it parses identically to its own
-        // deliverable, so sending it would duplicate that row.
-        missing.push("is the OV master");
-    } else {
-        // Campaign is what the master lookup keys on -- an empty one means the
-        // row can never match a master, so it is the most important gap here.
-        if (!parsed.campaign) missing.push("campaign");
-        if (!parsed.artworkType) missing.push("artwork");
-        if (!parsed.territory) missing.push("territory");
-        if (!parsed.duration) missing.push("duration");
-        if (!size) missing.push("size");
-    }
-    return { name, status, customStatusName, parsed, size, missing };
-}
+// PARSING AND VERDICTS LIVE IN lib/jobRows.ts. They were here, which meant the
+// Ask agent could not reach them without keeping a second copy -- the same
+// trap jobsFeed.ts calls out for readiness. This file renders them now, and
+// does not define them.
+import {
+    loadJobRows,
+    classifyRows,
+    isFinished,
+    isHeld,
+    statusOf,
+    stageBatchFromJob,
+    type Row,
+} from "./lib/jobRows";
 
 interface Props {
     job: WrikeJob;
@@ -93,25 +51,8 @@ export const ActiveJobModal: React.FC<Props> = ({ job, onClose, onOpenLocaliser 
     useEffect(() => {
         let cancelled = false;
         (async () => {
-            const subs = job.subtasks || [];
-            if (!subs.length) {
-                setRows([]);
-                return;
-            }
-            try {
-                // ONE call for every name: each bridge round-trip costs far
-                // more than the parse itself.
-                const parsed = (await evalTS(
-                    "parseDeliverableNames",
-                    JSON.stringify(subs.map((s) => s.name))
-                )) as ParsedName[];
-                if (cancelled) return;
-                setRows(subs.map((s, i) => buildRow(s.name, s.status, (parsed && parsed[i]) || null, s.customStatusName)));
-            } catch (e) {
-                // No bridge (browser preview): still list the names, just
-                // without a parse. Better than an empty modal.
-                if (!cancelled) setRows(subs.map((s) => buildRow(s.name, s.status, null, s.customStatusName)));
-            }
+            const parsed = await loadJobRows(job);
+            if (!cancelled) setRows(parsed);
         })();
         return () => {
             cancelled = true;
@@ -131,45 +72,12 @@ export const ActiveJobModal: React.FC<Props> = ({ job, onClose, onOpenLocaliser 
 
     const parts = parseJobTitle(job.title);
 
-    // WHICH CUSTOM STATUSES MEAN "ready to localise" -- an ALLOWLIST, per the
-    // studio. Everything else is shown but not sent: it may be waiting, may be
-    // in flight, may already be done, and none of those want re-localising.
-    const LOCALISABLE = /^(backlog|motion|save\s*png)$/i;
-    // Finished for real. Struck through rather than merely dimmed, because
-    // "delivered" reads very differently from "on hold". Matches TimeHub's
-    // own test (enrichJob) so the two never disagree.
-    const FINISHED = /^(delivered|completed?|done|published)$/i;
-
-    // The feed DOES send customStatusName now (verified on the live feed:
-    // subtasks arrive as status "Active" with customStatusName "Backlog" /
-    // "On hold" / "Render review"). The guard below stays anyway: a subtask
-    // that arrives without one must not be judged against an allowlist it
-    // cannot satisfy -- the status GROUP is only ever Active/Completed/
-    // Deferred/Cancelled, none of which is localisable, so applying the
-    // allowlist to a bare group would make every row unsendable and the
-    // button dead.
-    const hasCustom = (r: Row) => !!String(r.customStatusName || "").trim();
-    const statusOf = (r: Row) => String(r.customStatusName || r.status || "").trim();
-
-    const isFinished = (r: Row) =>
-        String(r.status || "").trim() === "Completed" || FINISHED.test(statusOf(r));
-    /** Not ready or not needed -- shown, highlighted, never sent. */
-    const isHeld = (r: Row) => hasCustom(r) && !LOCALISABLE.test(statusOf(r)) && !isFinished(r);
-
-    // Rows that can't drive a localise are HIDDEN, not greyed. Campaign is what
-    // the master lookup keys on and a run needs a size and duration too, so a
-    // row missing any of those was only ever there to be scrolled past --
-    // stills, mostly. The count below still says how many were dropped, so
-    // nothing disappears silently.
-    const usable = rows ? rows.filter((r) => r.missing.length === 0) : [];
-    const hidden = rows ? rows.length - usable.length : 0;
+    // Rows that can't drive a localise are HIDDEN, not greyed, and the count
+    // below still says how many were dropped so nothing disappears silently.
+    // All of these verdicts come from lib/jobRows.ts -- the agent reads the
+    // same ones, so the modal and Ask cannot disagree about a job.
+    const { usable, hidden, sendable, doneCount, heldCount } = classifyRows(rows || []);
     const clean = usable.length;
-
-    // Completed rows stay VISIBLE and struck through -- seeing that eight of
-    // twelve are already done is the useful part -- but they are never sent.
-    const sendable = usable.filter((r) => !isFinished(r) && !isHeld(r));
-    const doneCount = usable.filter(isFinished).length;
-    const heldCount = usable.filter(isHeld).length;
 
     return createPortal(
         <div className="ajm-overlay" onClick={onClose} role="presentation">
@@ -300,41 +208,10 @@ export const ActiveJobModal: React.FC<Props> = ({ job, onClose, onOpenLocaliser 
                         disabled={!rows || sendable.length === 0}
                         onClick={() => {
                             if (!rows) return;
-                            const handoffRows: HandoffRow[] = sendable.map((r) => {
-                                const [w, h] = r.size.split("x");
-                                return {
-                                    artwork: r.parsed?.artworkType || "DOOH",
-                                    creative: r.parsed?.campaign || "",
-                                    // Passed through verbatim: nameGeneratorParse
-                                    // already returns the site exactly as the subtask
-                                    // spelled it, and that spelling is what the
-                                    // generated filename is meant to agree with.
-                                    site: r.parsed?.site || "",
-                                    width: w || "",
-                                    height: h || "",
-                                    // The builder's field is a bare number of
-                                    // seconds; the parser gives "30sec".
-                                    duration: (r.parsed?.duration || "").replace(/\D/g, ""),
-                                };
-                            });
-                            setPendingBatch({
-                                territory: parts.territory || "",
-                                // Wrike titles carry the batch as free text ("Batch 2"),
-                                // but this string becomes an output FOLDER name: the CSV's
-                                // "Batch:" line is read by csvLocaliserRun and joined onto
-                                // the AE folder path (localise.ts). Left as-is it would
-                                // create "AE/Batch 02" beside the studio's existing
-                                // "Batch_01" folders -- a parallel naming convention
-                                // rather than the next batch in the series. Whitespace
-                                // only; the trailing number is zero-padded downstream by
-                                // csvLocPadBatchNumber, so nothing here should touch it.
-                                batch: parts.batch.trim().replace(/\s+/g, "_") || "Batch_1",
-                                rows: handoffRows,
-                                jobTitle: job.title,
-                                skipped: rows
-                                    .filter((r) => r.missing.length > 0)
-                                    .map((r) => ({ name: r.name, missing: r.missing })),
-                            });
+                            // Payload construction lives in lib/jobRows.ts so
+                            // the Ask agent can stage the same batch the same
+                            // way -- see stageBatchFromJob.
+                            stageBatchFromJob(job, rows);
                             onOpenLocaliser();
                         }}
                     >
