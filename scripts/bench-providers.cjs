@@ -16,6 +16,16 @@
 // IT SPENDS REAL MONEY on both accounts. Small -- the default list is six
 // questions -- but it is not free, and it is your key.
 //
+// BASELINE, 2026-08-19, six default questions, off-peak, caches warm:
+//
+//   Haiku 4.5     $0.02326      DeepSeek V4 Flash  $0.00302      7.7x
+//
+// That 7.7x is close to the raw rate ratio, which is what a cache working
+// properly on BOTH sides looks like. An earlier run read 52.8x and was
+// measuring a bug in our own cache breakpoints, not a difference between the
+// services -- if a future run shows a gap far above ~8x, suspect our request
+// shape before believing it.
+//
 // WHAT IT IS NOT: a correctness test. Tool calls are answered with fixtures
 // rather than by After Effects, so the model sees plausible data and not your
 // project. That is enough to compare cost, step counts and which tools each
