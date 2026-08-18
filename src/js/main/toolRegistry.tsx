@@ -314,18 +314,35 @@ export const TOOLS: ToolEntry[] = [
         categories: ["localise"],
         icon: Languages,
         Component: CampaignLocaliserTool,
-        actions: ["Generate Files", "Generate Files (don't replace)", "Trott 2.0"],
+        // ONLY TROTT IS ADVERTISED, and this list is what advertising means:
+        // `actions` drives search, ⌘K and the agent's capability list, so a
+        // button left out of it is still on the page and still pressable, just
+        // no longer something the panel offers you as a way to localise.
+        //
+        // A STUDIO ROUTING DECISION, not a judgement about the code: Big Guy
+        // Localiser is the route for localising a campaign, and Trott 2.0 is
+        // the fallback for the cases it cannot do. Campaign Localiser's two
+        // Generate Files buttons are a third way of doing the same job, and
+        // three routes to one outcome is how two artists localise the same
+        // batch differently. They stay on the page for whoever already knows
+        // to reach for them.
+        actions: ["Trott 2.0"],
         description: "",
-        // All three WRITE — they open a master and save to a new _V01.aep,
-        // never over the master itself (CLAUDE.md §1). Worth the agent being
-        // able to say so, since "generate" alone does not tell an artist
-        // whether anything of theirs is at risk.
+        // WRITES — it opens a master and saves to a new _V01.aep, never over
+        // the master itself (CLAUDE.md §1). Worth the agent being able to say
+        // so, since "generate" alone does not tell an artist whether anything
+        // of theirs is at risk.
+        //
+        // The notes for the two unadvertised buttons are kept: they cost
+        // nothing, they are keyed by label so they simply go unread, and they
+        // are the description to restore if the routing decision is ever
+        // reversed.
         actionNotes: {
             "Generate Files": "Generates the localised files for the campaign. Writes new _V01.aep files; the master itself is never written to.",
             "Generate Files (don't replace)": "Same as Generate Files, but skips any deliverable that already exists instead of regenerating it.",
             "Trott 2.0": "A generation variant that also writes to new _V01.aep files rather than the master.",
         },
-        // All three generate deliverables. None is ever agent-clickable.
+        // Generates deliverables. Never agent-clickable.
         actionSafety: {
             "Generate Files": "write",
             "Generate Files (don't replace)": "write",

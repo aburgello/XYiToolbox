@@ -127,13 +127,36 @@ export interface AskResult {
     answer: string;
     steps: Step[];
     costUsd: number;
+    /**
+     * Every message this turn added, question first and the assistant's answer
+     * last. The caller keeps these and hands them back as `history` next time.
+     *
+     * A WHOLE TURN, always -- never a slice of one. Each of these arrays starts
+     * with a user question and ends with an assistant reply, with any tool_use
+     * and its matching tool_result paired up inside. That is what makes them
+     * safe to concatenate and to drop from the front: the API rejects a
+     * tool_use whose tool_result is missing, so trimming history by MESSAGE
+     * count would eventually cut a turn in half and start failing outright.
+     * Trim by turn, not by message.
+     */
+    messages: any[];
 }
 
 export async function ask(
     question: string,
-    onStep?: (s: Step) => void
+    onStep?: (s: Step) => void,
+    history: any[] = []
 ): Promise<AskResult> {
-    const messages: any[] = [{ role: "user", content: question }];
+    // WITHOUT THE HISTORY THERE IS NO CONVERSATION, only a series of unrelated
+    // questions -- which is what this was: every ask() started a fresh array,
+    // so "send that to localise" arrived with no idea what "that" was. The
+    // tool RESULTS have to come with it, not just the visible answers: a job's
+    // id only ever exists in a tool result, never in the text the artist reads,
+    // so a follow-up that acts on "that job" has nothing to act on otherwise.
+    const messages: any[] = [...history, { role: "user", content: question }];
+    // Where this turn's own messages begin, so the caller gets back exactly
+    // what to remember and nothing it already has.
+    const turnStart = messages.length - 1;
     const steps: Step[] = [];
     let cost = 0;
 
@@ -152,7 +175,7 @@ export async function ask(
                 .join("")
                 .trim();
 
-            if (answer) return { answer, steps, costUsd: cost };
+            if (answer) return { answer, steps, costUsd: cost, messages: messages.slice(turnStart) };
 
             // NO TEXT AND NO TOOL CALL. Seen after a successful open_tool: the
             // model considers the job done and says nothing. "(no answer)" made
@@ -163,7 +186,7 @@ export async function ask(
                 last && last.ok
                     ? `Done — ${last.name} ran, but I didn't get a summary back (turn ended: ${reply.stopReason}).`
                     : `I didn't get an answer back (turn ended: ${reply.stopReason}).`;
-            return { answer: fallback, steps, costUsd: cost };
+            return { answer: fallback, steps, costUsd: cost, messages: messages.slice(turnStart) };
         }
 
         const results: any[] = [];
@@ -199,5 +222,6 @@ export async function ask(
         answer: `I ran out of steps (${MAX_STEPS}) before finishing that one.`,
         steps,
         costUsd: cost,
+        messages: messages.slice(turnStart),
     };
 }

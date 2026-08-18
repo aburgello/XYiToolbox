@@ -37,7 +37,24 @@ interface Turn {
     answer: string;
     error?: string;
     costUsd: number;
+    /**
+     * This turn's raw messages, kept so the NEXT question can see it. Whole
+     * turns only -- see AskResult.messages for why they must not be sliced.
+     * Absent on a turn that errored, which never produced a valid exchange.
+     */
+    messages?: any[];
 }
+
+/**
+ * How many previous turns travel with a new question.
+ *
+ * Not unlimited: tool results are re-sent in full on every later call, so a
+ * long session would pay for the whole masters list again on each question --
+ * and the panel has a running cost readout precisely because somebody notices.
+ * Six is enough for "that job" / "the second one" / "no, the portrait one",
+ * which is what a follow-up actually reaches back for.
+ */
+const HISTORY_TURNS = 6;
 
 interface Props {
     /**
@@ -98,11 +115,26 @@ const AgentChat: React.FC<Props> = ({ focusKey }) => {
         setLive([]);
 
         try {
+            // Whole turns, oldest dropped first. Concatenating complete turns is
+            // what keeps every tool_use next to its tool_result -- trimming by
+            // message count would eventually orphan one and the API would
+            // reject the request outright.
+            const history = turns
+                .filter((t) => t.messages && t.messages.length)
+                .slice(-HISTORY_TURNS)
+                .reduce<any[]>((acc, t) => acc.concat(t.messages as any[]), []);
+
             const res = await ask(text, (s) => {
                 collected.push(s);
                 setLive([...collected]);
-            });
-            setTurns((t) => [...t, { question: text, steps: res.steps, answer: res.answer, costUsd: res.costUsd }]);
+            }, history);
+            setTurns((t) => [...t, {
+                question: text,
+                steps: res.steps,
+                answer: res.answer,
+                costUsd: res.costUsd,
+                messages: res.messages,
+            }]);
         } catch (e: any) {
             setTurns((t) => [...t, {
                 question: text,
