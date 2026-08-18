@@ -455,6 +455,10 @@ export const BespokeTool = () => {
     // Saved layouts. The screen is the stable thing; the campaign is what
     // changes -- see bespokeTemplateSave in team.ts.
     const [templates, setTemplates] = useState<BespokeTemplate[]>([]);
+    const [templatesRead, setTemplatesRead] = useState(false);
+    // A screen the agent asked for, held until the library has actually been
+    // read. See the resolver below.
+    const [pendingScreen, setPendingScreen] = useState("");
     const [saving, setSaving] = useState(false);
     const [tplName, setTplName] = useState("");
     const [layouts, setLayouts] = useState<Record<string, { regions: Region[]; guidesX: number[]; guidesY: number[] }>>({});
@@ -754,12 +758,17 @@ export const BespokeTool = () => {
         try {
             const res = await evalTS("bespokeTemplateList");
             if (res && res.success && res.templates) setTemplates(res.templates);
+            // A COMPLETED READ, not a populated one. An empty list before the
+            // first read and an empty list after it mean opposite things, and
+            // only this flag can tell them apart.
             // `read` separates "the library is empty" from "the share is not
             // there". An EMPTY library still needs its front door -- seeding is
             // how it stops being empty -- but an unreachable one shows nothing.
             if (res && res.success) setLibraryReadable(res.read !== false);
+            setTemplatesRead(true);
         } catch {
             /* no bridge, or no share -- the feature simply is not there */
+            setTemplatesRead(true);
         }
     }, []);
 
@@ -1039,10 +1048,39 @@ export const BespokeTool = () => {
             return;
         }
 
+        // HANDED TO THE RESOLVER BELOW RATHER THAN ANSWERED HERE. The library
+        // is read by an effect keyed on `mode`, and this fill is usually what
+        // sets `mode` -- so at this instant `templates` is still empty and
+        // looking the name up here answers "no screen called that" about a
+        // library nobody has read yet. Confidently wrong, and it sends somebody
+        // off to trace a screen that already exists.
+        setPendingScreen(fill.screenName || "");
+    });
+
+    /**
+     * The screen the agent asked for, resolved once the library is actually
+     * readable -- not before, and not forever.
+     *
+     * Three distinct answers, kept distinct: not read yet (wait), read and
+     * unreachable (say so -- the screen may well exist), read and no match
+     * (say so -- it does not).
+     */
+    useEffect(() => {
+        if (!pendingScreen || !templatesRead) return;
+        const wanted = pendingScreen.trim().toLowerCase();
+        setPendingScreen("");
+
+        if (!libraryReadable) {
+            setStatus({
+                text: `Can't reach the screen library right now, so I can't tell whether "${pendingScreen}" is in it — reconnect to the share and open the library.`,
+                type: "error",
+            });
+            return;
+        }
         const hit = templates.filter((t) => String(t.name).toLowerCase() === wanted)[0];
         if (!hit) {
             setStatus({
-                text: `No screen called "${fill.screenName}" in the library — it's open, pick from the list.`,
+                text: `No screen called "${pendingScreen}" in the library — it's open, pick from the list.`,
                 type: "error",
             });
             return;
@@ -1058,7 +1096,8 @@ export const BespokeTool = () => {
         // reference image and canvas to draw against, not somebody else's
         // masters dropped into regions.
         if (traceTemplate(hit)) setLibraryOpen(false);
-    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pendingScreen, templatesRead, templates, libraryReadable]);
 
     // ── board shortcuts, deliberately OPT-IN ────────────────────────────────
     // AE binds the arrow keys to "nudge the selected LAYER in the comp", so a
