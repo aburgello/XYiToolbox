@@ -40,6 +40,7 @@ import { GsapScreenTransition } from "./gsap/components/GsapScreenTransition";
 import { useTheme } from "./hooks/useTheme";
 import { registerSoftReload } from "./softReload";
 import { setNavigator } from "./lib/agent/navigation";
+import { setAgentScreen } from "./lib/agent/context";
 import AgentBubble from "./AgentBubble";
 // ---------------------------------------------------------------------------
 // Screen type -- exported so screen components can reference it without a
@@ -113,6 +114,20 @@ const Main = () => {
             else setScreen({ type: "tool", toolId, backTo: screen, autoAction });
         });
         return () => setNavigator(null);
+    }, [screen]);
+    // WHERE THE ARTIST IS, for the Ask agent's per-question context line.
+    //
+    // The ids only -- context.ts turns them into words. main.tsx does not
+    // import the tool registry today and should not start doing so for a
+    // caption.
+    useEffect(() => {
+        setAgentScreen(
+            screen.type === "category"
+                ? { type: "category", categoryId: screen.categoryId }
+                : screen.type === "tool"
+                    ? { type: "tool", toolId: screen.toolId }
+                    : { type: "home" }
+        );
     }, [screen]);
     // Auto-fires a named button inside a tool's component after it mounts.
     // Used when a search hit matches an inner action (e.g. "Trott 2.0") --

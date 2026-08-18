@@ -7576,3 +7576,63 @@ export const generateDarken = (style: string, opacityPct: number, featherPx: num
     return { success: false, error: e.toString() };
   }
 };
+
+// =============================================================================
+// Ask agent -- what the artist is looking at right now.
+//
+// READ-ONLY, and deliberately NOT in agentWrites.ts: that file's header claims
+// to be the whole of what the agent can change, and it only stays true if
+// nothing read-only moves in beside it.
+//
+// Sent with every question rather than fetched on demand, so it has to be cheap
+// and it has to be quiet. No comp open is a normal state, not an error.
+// =============================================================================
+
+export interface AgentContextSnapshot {
+  success: boolean;
+  compName?: string;
+  width?: number;
+  height?: number;
+  frameRate?: number;
+  seconds?: number;
+  selectedCount?: number;
+  /** A few names, not all of them -- this rides on every question. */
+  selectedNames?: string[];
+  /** Which expression dialect is legal, so set_expression need not ask. */
+  expressionEngine?: string;
+}
+
+/** How many selected layer names to name before saying "and N more". */
+const CONTEXT_NAME_LIMIT = 5;
+
+export const agentContextSnapshot = (): AgentContextSnapshot => {
+  try {
+    if (!app || !app.project) return { success: true };
+
+    const item = app.project.activeItem;
+    // Duck-typed, never instanceof against a host class (CLAUDE.md section 2).
+    if (!item || typeof (item as CompItem).layers === "undefined") {
+      return { success: true, expressionEngine: app.project.expressionEngine };
+    }
+    const comp = item as CompItem;
+
+    const names: string[] = [];
+    const sel = comp.selectedLayers;
+    for (let i = 0; i < sel.length && i < CONTEXT_NAME_LIMIT; i++) names.push(sel[i].name);
+
+    return {
+      success: true,
+      compName: comp.name,
+      width: comp.width,
+      height: comp.height,
+      frameRate: Math.round(comp.frameRate * 1000) / 1000,
+      seconds: Math.round(comp.duration * 1000) / 1000,
+      selectedCount: sel.length,
+      selectedNames: names.length ? names : undefined,
+      expressionEngine: app.project.expressionEngine,
+    };
+  } catch (e) {
+    // Context is a nicety. A question must never fail because the snapshot did.
+    return { success: true };
+  }
+};

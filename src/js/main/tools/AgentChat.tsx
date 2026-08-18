@@ -21,6 +21,7 @@ import { createPortal } from "react-dom";
 import { Send, KeyRound, Loader2, CornerDownLeft } from "lucide-react";
 import StatusIcon from "../StatusIcon";
 import { ask, type Step } from "../lib/agent/loop";
+import { buildContextLine } from "../lib/agent/context";
 import { getApiKey, setApiKey } from "../lib/agent/provider";
 import "../shared.scss";
 import "./formTool.scss";
@@ -140,7 +141,13 @@ const AgentChat: React.FC<Props> = ({ focusKey, headerSlot }) => {
                 .slice(-HISTORY_TURNS)
                 .reduce<any[]>((acc, t) => acc.concat(t.messages as any[]), []);
 
-            const res = await ask(text, (s) => {
+            // GATHERED HERE, at send time, and appended to the question rather
+            // than folded into the system prompt -- see context.ts for why the
+            // cached prefix must not move. The artist's own words are what the
+            // transcript stores; this rides along only in what is sent.
+            const context = await buildContextLine();
+
+            const res = await ask(text + context, (s) => {
                 collected.push(s);
                 setLive([...collected]);
             }, history);
