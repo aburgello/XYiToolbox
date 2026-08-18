@@ -288,6 +288,79 @@ export const TOOLS: ToolDef[] = [
         },
     },
     {
+        name: "animate_layers",
+        description:
+            "MAKE AN ANIMATION: two keyframes on one transform property, across the targeted layers. " +
+            "This is how you actually move something — fade a layer up, slide it in, scale it on, spin " +
+            "it. Property is position, scale, rotation, opacity or anchor. Set `relative` for offsets " +
+            "from where the layer is now, which is what 'slide in from 200 below' means and saves you " +
+            "needing to know where anything sits. `stagger` walks the start along per layer so 'these " +
+            "three, one after another' is one call. Refuses rather than writing over a property that " +
+            "is already animated. The keyframes it makes are left SELECTED, so call " +
+            "apply_ease_preset straight after to give the move the studio's own feel — prefer that " +
+            "over the plain `ease` argument, which is only After Effects' stock Easy Ease. Undoable " +
+            "with one Ctrl+Z.",
+        input_schema: {
+            type: "object",
+            properties: {
+                property: {
+                    type: "string",
+                    description: "position, scale, rotation, opacity or anchor.",
+                },
+                to: {
+                    type: "string",
+                    description:
+                        "The end value, as JSON. A number for rotation and opacity ('100'), an array " +
+                        "for position, scale and anchor ('[960,540]'). Two numbers are enough for a " +
+                        "3D property — the third is left as it is.",
+                },
+                from: {
+                    type: "string",
+                    description:
+                        "Optional start value, same shape as `to`. Left out, the animation starts " +
+                        "from wherever the layer already is.",
+                },
+                startSeconds: { type: "number", description: "When the first keyframe sits. Defaults to 0." },
+                durationSeconds: { type: "number", description: "How long the move takes. Required." },
+                relative: {
+                    type: "boolean",
+                    description:
+                        "Read `from`/`to` as offsets from the layer's current value rather than " +
+                        "absolute coordinates. Use this for 'slide up by 200' or 'scale up 20%'.",
+                },
+                stagger: {
+                    type: "number",
+                    description: "Seconds between each layer's start. 0 (default) animates them together.",
+                },
+                ease: {
+                    type: "string",
+                    description:
+                        "'none' (default), 'in', 'out' or 'both' — After Effects' stock Easy Ease. " +
+                        "A studio preset via apply_ease_preset is usually the better answer.",
+                },
+                replaceExisting: {
+                    type: "boolean",
+                    description:
+                        "Only set this when the artist has explicitly said to replace animation that " +
+                        "is already on the property. It removes their keyframes.",
+                },
+                targetKind: {
+                    type: "string",
+                    description:
+                        "Which layers: 'selected' (default), 'name', 'index' or 'label'. Use " +
+                        "list_layers to see what is in the comp.",
+                },
+                targetValue: {
+                    type: "string",
+                    description:
+                        "The layer name, the 1-based index, or the label number — whichever targetKind " +
+                        "says. Leave out for 'selected'.",
+                },
+            },
+            required: ["property", "to", "durationSeconds"],
+        },
+    },
+    {
         name: "add_shape_layer",
         description:
             "Add a shape layer to the comp the artist has open — empty, or with one rectangle or " +
@@ -1611,6 +1684,37 @@ const WRITE_TOOLS: Record<
             // "leave AE's default", which is different from an invalid value
             // and must not be turned into one.
             return [i.text, i.fontSize == null ? "" : i.fontSize, typeof i.hexColour === "string" ? i.hexColour : ""];
+        },
+    },
+    animate_layers: {
+        safety: "undoable",
+        backend: "agentAnimateProperty",
+        args: (i) => {
+            if (typeof i.property !== "string" || !i.property.trim()) {
+                return "animate_layers needs to know which property to animate.";
+            }
+            // `to` is required and must survive as a STRING: the host parses it,
+            // so a number sent bare still has to arrive as text it can read.
+            if (i.to == null || i.to === "") return "animate_layers needs an end value.";
+            const dur = Number(i.durationSeconds);
+            if (!isFinite(dur) || dur <= 0) return "animate_layers needs a duration longer than zero.";
+            const start = i.startSeconds == null ? 0 : Number(i.startSeconds);
+            if (!isFinite(start) || start < 0) return "animate_layers needs a start time of zero or later.";
+            const stagger = i.stagger == null ? 0 : Number(i.stagger);
+            if (!isFinite(stagger) || stagger < 0) return "animate_layers needs a stagger of zero or more.";
+            return [
+                typeof i.targetKind === "string" ? i.targetKind : "selected",
+                i.targetValue == null ? "" : String(i.targetValue),
+                i.property.trim(),
+                i.from == null ? "" : (typeof i.from === "string" ? i.from : JSON.stringify(i.from)),
+                typeof i.to === "string" ? i.to : JSON.stringify(i.to),
+                start,
+                dur,
+                i.relative === true,
+                stagger,
+                typeof i.ease === "string" ? i.ease : "none",
+                i.replaceExisting === true,
+            ];
         },
     },
     add_shape_layer: {

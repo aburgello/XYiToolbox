@@ -1068,3 +1068,346 @@ export const agentAddShapeLayer = (
     return { success: false, error: e.toString() };
   }
 };
+
+// =============================================================================
+// ANIMATION -- the thing the agent kept having to refuse.
+//
+// Asked to "create animation on these 3 layers" it could only answer that it
+// had no tool for it: easing existed, keyframes did not, so every request had
+// to bounce back to the artist to set two keys by hand first. This closes that.
+//
+// IT MAKES MOVEMENT, IT DOES NOT INVENT TASTE. Two keyframes, a start, a
+// duration, and optionally AE's own Easy Ease -- which is F9, a host gesture,
+// not a studio opinion. Anything with a house feel to it comes from the
+// studio's OWN ease bank afterwards (apply_ease_preset), which is why this
+// leaves the keys it made SELECTED: the follow-up call lands on exactly them
+// with nothing else to aim at. Building a library of "pop in", "slide up"
+// presets here would be this file deciding how the studio's work moves, which
+// is not its call -- same reasoning as Batch Match's transform modes and
+// Master Tools' preset sizes.
+// =============================================================================
+
+/** Past this a value is a typo or an attack, not a transform. */
+const MAX_ABS_VALUE = 1e6;
+/** AE's own Easy Ease influence, as F9 applies it. */
+const EASY_EASE_INFLUENCE = 33.3333;
+
+interface AnimateResult extends Result {
+  message?: string;
+  undo?: string;
+}
+
+/**
+ * A transform property, via `layer.transform`.
+ *
+ * NEVER `layer.property("Position")`. CLAUDE.md: a camera or light resolves
+ * display-name lookups against the wrong property (Point of Interest shares a
+ * matchName with Anchor Point), so the named form animates something nobody
+ * asked for on exactly the layer types most likely to be in a rig.
+ */
+function transformProperty(
+  layer: Layer,
+  which: string
+): { prop?: Property; label?: string; error?: string } {
+  const tr = (layer as any).transform as any;
+  if (!tr) return { error: '"' + layer.name + '" has no transform properties.' };
+
+  const w = String(which || "").toLowerCase().replace(/[^a-z]/g, "");
+  let prop: any = null;
+  let label = "";
+  if (w === "position") { prop = tr.position; label = "Position"; }
+  else if (w === "scale") { prop = tr.scale; label = "Scale"; }
+  else if (w === "rotation") {
+    // A 3D layer has no plain `rotation`; its Z rotation is the one that means
+    // "spin it on screen", and that is what an artist asking for rotation on a
+    // flat DOOH comp means.
+    prop = tr.rotation;
+    label = "Rotation";
+    if (!prop) { prop = tr.zRotation; label = "Z Rotation"; }
+  }
+  else if (w === "opacity") { prop = tr.opacity; label = "Opacity"; }
+  else if (w === "anchor" || w === "anchorpoint") { prop = tr.anchorPoint; label = "Anchor Point"; }
+  else return { error: '"' + which + '" is not an animatable transform. Use position, scale, rotation, opacity or anchor.' };
+
+  // REPORTED, NEVER SKIPPED. A rig that half-applies and calls itself done is
+  // the Auto AR bug that hid for months (CLAUDE.md section 2).
+  if (!prop) {
+    return { error: '"' + layer.name + '" has no ' + label + " -- it is probably a camera, light or audio layer." };
+  }
+  return { prop: prop as Property, label: label };
+}
+
+/** A number or an array of numbers from the agent, bounded and finite. */
+function readNumbers(json: string, what: string): { vals?: number[]; error?: string } {
+  const raw = String(json == null ? "" : json).replace(/^\s+|\s+$/g, "");
+  if (!raw) return { vals: undefined };
+  let parsed: any;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    // A bare "540" is a reasonable thing for a model to send for a 1-D
+    // property, so fall back to reading it as one number before refusing.
+    const n = Number(raw);
+    if (isNaN(n)) return { error: what + ' must be a number or an array of numbers, not "' + raw + '".' };
+    parsed = n;
+  }
+  const arr: number[] = [];
+  if (typeof parsed === "number") arr.push(parsed);
+  else if (parsed && typeof parsed.length === "number") {
+    for (let i = 0; i < parsed.length; i++) arr.push(Number(parsed[i]));
+  } else {
+    return { error: what + " must be a number or an array of numbers." };
+  }
+  if (!arr.length) return { error: what + " was an empty array." };
+  for (let i = 0; i < arr.length; i++) {
+    if (isNaN(arr[i]) || !isFinite(arr[i])) return { error: what + " contains something that is not a number." };
+    if (Math.abs(arr[i]) > MAX_ABS_VALUE) return { error: what + " has a value past anything real (" + arr[i] + ")." };
+  }
+  return { vals: arr };
+}
+
+/** The value to write, sized to what the property actually holds. */
+function sizeToProperty(
+  given: number[] | undefined,
+  current: any,
+  dims: number,
+  what: string
+): { value?: number | number[]; error?: string } {
+  if (dims === 1) {
+    const v = given === undefined ? Number(current) : given[0];
+    if (given !== undefined && given.length > 1) {
+      return { error: what + " has " + given.length + " numbers but this property takes one." };
+    }
+    return { value: v };
+  }
+  const cur: number[] = [];
+  for (let i = 0; i < dims; i++) cur.push(Number(current[i]));
+  if (given === undefined) return { value: cur };
+  if (given.length > dims) {
+    return { error: what + " has " + given.length + " numbers but this property takes " + dims + "." };
+  }
+  // SHORT IS FILLED FROM THE CURRENT VALUE, not from zero. [x, y] against a 3D
+  // position means "move it in the frame and leave its depth alone"; zeroing
+  // the z would yank a 3D layer onto the camera plane silently.
+  const out: number[] = [];
+  for (let i = 0; i < dims; i++) out.push(i < given.length ? given[i] : cur[i]);
+  return { value: out };
+}
+
+function addValues(base: number | number[], delta: number | number[], dims: number): number | number[] {
+  if (dims === 1) return Number(base) + Number(delta);
+  const out: number[] = [];
+  for (let i = 0; i < dims; i++) out.push(Number((base as number[])[i]) + Number((delta as number[])[i]));
+  return out;
+}
+
+/** The index of the key AE stored at `t`, or 0. Times are compared with a
+ *  half-frame tolerance because AE snaps a written time to its own grid. */
+function keyIndexAt(prop: Property, t: number, tolerance: number): number {
+  for (let k = 1; k <= prop.numKeys; k++) {
+    if (Math.abs(prop.keyTime(k) - t) <= tolerance) return k;
+  }
+  return 0;
+}
+
+/**
+ * Two keyframes on one transform property, across every target layer.
+ *
+ * WHAT IT REFUSES TO DO QUIETLY: overwrite animation that is already there.
+ * A property with keys on it is somebody's work, and dropping two more into
+ * the middle of it produces motion nobody designed and nobody can see is
+ * wrong without scrubbing. It stops and names the layers; `replaceExisting`
+ * is the artist's explicit yes, and it is still one Ctrl+Z.
+ *
+ * `relative` reads from/to as offsets from where the layer is now, which is
+ * what "slide it in from 200 below" means -- absolute coordinates for that
+ * would need the agent to know where every layer sits.
+ *
+ * `staggerSeconds` walks the start time along per layer, so "these 3, one
+ * after another" is one call rather than three with hand-computed times.
+ */
+export const agentAnimateProperty = (
+  targetKind: string,
+  targetValue: string,
+  property: string,
+  fromJson: string,
+  toJson: string,
+  startSeconds: number,
+  durationSeconds: number,
+  relative: boolean,
+  staggerSeconds: number,
+  ease: string,
+  replaceExisting: boolean
+): AnimateResult => {
+  try {
+    const comp = app.project.activeItem;
+    if (!(comp instanceof CompItem)) return needComp() as AnimateResult;
+
+    const start = Number(startSeconds);
+    const dur = Number(durationSeconds);
+    const stagger = Number(staggerSeconds || 0);
+    if (isNaN(start) || start < 0) return { success: false, error: "Start time must be zero or later." };
+    if (isNaN(dur) || dur <= 0) return { success: false, error: "The animation needs a duration longer than zero." };
+    if (start > MAX_SECONDS || dur > MAX_SECONDS) return { success: false, error: "That timing is past anything real." };
+    if (isNaN(stagger) || stagger < 0 || stagger > MAX_SECONDS) return { success: false, error: "Stagger must be zero or a positive number of seconds." };
+
+    const easeMode = String(ease || "none").toLowerCase();
+    if (easeMode !== "none" && easeMode !== "in" && easeMode !== "out" && easeMode !== "both") {
+      return { success: false, error: 'Ease must be "none", "in", "out" or "both".' };
+    }
+
+    const to = readNumbers(toJson, "The end value");
+    if (to.error) return { success: false, error: to.error };
+    if (!to.vals) return { success: false, error: "Tell me what to animate it to." };
+    const from = readNumbers(fromJson, "The start value");
+    if (from.error) return { success: false, error: from.error };
+
+    const found = resolveTargets(comp, targetKind, targetValue);
+    if (found.error || !found.layers) return { success: false, error: found.error };
+    const layers = found.layers;
+
+    // EVERY LAYER CHECKED BEFORE ANY LAYER IS WRITTEN. A half-applied
+    // animation across a selection is worse than none: the board looks
+    // animated and only some of it is.
+    const propsFor: Property[] = [];
+    let label = "";
+    const blocked: string[] = [];
+    for (let i = 0; i < layers.length; i++) {
+      const got = transformProperty(layers[i], property);
+      if (got.error || !got.prop) return { success: false, error: got.error };
+      label = got.label || property;
+      if (got.prop.numKeys > 0 && !replaceExisting) blocked.push(layers[i].name);
+      propsFor.push(got.prop);
+    }
+    if (blocked.length) {
+      return {
+        success: false,
+        error:
+          label + " is already animated on " + blocked.join(", ") +
+          ". I won't write over animation somebody made -- say to replace it and I will, or animate a different property.",
+      };
+    }
+
+    const frame = comp.frameDuration;
+    const tol = frame / 2;
+    const startFrames = Math.round(start / frame);
+    const durFrames = Math.max(1, Math.round(dur / frame));
+    const staggerFrames = Math.round(stagger / frame);
+
+    app.beginUndoGroup("Animate " + label);
+    let touched = 0;
+    let lastEnd = 0;
+    for (let i = 0; i < layers.length; i++) {
+      const prop = propsFor[i];
+      const current = prop.value;
+      const dims = typeof current === "number" ? 1 : (current as number[]).length;
+
+      const endVal = sizeToProperty(to.vals, current, dims, "The end value");
+      if (endVal.error) { app.endUndoGroup(); return { success: false, error: endVal.error }; }
+      const startVal = sizeToProperty(from.vals, current, dims, "The start value");
+      if (startVal.error) { app.endUndoGroup(); return { success: false, error: startVal.error }; }
+
+      let v0 = startVal.value as number | number[];
+      let v1 = endVal.value as number | number[];
+      if (relative) {
+        // Offsets from where it is NOW. `from` unstated means "from here",
+        // which is already `current`, so only an explicit one is shifted.
+        if (from.vals) v0 = addValues(current as number | number[], v0, dims);
+        v1 = addValues(current as number | number[], v1, dims);
+      }
+
+      if (replaceExisting) {
+        for (let k = prop.numKeys; k >= 1; k--) prop.removeKey(k);
+      }
+
+      // COUNTED IN FRAMES, not snapped afterwards. Rounding each time
+      // independently looks equivalent and is not: a 0.5s stagger on a 25fps
+      // comp is 12.5 frames, so successive starts rounded to 0.00 / 0.52 /
+      // 1.00 -- gaps of 0.52 and 0.48 where the artist asked for even ones.
+      // Snapping the INTERVAL and multiplying keeps every gap identical and
+      // every layer the same length.
+      //
+      // The max(1) is not cosmetic either: a duration under half a frame
+      // rounded both keys onto the same time, which is ONE keyframe, which is
+      // no animation at all -- reported as success.
+      const t0 = (startFrames + staggerFrames * i) * frame;
+      const t1 = t0 + durFrames * frame;
+      prop.setValueAtTime(t0, v0 as any);
+      prop.setValueAtTime(t1, v1 as any);
+      if (t1 > lastEnd) lastEnd = t1;
+
+      const k0 = keyIndexAt(prop, t0, tol);
+      const k1 = keyIndexAt(prop, t1, tol);
+
+      if (easeMode !== "none" && k0 && k1) {
+        // Built to the length AE reports for THIS key, per the note in
+        // motionTools' writeEaseToTargets -- setTemporalEaseAtKey rejects an
+        // array whose length does not match, and Scale is 2-D or 3-D.
+        const slow = new KeyframeEase(0, EASY_EASE_INFLUENCE);
+        const flat = new KeyframeEase(0, 0.1);
+        const build = (n: number, e: KeyframeEase) => {
+          const a: KeyframeEase[] = [];
+          for (let d = 0; d < n; d++) a.push(e);
+          return a as any;
+        };
+        try {
+          // BEZIER FIRST. Temporal ease on a LINEAR keyframe is accepted and
+          // then does nothing -- the curve stays straight and the call still
+          // reports success. motionTools' own ease path sets this for the same
+          // reason; missing it here would have shipped an "eased" animation
+          // that is visibly linear.
+          prop.setInterpolationTypeAtKey(k0, KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER);
+          prop.setInterpolationTypeAtKey(k1, KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER);
+          const n0 = prop.keyOutTemporalEase(k0).length;
+          const n1 = prop.keyInTemporalEase(k1).length;
+          const outFirst = easeMode === "out" || easeMode === "both" ? slow : flat;
+          const inLast = easeMode === "in" || easeMode === "both" ? slow : flat;
+          prop.setTemporalEaseAtKey(k0, build(prop.keyInTemporalEase(k0).length, flat), build(n0, outFirst));
+          prop.setTemporalEaseAtKey(k1, build(n1, inLast), build(prop.keyOutTemporalEase(k1).length, flat));
+        } catch (e) {
+          // An ease that will not take is not worth losing the keyframes over.
+        }
+      }
+
+      // LEFT SELECTED, so the studio's own ease presets can land on exactly
+      // these keys next. getSelectedEaseTargets reads comp.selectedProperties,
+      // so the PROPERTY has to be selected, not only its keys.
+      try {
+        if (i === 0) {
+          const sel = comp.selectedProperties;
+          for (let s = 0; s < sel.length; s++) (sel[s] as any).selected = false;
+        }
+        (prop as any).selected = true;
+        if (k0) prop.setSelectedAtKey(k0, true);
+        if (k1) prop.setSelectedAtKey(k1, true);
+      } catch (e) {
+        /* selection is a convenience; never fail the animation over it */
+      }
+      touched++;
+    }
+    app.endUndoGroup();
+
+    const overrun = lastEnd > comp.duration + tol
+      ? " It runs past the end of the comp (" + comp.duration.toFixed(2) + "s), so the tail won't render."
+      : "";
+    // THE NUMBERS IT ACTUALLY WROTE. Reporting the request back would hide a
+    // stagger or duration that had to move to land on a frame.
+    const realDur = durFrames * frame;
+    const realStagger = staggerFrames * frame;
+    const staggerNote = realStagger > 0 && layers.length > 1
+      ? ", staggered " + realStagger.toFixed(2) + "s apart"
+      : "";
+    const easeNote = easeMode === "none" ? "" : " with an easy ease " + easeMode;
+    return {
+      success: true,
+      message:
+        "Animated " + label + " on " + touched + " layer" + (touched === 1 ? "" : "s") +
+        " over " + realDur.toFixed(2) + "s from " + (startFrames * frame).toFixed(2) + "s" + staggerNote + easeNote + "." + overrun +
+        " The new keyframes are selected, so a studio ease preset will land on them.",
+      undo: "Ctrl+Z once",
+    };
+  } catch (e) {
+    app.endUndoGroup();
+    return { success: false, error: e.toString() };
+  }
+};
