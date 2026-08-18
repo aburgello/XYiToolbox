@@ -308,6 +308,106 @@ export const TOOLS: ToolDef[] = [
         },
     },
     {
+        name: "align_layers",
+        description:
+            "Align the selected layers, using the panel's own XYTools align — the same thing its " +
+            "buttons do. Edges: left, hcenter, right, top, vcenter, bottom. Align to the composition " +
+            "(default) or to the selection. 'Centre this' means hcenter and vcenter relative to the " +
+            "comp; 'centre these to each other' means relativeTo: selection, which needs 2+ layers. " +
+            "Undoable with one Ctrl+Z.",
+        input_schema: {
+            type: "object",
+            properties: {
+                edge: {
+                    type: "string",
+                    description: "left, hcenter, right, top, vcenter or bottom. hcenter+vcenter is dead centre.",
+                },
+                relativeTo: {
+                    type: "string",
+                    description: "'comp' (default) or 'selection'. 'selection' needs at least 2 layers.",
+                },
+            },
+            required: ["edge"],
+        },
+    },
+    {
+        name: "distribute_layers",
+        description:
+            "Space the selected layers evenly along an axis, using XYTools distribute. Undoable with " +
+            "one Ctrl+Z.",
+        input_schema: {
+            type: "object",
+            properties: { axis: { type: "string", description: "'horizontal' or 'vertical'." } },
+            required: ["axis"],
+        },
+    },
+    {
+        name: "fit_layers",
+        description:
+            "Scale the selected layers to the comp, using XYTools fit. 'contain' fits inside, 'cover' " +
+            "fills and crops, 'stretch' distorts to fill exactly. Undoable with one Ctrl+Z.",
+        input_schema: {
+            type: "object",
+            properties: { mode: { type: "string", description: "'contain', 'cover' or 'stretch'." } },
+            required: ["mode"],
+        },
+    },
+    {
+        name: "flip_layers",
+        description: "Flip the selected layers on an axis, using XYTools. Undoable with one Ctrl+Z.",
+        input_schema: {
+            type: "object",
+            properties: { axis: { type: "string", description: "'horizontal' or 'vertical'." } },
+            required: ["axis"],
+        },
+    },
+    {
+        name: "sequence_layers",
+        description:
+            "Offset the selected layers in time so they start one after another, using XYTools " +
+            "sequence. Undoable with one Ctrl+Z.",
+        input_schema: {
+            type: "object",
+            properties: {
+                frames: { type: "number", description: "Frames between each layer's start." },
+                reverse: { type: "boolean", description: "Sequence in reverse selection order. Defaults false." },
+            },
+            required: ["frames"],
+        },
+    },
+    {
+        name: "fade_layers",
+        description:
+            "Add opacity fades to the selected layers, using XYTools fade. Undoable with one Ctrl+Z.",
+        input_schema: {
+            type: "object",
+            properties: {
+                mode: { type: "string", description: "'in', 'out' or 'both'." },
+                frames: { type: "number", description: "Length of the fade in frames." },
+                atEdges: {
+                    type: "boolean",
+                    description: "Fade at each layer's own in/out points rather than the comp's. Defaults false.",
+                },
+            },
+            required: ["mode", "frames"],
+        },
+    },
+    {
+        name: "set_anchor",
+        description:
+            "Move the anchor point of the selected layers to a position within their own bounds, " +
+            "using XYTools. 0,0 is top-left, 1,1 is bottom-right, 0.5,0.5 is the centre — which is " +
+            "what 'centre the anchor point' means. The layer does not move. Undoable with one Ctrl+Z.",
+        input_schema: {
+            type: "object",
+            properties: {
+                relX: { type: "number", description: "0 to 1 across the layer. 0.5 is centre." },
+                relY: { type: "number", description: "0 to 1 down the layer. 0.5 is centre." },
+            },
+            required: ["relX", "relY"],
+        },
+    },
+    {
         name: "preflight_project",
         description:
             "Run the panel's own Pre-Flight audit on the open project: missing footage, missing " +
@@ -895,6 +995,13 @@ export async function runTool(name: string, input: any): Promise<ToolResult> {
         case "rename_selected":
         case "label_selected":
         case "duplicate_selected":
+        case "align_layers":
+        case "distribute_layers":
+        case "fit_layers":
+        case "flip_layers":
+        case "sequence_layers":
+        case "fade_layers":
+        case "set_anchor":
         case "set_comp_duration":
         case "set_expression": {
             const write = WRITE_TOOLS[name];
@@ -1477,6 +1584,95 @@ const WRITE_TOOLS: Record<
             // is an error, which is why this checks the type and not the value.
             if (typeof i.expression !== "string") return "set_expression needs an expression string.";
             return [fx, prop, i.expression, ...targetArgs(i)];
+        },
+    },
+    // --- XYTools -------------------------------------------------------
+    //
+    // These wrap the panel's OWN motion tools rather than reimplementing them.
+    // Every one already acts on the selection, already opens its own undo
+    // group, and already handles the awkward parts -- sourceRectAtTime on
+    // layers that do not have it, alignment against a comp versus against the
+    // selection. Rewriting any of that for the agent would be a second
+    // implementation of behaviour artists already know, and it would drift.
+    //
+    // The vocabularies below are taken from XYToolsDroplet.tsx's own call
+    // sites, not invented: the agent presses exactly what the buttons press.
+    align_layers: {
+        safety: "undoable",
+        backend: "motionToolsAlign",
+        args: (i) => {
+            const EDGES = ["left", "hcenter", "right", "top", "vcenter", "bottom"];
+            const edge = typeof i.edge === "string" ? i.edge : "";
+            if (EDGES.indexOf(edge) === -1) return `align_layers edge must be one of: ${EDGES.join(", ")}.`;
+            const to = i.relativeTo === "selection" ? "selection" : "comp";
+            return [edge, to];
+        },
+    },
+    distribute_layers: {
+        safety: "undoable",
+        backend: "motionToolsDistribute",
+        args: (i) => {
+            if (i.axis !== "horizontal" && i.axis !== "vertical") {
+                return "distribute_layers axis must be 'horizontal' or 'vertical'.";
+            }
+            return [i.axis];
+        },
+    },
+    fit_layers: {
+        safety: "undoable",
+        backend: "motionToolsFit",
+        args: (i) => {
+            const MODES = ["contain", "cover", "stretch"];
+            if (MODES.indexOf(i.mode) === -1) return `fit_layers mode must be one of: ${MODES.join(", ")}.`;
+            return [i.mode];
+        },
+    },
+    flip_layers: {
+        safety: "undoable",
+        backend: "motionToolsFlip",
+        args: (i) => {
+            if (i.axis !== "horizontal" && i.axis !== "vertical") {
+                return "flip_layers axis must be 'horizontal' or 'vertical'.";
+            }
+            return [i.axis];
+        },
+    },
+    sequence_layers: {
+        safety: "undoable",
+        backend: "motionToolsSequence",
+        args: (i) => {
+            if (typeof i.frames !== "number" || !isFinite(i.frames)) {
+                return "sequence_layers needs a number of frames to offset each layer by.";
+            }
+            return [i.frames, i.reverse === true];
+        },
+    },
+    fade_layers: {
+        safety: "undoable",
+        backend: "motionToolsFade",
+        args: (i) => {
+            const MODES = ["in", "out", "both"];
+            if (MODES.indexOf(i.mode) === -1) return `fade_layers mode must be one of: ${MODES.join(", ")}.`;
+            if (typeof i.frames !== "number" || !isFinite(i.frames) || i.frames <= 0) {
+                return "fade_layers needs a positive number of frames.";
+            }
+            // atEdges fades at the layer's own in/out points rather than the
+            // comp's — the panel's own default is false.
+            return [i.mode, i.frames, i.atEdges === true];
+        },
+    },
+    set_anchor: {
+        safety: "undoable",
+        backend: "motionToolsSnapAnchor",
+        args: (i) => {
+            // 0..1 across the layer's own bounds: 0.5/0.5 is the centre, which
+            // is what "centre the anchor point" means.
+            for (const k of ["relX", "relY"]) {
+                if (typeof i[k] !== "number" || !isFinite(i[k]) || i[k] < 0 || i[k] > 1) {
+                    return `set_anchor needs ${k} between 0 and 1 (0.5 is centre).`;
+                }
+            }
+            return [i.relX, i.relY];
         },
     },
     set_comp_duration: {
