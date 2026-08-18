@@ -42,3 +42,42 @@ export function getLoadedSpecReport(): SpecReport | null {
     const rows = loaded.files.reduce((n, f) => n + f.rows.length, 0);
     return rows > 0 ? loaded : null;
 }
+
+// =============================================================================
+// WHAT DELIVERY IS ABOUT TO SEND.
+//
+// The agent could read the spec sheet but had no idea which deliverables were
+// being checked against it -- its only view of the world is the ACTIVE COMP,
+// via the context line. So asked about "these three renders" it answered about
+// one, and looked like it was discarding the rest when it had simply never
+// been shown them.
+// =============================================================================
+
+export interface LoadedDeliverable {
+    name: string;
+    /** Seconds, from the comp itself. */
+    duration: number;
+    /** The comp's real frame rate, which is what a spec sheet disagrees with. */
+    frameRate: number;
+    /** What is typed into the row, "" when blank. NOT what the spec asks for. */
+    sizeMB: string;
+    maxMbps: string;
+    fps: string;
+    audio: boolean;
+}
+
+/** Past this, a batch costs more prompt than it is worth. Never truncated
+ *  silently -- the count is reported alongside. */
+const MAX_REPORTED = 25;
+
+let deliverables: LoadedDeliverable[] = [];
+
+export function setLoadedDeliveryRows(rows: LoadedDeliverable[]): void {
+    deliverables = rows || [];
+}
+
+export function getLoadedDeliveryRows(): { rows: LoadedDeliverable[]; total: number; omitted: number } {
+    const total = deliverables.length;
+    const rows = deliverables.slice(0, MAX_REPORTED);
+    return { rows, total, omitted: Math.max(0, total - rows.length) };
+}

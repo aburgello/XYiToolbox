@@ -24,7 +24,7 @@
 import { evalTS } from "../../../lib/utils/bolt";
 import { setPendingFill, takePendingFill } from "./fieldHandoff";
 import { readSpecReport } from "../deliverySpecMatch";
-import { getLoadedSpecReport } from "./deliveryContext";
+import { getLoadedSpecReport, getLoadedDeliveryRows } from "./deliveryContext";
 import { navigateToTool } from "./navigation";
 // The registry is the single source of truth for what may be filled;
 // capabilities.ts reads the same list to tell the model the field ids.
@@ -847,6 +847,10 @@ export const TOOLS: ToolDef[] = [
             "— the parser's own doubts — and `notes`, the free text it could not parse. The notes are " +
             "where the real limit often hides: one sheet writes MP4 under FILE SIZE and puts \"Max " +
             "size 21mb\" in the requirements column. Read them.\n" +
+            "It also returns `deliverables` — every row currently loaded in Delivery, with each comp's " +
+            "real duration and frame rate. CHECK ALL OF THEM against the sheet, not just the one comp " +
+            "open in After Effects, and name each one you checked. `deliverablesOmitted` is how many " +
+            "were left out of a large batch; say so rather than implying you saw everything.\n" +
             "Say what the sheet SAYS and what looks wrong about it. Never state a limit the sheet " +
             "does not give, and quote the cell when the answer came from free text.",
         input_schema: {
@@ -1592,6 +1596,12 @@ export async function runTool(name: string, input: any): Promise<ToolResult> {
             // The NOTE is returned even when there are no rows: "no specs folder
             // next to this campaign" and "the PDFs are unreadable prose" are
             // different answers, and an empty list conveys neither.
+            // WHAT IS BEING DELIVERED, alongside what the sheet asks for. The
+            // agent's only other view is the ACTIVE COMP, so a question about
+            // "these three renders" got an answer about one -- which reads as
+            // the other two being discarded rather than never seen.
+            const loaded = getLoadedDeliveryRows();
+
             return {
                 ok: true,
                 data: {
@@ -1600,6 +1610,13 @@ export async function runTool(name: string, input: any): Promise<ToolResult> {
                     from: onScreen ? "the spec sheet open in Delivery" : "the campaign folder",
                     folder: report.folder,
                     note: report.note,
+                    deliverables: loaded.rows,
+                    // NEVER A SILENT TRUNCATION. A batch of forty would cost
+                    // more prompt than it is worth, and an agent that checked
+                    // twenty-five and said "all good" would be wrong about the
+                    // rest without knowing it.
+                    deliverablesOmitted: loaded.omitted,
+                    deliverablesTotal: loaded.total,
                     files: report.files.map((f) => ({
                         file: f.file,
                         error: f.error,

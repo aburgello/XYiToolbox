@@ -8,7 +8,7 @@ import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import { evalTS } from "../../lib/utils/bolt";
 import { sfx } from "../../lib/utils/sfx";
 import { suggestForComp, readSpecReport, type SpecSuggestion, type SpecReport } from "../lib/deliverySpecMatch";
-import { setLoadedSpecReport } from "../lib/agent/deliveryContext";
+import { setLoadedSpecReport, setLoadedDeliveryRows } from "../lib/agent/deliveryContext";
 import { child_process } from "../../lib/cep/node";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
@@ -423,6 +423,21 @@ const DeliveryHubTool = () => {
     // silent, wrong, or simply describes sizes nobody ordered.
     const [report, setReport] = useState<SpecReport | null>(null);
     const [reportBusy, setReportBusy] = useState(false);
+
+    // PUBLISHED FOR THE AGENT, on every change. Asked about "these three
+    // renders" it used to answer about the active comp alone, because that was
+    // the only deliverable it had ever been shown.
+    useEffect(() => {
+        setLoadedDeliveryRows(rows.map((r) => ({
+            name: r.name,
+            duration: r.duration,
+            frameRate: r.frameRate,
+            sizeMB: r.sizeMB,
+            maxMbps: r.maxMbps,
+            fps: r.fps,
+            audio: r.includeAudio,
+        })));
+    }, [rows]);
 
     const runReport = async () => {
         // sourcePath is nullable, and `filter` does not narrow it -- read it out

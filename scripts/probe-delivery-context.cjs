@@ -68,6 +68,30 @@ C.setLoadedSpecReport(null);
 check("dismissed means gone — never answers from a sheet nobody is looking at",
       C.getLoadedSpecReport() === null);
 
+console.log("\n=== what Delivery is about to send ===");
+const three = [
+    { name: "Filmstaden_1920x1080", duration: 10, frameRate: 23.976, sizeMB: "", maxMbps: "", fps: "", audio: false },
+    { name: "JCDecaux_1080x1920",   duration: 10, frameRate: 23.976, sizeMB: "", maxMbps: "", fps: "", audio: false },
+    { name: "JCDecaux_1080x1920",   duration: 10, frameRate: 23.976, sizeMB: "", maxMbps: "", fps: "", audio: false },
+];
+C.setLoadedDeliveryRows(three);
+const got = C.getLoadedDeliveryRows();
+check("all three rows are visible, not just the active comp", got.rows.length === 3, String(got.rows.length));
+check("carrying the comp's real frame rate, which is what a sheet disagrees with",
+      got.rows[0].frameRate === 23.976);
+check("nothing omitted at this size", got.omitted === 0 && got.total === 3);
+
+C.setLoadedDeliveryRows(Array.from({ length: 40 }, (_, i) => ({
+    name: "Row" + i, duration: 10, frameRate: 25, sizeMB: "", maxMbps: "", fps: "", audio: false,
+})));
+const big = C.getLoadedDeliveryRows();
+check("a big batch is capped", big.rows.length === 25, String(big.rows.length));
+check("and says how many it left out — never a silent truncation",
+      big.omitted === 15 && big.total === 40, big.omitted + "/" + big.total);
+
+C.setLoadedDeliveryRows([]);
+check("cleared when the rows go", C.getLoadedDeliveryRows().total === 0);
+
 console.log("\n=== the walk that could not work ===");
 function walk(from) {
     let dir = path.dirname(from), out = [];
