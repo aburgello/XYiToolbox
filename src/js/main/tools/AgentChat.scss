@@ -45,6 +45,30 @@
         }
     }
 
+    // Which service the agent talks to. A testing control, so it sits inside
+    // the key panel rather than anywhere someone meets by accident.
+    .agentchat-provider {
+        flex: 1;
+        // Explicit background and colour: a bare <select> inherits the host's
+        // and comes out white-on-white in the panel's dark chrome.
+        background: rgba(255, 255, 255, 0.06);
+        color: inherit;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 4px;
+        padding: 5px 8px;
+        font-size: 11px;
+        font-family: inherit;
+    }
+
+    .agentchat-provider-note {
+        margin: 0 0 6px;
+        font-size: 10.5px;
+        line-height: 1.45;
+        opacity: 0.72;
+        // `break-word`, not `anywhere` — Chromium 74 is the build target.
+        overflow-wrap: break-word;
+    }
+
     // --- transcript -----------------------------------------------------
 
     .agentchat-scroll {

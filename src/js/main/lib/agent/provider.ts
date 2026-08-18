@@ -32,14 +32,98 @@ export interface ModelReply {
     usage: { input: number; output: number; cacheRead: number; cacheWrite: number };
 }
 
-const ENDPOINT = "https://api.anthropic.com/v1/messages";
-
-// Cheapest capable tier — this workload is "call two tools, summarise", which
-// does not need a frontier model. See docs/AGENT-THREE-TOOL-PROTOTYPE.md §7.
-const MODEL = "claude-haiku-4-5";
 const MAX_TOKENS = 2048;
 
+// =============================================================================
+// WHERE THE MODEL LIVES -- swappable, because it turned out not to need a fork.
+//
+// DeepSeek publishes an ANTHROPIC-COMPATIBLE endpoint (api.deepseek.com
+// /anthropic), which is how Claude Code runs against it with nothing but
+// ANTHROPIC_BASE_URL. That means the whole request and reply shape this file
+// and loop.ts are built around -- `tools` with input_schema, content[] blocks
+// of type "tool_use", stop_reason -- carries over untouched. Three constants,
+// not a rewrite.
+//
+// THIS IS A TESTING FACILITY. Anthropic stays the default and nothing changes
+// for anyone who does not go looking for the setting.
+//
+// WHAT THIS CANNOT TELL YOU, and what has to be tested from a real panel:
+// whether a given endpoint permits a CROSS-ORIGIN call. Claude Code is a Node
+// process with no browser origin, so CORS simply does not arise there; a CEP
+// panel is Chromium doing a cross-origin fetch, which is the entire reason
+// Anthropic requires an explicit opt-in header. An endpoint that works
+// perfectly in a terminal can still be unreachable from here.
+// =============================================================================
+
+export interface Provider {
+    id: string;
+    label: string;
+    endpoint: string;
+    model: string;
+    /** How the key travels. Anthropic wants x-api-key; most others want Bearer. */
+    auth: "x-api-key" | "bearer";
+    /** Send Anthropic's cache-breakpoint fields. Harmlessly ignored elsewhere. */
+    explicitCache: boolean;
+    /** USD per million tokens, for the running-cost readout. */
+    rates: { input: number; output: number; cacheRead: number; cacheWrite: number };
+    /** Anything worth knowing before trusting the numbers. */
+    note?: string;
+}
+
+export const PROVIDERS: Provider[] = [
+    {
+        id: "anthropic",
+        label: "Anthropic — Haiku 4.5",
+        endpoint: "https://api.anthropic.com/v1/messages",
+        // Cheapest capable tier — this workload is "call two tools, summarise",
+        // which does not need a frontier model.
+        model: "claude-haiku-4-5",
+        auth: "x-api-key",
+        explicitCache: true,
+        // cacheWrite is 2x base because the breakpoint below asks for a 1h TTL.
+        rates: { input: 1.0, output: 5.0, cacheRead: 0.1, cacheWrite: 2.0 },
+    },
+    {
+        id: "deepseek",
+        label: "DeepSeek — V4 Flash (testing)",
+        endpoint: "https://api.deepseek.com/anthropic/v1/messages",
+        model: "deepseek-v4-flash",
+        auth: "bearer",
+        // DeepSeek caches automatically rather than on explicit breakpoints, so
+        // cache_control is sent-and-ignored at best. Left OFF so the request is
+        // honest about what it is asking for, and so a strict endpoint cannot
+        // reject an unknown field.
+        explicitCache: false,
+        // OFF-PEAK rates. Peak is double, so the readout UNDERSTATES by up to 2x
+        // during peak hours -- stated rather than quietly wrong.
+        rates: { input: 0.22, output: 0.66, cacheRead: 0.007, cacheWrite: 0.22 },
+        note: "Off-peak rates; peak is ~2x. Untested from a CEP panel — if calls fail, suspect CORS before the key.",
+    },
+];
+
+const PROVIDER_STORAGE = "xyi.agent.provider";
+
+export function getProvider(): Provider {
+    let id = "";
+    try { id = window.localStorage.getItem(PROVIDER_STORAGE) || ""; } catch { /* private mode */ }
+    const found = PROVIDERS.filter((p) => p.id === id)[0];
+    // Falls back to the first entry rather than throwing: a stored id from a
+    // provider that has since been removed must not brick the tool.
+    return found || PROVIDERS[0];
+}
+
+export function setProvider(id: string): void {
+    try { window.localStorage.setItem(PROVIDER_STORAGE, id); } catch { /* session only */ }
+}
+
+// PER PROVIDER, because they are different accounts with different keys. One
+// shared slot meant switching to DeepSeek sent the Anthropic key and 401'd,
+// then switching back sent whatever was typed second -- a confusing failure
+// that looks like the endpoint being broken.
 const KEY_STORAGE = "xyi.agent.apiKey";
+function keyStorageFor(p: Provider): string {
+    return p.id === "anthropic" ? KEY_STORAGE : KEY_STORAGE + "." + p.id;
+}
 
 /**
  * localStorage, NOT app.settings -- deliberately.
@@ -54,28 +138,34 @@ const KEY_STORAGE = "xyi.agent.apiKey";
  * Either way the key is per-machine and never written to the team share.
  */
 export function getApiKey(): string {
-    try { return window.localStorage.getItem(KEY_STORAGE) || ""; } catch { return ""; }
+    try { return window.localStorage.getItem(keyStorageFor(getProvider())) || ""; } catch { return ""; }
 }
 
 export function setApiKey(key: string): void {
-    try { window.localStorage.setItem(KEY_STORAGE, key.trim()); } catch { /* private mode — session only */ }
+    try { window.localStorage.setItem(keyStorageFor(getProvider()), key.trim()); } catch { /* private mode — session only */ }
 }
 
 export async function callModel(call: ModelCall): Promise<ModelReply> {
     const key = getApiKey();
     if (!key) throw new Error("No API key set. Open Settings in the tool and paste one in.");
 
-    const res = await fetch(ENDPOINT, {
+    const provider = getProvider();
+    const headers: Record<string, string> = {
+        "content-type": "application/json",
+        "anthropic-version": "2023-06-01",
+        // Required when calling from a browser context, which a CEP panel is.
+        // Sent to every endpoint: Anthropic needs it, and an Anthropic-shaped
+        // one that does not will ignore an unrecognised header.
+        "anthropic-dangerous-direct-browser-access": "true",
+    };
+    if (provider.auth === "bearer") headers["authorization"] = "Bearer " + key;
+    else headers["x-api-key"] = key;
+
+    const res = await fetch(provider.endpoint, {
         method: "POST",
-        headers: {
-            "content-type": "application/json",
-            "x-api-key": key,
-            "anthropic-version": "2023-06-01",
-            // Required when calling from a browser context, which a CEP panel is.
-            "anthropic-dangerous-direct-browser-access": "true",
-        },
+        headers: headers,
         body: JSON.stringify({
-            model: MODEL,
+            model: provider.model,
             max_tokens: MAX_TOKENS,
             // CACHE THE STABLE PREFIX. The system prompt plus three tool
             // definitions is identical on every call in a session, and cached
@@ -93,7 +183,9 @@ export async function callModel(call: ModelCall): Promise<ModelReply> {
             // right because the reads now actually land. If the panel ever
             // becomes something people fire one question at and close, this is
             // the line to reconsider.
-            system: [{ type: "text", text: call.system, cache_control: { type: "ephemeral", ttl: "1h" } }],
+            system: provider.explicitCache
+                ? [{ type: "text", text: call.system, cache_control: { type: "ephemeral", ttl: "1h" } }]
+                : [{ type: "text", text: call.system }],
             tools: call.tools,
             messages: call.messages,
         }),
@@ -101,7 +193,10 @@ export async function callModel(call: ModelCall): Promise<ModelReply> {
 
     if (!res.ok) {
         const body = await res.text().catch(() => "");
-        throw new Error(`Model call failed (${res.status}). ${body.slice(0, 300)}`);
+        // NAMES WHICH ENDPOINT FAILED. With a provider setting in play, "Model
+        // call failed (401)" is ambiguous in a way it never used to be -- it
+        // could be the wrong key, or the right key sent to the other service.
+        throw new Error(`${provider.label} call failed (${res.status}). ${body.slice(0, 300)}`);
     }
 
     const json = await res.json();
@@ -128,13 +223,16 @@ export async function callModel(call: ModelCall): Promise<ModelReply> {
  * Update alongside MODEL.
  */
 export function estimateCost(u: { input: number; output: number; cacheRead: number; cacheWrite?: number }): number {
+    // The ACTIVE provider's rates. Hardcoding Haiku's would have over-reported
+    // a DeepSeek session by roughly 5x -- a readout nobody can act on.
+    const r = getProvider().rates;
     return (
-        (u.input / 1e6) * 1.0 +
-        (u.output / 1e6) * 5.0 +
-        (u.cacheRead / 1e6) * 0.1 +
+        (u.input / 1e6) * r.input +
+        (u.output / 1e6) * r.output +
+        (u.cacheRead / 1e6) * r.cacheRead +
         // 2x base for a 1h write. Counted at all now: leaving it out made the
         // panel report a number that was always too low, which is the wrong
         // direction for a figure someone is deciding a budget on.
-        ((u.cacheWrite || 0) / 1e6) * 2.0
+        ((u.cacheWrite || 0) / 1e6) * r.cacheWrite
     );
 }

@@ -22,7 +22,7 @@ import { Send, KeyRound, Loader2, CornerDownLeft } from "lucide-react";
 import StatusIcon from "../StatusIcon";
 import { ask, type Step } from "../lib/agent/loop";
 import { buildContextLine } from "../lib/agent/context";
-import { getApiKey, setApiKey } from "../lib/agent/provider";
+import { getApiKey, setApiKey, getProvider, setProvider, PROVIDERS } from "../lib/agent/provider";
 import "../shared.scss";
 import "./formTool.scss";
 import "./AgentChat.scss";
@@ -90,6 +90,10 @@ const AgentChat: React.FC<Props> = ({ focusKey, headerSlot }) => {
     const [keyOpen, setKeyOpen] = useState(false);
     const [keyDraft, setKeyDraft] = useState("");
     const [hasKey, setHasKey] = useState(false);
+    // WHICH SERVICE THIS PANEL TALKS TO. A testing facility: Anthropic is the
+    // default and nothing here changes unless somebody opens the key panel and
+    // picks something else.
+    const [providerId, setProviderId] = useState(() => getProvider().id);
     const [status, setStatus] = useState<{ type: "success" | "error"; text: string } | null>(null);
     const scrollRef = useRef<HTMLDivElement | null>(null);
     const askRef = useRef<HTMLInputElement | null>(null);
@@ -113,6 +117,27 @@ const AgentChat: React.FC<Props> = ({ focusKey, headerSlot }) => {
         const el = scrollRef.current;
         if (el) el.scrollTop = el.scrollHeight;
     }, [turns, live]);
+
+    /**
+     * Switching service switches KEY, because they are different accounts.
+     * Reading the new provider's own stored key back is what stops "I set a key
+     * and it still says no key" -- and stops the Anthropic key being sent to
+     * DeepSeek, which 401s in a way that reads like the endpoint is broken.
+     */
+    const switchProvider = (id: string) => {
+        setProvider(id);
+        setProviderId(id);
+        setKeyDraft("");
+        const existing = getApiKey();
+        setHasKey(!!existing);
+        const p = PROVIDERS.filter((x) => x.id === id)[0];
+        setStatus({
+            type: existing ? "success" : "error",
+            text: existing
+                ? `Talking to ${p?.label}. Its key is already saved here.`
+                : `Talking to ${p?.label}. Paste that service's key — the other one won't work.`,
+        });
+    };
 
     const saveKey = () => {
         setApiKey(keyDraft);
@@ -206,6 +231,25 @@ const AgentChat: React.FC<Props> = ({ focusKey, headerSlot }) => {
             {headerSlot
                 ? createPortal(headerControls, headerSlot)
                 : <div className="button-row">{headerControls}</div>}
+
+            {keyOpen && PROVIDERS.length > 1 && (
+                <div className="agentchat-keyrow">
+                    <select
+                        className="agentchat-provider"
+                        value={providerId}
+                        onChange={(e) => switchProvider(e.target.value)}
+                        aria-label="Which service to call"
+                    >
+                        {PROVIDERS.map((p) => (
+                            <option key={p.id} value={p.id}>{p.label}</option>
+                        ))}
+                    </select>
+                </div>
+            )}
+
+            {keyOpen && getProvider().note && (
+                <p className="agentchat-provider-note">{getProvider().note}</p>
+            )}
 
             {keyOpen && (
                 <div className="agentchat-keyrow">
