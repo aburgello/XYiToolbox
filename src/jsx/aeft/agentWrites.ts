@@ -172,13 +172,95 @@ function selectedLayers(comp: CompItem): Layer[] {
   return out;
 }
 
+/**
+ * WHICH LAYERS AN ACTION MEANS.
+ *
+ * Selection was the original answer and it is still the default, because it is
+ * what an artist has in their hands. But requiring it made the agent ask people
+ * to go and click things it could perfectly well identify -- "the layer called
+ * BG", "the third one", "everything labelled red" are all unambiguous
+ * instructions, and refusing them was a limit of the plumbing rather than a
+ * safety property.
+ *
+ * The real bound was never the selection: it is the ACTIVE COMP. Nothing here
+ * can reach a comp the artist is not looking at, and everything is one undo.
+ * Widening from "what is selected" to "anything in this comp, named
+ * explicitly" keeps that.
+ *
+ * AMBIGUITY REFUSES, IT NEVER PICKS. Two layers with the same name is a
+ * question for the artist -- guessing between them is how the wrong layer gets
+ * renamed and nobody notices until the render.
+ *
+ * Flat scalars, per CLAUDE.md: a selector object would lose its values crossing
+ * the bridge, so the kind and the value travel as two strings.
+ */
+function resolveTargets(
+  comp: CompItem,
+  kind: string,
+  value: string
+): { layers?: Layer[]; error?: string } {
+  const k = String(kind == null || kind === "" ? "selected" : kind);
+  const raw = String(value == null ? "" : value).replace(/^\s+|\s+$/g, "");
+
+  if (k === "selected") {
+    const sel = selectedLayers(comp);
+    if (!sel.length) {
+      return { error: "Nothing is selected. Select the layers, or tell me which ones by name, index or label." };
+    }
+    return { layers: sel };
+  }
+
+  if (k === "name") {
+    if (!raw) return { error: "Which layer name?" };
+    const want = raw.toLowerCase();
+    const hits: Layer[] = [];
+    for (let i = 1; i <= comp.numLayers; i++) {
+      const l = comp.layer(i);
+      // Case-insensitive so "bg" finds "BG" -- artists type names, not ids.
+      // Still an EXACT match, never a substring: "BG" must not select
+      // "BG_OLD_DO_NOT_USE".
+      if (l && String(l.name).toLowerCase() === want) hits.push(l);
+    }
+    if (!hits.length) return { error: 'No layer called "' + raw + '" in "' + comp.name + '".' };
+    if (hits.length > 1) {
+      return { error: hits.length + ' layers are called "' + raw + '". Select the one you mean, or give me its index.' };
+    }
+    return { layers: hits };
+  }
+
+  if (k === "index") {
+    const n = Math.round(Number(raw));
+    // Written to reject, so a NaN from "third" lands here rather than passing
+    // a bounds test that is false either way.
+    if (!(n >= 1 && n <= comp.numLayers)) {
+      return { error: "Layer index must be between 1 and " + comp.numLayers + " in this comp." };
+    }
+    return { layers: [comp.layer(n)] };
+  }
+
+  if (k === "label") {
+    const n = Math.round(Number(raw));
+    if (!(n >= 0 && n <= MAX_LABEL)) {
+      return { error: "Label must be a number from 0 (none) to " + MAX_LABEL + "." };
+    }
+    const hits: Layer[] = [];
+    for (let i = 1; i <= comp.numLayers; i++) {
+      const l = comp.layer(i);
+      if (l && l.label === n) hits.push(l);
+    }
+    if (!hits.length) return { error: "No layers with label " + n + " in this comp." };
+    return { layers: hits };
+  }
+
+  return { error: 'Target must be "selected", "name", "index" or "label".' };
+}
+
 /** "Open a comp first" / "select something first", said the same way every time. */
 function needComp(): Result {
   return { success: false, error: "No composition is open. Open the comp you want to work in, then ask again." };
 }
-function needSelection(what: string): Result {
-  return { success: false, error: "Nothing is selected. Select the layer(s) you want to " + what + ", then ask again." };
-}
+// (needSelection lived here. resolveTargets now owns that message, and phrases
+//  it better -- it can offer name/index/label as alternatives to selecting.)
 
 interface PrecomposeResult extends Result {
   name?: string;
@@ -199,14 +281,17 @@ interface PrecomposeResult extends Result {
  */
 export const agentPrecomposeSelected = (
   name: string,
-  moveAllAttributes: boolean
+  moveAllAttributes: boolean,
+  targetKind: string,
+  targetValue: string
 ): PrecomposeResult => {
   try {
     const comp = activeComp();
     if (!comp) return needComp();
 
-    const layers = selectedLayers(comp);
-    if (layers.length === 0) return needSelection("precompose");
+    const found = resolveTargets(comp, targetKind, targetValue);
+    if (found.error) return { success: false, error: found.error };
+    const layers = found.layers as Layer[];
 
     const compName = String(name == null ? "" : name).replace(/^\s+|\s+$/g, "");
     if (!compName) return { success: false, error: "The precomp needs a name." };
@@ -368,13 +453,18 @@ interface SelectionResult extends Result {
  * makes the comp unreadable -- the artist would have to undo and redo it by
  * hand, which is worse than the tool having had an opinion.
  */
-export const agentRenameSelected = (baseName: string): SelectionResult => {
+export const agentRenameSelected = (
+  baseName: string,
+  targetKind: string,
+  targetValue: string
+): SelectionResult => {
   try {
     const comp = activeComp();
     if (!comp) return needComp();
 
-    const layers = selectedLayers(comp);
-    if (layers.length === 0) return needSelection("rename");
+    const found = resolveTargets(comp, targetKind, targetValue);
+    if (found.error) return { success: false, error: found.error };
+    const layers = found.layers as Layer[];
 
     const base = String(baseName == null ? "" : baseName).replace(/^\s+|\s+$/g, "");
     if (!base) return { success: false, error: "The layers need a name." };
@@ -398,13 +488,18 @@ export const agentRenameSelected = (baseName: string): SelectionResult => {
 };
 
 /** Sets the label colour on the selected layers. 0 is None. */
-export const agentLabelSelected = (label: number): SelectionResult => {
+export const agentLabelSelected = (
+  label: number,
+  targetKind: string,
+  targetValue: string
+): SelectionResult => {
   try {
     const comp = activeComp();
     if (!comp) return needComp();
 
-    const layers = selectedLayers(comp);
-    if (layers.length === 0) return needSelection("label");
+    const found = resolveTargets(comp, targetKind, targetValue);
+    if (found.error) return { success: false, error: found.error };
+    const layers = found.layers as Layer[];
 
     const n = Math.round(Number(label));
     if (!(n >= 0 && n <= MAX_LABEL)) {
@@ -425,13 +520,17 @@ export const agentLabelSelected = (label: number): SelectionResult => {
 };
 
 /** Duplicates the selected layers. */
-export const agentDuplicateSelected = (): SelectionResult => {
+export const agentDuplicateSelected = (
+  targetKind: string,
+  targetValue: string
+): SelectionResult => {
   try {
     const comp = activeComp();
     if (!comp) return needComp();
 
-    const layers = selectedLayers(comp);
-    if (layers.length === 0) return needSelection("duplicate");
+    const found = resolveTargets(comp, targetKind, targetValue);
+    if (found.error) return { success: false, error: found.error };
+    const layers = found.layers as Layer[];
 
     const names: string[] = [];
     app.beginUndoGroup("Ask: duplicate " + layers.length + " layer(s)");
@@ -597,13 +696,17 @@ function collectProps(group: PropertyGroup, out: EffectProp[], depth: number): v
  * The effects on the selected layers, with the matchNames needed to address
  * them. Read-only.
  */
-export const agentListEffects = (): ListEffectsResult => {
+export const agentListEffects = (
+  targetKind: string,
+  targetValue: string
+): ListEffectsResult => {
   try {
     const comp = activeComp();
     if (!comp) return needComp();
 
-    const layers = selectedLayers(comp);
-    if (layers.length === 0) return needSelection("inspect");
+    const found = resolveTargets(comp, targetKind, targetValue);
+    if (found.error) return { success: false, error: found.error };
+    const layers = found.layers as Layer[];
 
     const out: LayerEffects[] = [];
     for (let i = 0; i < layers.length; i++) {
@@ -678,14 +781,17 @@ function findPropByMatchName(group: PropertyGroup, matchName: string, depth: num
 export const agentSetExpression = (
   effectMatchName: string,
   propertyMatchName: string,
-  expression: string
+  expression: string,
+  targetKind: string,
+  targetValue: string
 ): ExpressionResult => {
   try {
     const comp = activeComp();
     if (!comp) return needComp();
 
-    const layers = selectedLayers(comp);
-    if (layers.length === 0) return needSelection("apply an expression to");
+    const found = resolveTargets(comp, targetKind, targetValue);
+    if (found.error) return { success: false, error: found.error };
+    const layers = found.layers as Layer[];
 
     const fxMatch = String(effectMatchName == null ? "" : effectMatchName).replace(/^\s+|\s+$/g, "");
     const propMatch = String(propertyMatchName == null ? "" : propertyMatchName).replace(/^\s+|\s+$/g, "");
@@ -738,6 +844,64 @@ export const agentSetExpression = (
       expressionEngine: app.project.expressionEngine,
       undo: "Ctrl+Z (Cmd+Z on Mac) once, in After Effects.",
     };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+
+interface LayerRow {
+  index: number;
+  name: string;
+  label: number;
+  enabled: boolean;
+  selected: boolean;
+  /** Present only when the layer has effects, so a quiet comp stays quiet. */
+  effectCount?: number;
+}
+interface ListLayersResult extends Result {
+  comp?: string;
+  layerCount?: number;
+  layers?: LayerRow[];
+}
+
+/**
+ * Every layer in the active comp, with the index, name and label needed to
+ * address one. Read-only.
+ *
+ * The other half of layer addressing: resolveTargets can find a layer by name,
+ * index or label, and this is where those come from. Asking the agent to
+ * address a layer without giving it a way to see the comp would be the same
+ * mistake as expecting matchNames without list_effects.
+ */
+export const agentListLayers = (): ListLayersResult => {
+  try {
+    const comp = activeComp();
+    if (!comp) return needComp();
+
+    const rows: LayerRow[] = [];
+    for (let i = 1; i <= comp.numLayers; i++) {
+      const l = comp.layer(i);
+      if (!l) continue;
+      const row: LayerRow = {
+        index: l.index,
+        name: l.name,
+        label: l.label,
+        enabled: l.enabled,
+        // So the agent can say "the three you have selected" and mean it, and
+        // so `target: selected` and an explicit name never disagree silently.
+        selected: l.selected,
+      };
+      // Counted, not listed: the names and parameters are list_effects' job,
+      // and this row rides in a list that can be a hundred long.
+      const parade = l.property("ADBE Effect Parade") as PropertyGroup;
+      if (parade && typeof parade.numProperties === "number" && parade.numProperties > 0) {
+        row.effectCount = parade.numProperties;
+      }
+      rows.push(row);
+    }
+
+    return { success: true, comp: comp.name, layerCount: rows.length, layers: rows };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

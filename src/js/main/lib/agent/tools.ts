@@ -236,7 +236,19 @@ export const TOOLS: ToolDef[] = [
                     type: "boolean",
                     description:
                         "Move attributes into the precomp. Defaults true. Only honoured for a single " +
-                        "layer — with several selected it is forced true and reported back.",
+                        "layer — with several it is forced true and reported back.",
+                },
+                targetKind: {
+                    type: "string",
+                    description:
+                        "Which layers: 'selected' (default), 'name', 'index' or 'label'. Use " +
+                        "list_layers to see what is in the comp.",
+                },
+                targetValue: {
+                    type: "string",
+                    description:
+                        "The layer name, the 1-based index, or the label number — whichever targetKind " +
+                        "says. Leave out for 'selected'.",
                 },
             },
             required: ["name"],
@@ -291,7 +303,19 @@ export const TOOLS: ToolDef[] = [
         input_schema: {
             type: "object",
             properties: {
-                name: { type: "string", description: "The name, or the base name when several layers are selected." },
+                name: { type: "string", description: "The name, or the base name when several layers are targeted." },
+                targetKind: {
+                    type: "string",
+                    description:
+                        "Which layers: 'selected' (default), 'name', 'index' or 'label'. Use " +
+                        "list_layers to see what is in the comp.",
+                },
+                targetValue: {
+                    type: "string",
+                    description:
+                        "The layer name, the 1-based index, or the label number — whichever targetKind " +
+                        "says. Leave out for 'selected'.",
+                },
             },
             required: ["name"],
         },
@@ -305,6 +329,18 @@ export const TOOLS: ToolDef[] = [
             type: "object",
             properties: {
                 label: { type: "number", description: "0 for none, or 1-16 for a label swatch." },
+                targetKind: {
+                    type: "string",
+                    description:
+                        "Which layers: 'selected' (default), 'name', 'index' or 'label'. Use " +
+                        "list_layers to see what is in the comp.",
+                },
+                targetValue: {
+                    type: "string",
+                    description:
+                        "The layer name, the 1-based index, or the label number — whichever targetKind " +
+                        "says. Leave out for 'selected'.",
+                },
             },
             required: ["label"],
         },
@@ -312,8 +348,26 @@ export const TOOLS: ToolDef[] = [
     {
         name: "duplicate_selected",
         description:
-            "Duplicate the selected layers in the comp the artist has open. Undoable with one Ctrl+Z.",
-        input_schema: { type: "object", properties: {}, required: [] },
+            "Duplicate layers in the comp the artist has open — the selection by default, or layers " +
+            "named by targetKind/targetValue. Undoable with one Ctrl+Z.",
+        input_schema: {
+            type: "object",
+            properties: {
+                targetKind: {
+                    type: "string",
+                    description:
+                        "Which layers: 'selected' (default), 'name', 'index' or 'label'. Use " +
+                        "list_layers to see what is in the comp.",
+                },
+                targetValue: {
+                    type: "string",
+                    description:
+                        "The layer name, the 1-based index, or the label number — whichever targetKind " +
+                        "says. Leave out for 'selected'.",
+                },
+            },
+            required: [],
+        },
     },
     {
         name: "set_comp_duration",
@@ -330,14 +384,77 @@ export const TOOLS: ToolDef[] = [
         },
     },
     {
+        name: "list_layers",
+        description:
+            "Every layer in the comp the artist has open: index, name, label colour, whether it is " +
+            "enabled or selected, and how many effects it has. Read-only. Call this when you need to " +
+            "act on a layer the artist described rather than selected — it is where the index, name " +
+            "and label come from.",
+        input_schema: { type: "object", properties: {}, required: [] },
+    },
+    {
+        name: "find_expression",
+        description:
+            "Search the studio's saved Expressions Bank. With a query, returns matching entries WITH " +
+            "their code, ready to use with set_expression. With no query, returns just the names and " +
+            "tags so you can see what exists without pulling every expression into the conversation. " +
+            "Read-only. Prefer a saved expression over writing one from scratch — it is the one the " +
+            "studio already trusts.",
+        input_schema: {
+            type: "object",
+            properties: {
+                query: {
+                    type: "string",
+                    description: "Words to match against name, tag and description. Omit to list what exists.",
+                },
+            },
+            required: [],
+        },
+    },
+    {
+        name: "find_screen",
+        description:
+            "Search the shared Bespoke screen library — layouts the studio has already traced for " +
+            "peculiar screens. Match by words in the name, site or territory, and/or by canvas size. " +
+            "Read-only. Ask this before anyone traces a screen by hand: somebody may have done it " +
+            "already, and loading theirs is minutes instead of an afternoon.",
+        input_schema: {
+            type: "object",
+            properties: {
+                query: { type: "string", description: "Words to match against name, site or territory." },
+                width: { type: "number", description: "Optional canvas width to match exactly." },
+                height: { type: "number", description: "Optional canvas height to match exactly." },
+            },
+            required: [],
+        },
+    },
+    {
         name: "list_effects",
         description:
-            "Read the effects on the layers the artist has selected, with the matchNames needed to " +
+            "Read the effects on layers in the open comp — the selection by default, or layers named " +
+            "by targetKind/targetValue — with the matchNames needed to " +
             "address them and each property's current value. Read-only. Call this BEFORE set_expression " +
             "— matchNames are the only reliable way to address an effect parameter, and this is where " +
             "you get them. It also reports the project's expression engine, which decides what syntax " +
             "is legal.",
-        input_schema: { type: "object", properties: {}, required: [] },
+        input_schema: {
+            type: "object",
+            properties: {
+                targetKind: {
+                    type: "string",
+                    description:
+                        "Which layers: 'selected' (default), 'name', 'index' or 'label'. Use " +
+                        "list_layers to see what is in the comp.",
+                },
+                targetValue: {
+                    type: "string",
+                    description:
+                        "The layer name, the 1-based index, or the label number — whichever targetKind " +
+                        "says. Leave out for 'selected'.",
+                },
+            },
+            required: [],
+        },
     },
     {
         name: "set_expression",
@@ -362,6 +479,18 @@ export const TOOLS: ToolDef[] = [
                     type: "string",
                     description:
                         "The expression, in After Effects expression language. Empty string clears it.",
+                },
+                targetKind: {
+                    type: "string",
+                    description:
+                        "Which layers: 'selected' (default), 'name', 'index' or 'label'. Use " +
+                        "list_layers to see what is in the comp.",
+                },
+                targetValue: {
+                    type: "string",
+                    description:
+                        "The layer name, the 1-based index, or the label number — whichever targetKind " +
+                        "says. Leave out for 'selected'.",
                 },
             },
             required: ["effectMatchName", "propertyMatchName", "expression"],
@@ -757,8 +886,118 @@ export async function runTool(name: string, input: any): Promise<ToolResult> {
             return { ok: true, data: { ...report, safety: write.safety } };
         }
 
+        case "list_layers": {
+            const res = (await evalTS("agentListLayers").catch(() => undefined)) as
+                | { success: boolean; error?: string; comp?: string; layerCount?: number; layers?: any[] }
+                | undefined;
+            if (res === undefined) return { ok: false, reason: "No bridge to After Effects — can't read the comp." };
+            if (!res.success) return { ok: false, reason: res.error || "Couldn't read the layers." };
+            return { ok: true, data: { comp: res.comp, layerCount: res.layerCount, layers: res.layers } };
+        }
+
+        case "find_expression": {
+            const res = (await evalTS("expressionsBankLoad").catch(() => undefined)) as
+                | { success: boolean; error?: string; message?: string }
+                | undefined;
+            if (res === undefined) return mockOr({ ok: true, data: { entries: [] } });
+            if (!res.success) return { ok: false, reason: res.error || "Couldn't read the Expressions Bank." };
+
+            let entries: any[] = [];
+            try {
+                // The host hands back the stored JSON verbatim rather than
+                // re-serialising it, so unknown fields from a newer panel
+                // survive. Parsing is this side's job.
+                entries = JSON.parse(res.message || "[]") || [];
+            } catch {
+                return { ok: false, reason: "The Expressions Bank is stored in a format I couldn't read." };
+            }
+
+            const q = typeof input?.query === "string" ? input.query.trim().toLowerCase() : "";
+            if (!q) {
+                // NO CODE without a query. The bank can hold dozens of
+                // expressions and every tool result is re-sent on each later
+                // call in the turn — an index costs a line each, the bodies
+                // would cost the conversation.
+                return {
+                    ok: true,
+                    data: {
+                        count: entries.length,
+                        entries: entries.map((e) => ({ name: e.name, tag: e.tag, description: e.description })),
+                        note: "Names and tags only. Search with a query to get the code.",
+                    },
+                };
+            }
+
+            const hits = entries.filter((e) => {
+                const hay = [e.name, e.tag, e.description].join(" ").toLowerCase();
+                return hay.indexOf(q) !== -1;
+            });
+            const CAP = 5;
+            return {
+                ok: true,
+                data: {
+                    matched: hits.length,
+                    entries: hits.slice(0, CAP).map((e) => ({
+                        name: e.name,
+                        tag: e.tag,
+                        description: e.description,
+                        code: e.code,
+                    })),
+                    truncated: hits.length > CAP ? hits.length - CAP : undefined,
+                },
+            };
+        }
+
+        case "find_screen": {
+            const res = (await evalTS("bespokeTemplateList").catch(() => undefined)) as
+                | { success: boolean; read?: boolean; error?: string; templates?: any[] }
+                | undefined;
+            if (res === undefined) return mockOr({ ok: true, data: { screens: [] } });
+            if (!res.success) return { ok: false, reason: res.error || "Couldn't read the screen library." };
+            // `read` false means the share could not be reached. An empty
+            // library and an unreachable one are different answers, and only
+            // one of them means "nobody has built this".
+            if (res.read === false) {
+                return { ok: false, reason: "The team share isn't reachable, so I can't tell whether this screen exists. Not the same as it not existing." };
+            }
+
+            const all = res.templates || [];
+            const q = typeof input?.query === "string" ? input.query.trim().toLowerCase() : "";
+            const w = typeof input?.width === "number" ? Math.round(input.width) : null;
+            const h = typeof input?.height === "number" ? Math.round(input.height) : null;
+
+            const hits = all.filter((t) => {
+                if (w !== null && Math.round(t.canvasW) !== w) return false;
+                if (h !== null && Math.round(t.canvasH) !== h) return false;
+                if (!q) return true;
+                return [t.name, t.site, t.territory].join(" ").toLowerCase().indexOf(q) !== -1;
+            });
+
+            return {
+                ok: true,
+                data: {
+                    matched: hits.length,
+                    libraryTotal: all.length,
+                    screens: hits.slice(0, 10).map((t) => ({
+                        name: t.name,
+                        territory: t.territory,
+                        site: t.site,
+                        canvas: `${t.canvasW}x${t.canvasH}`,
+                        regions: (t.slots || []).length,
+                        savedBy: t.savedBy,
+                    })),
+                    // The geometry is deliberately absent: it is the panel's to
+                    // load, not the conversation's to carry.
+                    note: hits.length
+                        ? "Open It's Bespokin' Time and load one from the library to use its layout."
+                        : undefined,
+                },
+            };
+        }
+
         case "list_effects": {
-            const res = (await evalTS("agentListEffects").catch(() => undefined)) as
+            const [lek, lev] = targetArgs(input || {});
+            const res = (await evalTS("agentListEffects", lek, lev).catch(() => undefined)) as
                 | { success: boolean; error?: string; comp?: string; expressionEngine?: string; layers?: any[] }
                 | undefined;
             if (res === undefined) return { ok: false, reason: "No bridge to After Effects — can't read the layer." };
@@ -1029,6 +1268,20 @@ async function loadJobs(): Promise<{ ok: true; res: Awaited<ReturnType<typeof fe
  * to send or a string explaining what is wrong with the input, so validation
  * and marshalling stay together and the gate is passed exactly once.
  */
+/**
+ * The two flat scalars every selection-based write tool ends with.
+ *
+ * Flat, not an object, because they cross the bridge — a nested selector would
+ * lose its values in transit (CLAUDE.md section 2). Defaults to the selection,
+ * which is what an artist has in their hands and what these tools have always
+ * meant.
+ */
+function targetArgs(i: any): [string, string] {
+    const kind = typeof i.targetKind === "string" && i.targetKind ? i.targetKind : "selected";
+    const value = i.targetValue == null ? "" : String(i.targetValue);
+    return [kind, value];
+}
+
 const WRITE_TOOLS: Record<
     string,
     {
@@ -1065,7 +1318,7 @@ const WRITE_TOOLS: Record<
             if (!name) return "precompose_selected needs a name for the precomp.";
             // Defaults to true, which is both AE's default and the only legal
             // value for more than one layer.
-            return [name, i.moveAllAttributes !== false];
+            return [name, i.moveAllAttributes !== false, ...targetArgs(i)];
         },
     },
     add_solid: {
@@ -1099,7 +1352,7 @@ const WRITE_TOOLS: Record<
         args: (i) => {
             const name = typeof i.name === "string" ? i.name.trim() : "";
             if (!name) return "rename_selected needs a name.";
-            return [name];
+            return [name, ...targetArgs(i)];
         },
     },
     label_selected: {
@@ -1109,13 +1362,13 @@ const WRITE_TOOLS: Record<
             if (typeof i.label !== "number" || !isFinite(i.label)) {
                 return "label_selected needs a label number from 0 (none) to 16.";
             }
-            return [i.label];
+            return [i.label, ...targetArgs(i)];
         },
     },
     duplicate_selected: {
         safety: "undoable",
         backend: "agentDuplicateSelected",
-        args: () => [],
+        args: (i) => [...targetArgs(i)],
     },
     set_expression: {
         safety: "undoable",
@@ -1128,7 +1381,7 @@ const WRITE_TOOLS: Record<
             // An empty expression is legal: it clears one. Only a missing field
             // is an error, which is why this checks the type and not the value.
             if (typeof i.expression !== "string") return "set_expression needs an expression string.";
-            return [fx, prop, i.expression];
+            return [fx, prop, i.expression, ...targetArgs(i)];
         },
     },
     set_comp_duration: {
