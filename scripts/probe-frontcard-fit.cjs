@@ -32,7 +32,13 @@ function textLayer(name, text, opts = {}) {
   const L = {
     name,
     property: () => ({
-      get value() { return Object.assign(Object.create(null), doc); },
+      // A TextDocument stringifies to its own text in AE, and readText relies
+      // on that -- so the mock has to as well.
+      get value() {
+        const copy = Object.assign({}, doc);
+        copy.toString = function () { return doc.text; };
+        return copy;
+      },
       setValue(v) {
         if (typeof v === "string") { doc.text = v; return; }
         doc.fontSize = v.fontSize; doc.boxTextSize = v.boxTextSize; doc.boxTextPos = v.boxTextPos;
@@ -59,6 +65,12 @@ function scene(title, opts) {
   const inner = [];
   for (let i = 1; i <= 16; i++) inner.push(textLayer("t" + i, "x", { boxText: false }));
   inner[1] = { name: "XYi_Logo_V20_[0000-0250].png", property: () => ({ value: "", setValue() {} }) };
+  // Layers the reader also reads: campaignLine (5), territory (4), date (3),
+  // artwork (7)... index 8 is the title. Give them plain strings.
+  for (let i = 0; i < 16; i++) if (i !== 1 && i !== 7) {
+    let v = "";
+    inner[i] = { name: "t" + (i + 1), property: () => ({ get value() { return v; }, setValue(x) { v = String(x); } }) };
+  }
   inner[7] = t;
   const source = { layer: (n) => inner[n - 1], numLayers: 16 };
   const fc = { name: "Frontcard", source, property: () => ({ value: "", setValue() {} }) };
@@ -143,6 +155,41 @@ console.log("\n=== point text has no box to grow ===");
 {
   const g = run("point text", "FORGOTTEN ISLAND", { boxText: false, boxWidth: 300, boxHeight: 80, fontSize: 60 });
   check("left completely alone", g.after.w === g.before.w && g.after.size === g.before.size);
+}
+
+console.log("\n=== reading the card: is that a real title or the template's slot? ===");
+function readWith(title, projPath) {
+  const sc = scene("x", { boxWidth: 600, boxHeight: 120, fontSize: 60 });
+  sc.t._doc.text = title;
+  const project = projPath === null ? {} : { file: { toString: () => projPath, fsName: projPath } };
+  const { api } = loadBundle(sc.comp, { project });
+  const r = api.frontcardReadFields();
+  if (!r.success) console.log("      (read failed: " + r.error + ")");
+  return r;
+}
+const CAMPAIGN = "/Volumes/universal/Universal_Pictures/Forgotten_Island/Digital/INT/Batch_01/x.aep";
+{
+  const r = readWith("Film Title", CAMPAIGN);
+  check("'Film Title' is recognised as the template's slot", r.titlePlaceholder === true, JSON.stringify(r.titlePlaceholder));
+  check("and the campaign folder gives the title", r.derived && r.derived.title === "Forgotten Island", r.derived && r.derived.title);
+}
+{
+  const r = readWith("", CAMPAIGN);
+  check("an empty title counts as unfilled too", r.titlePlaceholder === true);
+}
+{
+  const r = readWith("Forgotten Island", CAMPAIGN);
+  check("a real title is left alone", r.titlePlaceholder === false, JSON.stringify(r.titlePlaceholder));
+}
+{
+  const r = readWith("Film Title", "/Users/antonio/Desktop/FID_INTL_MultipleArt_DOOH_1080x1526px_10s_DE_V01.aep");
+  check("a project outside a campaign folder derives NOTHING",
+        r.derived && r.derived.title === "", "got: " + (r.derived && r.derived.title));
+  check("and says so in unresolved", (r.unresolved || []).indexOf("title") !== -1, JSON.stringify(r.unresolved));
+}
+{
+  const r = readWith("Film Title", null);
+  check("an unsaved project derives nothing", r.derived && r.derived.title === "", r.derived && r.derived.title);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

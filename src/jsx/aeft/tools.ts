@@ -993,6 +993,24 @@ function frontcardTargets(comp: CompItem): FrontcardTarget[] {
   return out;
 }
 
+/**
+ * The brand template's own unfilled title, as it ships.
+ *
+ * Kept here rather than in the panel because every other fact about the
+ * template's text layers lives on this side, and a second copy in the React
+ * code is one more thing to forget when the template changes.
+ */
+const FRONTCARD_TITLE_PLACEHOLDERS = ["film title", "title", "campaign title"];
+
+function isFrontcardTitlePlaceholder(current: string): boolean {
+  const v = String(current == null ? "" : current).replace(/^\s+|\s+$/g, "").toLowerCase();
+  if (v === "") return true;
+  for (let i = 0; i < FRONTCARD_TITLE_PLACEHOLDERS.length; i++) {
+    if (v === FRONTCARD_TITLE_PLACEHOLDERS[i]) return true;
+  }
+  return false;
+}
+
 function frontcardSet(target: FrontcardTarget, which: string, value: string): string {
   const idx = (target.idx as any)[which];
   if (!idx) return "";
@@ -1132,6 +1150,9 @@ export interface FrontcardFields {
   derived?: { title: string; artwork: string; version: string; campaign: string; duration: string; territory: string; date: string };
   /** Derived fields the name couldn't answer. */
   unresolved?: string[];
+  /** True when the card's title is still the brand template's unfilled slot,
+   *  so the panel can offer the campaign instead of echoing "Film Title". */
+  titlePlaceholder?: boolean;
   territoryToken?: string;
   countries?: { name: string; code: string }[];
   /** Set when the values were derived from a DIFFERENT comp's name than the
@@ -1168,10 +1189,21 @@ export const frontcardReadFields = (): FrontcardFields => {
     const year = String(today.getFullYear()).slice(2, 4);
     const fullDate = (day < 10 ? "0" : "") + day + "." + (month < 10 ? "0" : "") + month + "." + year;
 
+    // THE CAMPAIGN FOLDER, which is what the title actually is:
+    //   /Volumes/.../Forgotten_Island/Digital/INT/...  ->  "Forgotten Island"
+    //
+    // GUARDED ON "/Digital" BEING THERE. split() returns the whole string when
+    // the separator is absent, so a project saved anywhere else took the last
+    // path segment -- the .aep FILENAME -- and offered
+    // "FID INTL MultipleArt DOOH MotionPoster 1080x1526px 10s DE V01.aep" as a
+    // film title. An empty derivation is honest and lands in `unresolved`; that
+    // one looks like an answer.
     let derivedTitle = "";
     if (app.project.file) {
       const projPath = String(app.project.file);
-      derivedTitle = projPath.split("/Digital")[0].split("/").slice(-1)[0].split("_").join(" ");
+      if (projPath.indexOf("/Digital") !== -1) {
+        derivedTitle = projPath.split("/Digital")[0].split("/").slice(-1)[0].split("_").join(" ");
+      }
     }
 
     const unresolved: string[] = [];
@@ -1196,6 +1228,14 @@ export const frontcardReadFields = (): FrontcardFields => {
       success: true,
       frontcards: targets.length,
       compName: name,
+      // IS THE CARD'S TITLE STILL THE TEMPLATE'S PLACEHOLDER? Cheeky DT prefills
+      // from what the card says, on the principle that you are correcting
+      // reality rather than re-deriving from a filename that may be wrong. A
+      // placeholder is not reality: nobody chose it, it is the brand template's
+      // unfilled slot, and offering it as the current value is how "FILM TITLE"
+      // reaches a deliverable. Reported rather than silently swapped, so the
+      // panel decides what to do with it and the rule stays visible.
+      titlePlaceholder: isFrontcardTitlePlaceholder(readText(t0, "title")),
       current: {
         title: readText(t0, "title"),
         artwork: readText(t0, "artwork"),
