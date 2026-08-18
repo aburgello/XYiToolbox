@@ -58,10 +58,17 @@
     bottom: 70px;              // clears the FAB
     z-index: 1500;
 
+    // Defaults only -- AgentBubble.tsx sets width/height inline once the panel
+    // has been resized, and clamps to the window itself. These caps stay as the
+    // backstop for the default size and for a first run with nothing stored.
     width: 380px;
     max-width: calc(100vw - 36px);
     height: 520px;
-    max-height: 72vh;
+    // Was 72vh. A stored height taller than that would have been silently
+    // capped, so the drag handle would come away from the cursor and keep
+    // going -- the box stopping while the pointer carries on is the tell that
+    // CSS and JS disagree about the maximum. Matches clampSize()'s own limit.
+    max-height: calc(100vh - 90px);
 
     display: flex;
     flex-direction: column;
@@ -87,6 +94,37 @@
         pointer-events: auto;
         transform: translateY(0);
         transition: opacity 140ms ease, transform 140ms ease, visibility 0s;
+    }
+}
+
+/* THE RESIZE HANDLE.
+
+   Top-left, because the panel is pinned bottom-right and that is the only
+   corner with room to travel. It sits ABOVE the header (z-index) so the corner
+   stays grabbable rather than being covered by the title.
+
+   Deliberately not `resize: both` on the panel: the UA handle only ever appears
+   bottom-right, which here is the corner welded to the screen edge, and it
+   needs `overflow` other than hidden -- which this panel relies on to clip its
+   own rounded corners. */
+.agent-bubble-resize {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 16px;
+    height: 16px;
+    z-index: 2;
+    cursor: nwse-resize;
+    // A quiet corner mark rather than a control: two hairlines that read as a
+    // grip when you are looking for one and disappear when you are not.
+    background:
+        linear-gradient(to right,  rgba(255, 255, 255, 0.28) 0 7px, transparent 7px) top left / 7px 1px no-repeat,
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.28) 0 7px, transparent 7px) top left / 1px 7px no-repeat;
+
+    &:hover {
+        background:
+            linear-gradient(to right,  rgba(255, 255, 255, 0.6) 0 11px, transparent 11px) top left / 11px 1px no-repeat,
+            linear-gradient(to bottom, rgba(255, 255, 255, 0.6) 0 11px, transparent 11px) top left / 1px 11px no-repeat;
     }
 }
 

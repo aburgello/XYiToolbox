@@ -17,10 +17,35 @@
 // second" should not be destructive. It is lazily mounted on first open, so an
 // artist who never uses it never pays for it.
 // =============================================================================
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Bot, X } from "lucide-react";
 import AgentChat from "./tools/AgentChat";
 import "./AgentBubble.scss";
+
+const SIZE_KEY = "xyi.agent.panelSize";
+const DEFAULT_W = 380;
+const DEFAULT_H = 520;
+// Below this the transcript stops being readable and the input has nowhere to
+// go; the panel would still "work" and be useless.
+const MIN_W = 300;
+const MIN_H = 260;
+
+/**
+ * Held inside the window, with room for the margins the panel is pinned by.
+ *
+ * Clamped in JS rather than left to the stylesheet's max-width/max-height: a
+ * CSS cap would stop the box growing but not the drag, so the corner would
+ * detach from the cursor and keep travelling. The stylesheet's caps stay as a
+ * backstop for the default size.
+ */
+function clampSize(w: number, h: number): { w: number; h: number } {
+    const maxW = Math.max(MIN_W, window.innerWidth - 36);
+    const maxH = Math.max(MIN_H, window.innerHeight - 90);
+    return {
+        w: Math.round(Math.min(Math.max(w, MIN_W), maxW)),
+        h: Math.round(Math.min(Math.max(h, MIN_H), maxH)),
+    };
+}
 
 const AgentBubble: React.FC = () => {
     const [open, setOpen] = useState(false);
@@ -30,6 +55,67 @@ const AgentBubble: React.FC = () => {
     // do this job -- the panel is hidden with CSS rather than unmounted, so it
     // only ever mounts once.
     const [focusKey, setFocusKey] = useState(0);
+
+    // --- size ---------------------------------------------------------------
+    // Kept in localStorage, matching provider.ts's deliberate choice to keep
+    // this whole experiment out of src/jsx. A panel size is a per-machine
+    // preference anyway; it has no business travelling with a team profile.
+    const [size, setSize] = useState<{ w: number; h: number }>(() => {
+        try {
+            const raw = window.localStorage.getItem(SIZE_KEY);
+            if (raw) {
+                const v = JSON.parse(raw);
+                if (v && typeof v.w === "number" && typeof v.h === "number") return clampSize(v.w, v.h);
+            }
+        } catch { /* private mode, or nothing saved -- the default is fine */ }
+        return { w: DEFAULT_W, h: DEFAULT_H };
+    });
+
+    // Mouse events, not pointer events: the macOS AE CEP host does not dispatch
+    // Pointer Events reliably, which is this codebase's standing rule for
+    // anything beyond a plain click.
+    const dragRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
+
+    const startResize = (e: React.MouseEvent) => {
+        dragRef.current = { x: e.clientX, y: e.clientY, w: size.w, h: size.h };
+        e.preventDefault();
+    };
+
+    useEffect(() => {
+        const move = (e: MouseEvent) => {
+            const d = dragRef.current;
+            if (!d) return;
+            // THE PANEL IS PINNED BOTTOM-RIGHT, so it grows up and to the LEFT:
+            // dragging the handle left (negative dx) has to make it WIDER, not
+            // narrower. Getting this backwards is the classic version of this
+            // bug, and it feels like the panel fighting the cursor.
+            setSize(clampSize(d.w - (e.clientX - d.x), d.h - (e.clientY - d.y)));
+        };
+        const up = () => {
+            if (!dragRef.current) return;
+            dragRef.current = null;
+            // Saved on RELEASE, not on every move: a drag fires mousemove
+            // dozens of times a second and localStorage writes are synchronous.
+            setSize((s) => {
+                try { window.localStorage.setItem(SIZE_KEY, JSON.stringify(s)); } catch { /* session only */ }
+                return s;
+            });
+        };
+        window.addEventListener("mousemove", move);
+        window.addEventListener("mouseup", up);
+        return () => {
+            window.removeEventListener("mousemove", move);
+            window.removeEventListener("mouseup", up);
+        };
+    }, []);
+
+    // A window that shrinks below a stored size would otherwise leave the panel
+    // hanging off the edge, and the handle with it.
+    useEffect(() => {
+        const onResize = () => setSize((s) => clampSize(s.w, s.h));
+        window.addEventListener("resize", onResize);
+        return () => window.removeEventListener("resize", onResize);
+    }, []);
     // The header node AgentChat renders its status controls into. See the slot
     // in the markup below for why this is state and not a ref.
     const [headSlot, setHeadSlot] = useState<HTMLElement | null>(null);
@@ -45,7 +131,21 @@ const AgentBubble: React.FC = () => {
     return (
         <>
             {mounted && (
-                <div className={"agent-bubble-panel" + (open ? " is-open" : "")} aria-hidden={!open}>
+                <div
+                    className={"agent-bubble-panel" + (open ? " is-open" : "")}
+                    aria-hidden={!open}
+                    style={{ width: size.w, height: size.h }}
+                >
+                    {/* TOP-LEFT, because the panel is pinned bottom-right and
+                        that is the only corner with anywhere to go. A handle on
+                        the bottom-right would be dragging against the two edges
+                        the panel is anchored to. */}
+                    <span
+                        className="agent-bubble-resize"
+                        onMouseDown={startResize}
+                        title="Drag to resize"
+                        aria-hidden="true"
+                    />
                     <div className="agent-bubble-head">
                         <span className="agent-bubble-title"><Bot size={14} /> Ask</span>
                         {/* AgentChat portals its key button and running cost in
