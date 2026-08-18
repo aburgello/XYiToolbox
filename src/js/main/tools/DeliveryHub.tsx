@@ -859,12 +859,19 @@ const DeliveryHubTool = () => {
                         <motion.div
                             key="clear-wrap"
                             initial={{ width: 0, opacity: 0, marginLeft: 0 }}
-                            // TWO buttons live in here, each 28px, with a 6px gap
-                            // between them -- so 62, not 28. Animating to one
-                            // button's width while overflow:hidden clipped the
-                            // second, which read as the two icons sitting on top
-                            // of each other rather than side by side.
-                            animate={{ width: 62, opacity: 1, marginLeft: 6 }}
+                            // "auto", NOT A PIXEL COUNT. This was 62 -- two 28px
+                            // icon buttons and a 6px gap -- and before that 28,
+                            // which clipped the second button so the two icons
+                            // looked stacked. It broke a third time the moment
+                            // one of them gained a text label: overflow:hidden
+                            // cut "Read specs" to "ead specs" and slid the bin
+                            // icon over the top of it.
+                            //
+                            // Three breakages of the same kind is the measure
+                            // saying it is the wrong measure. The width of this
+                            // strip is whatever its contents are, and Framer
+                            // measures that itself.
+                            animate={{ width: "auto", opacity: 1, marginLeft: 6 }}
                             exit={{ width: 0, opacity: 0, marginLeft: 0 }}
                             transition={{ duration: 0.15, ease: "easeOut" }}
                             style={{ overflow: "hidden", flexShrink: 0, display: "flex", gap: 6 }}

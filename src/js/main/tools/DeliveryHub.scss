@@ -995,9 +995,15 @@
 // The one spec button carries a label: two unlabelled glyphs side by side told
 // nobody which read the sheet and which filled the rows.
 .dh-readspecs {
+    // `width: auto` overrides .dh-icon-btn's square sizing; flex-shrink: 0 stops
+    // the toolbar squeezing the label into an ellipsis when the panel is docked
+    // narrow, which is the failure this button already had once.
     width: auto;
+    flex: none;
     gap: 6px;
     padding: 0 10px;
+    white-space: nowrap;
 
     span { font-size: 11px; white-space: nowrap; }
+    svg { flex: none; }
 }
