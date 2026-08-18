@@ -202,6 +202,26 @@ export const TOOLS: ToolDef[] = [
         },
     },
     {
+        name: "create_comp",
+        description:
+            "Create a new empty composition in the artist's open After Effects project. Undoable with " +
+            "one Ctrl+Z and touches nothing on disk — it adds a comp to the project panel and nothing " +
+            "else. It does not open or select the comp. Say what you made and that one undo reverses " +
+            "it. If the artist has not said a frame rate or duration, ask rather than assuming: 25fps " +
+            "is this studio's usual but a wrong comp is still a wrong comp.",
+        input_schema: {
+            type: "object",
+            properties: {
+                name: { type: "string", description: "The comp's name, as it will appear in the project panel." },
+                width: { type: "number", description: "Width in pixels." },
+                height: { type: "number", description: "Height in pixels." },
+                frameRate: { type: "number", description: "Frames per second, e.g. 25." },
+                seconds: { type: "number", description: "Duration in seconds." },
+            },
+            required: ["name", "width", "height", "frameRate", "seconds"],
+        },
+    },
+    {
         name: "locate_campaign",
         description:
             "Find which campaign owns a filename token. Deliverable names carry a campaign token " +
@@ -542,6 +562,62 @@ export async function runTool(name: string, input: any): Promise<ToolResult> {
             return { ok: true, data: { opened: nav.label, pressed: nav.pressed } };
         }
 
+        case "create_comp": {
+            // THE WRITE GATE. Separate from run_action's, because these are a
+            // different kind of thing: run_action presses a button somebody
+            // already built and graded, this calls a parameterised write
+            // function. Same fail-closed shape though -- a write tool not on
+            // this list is not callable, so adding a function to
+            // agentWrites.ts does not by itself make it reachable.
+            const write = WRITE_TOOLS[name];
+            if (!write) {
+                return { ok: false, reason: `"${name}" is not a write tool I'm allowed to run.` };
+            }
+
+            if (!input || typeof input.name !== "string" || !input.name.trim()) {
+                return { ok: false, reason: "create_comp needs a name for the comp." };
+            }
+            // Checked here AND in ExtendScript. Not redundant: this one gives
+            // the model a correctable error without a bridge round trip, and
+            // the host one is the gate that actually holds, since it is the
+            // only side that cannot be talked out of it.
+            for (const k of ["width", "height", "frameRate", "seconds"]) {
+                if (typeof input[k] !== "number" || !isFinite(input[k]) || input[k] <= 0) {
+                    return { ok: false, reason: `create_comp needs a positive number for ${k}.` };
+                }
+            }
+
+            const res = (await evalTS(
+                "agentCreateComp",
+                input.name.trim(),
+                input.width,
+                input.height,
+                input.frameRate,
+                input.seconds
+            ).catch(() => undefined)) as
+                | { success: boolean; error?: string; name?: string; width?: number; height?: number; frameRate?: number; seconds?: number; undo?: string }
+                | undefined;
+
+            if (res === undefined) return { ok: false, reason: "No bridge to After Effects — nothing was created." };
+            if (!res.success) return { ok: false, reason: res.error || "Couldn't create the comp." };
+
+            return {
+                ok: true,
+                data: {
+                    created: res.name,
+                    // Read back off the comp host-side, not echoed from the
+                    // request: AE quantises duration to the frame, and the
+                    // agent should report what exists rather than what it asked
+                    // for.
+                    size: `${res.width}x${res.height}`,
+                    frameRate: res.frameRate,
+                    seconds: res.seconds,
+                    undo: res.undo,
+                    safety: write.safety,
+                },
+            };
+        }
+
         case "locate_campaign": {
             if (!input || typeof input.token !== "string" || !input.token.trim()) {
                 return { ok: false, reason: "locate_campaign needs a campaign token from a deliverable's filename." };
@@ -771,6 +847,27 @@ async function loadJobs(): Promise<{ ok: true; res: Awaited<ReturnType<typeof fe
         return { ok: false, reason: `Couldn't reach the jobs feed: ${e?.message || e}` };
     }
 }
+
+/**
+ * THE PARAMETERISED WRITE TOOLS, and the whole list of them.
+ *
+ * A second, deliberately separate safety surface from ACTIONS' `safety` field.
+ * Those grade buttons somebody already built; these are functions in
+ * agentWrites.ts that take arguments from a language model and change the open
+ * project. Keeping the two lists apart means neither can quietly inherit the
+ * other's permissiveness.
+ *
+ * FAIL-CLOSED, like everything else here: a case in the dispatch below is not
+ * enough on its own — a write tool absent from this map is refused, so adding a
+ * function to agentWrites.ts does not by itself make it reachable.
+ *
+ * `undoable` is the only tier that belongs here. Anything whose worst case is
+ * more than one Ctrl+Z is not a thing the agent does; it is a thing the agent
+ * opens the panel for.
+ */
+const WRITE_TOOLS: Record<string, { safety: "undoable" }> = {
+    create_comp: { safety: "undoable" },
+};
 
 /**
  * May the agent run this one-click action?

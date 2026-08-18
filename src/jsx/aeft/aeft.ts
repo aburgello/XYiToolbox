@@ -40,3 +40,7 @@ export * from "./effects";
 export * from "./team";
 export * from "./preflight";
 export * from "./wordGame";
+// The Ask agent's write surface. Its own file on purpose -- see its header:
+// "what can the agent do to my project?" should be answerable by reading one
+// file, and that stops being true the moment these are scattered.
+export * from "./agentWrites";
