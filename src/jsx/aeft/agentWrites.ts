@@ -906,3 +906,157 @@ export const agentListLayers = (): ListLayersResult => {
     return { success: false, error: e.toString() };
   }
 };
+
+/**
+ * A text layer, optionally sized and coloured.
+ *
+ * FONT FAMILY IS DELIBERATELY NOT SETTABLE. Assigning a font AE does not have
+ * does not throw -- it silently substitutes, and the layer looks fine until
+ * somebody who knows the brand sees the render. A tool that can quietly ship
+ * the wrong typeface is worse than one that makes you set it yourself, so this
+ * creates the layer and leaves the font to the artist and their character
+ * panel.
+ */
+export const agentAddTextLayer = (
+  text: string,
+  fontSize: number,
+  hexColour: string
+): AddLayerResult => {
+  try {
+    const comp = activeComp();
+    if (!comp) return needComp();
+
+    const body = String(text == null ? "" : text);
+
+    // Validated BEFORE the undo group opens, so a bad argument never creates a
+    // layer that then has to be undone.
+    let size = 0;
+    if (fontSize != null && String(fontSize) !== "") {
+      size = Number(fontSize);
+      if (!(size > 0 && size <= 2000)) {
+        return { success: false, error: "Font size must be a number between 1 and 2000." };
+      }
+    }
+
+    let colour: number[] | null = null;
+    if (hexColour != null && String(hexColour) !== "") {
+      colour = parseHexColour(hexColour);
+      if (!colour) return { success: false, error: "Colour must be a hex value like #FFFFFF." };
+    }
+
+    app.beginUndoGroup("Ask: add text layer");
+    let layer: TextLayer;
+    try {
+      layer = comp.layers.addText(body) as TextLayer;
+
+      if (size || colour) {
+        // matchNames throughout, never display names -- "Source Text" is
+        // localised and the whole file exists to avoid that class of lookup.
+        const srcProp = layer
+          .property("ADBE Text Properties")
+          .property("ADBE Text Document") as Property;
+        // A TextDocument is read, mutated, and written BACK as a whole. Setting
+        // a field on the value in place does nothing: the value is a copy.
+        const doc = srcProp.value as TextDocument;
+        if (size) doc.fontSize = size;
+        if (colour) {
+          doc.applyFill = true;
+          doc.fillColor = colour;
+        }
+        srcProp.setValue(doc);
+      }
+    } finally {
+      app.endUndoGroup();
+    }
+    if (!layer) return { success: false, error: "After Effects did not create the text layer." };
+
+    return {
+      success: true,
+      name: layer.name,
+      kind: "text layer",
+      undo: "Ctrl+Z (Cmd+Z on Mac) once, in After Effects.",
+    };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/**
+ * A shape layer, optionally with one rectangle or ellipse in it.
+ *
+ * "none" makes an empty shape layer for the artist to draw in, which is a
+ * legitimate ask and the cheapest thing to get right. A rectangle or ellipse is
+ * built from matchNames -- there is no scripting shortcut for "add a red box",
+ * only the vector property tree.
+ */
+export const agentAddShapeLayer = (
+  name: string,
+  shape: string,
+  width: number,
+  height: number,
+  hexColour: string
+): AddLayerResult => {
+  try {
+    const comp = activeComp();
+    if (!comp) return needComp();
+
+    const kind = String(shape == null || shape === "" ? "none" : shape).toLowerCase();
+    if (kind !== "none" && kind !== "rectangle" && kind !== "ellipse") {
+      return { success: false, error: 'Shape must be "rectangle", "ellipse" or "none".' };
+    }
+
+    const layerName = String(name == null ? "" : name).replace(/^\s+|\s+$/g, "");
+
+    let w = 0;
+    let h = 0;
+    let colour: number[] | null = null;
+    if (kind !== "none") {
+      w = width == null || String(width) === "" ? Math.round(comp.width / 2) : Math.round(Number(width));
+      h = height == null || String(height) === "" ? Math.round(comp.height / 2) : Math.round(Number(height));
+      if (!(w >= 1 && w <= MAX_DIM)) return { success: false, error: "Width must be between 1 and " + MAX_DIM + "." };
+      if (!(h >= 1 && h <= MAX_DIM)) return { success: false, error: "Height must be between 1 and " + MAX_DIM + "." };
+
+      colour = parseHexColour(hexColour == null || String(hexColour) === "" ? "#FFFFFF" : hexColour);
+      if (!colour) return { success: false, error: "Colour must be a hex value like #FF0000." };
+    }
+
+    app.beginUndoGroup("Ask: add shape layer");
+    let layer: ShapeLayer;
+    try {
+      layer = comp.layers.addShape() as ShapeLayer;
+      if (layerName) layer.name = layerName;
+
+      if (kind !== "none") {
+        // Every one of these is a matchName. The vector tree has no stable
+        // display names across AE versions or languages, so a display-name
+        // lookup here would be the Auto AR bug again in a new place.
+        const root = layer.property("ADBE Root Vectors Group") as PropertyGroup;
+        const group = root.addProperty("ADBE Vector Group") as PropertyGroup;
+        const contents = group.property("ADBE Vectors Group") as PropertyGroup;
+
+        if (kind === "rectangle") {
+          const rect = contents.addProperty("ADBE Vector Shape - Rect") as PropertyGroup;
+          (rect.property("ADBE Vector Rect Size") as Property).setValue([w, h]);
+        } else {
+          const ell = contents.addProperty("ADBE Vector Shape - Ellipse") as PropertyGroup;
+          (ell.property("ADBE Vector Ellipse Size") as Property).setValue([w, h]);
+        }
+
+        const fill = contents.addProperty("ADBE Vector Graphic - Fill") as PropertyGroup;
+        (fill.property("ADBE Vector Fill Color") as Property).setValue(colour as number[]);
+      }
+    } finally {
+      app.endUndoGroup();
+    }
+    if (!layer) return { success: false, error: "After Effects did not create the shape layer." };
+
+    return {
+      success: true,
+      name: layer.name,
+      kind: kind === "none" ? "empty shape layer" : kind + " shape layer",
+      undo: "Ctrl+Z (Cmd+Z on Mac) once, in After Effects.",
+    };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};

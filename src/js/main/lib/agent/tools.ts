@@ -271,6 +271,51 @@ export const TOOLS: ToolDef[] = [
         },
     },
     {
+        name: "add_text_layer",
+        description:
+            "Add a text layer to the comp the artist has open. Font size and colour are optional; the " +
+            "FONT FAMILY cannot be set, because After Effects substitutes a missing font silently and " +
+            "the wrong typeface would ship looking fine — say so if they ask for a specific font, and " +
+            "tell them to set it in the character panel. Undoable with one Ctrl+Z.",
+        input_schema: {
+            type: "object",
+            properties: {
+                text: { type: "string", description: "The text to put in the layer." },
+                fontSize: { type: "number", description: "Optional point size." },
+                hexColour: { type: "string", description: "Optional fill colour as hex, e.g. #FFFFFF." },
+            },
+            required: ["text"],
+        },
+    },
+    {
+        name: "add_shape_layer",
+        description:
+            "Add a shape layer to the comp the artist has open — empty, or with one rectangle or " +
+            "ellipse in it. Defaults to half the comp's size and white. Undoable with one Ctrl+Z.",
+        input_schema: {
+            type: "object",
+            properties: {
+                name: { type: "string", description: "Optional name for the layer." },
+                shape: {
+                    type: "string",
+                    description: "'rectangle', 'ellipse', or 'none' for an empty shape layer. Defaults to none.",
+                },
+                width: { type: "number", description: "Optional. Defaults to half the comp width." },
+                height: { type: "number", description: "Optional. Defaults to half the comp height." },
+                hexColour: { type: "string", description: "Optional fill colour as hex. Defaults to white." },
+            },
+            required: [],
+        },
+    },
+    {
+        name: "preflight_project",
+        description:
+            "Run the panel's own Pre-Flight audit on the open project: missing footage, missing " +
+            "effects, and missing fonts. Read-only — it inspects and reports, and changes nothing. " +
+            "Use it when asked whether a project is ready to render or deliver.",
+        input_schema: { type: "object", properties: {}, required: [] },
+    },
+    {
         name: "add_adjustment_layer",
         description:
             "Add a comp-sized adjustment layer to the comp the artist has open. Undoable with one Ctrl+Z.",
@@ -843,6 +888,8 @@ export async function runTool(name: string, input: any): Promise<ToolResult> {
         case "create_comp":
         case "precompose_selected":
         case "add_solid":
+        case "add_text_layer":
+        case "add_shape_layer":
         case "add_adjustment_layer":
         case "add_null":
         case "rename_selected":
@@ -884,6 +931,32 @@ export async function runTool(name: string, input: any): Promise<ToolResult> {
             // verbatim is what keeps the agent honest about what exists.
             const { success, ...report } = res;
             return { ok: true, data: { ...report, safety: write.safety } };
+        }
+
+        case "preflight_project": {
+            const res = (await evalTS("preflightAudit").catch(() => undefined)) as
+                | { success: boolean; error?: string; report?: any }
+                | undefined;
+            if (res === undefined) return { ok: false, reason: "No bridge to After Effects — can't audit the project." };
+            if (!res.success || !res.report) return { ok: false, reason: res.error || "Couldn't audit the project." };
+
+            const r = res.report;
+            return {
+                ok: true,
+                data: {
+                    project: r.projectName,
+                    comps: r.compCount,
+                    footageItems: r.footageCount,
+                    missingFootage: (r.missingFootage || []).map((f: any) => ({ name: f.name, expectedAt: f.path })),
+                    missingEffects: (r.missingEffects || []).map((e: any) => ({ effect: e.label, usedIn: e.usedIn })),
+                    missingFonts: r.missingFonts || [],
+                    // NOT the same as "no missing fonts". A false here means the
+                    // check could not run, and reporting that as a clean bill is
+                    // exactly how the quietest of the three failures ships.
+                    fontsChecked: r.fontsChecked,
+                    fontsUsed: r.fontsUsed,
+                },
+            };
         }
 
         case "list_layers": {
@@ -1335,6 +1408,28 @@ const WRITE_TOOLS: Record<
             const h = typeof i.height === "number" ? i.height : null;
             return [name, hex, w, h];
         },
+    },
+    add_text_layer: {
+        safety: "undoable",
+        backend: "agentAddTextLayer",
+        args: (i) => {
+            if (typeof i.text !== "string") return "add_text_layer needs the text to put in the layer.";
+            // Empty strings pass through for size and colour: absent means
+            // "leave AE's default", which is different from an invalid value
+            // and must not be turned into one.
+            return [i.text, i.fontSize == null ? "" : i.fontSize, typeof i.hexColour === "string" ? i.hexColour : ""];
+        },
+    },
+    add_shape_layer: {
+        safety: "undoable",
+        backend: "agentAddShapeLayer",
+        args: (i) => [
+            typeof i.name === "string" ? i.name.trim() : "",
+            typeof i.shape === "string" ? i.shape : "none",
+            i.width == null ? "" : i.width,
+            i.height == null ? "" : i.height,
+            typeof i.hexColour === "string" ? i.hexColour : "",
+        ],
     },
     add_adjustment_layer: {
         safety: "undoable",
