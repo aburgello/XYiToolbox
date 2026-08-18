@@ -1,12 +1,20 @@
 // =============================================================================
 // src/jsx/aeft/agentWrites.ts
 // -----------------------------------------------------------------------------
-// THE ONLY FUNCTIONS THE ASK AGENT MAY CALL THAT CHANGE ANYTHING.
+// THE WRITE FUNCTIONS WRITTEN FOR THE ASK AGENT.
 //
-// Its own file so the answer to "what can the agent do to my project?" is one
-// file long. Everything else it holds reads, scans, navigates, or fills a form;
-// this is the whole of the other half, and it should stay short enough to read
-// in a sitting.
+// It used to say "the only functions the agent may call that change anything",
+// and that stopped being true the moment XYTools was wired up: align, fit,
+// fade, ease and the rest are pre-existing panel functions in motionTools.ts
+// that the agent now calls too. A header claiming to be exhaustive when it is
+// not is worse than one that does not claim it, so:
+//
+//   THE AUTHORITATIVE LIST IS WRITE_TOOLS in lib/agent/tools.ts. Nothing is
+//   agent-callable unless it appears there, whichever file it lives in.
+//
+// What this file still is: everything written specifically FOR the agent,
+// rather than wrapped from something the panel already did. Every rule below
+// applies to both kinds.
 //
 // WHAT MAKES THESE SAFE IS NOT THAT THEY ARE SMALL -- IT IS THAT WE WROTE THEM.
 // The alternative design is handing the model `runScript` and letting it author

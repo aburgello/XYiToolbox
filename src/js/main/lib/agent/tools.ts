@@ -439,6 +439,22 @@ export const TOOLS: ToolDef[] = [
         },
     },
     {
+        name: "apply_custom_ease",
+        description:
+            "Apply easing to the selected keyframes with influence you choose, for a shape the studio " +
+            "has not saved as a preset. Influence is 0.1 to 100 — higher is a longer, softer ease. " +
+            "Prefer a saved preset when one fits (list_ease_presets); use this when the artist asks " +
+            "for something specific like 'ease harder on the way out'. Undoable with one Ctrl+Z.",
+        input_schema: {
+            type: "object",
+            properties: {
+                inInfluence: { type: "number", description: "Ease influence on the incoming side, 0.1-100." },
+                outInfluence: { type: "number", description: "Ease influence on the outgoing side, 0.1-100." },
+            },
+            required: ["inInfluence", "outInfluence"],
+        },
+    },
+    {
         name: "trim_layers",
         description:
             "Trim the selected layers to the playhead, using XYTools. 'in' pulls the layer's start to " +
@@ -1046,6 +1062,7 @@ export async function runTool(name: string, input: any): Promise<ToolResult> {
         case "set_anchor":
         case "apply_ease":
         case "apply_ease_preset":
+        case "apply_custom_ease":
         case "trim_layers":
         case "set_comp_duration":
         case "set_expression": {
@@ -1760,6 +1777,18 @@ const WRITE_TOOLS: Record<
             const id = typeof i.id === "string" ? i.id.trim() : "";
             if (!id) return "apply_ease_preset needs a preset id — call list_ease_presets first.";
             return [id];
+        },
+    },
+    apply_custom_ease: {
+        safety: "undoable",
+        backend: "motionToolsApplyCustomEase",
+        args: (i) => {
+            for (const k of ["inInfluence", "outInfluence"]) {
+                if (typeof i[k] !== "number" || !isFinite(i[k]) || i[k] < 0.1 || i[k] > 100) {
+                    return `apply_custom_ease needs ${k} between 0.1 and 100.`;
+                }
+            }
+            return [i.inInfluence, i.outInfluence];
         },
     },
     trim_layers: {
