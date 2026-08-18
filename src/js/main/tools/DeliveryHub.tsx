@@ -1228,10 +1228,16 @@ const DeliveryHubTool = () => {
                             <AskAbout
                                 label="Check these specs"
                                 hint="Reads the sheet and the rows you have loaded, and says what looks wrong"
+                                // ASKS FOR THE ANSWER, NOT THE RECITAL. The first
+                                // wording invited a walk through every row of every
+                                // PDF and ran past the reply limit, so nothing at
+                                // all came back. One line per deliverable, then the
+                                // problems — the table is already on screen.
                                 question={
                                     "Check the spec sheet I have open in Delivery against the rows I've loaded. " +
-                                    "Go through each deliverable, say which spec row it matches, and tell me " +
-                                    "anything that looks wrong or contradictory in the sheet itself."
+                                    "One short line per deliverable saying which spec row it matches, then list " +
+                                    "only what looks wrong or contradictory. Don't restate the table — it's on " +
+                                    "screen in front of me."
                                 }
                             />
                         </div>

@@ -217,6 +217,10 @@ export function systemPrompt(): string {
         "WORTH SAYING OUT LOUD when you see it: rows on the same network that disagree, a column",
         "empty on some rows and filled on others, a bitrate and a file size that cannot both be true",
         "over the stated duration, a unit nobody wrote down.",
+        "KEEP IT SHORT WHEN THERE IS A LOT OF IT. A spec pack can be five PDFs and forty rows, and",
+        "the artist already has the table on screen -- reciting it back fills the reply limit and they",
+        "get nothing. Lead with what is WRONG, one line per deliverable, and offer the detail rather",
+        "than producing it unasked.",
         "QUOTE THE CELL when your answer came from free text, so the artist can see what you read it",
         "from. And never state a limit the sheet does not give -- \"row 3 does not say\" is the right",
         "answer there, not a number carried over from the row above. A delivery built to a cap the",
@@ -500,10 +504,38 @@ export async function ask(
             // that look like a failure when the navigation had actually worked,
             // so report what did happen and why the turn ended.
             const last = steps[steps.length - 1];
+
+            // RAN OUT OF ROOM IS ITS OWN ANSWER, and a different one. The old
+            // message read as "the tool worked but the model had nothing to
+            // say", which sent somebody looking at the tool. What actually
+            // happened is a long reply hitting the reply limit -- and asking
+            // the same question again just hits it again, so say what to do
+            // instead of implying it was a one-off.
+            if (reply.stopReason === "max_tokens") {
+                return {
+                    answer:
+                        (last && last.ok ? `${last.name} ran fine, but ` : "") +
+                        "the answer came out longer than one reply allows and was cut off before any " +
+                        "of it reached you. Ask for a smaller piece of it — one deliverable, or just " +
+                        "what looks wrong — rather than the whole sheet at once.",
+                    steps, costUsd: cost, usage: used, messages: messages.slice(turnStart),
+                };
+            }
+
+            // WHAT DID COME BACK, when it was not text. A reasoning-style block
+            // this loop does not render would otherwise vanish and look like an
+            // empty reply, and there would be nothing in the transcript to say
+            // which it was.
+            const kinds: string[] = [];
+            for (const b of reply.content as any[]) {
+                if (b && b.type && b.type !== "text" && kinds.indexOf(b.type) === -1) kinds.push(b.type);
+            }
+            const shrug = kinds.length ? ` It sent back ${kinds.join(", ")} and no text.` : "";
+
             const fallback =
                 last && last.ok
-                    ? `Done — ${last.name} ran, but I didn't get a summary back (turn ended: ${reply.stopReason}).`
-                    : `I didn't get an answer back (turn ended: ${reply.stopReason}).`;
+                    ? `Done — ${last.name} ran, but I didn't get a summary back (turn ended: ${reply.stopReason}).${shrug}`
+                    : `I didn't get an answer back (turn ended: ${reply.stopReason}).${shrug}`;
             return { answer: fallback, steps, costUsd: cost, usage: used, messages: messages.slice(turnStart) };
         }
 

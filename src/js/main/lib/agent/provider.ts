@@ -32,7 +32,12 @@ export interface ModelReply {
     usage: { input: number; output: number; cacheRead: number; cacheWrite: number; raw?: Record<string, unknown> };
 }
 
-const MAX_TOKENS = 2048;
+// The cap on ONE reply. Output is billed only for what is actually generated,
+// so a higher ceiling costs nothing until it is used -- and 2048 was being hit
+// by a genuinely reasonable answer: "go through each of these deliverables and
+// say what is wrong with the sheet" over three rows and five PDFs is a long
+// reply, and the turn was ending with nothing to show for the tokens.
+const MAX_TOKENS = 4096;
 
 // =============================================================================
 // WHERE THE MODEL LIVES -- swappable, because it turned out not to need a fork.
