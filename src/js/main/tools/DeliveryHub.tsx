@@ -8,6 +8,7 @@ import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import { evalTS } from "../../lib/utils/bolt";
 import { sfx } from "../../lib/utils/sfx";
 import { suggestForComp, readSpecReport, type SpecSuggestion, type SpecReport } from "../lib/deliverySpecMatch";
+import { setLoadedSpecReport } from "../lib/agent/deliveryContext";
 import { child_process } from "../../lib/cep/node";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
@@ -433,7 +434,12 @@ const DeliveryHubTool = () => {
         setReportBusy(true);
         setCheckError(null);
         try {
-            setReport(await readSpecReport(from));
+            const r = await readSpecReport(from);
+            setReport(r);
+            // PUBLISHED FOR THE AGENT. It cannot reach this folder on its own --
+            // the campaign sits beside the masters root rather than above it --
+            // so what is on screen is the only reliable copy.
+            setLoadedSpecReport(r);
         } catch (e) {
             setCheckError("Couldn't read the specs: " + String((e as Error).message || e));
         } finally {
@@ -846,7 +852,7 @@ const DeliveryHubTool = () => {
                                 <button
                                     className={"dh-icon-btn" + (report ? " is-on" : "")}
                                     disabled={checkBusy || reportBusy || rows.length === 0}
-                                    onClick={() => (report ? setReport(null) : runReport())}
+                                    onClick={() => { if (report) { setReport(null); setLoadedSpecReport(null); } else { runReport(); } }}
                                 >
                                     <FileText size={14} />
                                 </button>
@@ -1131,7 +1137,7 @@ const DeliveryHubTool = () => {
                         <div className="dh-specreport-head">
                             <FileText size={12} />
                             <span>{report.folder || "no specs folder"}</span>
-                            <button onClick={() => setReport(null)}><X size={11} /></button>
+                            <button onClick={() => { setReport(null); setLoadedSpecReport(null); }}><X size={11} /></button>
                         </div>
 
                         {report.note && <p className="dh-specreport-note">{report.note}</p>}

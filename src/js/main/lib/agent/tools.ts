@@ -24,6 +24,7 @@
 import { evalTS } from "../../../lib/utils/bolt";
 import { setPendingFill, takePendingFill } from "./fieldHandoff";
 import { readSpecReport } from "../deliverySpecMatch";
+import { getLoadedSpecReport } from "./deliveryContext";
 import { navigateToTool } from "./navigation";
 // The registry is the single source of truth for what may be filled;
 // capabilities.ts reads the same list to tell the model the field ids.
@@ -854,11 +855,13 @@ export const TOOLS: ToolDef[] = [
                 mastersRoot: {
                     type: "string",
                     description:
-                        "Any path inside the campaign — the mastersRoot from list_campaigns does. " +
-                        "The specs are found in Masters/Specs above it.",
+                        "Optional. Any path inside the campaign, to find the specs by walking up to " +
+                        "Masters/Specs. Leave it out when the artist already has the sheet open in " +
+                        "Delivery — that copy is used first and is more reliable, because a masters " +
+                        "root often sits BESIDE the campaign folder rather than inside it.",
                 },
             },
-            required: ["mastersRoot"],
+            required: [],
         },
     },
     {
@@ -1563,18 +1566,38 @@ export async function runTool(name: string, input: any): Promise<ToolResult> {
         }
 
         case "read_delivery_specs": {
-            if (!input || typeof input.mastersRoot !== "string" || !input.mastersRoot) {
-                return { ok: false, reason: "read_delivery_specs needs a path inside the campaign. Call list_campaigns first." };
+            // WHAT THE ARTIST HAS OPEN WINS. Delivery finds these by walking up
+            // from a RENDER path; the agent is given a mastersRoot, and on the
+            // studio's layout the campaign folder is a sibling of the masters
+            // folder rather than an ancestor -- so the walk cannot reach it and
+            // the agent used to insist there were no specs while they were
+            // parsed on screen beside it.
+            const onScreen = getLoadedSpecReport();
+            const root = input && typeof input.mastersRoot === "string" ? input.mastersRoot.trim() : "";
+            if (!onScreen && !root) {
+                return {
+                    ok: false,
+                    reason:
+                        "No spec sheet is open in Delivery, and no path was given. Either open the " +
+                        "specs there (the document button next to Load Comps), or pass a path inside " +
+                        "the campaign from list_campaigns.",
+                };
             }
-            const report = await readSpecReport(input.mastersRoot).catch((e) => ({
-                folder: "", files: [], note: "Couldn't read the specs: " + String(e && e.message ? e.message : e),
-            }));
+
+            const report = onScreen
+                ? onScreen
+                : await readSpecReport(root).catch((e) => ({
+                      folder: "", files: [], note: "Couldn't read the specs: " + String(e && e.message ? e.message : e),
+                  }));
             // The NOTE is returned even when there are no rows: "no specs folder
             // next to this campaign" and "the PDFs are unreadable prose" are
             // different answers, and an empty list conveys neither.
             return {
                 ok: true,
                 data: {
+                    // Said plainly, because it changes what the answer is worth:
+                    // the sheet in front of the artist, or one found by path.
+                    from: onScreen ? "the spec sheet open in Delivery" : "the campaign folder",
                     folder: report.folder,
                     note: report.note,
                     files: report.files.map((f) => ({
