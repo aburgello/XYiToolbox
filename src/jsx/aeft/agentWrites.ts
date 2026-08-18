@@ -494,3 +494,251 @@ export const agentSetCompDuration = (seconds: number): CompDurationResult => {
     return { success: false, error: e.toString() };
   }
 };
+
+// -----------------------------------------------------------------------------
+// EFFECTS AND EXPRESSIONS
+//
+// MATCHNAMES, NEVER DISPLAY NAMES, and this is the one rule everything here is
+// built around. Display names are localised and change between AE point
+// releases -- the Transform effect's uniform scale reports as "Scale" on AE
+// 26.2 and "Scale Height" on 26.3+, which returned null and silently skipped a
+// whole rig for months in two separate codebases (CLAUDE.md section 2). So the
+// read tool REPORTS matchNames and the write tool ADDRESSES by them: the pair
+// is the point, because a model cannot use a matchName it was never told.
+//
+// Expressions are a different risk class from ExtendScript and it is worth
+// being precise about why they are allowed here. An expression is evaluated by
+// AE's expression engine: it computes a property value and can do nothing else.
+// It cannot open, save, import or delete anything, it cannot reach the file
+// system, and a bad one disables itself with an error on the property rather
+// than damaging the project. It is also one undo. That is a genuinely smaller
+// blast radius than a script, not a smaller-looking one.
+// -----------------------------------------------------------------------------
+
+/** Deep enough for an effect's nested groups, shallow enough never to run away. */
+const MAX_PROP_DEPTH = 4;
+
+interface EffectProp {
+  name: string;
+  matchName: string;
+  value?: string;
+  canSetExpression?: boolean;
+  expression?: string;
+}
+interface EffectInfo {
+  name: string;
+  matchName: string;
+  properties: EffectProp[];
+}
+interface LayerEffects {
+  layer: string;
+  effects: EffectInfo[];
+}
+interface ListEffectsResult extends Result {
+  comp?: string;
+  /** "extendscript" or "javascript-1.0" -- decides what syntax is legal. */
+  expressionEngine?: string;
+  layers?: LayerEffects[];
+}
+
+/** A group has numProperties; a leaf does not. Duck-typed, never instanceof. */
+function isPropertyGroup(p: unknown): boolean {
+  return !!p && typeof (p as PropertyGroup).numProperties === "number";
+}
+
+/**
+ * Every settable property under a group, flattened.
+ *
+ * DOWNWARD ONLY. Never propertyGroup(1) to walk up -- that returns the PARENT
+ * and grows exponentially, and it froze AE solid the one time it was done in a
+ * collector (CLAUDE.md section 2).
+ */
+function collectProps(group: PropertyGroup, out: EffectProp[], depth: number): void {
+  if (depth > MAX_PROP_DEPTH) return;
+  const n = group.numProperties;
+  for (let i = 1; i <= n; i++) {
+    const p = group.property(i);
+    if (!p) continue;
+
+    if (isPropertyGroup(p)) {
+      collectProps(p as PropertyGroup, out, depth + 1);
+      continue;
+    }
+
+    const leaf = p as Property;
+    const info: EffectProp = { name: leaf.name, matchName: leaf.matchName };
+
+    // .value throws on some property types (custom value, layer selectors), and
+    // a value is a nicety here -- losing one must never cost the matchName,
+    // which is the part the caller actually needs.
+    try {
+      const v = leaf.value;
+      if (typeof v === "number") info.value = String(Math.round(v * 1000) / 1000);
+      else if (v && typeof (v as number[]).length === "number") {
+        const parts: string[] = [];
+        const arr = v as number[];
+        for (let k = 0; k < arr.length; k++) parts.push(String(Math.round(arr[k] * 1000) / 1000));
+        info.value = "[" + parts.join(", ") + "]";
+      }
+    } catch (e) { /* unreadable value; the matchName still stands */ }
+
+    try {
+      if (leaf.canSetExpression) {
+        info.canSetExpression = true;
+        if (leaf.expression) info.expression = leaf.expression;
+      }
+    } catch (e) { /* older property types can refuse the question */ }
+
+    out.push(info);
+  }
+}
+
+/**
+ * The effects on the selected layers, with the matchNames needed to address
+ * them. Read-only.
+ */
+export const agentListEffects = (): ListEffectsResult => {
+  try {
+    const comp = activeComp();
+    if (!comp) return needComp();
+
+    const layers = selectedLayers(comp);
+    if (layers.length === 0) return needSelection("inspect");
+
+    const out: LayerEffects[] = [];
+    for (let i = 0; i < layers.length; i++) {
+      const layer = layers[i];
+      // "ADBE Effect Parade" is the matchName for the Effects group. Asking for
+      // "Effects" by display name is the localised lookup this file exists to
+      // avoid.
+      const parade = layer.property("ADBE Effect Parade") as PropertyGroup;
+      const effects: EffectInfo[] = [];
+
+      if (parade && typeof parade.numProperties === "number") {
+        for (let e = 1; e <= parade.numProperties; e++) {
+          const fx = parade.property(e) as PropertyGroup;
+          if (!fx) continue;
+          const props: EffectProp[] = [];
+          collectProps(fx, props, 1);
+          effects.push({ name: fx.name, matchName: fx.matchName, properties: props });
+        }
+      }
+
+      out.push({ layer: layer.name, effects: effects });
+    }
+
+    return {
+      success: true,
+      comp: comp.name,
+      // WHICH DIALECT AN EXPRESSION MUST BE WRITTEN IN. A project set to the
+      // legacy engine rejects modern syntax, and the failure is a disabled
+      // property rather than a thrown error -- so the caller is told up front
+      // rather than finding out from a broken rig.
+      expressionEngine: app.project.expressionEngine,
+      layers: out,
+    };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+interface ExpressionResult extends Result {
+  applied?: { layer: string; property: string }[];
+  skipped?: { layer: string; why: string }[];
+  expressionEngine?: string;
+  undo?: string;
+}
+
+/** Finds one property inside an effect by matchName, searching downward only. */
+function findPropByMatchName(group: PropertyGroup, matchName: string, depth: number): Property | null {
+  if (depth > MAX_PROP_DEPTH) return null;
+  const n = group.numProperties;
+  for (let i = 1; i <= n; i++) {
+    const p = group.property(i);
+    if (!p) continue;
+    if (isPropertyGroup(p)) {
+      const nested = findPropByMatchName(p as PropertyGroup, matchName, depth + 1);
+      if (nested) return nested;
+      continue;
+    }
+    if ((p as Property).matchName === matchName) return p as Property;
+  }
+  return null;
+}
+
+/**
+ * Sets an expression on one property of one effect, across the selected layers.
+ *
+ * A LAYER THAT DOES NOT HAVE THE EFFECT IS SKIPPED AND NAMED, never silently
+ * passed over: "applied to 3 layers" when four were selected is the kind of
+ * report that sends somebody hunting for a bug in the fourth one.
+ *
+ * Pass an empty expression to clear one.
+ */
+export const agentSetExpression = (
+  effectMatchName: string,
+  propertyMatchName: string,
+  expression: string
+): ExpressionResult => {
+  try {
+    const comp = activeComp();
+    if (!comp) return needComp();
+
+    const layers = selectedLayers(comp);
+    if (layers.length === 0) return needSelection("apply an expression to");
+
+    const fxMatch = String(effectMatchName == null ? "" : effectMatchName).replace(/^\s+|\s+$/g, "");
+    const propMatch = String(propertyMatchName == null ? "" : propertyMatchName).replace(/^\s+|\s+$/g, "");
+    if (!fxMatch) return { success: false, error: "Which effect? Give its matchName, from list_effects." };
+    if (!propMatch) return { success: false, error: "Which property? Give its matchName, from list_effects." };
+
+    const expr = String(expression == null ? "" : expression);
+
+    const applied: { layer: string; property: string }[] = [];
+    const skipped: { layer: string; why: string }[] = [];
+
+    app.beginUndoGroup("Ask: set expression on " + propMatch);
+    try {
+      for (let i = 0; i < layers.length; i++) {
+        const layer = layers[i];
+        const parade = layer.property("ADBE Effect Parade") as PropertyGroup;
+        if (!parade || typeof parade.numProperties !== "number") {
+          skipped.push({ layer: layer.name, why: "has no effects" });
+          continue;
+        }
+
+        let fx: PropertyGroup | null = null;
+        for (let e = 1; e <= parade.numProperties; e++) {
+          const cand = parade.property(e) as PropertyGroup;
+          if (cand && cand.matchName === fxMatch) { fx = cand; break; }
+        }
+        if (!fx) { skipped.push({ layer: layer.name, why: "does not have that effect" }); continue; }
+
+        const prop = findPropByMatchName(fx, propMatch, 1);
+        if (!prop) { skipped.push({ layer: layer.name, why: "that effect has no such property" }); continue; }
+        if (!prop.canSetExpression) {
+          skipped.push({ layer: layer.name, why: "that property cannot take an expression" });
+          continue;
+        }
+
+        prop.expression = expr;
+        applied.push({ layer: layer.name, property: prop.name });
+      }
+    } finally {
+      app.endUndoGroup();
+    }
+
+    // NOT an error when nothing matched -- the call did what it was asked and
+    // found nothing to do. Reporting it as a failure would tell the artist the
+    // tool broke when what actually happened is that the selection was wrong.
+    return {
+      success: true,
+      applied: applied,
+      skipped: skipped.length ? skipped : undefined,
+      expressionEngine: app.project.expressionEngine,
+      undo: "Ctrl+Z (Cmd+Z on Mac) once, in After Effects.",
+    };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};

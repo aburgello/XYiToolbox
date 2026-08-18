@@ -330,6 +330,44 @@ export const TOOLS: ToolDef[] = [
         },
     },
     {
+        name: "list_effects",
+        description:
+            "Read the effects on the layers the artist has selected, with the matchNames needed to " +
+            "address them and each property's current value. Read-only. Call this BEFORE set_expression " +
+            "— matchNames are the only reliable way to address an effect parameter, and this is where " +
+            "you get them. It also reports the project's expression engine, which decides what syntax " +
+            "is legal.",
+        input_schema: { type: "object", properties: {}, required: [] },
+    },
+    {
+        name: "set_expression",
+        description:
+            "Put an expression on one property of one effect, on every selected layer that has it. " +
+            "Undoable with one Ctrl+Z. Address the effect and the property by matchName from " +
+            "list_effects — never by the name shown in the timeline, which differs between After " +
+            "Effects versions and languages. Layers without that effect are skipped and named back to " +
+            "you; say which. Pass an empty string to clear an expression.",
+        input_schema: {
+            type: "object",
+            properties: {
+                effectMatchName: {
+                    type: "string",
+                    description: "The effect's matchName from list_effects, e.g. 'ADBE 4ColorGradient'.",
+                },
+                propertyMatchName: {
+                    type: "string",
+                    description: "The property's matchName from list_effects, e.g. 'ADBE 4ColorGradient-0002'.",
+                },
+                expression: {
+                    type: "string",
+                    description:
+                        "The expression, in After Effects expression language. Empty string clears it.",
+                },
+            },
+            required: ["effectMatchName", "propertyMatchName", "expression"],
+        },
+    },
+    {
         name: "locate_campaign",
         description:
             "Find which campaign owns a filename token. Deliverable names carry a campaign token " +
@@ -681,7 +719,8 @@ export async function runTool(name: string, input: any): Promise<ToolResult> {
         case "rename_selected":
         case "label_selected":
         case "duplicate_selected":
-        case "set_comp_duration": {
+        case "set_comp_duration":
+        case "set_expression": {
             const write = WRITE_TOOLS[name];
             // Unreachable while the case list and the map agree — and here
             // precisely so that when they stop agreeing, the answer is a
@@ -716,6 +755,26 @@ export async function runTool(name: string, input: any): Promise<ToolResult> {
             // verbatim is what keeps the agent honest about what exists.
             const { success, ...report } = res;
             return { ok: true, data: { ...report, safety: write.safety } };
+        }
+
+        case "list_effects": {
+            const res = (await evalTS("agentListEffects").catch(() => undefined)) as
+                | { success: boolean; error?: string; comp?: string; expressionEngine?: string; layers?: any[] }
+                | undefined;
+            if (res === undefined) return { ok: false, reason: "No bridge to After Effects — can't read the layer." };
+            if (!res.success) return { ok: false, reason: res.error || "Couldn't read the effects on that layer." };
+            return {
+                ok: true,
+                data: {
+                    comp: res.comp,
+                    // Passed through because it decides what syntax is legal:
+                    // a project on the legacy engine rejects modern JavaScript,
+                    // and the symptom is a disabled property rather than an
+                    // error the model would see.
+                    expressionEngine: res.expressionEngine,
+                    layers: res.layers,
+                },
+            };
         }
 
         case "locate_campaign": {
@@ -1057,6 +1116,20 @@ const WRITE_TOOLS: Record<
         safety: "undoable",
         backend: "agentDuplicateSelected",
         args: () => [],
+    },
+    set_expression: {
+        safety: "undoable",
+        backend: "agentSetExpression",
+        args: (i) => {
+            const fx = typeof i.effectMatchName === "string" ? i.effectMatchName.trim() : "";
+            const prop = typeof i.propertyMatchName === "string" ? i.propertyMatchName.trim() : "";
+            if (!fx) return "set_expression needs the effect's matchName — call list_effects first.";
+            if (!prop) return "set_expression needs the property's matchName — call list_effects first.";
+            // An empty expression is legal: it clears one. Only a missing field
+            // is an error, which is why this checks the type and not the value.
+            if (typeof i.expression !== "string") return "set_expression needs an expression string.";
+            return [fx, prop, i.expression];
+        },
     },
     set_comp_duration: {
         safety: "undoable",
