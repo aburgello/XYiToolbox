@@ -24,62 +24,12 @@ const LOOP_TS = path.join(ROOT, "src/js/main/lib/agent/loop.ts");
 
 const tok = (n) => Math.round(n / 4);
 
-// --- the system prompt: the string-literal array joined at the end of the
-//     prompt builder. Dynamic tail (buildRunnableActionList) is noted, not
-//     counted, because it is generated rather than authored.
-function systemPromptChars() {
-    const s = fs.readFileSync(LOOP_TS, "utf8");
-    const end = s.indexOf('].join("\\n");');
-    if (end === -1) return { chars: 0, lines: 0, note: "could not locate the prompt array" };
-    const start = s.lastIndexOf("return [", end);
-    const block = s.slice(start, end);
-    const lines = block.match(/^\s*"(?:[^"\\]|\\.)*",?\s*$/gm) || [];
-    const text = lines.map((l) => l.trim().replace(/^"|",?$/g, "")).join("\n");
-    const dynamic = /buildRunnableActionList\(\)/.test(block);
-    return { chars: text.length, lines: lines.length, dynamic };
-}
+const { loadAgent } = require("./agent-headless.cjs");
+const agent = loadAgent();
 
-// --- the TOOLS literal, brace-matched out of the source and eval'd. It is pure
-//     data (object literals and string concatenation), so this is safe and
-//     avoids bundling the whole panel just to read an array.
-function toolDefs() {
-    const s = fs.readFileSync(TOOLS_TS, "utf8");
-    let i = s.indexOf("export const TOOLS: ToolDef[] = [");
-    if (i === -1) throw new Error("TOOLS array not found — has it been renamed?");
-    i = s.indexOf("= [", i) + 2;
-    // Tracks strings AND comments. Skipping comments is not fussiness: an
-    // apostrophe in a prose comment ("the prompt's ANIMATING SOMETHING
-    // section") reads as an opening quote, swallows the rest of the file, and
-    // the bracket count never balances -- the scan runs off the end and hangs.
-    // Which is exactly what it did the first time a comment with an apostrophe
-    // was added to the array.
-    let depth = 0, j = i, instr = null, esc = false, comment = null;
-    for (; j < s.length; j++) {
-        const c = s[j], next = s[j + 1];
-        if (comment) {
-            if (comment === "//" && c === "\n") comment = null;
-            else if (comment === "/*" && c === "*" && next === "/") { comment = null; j++; }
-            continue;
-        }
-        if (instr) {
-            if (esc) esc = false;
-            else if (c === "\\") esc = true;
-            else if (c === instr) instr = null;
-            continue;
-        }
-        if (c === "/" && next === "/") { comment = "//"; j++; continue; }
-        if (c === "/" && next === "*") { comment = "/*"; j++; continue; }
-        if (c === '"' || c === "'" || c === "`") { instr = c; continue; }
-        if (c === "[") depth++;
-        else if (c === "]" && --depth === 0) break;
-    }
-    if (depth !== 0) throw new Error("TOOLS array did not close — the scanner lost track.");
-    // eslint-disable-next-line no-new-func
-    return new Function("return " + s.slice(i, j + 1))();
-}
-
-const sys = systemPromptChars();
-const tools = toolDefs();
+const systemText = agent.systemPrompt();
+const sys = { chars: systemText.length, lines: systemText.split("\n").length };
+const tools = agent.TOOLS;
 const rows = tools
     .map((t) => {
         const whole = JSON.stringify(t).length;
@@ -102,7 +52,7 @@ const pct = (n) => ((n / total) * 100).toFixed(1).padStart(5) + "%";
 console.log(`  system prompt      ${String(sys.chars).padStart(7)} chars  ${String(tok(sys.chars)).padStart(6)} tok  ${pct(sys.chars)}   (${sys.lines} lines)`);
 console.log(`  ${String(rows.length).padStart(2)} tool definitions ${String(toolChars).padStart(7)} chars  ${String(tok(toolChars)).padStart(6)} tok  ${pct(toolChars)}`);
 console.log(`  ${"".padStart(18)} ${String(total).padStart(7)} chars  ${String(tok(total)).padStart(6)} tok`);
-if (sys.dynamic) console.log("\n  (plus buildRunnableActionList(), generated at runtime and not counted here)");
+console.log("\n  (the generated panel inventory IS included -- it is part of what gets sent)");
 
 console.log("\nPER TOOL, dearest first\n");
 console.log("       tokens   share  name                          description / schema");
