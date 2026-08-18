@@ -515,7 +515,14 @@ export const TOOLS: ToolEntry[] = [
         //                    lib/agent/multiArt.ts, which forgives spelling and
         //                    refuses ambiguity. Same empty-board rule as
         //                    screenName, and it never presses Build.
-        fillableFields: ["mode", "libraryOpen", "libraryTerritory", "screenName", "mastersRoot", "segments"],
+        //   canvasWidth      the DELIVERABLE's size — not a master's. A spec
+        //   canvasHeight     saying 1080x1526 is describing this, and the
+        //   runtimeSeconds   masters that fill it are whatever the campaign
+        //                    has in that shape.
+        fillableFields: [
+            "mode", "libraryOpen", "libraryTerritory", "screenName", "mastersRoot", "segments",
+            "canvasWidth", "canvasHeight", "runtimeSeconds",
+        ],
         description: "Compose a deliverable from several masters — creatives tiled across the frame, segments played in order. For MultipleArt rows, where no single master fits.",
     },
     {

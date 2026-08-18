@@ -1049,6 +1049,25 @@ export const BespokeTool = () => {
             asked.push("the masters folder");
         }
 
+        // THE DELIVERABLE'S OWN SIZE, which is not the same question as which
+        // master fills it. The spec's "1080x1526px" is this canvas; the masters
+        // that go in it are whatever the campaign has in that shape. Keeping
+        // them apart is the whole reason both are fillable.
+        const dim = (v: string) => {
+            const n = Math.round(Number(v));
+            return n >= 4 && n <= 30000 ? String(n) : "";
+        };
+        const cw = dim(fill.canvasWidth || "");
+        const ch = dim(fill.canvasHeight || "");
+        if (cw) setCanvasW(cw);
+        if (ch) setCanvasH(ch);
+        if (cw && ch) asked.push(`a ${cw}x${ch} canvas`);
+        const secs = Number(fill.runtimeSeconds);
+        if (isFinite(secs) && secs > 0 && secs <= 3600) {
+            setRuntime(String(secs));
+            asked.push(`a ${secs}s runtime`);
+        }
+
         // A running order implies Multi Art. Held for the resolver below.
         if (fill.segments) {
             setMode("multi");

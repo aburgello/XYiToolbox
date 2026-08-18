@@ -179,6 +179,7 @@ function selectFor(spec: SegmentSpec, masters: MasterLike[], where: string): { o
 
     const want = normalise(spec.creative || "");
     let pool = masters.filter((m) => normalise(m.creative || m.name) === want);
+    let sizeNote = "";
 
     // NOT A SUBSTRING FALLBACK BY DEFAULT. It is tried only when the exact
     // normalised name found nothing, and it must still land on ONE creative --
@@ -215,20 +216,59 @@ function selectFor(spec: SegmentSpec, masters: MasterLike[], where: string): { o
         pool = narrowed;
     }
 
+    // SIZE IS A PREFERENCE, NOT A REQUIREMENT -- this is the studio's own rule,
+    // not a new one. pickBestMasterFromIndex (tools.ts), which every localise
+    // path goes through, filters masters to the right ORIENTATION and then
+    // takes the closest aspect RATIO. It never demands an exact size, because a
+    // master is a source that gets scaled into the deliverable: a 1080x1920
+    // portrait master is exactly what fills a 1080x1526 portrait panel.
+    //
+    // Requiring an exact match here refused a row the rest of the panel would
+    // have built without comment. An explicitly named variant still wins when
+    // it exists -- "the 1920x1080 Trio" is a real instruction -- so exact is
+    // preferred and closest-ratio is the fallback, said out loud.
     if (spec.size) {
-        const narrowed = pool.filter((m) => m.width + "x" + m.height === spec.size);
-        if (!narrowed.length) {
-            const have = uniq(pool.map((m) => m.width + "x" + m.height));
-            return {
-                ok: false,
-                error: `${where}: no ${spec.creative} at ${spec.size} — it comes at ${listOf(have, 4)}.`,
-            };
+        const exact = pool.filter((m) => m.width + "x" + m.height === spec.size);
+        if (exact.length) {
+            pool = exact;
+        } else {
+            const want = spec.size.split("x");
+            const wantRatio = Number(want[0]) / Number(want[1]);
+            const wantPortrait = wantRatio < 1;
+            // ORIENTATION INFERRED FROM A SIZE IS A PREFERENCE; ORIENTATION
+            // THE ARTIST TYPED IS NOT. An explicit `orientation` has already
+            // refused above if the creative has nothing that way. Here the
+            // shape was only implied by a canvas, and a portrait master in a
+            // landscape frame is the headline Multi Art case -- three portrait
+            // panels across a metrobus. So prefer the matching orientation and
+            // fall back rather than refusing the thing the tool is for.
+            const sameWay = pool.filter((m) => (m.width / m.height < 1) === wantPortrait);
+            const usable = sameWay.length ? sameWay : pool;
+
+            let best = Number.MAX_VALUE;
+            for (const m of usable) {
+                const d = Math.abs(wantRatio - m.width / m.height);
+                if (d < best) best = d;
+            }
+            // Every master AT that best ratio, not the first one found: several
+            // sibling masters share a size, and narrowing to one here would
+            // silently drop the other panels of a three-up.
+            pool = usable.filter((m) => Math.abs(wantRatio - m.width / m.height) - best < 1e-9);
+            const sizes = uniq(pool.map((m) => m.width + "x" + m.height));
+            sizeNote =
+                `nothing is exactly ${spec.size}, so ${sizes.join("/")} ` +
+                `${sizes.length === 1 ? "was" : "were"} used and will scale to fit`;
         }
-        pool = narrowed;
     }
 
     const filled = repeatTo(pool, spec.count);
-    return { ok: true, plan: { seconds: spec.seconds, tiles: filled.tiles, note: filled.note ? `${where}: ${filled.note}` : undefined } };
+    const notes: string[] = [];
+    if (sizeNote) notes.push(sizeNote);
+    if (filled.note) notes.push(filled.note);
+    return {
+        ok: true,
+        plan: { seconds: spec.seconds, tiles: filled.tiles, note: notes.length ? `${where}: ${notes.join("; ")}` : undefined },
+    };
 }
 
 function uniq(xs: string[]): string[] {
