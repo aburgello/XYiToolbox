@@ -202,6 +202,27 @@ export const TOOLS: ToolDef[] = [
         },
     },
     {
+        name: "locate_campaign",
+        description:
+            "Find which campaign owns a filename token. Deliverable names carry a campaign token " +
+            "('FID_INTL_PortalToParadise_...') while the campaign list holds human labels " +
+            "('Forgotten Island') — this maps one to the other by checking which campaign's masters " +
+            "actually carry that token, using the same match the build uses to pick a master. Use it " +
+            "whenever you have deliverable names but no mastersRoot. Read-only.",
+        input_schema: {
+            type: "object",
+            properties: {
+                token: {
+                    type: "string",
+                    description:
+                        "The campaign token from a deliverable's filename — the first underscore " +
+                        "field, e.g. 'FID'. Not the campaign's display name.",
+                },
+            },
+            required: ["token"],
+        },
+    },
+    {
         name: "resolve_masters",
         description:
             "Check whether a Wrike job's deliverables have masters to build from, BEFORE anything is " +
@@ -519,6 +540,36 @@ export async function runTool(name: string, input: any): Promise<ToolResult> {
             // The label goes back so the model can confirm what it opened by
             // name rather than echoing the id at the artist.
             return { ok: true, data: { opened: nav.label, pressed: nav.pressed } };
+        }
+
+        case "locate_campaign": {
+            if (!input || typeof input.token !== "string" || !input.token.trim()) {
+                return { ok: false, reason: "locate_campaign needs a campaign token from a deliverable's filename." };
+            }
+            const res = (await evalTS("locateCampaignForToken", input.token.trim()).catch(() => undefined)) as
+                | { success: boolean; error?: string; matches?: any[]; unreachable?: string[] }
+                | undefined;
+
+            if (res === undefined) return mockOr({ ok: true, data: { matches: MOCK_CAMPAIGNS.slice(0, 1) } });
+            if (!res.success) return { ok: false, reason: res.error || "Couldn't look up that campaign token." };
+
+            const matches = res.matches || [];
+            return {
+                ok: true,
+                data: {
+                    token: input.token.trim(),
+                    matches,
+                    // NAMED, not counted. A campaign that could not be reached is
+                    // not a campaign without masters, and the difference decides
+                    // whether "no campaign owns this token" is true or just
+                    // unknown -- so the model is given the names and told to say
+                    // so rather than concluding.
+                    couldNotCheck: res.unreachable,
+                    note: matches.length === 0
+                        ? "No campaign's masters carry that token. If any campaign could not be checked, say which — the answer may be in one of those."
+                        : undefined,
+                },
+            };
         }
 
         case "resolve_masters": {

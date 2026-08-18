@@ -4,7 +4,7 @@
 // now a thin barrel -- see its header comment for context.
 // =============================================================================
 import { Result, SETTINGS_SECTION, decode } from "./shared";
-import { getMastersIndex, pickBestMasterFromIndex, mastersSkipFolder } from "./tools";
+import { getMastersIndex, pickBestMasterFromIndex, mastersSkipFolder, mastersCanon } from "./tools";
 
 
 
@@ -1191,4 +1191,77 @@ export const createReviewComparisons = (matchesJson: string): ReviewComparisonRe
     results.push(createReviewComparison(m.mp4Path, m.localItemId, m.localItemName));
   }
   return { success: true, results: results };
+};
+
+/**
+ * WHICH CAMPAIGN OWNS A FILENAME TOKEN.
+ *
+ * A deliverable is called `FID_INTL_PortalToParadise_DOOH_...`, and the
+ * campaign list holds "Forgotten Island". Those are two different identifiers
+ * for one campaign -- a filename token and a human label -- and nothing mapped
+ * between them, so the agent could read a job's deliverables and still not know
+ * which masters folder to look in.
+ *
+ * NOT AN ALIAS LIST. A hand-maintained token -> campaign table is a second
+ * source of truth that drifts the first time somebody adds a campaign and
+ * forgets the alias, and the symptom is the panel saying a campaign does not
+ * exist when it does. The data already answers the question: a campaign owns a
+ * token if its MASTERS carry it, which is what the build uses to pick a master
+ * in the first place.
+ *
+ * Matched with pickBestMasterFromIndex's own test -- mastersCanon'd substring
+ * against canonPath -- so a token that locates a campaign here is by
+ * construction a token that will find masters there.
+ *
+ * ONE CALL, not one per campaign: this walks the list host-side over the cached
+ * index rather than making the agent ask about each campaign in turn and spend
+ * its step budget doing it.
+ *
+ * An unreachable campaign is skipped and REPORTED, never silently treated as
+ * empty -- an unmounted share is a normal state, and "no masters here" and
+ * "couldn't look" are different answers (CLAUDE.md).
+ */
+export const locateCampaignForToken = (
+  token: string
+): {
+  success: boolean;
+  error?: string;
+  token?: string;
+  matches?: { name: string; mastersRoot: string; masterCount: number }[];
+  unreachable?: string[];
+} => {
+  try {
+    const canon = mastersCanon(String(token || ""));
+    if (!canon) return { success: false, error: "No campaign token to look for." };
+
+    const camps = loadCampaignsRaw();
+    const matches: { name: string; mastersRoot: string; masterCount: number }[] = [];
+    const unreachable: string[] = [];
+
+    for (let i = 0; i < camps.length; i++) {
+      const c = camps[i];
+      if (!c.mastersRoot) continue;
+
+      // `.exists` on a DIRECTORY is the one case CLAUDE.md allows it, and it is
+      // what keeps an unmounted campaign out of the "has no masters" bucket.
+      const root = new Folder(c.mastersRoot);
+      if (!root.exists) { unreachable.push(c.name); continue; }
+
+      const index = getMastersIndex(c.mastersRoot);
+      let count = 0;
+      for (let n = 0; n < index.length; n++) {
+        if (index[n].canonPath.indexOf(canon) !== -1) count++;
+      }
+      if (count > 0) matches.push({ name: c.name, mastersRoot: c.mastersRoot, masterCount: count });
+    }
+
+    return {
+      success: true,
+      token: String(token),
+      matches: matches,
+      unreachable: unreachable.length ? unreachable : undefined,
+    };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
 };

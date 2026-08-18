@@ -3015,7 +3015,10 @@ export interface MasterIndexEntry {
   orientation: string;
 }
 
-function mastersCanon(s: string): string {
+// Exported so the campaign locator can canonicalise a token the SAME way the
+// master picker does. A second canonicaliser would drift, and the drift would
+// show up as "that campaign has no masters" about one that does.
+export function mastersCanon(s: string): string {
   return String(s).toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
