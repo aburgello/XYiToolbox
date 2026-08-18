@@ -991,3 +991,13 @@
 
     span { flex: 1; }
 }
+
+// The one spec button carries a label: two unlabelled glyphs side by side told
+// nobody which read the sheet and which filled the rows.
+.dh-readspecs {
+    width: auto;
+    gap: 6px;
+    padding: 0 10px;
+
+    span { font-size: 11px; white-space: nowrap; }
+}

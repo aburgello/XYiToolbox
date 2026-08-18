@@ -440,6 +440,29 @@ const DeliveryHubTool = () => {
         })));
     }, [rows]);
 
+    /**
+     * READ THE SPECS — one action, both halves.
+     *
+     * These were two unlabelled icon buttons: one looked a row's spec up and
+     * filled anything still blank, the other showed what the sheet says. That
+     * split was how they got built rather than a real distinction, and nobody
+     * could tell which was which from two grey glyphs.
+     *
+     * MERGING A WRITE INTO A READ IS NORMALLY WRONG, and it is worth saying why
+     * it is not here: the fill only ever touches EMPTY fields, never overrules
+     * a value somebody typed, and leaves audio alone once anyone has clicked
+     * it. So on a row with nothing in it there is nothing to lose, and on a row
+     * somebody has filled in there is nothing to change.
+     *
+     * The report is shown either way, which makes the fill MORE auditable than
+     * it was on its own: every value that lands in a row can now be checked
+     * against the sheet it came from, sitting right underneath.
+     */
+    const readSpecs = async () => {
+        await runSuggest();
+        await runReport();
+    };
+
     const runReport = async () => {
         // sourcePath is nullable, and `filter` does not narrow it -- read it out
         // explicitly so the call cannot be handed a null it would treat as a
@@ -850,27 +873,25 @@ const DeliveryHubTool = () => {
                                 name for its country code, finds that territory's
                                 Masters/Specs, and fills ONLY empty fields. Where a
                                 spec can't be read (vendor sheets rather than a
-                                table) it names the document to open instead. */}
-                            <Tooltip text="Look up each row's spec PDF and fill anything still blank">
+                                table) it names the document to open instead.
+
+                                ONE BUTTON, because it was always one job. It used
+                                to be two unlabelled glyphs -- one filled the rows,
+                                one showed the sheet -- and nothing on screen said
+                                which was which. Now it does both and says so, and
+                                the sheet appearing underneath is what makes the
+                                filled values checkable. */}
+                            <Tooltip text="Read the client spec PDFs: fill anything still blank on each row, and show what the sheet says">
                                 <button
-                                    className="dh-icon-btn"
-                                    disabled={checkBusy || suggestBusy || rows.length === 0}
-                                    onClick={runSuggest}
-                                >
-                                    <Folder size={14} />
-                                </button>
-                            </Tooltip>
-                            {/* READING THE SHEET, as opposed to answering one
-                                row from it. Separate button because it answers
-                                a different question: not "what should this be"
-                                but "what does the document actually say". */}
-                            <Tooltip text="Read the spec PDFs and show every bitrate, fps and file size in them">
-                                <button
-                                    className={"dh-icon-btn" + (report ? " is-on" : "")}
-                                    disabled={checkBusy || reportBusy || rows.length === 0}
-                                    onClick={() => { if (report) { setReport(null); setLoadedSpecReport(null); } else { runReport(); } }}
+                                    className={"dh-icon-btn dh-readspecs" + (report ? " is-on" : "")}
+                                    disabled={checkBusy || suggestBusy || reportBusy || rows.length === 0}
+                                    onClick={() => {
+                                        if (report) { setReport(null); setLoadedSpecReport(null); return; }
+                                        void readSpecs();
+                                    }}
                                 >
                                     <FileText size={14} />
+                                    <span>{suggestBusy || reportBusy ? "Reading…" : "Read specs"}</span>
                                 </button>
                             </Tooltip>
                             <button
