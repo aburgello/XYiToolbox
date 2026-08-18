@@ -278,6 +278,15 @@ export interface SpecRow {
   /** Human-readable warnings about THIS row, "" when clean. Never auto-corrected
    *  -- see validateSpecValues. Deliberately not written to the CSV. */
   Flags: string;
+  /** OPTIONAL, because SpecRow is built in more than one place and this is
+   *  purely informational -- CSVLocaliser assembles rows for its preview and
+   *  has no free-text column to give.
+   *
+   *  The SPECIFIC VIDEO REQUIREMENTS cell, verbatim. Free text, so it is
+   *  carried rather than parsed: a real sheet put the actual file-size cap in
+   *  here ("Max size 21mb") while the size column said "MP4". One phrasing is
+   *  matched below; the rest is for a person to read. */
+  Notes?: string;
 }
 
 // --- value shapes ----------------------------------------------------------
@@ -320,9 +329,21 @@ function cellNumbers(v: string): CellNumber[] {
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     const n = parseFloat(m[1].replace(",", "."));
-    if (isNaN(n)) continue;
-    out.push({ value: n, unit: (m[2] || "").toLowerCase(), raw: m[0].trim() });
     if (re.lastIndex === m.index) re.lastIndex++;   // never spin on an empty match
+    if (isNaN(n)) continue;
+    // A DIGIT GLUED TO LETTERS ON ITS LEFT IS PART OF A WORD, not a
+    // measurement. This column's own header reads "FILE SIZE (KB, MB, PRO
+    // RES)", so clients legitimately write "MP4" in it -- and the 4 was being
+    // read as 4 MB against a real limit of 21 MB. Confidently wrong, silent,
+    // and it would have had somebody crush a file to a fifth of its allowance.
+    // Same trap in H264, x264, ProRes422.
+    const before = m.index > 0 ? text.charAt(m.index - 1) : "";
+    if (before && /[A-Za-z]/.test(before)) continue;
+    // ...and one separator deep, for the codec names written with a dot or a
+    // dash: H.265, H-264. "8.5 MB" is unaffected -- there the character before
+    // the dot is a digit, and the regex has already taken "8.5" whole.
+    if ((before === "." || before === "-") && m.index > 1 && /[A-Za-z]/.test(text.charAt(m.index - 2))) continue;
+    out.push({ value: n, unit: (m[2] || "").toLowerCase(), raw: m[0].trim() });
   }
   return out;
 }
@@ -333,15 +354,16 @@ function pickByUnit(nums: CellNumber[], units: string[]): CellNumber | null {
   return null;
 }
 
-/** First number in a string, or null. */
+/** First STANDALONE number in a string, or null. See cellNumbers on why a
+ *  digit welded to letters ("MP4") is not a number this file wants. */
 function firstNumber(v: string): number | null {
-  const m = String(v || "").match(/\d+(?:[.,]\d+)?/);
-  if (!m) return null;
-  const n = parseFloat(m[0].replace(",", "."));
-  return isNaN(n) ? null : n;
+  const nums = cellNumbers(v);
+  return nums.length ? nums[0].value : null;
 }
 
 /** -> MB. Decimal (1 MB = 1000 KB), matching deliver.ts's own size maths. */
+const CONTAINER_WORDS = /\b(mp4|mov|prores|pro\s*res|h\.?26[45]|hevc|avc|webm|gif|jpg|png|avi|mpeg|mxf)\b/i;
+
 function normaliseFileSize(v: string): { mb: number | null; note: string } {
   const raw = String(v || "").trim();
   if (!raw) return { mb: null, note: "" };
@@ -459,7 +481,36 @@ export function reshapeSpecs(rawSpecs: RawSpec[], territory: string): SpecRow[] 
       if (m) duration = m[0];
     }
 
-    const fs = normaliseFileSize(String(row.fileSize || ""));
+    let fs = normaliseFileSize(String(row.fileSize || ""));
+
+    // THE LIMIT IS OFTEN IN THE OTHER COLUMN. A real oOh sheet puts "MP4" under
+    // FILE SIZE -- which its own header invites, reading "(KB, MB, PRO RES)" --
+    // and the actual cap under SPECIFIC VIDEO REQUIREMENTS as "Max size 21mb".
+    // The parser captured that column all along and never looked in it, so the
+    // row came back with no limit at all, or worse, with the 4 out of "MP4".
+    //
+    // Only consulted when the size column gave nothing, and always reported:
+    // borrowing a number from a free-text field is a reasonable reading, not a
+    // certainty, and the person delivering should know where it came from.
+    const freeText = String(row.specificVideo || "").trim();
+    if (fs.mb === null && freeText) {
+      const m = freeText.match(/max(?:imum)?\s*(?:file\s*)?(?:size)?\s*[:\-]?\s*(\d+(?:[.,]\d+)?)\s*(gb|mb|kb)\b/i);
+      if (m) {
+        const n = parseFloat(m[1].replace(",", "."));
+        const unit = m[2].toLowerCase();
+        const mb = unit === "gb" ? n * 1000 : unit === "kb" ? n / 1000 : n;
+        fs = { mb, note: `max size read from "${freeText}", not the file size column` };
+      }
+    }
+    // A size column holding only a container name is worth saying out loud,
+    // even once the limit has been found elsewhere -- it is why the column
+    // looks empty.
+    const sizeCellIsFormat = fs.note === "" && String(row.fileSize || "").trim() !== "" &&
+      normaliseFileSize(String(row.fileSize || "")).mb === null &&
+      CONTAINER_WORDS.test(String(row.fileSize || ""));
+    if (sizeCellIsFormat) {
+      fs = { mb: fs.mb, note: `file size column says "${String(row.fileSize).trim()}" — a format, not a size` };
+    }
     const br = normaliseBitrate(String(row.bitRate || ""));
     const fpsRaw = String(row.frameRate || "").trim();
     const fpsNums = cellNumbers(fpsRaw);
@@ -500,6 +551,7 @@ export function reshapeSpecs(rawSpecs: RawSpec[], territory: string): SpecRow[] 
       // kbps" and "no unit -- KB?" have been invisible all along. The
       // row-shape warnings are appended to these below.
       Flags: [fs.note, br.note, fpsNote].filter(Boolean).join(" · "),
+      Notes: freeText,
     };
   });
 
@@ -615,7 +667,11 @@ export function buildLocaliserCsv(opts: {
 
   const body = [
     CSV_HEADERS.join(","),
-    ...opts.rows.map((r) => CSV_HEADERS.map((h) => csvCell(r[h])).join(",")),
+    // `|| ""` because SpecRow now carries an optional field. CSV_HEADERS does
+    // not include it -- Flags and Notes are both deliberately kept out of the
+    // CSV, see the note on CSV_HEADERS -- but the indexed read is typed against
+    // the whole row, so the optional one widens it.
+    ...opts.rows.map((r) => CSV_HEADERS.map((h) => csvCell(r[h] || "")).join(",")),
   ].join("\n");
 
   return meta + body;

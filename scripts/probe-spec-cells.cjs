@@ -98,6 +98,26 @@ console.log("\n=== the checks that already worked still do ===");
           r.BitRate === "8" && /read as kbps/.test(r.Flags), r.BitRate + " | " + r.Flags);
 }
 
+console.log("\n=== the real oOh sheet that started this ===");
+// FILE SIZE column reads "MP4" (its own header invites it: "KB, MB, PRO RES"),
+// and the actual cap sits in SPECIFIC VIDEO REQUIREMENTS as "Max size 21mb".
+{
+    const r = shape({ fileSize: "MP4", specificVideo: "Max size 21mb", duration: "7" });
+    check("MP4 is no longer read as a 4 MB cap", r.FileSize !== "4", "got " + r.FileSize);
+    check("the real 21 MB limit is found in the notes column", r.FileSize === "21", r.FileSize);
+    check("and it says where it came from", /not the file size column/.test(r.Flags), r.Flags);
+    check("the free text is carried verbatim", r.Notes === "Max size 21mb", r.Notes);
+}
+{
+    const r = shape({ fileSize: "MP4", specificVideo: "", duration: "45" });
+    check("a row with no cap anywhere reports none", r.FileSize === "", r.FileSize);
+    check("and says the size column holds a format", /a format, not a size/.test(r.Flags), r.Flags);
+}
+for (const w of ["ProRes422", "H264", "H.265", "MOV"]) {
+    const r = shape({ fileSize: w });
+    check(`"${w}" is not read as a number`, r.FileSize === "", w + " -> " + r.FileSize);
+}
+
 console.log("\n=== a clean row stays clean ===");
 {
     const r = shape({ fileSize: "12", bitRate: "8", frameRate: "25", duration: "10" });

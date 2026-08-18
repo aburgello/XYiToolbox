@@ -1152,7 +1152,7 @@ const DeliveryHubTool = () => {
                                             <thead>
                                                 <tr>
                                                     <th>Size</th><th>Secs</th><th>Bitrate</th>
-                                                    <th>Fps</th><th>Max file</th><th>Sound</th><th>Site</th>
+                                                    <th>Fps</th><th>Max file</th><th>Sound</th><th>Site</th><th>Notes</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -1165,6 +1165,11 @@ const DeliveryHubTool = () => {
                                                         <td>{r.fileSize ? r.fileSize + " MB" : "—"}</td>
                                                         <td>{r.sound || "—"}</td>
                                                         <td>{r.site || r.country || "—"}</td>
+                                                        {/* VERBATIM. The parser reads one
+                                                            phrasing of "max size"; the sheet is
+                                                            the authority and this is where the
+                                                            unparseable half of it lives. */}
+                                                        <td className="dh-specreport-notes">{r.notes || "—"}</td>
                                                     </tr>
                                                 ))}
                                             </tbody>

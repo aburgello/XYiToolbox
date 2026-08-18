@@ -974,3 +974,10 @@
         }
     }
 }
+
+// Free text off the sheet: allowed to wrap, unlike the numeric columns.
+.dh-specreport .dh-specreport-table td.dh-specreport-notes {
+    white-space: normal;
+    min-width: 130px;
+    opacity: 0.72;
+}

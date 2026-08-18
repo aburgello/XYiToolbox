@@ -294,6 +294,9 @@ export interface SpecReportRow {
     /** The parser's own doubts about this row -- a bitrate in the fps column and
      *  so on. Surfaced rather than hidden: these tables are filled in by hand. */
     flags: string;
+    /** The free-text requirements cell, verbatim. Shown because the parser can
+     *  only match a phrasing it was taught, and the sheet is the authority. */
+    notes: string;
 }
 
 export interface SpecReportFile {
@@ -354,6 +357,7 @@ export async function readSpecReport(sourcePath: string): Promise<SpecReport> {
                     fileSize: r.FileSize || "",
                     sound: r.Sound || "",
                     flags: r.Flags || "",
+                    notes: r.Notes || "",
                 })),
             });
         } catch (e) {
