@@ -872,7 +872,11 @@
 // --- what the spec PDFs say -------------------------------------------------
 // Reading the document, not answering one row from it. Sits under the toolbar
 // and above the errors, because it is reference material rather than a result.
-.dh-specreport {
+//
+// Scoped like every other rule in this file: a bare class here would sit at
+// (0,1,0) and lose to anything nested, which is exactly how the Read specs
+// button ended up clipped to 28px.
+.delivery-hub .dh-specreport {
     overflow: hidden;
     margin: 6px 0 2px;
     border: 1px solid rgba(255, 255, 255, 0.1);
@@ -976,14 +980,14 @@
 }
 
 // Free text off the sheet: allowed to wrap, unlike the numeric columns.
-.dh-specreport .dh-specreport-table td.dh-specreport-notes {
+.delivery-hub .dh-specreport .dh-specreport-table td.dh-specreport-notes {
     white-space: normal;
     min-width: 130px;
     opacity: 0.72;
 }
 
 // The footer carries the caveat and, when the agent is on, its button.
-.dh-specreport .dh-specreport-foot {
+.delivery-hub .dh-specreport .dh-specreport-foot {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -994,11 +998,16 @@
 
 // The one spec button carries a label: two unlabelled glyphs side by side told
 // nobody which read the sheet and which filled the rows.
-.dh-readspecs {
-    // `width: auto` overrides .dh-icon-btn's square sizing; flex-shrink: 0 stops
-    // the toolbar squeezing the label into an ellipsis when the panel is docked
-    // narrow, which is the failure this button already had once.
+// SCOPED UNDER .delivery-hub, and that is the whole fix rather than a tidy-up.
+// .dh-icon-btn is nested in this file, so it compiles to
+// `.delivery-hub .dh-icon-btn` at (0,2,0) and its `width: 28px` beat a bare
+// `.dh-readspecs` at (0,1,0) no matter what was written in it. The label was
+// being clipped by a 28px box the whole time, which is why animating the strip
+// to auto changed nothing. Same trap CLAUDE.md records for `.form-tool button`
+// against `.bsp-*`.
+.delivery-hub .dh-readspecs {
     width: auto;
+    // flex: none so a narrow docked panel squeezes something else, not the label.
     flex: none;
     gap: 6px;
     padding: 0 10px;
