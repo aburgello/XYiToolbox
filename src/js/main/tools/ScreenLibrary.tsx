@@ -32,7 +32,7 @@
 //     MENA, META, Domestic and Football Super Boards all sit in that column
 //     alongside Argentina.
 // =============================================================================
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 // FolderOpen for "show me the file", FolderSearch for "go and scan a folder" --
 // two different jobs that were both wearing the magnifier variant.
@@ -279,9 +279,26 @@ const ScreenLibrary: React.FC<{
     activeId?: string;
     onReload: () => void;
     onStatus: (text: string, type: "success" | "error") => void;
-}> = ({ open, entries, onClose, onLoad, onTrace, activeId, onReload, onStatus }) => {
+    /**
+     * A country to open filtered to, when the artist arrived here asking for
+     * one. Applied ONCE per value, never on every render: after that the rail
+     * is theirs, and re-asserting it would fight every click they make.
+     */
+    initialTerritory?: string;
+}> = ({ open, entries, onClose, onLoad, onTrace, activeId, onReload, onStatus, initialTerritory }) => {
     const reduced = useReducedMotion();
     const [territory, setTerritory] = useState("");
+
+    // Keyed on the VALUE, so a second request for the same country re-applies
+    // (the artist may have clicked away since) while an unchanged prop does
+    // not keep resetting the rail underneath them.
+    const appliedTerritory = useRef<string | null>(null);
+    useEffect(() => {
+        if (!initialTerritory) return;
+        if (appliedTerritory.current === initialTerritory) return;
+        appliedTerritory.current = initialTerritory;
+        setTerritory(initialTerritory);
+    }, [initialTerritory]);
     const [query, setQuery] = useState("");
     const [busy, setBusy] = useState(false);
     const [scan, setScan] = useState<{ root: string; candidates: ScanCandidate[]; scanned: number } | null>(null);

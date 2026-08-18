@@ -31,6 +31,7 @@ import { motion, useReducedMotion } from "motion/react";
 import { AlertCircle, ChevronRight, Copy, Globe2, Layers, LayoutGrid, Library, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, RotateCcw, Square as SquareIcon, Trash2, X } from "lucide-react";
 import { csi, evalTS } from "../../lib/utils/bolt";
 import { deriveMastersFromMarkets } from "../lib/mastersRoot";
+import { usePendingFill } from "../lib/agent/fieldHandoff";
 import { usePosterFrame, pickPreviewRender, isImageFile, type RenderEntry } from "../lib/renderPreview";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
@@ -458,6 +459,8 @@ export const BespokeTool = () => {
     const [tplName, setTplName] = useState("");
     const [layouts, setLayouts] = useState<Record<string, { regions: Region[]; guidesX: number[]; guidesY: number[] }>>({});
     const [libraryOpen, setLibraryOpen] = useState(false);
+    // A country the artist asked to see, passed through to the library's rail.
+    const [libraryTerritory, setLibraryTerritory] = useState("");
     // Candidate references pulled out of a template, best first. More than one
     // because picking the right in-situ image out of an .aep is a heuristic:
     // it lands on a camera roll JPG or a screenshot often enough that the
@@ -991,6 +994,71 @@ export const BespokeTool = () => {
         });
         return true;
     };
+
+    /**
+     * ARRIVING SOMEWHERE, not just at the door.
+     *
+     * open_tool could reach this tool and no further: Bespoke opens on the mode
+     * chooser, so the Screen library button does not exist yet and there is
+     * nothing to press. The agent could say "press the Screen library button"
+     * and stop, which is a worse answer than the artist clicking twice.
+     *
+     * So the agent can set the mode, open the library, and filter it to a
+     * country -- the state the artist would have reached by hand -- and the
+     * work starts where they asked for it.
+     *
+     * LOADING A SCREEN IS DIFFERENT AND IS GUARDED. Adopting one replaces the
+     * regions on the board, and that is PANEL state: no Ctrl+Z brings it back.
+     * So a named screen is only adopted onto an EMPTY board; with work in
+     * progress the library is opened filtered instead and the artist is told
+     * why. Same rule as the Script Playground box -- never quietly overwrite
+     * something somebody was in the middle of.
+     */
+    usePendingFill("bespoke", (fill) => {
+        const asked: string[] = [];
+
+        if (fill.mode === "regions" || fill.mode === "multi") {
+            setMode(fill.mode);
+            asked.push(fill.mode === "regions" ? "Bespoke mode" : "Multi Art mode");
+        }
+        if (fill.libraryTerritory) setLibraryTerritory(fill.libraryTerritory);
+
+        // A screen name implies the library, and implies Bespoke mode -- asking
+        // for a layout and landing on the mode chooser would be the same
+        // half-arrival this exists to fix.
+        const wanted = (fill.screenName || "").trim().toLowerCase();
+        if (wanted) setMode((m) => m || "regions");
+
+        if (fill.libraryOpen === "true" || wanted) {
+            setLibraryOpen(true);
+            asked.push("the screen library");
+        }
+
+        if (!wanted) {
+            if (asked.length) setStatus({ text: "Opened " + asked.join(" and ") + ".", type: "success" });
+            return;
+        }
+
+        const hit = templates.filter((t) => String(t.name).toLowerCase() === wanted)[0];
+        if (!hit) {
+            setStatus({
+                text: `No screen called "${fill.screenName}" in the library — it's open, pick from the list.`,
+                type: "error",
+            });
+            return;
+        }
+        if (regions.length > 0) {
+            setStatus({
+                text: `You have regions on the board, so I've left them alone — "${hit.name}" is in the library when you're ready.`,
+                type: "error",
+            });
+            return;
+        }
+        // traceTemplate, not loadTemplate: "open one as reference" is the
+        // reference image and canvas to draw against, not somebody else's
+        // masters dropped into regions.
+        if (traceTemplate(hit)) setLibraryOpen(false);
+    });
 
     // ── board shortcuts, deliberately OPT-IN ────────────────────────────────
     // AE binds the arrow keys to "nudge the selected LAYER in the comp", so a
@@ -2380,6 +2448,7 @@ export const BespokeTool = () => {
                         onLoad={(t) => { if (loadTemplate(t)) setLibraryOpen(false); }}
                         onTrace={(t) => { if (traceTemplate(t)) setLibraryOpen(false); }}
                         activeId={activeScreen ? activeScreen.id : ""}
+                        initialTerritory={libraryTerritory}
                         onReload={refreshTemplates}
                         onStatus={(text, type) => setStatus({ text, type })}
                     />

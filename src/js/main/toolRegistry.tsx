@@ -494,6 +494,20 @@ export const TOOLS: ToolEntry[] = [
         icon: Layers,
         Component: BespokeTool,
         actions: ["Bespoke", "Bespokin", "Multiple Art", "Add segment", "Remove segment", "Screen library", "Library", "Seed from templates", "Find references", "Trace", "Save this layout"],
+        // ARRIVING IN A STATE, not pressing a button. Bespoke opens on the mode
+        // chooser, so "Screen library" does not exist yet for anything to click
+        // -- which is why this tool has no actionSafety and every button stays
+        // unpressable. The agent reaches the library through these instead.
+        //
+        //   mode             "regions" (Bespoke) or "multi" (Multi Art)
+        //   libraryOpen      "true" to open the screen library
+        //   libraryTerritory a country to filter the library's rail to
+        //   screenName       adopt that screen as the reference — ONLY onto an
+        //                    empty board. Replacing regions is panel state and
+        //                    no Ctrl+Z brings them back, so with work in
+        //                    progress the receiver opens the library instead
+        //                    and says why.
+        fillableFields: ["mode", "libraryOpen", "libraryTerritory", "screenName"],
         description: "Compose a deliverable from several masters — creatives tiled across the frame, segments played in order. For MultipleArt rows, where no single master fits.",
     },
     {
