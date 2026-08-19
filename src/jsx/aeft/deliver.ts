@@ -544,17 +544,46 @@ function deliveryCalcRequiredBitrateMbps(fileSizeMB: number, durationSec: number
 // below (unchanged callers just want the parent "Batch_XX" folder) and
 // deliveryChecklistLoadComps() (which also wants the full path, for
 // Review Session's Wrike-format export -- see ReviewHub.tsx).
-function deliveryFindMovSourceFile(comp: CompItem): File | null {
+function deliveryFindMovSourceFile(comp: CompItem, depth?: number): File | null {
+  // RECURSES INTO PRECOMPS, and that is the fix for a real delivery that went
+  // to the wrong folder.
+  //
+  // deliveryRotate90CC wraps the original comp in a rotated one, so the
+  // wrapper's only layer is a COMP, not footage -- and this used to look at
+  // one level and give up. The note on that function even says so, and worked
+  // around it for the row entry by running against the original comp. The
+  // QUEUE had no such workaround: it calls this on whatever comp is being
+  // rendered, got null for every rotated deliverable, left the output path
+  // unset, and After Effects wrote the file wherever it last wrote one.
+  //
+  // Depth-capped rather than unbounded: a comp that somehow contains itself
+  // would otherwise walk forever, and eight levels is far past any real
+  // delivery nesting.
+  const level = depth || 0;
+  if (level > 8) return null;
+
   for (let i = 1; i <= comp.numLayers; i++) {
     const layer = comp.layer(i);
-    if (layer instanceof AVLayer && layer.source && layer.source instanceof FootageItem) {
-      const srcFile = layer.source.file;
-      if (srcFile && srcFile.fsName) {
-        const lower = srcFile.fsName.toLowerCase();
-        if (lower.indexOf(".mov") === lower.length - 4) {
-          return srcFile;
-        }
-      }
+    const source = (layer as AVLayer).source as any;
+    if (!source) continue;
+
+    // DUCK-TYPED, never `instanceof AVLayer` / `instanceof FootageItem`.
+    // CLAUDE.md section 2 bans instanceof against an AE host class -- it does
+    // not reliably match at ExtendScript runtime, and two accesses to the same
+    // object return different wrappers. Footage is the thing with a `file`.
+    const srcFile = source.file;
+    if (srcFile && srcFile.fsName) {
+      const lower = String(srcFile.fsName).toLowerCase();
+      // indexOf, not .match(): a real render path contains ( + [ and would
+      // compile as a regex.
+      if (lower.indexOf(".mov") === lower.length - 4) return srcFile as File;
+      continue;
+    }
+
+    // A precomp is the thing that can list its own layers.
+    if (typeof source.numLayers === "number") {
+      const nested = deliveryFindMovSourceFile(source as CompItem, level + 1);
+      if (nested) return nested;
     }
   }
   return null;
