@@ -522,12 +522,12 @@ export const OffByAPixel = ({ onClose }: { onClose: () => void }) => {
         if (!done || postedRef.current || checking) return;
         postedRef.current = true;
         if (already !== null) {
-            setPostNote(`Already played today — your ${already} stands.`);
+            setPostNote(`Already played today. Your ${already} stands.`);
             return;
         }
         evalTS("teamArcadePost", "pixel", total, "")
             .then(() => setPostNote(`${total} posted to the board.`))
-            .catch(() => setPostNote("Couldn't reach the team folder — score not posted."));
+            .catch(() => setPostNote("Couldn't reach the team folder. Score not posted."));
     }, [done, total, already, checking]);
 
     // --- click handling -----------------------------------------------------
@@ -583,7 +583,7 @@ export const OffByAPixel = ({ onClose }: { onClose: () => void }) => {
 
         const showAnswer = reveal ? board.faulty.find((el) => el.id === board.fault.id) || null : null;
         drawPanel(ctx, PANEL_X[0], board.clean, board.pal, "APPROVED", null);
-        drawPanel(ctx, PANEL_X[1], board.faulty, board.pal, "DELIVERED — click the fault", showAnswer);
+        drawPanel(ctx, PANEL_X[1], board.faulty, board.pal, "DELIVERED, click the fault", showAnswer);
     }, [board, done, reveal, results, total]);
 
     const secsLeft = Math.max(0, ROUND_SECONDS - elapsed);
@@ -617,7 +617,7 @@ export const OffByAPixel = ({ onClose }: { onClose: () => void }) => {
             {reveal && last && (
                 <div className="obp-overlay">
                     <span className={"obp-verdict" + (reveal === "hit" ? " is-hit" : "")}>
-                        {reveal === "hit" ? `Found it — ${last.points} pts` : "Time — 0 pts"}
+                        {reveal === "hit" ? `Found it, ${last.points} pts` : "Time, 0 pts"}
                     </span>
                     <span className="obp-why">{last.fault.label}</span>
                     <button className="obp-next" onClick={next} autoFocus>

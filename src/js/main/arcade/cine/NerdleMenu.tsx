@@ -232,7 +232,7 @@ export const NerdleMenu = ({ onChoose }: { onChoose: (c: MenuChoice) => void }) 
             setNote(r.message || "Invited.");
             refresh();
         } catch (e) {
-            setNote("No team folder available from here — solo still works.");
+            setNote("No team folder available from here. Solo still works.");
         } finally {
             setBusy(false);
         }
@@ -260,7 +260,7 @@ export const NerdleMenu = ({ onChoose }: { onChoose: (c: MenuChoice) => void }) 
                         <Play size={15} />
                         <span className="nm-solo-text">
                             <strong>Play here</strong>
-                            <small>Two seats, one keyboard — pass it back and forth</small>
+                            <small>Two seats, one keyboard. Pass it back and forth</small>
                         </span>
                     </button>
 
@@ -273,8 +273,8 @@ export const NerdleMenu = ({ onChoose }: { onChoose: (c: MenuChoice) => void }) 
 
                         {!loading && !lobby?.me && (
                             <p className="nm-note">
-                                Tag this machine with your name in the Team menu to challenge anyone —
-                                the invite needs to say who it's from.
+                                Tag this machine with your name in the Team menu to challenge anyone.
+                                The invite needs to say who it's from.
                             </p>
                         )}
 
@@ -393,7 +393,7 @@ export const NerdleMenu = ({ onChoose }: { onChoose: (c: MenuChoice) => void }) 
             )}
 
             <p className="nm-foot">
-                Challenges arrive when the other panel next looks — there's no notification on a
+                Challenges arrive when the other panel next looks. There's no notification on a
                 file share, so nudge them if you're in a hurry.
             </p>
         </div>

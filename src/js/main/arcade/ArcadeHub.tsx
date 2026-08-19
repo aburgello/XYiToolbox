@@ -524,7 +524,7 @@ export const ArcadeHub = ({ onClose }: { onClose: () => void }) => {
                         {overall.length === 0 && (
                             <p className="arc-season-empty">
                                 {isThisSeason
-                                    ? `${seasonLabel(season)} is wide open — nothing's been won yet.`
+                                    ? `${seasonLabel(season)} is wide open. Nothing's been won yet.`
                                     : `Nothing scored in ${seasonLabel(season)}.`}
                             </p>
                         )}
@@ -571,7 +571,7 @@ export const ArcadeHub = ({ onClose }: { onClose: () => void }) => {
                     nothing stale to warn about. */}
                 {stale && (
                     <p className="arc-note arc-note--stale">
-                        Couldn't reach the team folder just now — showing the last standings I read.
+                        Couldn't reach the team folder just now, showing the last standings I read.
                         <button className="arc-note-retry" onClick={refresh}>Try again</button>
                     </p>
                 )}

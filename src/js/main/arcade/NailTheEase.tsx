@@ -265,7 +265,7 @@ export const NailTheEase = ({ onClose }: { onClose: () => void }) => {
         postedRef.current = true;
         evalTS("teamArcadePost", "ease", total, "")
             .then(() => setPostNote(`${total} posted to the board.`))
-            .catch(() => setPostNote("Couldn't reach the team folder — score not posted."));
+            .catch(() => setPostNote("Couldn't reach the team folder. Score not posted."));
     }, [done, total]);
 
     // --- dragging -----------------------------------------------------------

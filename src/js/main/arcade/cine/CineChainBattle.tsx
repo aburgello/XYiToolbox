@@ -558,7 +558,7 @@ export const CineChainBattle = ({
                         <div className="cc-status">
                             <span className={"cc-turn" + (over ? " cc-turn--over" : "")}>
                                 {over
-                                    ? (iWon ? `${against} ran out of time — you win` : "You ran out of time")
+                                    ? (iWon ? `${against} ran out of time. You win` : "You ran out of time")
                                     : myTurn ? "Your turn" : `${against}'s turn`}
                             </span>
                             <span className={"cc-clock" + (remaining <= 5 ? " cc-clock--low" : "")}>
