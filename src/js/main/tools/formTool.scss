@@ -1617,6 +1617,12 @@
             font-size: 12.5px;
             font-weight: 650;
             color: #eee;
+            // Truncated, never wrapped: the line below it already ellipses,
+            // and a campaign name that wraps pushes into the Edit button
+            // sitting beside it rather than growing the row.
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         span {
@@ -2332,10 +2338,31 @@ $rail-gap: 10px;   // exactly the flex gap between rows, so segments tile
 // point where the run row wraps, the action would otherwise sit stranded and
 // left-aligned under the toggles, reading as less important than they are.
 // Give it the whole line instead. Plain @media, NOT @container — chrome74.
+//
+// SCOPED TO THE ROWS IT WAS WRITTEN FOR. As a bare `.specs-tool
+// .specs-scan-btn` it also caught the button in `.specs-ready`, which shares
+// its line with the campaign name and an Edit button — so at ~500px the
+// action took the whole width, squeezed the name to nothing, and "Forgotten
+// Island" wrapped underneath the Edit button. The comment above only ever
+// described the run row; the selector did not.
 @media (max-width: 560px) {
-    .specs-tool .specs-scan-btn {
+    .specs-tool .specs-run-row .specs-scan-btn,
+    .specs-tool .specs-actions-row .specs-scan-btn {
         flex: 1 1 100%;
         width: 100%;
+    }
+
+    // The ready row wraps instead: name and Edit stay together on the first
+    // line, the action drops to its own beneath them. min-width:168px would
+    // otherwise keep it wedged alongside the text at any width.
+    .specs-tool .specs-ready {
+        flex-wrap: wrap;
+
+        .specs-scan-btn {
+            flex: 1 1 100%;
+            width: 100%;
+            min-width: 0;
+        }
     }
 }
 
