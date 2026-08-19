@@ -102,7 +102,8 @@ function mkComp(layers, opts = {}) {
  * Loads the bundle into a fresh sandbox holding `comp` as the active item.
  * Returns the panel's exported namespace, plus the sandbox so a test can see
  * how many undo groups were opened and closed. `opts.project` merges extra
- * fields onto app.project.
+ * fields onto app.project; `opts.compItems` brands extra objects as CompItem
+ * so they survive an `instanceof` check.
  */
 function loadBundle(comp, opts) {
   const project = { activeItem: comp };
@@ -128,6 +129,14 @@ function loadBundle(comp, opts) {
   // `comp instanceof CompItem` is the first thing most of these functions do,
   // and it has to be the sandbox's CompItem, not this file's.
   if (comp) Object.setPrototypeOf(comp, s.CompItem.prototype);
+  // Anything else that must pass the same test -- a project selection, say.
+  // Without this a mock comp is a plain object and every entry point reports
+  // "select one or more comps first".
+  if (opts && opts.compItems) {
+    for (let i = 0; i < opts.compItems.length; i++) {
+      Object.setPrototypeOf(opts.compItems[i], s.CompItem.prototype);
+    }
+  }
   const ctx = vm.createContext(s);
   vm.runInContext(fs.readFileSync(BUNDLE, "utf8"), ctx, { filename: "index.js" });
   // The bundle ends with `host[ns] = aeft`, host being `$` and ns the panel id.
