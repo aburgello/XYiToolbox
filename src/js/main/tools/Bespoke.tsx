@@ -401,6 +401,28 @@ function defaultRegionBox(m: BespokeMaster, cw: number, ch: number): { w: number
     return { w: Math.max(24, w), h: Math.max(24, h) };
 }
 
+/**
+ * The creative as the FILENAME spells it, not as the folder does.
+ *
+ * `m.creative` is the AE/<Creative> folder -- PORTAL_TO_PARADISE -- which is
+ * the right identity to group by and the wrong string to put in a deliverable
+ * name: it carries underscores of its own and would split one token into
+ * three. The filename's own third field is the studio's spelling of the same
+ * thing (FID_INTL_PortalToParadise_DOOH_...), which is what belongs in a name.
+ */
+function creativeToken(m: BespokeMaster): string {
+    const stem = String(m.name || "").replace(/\.aep$/i, "");
+    const bits = stem.split("_");
+    return bits.length > 2 ? bits[2] : (m.creative || stem);
+}
+
+/** What a board is, for telling whether it has been changed since it loaded. */
+function boardSignature(rs: { master: BespokeMaster; x: number; y: number; w: number; h: number; rotation: number }[]): string {
+    const out: string[] = [];
+    for (const r of rs) out.push(`${r.master.path}|${r.x},${r.y},${r.w},${r.h},${r.rotation || 0}`);
+    return out.join(";");
+}
+
 /** Below this a region collapses and can never be grabbed again. */
 const MIN_REGION = 24;
 
@@ -595,6 +617,14 @@ export const BespokeTool = () => {
     // Saving needs its TERRITORY and NAME, because the country in "Where it
     // lands" is a different thing (see saveTemplate) and is usually unset.
     const [activeScreen, setActiveScreen] = useState<{ id: string; territory: string; name: string } | null>(null);
+    /**
+     * The board as it arrived from the library, so "has this been changed"
+     * is a comparison rather than a flag somebody has to remember to set.
+     * The library is how the next person avoids tracing this screen again,
+     * and saving back was a button you had to think of after the work was
+     * already done.
+     */
+    const [screenSig, setScreenSig] = useState("");
     // Not "is it empty" -- "did the read work at all". See refreshTemplates.
     const [libraryReadable, setLibraryReadable] = useState(false);
     // Constraints while dragging a corner. Ratio keeps a region from ever
@@ -963,6 +993,10 @@ export const BespokeTool = () => {
             setStatus({ text: `Saved "${name}". ${entry.slots.length} region${entry.slots.length === 1 ? "" : "s"} and ${guidesX.length + guidesY.length} guides.`, type: "success" });
             setSaving(false);
             setTplName("");
+            // The board and the library agree again, so the button stops
+            // asking to be pressed.
+            setActiveScreen({ id: entry.id, territory: saveTerritory, name });
+            setScreenSig(boardSignature(regions));
             const listed = await evalTS("bespokeTemplateList");
             if (listed && listed.success && listed.templates) setTemplates(listed.templates);
         } else {
@@ -981,11 +1015,26 @@ export const BespokeTool = () => {
      */
     /** Returns whether a layout was actually adopted -- the library closes on it. */
     const loadTemplate = (t: BespokeTemplate): boolean => {
-        const pool = (masters || []).filter((m) => !creative || (m.creative || m.name) === creative);
-        if (pool.length === 0) {
+        const all = (masters || []).filter((m) => !creative || (m.creative || m.name) === creative);
+        if (all.length === 0) {
             setStatus({ text: "No masters in this creative to fill the layout with.", type: "error" });
             return false;
         }
+        /**
+         * THE BOARD'S RUNTIME NARROWS THE POOL FIRST.
+         *
+         * The slots remember the duration they were saved with, and a screen
+         * laid out for a 15s job loaded onto a 10s board matched all of them
+         * exactly -- filling every region with a 15s master, so the board
+         * arrived fully warned about overruns nobody chose. Narrowing to the
+         * length the board runs, when the shelf has any, answers the question
+         * the board is actually asking. When it has none the whole pool stands:
+         * a board filled with the wrong length and warned about beats a board
+         * that refuses to fill.
+         */
+        const want = Number(runtime) || 0;
+        const fitting = want ? all.filter((m) => Number(m.duration) === want) : [];
+        const pool = fitting.length ? fitting : all;
         const unmatched: string[] = [];
         const next: Region[] = [];
         t.slots.forEach((sl, i) => {
@@ -1009,6 +1058,7 @@ export const BespokeTool = () => {
         setGuidesX(t.guidesX || []);
         setGuidesY(t.guidesY || []);
         setActiveScreen({ id: t.id, territory: t.territory || "", name: t.name });
+        setScreenSig(boardSignature(next));
         setRegions(next);
         setSelRegion(0);
         setStatus(unmatched.length
@@ -1117,6 +1167,10 @@ export const BespokeTool = () => {
         // click to step past rather than a dead screen.
         setRefAlts(t.referencePaths && t.referencePaths.length ? t.referencePaths : [t.referencePath]);
         setActiveScreen({ id: t.id, territory: t.territory || "", name: t.name });
+        // Tracing starts from an empty board on purpose, so the signature is
+        // the empty one: the first region drawn is already a change worth
+        // saving back.
+        setScreenSig("");
         adoptReference(t.referencePath);
         if (t.canvasW) setCanvasW(String(t.canvasW));
         if (t.canvasH) setCanvasH(String(t.canvasH));
@@ -1854,8 +1908,34 @@ export const BespokeTool = () => {
         return Math.round((have - want) * 10) / 10;
     };
 
+    /**
+     * THE SAME MASTER AT THE LENGTH THE BOARD RUNS.
+     *
+     * Every warning about an over-long master is a question with an answer
+     * already on the shelf: these come in sets, and the 10s of a 15s at the
+     * same size is usually sitting three cards away. Exact identity only --
+     * same creative FOLDER, same pixel size, that exact duration -- because a
+     * near match here silently puts a different crop or a different cut into a
+     * deliverable, which is the failure mode the CSV and OV Swap matchers are
+     * deliberately strict about too.
+     *
+     * Null is a real answer, and worth printing: no 10s at that size means one
+     * has to be made, and finding that out by scrolling the shelf is the slow
+     * way to learn it.
+     */
+    const fittingSibling = (m: BespokeMaster, secs: number): BespokeMaster | null => {
+        if (!secs) return null;
+        for (const c of masters || []) {
+            if ((c.creative || c.name) !== (m.creative || m.name)) continue;
+            if (c.width !== m.width || c.height !== m.height) continue;
+            if (Number(c.duration) !== secs) continue;
+            return c;
+        }
+        return null;
+    };
+
     const overrunRegions = regions
-        .map((r, i) => ({ i, r, over: overrunOf(r.master) }))
+        .map((r, i) => ({ i, r, over: overrunOf(r.master), fit: fittingSibling(r.master, Number(runtime)) }))
         .filter((x) => x.over > 0);
 
     /**
@@ -1870,6 +1950,28 @@ export const BespokeTool = () => {
     const swapRegionAt = (at: number, m: BespokeMaster) => {
         setRegions((prev) => prev.map((r, i) => (i === at ? { ...r, master: m } : r)));
         setSelRegion(at);
+    };
+
+    /**
+     * Opening the picker FOR a region, rather than just opening the picker.
+     *
+     * swapTarget alone left the shelf on whatever was last filtered -- press
+     * "swap the master" on a Portal region while the shelf is showing TRIO and
+     * you get twenty TRIO cards in answer to a question about Portal. The
+     * creative is not a preference here, it is the identity of the thing being
+     * replaced. The duration filter is cleared rather than set: the reason for
+     * swapping is usually that no master of this length exists, and filtering
+     * to a length with nothing behind it answers with an empty shelf.
+     */
+    const openSwap = (i: number) => {
+        const r = regions[i];
+        setSwapTarget(i);
+        setSelRegion(i);
+        // A live query outranks the filters entirely, so it has to go or the
+        // shelf ignores everything set below.
+        setQuery("");
+        if (r) setCreative(r.master.creative || r.master.name);
+        setDurFilter("");
     };
 
     const swapRegion = (m: BespokeMaster) => {
@@ -2528,16 +2630,127 @@ export const BespokeTool = () => {
     // --- composition -------------------------------------------------------
     const seg = segments[Math.min(current, segments.length - 1)];
 
-    /** The output name, composed the way every other deliverable name is. */
+    /**
+     * REORDERING A ROW, by dragging along it.
+     *
+     * The running order is the one thing in Multi Art you would expect to
+     * rearrange, and tiles and segments could only be appended and deleted --
+     * so getting a segment out of third place meant deleting two and adding
+     * them back. Same mouse-event shape as dragging a master onto the board,
+     * for the same reason: Pointer Events are not reliable in this host.
+     *
+     * IT REORDERS AS YOU GO rather than dropping at the end. The row is the
+     * preview, so seeing the new order under the cursor IS the feedback, and
+     * it needs no ghost. Stable because a move only happens when the cursor is
+     * fully over another item: once the dragged item lands in that slot it is
+     * the thing under the cursor, so nothing oscillates.
+     */
+    const rowDragRef = React.useRef<{ kind: "tile" | "seg"; index: number; sx: number; moved: boolean } | null>(null);
+    const [rowDrag, setRowDrag] = useState<{ kind: "tile" | "seg"; index: number } | null>(null);
+    const tilesRef = React.useRef<HTMLDivElement>(null);
+    const timelineRef = React.useRef<HTMLDivElement>(null);
+
+    const beginRowDrag = (kind: "tile" | "seg", index: number, e: React.MouseEvent<HTMLElement>) => {
+        if (e.button !== 0) return;
+        // The tile's own remove button is not a handle.
+        if ((e.target as HTMLElement).closest && (e.target as HTMLElement).closest(".bsp-tile-x")) return;
+        rowDragRef.current = { kind, index, sx: e.clientX, moved: false };
+        setRowDrag({ kind, index });
+    };
+
+    useEffect(() => {
+        if (!rowDrag) return;
+        const moveItem = <T,>(arr: T[], from: number, to: number): T[] => {
+            const out = arr.slice();
+            const [held] = out.splice(from, 1);
+            out.splice(to, 0, held);
+            return out;
+        };
+        const indexAtX = (container: HTMLElement | null, x: number) => {
+            if (!container) return -1;
+            const kids = container.querySelectorAll("[data-ri]");
+            for (let i = 0; i < kids.length; i++) {
+                const r = (kids[i] as HTMLElement).getBoundingClientRect();
+                if (x >= r.left && x <= r.right) return i;
+            }
+            // Between two items, or past the end of the row: leave the order
+            // where it is rather than guessing at an edge.
+            return -1;
+        };
+        const move = (e: MouseEvent) => {
+            const d = rowDragRef.current;
+            if (!d) return;
+            if (!d.moved && Math.abs(e.clientX - d.sx) < 4) return;
+            d.moved = true;
+            e.preventDefault();
+            const to = indexAtX(d.kind === "tile" ? tilesRef.current : timelineRef.current, e.clientX);
+            if (to < 0 || to === d.index) return;
+            const from = d.index;
+            if (d.kind === "tile") {
+                setSegments((prev) => prev.map((sg, i) => (
+                    i === current ? { ...sg, tiles: moveItem(sg.tiles, from, to) } : sg
+                )));
+            } else {
+                setSegments((prev) => moveItem(prev, from, to));
+                setCurrent(to);
+            }
+            d.index = to;
+            setRowDrag({ kind: d.kind, index: to });
+        };
+        const up = () => {
+            rowDragRef.current = null;
+            setRowDrag(null);
+        };
+        window.addEventListener("mousemove", move);
+        window.addEventListener("mouseup", up);
+        return () => {
+            window.removeEventListener("mousemove", move);
+            window.removeEventListener("mouseup", up);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [rowDrag ? rowDrag.kind : "", current]);
+
+    /** One tile replaced, in whichever segment holds it. */
+    const replaceTile = (si: number, ti: number, m: BespokeMaster) =>
+        setSegments((prev) => prev.map((sg, i) => (
+            i === si ? { ...sg, tiles: sg.tiles.map((t, j) => (j === ti ? m : t)) } : sg
+        )));
+
+    /** Every master on the board, in order, whichever mode built it. */
+    const boardMasters = useMemo(() => {
+        if (mode === "regions") return regions.map((r) => r.master);
+        const out: BespokeMaster[] = [];
+        for (const sg of segments) for (const t of sg.tiles) out.push(t);
+        return out;
+    }, [mode, regions, segments]);
+
+    /**
+     * The output name, composed the way every other deliverable name is.
+     *
+     * MULTIPLEART IS A COUNT OF CREATIVES, NOT A MODE. It sits in the creative
+     * slot of the studio convention and means "there is more than one creative
+     * in this file" -- so three tiles of one creative are named after that
+     * creative, and it was hardcoded here, which named every Multi Art build
+     * MultipleArt whether it was or not. Identity is the folder (two masters of
+     * one creative are one creative); the printed token is the filename's.
+     *
+     * Composed for a BESPOKE board too, which had no name at all unless a
+     * reference filename happened to supply one.
+     */
     const suggestedName = useMemo(() => {
-        const first = segments[0]?.tiles[0];
+        const first = boardMasters[0];
         if (!first) return "";
+        const seen: string[] = [];
+        for (const m of boardMasters) {
+            const k = m.creative || m.name;
+            if (seen.indexOf(k) === -1) seen.push(k);
+        }
         const code = territoryCode || first.territory || "OV";
         const siteToken = site.trim();
         const bits = [
             first.film || "",
             first.region || "INTL",
-            "MultipleArt",
+            seen.length > 1 ? "MultipleArt" : creativeToken(first),
             first.artwork || "DOOH",
             siteToken,
             `${canvasW}x${canvasH}px`,
@@ -2545,18 +2758,25 @@ export const BespokeTool = () => {
             code,
         ].filter((b) => b !== "");
         return bits.join("_");
-    }, [segments, territoryCode, canvasW, canvasH, runtime, site]);
+    }, [boardMasters, territoryCode, canvasW, canvasH, runtime, site]);
 
     // Prefilled from the first tile's own site, then left alone once touched --
     // the masters usually carry the right one already.
     useEffect(() => {
-        const first = segments[0]?.tiles[0];
+        const first = boardMasters[0];
         if (!siteTouched && first && first.site) setSite(first.site);
-    }, [segments, siteTouched]);
+    }, [boardMasters, siteTouched]);
 
+    /**
+     * THE REFERENCE FILENAME OUTRANKS A COMPOSED NAME. It IS the deliverable's
+     * spec -- it is where the canvas and the runtime came from too -- so on a
+     * traced board the composed name must not overwrite it the moment the first
+     * region lands. Composing only fills the gap it used to leave: a bespoke
+     * board drawn from nothing, which had no name at all.
+     */
     useEffect(() => {
-        if (!nameTouched) setOutName(suggestedName);
-    }, [suggestedName, nameTouched]);
+        if (!nameTouched && !refPath) setOutName(suggestedName);
+    }, [suggestedName, nameTouched, refPath]);
     const totalSecs = segments.reduce((n, s) => n + s.seconds, 0);
     const wantSecs = Number(runtime) || 0;
     const canvasWidth = Number(canvasW) || 0;
@@ -2590,30 +2810,39 @@ export const BespokeTool = () => {
     if (wantSecs > 0 && Math.abs(totalSecs - wantSecs) > 0.001) {
         notes.push(`segments total ${totalSecs}s, the row asks for ${wantSecs}s`);
     }
-    // THE SAME DEFECT AS A REGION OVERRUNNING ITS BOARD, and it was checked in
-    // one mode only. AE renders the first N seconds of an over-long layer
-    // without complaint, so a 15s master in a segment that holds 10s quietly
-    // loses its endcard, its logo and its legal -- and the build looks like it
-    // worked. Every segment is checked, not just the one on screen: the others
-    // are one click away and just as deliverable.
-    for (let si = 0; si < segments.length; si++) {
-        const s = segments[si];
-        for (let ti = 0; ti < s.tiles.length; ti++) {
-            const over = overrunOf(s.tiles[ti], s.seconds);
-            if (over > 0) {
-                const said =
-                    `${segments.length > 1 ? `segment ${si + 1}: ` : ""}${shortNameOf(s.tiles[ti])} is ` +
-                    `${s.tiles[ti].duration}s in a ${s.seconds}s hold. Its last ${over}s won't render`;
-                // The same master tiled four times across a segment is one
-                // problem, not four lines of it.
-                if (notes.indexOf(said) === -1) notes.push(said);
-            }
-        }
-    }
     if (seg && seg.tiles.length > 0 && canvasWidth > 0 && naturalWidth !== canvasWidth) {
         notes.push(naturalWidth > canvasWidth
             ? `this segment is ${naturalWidth}px across a ${canvasWidth}px canvas. It will be scaled down to fit`
             : `this segment is ${naturalWidth}px across a ${canvasWidth}px canvas. It will be centred with space either side`);
+    }
+
+    /**
+     * THE SAME DEFECT AS A REGION OVERRUNNING ITS BOARD, in the mode that never
+     * checked for it. AE renders the first N seconds of an over-long layer
+     * without complaint, so a 15s master in a segment that holds 10s quietly
+     * loses its endcard, its logo and its legal, and the build looks like it
+     * worked. Every segment is checked, not just the one on screen: the others
+     * are one click away and just as deliverable.
+     *
+     * Carries the sibling that fits, so the warning is answerable in one press
+     * rather than being a description of a problem.
+     */
+    const screenChanged = !!activeScreen && boardSignature(regions) !== screenSig;
+
+    const segOverruns: { si: number; ti: number; m: BespokeMaster; over: number; fit: BespokeMaster | null }[] = [];
+    for (let si = 0; si < segments.length; si++) {
+        const sg = segments[si];
+        for (let ti = 0; ti < sg.tiles.length; ti++) {
+            const over = overrunOf(sg.tiles[ti], sg.seconds);
+            if (over > 0) {
+                segOverruns.push({
+                    si, ti,
+                    m: sg.tiles[ti],
+                    over,
+                    fit: fittingSibling(sg.tiles[ti], sg.seconds),
+                });
+            }
+        }
     }
 
     return (
@@ -3472,20 +3701,27 @@ export const BespokeTool = () => {
                                 dropped endcard and a delivered file is this
                                 line. Both ways out are offered rather than one
                                 being chosen silently. */}
-                            {overrunRegions.map(({ i, r, over }) => (
+                            {overrunRegions.map(({ i, r, over, fit }) => (
                                 <li key={r.id}>
                                     <AlertCircle size={10} />
                                     <span>
                                         R{i + 1} {regionLabel(r.master)} is {r.master.duration}s in a {runtime}s board.
                                         Its last {over}s won't render.
                                     </span>
-                                    <button
-                                        className="bsp-swaplink"
-                                        onClick={() => { setSwapTarget(i); setSelRegion(i); }}
-                                    >
-                                        swap the master
-                                    </button>
-                                    <span className="bsp-problems-or">or keep it and it plays from the start</span>
+                                    {fit ? (
+                                        <button className="bsp-swaplink" onClick={() => swapRegionAt(i, fit)}>
+                                            swap to the {fit.duration}s
+                                        </button>
+                                    ) : (
+                                        <button className="bsp-swaplink" onClick={() => openSwap(i)}>
+                                            swap the master
+                                        </button>
+                                    )}
+                                    <span className="bsp-problems-or">
+                                        {fit
+                                            ? "or keep it and it plays from the start"
+                                            : `nothing at ${r.master.size} runs ${runtime}s. Keep it and it plays from the start`}
+                                    </span>
                                 </li>
                             ))}
                         </ul>
@@ -3594,11 +3830,13 @@ export const BespokeTool = () => {
             {/* --- the frame ----------------------------------------------- */}
             <p className="bsp-lbl bsp-lbl--section">This segment fills the frame</p>
             <div className="bsp-stage">
-                <div className="bsp-tiles">
+                <div className="bsp-tiles" ref={tilesRef}>
                     {seg && seg.tiles.map((m, i) => (
                         <motion.div
-                            className="bsp-tile"
+                            className={"bsp-tile" + (rowDrag && rowDrag.kind === "tile" && rowDrag.index === i ? " is-dragging" : "")}
                             key={`${m.path}-${i}`}
+                            data-ri={i}
+                            onMouseDown={(e) => beginRowDrag("tile", i, e)}
                             style={{ background: hueFor(m.creative) }}
                             initial={reduced ? false : { opacity: 0, scale: 0.96 }}
                             animate={{ opacity: 1, scale: 1 }}
@@ -3660,7 +3898,7 @@ export const BespokeTool = () => {
 
             {/* --- running order ------------------------------------------- */}
             <p className="bsp-lbl bsp-lbl--section">Running order</p>
-            <div className="bsp-timeline">
+            <div className="bsp-timeline" ref={timelineRef}>
                 {segments.map((s, i) => {
                     const name = s.tiles.length === 0 ? "empty"
                         : s.tiles.length === 1 ? (s.tiles[0].creative || s.tiles[0].name)
@@ -3668,7 +3906,10 @@ export const BespokeTool = () => {
                     return (
                         <button
                             key={s.id}
-                            className={"bsp-seg" + (i === current ? " is-on" : "")}
+                            data-ri={i}
+                            onMouseDown={(e) => beginRowDrag("seg", i, e)}
+                            className={"bsp-seg" + (i === current ? " is-on" : "")
+                                + (rowDrag && rowDrag.kind === "seg" && rowDrag.index === i ? " is-dragging" : "")}
                             // GROW-proportional, not a percentage basis. Bases of
                             // 70% + 30% already fill the row, so the gaps and the
                             // fixed-width + button pushed it past the panel edge.
@@ -3691,10 +3932,30 @@ export const BespokeTool = () => {
 
             </>)}
 
-            {(mode === "multi") && (blockers.length > 0 || notes.length > 0) && (
+            {(mode === "multi") && (blockers.length > 0 || notes.length > 0 || segOverruns.length > 0) && (
                 <ul className="bsp-problems">
                     {blockers.map((p) => (
                         <li key={p}><AlertCircle size={10} /> {p}</li>
+                    ))}
+                    {segOverruns.map(({ si, ti, m, over, fit }) => (
+                        <li className="is-note" key={`${si}-${ti}`}>
+                            <AlertCircle size={10} />
+                            <span>
+                                {segments.length > 1 ? `Segment ${si + 1}: ` : ""}
+                                {shortNameOf(m)} is {m.duration}s in a {segments[si].seconds}s hold.
+                                Its last {over}s won't render.
+                            </span>
+                            {fit && (
+                                <button className="bsp-swaplink" onClick={() => replaceTile(si, ti, fit)}>
+                                    swap to the {fit.duration}s
+                                </button>
+                            )}
+                            <span className="bsp-problems-or">
+                                {fit
+                                    ? "or keep it and it plays from the start"
+                                    : `nothing at ${m.size} runs ${segments[si].seconds}s. Keep it and it plays from the start`}
+                            </span>
+                        </li>
                     ))}
                     {notes.map((p) => (
                         <li className="is-note" key={p}><AlertCircle size={10} /> {p}</li>
@@ -4003,14 +4264,20 @@ export const BespokeTool = () => {
                         </>
                     ) : (
                         <button
-                            className="bsp-btn bsp-btn--ghost"
+                            className={"bsp-btn bsp-btn--ghost" + (screenChanged ? " bsp-btn--nudge" : "")}
                             // Defaults to the traced screen's own name, so
                             // re-saving it keeps the same id and REPLACES the
                             // template rather than making a near-duplicate. The
                             // site is the fallback for a board built fresh.
                             onClick={() => { setTplName((activeScreen && activeScreen.name) || site.trim()); setSaving(true); }}
                         >
-                            Save this layout
+                            {/* NAMES THE SCREEN once this board came from one and
+                                no longer matches it. "Save this layout" is a
+                                chore nobody has a reason to do; "Update
+                                GRAND_REX" is the same press with the reason in
+                                it, and the id is name-derived so it supersedes
+                                rather than duplicating. */}
+                            {screenChanged ? `Update ${activeScreen!.name}` : "Save this layout"}
                         </button>
                     )}
                 </div>

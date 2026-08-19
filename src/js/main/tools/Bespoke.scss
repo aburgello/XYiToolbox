@@ -401,6 +401,15 @@
     height: 96px;
 }
 
+// DRAGGABLE ALONG THE ROW. The row reorders live under the cursor, so the held
+// item only has to be told apart from the ones moving around it.
+.bsp-tile { cursor: grab; }
+.bsp-tile.is-dragging,
+.bsp .bsp-seg.is-dragging {
+    opacity: 0.55;
+    cursor: grabbing;
+}
+
 .bsp-tile {
     position: relative;
     flex: 1;
@@ -2072,6 +2081,13 @@
     }
 
     &:focus-visible { outline: 2px solid #7fe7d8; outline-offset: 3px; }
+}
+
+// A BUTTON WITH A REASON TO BE PRESSED. Worn only while the board no longer
+// matches the library screen it came from, so it is a state and not a style.
+.bsp .bsp-btn--nudge {
+    border-color: #2dd4bf;
+    color: #7fe7d8;
 }
 
 .bsp-preview-t {
