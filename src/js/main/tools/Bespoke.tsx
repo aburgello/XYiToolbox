@@ -38,6 +38,7 @@ import { usePosterFrame, pickPreviewRender, isImageFile, type RenderEntry } from
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
 import Dropdown from "../Dropdown";
+import SegmentedToggle from "../SegmentedToggle";
 import CheckboxToggle from "../CheckboxToggle";
 import LoadingChatter from "../LoadingChatter";
 import ScreenLibrary, { ScreenEntry } from "./ScreenLibrary";
@@ -4054,15 +4055,28 @@ export const BespokeTool = () => {
                             </button>
                         );
                     })}
-                    <Dropdown
-                        className="bsp-dur"
-                        value={durFilter}
-                        onChange={(v) => { setQuery(""); setDurFilter(v); }}
-                        options={[{ value: "", label: "Any duration" }]
-                            .concat(durations.map((d) => ({ value: d, label: `${d}s` })))}
-                        placeholder="Any duration"
-                        emptyMessage="No durations to filter by."
-                    />
+                    {/* ATTACHED BUTTONS, NOT A DROPDOWN. There are two or three
+                        durations on a campaign and picking between them is the
+                        most-used filter here, so it was two clicks and a menu
+                        that covered the shelf to answer a question with three
+                        answers. All of them on the row is one click, and
+                        stepping between them is one click each.
+
+                        SegmentedToggle rather than another set of chips: this
+                        is one exclusive choice, which is what it is for, and it
+                        needs a unique `name` or it shares a Framer layoutId
+                        with any other instance on the page. */}
+                    {durations.length > 0 && (
+                        <span className="bsp-durs">
+                            <SegmentedToggle
+                                name="bsp-dur"
+                                value={durFilter}
+                                onChange={(v) => { setQuery(""); setDurFilter(v); }}
+                                options={[{ value: "", label: "Any" }]
+                                    .concat(durations.map((d) => ({ value: d, label: `${d}s` })))}
+                            />
+                        </span>
+                    )}
                 </div>
                 {searching && (
                     <p className="bsp-search-note">
@@ -4233,57 +4247,63 @@ export const BespokeTool = () => {
 
             {/* Says plainly what this does NOT do yet, rather than offering a
                 Build button that would have to guess how masters are placed. */}
-            {/* SAVING A LAYOUT IS NOT BUILDING ONE, so it does not get a
-                primary button. Ghost weight, to the left of Build. */}
-            {mode === "regions" && regions.length > 0 && (
-                <div className="bsp-tpl">
-                    {saving ? (
-                        <>
-                            <input
-                                className="bsp-input bsp-tpl-name"
-                                value={tplName}
-                                autoFocus
-                                placeholder={site.trim() || "name this screen"}
-                                onChange={(e) => setTplName(e.target.value)}
-                                onKeyDown={(e) => { if (e.key === "Enter") saveTemplate(); if (e.key === "Escape") setSaving(false); }}
-                            />
-                            {/* SAYS WHERE IT IS ABOUT TO GO. Which country a
-                                layout lands in was invisible and guessable-wrong
-                                -- and "Unfiled" is what you get with no traced
-                                screen and no country chosen, which is worth
-                                seeing BEFORE pressing Save rather than
-                                discovering in the rail afterwards. */}
-                            <span className="bsp-tpl-dest">
-                                → {saveTerritory || "Unfiled"}
-                                {activeScreen && activeScreen.territory ? " (from the screen)" : ""}
-                            </span>
-                            <button className="bsp-btn bsp-btn--ghost" onClick={saveTemplate} disabled={!tplName.trim()}>
-                                Save
-                            </button>
-                            <button className="bsp-swaplink" onClick={() => setSaving(false)}>cancel</button>
-                        </>
-                    ) : (
-                        <button
-                            className={"bsp-btn bsp-btn--ghost" + (screenChanged ? " bsp-btn--nudge" : "")}
-                            // Defaults to the traced screen's own name, so
-                            // re-saving it keeps the same id and REPLACES the
-                            // template rather than making a near-duplicate. The
-                            // site is the fallback for a board built fresh.
-                            onClick={() => { setTplName((activeScreen && activeScreen.name) || site.trim()); setSaving(true); }}
-                        >
-                            {/* NAMES THE SCREEN once this board came from one and
-                                no longer matches it. "Save this layout" is a
-                                chore nobody has a reason to do; "Update
-                                GRAND_REX" is the same press with the reason in
-                                it, and the id is name-derived so it supersedes
-                                rather than duplicating. */}
-                            {screenChanged ? `Update ${activeScreen!.name}` : "Save this layout"}
-                        </button>
-                    )}
-                </div>
-            )}
+            {/* ONE FOOTER, TWO ENDS OF IT. Saving the layout and building the
+                composition are the two things you do when the board is
+                finished, and they were two stacked rows with a divider between
+                them -- so the last thing on screen was a lone button on the
+                right with an unrelated one floating above it. Same row now:
+                saving to the left, building to the right.
 
+                SAVING A LAYOUT IS NOT BUILDING ONE, so it keeps ghost weight
+                against Build's primary. */}
             <div className="bsp-pending" hidden={!mode}>
+                {mode === "regions" && regions.length > 0 && (
+                    <div className="bsp-tpl">
+                        {saving ? (
+                            <>
+                                <input
+                                    className="bsp-input bsp-tpl-name"
+                                    value={tplName}
+                                    autoFocus
+                                    placeholder={site.trim() || "name this screen"}
+                                    onChange={(e) => setTplName(e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === "Enter") saveTemplate(); if (e.key === "Escape") setSaving(false); }}
+                                />
+                                {/* SAYS WHERE IT IS ABOUT TO GO. Which country a
+                                    layout lands in was invisible and guessable-wrong
+                                    -- and "Unfiled" is what you get with no traced
+                                    screen and no country chosen, which is worth
+                                    seeing BEFORE pressing Save rather than
+                                    discovering in the rail afterwards. */}
+                                <span className="bsp-tpl-dest">
+                                    → {saveTerritory || "Unfiled"}
+                                    {activeScreen && activeScreen.territory ? " (from the screen)" : ""}
+                                </span>
+                                <button className="bsp-btn bsp-btn--ghost" onClick={saveTemplate} disabled={!tplName.trim()}>
+                                    Save
+                                </button>
+                                <button className="bsp-swaplink" onClick={() => setSaving(false)}>cancel</button>
+                            </>
+                        ) : (
+                            <button
+                                className={"bsp-btn bsp-btn--ghost" + (screenChanged ? " bsp-btn--nudge" : "")}
+                                // Defaults to the traced screen's own name, so
+                                // re-saving it keeps the same id and REPLACES the
+                                // template rather than making a near-duplicate. The
+                                // site is the fallback for a board built fresh.
+                                onClick={() => { setTplName((activeScreen && activeScreen.name) || site.trim()); setSaving(true); }}
+                            >
+                                {/* NAMES THE SCREEN once this board came from one and
+                                    no longer matches it. "Save this layout" is a
+                                    chore nobody has a reason to do; "Update
+                                    GRAND_REX" is the same press with the reason in
+                                    it, and the id is name-derived so it supersedes
+                                    rather than duplicating. */}
+                                {screenChanged ? `Update ${activeScreen!.name}` : "Save this layout"}
+                            </button>
+                        )}
+                    </div>
+                )}
                 <Tooltip text={mode === "regions"
                     ? (regions.length ? "Import the masters and assemble the regions" : "Add a region first")
                     : (blockers.length ? "Every segment needs at least one creative" : "Import the masters and assemble the composition")}>

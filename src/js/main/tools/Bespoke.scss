@@ -383,9 +383,22 @@
 .bsp-dest .dropdown,
 .bsp-dest .dropdown-trigger { width: 100%; }
 
-// The duration filter sits in the chip row, so it stays its own width there.
-.bsp-dur { min-width: 118px; }
-.bsp-filters .dropdown { flex: none; }
+// The duration control sits in the chip row, so it is sized to the chips
+// rather than to its own defaults: no bottom margin (it is not stacked under
+// anything here) and the chips' own padding and weight, or three attached
+// buttons tower over the four beside them.
+.bsp-durs { display: inline-flex; }
+
+.bsp-filters .segmented-toggle {
+    margin-bottom: 0;
+    border-color: var(--surface-border, #363636);
+}
+
+.bsp-filters .seg-option {
+    padding: 3px 9px;
+    font-size: var(--t-sm);
+    font-weight: 500;
+}
 
 /* --- the frame ----------------------------------------------------------- */
 .bsp-stage {
@@ -985,6 +998,11 @@
     gap: 8px;
     row-gap: 6px;
     flex-wrap: wrap;
+    // Takes the left end of the footer and pushes Build to the right. A basis
+    // rather than plain grow, so the name input has room to be typed in when
+    // the row is saving.
+    flex: 1 1 260px;
+    min-width: 0;
 }
 
 .bsp-tpl-name {
@@ -997,24 +1015,20 @@
 
 .bsp-tpl-pick { max-width: 220px; }
 
-.bsp-pending {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    margin: 0;
-    padding-top: 9px;
-    border-top: 1px solid var(--surface-divider, #2a2a2a);
-    font-size: var(--t-sm);
-    color: #6f757f;
-}
-
+// The footer: saving at one end, building at the other. (This was two
+// identical rules stacked, one silently overriding the other.)
 .bsp-pending {
     display: flex;
     justify-content: flex-end;
     align-items: center;
     gap: 10px;
+    row-gap: 6px;
+    flex-wrap: wrap;
+    margin: 0;
     padding-top: 9px;
     border-top: 1px solid var(--surface-divider, #2a2a2a);
+    font-size: var(--t-sm);
+    color: #6f757f;
 }
 
 .bsp-probe {
