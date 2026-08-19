@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+// AGENT-HOOK — remove with the agent. See docs: grep AGENT-HOOK.
 import { usePendingFill } from "../lib/agent/fieldHandoff";
 import { Play, Trash2, Save, Pencil, X, Terminal, LayoutList, MousePointerClick, Check } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
@@ -47,6 +48,7 @@ const ScriptPlayground: React.FC = () => {
      * suggestion — so the status line says who wrote it and that it has not
      * run. That is the whole mitigation, and it is why this is allowed.
      */
+    // AGENT-HOOK — remove with the agent.
     usePendingFill("script-playground", (fill) => {
         if (typeof fill.code !== "string" || !fill.code.trim()) return;
 

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import AskIcon from "../AskIcon";
 import { evalTS } from "../../lib/utils/bolt";
+// AGENT-HOOK — remove with the agent. See docs: grep AGENT-HOOK.
 import { isAgentEnabled, toggleAgentEnabled, subscribeToBubble } from "../lib/agent/bubbleControl";
 import { confirmDialog, promptDialog } from "../Dialog";
 import { TOOLS, CATEGORIES, categoryStyleVars, prefetchTool } from "../toolRegistry";
@@ -53,6 +54,7 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
     // Favourites group Toolset renders further down this same screen.
     const { favoriteIds, toggleFavorite, boxOpen, toggleFavoritesBox } = useFavorites(TOOLS);
     const [foldersOpen, setFoldersOpen] = useState(false);
+    // AGENT-HOOK — remove with the agent.
     // Mirrored from bubbleControl, and SUBSCRIBED rather than read once: the
     // bubble's own X and its launcher change the shared state too, so a button
     // that only read it at mount would sit lit up over a bubble somebody had

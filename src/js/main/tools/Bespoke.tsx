@@ -31,6 +31,7 @@ import { motion, useReducedMotion } from "motion/react";
 import { AlertCircle, ChevronRight, Copy, Globe2, Layers, LayoutGrid, Library, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, RotateCcw, Square as SquareIcon, Trash2, X } from "lucide-react";
 import { csi, evalTS } from "../../lib/utils/bolt";
 import { deriveMastersFromMarkets } from "../lib/mastersRoot";
+// AGENT-HOOK — remove with the agent. See docs: grep AGENT-HOOK.
 import { usePendingFill } from "../lib/agent/fieldHandoff";
 import { parseSegmentSpec, planSegments } from "../lib/agent/multiArt";
 import { usePosterFrame, pickPreviewRender, isImageFile, type RenderEntry } from "../lib/renderPreview";
@@ -1029,6 +1030,7 @@ export const BespokeTool = () => {
      * why. Same rule as the Script Playground box -- never quietly overwrite
      * something somebody was in the middle of.
      */
+    // AGENT-HOOK — remove with the agent.
     usePendingFill("bespoke", (fill) => {
         const asked: string[] = [];
 

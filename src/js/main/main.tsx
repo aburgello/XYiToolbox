@@ -39,6 +39,7 @@ import CommandPalette from "./CommandPalette";
 import { GsapScreenTransition } from "./gsap/components/GsapScreenTransition";
 import { useTheme } from "./hooks/useTheme";
 import { registerSoftReload } from "./softReload";
+// AGENT-HOOK — remove with the agent. See docs: grep AGENT-HOOK.
 import { setNavigator } from "./lib/agent/navigation";
 import { setAgentScreen } from "./lib/agent/context";
 import AgentBubble from "./AgentBubble";
@@ -121,6 +122,7 @@ const Main = () => {
     // import the tool registry today and should not start doing so for a
     // caption.
     useEffect(() => {
+        // AGENT-HOOK — remove with the agent.
         setAgentScreen(
             screen.type === "category"
                 ? { type: "category", categoryId: screen.categoryId }

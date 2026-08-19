@@ -7,6 +7,7 @@
 // the selected project item(s) -- never touches a file on disk.
 // =============================================================================
 import React, { useState } from "react";
+// AGENT-HOOK — remove with the agent. See docs: grep AGENT-HOOK.
 import { usePendingFill } from "../lib/agent/fieldHandoff";
 import { Wand2, ScanSearch, RotateCcw } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
@@ -49,6 +50,7 @@ const NameGeneratorTool = () => {
      * Take-once, keyed by tool id, so coming back here later cannot silently
      * re-fill a form already dealt with.
      */
+    // AGENT-HOOK — remove with the agent.
     usePendingFill("name-generator", (fill) => {
         const setters: Record<string, [string, (v: string) => void]> = {
             filmTitle: [filmTitle, setFilmTitle],

@@ -8,6 +8,7 @@ import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import { evalTS } from "../../lib/utils/bolt";
 import { sfx } from "../../lib/utils/sfx";
 import { suggestForComp, readSpecReport, type SpecSuggestion, type SpecReport } from "../lib/deliverySpecMatch";
+// AGENT-HOOK — remove with the agent. See docs: grep AGENT-HOOK.
 import { setLoadedSpecReport, setLoadedDeliveryRows } from "../lib/agent/deliveryContext";
 import AskAbout from "../AskAbout";
 import { child_process } from "../../lib/cep/node";
@@ -425,6 +426,7 @@ const DeliveryHubTool = () => {
     const [report, setReport] = useState<SpecReport | null>(null);
     const [reportBusy, setReportBusy] = useState(false);
 
+    // AGENT-HOOK — remove with the agent.
     // PUBLISHED FOR THE AGENT, on every change. Asked about "these three
     // renders" it used to answer about the active comp alone, because that was
     // the only deliverable it had ever been shown.

@@ -178,6 +178,8 @@ export interface ToolEntry {
     /** Short description shown in the tool content header. */
     description?: string;
     /**
+     * AGENT-HOOK — remove with the agent.
+     *
      * What each button in `actions` actually DOES, keyed by its exact label.
      *
      * A PARALLEL FIELD rather than richer `actions` entries, because
@@ -246,6 +248,7 @@ export interface ToolEntry {
      * already typed, because overwriting your work is where a proposal turns
      * into a destructive act.
      */
+    /** AGENT-HOOK — remove with the agent. */
     fillableFields?: string[];
     /**
      * Set when this tool's real home is a category's bespoke screen rather
