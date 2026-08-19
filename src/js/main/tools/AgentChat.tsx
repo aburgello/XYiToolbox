@@ -18,21 +18,21 @@
 // =============================================================================
 import React, { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Send, KeyRound, Loader2, CornerDownLeft } from "lucide-react";
+import { Send, KeyRound, Loader2 } from "lucide-react";
 import StatusIcon from "../StatusIcon";
 import { ask, type Step } from "../lib/agent/loop";
 import { buildContextLine } from "../lib/agent/context";
 import { getApiKey, setApiKey, getProvider, setProvider, PROVIDERS, isPeakNow } from "../lib/agent/provider";
+import AskIcon from "../AskIcon";
 import { takePendingQuestion, subscribeToBubble } from "../lib/agent/bubbleControl";
+import { suggestedOpeners } from "../lib/agent/context";
 import "../shared.scss";
 import "./formTool.scss";
 import "./AgentChat.scss";
 
-const EXAMPLES = [
-    "Which masters in ODY have no render yet?",
-    "How many masters are in ODY?",
-    "What campaigns do we have?",
-];
+// Openers come from suggestedOpeners(), keyed off the screen. The set that
+// used to live here named a campaign -- ODY -- which stopped being live months
+// ago, so the first thing the panel ever said was out of date.
 
 interface Turn {
     question: string;
@@ -353,13 +353,20 @@ const AgentChat: React.FC<Props> = ({ focusKey, headerSlot }) => {
             <div className="agentchat-scroll" ref={scrollRef}>
                 {turns.length === 0 && !live && (
                     <div className="agentchat-empty">
-                        <p className="agentchat-empty-title">Ask about the master library.</p>
+                        <AskIcon size={22} className="agentchat-empty-mark" />
+                        <p className="agentchat-empty-title">Ask about the work in front of you.</p>
+                        {/* WAS "Read-only — it cannot change anything", which
+                            stopped being true the day it gained write tools. A
+                            panel that understates what it can do is worse than
+                            one that overstates it: somebody trusts the claim
+                            and stops watching. */}
                         <p className="agentchat-empty-body">
-                            Read-only — it can list campaigns, list masters, and check which have renders.
-                            It cannot change anything.
+                            It reads campaigns, masters, renders, spec sheets and your Wrike jobs — and it can
+                            build in After Effects: comps, layers, keyframes, expressions, easing. Every change
+                            is one Ctrl+Z, and it never presses a button that renders or delivers.
                         </p>
                         <div className="agentchat-examples">
-                            {EXAMPLES.map((ex) => (
+                            {suggestedOpeners().map((ex) => (
                                 <button key={ex} className="agentchat-example" onClick={() => send(ex)}>
                                     {ex}
                                 </button>
@@ -370,13 +377,33 @@ const AgentChat: React.FC<Props> = ({ focusKey, headerSlot }) => {
 
                 {turns.map((t, i) => (
                     <div className="agentchat-turn" key={i}>
-                        <div className="agentchat-q"><CornerDownLeft size={12} /> {t.question}</div>
-                        {t.steps.map((s, j) => (
-                            <div className={"agentchat-step" + (s.ok ? "" : " is-fail")} key={j}>
-                                <span className="agentchat-step-name">{s.name}</span>
-                                <span className="agentchat-step-detail">{s.detail}</span>
-                            </div>
-                        ))}
+                        {/* THE QUESTION READS AS SOMETHING SOMEBODY SAID, in its
+                            own tinted block, rather than as a bold heading over
+                            a wall of tool output. */}
+                        <div className="agentchat-q">{t.question}</div>
+
+                        {/* TOOL STEPS RECEDE. They are the least interesting
+                            part of a turn and used to be the loudest: monospace
+                            rows with an accent bar, above the answer somebody
+                            actually wanted. Collapsed to one quiet line, opened
+                            when something failed or when asked. */}
+                        {t.steps.length > 0 && (
+                            <details className="agentchat-steps" open={t.steps.some((s) => !s.ok)}>
+                                <summary>
+                                    {t.steps.length === 1
+                                        ? t.steps[0].name
+                                        : `${t.steps.length} steps`}
+                                    {t.steps.some((s) => !s.ok) && <em> — one didn't work</em>}
+                                </summary>
+                                {t.steps.map((s, j) => (
+                                    <div className={"agentchat-step" + (s.ok ? "" : " is-fail")} key={j}>
+                                        <span className="agentchat-step-name">{s.name}</span>
+                                        <span className="agentchat-step-detail">{s.detail}</span>
+                                    </div>
+                                ))}
+                            </details>
+                        )}
+
                         {t.error
                             ? <div className="loc-status loc-status-error"><StatusIcon type="error" /><span>{t.error}</span></div>
                             : <div className="agentchat-a">{t.answer}</div>}
@@ -385,6 +412,10 @@ const AgentChat: React.FC<Props> = ({ focusKey, headerSlot }) => {
 
                 {live && (
                     <div className="agentchat-turn agentchat-turn--live">
+                        {/* SHOWN IN FULL WHILE IT RUNS, unlike a finished turn:
+                            this is the only thing on screen saying anything is
+                            happening, and a collapsed summary would read as a
+                            stall. */}
                         {live.map((s, j) => (
                             <div className={"agentchat-step" + (s.ok ? "" : " is-fail")} key={j}>
                                 <span className="agentchat-step-name">{s.name}</span>
@@ -392,7 +423,8 @@ const AgentChat: React.FC<Props> = ({ focusKey, headerSlot }) => {
                             </div>
                         ))}
                         <div className="agentchat-thinking">
-                            <Loader2 size={13} className="agentchat-spin" /> working…
+                            <Loader2 size={13} className="agentchat-spin" />
+                            {live.length ? "working…" : "thinking…"}
                         </div>
                     </div>
                 )}

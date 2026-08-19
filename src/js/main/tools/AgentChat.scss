@@ -80,23 +80,31 @@
     }
 
     .agentchat-empty {
-        padding: 22px 8px;
+        padding: 26px 10px 18px;
         text-align: center;
-        opacity: 0.75;
+    }
+
+    // The agent's own mark, quiet: it says what this panel is without a line
+    // of text doing it.
+    .agentchat-empty-mark {
+        color: #5eead4;
+        opacity: 0.5;
+        margin-bottom: 10px;
     }
 
     .agentchat-empty-title {
-        margin: 0 0 6px;
+        margin: 0 0 8px;
         font-size: 13px;
         font-weight: 600;
+        color: #e8e8e8;
     }
 
     .agentchat-empty-body {
-        margin: 0 auto 14px;
-        max-width: 320px;
-        font-size: 11.5px;
-        line-height: 1.5;
-        opacity: 0.7;
+        margin: 0 auto 16px;
+        max-width: 340px;
+        font-size: 11px;
+        line-height: 1.6;
+        opacity: 0.62;
     }
 
     .agentchat-examples {
@@ -107,34 +115,46 @@
 
     .agentchat-example {
         margin-bottom: 6px;
-        padding: 6px 12px;
+        padding: 7px 13px;
         font-size: 11.5px;
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.10);
+        // Tinted with the agent's own colour rather than plain grey: these
+        // spend money when pressed, like every other affordance that calls it.
+        background: rgba(90, 200, 180, 0.07);
+        border: 1px solid rgba(90, 200, 180, 0.2);
         border-radius: 14px;
-        color: inherit;
+        color: #cfe9e4;
         cursor: pointer;
+        text-align: left;
+        line-height: 1.4;
 
-        &:hover  { background: rgba(255, 255, 255, 0.10); }
+        &:hover  { background: rgba(90, 200, 180, 0.14); border-color: rgba(90, 200, 180, 0.34); color: #e2f5f1; }
         &:active { background: rgba(255, 255, 255, 0.15); }
     }
 
     .agentchat-turn {
-        margin-bottom: 14px;
-        padding-bottom: 12px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        margin-bottom: 16px;
+        padding-bottom: 14px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 
-        &:last-child { border-bottom: none; }
+        &:last-child { border-bottom: none; padding-bottom: 4px; }
     }
 
     .agentchat-turn--live { opacity: 0.9; }
 
     .agentchat-q {
-        display: flex;
-        align-items: center;
-        margin-bottom: 8px;
-        font-size: 12px;
-        font-weight: 600;
+        margin-bottom: 9px;
+        padding: 7px 10px;
+        font-size: 11.5px;
+        font-weight: 500;
+        line-height: 1.5;
+        color: #ddd;
+        // A block of its own rather than a bold heading: what somebody typed
+        // reads as speech, and the answer below it as the reply.
+        background: rgba(255, 255, 255, 0.045);
+        border-left: 2px solid rgba(90, 200, 180, 0.5);
+        border-radius: 0 5px 5px 0;
+        white-space: pre-wrap;
+        word-break: break-word;
 
         svg {
             margin-right: 6px;
@@ -149,13 +169,39 @@
     // "what did it actually call", and hiding that turns every debug session
     // into guesswork.
 
+    // WHAT IT DID, folded away. These were monospace rows with an accent bar
+    // sitting above the answer somebody actually wanted, and on a three-tool
+    // turn they were most of the screen.
+    .agentchat-steps {
+        margin: 0 0 8px;
+
+        summary {
+            font-size: 10px;
+            opacity: 0.45;
+            cursor: pointer;
+            padding: 2px 0;
+            font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+            // The default triangle is large and dark against this surface.
+            list-style: none;
+
+            &::-webkit-details-marker { display: none; }
+            &::before { content: "▸ "; }
+
+            &:hover { opacity: 0.75; }
+            em { font-style: normal; color: #e0b050; opacity: 0.9; }
+        }
+
+        &[open] > summary::before { content: "▾ "; }
+        &[open] > summary { margin-bottom: 4px; }
+    }
+
     .agentchat-step {
         display: flex;
         align-items: baseline;
         margin: 0 0 3px 4px;
         padding: 3px 8px;
-        font-size: 11px;
-        border-left: 2px solid var(--ov-accent, #68a2d9);
+        font-size: 10.5px;
+        border-left: 2px solid rgba(255, 255, 255, 0.14);
         background: rgba(255, 255, 255, 0.03);
         border-radius: 0 3px 3px 0;
 
@@ -180,9 +226,13 @@
     .agentchat-a {
         margin-top: 8px;
         font-size: 12px;
-        line-height: 1.55;
+        // Looser than the rest of the panel on purpose: this is the only thing
+        // here anybody reads a paragraph of.
+        line-height: 1.62;
+        color: #dcdcdc;
         white-space: pre-wrap;
-        word-break: break-word;
+        // `break-word`, not `anywhere` — Chromium 74 is the build target.
+        overflow-wrap: break-word;
     }
 
     .agentchat-thinking {

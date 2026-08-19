@@ -136,3 +136,55 @@ export async function buildContextLine(): Promise<string> {
     // question, or quote it back as though the artist had said it.
     return "\n\n[Context (not part of the question): " + parts.join(" ") + "]";
 }
+
+/**
+ * Openers for the empty chat, chosen from where the artist is standing.
+ *
+ * The hardcoded set this replaces named a campaign -- "Which masters in ODY
+ * have no render yet?" -- and ODY stopped being the live campaign months ago.
+ * A starting screen that suggests work nobody is doing teaches people the tool
+ * is out of date before they have asked it anything.
+ *
+ * SYNCHRONOUS, and deliberately: the alternative is probing the host for the
+ * open comp every time the bubble opens, which puts a bridge call on a panel
+ * that has not been asked to do anything yet. The screen alone is enough to
+ * be relevant, and nothing here names a campaign, a territory or a creative --
+ * that is exactly what went stale last time.
+ */
+export function suggestedOpeners(): string[] {
+    const s = currentScreen;
+    const toolId = s && s.type === "tool" ? s.toolId : "";
+
+    if (toolId === "delivery-hub") {
+        return [
+            "Check the spec sheet against the rows I've loaded",
+            "What do these specs actually ask for?",
+            "Which of my jobs are ready to deliver?",
+        ];
+    }
+    if (toolId === "bespoke") {
+        return [
+            "Have we built a screen like this before?",
+            "Show me the saved screens for a country",
+            "What masters does this campaign have?",
+        ];
+    }
+    if (toolId === "artwork-check") {
+        return [
+            "Which art edit should this deliverable use?",
+            "What creatives does this campaign have?",
+        ];
+    }
+    if (s && s.type === "category" && s.categoryId === "localise") {
+        return [
+            "What can I localise today?",
+            "What's on my plate?",
+            "What campaigns do we have?",
+        ];
+    }
+    return [
+        "What's on my plate?",
+        "What campaigns do we have?",
+        "What can you help me with?",
+    ];
+}
