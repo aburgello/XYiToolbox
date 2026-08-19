@@ -82,7 +82,7 @@ const NameAuditTool = () => {
             });
         } catch (e) {
             setStatus({
-                text: "No CEP bridge detected — open this panel inside After Effects to run it.",
+                text: "No CEP bridge detected. Open this panel inside After Effects to run it.",
                 type: "error",
             });
         } finally {

@@ -374,7 +374,7 @@ const ExpressionsBank: React.FC = () => {
                 ? { type: "success", text: (result as { message?: string }).message || "Shared with the team." }
                 : { type: "error", text: result.error || "Something went wrong." });
         } catch {
-            setStatus({ type: "error", text: "No CEP bridge detected — open this panel inside After Effects." });
+            setStatus({ type: "error", text: "No CEP bridge detected. Open this panel inside After Effects." });
         }
     };
 

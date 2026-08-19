@@ -63,7 +63,7 @@ const CompInspector: React.FC = () => {
             }
         } catch {
             setInfo(MOCK_COMP);
-            setStatus({ type: "error", text: "No bridge — showing mock data." });
+            setStatus({ type: "error", text: "No bridge. Showing mock data." });
         } finally { setBusy(false); }
     };
 

@@ -34,7 +34,7 @@ const LOSToolsTool = () => {
             if (path === undefined) throw new Error("no bridge");
             if (path) setter(path);
         } catch (e) {
-            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to use this.", type: "error" });
+            setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects to use this.", type: "error" });
         }
     };
 
@@ -50,7 +50,7 @@ const LOSToolsTool = () => {
             if (result === undefined) throw new Error("no bridge");
             setStatus(result.success ? { text: "Complete. Any per-project issues were shown as their own alert during the run.", type: "success" } : { text: result.error || "Something went wrong.", type: "error" });
         } catch (e) {
-            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+            setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects to run it.", type: "error" });
         } finally {
             setBusy(false);
         }

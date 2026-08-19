@@ -131,7 +131,7 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
             }
         } catch (e) {
             sfx.error();
-            setRunStatus({ type: "error", text: "No CEP bridge detected — open this panel inside After Effects." });
+            setRunStatus({ type: "error", text: "No CEP bridge detected. Open this panel inside After Effects." });
         } finally {
             setRunningId(null);
         }

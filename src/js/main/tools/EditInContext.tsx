@@ -189,7 +189,7 @@ const EditInContextTool = () => {
             if (res === undefined) throw new Error("no bridge");
             return res as any;
         } catch (e) {
-            say("No CEP bridge detected — open this panel inside After Effects.");
+            say("No CEP bridge detected. Open this panel inside After Effects.");
             return null;
         }
     }, []);

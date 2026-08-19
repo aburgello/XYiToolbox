@@ -31,7 +31,7 @@ const UsefulFoldersTool = () => {
             if (result === undefined) throw new Error("no bridge");
             setFolders(result);
         } catch (e) {
-            setError("No CEP bridge detected — open this panel inside After Effects to use this.");
+            setError("No CEP bridge detected. Open this panel inside After Effects to use this.");
             setFolders([]);
         }
     };

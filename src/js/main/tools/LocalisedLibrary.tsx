@@ -272,7 +272,7 @@ const LocalisedLibraryTool = () => {
             // preview). Anything else here is a real thrown ExtendScript
             // exception with an actual `.message` -- show that instead so
             // this class of bug is visible again if it ever recurs.
-            const message = e && e.message && e.message !== "no bridge" ? e.message : "No CEP bridge detected — open this panel inside After Effects to run it.";
+            const message = e && e.message && e.message !== "no bridge" ? e.message : "No CEP bridge detected. Open this panel inside After Effects to run it.";
             pushToast(message, "error");
             return null;
         }

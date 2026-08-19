@@ -105,7 +105,7 @@ const ScriptPlayground: React.FC = () => {
                 setStatus({ type: "error", text: "Script failed." });
             }
         } catch (e) {
-            setOutput("No CEP bridge detected — open this panel inside After Effects to run scripts.");
+            setOutput("No CEP bridge detected. Open this panel inside After Effects to run scripts.");
             setStatus({ type: "error", text: "No bridge." });
         } finally {
             setBusy(false);
@@ -178,7 +178,7 @@ const ScriptPlayground: React.FC = () => {
                 text: result.success ? `"${t.name}" ran: ${result.message || "(no output)"}` : `"${t.name}" failed: ${result.error || "Unknown error."}`,
             });
         } catch {
-            setStatus({ type: "error", text: "No CEP bridge detected — open this panel inside After Effects to run tools." });
+            setStatus({ type: "error", text: "No CEP bridge detected. Open this panel inside After Effects to run tools." });
         }
     };
 

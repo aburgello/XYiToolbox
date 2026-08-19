@@ -406,7 +406,7 @@ const ScreenLibrary: React.FC<{
                 onStatus((res && res.error) || "Couldn't read that folder.", "error");
             }
         } catch {
-            onStatus("No CEP bridge detected — open this panel inside After Effects to run it.", "error");
+            onStatus("No CEP bridge detected. Open this panel inside After Effects to run it.", "error");
         }
         setBusy(false);
     };

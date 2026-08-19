@@ -20,7 +20,7 @@ const PDFToCSVTool = () => {
         try {
             const result = await evalTS("pdfToCsvGenerate");
             if (result === undefined) {
-                setStatus({ text: "No CEP bridge — open inside After Effects.", type: "error" });
+                setStatus({ text: "No CEP bridge. Open inside After Effects.", type: "error" });
                 return;
             }
             setStatus({

@@ -53,7 +53,7 @@ const DeliveryChecklistTool = () => {
             setRows((result.comps || []).map((c: any) => ({ id: c.id, name: c.name, folderName: c.folderName ?? null, sizeMB: "5" })));
             if ((result.comps || []).length > 0) sfx.bop();
         } catch (e) {
-            setError("No CEP bridge detected — open this panel inside After Effects to run it.");
+            setError("No CEP bridge detected. Open this panel inside After Effects to run it.");
         }
     };
 
@@ -93,7 +93,7 @@ const DeliveryChecklistTool = () => {
             if (result.success) setLog(result.log || "");
             else setError(result.error || "Something went wrong.");
         } catch (e) {
-            setError("No CEP bridge detected — open this panel inside After Effects to run it.");
+            setError("No CEP bridge detected. Open this panel inside After Effects to run it.");
         } finally {
             setBusy(false);
         }

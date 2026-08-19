@@ -92,7 +92,7 @@ const NameGeneratorTool = () => {
             if (result.success && onResult) onResult(result);
             setStatus(result.success ? { text: result.newName || result.message || `${label} complete.`, type: "success" } : { text: result.error || "Something went wrong.", type: "error" });
         } catch (e) {
-            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+            setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects to run it.", type: "error" });
         } finally {
             setBusy(false);
         }

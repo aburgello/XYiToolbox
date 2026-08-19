@@ -54,7 +54,7 @@ const RenderQueueManager: React.FC = () => {
             }
         } catch {
             setItems(MOCK_ITEMS);
-            setStatus({ type: "error", text: "No bridge — showing mock data." });
+            setStatus({ type: "error", text: "No bridge. Showing mock data." });
         } finally {
             setLoaded(true);
             setBusy(false);

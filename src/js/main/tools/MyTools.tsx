@@ -46,7 +46,7 @@ const MyTools: React.FC<ToolProps> = ({ onSelectTool }) => {
                 text: result.success ? `"${t.name}" ran: ${result.message || "(no output)"}` : `"${t.name}" failed: ${result.error || "Unknown error."}`,
             });
         } catch {
-            setStatus({ type: "error", text: "No CEP bridge detected — open this panel inside After Effects to run tools." });
+            setStatus({ type: "error", text: "No CEP bridge detected. Open this panel inside After Effects to run tools." });
         }
     };
 
@@ -72,7 +72,7 @@ const MyTools: React.FC<ToolProps> = ({ onSelectTool }) => {
                 text: result.success ? result.message || "Shared with the team." : result.error || "Something went wrong.",
             });
         } catch {
-            setStatus({ type: "error", text: "No CEP bridge detected — open this panel inside After Effects to share." });
+            setStatus({ type: "error", text: "No CEP bridge detected. Open this panel inside After Effects to share." });
         } finally {
             setSharingId(null);
         }

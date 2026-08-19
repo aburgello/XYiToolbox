@@ -82,7 +82,7 @@ interface UserEffect {
     category: string;
 }
 
-const NO_BRIDGE_MSG = "No CEP bridge detected — open this panel inside After Effects to run it.";
+const NO_BRIDGE_MSG = "No CEP bridge detected. Open this panel inside After Effects to run it.";
 
 // A caught rejection from evalTS is one of: our own "no bridge" sentinel
 // (thrown when the bridge resolves undefined); the raw TypeError CSInterface

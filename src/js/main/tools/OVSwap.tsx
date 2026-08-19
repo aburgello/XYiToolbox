@@ -82,7 +82,7 @@ const OVSwapTool = () => {
         return result;
     };
 
-    const noBridge = () => setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+    const noBridge = () => setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects to run it.", type: "error" });
 
     // Fills the code field from the project itself (see suggestOvSwapCode).
     // Silent on failure: an empty field is a perfectly normal outcome and

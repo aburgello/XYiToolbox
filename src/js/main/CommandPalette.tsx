@@ -200,7 +200,7 @@ const CommandPalette: React.FC<Props> = ({ screen, onNavigate }) => {
                 // Toolset grid button's own picker just leaves that tile as-is.
                 cancelled = true;
             } else if (result === undefined) {
-                setOutcome({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+                setOutcome({ text: "No CEP bridge detected. Open this panel inside After Effects to run it.", type: "error" });
             } else {
                 setOutcome({
                     text: result.success ? action.successText(result) : result.error || "Something went wrong.",

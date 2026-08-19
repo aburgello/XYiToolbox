@@ -63,7 +63,7 @@ const CampaignLocaliserTool: React.FC<ToolProps> = (_props) => {
                 sfx.error();
             }
         } catch (e) {
-            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+            setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects to run it.", type: "error" });
             sfx.error();
         } finally {
             setBusy(false);
@@ -83,7 +83,7 @@ const CampaignLocaliserTool: React.FC<ToolProps> = (_props) => {
             );
             result.success ? sfx.success() : sfx.error();
         } catch (e) {
-            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+            setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects to run it.", type: "error" });
             sfx.error();
         } finally {
             setBusy(false);
@@ -108,7 +108,7 @@ const CampaignLocaliserTool: React.FC<ToolProps> = (_props) => {
                 result.success ? sfx.success() : sfx.error();
             }
         } catch (e) {
-            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+            setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects to run it.", type: "error" });
             sfx.error();
         } finally {
             setBusy(false);

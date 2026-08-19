@@ -139,7 +139,7 @@ const CheekyDTTool = () => {
                 setStatus({ text: res.error || "Couldn't read the Frontcard.", type: "error" });
             }
         } catch {
-            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+            setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects to run it.", type: "error" });
         } finally {
             setLoading(false);
         }
@@ -236,7 +236,7 @@ const CheekyDTTool = () => {
             if (code === undefined) throw new Error("no bridge");
             setLookup({ text: (code as unknown as string) || "No matching territory found.", type: code ? "success" : "error" });
         } catch {
-            setLookup({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+            setLookup({ text: "No CEP bridge detected. Open this panel inside After Effects to run it.", type: "error" });
         }
     };
 
