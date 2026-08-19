@@ -8,6 +8,9 @@ import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import { evalTS } from "../../lib/utils/bolt";
 import { sfx } from "../../lib/utils/sfx";
 import { suggestForComp, readSpecReport, type SpecSuggestion, type SpecReport } from "../lib/deliverySpecMatch";
+// AGENT-HOOK — remove with the agent. See docs: grep AGENT-HOOK.
+import { setLoadedSpecReport, setLoadedDeliveryRows } from "../lib/agent/deliveryContext";
+import AskAbout from "../AskAbout";
 import { child_process } from "../../lib/cep/node";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
@@ -423,6 +426,22 @@ const DeliveryHubTool = () => {
     const [report, setReport] = useState<SpecReport | null>(null);
     const [reportBusy, setReportBusy] = useState(false);
 
+    // AGENT-HOOK — remove with the agent.
+    // PUBLISHED FOR THE AGENT, on every change. Asked about "these three
+    // renders" it used to answer about the active comp alone, because that was
+    // the only deliverable it had ever been shown.
+    useEffect(() => {
+        setLoadedDeliveryRows(rows.map((r) => ({
+            name: r.name,
+            duration: r.duration,
+            frameRate: r.frameRate,
+            sizeMB: r.sizeMB,
+            maxMbps: r.maxMbps,
+            fps: r.fps,
+            audio: r.includeAudio,
+        })));
+    }, [rows]);
+
     /**
      * READ THE SPECS — one action, both halves.
      *
@@ -456,7 +475,12 @@ const DeliveryHubTool = () => {
         setReportBusy(true);
         setCheckError(null);
         try {
-            setReport(await readSpecReport(from));
+            const r = await readSpecReport(from);
+            setReport(r);
+            // PUBLISHED FOR THE AGENT. It cannot reach this folder on its own --
+            // the campaign sits beside the masters root rather than above it --
+            // so what is on screen is the only reliable copy.
+            setLoadedSpecReport(r);
         } catch (e) {
             setCheckError("Couldn't read the specs: " + String((e as Error).message || e));
         } finally {
@@ -779,9 +803,9 @@ const DeliveryHubTool = () => {
                 setLog(result.log || "");
                 // ONLY WHAT ACTUALLY WENT IN. Every row used to be ticked the
                 // moment this returned, so a comp the host refused to queue --
-                // no .MOV anywhere in it and an unsaved project -- still showed
-                // a green Queued, and the only sign was a line of log nobody
-                // rereads once the button has gone green.
+                // no .MOV and an unsaved project, i.e. anything Bespoke built --
+                // still showed a green Queued, and the only sign was a line of
+                // log nobody rereads once the button has gone green.
                 const refused: string[] = (result as any).notQueued || [];
                 setRows((r) => r.map((x) => ({ ...x, queued: refused.indexOf(x.name) === -1 })));
                 if (refused.length) {
@@ -886,7 +910,7 @@ const DeliveryHubTool = () => {
                                     className={"dh-icon-btn dh-readspecs" + (report ? " is-on" : "")}
                                     disabled={checkBusy || suggestBusy || reportBusy || rows.length === 0}
                                     onClick={() => {
-                                        if (report) { setReport(null); return; }
+                                        if (report) { setReport(null); setLoadedSpecReport(null); return; }
                                         void readSpecs();
                                     }}
                                 >
@@ -1174,7 +1198,7 @@ const DeliveryHubTool = () => {
                         <div className="dh-specreport-head">
                             <FileText size={12} />
                             <span>{report.folder || "no specs folder"}</span>
-                            <button onClick={() => setReport(null)}><X size={11} /></button>
+                            <button onClick={() => { setReport(null); setLoadedSpecReport(null); }}><X size={11} /></button>
                         </div>
 
                         {report.note && <p className="dh-specreport-note">{report.note}</p>}
@@ -1236,10 +1260,32 @@ const DeliveryHubTool = () => {
                             </div>
                         ))}
 
-                        <p className="dh-specreport-foot">
-                            Read straight off the PDFs — every value that landed in a row above came
-                            from here, so you can check it.
-                        </p>
+                        <div className="dh-specreport-foot">
+                            <span>
+                                Read straight off the PDFs. Nothing here has been filled into a row —
+                                use the folder button for that.
+                            </span>
+                            {/* THE ONE QUESTION WORTH A BUTTON HERE. A table has
+                                just been parsed off somebody else's hand-filled
+                                spreadsheet; "is anything wrong with it" is the
+                                next thought every single time, and it is the
+                                thing the agent does better than the table does. */}
+                            <AskAbout
+                                label="Check these specs"
+                                hint="Reads the sheet and the rows you have loaded, and says what looks wrong"
+                                // ASKS FOR THE ANSWER, NOT THE RECITAL. The first
+                                // wording invited a walk through every row of every
+                                // PDF and ran past the reply limit, so nothing at
+                                // all came back. One line per deliverable, then the
+                                // problems — the table is already on screen.
+                                question={
+                                    "Check the spec sheet I have open in Delivery against the rows I've loaded. " +
+                                    "One short line per deliverable saying which spec row it matches, then list " +
+                                    "only what looks wrong or contradictory. Don't restate the table — it's on " +
+                                    "screen in front of me."
+                                }
+                            />
+                        </div>
                     </motion.div>
                 )}
             </AnimatePresence>

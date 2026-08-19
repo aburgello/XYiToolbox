@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+// AGENT-HOOK — remove with the agent. See docs: grep AGENT-HOOK.
+import { usePendingFill } from "../lib/agent/fieldHandoff";
 import { Play, Trash2, Save, Pencil, X, Terminal, LayoutList, MousePointerClick, Check } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import StatusIcon from "../StatusIcon";
@@ -24,6 +26,53 @@ const ScriptPlayground: React.FC = () => {
     const [output, setOutput] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [status, setStatus] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+    /**
+     * A SCRIPT THE AGENT WROTE, dropped into the box on the way in.
+     *
+     * It saves a copy-paste, and nothing else: the agent could already write
+     * this script in chat for the artist to paste, so this adds no capability.
+     * Run Script is still the artist's — it is absent from the registry's
+     * actionSafety, so navigation.ts refuses to press it — and Save as Tool is
+     * not reachable by the agent at all, because a saved custom tool re-runs
+     * later on one click with nobody reading it.
+     *
+     * ONLY INTO AN UNTOUCHED BOX. The starting DEFAULT_SCRIPT counts as
+     * untouched, since nobody wrote it; anything else is the artist's work and
+     * is left exactly where it is. Silently replacing a script somebody was
+     * halfway through would be the one genuinely destructive thing this feature
+     * could do, and it would look identical to having worked.
+     *
+     * AND IT SAYS SO. The real difference between this and pasting it yourself
+     * is that a filled box reads as READY while a chat message reads as a
+     * suggestion — so the status line says who wrote it and that it has not
+     * run. That is the whole mitigation, and it is why this is allowed.
+     */
+    // AGENT-HOOK — remove with the agent.
+    usePendingFill("script-playground", (fill) => {
+        if (typeof fill.code !== "string" || !fill.code.trim()) return;
+
+        // An EMPTY box counts as untouched too, not just the starting default.
+        // Clearing a script that misbehaved and asking for another is the most
+        // obvious thing to do next, and treating the empty result as "the
+        // artist's work" refused to fill it — which is precisely how this was
+        // reported.
+        const untouched = !code.trim() || code === DEFAULT_SCRIPT;
+        if (!untouched) {
+            setStatus({
+                type: "error",
+                text: "Ask wrote a script for you, but there was already one in the box — yours is untouched. Clear it and ask again if you want theirs.",
+            });
+            return;
+        }
+
+        setCode(fill.code);
+        setOutput(null);
+        setStatus({
+            type: "success",
+            text: "Ask wrote this — read it before you run it. Nothing has run yet.",
+        });
+    });
 
     // Save-as-tool: a script saved here either becomes a one-click Toolset
     // grid button (Toolset.tsx auto-adds every "button"-kind entry to its

@@ -986,7 +986,15 @@
     opacity: 0.72;
 }
 
+// The footer carries the caveat and, when the agent is on, its button.
+.delivery-hub .dh-specreport .dh-specreport-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
 
+    span { flex: 1; }
+}
 
 // The one spec button carries a label: two unlabelled glyphs side by side told
 // nobody which read the sheet and which filled the rows.

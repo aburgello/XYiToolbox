@@ -1948,3 +1948,73 @@ export const motionToolsFade = (mode: string, frames: number, atEdges: boolean):
     return { success: false, error: e.toString() };
   }
 };
+
+/**
+ * Easing the studio has NOT saved as a preset -- influence given outright.
+ *
+ * The presets cover the shapes this studio uses on purpose; this covers "make
+ * it ease harder on the way out" without anyone having to save a preset for a
+ * one-off. Same helpers as motionToolsApplyEasePreset, so it lands on the
+ * selection identically -- a one-entry keysSrc that writeEaseToTargets applies
+ * to every selected key.
+ *
+ * INFLUENCE ONLY, AND SPEED IS FORCED TO ZERO. Influence is portable between
+ * keyframes; speed is absolute and belongs to the keyframe it was measured on
+ * (CLAUDE.md section 5), so a caller-supplied speed would be a number that
+ * means something different on every key it lands on. Zero speed with
+ * influence is what "ease" means in the timeline anyway.
+ */
+export const motionToolsApplyCustomEase = (
+  inInfluence: number,
+  outInfluence: number
+): PasteEaseResult => {
+  try {
+    const comp = app.project.activeItem;
+    if (!(comp instanceof CompItem)) return { success: false, error: "Select or open a composition first." };
+
+    // AE's own range. Written to REJECT so a NaN lands in the error rather than
+    // passing a bounds test that is false either way.
+    const inf = Number(inInfluence);
+    const outf = Number(outInfluence);
+    if (!(inf >= 0.1 && inf <= 100)) {
+      return { success: false, error: "In influence must be a number between 0.1 and 100." };
+    }
+    if (!(outf >= 0.1 && outf <= 100)) {
+      return { success: false, error: "Out influence must be a number between 0.1 and 100." };
+    }
+
+    const keysSrc: SerializedKeyEase[] = [{
+      inType: "bezier",
+      outType: "bezier",
+      inEase: [{ speed: 0, influence: inf }],
+      outEase: [{ speed: 0, influence: outf }],
+    }];
+
+    const targets = getSelectedEaseTargets(comp);
+    if (targets.length === 0) {
+      return { success: false, error: "Select the target keyframe(s) in the timeline first." };
+    }
+
+    app.beginUndoGroup("Apply Custom Ease");
+    const result = writeEaseToTargets(targets, keysSrc);
+    app.endUndoGroup();
+
+    if (result.touched === 0) {
+      return {
+        success: false,
+        error: result.skipped.length > 0
+          ? result.skipped.join(", ") + " doesn't support keyframe easing."
+          : "No keyframes found -- select the target keyframe(s) in the timeline first.",
+      };
+    }
+    const skipNote = result.skipped.length > 0 ? " (skipped: " + result.skipped.join(", ") + " -- no ease support)" : "";
+    return {
+      success: true,
+      message: "Applied ease in " + inf + " / out " + outf + " to " + result.touched +
+        " keyframe" + (result.touched === 1 ? "" : "s") + " (" + result.landedOn.join(", ") + ")" + skipNote,
+    };
+  } catch (e) {
+    app.endUndoGroup();
+    return { success: false, error: e.toString() };
+  }
+};

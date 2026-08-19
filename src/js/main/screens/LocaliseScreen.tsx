@@ -11,7 +11,7 @@ import { motion, useReducedMotion } from "motion/react";
 import gsap from "gsap";
 import LoadingChatter from "../LoadingChatter";
 import {    Layers,
- ArrowLeft, ArrowRight, BookOpen, FileSignature, Stamp, ClipboardCheck, Clapperboard, FileText, Copy, Image as ImageIcon, FileSpreadsheet, Rabbit, ScanSearch, Repeat } from "lucide-react";
+ ArrowLeft, ArrowRight, BookOpen, FileSignature, Stamp, ClipboardCheck, Clapperboard, FileText, Copy, Image as ImageIcon, FileSpreadsheet, Rabbit, ScanSearch, Repeat, FileSearch } from "lucide-react";
 import { TOOLS, categoryStyleVars, type ToolProps } from "../toolRegistry";
 import { ToolErrorBoundary } from "../ToolErrorBoundary";
 import { PaletteTrigger, triggerPalette } from "../CommandPalette";
@@ -62,6 +62,9 @@ const TOOLS_ROW: (UtilityEntry & { run?: string })[] = [
     { id: "jpeg-loc",          label: "JPEG Loc",       icon: ImageIcon,       run: "jpegLoc" },
     { id: "aep-thief",         label: "AEP Thief",      icon: Copy,            run: "copyAep" },
     { id: "cheeky-dt",         label: "Cheeky DT",      icon: Stamp },
+    // NEXT TO Check, because it is the same kind of question -- "is this
+    // deliverable right?" -- asked of the artwork rather than the comp.
+    { id: "artwork-check",     label: "Artwork Check",  icon: FileSearch },
     { id: "check",             label: "Check",          icon: ClipboardCheck },
     { id: "name-audit",        label: "Naming Audit",   icon: ScanSearch },
     { id: "generate-cue-sheet",label: "Cue Sheet",      icon: FileText },

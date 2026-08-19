@@ -39,13 +39,21 @@ import CommandPalette from "./CommandPalette";
 import { GsapScreenTransition } from "./gsap/components/GsapScreenTransition";
 import { useTheme } from "./hooks/useTheme";
 import { registerSoftReload } from "./softReload";
+// AGENT-HOOK — remove with the agent. See docs: grep AGENT-HOOK.
+import { setNavigator } from "./lib/agent/navigation";
+import { setAgentScreen } from "./lib/agent/context";
+import AgentBubble from "./AgentBubble";
 // ---------------------------------------------------------------------------
 // Screen type -- exported so screen components can reference it without a
 // circular import (they import Screen, Main imports them).
 // ---------------------------------------------------------------------------
 export type Screen =
     | { type: "home" }
-    | { type: "category"; categoryId: string; selectedToolId?: string }
+    // autoAction here as well as on `tool`: a tool whose real home is a
+    // category's bespoke screen (Big Guy Localiser IS the Localise screen's
+    // default pane) is opened as a CATEGORY, so a category screen has to be
+    // able to carry the button to press once it mounts.
+    | { type: "category"; categoryId: string; selectedToolId?: string; autoAction?: string }
     | { type: "tool"; toolId: string; backTo: Screen; autoAction?: string };
 
 const Main = () => {
@@ -84,6 +92,45 @@ const Main = () => {
         if (screen.type === "tool") setScreen(screen.backTo);
         else setScreen({ type: "home" });
     };
+
+    // Lets the Ask tool open a panel tool for the artist -- registered here
+    // because ToolScreen renders tool components with no props, so a module
+    // handle is the same answer localiseHandoff.ts reached for the same
+    // reason. Re-registered per screen so `backTo` returns the artist where
+    // they actually were, not where they were when the panel first mounted.
+    //
+    // NAVIGATION ONLY: no autoAction is passed, deliberately -- see the header
+    // of lib/agent/navigation.ts for why the agent does not get a generic
+    // button-clicker.
+    useEffect(() => {
+        setNavigator((toolId: string, livesIn?: string, autoAction?: string) => {
+            // A tool whose real home is a category's bespoke screen (Big Guy
+            // Localiser IS the Localise screen's default pane) is better
+            // reached there, in context with its siblings, than on an
+            // isolated tool page.
+            //
+            // `autoAction` has already been gated in navigation.ts -- it only
+            // ever arrives here for a button the registry marks "read".
+            if (livesIn) setScreen({ type: "category", categoryId: livesIn, autoAction });
+            else setScreen({ type: "tool", toolId, backTo: screen, autoAction });
+        });
+        return () => setNavigator(null);
+    }, [screen]);
+    // WHERE THE ARTIST IS, for the Ask agent's per-question context line.
+    //
+    // The ids only -- context.ts turns them into words. main.tsx does not
+    // import the tool registry today and should not start doing so for a
+    // caption.
+    useEffect(() => {
+        // AGENT-HOOK — remove with the agent.
+        setAgentScreen(
+            screen.type === "category"
+                ? { type: "category", categoryId: screen.categoryId }
+                : screen.type === "tool"
+                    ? { type: "tool", toolId: screen.toolId }
+                    : { type: "home" }
+        );
+    }, [screen]);
     // Auto-fires a named button inside a tool's component after it mounts.
     // Used when a search hit matches an inner action (e.g. "Trott 2.0") --
     // navigating to the tool's page AND clicking that button in one step.
@@ -91,16 +138,27 @@ const Main = () => {
     // mode="wait" can delay mounting until the exit animation finishes.
     const handledAutoActionRef = useRef<Screen | null>(null);
     useEffect(() => {
-        if (screen.type !== "tool" || !screen.autoAction) return;
+        if (screen.type === "home" || !screen.autoAction) return;
         if (handledAutoActionRef.current === screen) return;
         handledAutoActionRef.current = screen;
         const label = screen.autoAction;
 
         const tryClick = () => {
-            const container = document.querySelector(".drill-body");
+            // `.drill-body` only exists on a tool page. A category screen
+            // (LocaliseScreen, ToolsScreen) has its own chrome, so fall back
+            // to the shell -- otherwise an autoAction aimed at a tool that
+            // lives inside one of those screens can never fire.
+            const container =
+                document.querySelector(".drill-body") ||
+                document.querySelector(".app-shell");
             if (!container) return false;
             const match = Array.from(container.querySelectorAll("button")).find(
-                (b) => b.textContent?.trim() === label
+                (b) =>
+                    b.textContent?.trim() === label &&
+                    // NEVER reach into the agent's own panel. It is mounted in
+                    // the shell, so a broadened search can see it, and a label
+                    // collision there would have the agent clicking itself.
+                    !b.closest(".agent-bubble-panel")
             );
             if (match) { match.click(); return true; }
             return false;
@@ -151,6 +209,9 @@ const Main = () => {
                 {body}
             </GsapScreenTransition>
             <CommandPalette screen={screen} onNavigate={setScreen} />
+            {/* Outside GsapScreenTransition on purpose -- the whole point is
+                that it survives screen changes, transcript and all. */}
+            <AgentBubble />
             <DialogHost />
             <PreFlightHost />
             <McItReportHost />

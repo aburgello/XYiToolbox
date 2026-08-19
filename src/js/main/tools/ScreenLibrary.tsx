@@ -32,7 +32,7 @@
 //     MENA, META, Domestic and Football Super Boards all sit in that column
 //     alongside Argentina.
 // =============================================================================
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 // FolderOpen for "show me the file", FolderSearch for "go and scan a folder" --
 // two different jobs that were both wearing the magnifier variant.
@@ -279,9 +279,17 @@ const ScreenLibrary: React.FC<{
     activeId?: string;
     onReload: () => void;
     onStatus: (text: string, type: "success" | "error") => void;
-}> = ({ open, entries, onClose, onLoad, onTrace, activeId, onReload, onStatus }) => {
+    /**
+     * A country to open filtered to, when the artist arrived here asking for
+     * one. Applied ONCE per value, never on every render: after that the rail
+     * is theirs, and re-asserting it would fight every click they make.
+     */
+    initialTerritory?: string;
+}> = ({ open, entries, onClose, onLoad, onTrace, activeId, onReload, onStatus, initialTerritory }) => {
     const reduced = useReducedMotion();
     const [territory, setTerritory] = useState("");
+
+    const appliedTerritory = useRef<string | null>(null);
     const [query, setQuery] = useState("");
     const [busy, setBusy] = useState(false);
     const [scan, setScan] = useState<{ root: string; candidates: ScanCandidate[]; scanned: number } | null>(null);
@@ -305,9 +313,46 @@ const ScreenLibrary: React.FC<{
     // with no clue why, since the rail no longer shows what is selected.
     useEffect(() => {
         if (!territory) return;
+        // AN EMPTY LIST IS NOT A GONE TERRITORY. The library reads its
+        // templates asynchronously, so `live` is empty for the first render or
+        // two -- and clearing on that wiped a filter the moment it was set,
+        // which is what stopped "take me to the Germany layouts" arriving
+        // filtered. "Nothing loaded yet" and "that country no longer exists"
+        // are different answers, and only the second one should clear.
+        if (!live.length) return;
         const stillThere = live.filter((e) => (e.territory || "Unfiled") === territory).length > 0;
         if (!stillThere) setTerritory("");
     }, [live, territory]);
+
+    /**
+     * A country asked for from outside — the Ask agent sending somebody
+     * straight to "the Germany layouts".
+     *
+     * RESOLVED AGAINST WHAT IS ACTUALLY ON DISK, case-insensitively, rather
+     * than trusted verbatim. The rail groups by the exact stored string, so
+     * "germany" would filter to nothing and look like an empty library. If no
+     * stored territory matches, the filter is left alone: showing everything is
+     * a better wrong answer than showing nothing.
+     *
+     * Waits for the entries to arrive — applying before they load would match
+     * nothing and burn the one-shot.
+     */
+    useEffect(() => {
+        if (!initialTerritory || !live.length) return;
+        if (appliedTerritory.current === initialTerritory) return;
+
+        const want = initialTerritory.trim().toLowerCase();
+        let match = "";
+        for (const e of live) {
+            const t = e.territory || "Unfiled";
+            if (t.toLowerCase() === want) { match = t; break; }
+        }
+        // Marked applied either way: a country with no screens is an answer,
+        // and retrying it on every entries change would fight the artist's own
+        // clicks for as long as the panel is open.
+        appliedTerritory.current = initialTerritory;
+        if (match) setTerritory(match);
+    }, [initialTerritory, live]);
 
     const territories = useMemo(() => {
         // Whatever is on disk, counted -- never a country list. Sorted by name

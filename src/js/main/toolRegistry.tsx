@@ -25,6 +25,7 @@ import {
     FileText,
     ShieldCheck,
     ClipboardCheck,
+    FileSearch,
     Wand2,
     Replace,
     Stamp,
@@ -61,6 +62,8 @@ const OVSwapTool            = React.lazy(() => import("./tools/OVSwap"));
 const RandomLayersTool      = React.lazy(() => import("./tools/RandomLayers"));
 const NameGeneratorTool     = React.lazy(() => import("./tools/NameGenerator"));
 const CampaignLocaliserTool = React.lazy(() => import("./tools/CampaignLocaliser"));
+const CSVLocaliserTool      = React.lazy(() => import("./tools/CSVLocaliser"));
+const ArtworkCheckTool     = React.lazy(() => import("./tools/ArtworkCheck"));
 const EditGeneratorTool     = React.lazy(() => import("./tools/EditGenerator"));
 const GenerateCueSheetTool  = React.lazy(() => import("./tools/GenerateCueSheet"));
 const CheekyDTTool          = React.lazy(() => import("./tools/CheekyDT"));
@@ -98,6 +101,8 @@ const MaskSeparatorTool      = React.lazy(() => import("./tools/MaskSeparator"))
 const ReplicatorTool         = React.lazy(() => import("./tools/Replicator"));
 const QuickFXTool            = React.lazy(() => import("./tools/QuickFX"));
 const DarkenTool             = React.lazy(() => import("./tools/Darken"));
+// Ask is not lazily imported here any more -- it is mounted directly by
+// AgentBubble.tsx from main.tsx's shell, so it can outlive screen changes.
 // WrikeTasksTool intentionally NOT imported here -- see the "Wrike Tasks
 // (unhooked)" note near the end of CLAUDE.md before re-adding it.
 
@@ -111,6 +116,8 @@ const PREFETCH_MAP: Record<string, () => Promise<any>> = {
     "random-layers":      () => import("./tools/RandomLayers"),
     "name-generator":     () => import("./tools/NameGenerator"),
     "campaign-localiser": () => import("./tools/CampaignLocaliser"),
+    "csv-localiser":      () => import("./tools/CSVLocaliser"),
+    "artwork-check":      () => import("./tools/ArtworkCheck"),
     "edit-generator":     () => import("./tools/EditGenerator"),
     "generate-cue-sheet": () => import("./tools/GenerateCueSheet"),
     "cheeky-dt":          () => import("./tools/CheekyDT"),
@@ -170,6 +177,85 @@ export interface ToolEntry {
     actions?: string[];
     /** Short description shown in the tool content header. */
     description?: string;
+    /**
+     * AGENT-HOOK — remove with the agent.
+     *
+     * What each button in `actions` actually DOES, keyed by its exact label.
+     *
+     * A PARALLEL FIELD rather than richer `actions` entries, because
+     * CommandPalette and HomeScreen both iterate `actions` as plain strings
+     * for search -- changing that type breaks both.
+     *
+     * Read by the Ask agent (lib/agent/capabilities.ts). Without it the agent
+     * has a button's NAME and nothing else, so anything it says about what a
+     * button does is inferred from the label: it told an artist "Bespoke It"
+     * was for "custom territory handling" when it is for several masters in
+     * one deliverable. Optional and sparse on purpose -- fill it in where a
+     * label alone is misleading, not everywhere for completeness.
+     */
+    actionNotes?: Record<string, string>;
+    /**
+     * Whether the Ask agent may press a button itself, keyed by exact label.
+     *
+     *   "read"  — inspects, scans, refreshes, or opens a form. Changes nothing
+     *             on disk or in the project. The agent may click it.
+     *   "write" — generates, saves, renders, deletes, or otherwise produces
+     *             work. The agent NEVER clicks it: it opens the page and says
+     *             which button to press.
+     *
+     * UNLISTED LABELS DEFAULT TO "write". Unknown means don't touch — a new
+     * button should not become agent-clickable by having been forgotten here.
+     *
+     * The dangerous case is not an empty form, it is a LOADED one: an artist
+     * who has already set their roots and picked a campaign is exactly the
+     * artist most likely to be talking to the agent, and "press Generate" then
+     * runs against real config with no picker to catch it.
+     *
+     * Filling a form's FIELDS is neither of these -- see the note on
+     * localiseHandoff.ts. It changes React state, nothing else, and the artist
+     * still presses the button.
+     */
+    actionSafety?: Record<string, "read" | "write">;
+    /**
+     * WHICH OF THIS TOOL'S FIELDS THE AGENT MAY FILL IN, keyed by a stable
+     * field id the tool itself understands.
+     *
+     * Filling a field is not a write and not an undoable edit -- it is a
+     * PROPOSAL. It changes React state, it is visible before it does anything,
+     * it can be typed over, and it is inert until the artist presses the
+     * button. That is a stronger guarantee than "undoable": undoable means it
+     * happened and you reversed it; this means it has not happened yet.
+     * prefill_batch already works exactly this way.
+     *
+     * THE RISK IS NOT THE FILLING, IT IS WHAT THE FIELD FEEDS. Two kinds:
+     *
+     *   A size, a duration, a territory, a batch row — the field's own type
+     *   bounds the damage. The worst case is a wrong value you can see. These
+     *   are what this list is for.
+     *
+     *   A script body, an output path, a filename that decides where files
+     *   land — the field bounds nothing. Filling one is not proposing a value,
+     *   it is authoring the action, and the button afterwards is a formality
+     *   rather than a decision. These are never listed.
+     *
+     * UNLISTED FIELDS, AND UNLISTED TOOLS, ARE NOT FILLABLE. Same fail-closed
+     * rule as actionSafety: a field must not become agent-fillable by having
+     * been forgotten here.
+     *
+     * Two rules the filler enforces regardless of what this list says: the
+     * agent fills and STOPS -- it never fills and submits, even for a button
+     * graded "read" -- and it never silently replaces a value the artist
+     * already typed, because overwriting your work is where a proposal turns
+     * into a destructive act.
+     */
+    /** AGENT-HOOK — remove with the agent. */
+    fillableFields?: string[];
+    /**
+     * Set when this tool's real home is a category's bespoke screen rather
+     * than its own tool page. Navigating an artist here should land them on
+     * that screen, where the tool sits in context with its siblings.
+     */
+    livesIn?: string;
 }
 
 export interface CategoryDef {
@@ -260,6 +346,20 @@ export const TOOLS: ToolEntry[] = [
         Component: NameGeneratorTool,
         actions: ["Generate Name", "Detect Name", "Reset"],
         description: "Builds a standardised comp/filename from these fields for every selected item, or reverse-parses a selected item's existing name back into them (\"Detect Name\").",
+        // THE FIRST FILLABLE TOOL, and a deliberately unexciting one. Five short
+        // text fields, each bounded by what it is: a film title, an artwork
+        // type, a campaign, a site, a country. The worst case is a wrong word
+        // sitting in front of you before you press anything.
+        //
+        // Ids, not labels. actionSafety is keyed by label because a button is
+        // identified by its visible text and there is no other handle; a field
+        // has a real one, and keying these by label would break the moment
+        // "Film Title" was retitled.
+        //
+        // Generate Name is NOT in actionSafety, so it defaults to "write" and
+        // the agent cannot press it. That is the whole shape of this feature:
+        // it fills the form and stops.
+        fillableFields: ["filmTitle", "artworkType", "campaign", "site", "territory"],
     },
     {
         id: "campaign-localiser",
@@ -267,8 +367,83 @@ export const TOOLS: ToolEntry[] = [
         categories: ["localise"],
         icon: Languages,
         Component: CampaignLocaliserTool,
-        actions: ["Generate Files", "Generate Files (don't replace)", "Trott 2.0"],
+        // ONLY TROTT IS ADVERTISED, and this list is what advertising means:
+        // `actions` drives search, ⌘K and the agent's capability list, so a
+        // button left out of it is still on the page and still pressable, just
+        // no longer something the panel offers you as a way to localise.
+        //
+        // A STUDIO ROUTING DECISION, not a judgement about the code: Big Guy
+        // Localiser is the route for localising a campaign, and Trott 2.0 is
+        // the fallback for the cases it cannot do. Campaign Localiser's two
+        // Generate Files buttons are a third way of doing the same job, and
+        // three routes to one outcome is how two artists localise the same
+        // batch differently. They stay on the page for whoever already knows
+        // to reach for them.
+        actions: ["Trott 2.0"],
         description: "",
+        // WRITES — it opens a master and saves to a new _V01.aep, never over
+        // the master itself (CLAUDE.md §1). Worth the agent being able to say
+        // so, since "generate" alone does not tell an artist whether anything
+        // of theirs is at risk.
+        //
+        // The notes for the two unadvertised buttons are kept: they cost
+        // nothing, they are keyed by label so they simply go unread, and they
+        // are the description to restore if the routing decision is ever
+        // reversed.
+        actionNotes: {
+            "Generate Files": "Generates the localised files for the campaign. Writes new _V01.aep files; the master itself is never written to.",
+            "Generate Files (don't replace)": "Same as Generate Files, but skips any deliverable that already exists instead of regenerating it.",
+            "Trott 2.0": "A generation variant that also writes to new _V01.aep files rather than the master.",
+        },
+        // Generates deliverables. Never agent-clickable.
+        actionSafety: {
+            "Generate Files": "write",
+            "Generate Files (don't replace)": "write",
+            "Trott 2.0": "write",
+        },
+    },
+    {
+        // REGISTERED LATE. This tool shipped reachable only as a pane inside
+        // LocaliseScreen's TOOLS_ROW ("Big Guy Localiser"), with no entry
+        // here -- so it was invisible to home search, to ⌘K, and to anything
+        // else that reads TOOLS, exactly as CLAUDE.md's "live but
+        // unregistered, and therefore unfindable" note warned. A Localise
+        // tool needs BOTH; the TOOLS_ROW half was already there.
+        //
+        // `label` is what artists actually call it and what the tab says.
+        // "CSV" lives in the description so searching either term finds it.
+        id: "csv-localiser",
+        label: "Big Guy Localiser",
+        categories: ["localise"],
+        icon: FileSpreadsheet,
+        Component: CSVLocaliserTool,
+        actions: ["Scan territories", "Re-scan", "Build a Batch", "Bespoke It", "Add row"],
+        description: "The main CSV-driven batch localiser: scan a campaign's territories, see what each one still needs, and generate the batch. Build a Batch picks creatives and sizes by hand.",
+        // It is the DEFAULT pane of the Localise screen, so that is where an
+        // artist should be sent -- in context with the rest of the pipeline,
+        // not on an isolated tool page.
+        livesIn: "localise",
+        actionNotes: {
+            "Scan territories": "Walks the campaign's markets root and reports what each territory still needs. Read-only — nothing is generated.",
+            "Re-scan": "Same as Scan territories, shown once a scan already exists. Refreshes it.",
+            "Build a Batch": "Opens a row builder for picking creatives and sizes by hand, when there is no CSV to drive the batch.",
+            "Bespoke It": "Hands off to the Bespoke tool, for a deliverable made of SEVERAL masters at once (e.g. three portrait panels on one metrobus). Not for territory handling.",
+            "Add row": "Adds one more deliverable row inside Build a Batch.",
+        },
+        actionSafety: {
+            "Scan territories": "read",
+            "Re-scan": "read",
+            // Opens the row builder. Building a batch is not running one --
+            // nothing is generated until a separate run, so opening the form
+            // is safe.
+            "Build a Batch": "read",
+            "Add row": "read",
+            // Navigates to the Bespoke tool. Marked "write" at first on the
+            // grounds that it moves the artist's screen -- which is not what
+            // this field is for. The test is whether you can get back, and
+            // Back is a click.
+            "Bespoke It": "read",
+        },
     },
     {
         id: "aep-thief",
@@ -325,6 +500,35 @@ export const TOOLS: ToolEntry[] = [
         icon: Layers,
         Component: BespokeTool,
         actions: ["Bespoke", "Bespokin", "Multiple Art", "Add segment", "Remove segment", "Screen library", "Library", "Seed from templates", "Find references", "Trace", "Save this layout"],
+        // ARRIVING IN A STATE, not pressing a button. Bespoke opens on the mode
+        // chooser, so "Screen library" does not exist yet for anything to click
+        // -- which is why this tool has no actionSafety and every button stays
+        // unpressable. The agent reaches the library through these instead.
+        //
+        //   mode             "regions" (Bespoke) or "multi" (Multi Art)
+        //   libraryOpen      "true" to open the screen library
+        //   libraryTerritory a country to filter the library's rail to
+        //   screenName       adopt that screen as the reference — ONLY onto an
+        //                    empty board. Replacing regions is panel state and
+        //                    no Ctrl+Z brings them back, so with work in
+        //                    progress the receiver opens the library instead
+        //                    and says why.
+        //   mastersRoot      point the shelf at a campaign, using the path
+        //                    list_campaigns returned
+        //   segments         a Multi Art running order, as a JSON array of
+        //                    {seconds, count, creative, orientation, size}.
+        //                    Matched against the loaded shelf by
+        //                    lib/agent/multiArt.ts, which forgives spelling and
+        //                    refuses ambiguity. Same empty-board rule as
+        //                    screenName, and it never presses Build.
+        //   canvasWidth      the DELIVERABLE's size — not a master's. A spec
+        //   canvasHeight     saying 1080x1526 is describing this, and the
+        //   runtimeSeconds   masters that fill it are whatever the campaign
+        //                    has in that shape.
+        fillableFields: [
+            "mode", "libraryOpen", "libraryTerritory", "screenName", "mastersRoot", "segments",
+            "canvasWidth", "canvasHeight", "runtimeSeconds",
+        ],
         description: "Compose a deliverable from several masters — creatives tiled across the frame, segments played in order. For MultipleArt rows, where no single master fits.",
     },
     {
@@ -335,6 +539,19 @@ export const TOOLS: ToolEntry[] = [
         Component: CheekyDTTool,
         actions: ["Cheeky DT", "Territory Check"],
         description: "Select what you would like to update on the active Frontcard from its filename.",
+    },
+    {
+        id: "artwork-check",
+        label: "Artwork Check",
+        categories: ["localise"],
+        icon: FileSearch,
+        Component: ArtworkCheckTool,
+        actions: ["Check this deliverable", "Import"],
+        // Read-only: it reads a sheet and reports. "Import" brings a file into
+        // the project and is deliberately NOT listed as read, so nothing can
+        // press it on somebody's behalf.
+        actionSafety: { "Check this deliverable": "read" },
+        description: "Which art edit this deliverable is supposed to use, read off the mech sheet in JPG_PNG — and whether that tiff is actually in the project.",
     },
     {
         id: "check",
@@ -513,6 +730,29 @@ export const TOOLS: ToolEntry[] = [
         Component: ScriptPlaygroundTool,
         actions: ["Run Script", "Clear Output"],
         description: "Run arbitrary ExtendScript directly in After Effects from a textarea.",
+        // FILLABLE AFTER ALL, and the earlier refusal is kept here because the
+        // reasoning behind it was wrong in a specific, reusable way.
+        //
+        // It ran: filling this textarea grants `runScript` through the front
+        // end. It does not. The agent can already author arbitrary
+        // ExtendScript — it does that in chat and the artist pastes it — so
+        // filling the box adds no capability, it removes a clipboard
+        // round-trip. What grants execution is the RUN button, and that is
+        // still the artist's: "Run Script" is absent from actionSafety, so it
+        // defaults to "write" and navigation.ts refuses to press it. None of
+        // that changed.
+        //
+        // What was RIGHT in the objection is narrower, and is handled in the
+        // receiver rather than here: a filled box reads as READY where a chat
+        // message reads as a suggestion. So the tool fills only an untouched
+        // box, never over the artist's own work, and says plainly that what is
+        // in there was written by the agent and has not been run.
+        //
+        // Still no actionSafety: neither "Run Script" nor "Clear Output" is
+        // agent-clickable. And "Save as Tool" stays out of reach — a saved
+        // custom tool re-runs later on one click with nobody reading it, which
+        // is a different and worse thing than a filled box.
+        fillableFields: ["code"],
     },
     {
         id: "my-tools",
@@ -591,6 +831,14 @@ export const TOOLS: ToolEntry[] = [
         ],
         description: "One-click apply for a curated list of AE effects to the selected layer(s) -- a faster alternative to AE's own Effects & Presets search.",
     },
+    // "ask" is deliberately NOT registered as a tool. It moved to a floating
+    // panel mounted in main.tsx (AgentBubble.tsx) so it survives navigation --
+    // as a tool page, opening a tool for the artist unmounted the tool doing
+    // the opening and threw away the conversation. Registering it as well
+    // would put a SECOND, separate instance on the Tools rail with its own
+    // transcript, which is worse than not being in search at all: a floating
+    // button on every screen is already about as discoverable as it gets.
+    //
     // wrike-tasks entry intentionally removed -- unhooked, not deleted, see
     // CLAUDE.md's "Wrike Tasks (unhooked)" note.
 ];

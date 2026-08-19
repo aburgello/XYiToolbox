@@ -127,6 +127,29 @@ export interface ActionEntry {
     // sfx.success() (metallic ding) when omitted; set to "beep" for actions
     // that should use the synth beep instead.
     successSound?: "beep" | "ding";
+    /**
+     * BLAST RADIUS: what it costs you if this runs when it should not have.
+     *
+     *   "read"        — inspects and reports. Changes nothing.
+     *   "undoable"    — modifies the OPEN PROJECT: layers, comps, folders,
+     *                   effects. One Ctrl+Z reverses it.
+     *   "additive"    — creates NEW files or folders. Nothing existing is
+     *                   modified or overwritten, so the worst case is clutter
+     *                   you delete.
+     *   "destructive" — modifies, renames or overwrites files that already
+     *                   exist. No undo, and references can break.
+     *
+     * The Ask panel may run the first three and never the last. OMITTING THIS
+     * MEANS "destructive": an action nobody has classified must not become
+     * agent-runnable by having been forgotten.
+     *
+     * The axis is deliberately blast radius rather than undoability. Undo is
+     * only the cheapest case of "cheap to be wrong about" -- Loc it copies
+     * files and cannot be undone, but being wrong costs you a folder you
+     * delete, which is not the same kind of problem as MC It! rewriting
+     * twenty .aep files in place.
+     */
+    safety?: "read" | "undoable" | "additive" | "destructive";
 }
 
 // Small, fixed set of functional groups so 20+ one-click buttons read as a
@@ -228,6 +251,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Arranges the currently open project's comps/footage into standard folders (Composition/PreComp/Main, Footage/MOVs/Artwork/Solids/PNG), then removes any that end up empty.",
         icon: FolderTree,
         group: "qc",
+        safety: "undoable",
         run: () => evalTSSafe("organiseFolders"),
         successText: () => "Folders organised.",
     },
@@ -237,6 +261,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Updates the active comp's Frontcard text layers (artwork type, version, territory check, date) from its filename. Requires a Frontcard-based project.",
         icon: CheckSquare,
         group: "qc",
+        safety: "undoable",
         // INSPECT BEFORE WRITING. Cheeky T used to stamp whatever the comp name
         // gave it, so an unreadable name wrote "(null)" -- or, before the lookup
         // was fixed, a confidently wrong country -- onto a finished frontcard.
@@ -264,6 +289,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Imports the studio's brand Frontcard template and wraps the active comp in a new comp with it layered on top.",
         icon: PanelTop,
         group: "organise",
+        safety: "undoable",
         run: () => evalTSSafe("frontcard"),
         successText: () => "Frontcard added.",
     },
@@ -273,6 +299,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Scales every selected layer's source pre-comp to match the active comp's current size, then resets that layer's own Scale to 100%.",
         icon: Copy,
         group: "organise",
+        safety: "undoable",
         run: () => evalTSSafe("scaleCompositionMulti"),
         successText: () => "Selected pre-comps scaled to fit.",
     },
@@ -282,6 +309,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Duplicates the selected composition(s) while keeping all layer references, effects, and expressions intact, recursing into nested pre-comps. Runs with defaults (suffix _DUP, include nested + update expressions on).",
         icon: CopyPlus,
         group: "organise",
+        safety: "undoable",
         run: () => evalTSSafe("trueCompDuplicator", { suffix: "_DUP", includeNested: true, updateExpressions: true }),
         successText: (result) => result.message || "Comps duplicated.",
     },
@@ -291,6 +319,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Bumps every comp's trailing \"_VNN\" version tag up by one, in the currently open project.",
         icon: RotateCw,
         group: "qc",
+        safety: "undoable",
         run: () => evalTSSafe("turkIt", "up"),
         successText: () => "Turked it — versions bumped up.",
         successSound: "ding",
@@ -301,6 +330,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Bumps every comp's trailing \"_VNN\" version tag down by one, in the currently open project.",
         icon: RotateCcw,
         group: "qc",
+        safety: "undoable",
         run: () => evalTSSafe("turkIt", "down"),
         successText: () => "Un-turked it — versions bumped down.",
         successSound: "beep",
@@ -311,6 +341,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Automatically scales small comps (under 500px = quad res, under 1000px = double res) up for a better preview.",
         icon: ZoomIn,
         group: "qc",
+        safety: "undoable",
         run: () => evalTSSafe("drqr"),
         successText: () => "Comp scaled up for preview.",
     },
@@ -320,6 +351,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Scales the active comp to the size in its name: a bare WxH scales to WxH, and _DOUBLE_RES / _QUAD_RES scales to 2x / 4x that (re-rendering the inner comp at native res on a clean Frontcard+precomp structure). Never adds a suffix — use DRQR to promote a comp to double/quad res.",
         icon: Tag,
         group: "qc",
+        safety: "undoable",
         run: () => evalTSSafe("scaleCompositionByName"),
         successText: (r) => r.message || "Comp scaled to its name.",
     },
@@ -329,6 +361,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Adds a fit/fill-to-comp expression on each selected layer's Scale (toggle via the added \"Extreme\" checkbox effect).",
         icon: Maximize2,
         group: "transform",
+        safety: "undoable",
         run: () => evalTSSafe("scaleFit"),
         successText: () => "Scale Fit applied.",
     },
@@ -338,6 +371,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Wraps each selected item in a new comp scaled to the size in its filename, trimmed to its work area, ready for delivery.",
         icon: Truck,
         group: "organise",
+        safety: "undoable",
         run: () => evalTSSafe("delivery"),
         successText: () => "Delivery comp(s) created.",
     },
@@ -347,6 +381,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Finds this project's Renders folder (a sibling of AE in the market/territory root), creates a matching batch folder inside it, and queues the active comp with AE's default render settings, output redirected there -- plus a second queued row using the H264_16MBPS_MOS preset, output into a \"_mp4\" subfolder of that same batch folder.",
         icon: Film,
         group: "organise",
+        safety: "additive",
         run: () => evalTSSafe("renderMe"),
         successText: (r) => "Queued for render → " + (r.message || "Renders folder"),
     },
@@ -356,6 +391,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Wraps each selected item in a new comp with width/height swapped and rotated -90deg.",
         icon: RotateCcw,
         group: "transform",
+        safety: "undoable",
         run: () => evalTSSafe("rotate90cc"),
         successText: () => "Rotated comp(s) created.",
     },
@@ -365,6 +401,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Replaces the one selected layer's source with whatever's selected in the Project panel, matching its visual width/anchor/position.",
         icon: ArrowLeftRight,
         group: "transform",
+        safety: "undoable",
         run: () => evalTSSafe("swapper"),
         successText: () => "Layer source swapped.",
     },
@@ -374,6 +411,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Adds a transparent \"Edit_Points\" solid to the active comp with a marker at every layer's inPoint.",
         icon: Tag,
         group: "transform",
+        safety: "undoable",
         run: () => evalTSSafe("editMarkers"),
         successText: () => "Edit markers added.",
     },
@@ -383,6 +421,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Recursively disables every layer labelled yellow (2) inside the first comp found in a \"Main\" folder.",
         icon: Type,
         group: "naming",
+        safety: "undoable",
         run: () => evalTSSafe("makeTextless"),
         successText: () => "Textless pass complete.",
     },
@@ -392,6 +431,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Moves each selected layer's Transform properties onto a Transform effect instead, resetting the layer's own transform to default.",
         icon: Move,
         group: "transform",
+        safety: "undoable",
         run: () => evalTSSafe("transformApply"),
         successText: () => "Transform moved to effect.",
     },
@@ -401,6 +441,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Saves the currently open project to a new file per selected comp, named after that comp.",
         icon: Save,
         group: "organise",
+        safety: "additive",
         run: () => evalTSSafe("saveFromComp"),
         successText: (result) => `Saved: ${(result.savedFiles || []).join(", ")}`,
     },
@@ -410,6 +451,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Renames every comp inside a \"Main\" folder to match the project's own filename + version tag.",
         icon: PencilLine,
         group: "qc",
+        safety: "undoable",
         run: () => evalTSSafe("renameMainComp"),
         successText: () => "Comps in \"Main\" renamed to match the project filename.",
     },
@@ -419,6 +461,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Batch-replaces PNG/JPG footage across a folder of .aep files with the best-matching image from the territory's JPG_PNG batch (auto-derived when the standard tree matches). Previews first — nothing is saved until you Apply in the results modal.",
         icon: ImageIcon,
         group: "naming",
+        safety: "destructive",
         // Plain evalTS, NOT evalTSSafe: the safe wrapper gives up with "AE is
         // busy" after 15s, and a real MC It! batch (open+save per project)
         // routinely exceeds that while the script is still running fine.
@@ -432,6 +475,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Matches PDFs to AE/render files by shared size (WxH) and renames the AE file to include the PDF's screen name/campaign tokens.",
         icon: FileEdit,
         group: "naming",
+        safety: "destructive",
         run: () => evalTSSafe("campaignRename"),
         successText: (result) => result.message || "Done.",
     },
@@ -441,6 +485,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Recursively sorts a source folder's .aep files into aspect-ratio subfolders in a destination folder (copy-only, skips duplicates).",
         icon: Globe,
         group: "naming",
+        safety: "additive",
         run: () => evalTSSafe("locIt"),
         successText: (result) => result.message || "Done.",
     },
@@ -455,6 +500,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Darkening at standard values.",
         icon: Moon,
         group: "transform",
+        safety: "undoable",
         run: () => evalTSSafe(
             "generateDarken",
             DARKEN_DEFAULTS.style,
@@ -470,6 +516,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Pick a label color, then toggles enabled/disabled on every layer in the active comp with that label.",
         icon: ToggleLeft,
         group: "transform",
+        safety: "undoable",
         run: async () => {
             const choice = await selectDialog("Toggle layers with which label color?", LABEL_COLORS, 2);
             if (choice === null) return null;
@@ -483,6 +530,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Set the active comp's duration to a preset or a custom number of seconds.",
         icon: Timer,
         group: "transform",
+        safety: "undoable",
         run: async () => {
             const presets = ["10s", "15s", "20s", "30s", "Custom…"];
             const choice = await selectDialog("Set comp duration to:", presets, 0);
@@ -508,6 +556,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Audits the open project before handover/render: missing footage, effects not installed on this machine, and (where AE allows) missing fonts.",
         icon: CheckSquare,
         group: "qc",
+        safety: "read",
         run: async () => {
             const result = (await evalTSSafe("preflightAudit")) as ActionResult & {
                 report?: PreflightReport;
@@ -530,6 +579,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Re-apply one of your last 5 used effects to the selected layer(s) -- see the full Effects page (Tools) for the whole curated list.",
         icon: Sparkles,
         group: "transform",
+        safety: "undoable",
         // Real logic lives in QuickFxRecentDropletBody -- this run() is
         // never actually called (the id is special-cased in the render
         // loop below to open a Droplet instead, same as toggle-by-label/
@@ -563,6 +613,7 @@ export const ACTIONS: ActionEntry[] = [
         description: "Pick a CSV of positioned/masked assets and build a single new comp from it (also on the Extreme Tools 02 page).",
         icon: LayoutTemplate,
         group: "organise",
+        safety: "undoable",
         run: async () => {
             const val = await promptDialog("Duration in seconds:", "15");
             if (val === null) return null;

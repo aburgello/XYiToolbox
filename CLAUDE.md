@@ -434,3 +434,29 @@ workspaces reference the panel by id, so every user has to re-add the panel
 and re-save their workspace. `zxp.org` must contain no space (it is
 spliced unquoted into a shell command). `TOOLBOX_VERSION` lives in
 `TeamDroplet.tsx` and is `YYYYMMDD`.
+
+---
+
+## 9. THE ASK AGENT, AND HOW TO REMOVE IT
+
+The agent is opt-in and off by default: `bubbleControl.ts` reads
+`xyi.agent.enabled` from localStorage, `AgentBubble` returns null when it is
+unset, and nothing is rendered or listened for. A machine that never turns it
+on is a machine where it does not exist.
+
+**Every integration point is marked `AGENT-HOOK`.** `grep -rn AGENT-HOOK src/`
+is the complete list — 14 sites across 9 files. That marker is load-bearing:
+the coupling is small but it is spread thin, and a removal done by reading
+imports alone over-cuts `Bespoke.tsx`, where the fill receiver sits between
+unrelated state declarations.
+
+Removing it, measured on a real trial:
+
+- **25 files delete outright, ~7,800 lines** — all of `lib/agent/`,
+  `AgentBubble`, `AgentChat`, `AskAbout`, `AskIcon`, `agentWrites.ts` and the
+  `probe-agent-*` scripts.
+- **447 lines of surgery across 9 shared files**, every one a self-contained
+  block behind a named import. `Bespoke.tsx` is 253 of those and is the only
+  one worth doing by hand.
+
+Half a day, and nothing else in the panel depends on it.

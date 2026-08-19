@@ -1,0 +1,317 @@
+// =============================================================================
+// src/js/main/AgentBubble.scss
+// -----------------------------------------------------------------------------
+// chrome74 target (CLAUDE.md §3): no color-mix(), no :has(), no min()/max()/
+// clamp(), no aspect-ratio. Margins rather than flex `gap`. vh/vw are fine --
+// they predate the target by years.
+//
+// Z-INDEX, against the order in CLAUDE.md §3
+// (toasts/video 1000 · CommandPalette 1900 · Dialog 2000):
+// the bubble sits at 1500 -- above page content and toasts, but BELOW the
+// command palette and below Dialog, so a confirm raised from anywhere still
+// wins over it.
+//
+// Both buttons re-declare :hover AND :active: index.scss's global
+// button:hover/:active ($active: #20639b) otherwise paints over them.
+// =============================================================================
+
+// A dark surface with an accent ICON, not a solid accent disc. The panel's
+// own language is dark pills with coloured icons (the Toolset rows, the
+// category cards); a filled accent circle made a launcher the brightest
+// element on every screen it floated over.
+.agent-bubble-fab {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    z-index: 1500;
+
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    border: 0;
+    border-radius: 50%;
+    background: var(--surface-1, #262626);
+    color: #dfe7ff;
+    cursor: pointer;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+    transition: box-shadow 160ms ease, color 160ms ease;
+    // The ring is a pseudo-element BEHIND the button face; this contains it.
+    isolation: isolate;
+
+    /* ── THE RING ────────────────────────────────────────────────────────────
+       A conic gradient on a ::before, rotated by transform. Chrome 69 for
+       conic-gradient, so it clears the chrome74 target; rotating a TRANSFORM
+       rather than animating an angle is what keeps it there, since the modern
+       way (`@property` on an --angle custom property) is Chrome 85 and
+       CLAUDE.md rules @property out anyway.
+
+       Sized 2px larger than the button on each side and sat behind it, so the
+       button's own face covers the middle and only a rim shows. No masking,
+       no border-image: both cost more support than a rim is worth. */
+    &::before {
+        content: "";
+        position: absolute;
+        top: -2px;
+        left: -2px;
+        right: -2px;
+        bottom: -2px;
+        border-radius: 50%;
+        z-index: -1;
+        // TEAL AND CYAN, AND ONLY TEAL AND CYAN. Neighbours on the wheel, so
+        // what rotates is a sheen travelling round the rim rather than a wheel
+        // of colours going past -- the difference between "subtle" and "a
+        // loading spinner". The darkest stop is what gives it somewhere to
+        // travel; without it a ring of near-identical teals reads as flat and
+        // the motion disappears entirely.
+        background: conic-gradient(
+            from 0deg,
+            #2dd4bf,
+            #22d3ee,
+            #5eead4,
+            #0e7490,
+            #22d3ee,
+            #2dd4bf
+        );
+        // SUBTLE MEANS SLOW, not faint. 14s is about six degrees a second:
+        // present if you look at it, never something moving in the corner of
+        // your eye while you work -- which is the thing a perpetual animation
+        // in a docked panel has to earn.
+        //
+        // Linear, and the first and last stops are the same colour, so the
+        // loop has no seam to hesitate at.
+        animation: agent-fab-ring 14s linear infinite;
+        // Held back at rest so it reads as a rim rather than a light source.
+        opacity: 0.75;
+        transition: opacity 160ms ease;
+    }
+
+    // The face, painted over the middle of the ring. A real element rather than
+    // a second pseudo so the icon can sit on it and inherit `color`.
+    &::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        border-radius: 50%;
+        background: var(--surface-1, #262626);
+        z-index: -1;
+    }
+
+    &:hover {
+        color: #ffffff;
+        box-shadow: 0 2px 14px rgba(0, 0, 0, 0.5), 0 0 16px rgba(45, 212, 191, 0.4);
+
+        // Picks up when you point at it -- still unhurried, just awake.
+        &::before {
+            animation-duration: 5s;
+            opacity: 1;
+        }
+    }
+
+    &:active::before { animation-duration: 2s; }
+
+    // index.scss's global button:hover/:active paints over any custom button,
+    // so both states are re-declared (CLAUDE.md §3). The face is a pseudo, so
+    // the background that matters is restated there rather than here.
+    &:hover, &:active { background: var(--surface-1, #262626); }
+}
+
+@keyframes agent-fab-ring {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
+// A rotating ring is exactly what someone turns this off for.
+@media (prefers-reduced-motion: reduce) {
+    .agent-bubble-fab::before,
+    .agent-bubble-fab:hover::before {
+        animation: none;
+    }
+}
+
+.agent-bubble-panel {
+    position: fixed;
+    right: 18px;
+    bottom: 70px;              // clears the FAB
+    z-index: 1500;
+
+    // Defaults only -- AgentBubble.tsx sets width/height inline once the panel
+    // has been resized, and clamps to the window itself. These caps stay as the
+    // backstop for the default size and for a first run with nothing stored.
+    width: 380px;
+    max-width: calc(100vw - 36px);
+    height: 520px;
+    // Was 72vh. A stored height taller than that would have been silently
+    // capped, so the drag handle would come away from the cursor and keep
+    // going -- the box stopping while the pointer carries on is the tell that
+    // CSS and JS disagree about the maximum. Matches clampSize()'s own limit.
+    max-height: calc(100vh - 90px);
+
+    display: flex;
+    flex-direction: column;
+
+    background: rgba(24, 27, 33, 0.98);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    box-shadow: 0 10px 34px rgba(0, 0, 0, 0.55);
+    overflow: hidden;
+
+    // HIDDEN, NOT UNMOUNTED -- the transcript has to survive a close.
+    // visibility (not display) so the collapse can animate, and
+    // pointer-events off so a hidden panel never eats a click.
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(8px);
+    transition: opacity 140ms ease, transform 140ms ease, visibility 0s linear 140ms;
+
+    &.is-open {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+        transform: translateY(0);
+        transition: opacity 140ms ease, transform 140ms ease, visibility 0s;
+    }
+}
+
+/* THE RESIZE HANDLE.
+
+   Top-left, because the panel is pinned bottom-right and that is the only
+   corner with room to travel. It sits ABOVE the header (z-index) so the corner
+   stays grabbable rather than being covered by the title.
+
+   Deliberately not `resize: both` on the panel: the UA handle only ever appears
+   bottom-right, which here is the corner welded to the screen edge, and it
+   needs `overflow` other than hidden -- which this panel relies on to clip its
+   own rounded corners. */
+.agent-bubble-resize {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 16px;
+    height: 16px;
+    z-index: 2;
+    cursor: nwse-resize;
+    // A quiet corner mark rather than a control: two hairlines that read as a
+    // grip when you are looking for one and disappear when you are not.
+    background:
+        linear-gradient(to right,  rgba(255, 255, 255, 0.28) 0 7px, transparent 7px) top left / 7px 1px no-repeat,
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.28) 0 7px, transparent 7px) top left / 1px 7px no-repeat;
+
+    &:hover {
+        background:
+            linear-gradient(to right,  rgba(255, 255, 255, 0.6) 0 11px, transparent 11px) top left / 11px 1px no-repeat,
+            linear-gradient(to bottom, rgba(255, 255, 255, 0.6) 0 11px, transparent 11px) top left / 1px 11px no-repeat;
+    }
+}
+
+.agent-bubble-head {
+    display: flex;
+    align-items: center;
+    // `margin-left: auto` on the slot below does the separating now, so this no
+    // longer needs space-between -- with three children that rule would have
+    // pushed the slot to the middle of the bar rather than over to the close.
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    flex: 0 0 auto;
+}
+
+// Where AgentChat portals its cost readout and key button. Everything after the
+// title is pushed right, so the bar reads: what this is · what it costs · the
+// key · close.
+.agent-bubble-head-slot {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    margin-right: 6px;
+    // Empty until the portal lands, and an empty flex box with a gap still
+    // takes its margins -- min-width keeps it from reserving anything.
+    min-width: 0;
+}
+
+/* THE PORTALLED CONTROLS NEED THEIR OWN RULES, and this is the whole catch of
+   moving them. AgentChat.scss styles `.agentchat-keybtn` and `.agentchat-cost`
+   NESTED INSIDE `.agentchat` -- once they render through a portal into this
+   header they are no longer inside that element, so not one of those
+   declarations reaches them and they would arrive wearing index.scss's global
+   button skin (grey fill, blue hover).
+
+   Both states are re-declared for exactly that reason: that global rule paints
+   over any custom button unless :hover and :active are restated (CLAUDE.md §3). */
+.agent-bubble-head-slot {
+    .agentchat-cost {
+        font-size: 10px;
+        font-variant-numeric: tabular-nums;
+        color: rgba(255, 255, 255, 0.45);
+        white-space: nowrap;
+    }
+
+    // ICON ONLY. "API key set" was the widest thing in the strip and it said
+    // less than the key does -- whether one is set is carried by the icon's
+    // colour, and what it is for by the tooltip. Click still expands the full
+    // row in the body, where the input and the save have to live.
+    .agentchat-keybtn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        padding: 0;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 5px;
+        background: rgba(255, 255, 255, 0.06);
+        color: rgba(255, 255, 255, 0.5);
+        cursor: pointer;
+
+        &:hover  { background: rgba(255, 255, 255, 0.13); color: rgba(255, 255, 255, 0.85); }
+        &:active { background: rgba(255, 255, 255, 0.18); }
+
+        // A key that IS set reads as settled rather than as a prompt.
+        &.is-set { color: #7fe7d8; border-color: rgba(127, 231, 216, 0.35); }
+
+        svg { flex: none; }
+    }
+}
+
+.agent-bubble-title {
+    display: flex;
+    align-items: center;
+    font-size: 12px;
+    font-weight: 600;
+
+    svg { margin-right: 6px; opacity: 0.8; }
+}
+
+.agent-bubble-close {
+    padding: 3px;
+    display: flex;
+    align-items: center;
+    background: transparent;
+    border: none;
+    color: inherit;
+    opacity: 0.6;
+    cursor: pointer;
+
+    &:hover  { background: transparent; opacity: 1; }
+    &:active { background: transparent; opacity: 0.8; }
+}
+
+// The tool was written to fill a full drill page; inside the panel it fills
+// the panel instead. min-height:0 is what lets its transcript scroll rather
+// than push the ask row off the bottom.
+.agent-bubble-body {
+    flex: 1;
+    min-height: 0;
+    padding: 0 10px 10px;
+    display: flex;
+    flex-direction: column;
+
+    .form-tool.agentchat { height: 100%; min-height: 0; }
+}
