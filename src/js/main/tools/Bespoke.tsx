@@ -219,8 +219,10 @@ const RegionShot: React.FC<{
     playing?: boolean;
     /** Where the board's clock is, in seconds. Applied while paused. */
     seek?: number;
+    /** The master's own length, for saying when it runs out. */
+    endsAt?: string;
 }> = ({
-    src, rotation, w, h, playing, seek = 0,
+    src, rotation, w, h, playing, seek = 0, endsAt,
 }) => {
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const [broken, setBroken] = useState(false);
@@ -234,6 +236,15 @@ const RegionShot: React.FC<{
      * quiet half of the same mismatch the overrun warning covers out loud.
      */
     const [spent, setSpent] = useState(false);
+    /**
+     * NOT ON SCREEN YET, the mirror of spent.
+     *
+     * A Multi Art tile whose master is shorter than its segment is end-aligned
+     * by the build, so its layer starts partway through that segment and there
+     * is nothing there before it. The seek asked for is negative in that
+     * window, which is the panel saying so.
+     */
+    const [early, setEarly] = useState(false);
     const poster = usePosterFrame(videoRef, () => {});
 
     // ONE CLOCK FOR THE WHOLE BOARD. Each panel plays itself, but they all
@@ -244,8 +255,10 @@ const RegionShot: React.FC<{
         if (!v) return;
         if (!playing) { v.pause(); return; }
         const d = isFinite(v.duration) ? v.duration : 0;
-        try { v.currentTime = d ? Math.min(seek, d) : seek; } catch (e) { /* not seekable yet */ }
+        const at = Math.max(0, d ? Math.min(seek, d) : seek);
+        try { v.currentTime = at; } catch (e) { /* not seekable yet */ }
         setSpent(!!d && seek > d);
+        setEarly(seek < 0);
         v.play().catch(() => { /* autoplay refused -- the still frame stands */ });
         // `seek` is deliberately not a dependency: while playing, the video
         // keeps its own time and re-seeking it every tick is the stutter.
@@ -256,15 +269,23 @@ const RegionShot: React.FC<{
         const v = videoRef.current;
         if (!v || playing) return;
         const d = isFinite(v.duration) ? v.duration : 0;
-        try { v.currentTime = d ? Math.min(seek, d) : seek; } catch (e) { /* nothing to seek to yet */ }
+        const at = Math.max(0, d ? Math.min(seek, d) : seek);
+        try { v.currentTime = at; } catch (e) { /* nothing to seek to yet */ }
         setSpent(!!d && seek > d);
+        setEarly(seek < 0);
     }, [seek, playing]);
 
     if (!src || broken) return null;
 
     const turned = rotation === 90 || rotation === 270;
     return (
-        <span className={"bsp-region-clip" + (spent ? " is-spent" : "")}>
+        <span className={"bsp-region-clip" + (spent || early ? " is-spent" : "")}>
+            {/* A PANEL GOING DARK IS INFORMATION, not a glitch, and it was
+                being shown without being said. Outside the dimmed artwork
+                rather than inside it, or the caption would fade with the thing
+                it is explaining. */}
+            {early && <span className="bsp-region-spent">not on screen yet</span>}
+            {spent && !early && endsAt && <span className="bsp-region-spent">ends at {endsAt}s</span>}
             <span
                 className="bsp-region-shot"
                 style={{
@@ -416,6 +437,70 @@ function creativeToken(m: BespokeMaster): string {
     const bits = stem.split("_");
     return bits.length > 2 ? bits[2] : (m.creative || stem);
 }
+
+/**
+ * THE BOARD'S TRANSPORT: play, a scrub track, and the marks on it.
+ *
+ * One component for both modes, because the question is the same one -- what
+ * is on screen at this second -- and only the clock behind it differs. The
+ * handle and the readout are written through refs by the caller's own clock,
+ * so this never re-renders while it plays.
+ */
+const BoardTransport: React.FC<{
+    playing: boolean;
+    total: number;
+    marks: { at: number; kind: "end" | "seg" }[];
+    hint: string;
+    scrubRef: React.RefObject<HTMLInputElement | null>;
+    clockRef: React.RefObject<HTMLSpanElement | null>;
+    onToggle: () => void;
+    onScrub: (t: number) => void;
+}> = ({ playing, total, marks, hint, scrubRef, clockRef, onToggle, onScrub }) => {
+    const shown = Math.round(total * 10) / 10;
+    return (
+        <div className="bsp-preview">
+            <Tooltip text={playing ? "Pause" : `Play the board through its ${shown}s`}>
+                <button className="bsp-btn bsp-btn--ghost bsp-btn--icon" onClick={onToggle}>
+                    {playing ? <Pause size={12} /> : <Play size={12} />}
+                </button>
+            </Tooltip>
+            {/* `grow` is REQUIRED: Tooltip's wrapper carries flex: 0 0 auto and
+                would otherwise collapse the track it is wrapping (CLAUDE.md). */}
+            <Tooltip text={hint} delay={400} grow>
+                <span className="bsp-scrubwrap">
+                    {/* UNCONTROLLED ON PURPOSE. The handle is moved by the clock
+                        through a ref while playing, so making React own its
+                        value would put a re-render of the whole tool between
+                        every frame and the next. */}
+                    <input
+                        ref={scrubRef}
+                        className="bsp-scrub"
+                        type="range"
+                        min="0"
+                        max={String(total)}
+                        step="0.04"
+                        defaultValue="0"
+                        aria-label="Scrub the board"
+                        onChange={(e) => onScrub(Number(e.target.value) || 0)}
+                    />
+                    {/* Inset by half a thumb at each end, so a mark lines up
+                        with the handle that will sit on it rather than with the
+                        track's raw edges. */}
+                    {marks.map((m) => (
+                        <span
+                            key={`${m.kind}-${m.at}`}
+                            className={"bsp-mark" + (m.kind === "seg" ? " is-seg" : "")}
+                            style={{ left: `calc(5.5px + (100% - 11px) * ${total ? m.at / total : 0})` }}
+                        />
+                    ))}
+                </span>
+            </Tooltip>
+            <span className="bsp-preview-t">
+                <span ref={clockRef}>0.0s</span> / {shown}s
+            </span>
+        </div>
+    );
+};
 
 /** What a board is, for telling whether it has been changed since it loaded. */
 function boardSignature(rs: { master: BespokeMaster; x: number; y: number; w: number; h: number; rotation: number }[]): string {
@@ -1739,6 +1824,77 @@ export const BespokeTool = () => {
     const [previewPlay, setPreviewPlay] = useState(false);
     const boardSecs = Math.max(0.1, Number(runtime) || 10);
 
+    /** Where each segment starts on the running order's clock. */
+    const segStarts = useMemo(() => {
+        const out: number[] = [];
+        let at = 0;
+        for (const sg of segments) { out.push(at); at += Math.max(0, sg.seconds); }
+        return out;
+    }, [segments]);
+    const segTotal = useMemo(
+        () => segments.reduce((n, sg) => n + Math.max(0, sg.seconds), 0),
+        [segments]
+    );
+
+    /**
+     * MULTI ART RUNS ON ITS SEGMENTS, not on the runtime box. The build makes a
+     * comp of the segments' total, and the runtime field is a target the notes
+     * already compare that against -- so a preview keyed on the box would be
+     * showing a length that is not what gets built.
+     */
+    const previewTotal = mode === "multi" ? Math.max(0.1, segTotal) : boardSecs;
+
+    /** The segment the running order is in at a given second. */
+    const segAt = useCallback((t: number) => {
+        let i = 0;
+        for (let n = 0; n < segStarts.length; n++) if (t >= segStarts[n]) i = n;
+        return i;
+    }, [segStarts]);
+
+    /**
+     * WHEN A TILE'S OWN CLOCK STARTS, straight off what the build does.
+     *
+     * A Multi Art tile runs on the COMP's clock: startTime 0, so a 7-10s
+     * segment shows the master's 7-10s, not its first three seconds. The
+     * exception is a master too short to reach its segment's end, which is
+     * end-aligned so its last frame meets that end. Getting this wrong would
+     * make the preview a confident lie about which frames land where.
+     */
+    const tileStartTime = (m: BespokeMaster, segIndex: number) => {
+        const segEnd = (segStarts[segIndex] || 0) + Math.max(0, segments[segIndex]?.seconds || 0);
+        const d = Number(m.duration) || 0;
+        return d >= segEnd ? 0 : segEnd - d;
+    };
+
+    /**
+     * The ticks on the scrub track.
+     *
+     * Bespoke: where a panel runs out. Every region is a layer at time 0 with
+     * its own length, so a 10s master on a 15s board stops there and the board
+     * carries on without it.
+     *
+     * Multi Art: where one segment hands over to the next. A tile there can
+     * never run out mid-segment -- the build end-aligns anything too short --
+     * so the only edges worth marking are the segment boundaries.
+     */
+    const previewMarks = useMemo(() => {
+        const out: { at: number; kind: "end" | "seg" }[] = [];
+        const seen: Record<string, boolean> = {};
+        const push = (at: number, kind: "end" | "seg") => {
+            const key = `${kind}-${Math.round(at * 100)}`;
+            if (seen[key]) return;
+            if (!(at > 0.05) || at > previewTotal - 0.05) return;
+            seen[key] = true;
+            out.push({ at, kind });
+        };
+        if (mode === "multi") {
+            for (let i = 1; i < segStarts.length; i++) push(segStarts[i], "seg");
+        } else {
+            for (const r of regions) push(Number(r.master.duration) || 0, "end");
+        }
+        return out;
+    }, [mode, regions, segStarts, previewTotal]);
+
     const showClock = (t: number) => {
         if (scrubRef.current) scrubRef.current.value = String(t);
         if (clockRef.current) clockRef.current.textContent = `${t.toFixed(1)}s`;
@@ -1746,35 +1902,61 @@ export const BespokeTool = () => {
 
     const togglePreview = () => {
         // Pressing play at the end starts it again rather than doing nothing.
-        if (!previewPlay && previewT >= boardSecs - 0.05) {
+        if (!previewPlay && previewT >= previewTotal - 0.05) {
             setPreviewT(0);
             showClock(0);
+            if (mode === "multi") setCurrent(0);
         }
         setPreviewPlay((v) => !v);
     };
+
+    /** Scrubbing lands on a second, and in Multi Art on a segment with it. */
+    const scrubTo = (t: number) => {
+        setPreviewPlay(false);
+        setPreviewT(t);
+        if (mode === "multi") setCurrent(segAt(t));
+        if (clockRef.current) clockRef.current.textContent = `${t.toFixed(1)}s`;
+    };
+
+    const playSegRef = React.useRef(0);
 
     useEffect(() => {
         if (!previewPlay) return;
         const from = previewT;
         const t0 = performance.now();
+        playSegRef.current = segAt(from);
         let raf = 0;
         const tick = () => {
             const t = from + (performance.now() - t0) / 1000;
-            // STOPS AT THE BOARD'S RUNTIME, whatever the masters are. A 15s
-            // master in a 10s board renders its first 10s and nothing else, and
-            // a preview that ran on to 15 would be showing frames the delivered
-            // file does not have.
-            if (t >= boardSecs) {
-                showClock(boardSecs);
-                setPreviewT(boardSecs);
+            // STOPS AT THE END OF WHAT GETS BUILT, whatever the masters are. A
+            // 15s master in a 10s board renders its first 10s and nothing else,
+            // and a preview that ran on to 15 would be showing frames the
+            // delivered file does not have.
+            if (t >= previewTotal) {
+                showClock(previewTotal);
+                setPreviewT(previewTotal);
                 setPreviewPlay(false);
                 return;
             }
             showClock(t);
+            // THE RUNNING ORDER ADVANCES ITSELF. Once per segment, not once per
+            // frame: the clock stays out of React, and crossing a boundary is
+            // the only moment the tree has to change. previewT goes with it so
+            // the incoming tiles seek to the right frame as they mount.
+            if (mode === "multi") {
+                const si = segAt(t);
+                if (si !== playSegRef.current) {
+                    playSegRef.current = si;
+                    setCurrent(si);
+                    setPreviewT(t);
+                }
+            }
             raf = requestAnimationFrame(tick);
         };
         raf = requestAnimationFrame(tick);
         return () => cancelAnimationFrame(raf);
+        // Keyed on the arming alone: editing the running order mid-play would
+        // otherwise restart the clock under the artist.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [previewPlay]);
 
@@ -3482,6 +3664,7 @@ export const BespokeTool = () => {
                                         h={r.h}
                                         playing={previewPlay}
                                         seek={previewT}
+                                        endsAt={r.master.duration}
                                     />
                                     {/* The marks below are what a quarter turn
                                         moves when there is NO artwork to turn --
@@ -3621,36 +3804,16 @@ export const BespokeTool = () => {
                         and not another filter on the shelf. Only with regions
                         on it: there is nothing to play otherwise. */}
                     {regions.length > 0 && (
-                        <div className="bsp-preview">
-                            <Tooltip text={previewPlay ? "Pause" : `Play the board through its ${boardSecs}s`}>
-                                <button className="bsp-btn bsp-btn--ghost bsp-btn--icon" onClick={togglePreview}>
-                                    {previewPlay ? <Pause size={12} /> : <Play size={12} />}
-                                </button>
-                            </Tooltip>
-                            {/* UNCONTROLLED ON PURPOSE. The handle is moved by
-                                the clock through a ref while playing, so making
-                                React own its value would put a re-render of this
-                                whole tool between every frame and the next. */}
-                            <input
-                                ref={scrubRef}
-                                className="bsp-scrub"
-                                type="range"
-                                min="0"
-                                max={String(boardSecs)}
-                                step="0.04"
-                                defaultValue="0"
-                                aria-label="Scrub the board"
-                                onChange={(e) => {
-                                    const t = Number(e.target.value) || 0;
-                                    setPreviewPlay(false);
-                                    setPreviewT(t);
-                                    if (clockRef.current) clockRef.current.textContent = `${t.toFixed(1)}s`;
-                                }}
-                            />
-                            <span className="bsp-preview-t">
-                                <span ref={clockRef}>0.0s</span> / {boardSecs}s
-                            </span>
-                        </div>
+                        <BoardTransport
+                            playing={previewPlay}
+                            total={previewTotal}
+                            marks={previewMarks}
+                            hint="Ticks are where a panel runs out. Past its own master a region is not in the render at all, so the board carries on without it"
+                            scrubRef={scrubRef}
+                            clockRef={clockRef}
+                            onToggle={togglePreview}
+                            onScrub={scrubTo}
+                        />
                     )}
 
                     {/* What is LEFT of the old guides row: the buttons moved
@@ -3846,6 +4009,21 @@ export const BespokeTool = () => {
                             {/* What tells this tile from its neighbours, not the
                                 creative -- three tiles of one creative used to
                                 read as the same word three times. */}
+                            {/* THE ARTWORK, on the comp's clock. A tile was a
+                                flat colour block with a name on it, in the mode
+                                where what happens WHEN is the whole question --
+                                so a running order could be arranged and never
+                                watched. Seeks with the board, and each tile's
+                                own start comes from what the build does rather
+                                than from where its segment happens to sit. */}
+                            <RegionShot
+                                src={previewOf(m)}
+                                rotation={0}
+                                w={m.width}
+                                h={m.height}
+                                playing={previewPlay}
+                                seek={previewT - tileStartTime(m, current)}
+                            />
                             <span className="bsp-tile-name">{shortNameOf(m)}</span>
                             <span className="bsp-tile-spec">{m.size} · {m.duration}s</span>
                             {/* NOT wrapped in <Tooltip>: this button is
@@ -3872,6 +4050,22 @@ export const BespokeTool = () => {
                     <span>canvas {canvasW} × {canvasH}</span>
                 </div>
             </div>
+
+            {/* THE WHOLE RUNNING ORDER, not this segment. Playing walks the
+                strip below, so the frame always shows the segment the clock is
+                in and the strip says which one that is. */}
+            {segTotal > 0 && boardMasters.length > 0 && (
+                <BoardTransport
+                    playing={previewPlay}
+                    total={previewTotal}
+                    marks={previewMarks}
+                    hint="Ticks are where one segment hands over to the next. A tile never runs out inside its segment: anything too short is end-aligned by the build, so its last frame meets the segment's end"
+                    scrubRef={scrubRef}
+                    clockRef={clockRef}
+                    onToggle={togglePreview}
+                    onScrub={scrubTo}
+                />
+            )}
 
             <div className="bsp-segctl">
                 <span className="bsp-lbl">Holds for</span>

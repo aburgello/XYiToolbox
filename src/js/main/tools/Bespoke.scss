@@ -428,6 +428,9 @@
     flex: 1;
     min-width: 0;
     border-radius: var(--r-sm);
+    // The artwork fills the tile now, so it has to be clipped to the same
+    // corners the colour block had.
+    overflow: hidden;
     border: 1px solid rgba(255, 255, 255, 0.09);
     display: flex;
     flex-direction: column;
@@ -436,6 +439,19 @@
     gap: 3px;
     padding: 4px;
     text-align: center;
+}
+
+// ABOVE THE ARTWORK. A positioned element paints over a non-positioned sibling
+// whatever the z-index says, so the labels claim a stacking context of their
+// own -- and take a scrim, because a name in white over a bright frame is not
+// readable on half the masters in a campaign.
+.bsp-tile-name,
+.bsp-tile-spec {
+    position: relative;
+    z-index: 1;
+    padding: 0 5px;
+    border-radius: var(--r-xs);
+    background: rgba(8, 12, 12, 0.55);
 }
 
 .bsp-tile-name {
@@ -1638,8 +1654,24 @@
 
 // PAST THE END OF ITS OWN MASTER. The layer is not there in the render either,
 // so the panel drops to its flat colour rather than sitting on a last frame the
-// delivered file will not contain.
-.bsp-region-clip.is-spent { opacity: 0.08; }
+// delivered file will not contain. The ARTWORK dims, not the clip: the caption
+// explaining it lives in here too and must not fade with what it explains.
+.bsp-region-clip.is-spent .bsp-region-shot { opacity: 0.08; }
+
+.bsp-region-spent {
+    position: absolute;
+    z-index: 2;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    padding: 2px 7px;
+    border-radius: var(--r-pill);
+    background: rgba(10, 16, 15, 0.82);
+    color: #e0a04a;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: var(--t-micro);
+    white-space: nowrap;
+}
 
 /* Sized and turned inline (the swap at 90/270 is a ratio only React knows) and
    centred with a transform. Safe here specifically because regions are plain
@@ -2072,14 +2104,58 @@
     gap: 8px;
 }
 
+// The track and its ticks share a box, so a mark can be placed along it.
+.bsp-scrubwrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+
+    // The rail is drawn here rather than on the input, so the ticks can sit
+    // between it and the thumb.
+    &::before {
+        content: "";
+        position: absolute;
+        left: 5.5px;
+        right: 5.5px;
+        top: 50%;
+        height: 4px;
+        margin-top: -2px;
+        border-radius: var(--r-pill);
+        background: #1e2a28;
+    }
+}
+
+// WHERE SOMETHING ON SCREEN STOPS. Under the thumb rather than over it, so the
+// handle is never hidden by a tick it is sitting on, and inert: the track
+// underneath is what gets dragged.
+.bsp-mark {
+    position: absolute;
+    top: 50%;
+    z-index: 0;
+    width: 2px;
+    height: 11px;
+    margin-left: -1px;
+    margin-top: -5.5px;
+    border-radius: 1px;
+    background: #e0a04a;
+    pointer-events: none;
+
+    // A segment boundary is structure, not a warning, so it is drawn in the
+    // panel's own accent rather than in the colour of a problem.
+    &.is-seg { background: #3d6f68; }
+}
+
 .bsp .bsp-scrub {
+    position: relative;
+    z-index: 1;
     flex: 1;
     min-width: 0;
-    height: 4px;
+    background: transparent;
+    height: 11px;
     margin: 0;
     padding: 0;
-    border-radius: var(--r-pill);
-    background: #1e2a28;
     appearance: none;
     -webkit-appearance: none;
     cursor: pointer;
