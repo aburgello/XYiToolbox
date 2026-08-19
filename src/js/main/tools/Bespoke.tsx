@@ -1577,8 +1577,44 @@ export const BespokeTool = () => {
      * about the old gesture changes.
      */
     const masterDragRef = React.useRef<{ m: BespokeMaster; sx: number; sy: number; moved: boolean } | null>(null);
-    const [masterDrag, setMasterDrag] = useState<{ m: BespokeMaster; x: number; y: number; over: boolean } | null>(null);
+    const [masterDrag, setMasterDrag] = useState<
+        { m: BespokeMaster; x: number; y: number; over: boolean; onRegion: number } | null
+    >(null);
     const [dragArmed, setDragArmed] = useState(false);
+    /**
+     * DROPPED ON TOP OF A REGION, which is two different intentions.
+     *
+     * Landing a master on one already on the board reads as "use this one
+     * instead" at least as often as "put another one over it", and guessing
+     * either way is wrong half the time. So the drop asks, once, where it
+     * landed -- and the question only exists when there is something under the
+     * cursor to be ambiguous about. Empty board, no menu.
+     */
+    // `x`/`y` are where the MENU goes, `dx`/`dy` where the master was actually
+    // let go. They differ near a viewport edge, and Overlay has to honour the
+    // drop rather than the clamped menu position.
+    const [dropChoice, setDropChoice] = useState<
+        { m: BespokeMaster; x: number; y: number; dx: number; dy: number; i: number } | null
+    >(null);
+    const dropMenuRef = React.useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!dropChoice) return;
+        // MOUSEDOWN, not click: the menu was opened BY a mouseup, and a click
+        // listener would fire on the very release that opened it.
+        const away = (e: MouseEvent) => {
+            const el = dropMenuRef.current;
+            if (el && e.target instanceof Node && el.contains(e.target)) return;
+            setDropChoice(null);
+        };
+        const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setDropChoice(null); };
+        window.addEventListener("mousedown", away);
+        window.addEventListener("keydown", esc);
+        return () => {
+            window.removeEventListener("mousedown", away);
+            window.removeEventListener("keydown", esc);
+        };
+    }, [dropChoice]);
 
     const beginMasterDrag = (m: BespokeMaster, e: React.MouseEvent<HTMLElement>) => {
         // Regions only. A Multi Art segment has no coordinates to drop onto --
@@ -1595,6 +1631,28 @@ export const BespokeTool = () => {
             const rect = stageRef.current ? stageRef.current.getBoundingClientRect() : null;
             return !!rect && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
         };
+        /**
+         * The region under the cursor, or -1.
+         *
+         * LAST MATCH WINS. Regions paint in array order, so the one drawn last
+         * is the one on top and the one a cursor over a stack is pointing at.
+         * Rotation needs no special case: a quarter turn already swaps w and h
+         * about the centre, so the stored rectangle is the rectangle on screen.
+         */
+        const regionAt = (x: number, y: number) => {
+            const rect = stageRef.current ? stageRef.current.getBoundingClientRect() : null;
+            if (!rect || !rect.width || !rect.height) return -1;
+            const cw = Number(canvasW) || 1920;
+            const ch = Number(canvasH) || 1080;
+            const px = ((x - rect.left) / rect.width) * cw;
+            const py = ((y - rect.top) / rect.height) * ch;
+            let hit = -1;
+            for (let i = 0; i < regions.length; i++) {
+                const r = regions[i];
+                if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) hit = i;
+            }
+            return hit;
+        };
         const move = (e: MouseEvent) => {
             const d = masterDragRef.current;
             if (!d) return;
@@ -1603,7 +1661,14 @@ export const BespokeTool = () => {
             // swallow the selection and the focus of an ordinary click.
             d.moved = true;
             e.preventDefault();
-            setMasterDrag({ m: d.m, x: e.clientX, y: e.clientY, over: overStage(e.clientX, e.clientY) });
+            const over = overStage(e.clientX, e.clientY);
+            setMasterDrag({
+                m: d.m,
+                x: e.clientX,
+                y: e.clientY,
+                over,
+                onRegion: over ? regionAt(e.clientX, e.clientY) : -1,
+            });
         };
         const up = (e: MouseEvent) => {
             const d = masterDragRef.current;
@@ -1613,7 +1678,19 @@ export const BespokeTool = () => {
             if (!d || !d.moved) return;
             // Let go anywhere else and nothing happens, deliberately: dropping
             // a master on the wrong half of the panel should cost nothing.
-            if (overStage(e.clientX, e.clientY)) addRegionAt(d.m, e.clientX, e.clientY);
+            if (!overStage(e.clientX, e.clientY)) return;
+            const onto = regionAt(e.clientX, e.clientY);
+            if (onto < 0) { addRegionAt(d.m, e.clientX, e.clientY); return; }
+            // Kept clear of the viewport edges: a menu that opens half off
+            // screen is a menu with one option on a docked panel.
+            setDropChoice({
+                m: d.m,
+                i: onto,
+                dx: e.clientX,
+                dy: e.clientY,
+                x: Math.min(e.clientX, window.innerWidth - 218),
+                y: Math.min(e.clientY, window.innerHeight - 132),
+            });
         };
         window.addEventListener("mousemove", move);
         window.addEventListener("mouseup", up);
@@ -1678,11 +1755,15 @@ export const BespokeTool = () => {
      * The ratio may now differ, so the crop is recomputed and shown, but
      * nothing moves.
      */
-    const swapRegion = (m: BespokeMaster) => {
-        if (swapTarget < 0) return;
-        const at = swapTarget;
+    /** The master changes, the rectangle does not. Both ways in share this. */
+    const swapRegionAt = (at: number, m: BespokeMaster) => {
         setRegions((prev) => prev.map((r, i) => (i === at ? { ...r, master: m } : r)));
         setSelRegion(at);
+    };
+
+    const swapRegion = (m: BespokeMaster) => {
+        if (swapTarget < 0) return;
+        swapRegionAt(swapTarget, m);
         setSwapTarget(-1);
         setStatus(null);
     };
@@ -3033,7 +3114,8 @@ export const BespokeTool = () => {
                             return (
                                 <div
                                     key={r.id}
-                                    className={"bsp-region" + (i === selRegion ? " is-on" : "")}
+                                    className={"bsp-region" + (i === selRegion ? " is-on" : "")
+                                        + ((masterDrag && masterDrag.onRegion === i) || (dropChoice && dropChoice.i === i) ? " is-drop" : "")}
                                     style={{
                                         left: `${(r.x / cw) * 100}%`, top: `${(r.y / ch) * 100}%`,
                                         width: `${(r.w / cw) * 100}%`, height: `${(r.h / ch) * 100}%`,
@@ -3690,7 +3772,37 @@ export const BespokeTool = () => {
                         style={{ background: hueFor(masterDrag.m.creative || masterDrag.m.name) }}
                     />
                     {regionLabel(masterDrag.m)}
+                    {masterDrag.onRegion >= 0 && (
+                        <em className="bsp-dragghost-onto">onto R{masterDrag.onRegion + 1}</em>
+                    )}
                 </span>
+            )}
+
+            {/* THE QUESTION THE DROP ASKED. Above the ghost (1000) and below
+                Dialog (2000): a confirm raised from here still wins, and this
+                still covers the board it is talking about. */}
+            {dropChoice && (
+                <div
+                    className="bsp-dropmenu"
+                    ref={dropMenuRef}
+                    style={{ left: `${dropChoice.x}px`, top: `${dropChoice.y}px` }}
+                >
+                    <p className="bsp-dropmenu-hd">{regionLabel(dropChoice.m)}</p>
+                    <button
+                        className="bsp-dropmenu-item"
+                        onClick={() => { swapRegionAt(dropChoice.i, dropChoice.m); setDropChoice(null); }}
+                    >
+                        <b>Swap into R{dropChoice.i + 1}</b>
+                        <span>Takes its place. Position, size and rotation stay put</span>
+                    </button>
+                    <button
+                        className="bsp-dropmenu-item"
+                        onClick={() => { addRegionAt(dropChoice.m, dropChoice.dx, dropChoice.dy); setDropChoice(null); }}
+                    >
+                        <b>Overlay</b>
+                        <span>A new region on top, where it was dropped</span>
+                    </button>
+                </div>
             )}
 
             {status && (

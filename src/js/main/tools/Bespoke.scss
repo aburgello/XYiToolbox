@@ -1456,11 +1456,78 @@
     &.is-over { opacity: 1; }
 }
 
+.bsp-dragghost-onto {
+    color: #7fe7d8;
+    font-family: ui-monospace, Menlo, monospace;
+    font-style: normal;
+}
+
+// THE DROP ASKED A QUESTION. Above the ghost, below Dialog, per the panel's
+// z-index ladder: toasts and video 1000, CommandPalette 1900, Dialog 2000.
+.bsp-dropmenu {
+    position: fixed;
+    z-index: 1500;
+    width: 210px;
+    padding: 5px;
+    border: 1px solid #2dd4bf;
+    border-radius: var(--r-md);
+    background: var(--surface-1, #141414);
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55);
+}
+
+.bsp-dropmenu-hd {
+    margin: 0 0 4px;
+    padding: 3px 6px 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: #6f8b87;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: var(--t-micro);
+}
+
+.bsp .bsp-dropmenu-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    width: 100%;
+    padding: 6px 7px;
+    border: none;
+    border-radius: var(--r-sm);
+    background: none;
+    cursor: pointer;
+    text-align: left;
+
+    // index.scss's global button:hover/:active would paint these blue.
+    &:hover { background: #172422; }
+    &:active { background: #12201e; }
+
+    b {
+        color: #e6f2f0;
+        font-size: var(--t-sm);
+        font-weight: 600;
+    }
+
+    span {
+        color: #7d918e;
+        font-size: var(--t-micro);
+        line-height: 1.35;
+        white-space: normal;
+    }
+}
+
 .bsp-dragghost-sw {
     width: 8px;
     height: 8px;
     border-radius: var(--r-xs);
     flex: none;
+}
+
+// AIMED AT BY A DROP. Brighter than the selection ring, and inset so it reads
+// on a region whose artwork fills it edge to edge.
+.bsp .bsp-region.is-drop {
+    box-shadow: inset 0 0 0 2px #7fe7d8, 0 0 0 1px #7fe7d8;
 }
 
 // The cell between the guides bracketing the selected region -- what Fit to
@@ -2023,6 +2090,7 @@
 // for keyboard users leaves the mouse path untouched.
 .bsp .bsp-choose-card:focus-visible,
 .bsp .bsp-recent:focus-visible,
+.bsp .bsp-dropmenu-item:focus-visible,
 .bsp .bsp-route:focus-visible,
 .bsp .bsp-fold:focus-visible,
 .bsp .bsp-master:focus-visible,
