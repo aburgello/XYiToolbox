@@ -25,6 +25,7 @@ import {
     FileText,
     ShieldCheck,
     ClipboardCheck,
+    FileSearch,
     Wand2,
     Replace,
     Stamp,
@@ -62,6 +63,7 @@ const RandomLayersTool      = React.lazy(() => import("./tools/RandomLayers"));
 const NameGeneratorTool     = React.lazy(() => import("./tools/NameGenerator"));
 const CampaignLocaliserTool = React.lazy(() => import("./tools/CampaignLocaliser"));
 const CSVLocaliserTool      = React.lazy(() => import("./tools/CSVLocaliser"));
+const ArtworkCheckTool     = React.lazy(() => import("./tools/ArtworkCheck"));
 const EditGeneratorTool     = React.lazy(() => import("./tools/EditGenerator"));
 const GenerateCueSheetTool  = React.lazy(() => import("./tools/GenerateCueSheet"));
 const CheekyDTTool          = React.lazy(() => import("./tools/CheekyDT"));
@@ -115,6 +117,7 @@ const PREFETCH_MAP: Record<string, () => Promise<any>> = {
     "name-generator":     () => import("./tools/NameGenerator"),
     "campaign-localiser": () => import("./tools/CampaignLocaliser"),
     "csv-localiser":      () => import("./tools/CSVLocaliser"),
+    "artwork-check":      () => import("./tools/ArtworkCheck"),
     "edit-generator":     () => import("./tools/EditGenerator"),
     "generate-cue-sheet": () => import("./tools/GenerateCueSheet"),
     "cheeky-dt":          () => import("./tools/CheekyDT"),
@@ -533,6 +536,19 @@ export const TOOLS: ToolEntry[] = [
         Component: CheekyDTTool,
         actions: ["Cheeky DT", "Territory Check"],
         description: "Select what you would like to update on the active Frontcard from its filename.",
+    },
+    {
+        id: "artwork-check",
+        label: "Artwork Check",
+        categories: ["localise"],
+        icon: FileSearch,
+        Component: ArtworkCheckTool,
+        actions: ["Check this deliverable", "Import"],
+        // Read-only: it reads a sheet and reports. "Import" brings a file into
+        // the project and is deliberately NOT listed as read, so nothing can
+        // press it on somebody's behalf.
+        actionSafety: { "Check this deliverable": "read" },
+        description: "Which art edit this deliverable is supposed to use, read off the mech sheet in JPG_PNG — and whether that tiff is actually in the project.",
     },
     {
         id: "check",
