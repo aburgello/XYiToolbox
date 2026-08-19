@@ -28,7 +28,7 @@
 // step. Shipping a Build button that guessed would be worse than not having one.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { AlertCircle, ChevronRight, Copy, Globe2, Layers, LayoutGrid, Library, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, RotateCcw, Search, Square as SquareIcon, Trash2, X } from "lucide-react";
+import { AlertCircle, ChevronRight, Copy, Globe2, Image as ImageIcon, Layers, LayoutGrid, Library, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, RotateCcw, Search, Square as SquareIcon, Trash2, X } from "lucide-react";
 import { csi, evalTS } from "../../lib/utils/bolt";
 import { deriveMastersFromMarkets } from "../lib/mastersRoot";
 // AGENT-HOOK — remove with the agent. See docs: grep AGENT-HOOK.
@@ -95,7 +95,9 @@ const MasterCard: React.FC<{
     swapping: boolean;
     used: number;
     onPick: () => void;
-}> = ({ master, label, preview, swapping, used, onPick }) => {
+    /** Mousedown on the card, so the board can be dropped onto. */
+    onDragBegin?: (e: React.MouseEvent<HTMLElement>) => void;
+}> = ({ master, label, preview, swapping, used, onPick, onDragBegin }) => {
     const BOX = 38;
     const aspect = master.width && master.height ? master.width / master.height : 1;
     const pw = aspect >= 1 ? BOX : Math.max(4, BOX * aspect);
@@ -140,6 +142,7 @@ const MasterCard: React.FC<{
         <button
             className={"bsp-master" + (swapping ? " is-swap" : "") + (used > 0 ? " is-used" : "")}
             onClick={onPick}
+            onMouseDown={onDragBegin}
             onMouseEnter={showPreview && !asImage ? play : undefined}
             onMouseLeave={showPreview && !asImage ? poster.restToPoster : undefined}
         >
@@ -338,6 +341,19 @@ function tokenHitsMaster(tok: string, m: BespokeMaster): boolean {
 function masterMatchesQuery(m: BespokeMaster, tokens: string[]): boolean {
     for (const tok of tokens) if (!tokenHitsMaster(tok, m)) return false;
     return true;
+}
+
+/**
+ * The size a master arrives at: its own ratio, inside half the canvas, never
+ * scaled up past it. Shared by clicking a card and by dropping one, so a region
+ * is the same size whichever way it got there.
+ */
+function defaultRegionBox(m: BespokeMaster, cw: number, ch: number): { w: number; h: number } {
+    const aspect = m.width && m.height ? m.width / m.height : 1;
+    let w = Math.round(cw * 0.5);
+    let h = Math.round(w / aspect);
+    if (h > ch * 0.8) { h = Math.round(ch * 0.8); w = Math.round(h * aspect); }
+    return { w: Math.max(24, w), h: Math.max(24, h) };
 }
 
 /** Below this a region collapses and can never be grabbed again. */
@@ -834,8 +850,11 @@ export const BespokeTool = () => {
         }
     }, []);
 
+    // READ ON ARRIVAL, not on picking a mode. The chooser offers the screens
+    // saved most recently, so the read has to have happened by the time it is
+    // on screen -- and it is the same single read either way, one screen
+    // earlier. Silent when the share is not mounted, like every other NAS read.
     useEffect(() => {
-        if (!mode) return;
         refreshTemplates();
     }, [mode, refreshTemplates]);
 
@@ -1370,6 +1389,27 @@ export const BespokeTool = () => {
     const hasBoard = !!refPath || regions.length > 0;
 
     /**
+     * The box the regions actually occupy.
+     *
+     * Offered as "Fit canvas" ONLY on a board drawn from scratch. On a traced
+     * screen the canvas is the screen -- it comes off the reference filename,
+     * the regions are panels within it, and the space around them is the wall.
+     * Shrinking to the bounding box there would quietly change what is being
+     * delivered, so the button is not offered once a reference is set.
+     */
+    const regionExtent = useMemo(() => {
+        let w = 0;
+        let h = 0;
+        for (const r of regions) {
+            w = Math.max(w, r.x + r.w);
+            h = Math.max(h, r.y + r.h);
+        }
+        return { w: Math.round(w), h: Math.round(h) };
+    }, [regions]);
+    const canFitCanvas = !refPath && regions.length > 0 && regionExtent.w > 0 && regionExtent.h > 0
+        && (regionExtent.w !== Number(canvasW) || regionExtent.h !== Number(canvasH));
+
+    /**
      * TALLEST THE BOARD IS ALLOWED TO DRAW, in px.
      *
      * This panel is docked beside a comp, not a page you scroll. A portrait
@@ -1484,24 +1524,108 @@ export const BespokeTool = () => {
         }
     };
 
+    // AT THE MASTER'S OWN RATIO, so it starts uncropped. Regions used to arrive
+    // as a half-canvas rectangle at whatever shape that happened to be, which
+    // meant reaching for "Match master ratio" every single time.
     const addRegion = (m: BespokeMaster) => {
         const cw = Number(canvasW) || 1920;
         const ch = Number(canvasH) || 1080;
-        // AT THE MASTER'S OWN RATIO, so it starts uncropped. It used to arrive
-        // as a half-canvas rectangle at whatever shape that happened to be,
-        // which meant reaching for "Match master ratio" every single time.
-        // Sized to fit inside half the canvas, never scaled up past it.
-        const aspect = m.width && m.height ? m.width / m.height : 1;
-        let w = Math.round(cw * 0.5);
-        let h = Math.round(w / aspect);
-        if (h > ch * 0.8) { h = Math.round(ch * 0.8); w = Math.round(h * aspect); }
+        const box = defaultRegionBox(m, cw, ch);
         setRegions((prev) => [...prev, {
             id: nextSegId++, master: m, rotation: 0,
-            x: Math.round((cw - w) / 2), y: Math.round((ch - h) / 2),
-            w: Math.max(24, w), h: Math.max(24, h),
+            x: Math.round((cw - box.w) / 2), y: Math.round((ch - box.h) / 2),
+            w: box.w, h: box.h,
         }]);
         setSelRegion(regions.length);
     };
+
+    /** The same region, centred where the cursor let go of it. */
+    const addRegionAt = (m: BespokeMaster, clientX: number, clientY: number) => {
+        const rect = stageRef.current ? stageRef.current.getBoundingClientRect() : null;
+        if (!rect || !rect.width || !rect.height) { addRegion(m); return; }
+        const cw = Number(canvasW) || 1920;
+        const ch = Number(canvasH) || 1080;
+        const box = defaultRegionBox(m, cw, ch);
+        // Centred under the cursor, then pulled back inside the board: a region
+        // that starts half off the canvas is never what a drop meant, and the
+        // handles to drag it back are off screen with it.
+        const x = Math.round(((clientX - rect.left) / rect.width) * cw - box.w / 2);
+        const y = Math.round(((clientY - rect.top) / rect.height) * ch - box.h / 2);
+        setRegions((prev) => [...prev, {
+            id: nextSegId++, master: m, rotation: 0,
+            x: Math.max(0, Math.min(cw - box.w, x)),
+            y: Math.max(0, Math.min(ch - box.h, y)),
+            w: box.w, h: box.h,
+        }]);
+        setSelRegion(regions.length);
+    };
+
+    /**
+     * DRAGGING A MASTER OUT OF THE SHELF AND ONTO THE BOARD.
+     *
+     * Picking a card drops a region in the middle and you then drag it where
+     * you meant; on a wide dock the shelf sits beside the board, so the whole
+     * thing can be one gesture instead of two.
+     *
+     * MOUSE EVENTS, not Pointer and not HTML5 drag-and-drop: the macOS AE CEP
+     * host does not dispatch Pointer Events reliably, and native dnd hands the
+     * drag image to the host to draw. This is the same mousedown/move/up shape
+     * the region handles already use.
+     *
+     * A drag is only a drag after four pixels. Under that it is a click, and
+     * the card's own onClick still drops the region in the middle -- nothing
+     * about the old gesture changes.
+     */
+    const masterDragRef = React.useRef<{ m: BespokeMaster; sx: number; sy: number; moved: boolean } | null>(null);
+    const [masterDrag, setMasterDrag] = useState<{ m: BespokeMaster; x: number; y: number; over: boolean } | null>(null);
+    const [dragArmed, setDragArmed] = useState(false);
+
+    const beginMasterDrag = (m: BespokeMaster, e: React.MouseEvent<HTMLElement>) => {
+        // Regions only. A Multi Art segment has no coordinates to drop onto --
+        // its tiles are laid across the frame in the order they were added.
+        if (mode !== "regions" || swapTarget >= 0 || e.button !== 0) return;
+        masterDragRef.current = { m, sx: e.clientX, sy: e.clientY, moved: false };
+        setDragArmed(true);
+    };
+
+    useEffect(() => {
+        if (!dragArmed) return;
+        const DRAG_START = 4;
+        const overStage = (x: number, y: number) => {
+            const rect = stageRef.current ? stageRef.current.getBoundingClientRect() : null;
+            return !!rect && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+        };
+        const move = (e: MouseEvent) => {
+            const d = masterDragRef.current;
+            if (!d) return;
+            if (!d.moved && Math.abs(e.clientX - d.sx) + Math.abs(e.clientY - d.sy) < DRAG_START) return;
+            // Only once it IS a drag. Calling this on every mousedown would
+            // swallow the selection and the focus of an ordinary click.
+            d.moved = true;
+            e.preventDefault();
+            setMasterDrag({ m: d.m, x: e.clientX, y: e.clientY, over: overStage(e.clientX, e.clientY) });
+        };
+        const up = (e: MouseEvent) => {
+            const d = masterDragRef.current;
+            masterDragRef.current = null;
+            setDragArmed(false);
+            setMasterDrag(null);
+            if (!d || !d.moved) return;
+            // Let go anywhere else and nothing happens, deliberately: dropping
+            // a master on the wrong half of the panel should cost nothing.
+            if (overStage(e.clientX, e.clientY)) addRegionAt(d.m, e.clientX, e.clientY);
+        };
+        window.addEventListener("mousemove", move);
+        window.addEventListener("mouseup", up);
+        return () => {
+            window.removeEventListener("mousemove", move);
+            window.removeEventListener("mouseup", up);
+        };
+        // Deliberately keyed on the arming alone: the handlers close over the
+        // render that armed them, and a drag lasts a second or two, over which
+        // the canvas and the board do not change.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dragArmed]);
 
     /**
      * A short, unambiguous name for a master: its creative and its native size.
@@ -1531,9 +1655,13 @@ export const BespokeTool = () => {
      * Nothing anywhere said so, which is the actual defect: the build looked
      * like it worked.
      */
-    const overrunOf = (m: BespokeMaster) => {
+    const overrunOf = (m: BespokeMaster, against?: number) => {
         const have = Number(m.duration);
-        const want = Number(runtime);
+        // A SEGMENT'S HOLD IS THE BOARD, for Multi Art. The default is the
+        // whole runtime, which is the right question in Bespoke where a region
+        // runs for the length of the deliverable; a Multi Art tile only gets
+        // its own segment's seconds, so the caller passes those instead.
+        const want = against === undefined ? Number(runtime) : against;
         if (!have || !want || have <= want) return 0;
         return Math.round((have - want) * 10) / 10;
     };
@@ -2151,6 +2279,20 @@ export const BespokeTool = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [suggestedOrient, orientCounts, orientTouched]);
 
+    /**
+     * The screens saved most recently, for the chooser.
+     *
+     * TEAM-RECENT, BY SAVE DATE -- not a personal history. Usage history is
+     * deliberately not persisted or carried in profiles (CLAUDE.md), and the
+     * library's own stamps answer a near-enough question for free: the screen
+     * somebody laid out yesterday is usually the job still on the go.
+     */
+    const recentScreens = useMemo(() => {
+        const out = templates.slice();
+        out.sort((a, b) => String(b.stamp || "").localeCompare(String(a.stamp || "")));
+        return out.slice(0, 4);
+    }, [templates]);
+
     const durations = useMemo(() => {
         const out: string[] = [];
         for (const m of masters || []) {
@@ -2256,6 +2398,26 @@ export const BespokeTool = () => {
     if (wantSecs > 0 && Math.abs(totalSecs - wantSecs) > 0.001) {
         notes.push(`segments total ${totalSecs}s, the row asks for ${wantSecs}s`);
     }
+    // THE SAME DEFECT AS A REGION OVERRUNNING ITS BOARD, and it was checked in
+    // one mode only. AE renders the first N seconds of an over-long layer
+    // without complaint, so a 15s master in a segment that holds 10s quietly
+    // loses its endcard, its logo and its legal -- and the build looks like it
+    // worked. Every segment is checked, not just the one on screen: the others
+    // are one click away and just as deliverable.
+    for (let si = 0; si < segments.length; si++) {
+        const s = segments[si];
+        for (let ti = 0; ti < s.tiles.length; ti++) {
+            const over = overrunOf(s.tiles[ti], s.seconds);
+            if (over > 0) {
+                const said =
+                    `${segments.length > 1 ? `segment ${si + 1}: ` : ""}${shortNameOf(s.tiles[ti])} is ` +
+                    `${s.tiles[ti].duration}s in a ${s.seconds}s hold. Its last ${over}s won't render`;
+                // The same master tiled four times across a segment is one
+                // problem, not four lines of it.
+                if (notes.indexOf(said) === -1) notes.push(said);
+            }
+        }
+    }
     if (seg && seg.tiles.length > 0 && canvasWidth > 0 && naturalWidth !== canvasWidth) {
         notes.push(naturalWidth > canvasWidth
             ? `this segment is ${naturalWidth}px across a ${canvasWidth}px canvas. It will be scaled down to fit`
@@ -2331,6 +2493,41 @@ export const BespokeTool = () => {
                             <b>Bespoke</b>
                         </button>
                     </div>
+                    {/* A WAY BACK INTO YESTERDAY'S WORK. Every job passes
+                        through this screen and it was two cards and a lot of
+                        black; the screens the team saved most recently are the
+                        ones most likely to be wanted, and each is a whole board
+                        rather than a mode. */}
+                    {libraryReadable && recentScreens.length > 0 && (
+                        <div className="bsp-choose-recent">
+                            <p className="bsp-lbl">Lately in the screen library</p>
+                            <div className="bsp-recents">
+                                {recentScreens.map((t) => (
+                                    <button
+                                        key={t.id}
+                                        className="bsp-recent"
+                                        onClick={() => {
+                                            setMode("regions");
+                                            // Tracing, not loading: the reference is
+                                            // the point of a screen -- the artwork and
+                                            // the canvas go up and the regions are
+                                            // drawn over them. A screen saved without
+                                            // one still has its slots, so it loads
+                                            // rather than refusing.
+                                            if (t.referencePath) traceTemplate(t);
+                                            else loadTemplate(t);
+                                        }}
+                                    >
+                                        <span className="bsp-recent-nm">{t.name}</span>
+                                        <span className="bsp-recent-meta">
+                                            {[t.territory, t.canvasW && t.canvasH ? `${t.canvasW}×${t.canvasH}` : "", t.stamp]
+                                                .filter(Boolean).join(" · ")}
+                                        </span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -2451,29 +2648,12 @@ export const BespokeTool = () => {
                     : "No country chosen. It will be built and left unsaved."}
             </p>
 
-            {/* CANVAS AND RUNTIME SIT WITH THE PANE THEY DESCRIBE, not at the
-                top of the form. In Bespoke both are read straight off the
-                reference filename, so asking for them before the reference has
-                even been picked put the answer above the question -- there they
-                live in the bar above the canvas instead, which is why this
-                renders for Multi Art only. */}
-            <div className="bsp-target" hidden={mode !== "multi"}>
-                <label className="bsp-field">
-                    <span className="bsp-lbl">Canvas</span>
-                    <span className="bsp-size">
-                        <input className="bsp-input bsp-input--n" value={canvasW} onChange={(e) => setCanvasW(e.target.value)} />
-                        <span className="bsp-x">×</span>
-                        <input className="bsp-input bsp-input--n" value={canvasH} onChange={(e) => setCanvasH(e.target.value)} />
-                    </span>
-                </label>
-                <label className="bsp-field">
-                    <span className="bsp-lbl">Runtime</span>
-                    <span className="bsp-size">
-                        <input className="bsp-input bsp-input--n" value={runtime} onChange={(e) => setRuntime(e.target.value)} />
-                        <span className="bsp-x">s</span>
-                    </span>
-                </label>
-            </div>
+            {/* The canvas and the runtime USED TO BE REPEATED HERE for Multi
+                Art, on the reasoning that they belong beside the pane they
+                describe. That was true when the form had no name row; the name
+                row now carries both for both modes, so Multi Art drew two live
+                copies of the same two fields forty pixels apart, each editing
+                the other's value. One control per value. */}
 
             {/* BOARD AND SHELF, SIDE BY SIDE when there is room for it.
                 These are the two surfaces the job alternates between, and they
@@ -2601,6 +2781,16 @@ export const BespokeTool = () => {
                                 <button className="bsp-btn bsp-btn--ghost" onClick={() => { setGuidesX([]); setGuidesY([]); setSelGuide(null); }}>
                                     Clear
                                 </button>
+                            )}
+                            {canFitCanvas && (
+                                <Tooltip text={`Set the canvas to ${regionExtent.w}×${regionExtent.h}, the box the regions occupy. For a board drawn from scratch: a traced screen already has its canvas from the reference filename`}>
+                                    <button
+                                        className="bsp-btn bsp-btn--ghost"
+                                        onClick={() => { setCanvasW(String(regionExtent.w)); setCanvasH(String(regionExtent.h)); }}
+                                    >
+                                        Fit canvas
+                                    </button>
+                                </Tooltip>
                             )}
                         </span>
                         )}
@@ -2739,7 +2929,7 @@ export const BespokeTool = () => {
                             onKeyDown={onBoardKey}
                         />
                     <div
-                        className="bsp-canvas"
+                        className={"bsp-canvas" + (masterDrag && masterDrag.over ? " is-drop" : "")}
                         ref={stageRef}
                         // Measured: an explicit rectangle, no ratio trick.
                         // Unmeasured (first paint): fall back to the padding-box
@@ -2952,9 +3142,48 @@ export const BespokeTool = () => {
                                 title={`x ${g}. Drag to move, double-click to remove`}
                             />
                         ))}
-                        {regions.length === 0 && (
-                            <span className="bsp-canvas-empty">Pick a master below to drop the first region in.</span>
-                        )}
+                        {/* THE EMPTY BOARD IS THE BIGGEST THING IN THE TOOL, and
+                            it was carrying one grey sentence while the three
+                            ways to actually start a board sat in the smallest
+                            type on screen in the bar above it. "Where do the
+                            regions come from" is the only question at this
+                            moment, so it gets the space that is going spare.
+
+                            ONLY UNTIL A REFERENCE IS PICKED. After that the
+                            board is a backdrop being traced and these would sit
+                            on top of the artwork; the bar above keeps all three
+                            for the rest of the job. */}
+                        {regions.length === 0 && (refPath ? (
+                            <span className="bsp-canvas-empty">Pick a master below, or drag one onto the board.</span>
+                        ) : (
+                            <div className="bsp-canvas-start">
+                                <p className="bsp-canvas-startq">Where do the regions come from?</p>
+                                <div className="bsp-canvas-routes">
+                                    <button className="bsp-route" onClick={pickReference}>
+                                        <ImageIcon size={17} />
+                                        <b>Trace a reference</b>
+                                        <span>Draw them over the JPG from the brief</span>
+                                    </button>
+                                    <button className="bsp-route" onClick={regionsFromComp}>
+                                        <Layers size={17} />
+                                        <b>From the open comp</b>
+                                        <span>Its layers become the regions</span>
+                                    </button>
+                                    {libraryReadable && (
+                                        <button className="bsp-route" onClick={() => setLibraryOpen(true)}>
+                                            <Library size={17} />
+                                            <b>Screen library</b>
+                                            <span>
+                                                {templates.length > 0
+                                                    ? `${templates.length} screens the team has laid out`
+                                                    : "Screens the team has laid out"}
+                                            </span>
+                                        </button>
+                                    )}
+                                </div>
+                                <p className="bsp-canvas-or">or drag a master from the shelf straight onto the board</p>
+                            </div>
+                        ))}
                     </div>
                     </div>
 
@@ -3417,6 +3646,7 @@ export const BespokeTool = () => {
                             // this card and the name is the whole answer.
                             label={searching ? (m.creative || shortNameOf(m)) : shortNameOf(m)}
                             preview={previewOf(m)}
+                            onDragBegin={(e) => beginMasterDrag(m, e)}
                             swapping={swapTarget >= 0}
                             used={regions.filter((r) => r.master.path === m.path).length}
                             onPick={() => {
@@ -3445,6 +3675,23 @@ export const BespokeTool = () => {
             </div>
             </div>
             </div>
+
+            {/* WHAT IS IN THE HAND. position:fixed against the viewport and
+                pointer-events:none, so it never becomes the element the drop
+                lands on. Not a Framer element: it is repositioned on every
+                mousemove, and an animated x/y would lag the cursor. */}
+            {masterDrag && (
+                <span
+                    className={"bsp-dragghost" + (masterDrag.over ? " is-over" : "")}
+                    style={{ left: `${masterDrag.x}px`, top: `${masterDrag.y}px` }}
+                >
+                    <span
+                        className="bsp-dragghost-sw"
+                        style={{ background: hueFor(masterDrag.m.creative || masterDrag.m.name) }}
+                    />
+                    {regionLabel(masterDrag.m)}
+                </span>
+            )}
 
             {status && (
                 <p className={"bsp-status is-" + status.type}>
