@@ -338,7 +338,11 @@
 // sat 14px below what preceded it and 6px above what it labelled. A heading
 // belongs to what follows it, so the space goes above, and the gap alone
 // handles below.
-.bsp-lbl--section { margin: 2px 0 0; }
+// A SECTION LABEL BELONGS TO THE THING BELOW IT. An even 10px either side
+// floats it midway between the block above and the one it names, so it reads
+// as unattached to both. Pushed away from what is above and pulled towards
+// what it labels, against the column gap: 14px above, 6px below.
+.bsp-lbl--section { margin: 4px 0 -4px; }
 
 .bsp-input {
     box-sizing: border-box;
@@ -552,7 +556,10 @@
 }
 
 .bsp-problems {
-    margin: 0;
+    // Pulled up against the column gap, for the same reason a section label is
+    // pulled down: these describe the board or the segment directly above them
+    // and should sit with it, not halfway to the shelf.
+    margin: -4px 0 0;
     padding: 0;
     list-style: none;
     display: flex;
@@ -585,7 +592,26 @@
    CLAUDE.md has 413 existing declarations of it filed as an open question, and
    adding the 414th to a brand-new layout is how a question becomes a habit. The
    side column carries a margin instead, which works everywhere. */
-.bsp-work-main { min-width: 0; }
+// THE COLUMN RHYTHM STOPPED AT THE DOOR. `.bsp` is a flex column with a 10px
+// gap, but that gap only ever applied to ITS OWN children -- and everything
+// worth looking at (the stage, the segment controls, the running order, the
+// problems, the shelf) is two levels down inside .bsp-work. Those blocks were
+// therefore spaced by whatever margins they happened to declare, which is why
+// a label floated in the middle of nowhere while a warning sat welded to the
+// thing above it. Same gap, all the way down.
+.bsp-work {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.bsp-work-main,
+.bsp-work-side {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+}
 
 /* 1400, not 1100. The shelf is a 156px rail PLUS a grid of 150px cards, so a
    column narrower than about 460px fits one card per row -- which is a worse
@@ -593,9 +619,9 @@
    what the shelf needs to stay a grid, not by what the board could survive. */
 @media (min-width: 1400px) {
     .bsp-work {
-        display: flex;
         // Two columns of different natural heights: a short board must not
         // stretch the shelf, and vice versa.
+        flex-direction: row;
         align-items: flex-start;
     }
 
@@ -608,7 +634,8 @@
 
     .bsp-work-side {
         flex: 0 0 460px;
-        margin-left: 10px;
+        // No margin-left: side by side, the row's own 10px gap is the space
+        // between the two columns. Declaring both made it 20.
         // Follows the board down as it is worked on, so the shelf is in reach
         // from anywhere in a tall layout.
         position: sticky;
@@ -2009,6 +2036,11 @@
 }
 
 .bsp-guidebar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 6px; }
+
+// It holds a guide's coordinate and the keyboard hint, and often neither. A
+// zero-height flex child still takes a gap either side of it, so an empty bar
+// was 20px of nothing in the middle of the column.
+.bsp-guidebar:empty { display: none; }
 
 .bsp-guide {
     // above even a selected region, or a line under one cannot be grabbed
