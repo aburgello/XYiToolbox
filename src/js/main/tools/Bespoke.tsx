@@ -453,7 +453,9 @@ export const BespokeTool = () => {
     // is fine for roughing a line in and useless for landing it on 2380.
     const [selGuide, setSelGuide] = useState<{ axis: "x" | "y"; i: number } | null>(null);
     const [destOpen, setDestOpen] = useState(false);
-    const [pickerOpen, setPickerOpen] = useState(false);
+    // OPEN BY DEFAULT. Picking a master is the first thing anyone does here,
+    // and the shelf was folded away behind a row so thin it read as a divider.
+    const [pickerOpen, setPickerOpen] = useState(true);
     // Saved layouts. The screen is the stable thing; the campaign is what
     // changes -- see bespokeTemplateSave in team.ts.
     const [templates, setTemplates] = useState<BespokeTemplate[]>([]);
