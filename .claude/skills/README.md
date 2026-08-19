@@ -1,14 +1,21 @@
 # Project skills
 
 Design skills vendored from [VibeCurb](https://github.com/Yu-369/VibeCurb) (MIT License,
-Copyright (c) 2026 Yu-369), copied from the TimeHub project. These are prompt/instruction
+Copyright (c) 2026 Yu-369), copied from the TimeHub project, plus `unslop` from
+[poteto/plugins](https://github.com/poteto/plugins). These are prompt/instruction
 files only — no runtime code, no dependencies, and nothing imported by the panel.
+
+`unslop` is the odd one out: the design skills run when invoked, while unslop's own
+description says it must always apply. It is vendored with a local-exceptions section
+because three of its rules are wrong for this codebase. Read that section before
+following it into a code comment.
 
 | Skill | Use it for |
 | :--- | :--- |
 | `visual-redesign` | Restyling existing components without touching JS logic. Treats state, effects, API calls, handlers, refs and `data-*`/`aria-*` attributes as untouchable; changes only classNames, CSS, colours, spacing, type and motion. |
 | `awwwards-motion` | Adding animation. Includes a frequency-gated motion budget for functional app UI — high-traffic actions get zero animation, rare ones get the full budget. |
 | `awwwards-sections` | Marketing-style page sections. Least relevant here — this is a docked tool panel, not a landing page. Kept for completeness. |
+| `unslop` | Cutting AI tells from writing: panel copy, comments, commit messages, anything a person reads. 31 patterns with the fix for each. Vendored from [poteto/plugins](https://github.com/poteto/plugins), with three local exceptions appended. |
 
 Each runs a four-phase gated pipeline — audit, extract, build, then a PASS/FAIL visual diff —
 and will not proceed past a phase until its checklist passes.
