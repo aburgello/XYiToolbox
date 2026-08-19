@@ -22,7 +22,13 @@ import "../shared.scss";
 import "./formTool.scss";
 import "./ArtworkCheck.scss";
 
-interface Row { type: string; name: string; filePath: string; inProject: boolean }
+interface Row {
+    type: string; name: string; filePath: string; inProject: boolean;
+    /** The .aep motion edit built from this tiff — what a motion deliverable
+     *  actually needs. "" when the creative folder has none for it. */
+    editName?: string; editPath?: string;
+    editVariants?: { name: string; path: string }[];
+}
 interface CheckResult {
     success: boolean;
     error?: string;
@@ -31,8 +37,8 @@ interface CheckResult {
     csvPath?: string;
     rows?: Row[];
     creative?: string;
-    tiffFolder?: string;
-    tiffs?: { name: string; path: string }[];
+    editsFolder?: string;
+    edits?: { name: string; path: string }[];
     unexpected?: string[];
     verdict?: "match" | "mismatch" | "no-reference";
 }
@@ -58,12 +64,12 @@ const ArtworkCheckTool = () => {
         }
     };
 
-    const importTiff = async (path: string, name: string) => {
+    const importEdit = async (path: string, name: string) => {
         setBusy(true);
         try {
             const r = (await evalTS("artworkImportTiff", path)) as unknown as { success: boolean; error?: string };
             setStatus(r && r.success
-                ? { text: `Imported ${name}. Put it into the comp yourself — layer order and masking are yours.`, type: "success" }
+                ? { text: `Imported ${name}. Put it into the comp yourself — layer order, masking and scale are yours.`, type: "success" }
                 : { text: (r && r.error) || "Couldn't import that.", type: "error" });
             if (r && r.success) await check();
         } catch {
@@ -77,8 +83,8 @@ const ArtworkCheckTool = () => {
     const other = (res?.rows || []).filter((r) => r.type.toUpperCase() !== "ART");
     // Everything the creative has, minus what the sheet already asks for --
     // the "or check all the TIFFs in that folder" half.
-    const expected = (res?.rows || []).map((r) => r.name.toLowerCase());
-    const alternatives = (res?.tiffs || []).filter((t) => expected.indexOf(t.name.toLowerCase()) === -1);
+    const offered = (res?.rows || []).map((r) => (r.editName || "").toLowerCase());
+    const alternatives = (res?.edits || []).filter((t) => offered.indexOf(t.name.toLowerCase()) === -1);
 
     return (
         <div className="form-tool artwork-check">
@@ -107,21 +113,45 @@ const ArtworkCheckTool = () => {
                     )}
 
                     {art.map((r) => (
-                        <div key={r.name} className={"ac-row" + (r.inProject ? " is-ok" : " is-missing")}>
-                            <StatusIcon type={r.inProject ? "success" : "error"} size={12} />
-                            <div className="ac-row-text">
-                                <strong>{r.name}</strong>
-                                <span>{r.inProject ? "in this project" : "NOT in this project"}</span>
+                        <div key={r.name}>
+                            <div className={"ac-row" + (r.inProject ? " is-ok" : " is-missing")}>
+                                <StatusIcon type={r.inProject ? "success" : "error"} size={12} />
+                                <div className="ac-row-text">
+                                    {/* THE EDIT IS THE HEADLINE, not the tiff. The
+                                        sheet names the static art the mech was
+                                        built from; what goes in a motion
+                                        deliverable is the .aep built from it. */}
+                                    <strong>{r.editName || r.name}</strong>
+                                    <span>
+                                        {r.editName
+                                            ? `the motion edit for ${r.name}`
+                                            : `no motion edit exists for ${r.name}`}
+                                        {" · "}
+                                        {r.inProject ? "in this project" : "NOT in this project"}
+                                    </span>
+                                </div>
+                                {!r.inProject && r.editPath && (
+                                    <button className="ac-import" disabled={busy}
+                                        onClick={() => importEdit(r.editPath!, r.editName || r.name)}>
+                                        <Download size={12} /> Import
+                                    </button>
+                                )}
                             </div>
-                            {!r.inProject && res.tiffs && res.tiffs.filter((t) => t.name === r.name)[0] && (
-                                <button
-                                    className="ac-import"
-                                    disabled={busy}
-                                    onClick={() => importTiff(res.tiffs!.filter((t) => t.name === r.name)[0].path, r.name)}
-                                >
-                                    <Download size={12} /> Import
-                                </button>
-                            )}
+                            {/* OFFERED, NEVER CHOSEN. Which of these a
+                                deliverable wants depends on its duration, and
+                                that is the artist's call. */}
+                            {(r.editVariants || []).map((v) => (
+                                <div className="ac-row ac-row--alt" key={v.path}>
+                                    <div className="ac-row-text">
+                                        <strong>{v.name}</strong>
+                                        <span>another cut of the same edit</span>
+                                    </div>
+                                    <button className="ac-import" disabled={busy}
+                                        onClick={() => importEdit(v.path, v.name)}>
+                                        <Download size={12} /> Import
+                                    </button>
+                                </div>
+                            ))}
                         </div>
                     ))}
 
@@ -147,12 +177,12 @@ const ArtworkCheckTool = () => {
                     {alternatives.length > 0 && (
                         <div className="ac-alts">
                             <button className="ac-alts-toggle" onClick={() => setShowAll((v) => !v)}>
-                                <FolderOpen size={12} /> {showAll ? "Hide" : "Show"} the other {res.creative} art edits ({alternatives.length})
+                                <FolderOpen size={12} /> {showAll ? "Hide" : "Show"} the other {res.creative} motion edits ({alternatives.length})
                             </button>
                             {showAll && alternatives.map((t) => (
                                 <div className="ac-row ac-row--alt" key={t.path}>
                                     <div className="ac-row-text"><strong>{t.name}</strong></div>
-                                    <button className="ac-import" disabled={busy} onClick={() => importTiff(t.path, t.name)}>
+                                    <button className="ac-import" disabled={busy} onClick={() => importEdit(t.path, t.name)}>
                                         <Download size={12} /> Import
                                     </button>
                                 </div>

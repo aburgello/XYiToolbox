@@ -30,8 +30,16 @@ export interface ArtworkRow {
   name: string;
   /** Where the CSV says it came from. Informational only -- see the header. */
   filePath: string;
-  /** True when a file of this name is in the project already. */
+  /** True when this edit is in the project already. */
   inProject: boolean;
+  /** The .aep motion edit built from this tiff, "" when the folder has none.
+   *  Quad is a real example: a tiff with no animated version. */
+  editName?: string;
+  editPath?: string;
+  /** Other edits whose name extends this one -- "_10" and the like. Offered,
+   *  never chosen: which one a deliverable wants is a judgement about its
+   *  duration and the artist has it. */
+  editVariants?: { name: string; path: string }[];
 }
 
 export interface ArtworkCheckResult extends Result {
@@ -42,10 +50,12 @@ export interface ArtworkCheckResult extends Result {
   /** The CSV that was read, "" when none was found. */
   csvPath?: string;
   rows?: ArtworkRow[];
-  /** Every tiff in this creative's own folder, for picking a replacement. */
+  /** Every MOTION EDIT (.aep) in this creative's own folder. The CSV names the
+   *  static tiff the mech was composited from; what a motion deliverable needs
+   *  is the animated edit built from it. */
   creative?: string;
-  tiffFolder?: string;
-  tiffs?: { name: string; path: string }[];
+  editsFolder?: string;
+  edits?: { name: string; path: string }[];
   /** Tiffs in the project that the CSV does not mention. The likeliest shape
    *  of "wrong art edit": the right one absent and another one present. */
   unexpected?: string[];
@@ -59,6 +69,23 @@ function artNorm(name: string): string {
   const dot = s.lastIndexOf(".");
   if (dot > 0) s = s.substring(0, dot);
   return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * The key that pairs a TIFF to its MOTION EDIT.
+ *
+ * They are supposed to share a name and do not quite: the real folder holds
+ * FID_INTL_Trio_96Sheet_RGB_OV.tif beside FID_INTL_Trio_96_Sheet_sRGB_OV.aep --
+ * a separator that moved and an sRGB that grew an s. Dropping separators
+ * handles the first; collapsing srgb to rgb handles the second. Both are
+ * spelling, neither changes which art edit is meant.
+ *
+ * Anything looser would start matching different edits to each other, which is
+ * the failure that matters here: 30_Sheet, 48_Sheet and 96Sheet are three
+ * different pieces of artwork whose names differ by two characters.
+ */
+function editKey(name: string): string {
+  return artNorm(name).replace(/srgb/g, "rgb");
 }
 
 /** A project filename without its version tail, e.g. "..._AU_V01" -> "..._AU". */
@@ -135,16 +162,30 @@ function splitCsvLine(line: string): string[] {
   return out;
 }
 
-/** Every footage filename in the project, normalised. */
-function projectFootageNames(): { norm: string; name: string }[] {
-  const out: { norm: string; name: string }[] = [];
+/**
+ * Everything in the project that could BE an art edit: footage filenames and
+ * COMP names both.
+ *
+ * A motion edit is imported as a project, so it arrives as a tree of comps and
+ * there is no single file to look for. Only checking footage would report every
+ * correctly built deliverable as missing its artwork.
+ */
+function projectItemNames(): { key: string; name: string; kind: string }[] {
+  const out: { key: string; name: string; kind: string }[] = [];
   const proj = app.project;
   for (let i = 1; i <= proj.numItems; i++) {
     const item = proj.item(i);
-    // Duck-typed: footage is the thing with a `file`. instanceof against an AE
-    // host class is banned (CLAUDE.md section 2).
+    // Duck-typed: footage is the thing with a `file`, a comp the thing that can
+    // count its layers. instanceof against an AE host class is banned
+    // (CLAUDE.md section 2).
     const f = (item as any).file;
-    if (f && f.name) out.push({ norm: artNorm(f.name), name: String(f.name) });
+    if (f && f.name) {
+      out.push({ key: editKey(f.name), name: String(f.name), kind: "footage" });
+      continue;
+    }
+    if (typeof (item as any).numLayers === "number") {
+      out.push({ key: editKey(item.name), name: String(item.name), kind: "comp" });
+    }
   }
   return out;
 }
@@ -243,33 +284,10 @@ export const artworkCheck = (): ArtworkCheckResult => {
       }
     }
 
-    // --- what the project actually holds -----------------------------------
-    const footage = projectFootageNames();
-    const expected: { [norm: string]: boolean } = {};
-    for (let r = 0; r < rows.length; r++) {
-      const want = artNorm(rows[r].name);
-      expected[want] = true;
-      for (let f = 0; f < footage.length; f++) {
-        if (footage[f].norm === want) { rows[r].inProject = true; break; }
-      }
-    }
-
-    // Tiffs present that the sheet never mentions -- the other half of "wrong
-    // art edit", and the half that names the culprit.
-    const unexpected: string[] = [];
-    for (let f = 0; f < footage.length; f++) {
-      const n = footage[f].name.toLowerCase();
-      const isTiff = n.length > 4 &&
-        (n.substring(n.length - 4) === ".tif" || n.substring(n.length - 5) === ".tiff");
-      if (!isTiff) continue;
-      if (expected[footage[f].norm]) continue;
-      if (unexpected.indexOf(footage[f].name) === -1) unexpected.push(footage[f].name);
-    }
-
     // --- this creative's own art edits, for picking a replacement ------------
     let creative = "";
-    let tiffFolder = "";
-    const tiffs: { name: string; path: string }[] = [];
+    let editsFolder = "";
+    const edits: { name: string; path: string }[] = [];
     if (mastersHint) {
       const mastersRoot = new Folder(mastersHint);
       const creativeFolder = findCreativeFolder(mastersRoot, deliverable);
@@ -277,18 +295,76 @@ export const artworkCheck = (): ArtworkCheckResult => {
         creative = String(creativeFolder.name);
         const tf = new Folder(creativeFolder.fsName + "/Tiffs");
         if (tf.exists) {
-          tiffFolder = tf.fsName;
+          editsFolder = tf.fsName;
           const files = tf.getFiles();
           for (let i = 0; i < files.length; i++) {
             const f = files[i] as File;
             if (typeof (f as any).getFiles === "function") continue;
             const n = String(f.name).toLowerCase();
-            if (n.length > 4 && (n.substring(n.length - 4) === ".tif" || n.substring(n.length - 5) === ".tiff")) {
-              tiffs.push({ name: String(f.name), path: f.fsName });
+            // THE .aep, NOT THE .tif. The folder is called Tiffs and holds
+            // both: the static art the mech was composited from, and the
+            // animated edit built from it. A motion deliverable wants the
+            // second, and importing the first is what this got wrong first
+            // time round.
+            if (n.length > 4 && n.substring(n.length - 4) === ".aep") {
+              edits.push({ name: String(f.name), path: f.fsName });
             }
           }
         }
       }
+    }
+
+    // --- pair each sheet row to its motion edit, then look for it -----------
+    const present = projectItemNames();
+    const expected: { [key: string]: boolean } = {};
+
+    for (let r = 0; r < rows.length; r++) {
+      const want = editKey(rows[r].name);
+      expected[want] = true;
+
+      // The edit built from this tiff. Exact on the loose key; anything that
+      // merely EXTENDS the key ("_10") is a variant, offered rather than
+      // chosen -- which one a deliverable wants depends on its duration, and
+      // the artist knows that.
+      const variants: { name: string; path: string }[] = [];
+      for (let e = 0; e < edits.length; e++) {
+        const k = editKey(edits[e].name);
+        if (k === want) { rows[r].editName = edits[e].name; rows[r].editPath = edits[e].path; }
+        else if (k.indexOf(want) === 0) variants.push(edits[e]);
+      }
+      if (variants.length) rows[r].editVariants = variants;
+
+      // In the project by either name: the tiff itself, or the edit's comps.
+      const foundEdit = rows[r].editName;
+      const editWanted = foundEdit ? editKey(foundEdit) : "";
+      // Two separate tests, not `a || (b && c)`. The precedence audit rejects
+      // that shape outright because parentheses do not survive emit to ES3 --
+      // see mcIt()'s isSameType for the same restructuring.
+      for (let p = 0; p < present.length; p++) {
+        let hit = present[p].key === want;
+        if (!hit && editWanted) hit = present[p].key === editWanted;
+        if (hit) {
+          rows[r].inProject = true;
+          break;
+        }
+      }
+    }
+
+    // Art edits present that the sheet never mentions -- the other half of
+    // "wrong art edit", and the half that names the culprit. Matched against
+    // this creative's own edits so unrelated comps are not paraded as suspects.
+    const unexpected: string[] = [];
+    for (let p = 0; p < present.length; p++) {
+      if (expected[present[p].key]) continue;
+      let isAnEdit = false;
+      for (let e = 0; e < edits.length; e++) {
+        if (editKey(edits[e].name) === present[p].key) { isAnEdit = true; break; }
+      }
+      const n = present[p].name.toLowerCase();
+      const isTiff = n.length > 4 &&
+        (n.substring(n.length - 4) === ".tif" || n.substring(n.length - 5) === ".tiff");
+      if (!isAnEdit && !isTiff) continue;
+      if (unexpected.indexOf(present[p].name) === -1) unexpected.push(present[p].name);
     }
 
     let verdict: "match" | "mismatch" | "no-reference" = "no-reference";
@@ -305,8 +381,8 @@ export const artworkCheck = (): ArtworkCheckResult => {
       csvPath: csvPath,
       rows: rows,
       creative: creative,
-      tiffFolder: tiffFolder,
-      tiffs: tiffs,
+      editsFolder: editsFolder,
+      edits: edits,
       unexpected: unexpected,
       verdict: verdict,
     };

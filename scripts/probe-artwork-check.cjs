@@ -92,11 +92,14 @@ const check = (l, c, d) => {
     else { fail++; console.log("  FAIL  " + l + (d ? "\n          " + d : "")); }
 };
 const footage = (name) => ({ file: { name } });
+const comp = (name) => ({ name, numLayers: 3 });
 
 console.log("\n=== a real AU deliverable, with the RIGHT tiff in the project ===");
 {
     const proj = MARKETS + "/Australia/AE/Batch_01/FID_INTL_Trio_DOOH_oOhRetailLandscapeEvokes_2732x768px_7s_AU_V01.aep";
-    const r = run(proj, [footage("FID_INTL_Trio_96Sheet_RGB_OV.tif"), footage("FID_RGB_TT_OV_ON_BLACK_Simp_OOH.psd")]);
+    // An imported .aep arrives as COMPS, not a file — which is how a correctly
+    // built deliverable actually looks.
+    const r = run(proj, [comp("FID_INTL_Trio_96_Sheet_sRGB_OV"), footage("FID_RGB_TT_OV_ON_BLACK_Simp_OOH.psd")]);
     console.log("      verdict: " + r.verdict + "   csv: " + (r.csvPath ? "found" : "none"));
     check("found the CSV despite Batch_01 vs Batch_3", !!r.csvPath, JSON.stringify(r).slice(0, 200));
     check("stripped the _V01 to match the deliverable",
@@ -106,27 +109,36 @@ console.log("\n=== a real AU deliverable, with the RIGHT tiff in the project ===
           (r.rows || []).some((x) => x.type === "ART" && x.name.indexOf("96Sheet") !== -1),
           JSON.stringify(r.rows));
     check("verdict: match", r.verdict === "match", r.verdict);
-    check("offers Trio's own art edits", (r.creative || "").toUpperCase() === "TRIO", r.creative);
-    check("and lists them", (r.tiffs || []).length >= 5, String((r.tiffs || []).length));
+    check("offers Trio's own edits", (r.creative || "").toUpperCase() === "TRIO", r.creative);
+    // THE .aep, NOT THE .tif — the folder is called Tiffs and holds both.
+    check("lists .aep motion edits, not tiffs",
+          (r.edits || []).length > 0 && (r.edits || []).every((e) => /\.aep$/i.test(e.name)),
+          JSON.stringify((r.edits || []).map((e) => e.name)));
+    const artRow = (r.rows || []).filter((x) => x.type === "ART")[0];
+    check("pairs 96Sheet.tif to 96_Sheet_sRGB.aep across the spelling drift",
+          !!artRow && /96_Sheet_sRGB_OV\.aep$/.test(artRow.editName || ""), artRow && artRow.editName);
+    check("and offers the _10 cut as a variant rather than picking it",
+          !!artRow && (artRow.editVariants || []).some((v) => /_OV_10\.aep$/.test(v.name)),
+          JSON.stringify(artRow && artRow.editVariants));
 }
 
 console.log("\n=== the same deliverable with the WRONG tiff ===");
 {
     const proj = MARKETS + "/Australia/AE/Batch_01/FID_INTL_Trio_DOOH_oOhRetailLandscapeEvokes_2732x768px_7s_AU_V01.aep";
-    const r = run(proj, [footage("FID_INTL_Trio_48_Sheet_RGB_OV.tif")]);
+    const r = run(proj, [comp("FID_INTL_Trio_48_Sheet_RGB_OV")]);
     console.log("      verdict: " + r.verdict);
     check("verdict: mismatch", r.verdict === "mismatch", r.verdict);
     check("names the one that should be there",
           (r.rows || []).some((x) => x.type === "ART" && !x.inProject));
     check("and names the one that actually is",
-          (r.unexpected || []).indexOf("FID_INTL_Trio_48_Sheet_RGB_OV.tif") !== -1,
+          (r.unexpected || []).indexOf("FID_INTL_Trio_48_Sheet_RGB_OV") !== -1,
           JSON.stringify(r.unexpected));
 }
 
 console.log("\n=== your case: a comp named 10s when the mech is 7s ===");
 {
     const proj = MARKETS + "/Australia/AE/Batch_01/FID_INTL_Trio_DOOH_OOhRetailLandscapeEvokes_2732x768px_10s_AU_V01.aep";
-    const r = run(proj, [footage("FID_INTL_Trio_48_Sheet_RGB_OV.tif")]);
+    const r = run(proj, [comp("FID_INTL_Trio_48_Sheet_RGB_OV")]);
     console.log("      verdict: " + r.verdict);
     check("reports no reference rather than a false mismatch", r.verdict === "no-reference", r.verdict);
     check("succeeds — it is an answer, not an error", r.success === true, r.error);
