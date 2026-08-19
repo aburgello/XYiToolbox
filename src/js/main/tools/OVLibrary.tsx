@@ -503,7 +503,7 @@ const VideoPlayerModal: React.FC<{ path: string; onClose: () => void }> = ({ pat
                     <div className="video-player-error">
                         <Film size={32} />
                         <p>Could not play this file in the panel.</p>
-                        <p className="hint">The render works in After Effects — try Import or Reveal instead.</p>
+                        <p className="hint">The render works in After Effects. Try Import or Reveal instead.</p>
                     </div>
                 ) : (
                     <video src={toFileUrl(path)} controls autoPlay onError={() => setError(true)} />
@@ -926,7 +926,7 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
 
     const handleRemoveCampaign = async () => {
         if (!selectedCampaign) return;
-        if (!(await confirmDialog(`Remove campaign "${selectedCampaign.name}" from the OV Library?\n\nThis only removes it from this list — nothing on disk is touched.`))) return;
+        if (!(await confirmDialog(`Remove campaign "${selectedCampaign.name}" from the OV Library?\n\nThis only removes it from this list. Nothing on disk is touched.`))) return;
         await safeEvalTS("removeCampaign", selectedCampaign.name);
         setSelectedCampaign(null);
         await refreshCampaigns();
@@ -1034,7 +1034,7 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
         try {
             const result = await evalTS("createComparisonComp", path, width, height);
             if (result === undefined) {
-                pushToast("No CEP bridge — open inside After Effects to create a comparison comp.", "error");
+                pushToast("No CEP bridge. Open inside After Effects to create a comparison comp.", "error");
                 return;
             }
             pushToast(
@@ -1207,14 +1207,14 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
                             </Droplet>
                         </div>
                     </div>
-                    {usingMock && <span className="ov-hero-mock-pill">Mock data — no CEP bridge</span>}
+                    {usingMock && <span className="ov-hero-mock-pill">Mock data, no CEP bridge</span>}
                 </div>
             ) : (
                 <>
-                    <h2>OV Library — Masters &amp; Renders</h2>
+                    <h2>OV Library: Masters &amp; Renders</h2>
                     {usingMock && (
                         <div className="mock-banner">
-                            Preview mode — no CEP bridge detected, showing mock data. Real scans, imports, and file
+                            Preview mode. No CEP bridge detected, showing mock data. Real scans, imports, and file
                             actions are not happening. See CLAUDE.md "Testing" section.
                         </div>
                     )}
@@ -1326,7 +1326,7 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
                                 </Tooltip>
                             )}
                         </div>
-                        <Tooltip text={variantSort === "size" ? "Sorted by size — click to sort by duration" : "Sorted by duration — click to sort by size"}>
+                        <Tooltip text={variantSort === "size" ? "Sorted by size. Click to sort by duration" : "Sorted by duration. Click to sort by size"}>
                             <button
                                 className="sort-toggle"
                                 onClick={() => setVariantSort(variantSort === "size" ? "duration" : "size")}

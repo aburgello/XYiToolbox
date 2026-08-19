@@ -33,7 +33,7 @@ export interface ActionResult {
     [key: string]: unknown;
 }
 
-const NO_BRIDGE_MSG = "No CEP bridge detected — open this panel inside After Effects to run it.";
+const NO_BRIDGE_MSG = "No CEP bridge detected. Open this panel inside After Effects to run it.";
 const BUSY_MSG = "After Effects is busy or not responding. Try again in a moment.";
 
 export async function evalTSSafe<

@@ -193,7 +193,7 @@ const TeamDroplet: React.FC = () => {
                 refresh();
             }
         } catch (e) {
-            showNote("No CEP bridge detected — open this panel inside After Effects.", true);
+            showNote("No CEP bridge detected. Open this panel inside After Effects.", true);
         }
     };
 
@@ -210,9 +210,9 @@ const TeamDroplet: React.FC = () => {
             }
             setProfiles(result.profiles || []);
             setNameDraft("");
-            showNote(`Saved "${name}" — pick it from any machine's Team menu to apply this setup there.`, false);
+            showNote(`Saved "${name}". Pick it from any machine's Team menu to apply this setup there.`, false);
         } catch (e) {
-            showNote("No CEP bridge detected — open this panel inside After Effects.", true);
+            showNote("No CEP bridge detected. Open this panel inside After Effects.", true);
         } finally {
             setBusy(false);
         }
@@ -231,7 +231,7 @@ const TeamDroplet: React.FC = () => {
             setMachineOwner(next);
             showNote(next ? `This Mac is now tagged as ${next}'s station.` : "Machine untagged.", false);
         } catch (e) {
-            showNote("No CEP bridge detected — open this panel inside After Effects.", true);
+            showNote("No CEP bridge detected. Open this panel inside After Effects.", true);
         }
     };
 
@@ -246,7 +246,7 @@ const TeamDroplet: React.FC = () => {
             }
         } catch (e) {
             setLiveSync(!enabled);
-            showNote("No CEP bridge detected — open this panel inside After Effects.", true);
+            showNote("No CEP bridge detected. Open this panel inside After Effects.", true);
         }
     };
 
@@ -265,7 +265,7 @@ const TeamDroplet: React.FC = () => {
             // settings read with none of that risk.
             requestSoftReload();
         } catch (e) {
-            showNote("No CEP bridge detected — open this panel inside After Effects.", true);
+            showNote("No CEP bridge detected. Open this panel inside After Effects.", true);
         } finally {
             setBusy(false);
         }
@@ -280,7 +280,7 @@ const TeamDroplet: React.FC = () => {
         const ok = await confirmDialog(
             isOwnerReclaim
                 ? `Load ${profile.name}'s setup from the team folder and reload the panel?`
-                : `Apply "${profile.name}"'s setup on this machine? The current setup is backed up automatically — restore it any time from this Team menu.`
+                : `Apply "${profile.name}"'s setup on this machine? The current setup is backed up automatically. Restore it any time from this Team menu.`
         );
         if (!ok) return;
         setBusy(true);
@@ -297,14 +297,14 @@ const TeamDroplet: React.FC = () => {
             // reload hazard that returned an unstyled white panel.
             requestSoftReload();
         } catch (e) {
-            showNote("No CEP bridge detected — open this panel inside After Effects.", true);
+            showNote("No CEP bridge detected. Open this panel inside After Effects.", true);
         } finally {
             setBusy(false);
         }
     };
 
     const deleteProfile = async (profile: ProfileInfo) => {
-        const ok = await confirmDialog(`Delete "${profile.name}"'s saved setup for the whole team? (Removes only the snapshot — their folder stays, and nobody's live setup changes.)`);
+        const ok = await confirmDialog(`Delete "${profile.name}"'s saved setup for the whole team? (Removes only the snapshot, their folder stays, and nobody's live setup changes.)`);
         if (!ok) return;
         try {
             const result = await evalTS("teamDeleteProfile", profile.name);
@@ -312,7 +312,7 @@ const TeamDroplet: React.FC = () => {
             if (result.success) setProfiles(result.profiles || []);
             else showNote(result.error || "Something went wrong.", true);
         } catch (e) {
-            showNote("No CEP bridge detected — open this panel inside After Effects.", true);
+            showNote("No CEP bridge detected. Open this panel inside After Effects.", true);
         }
     };
 
@@ -326,9 +326,9 @@ const TeamDroplet: React.FC = () => {
                 <Tooltip
                     text={
                         guestActive
-                            ? `Team — using ${guestProfile}'s setup (guest)`
+                            ? `Team, using ${guestProfile}'s setup (guest)`
                             : updateAvailable
-                              ? `Team — Toolbox ${latestVersion} is available`
+                              ? `Team. Toolbox ${latestVersion} is available`
                               : "Team"
                     }
                 >
@@ -351,7 +351,7 @@ const TeamDroplet: React.FC = () => {
                     {updateAvailable && (
                         <div className="team-update-banner">
                             <RefreshCw size={12} />
-                            Toolbox {formatVersion(latestVersion)} is available — this machine runs {formatVersion(TOOLBOX_VERSION)}. Ask for the new installer.
+                            Toolbox {formatVersion(latestVersion)} is available. This machine runs {formatVersion(TOOLBOX_VERSION)}. Ask for the new installer.
                         </div>
                     )}
 
@@ -381,7 +381,7 @@ const TeamDroplet: React.FC = () => {
                         <>
                             <span className="team-section-label">Members</span>
                             {profiles.length === 0 ? (
-                                <p className="hint">No members yet — each member is a subfolder of the team folder (create them by hand, or just save your setup below and your folder is created for you).</p>
+                                <p className="hint">No members yet. Each member is a subfolder of the team folder (create them by hand, or just save your setup below and your folder is created for you).</p>
                             ) : (
                                 <div className="team-profile-list">
                                     {profiles.map((p) => (
@@ -404,7 +404,7 @@ const TeamDroplet: React.FC = () => {
                                             <button
                                                 type="button"
                                                 className={machineOwner === p.name ? "team-profile-home team-profile-home--owner" : "team-profile-home"}
-                                                title={machineOwner === p.name ? `This is ${p.name}'s Mac — click to untag` : `Tag this Mac as ${p.name}'s station`}
+                                                title={machineOwner === p.name ? `This is ${p.name}'s Mac. Click to untag` : `Tag this Mac as ${p.name}'s station`}
                                                 onClick={() => setOwner(p.name)}
                                             >
                                                 <Home size={12} />

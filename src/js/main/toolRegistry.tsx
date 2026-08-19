@@ -327,7 +327,7 @@ export const TOOLS: ToolEntry[] = [
         icon: Repeat,
         Component: OVSwapTool,
         actions: ["Scan Active Comp", "Swap Selected", "Reset"],
-        description: "Swaps the OV precomps and OV artwork in the active comp for the territory components already imported into the project — exact name match only, with a manual picker for anything it won't guess at.",
+        description: "Swaps the OV precomps and OV artwork in the active comp for the territory components already imported into the project. Exact name match only, with a manual picker for anything it won't guess at.",
     },
     {
         id: "random-layers",
@@ -336,7 +336,7 @@ export const TOOLS: ToolEntry[] = [
         icon: Shuffle,
         Component: RandomLayersTool,
         actions: ["Random Z", "Random Starting Point"],
-        description: "Applies a random value within [Minimum, Minimum + Range] to whichever layers are currently selected in the active comp — either their Z position or their start time.",
+        description: "Applies a random value within [Minimum, Minimum + Range] to whichever layers are currently selected in the active comp, either their Z position or their start time.",
     },
     {
         id: "name-generator",
@@ -470,7 +470,7 @@ export const TOOLS: ToolEntry[] = [
         icon: FileSpreadsheet,
         Component: PDFToCSVTool,
         actions: ["PDF to CSV"],
-        description: "Scans a folder of PDFs and writes a Campaign_Data_<CC>.csv of matched master info — filename scan only, never opens a project.",
+        description: "Scans a folder of PDFs and writes a Campaign_Data_<CC>.csv of matched master info. Filename scan only, never opens a project.",
     },
     {
         id: "edit-generator",
@@ -529,7 +529,7 @@ export const TOOLS: ToolEntry[] = [
             "mode", "libraryOpen", "libraryTerritory", "screenName", "mastersRoot", "segments",
             "canvasWidth", "canvasHeight", "runtimeSeconds",
         ],
-        description: "Compose a deliverable from several masters — creatives tiled across the frame, segments played in order. For MultipleArt rows, where no single master fits.",
+        description: "Compose a deliverable from several masters. Creatives tiled across the frame, segments played in order. For MultipleArt rows, where no single master fits.",
     },
     {
         id: "cheeky-dt",
@@ -551,7 +551,7 @@ export const TOOLS: ToolEntry[] = [
         // the project and is deliberately NOT listed as read, so nothing can
         // press it on somebody's behalf.
         actionSafety: { "Check this deliverable": "read" },
-        description: "Which art edit this deliverable is supposed to use, read off the mech sheet in JPG_PNG — and whether that tiff is actually in the project.",
+        description: "Which art edit this deliverable is supposed to use, read off the mech sheet in JPG_PNG, and whether that tiff is actually in the project.",
     },
     {
         id: "check",
@@ -658,7 +658,7 @@ export const TOOLS: ToolEntry[] = [
         icon: ScanSearch,
         Component: NameAuditTool,
         actions: ["Audit a Masters root", "Audit a batch / AE folder"],
-        description: "Checks a folder tree's filenames against the studio convention — what's on the new form, what's still on the old DGTL one, and what can't be parsed.",
+        description: "Checks a folder tree's filenames against the studio convention. What's on the new form, what's still on the old DGTL one, and what can't be parsed.",
     },
     {
         id: "batch-match",
@@ -667,7 +667,7 @@ export const TOOLS: ToolEntry[] = [
         icon: Crosshair,
         Component: BatchMatchTool,
         actions: ["Capture from selection", "Preview changes"],
-        description: "Copies a property value you've already got right onto the matching layer in every .aep in a folder — verbatim, offset, or scaled proportionally to each file's own comp/source size.",
+        description: "Copies a property value you've already got right onto the matching layer in every .aep in a folder. Verbatim, offset, or scaled proportionally to each file's own comp/source size.",
     },
     {
         id: "edit-in-context",

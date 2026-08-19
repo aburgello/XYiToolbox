@@ -97,20 +97,20 @@ const AdjustPreview: React.FC<{
                 <span>
                     {comp
                         ? <>Active comp <strong>{c.width}×{c.height}</strong></>
-                        : <>No comp detected — previewing on <strong>1920×1080</strong></>}
+                        : <>No comp detected, previewing on <strong>1920×1080</strong></>}
                 </span>
                 {(changedW || changedH) && (
                     <span>
                         Canvas → <strong>{Math.floor(newWidth)}×{Math.floor(newHeight)}</strong>
-                        {crops && !extends_ && " — content keeps its size, the edge crops"}
-                        {extends_ && !crops && " — content keeps its size, empty canvas is added"}
-                        {crops && extends_ && " — content keeps its size (crops one way, extends the other)"}
+                        {crops && !extends_ && ". Content keeps its size, the edge crops"}
+                        {extends_ && !crops && ". Content keeps its size, empty canvas is added"}
+                        {crops && extends_ && ". Content keeps its size (crops one way, extends the other)"}
                     </span>
                 )}
                 {par !== 1 && (
-                    <span>Pixel AR <strong>{par}</strong> — the rendered image stretches {par > 1 ? "wider" : "narrower"}</span>
+                    <span>Pixel AR <strong>{par}</strong>. The rendered image stretches {par > 1 ? "wider" : "narrower"}</span>
                 )}
-                <span className="adj-preview-note">Nothing rescales here — for proportional scaling use Scale Composition.</span>
+                <span className="adj-preview-note">Nothing rescales here. For proportional scaling use Scale Composition.</span>
             </div>
         </div>
     );
@@ -144,7 +144,7 @@ const AdjustTool = () => {
             if (result === undefined) throw new Error("no bridge");
             setStatus(result.success ? { text: `${field.action} complete.`, type: "success" } : { text: result.error || "Something went wrong.", type: "error" });
         } catch (e) {
-            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+            setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects to run it.", type: "error" });
         } finally {
             setBusy(false);
         }

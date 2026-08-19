@@ -321,7 +321,7 @@ export const ACTIONS: ActionEntry[] = [
         group: "qc",
         safety: "undoable",
         run: () => evalTSSafe("turkIt", "up"),
-        successText: () => "Turked it — versions bumped up.",
+        successText: () => "Turked it. Versions bumped up.",
         successSound: "ding",
     },
     {
@@ -332,7 +332,7 @@ export const ACTIONS: ActionEntry[] = [
         group: "qc",
         safety: "undoable",
         run: () => evalTSSafe("turkIt", "down"),
-        successText: () => "Un-turked it — versions bumped down.",
+        successText: () => "Un-turked it. Versions bumped down.",
         successSound: "beep",
     },
     {
@@ -348,7 +348,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "scale-by-name",
         label: "Scale by Name",
-        description: "Scales the active comp to the size in its name: a bare WxH scales to WxH, and _DOUBLE_RES / _QUAD_RES scales to 2x / 4x that (re-rendering the inner comp at native res on a clean Frontcard+precomp structure). Never adds a suffix — use DRQR to promote a comp to double/quad res.",
+        description: "Scales the active comp to the size in its name: a bare WxH scales to WxH, and _DOUBLE_RES / _QUAD_RES scales to 2x / 4x that (re-rendering the inner comp at native res on a clean Frontcard+precomp structure). Never adds a suffix. Use DRQR to promote a comp to double/quad res.",
         icon: Tag,
         group: "qc",
         safety: "undoable",
@@ -458,7 +458,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "mc-it",
         label: "MC It!",
-        description: "Batch-replaces PNG/JPG footage across a folder of .aep files with the best-matching image from the territory's JPG_PNG batch (auto-derived when the standard tree matches). Previews first — nothing is saved until you Apply in the results modal.",
+        description: "Batch-replaces PNG/JPG footage across a folder of .aep files with the best-matching image from the territory's JPG_PNG batch (auto-derived when the standard tree matches). Previews first. Nothing is saved until you Apply in the results modal.",
         icon: ImageIcon,
         group: "naming",
         safety: "destructive",
@@ -867,11 +867,11 @@ const QuickFxRecentDropletBody: React.FC<{
 
     return (
         <>
-            <p className="droplet-title">{searching ? "Quick FX — search all" : "Quick FX — last used"}</p>
+            <p className="droplet-title">{searching ? "Quick FX, search all" : "Quick FX, last used"}</p>
             {loading ? (
                 <p className="hint">Loading…</p>
             ) : bridgeMissing ? (
-                <p className="hint">No CEP bridge detected — open this panel inside After Effects to run it.</p>
+                <p className="hint">No CEP bridge detected. Open this panel inside After Effects to run it.</p>
             ) : (
                 <>
                     <div className="add-tool-search">
@@ -900,14 +900,14 @@ const QuickFxRecentDropletBody: React.FC<{
                     </div>
                     {searching ? (
                         matches.length === 0 ? (
-                            <p className="hint">{installed.length === 0 ? "Effect list not loaded — try reopening this menu." : `No effects match "${query}".`}</p>
+                            <p className="hint">{installed.length === 0 ? "Effect list not loaded. Try reopening this menu." : `No effects match "${query}".`}</p>
                         ) : (
                             <div className="qfxr-list">
                                 {matches.map((fx, i) => (
                                     <button
                                         key={fx.matchName}
                                         className={i === activeIndex ? "qfxr-item qfxr-item--top" : "qfxr-item"}
-                                        title={fx.category ? `${fx.category} — Enter applies the highlighted match` : "Enter applies the highlighted match"}
+                                        title={fx.category ? `${fx.category}. Enter applies the highlighted match` : "Enter applies the highlighted match"}
                                         onClick={() => applyInstalled(fx)}
                                     >
                                         <Sparkles size={13} />
@@ -1165,7 +1165,7 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
     const reportResult = (result: ActionResult | null | undefined, successText: (r: ActionResult) => string, successSound?: "beep" | "ding") => {
         if (result === null) return; // user cancelled a picker -- nothing to report
         if (result === undefined) {
-            pushToast("No CEP bridge detected — open this panel inside After Effects to run it.", "error");
+            pushToast("No CEP bridge detected. Open this panel inside After Effects to run it.", "error");
             sfx.error();
             return;
         }

@@ -77,7 +77,11 @@ check("the panel no longer ticks every row unconditionally",
       !/queued: true \}\)\)\)/.test(ui), "still marks all rows queued");
 check("it ticks only the rows that were not refused",
       /refused\.indexOf\(x\.name\) === -1/.test(ui));
-check("and says so out loud when any were refused", /NOT queued — nowhere to write to/.test(ui));
+// Matched loosely on purpose. The exact wording is prose and gets
+// reworded; what must not change is that the panel says a row was
+// refused and why. Pinning the sentence made an unslop pass look like a
+// regression.
+check("and says so out loud when any were refused", /NOT queued\W+Nowhere to write to/i.test(ui));
 
 console.log("\n" + pass + " passed, " + fail + " failed\n");
 process.exit(fail ? 1 : 0);

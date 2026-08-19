@@ -1033,13 +1033,13 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
             if (res.success) {
                 const rrows = (res as { rows?: CsvLocRow[] }).rows || [];
                 const problems = rrows.filter((r) => r.status === "no-master" || r.status === "error").length;
-                setNotice(`${buildTerritory} · ${batch}: ${res.message || "run finished."}` + (problems ? ` — ${problems} row(s) had no master match.` : ""));
+                setNotice(`${buildTerritory} · ${batch}: ${res.message || "run finished."}` + (problems ? ` ${problems} row(s) had no master match.` : ""));
                 if (rrows.length) showLocGenReport(csvResultToLocGenReport(res as any, `CSV Localiser (built) · ${buildTerritory} · ${batch}`));
             } else {
                 setNotice(res.error || "Something went wrong.");
             }
         } catch (e: any) {
-            setNotice(e?.message || "No CEP bridge — open this panel inside After Effects to run it.");
+            setNotice(e?.message || "No CEP bridge. Open this panel inside After Effects to run it.");
         } finally {
             setBusy(false);
         }
@@ -1104,7 +1104,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
         setMastersAuto(!!masters);
         if (masters) setAepPath(masters);
         if (!restoring) {
-            setNotice(masters ? "Markets from campaign; Masters auto-detected from its root." : "Markets set — pick the AEP masters folder below.");
+            setNotice(masters ? "Markets from campaign; Masters auto-detected from its root." : "Markets set. Pick the AEP masters folder below.");
             evalTS("csvLocaliserSaveLastCampaign", name).catch(() => {});
         }
     };
@@ -1129,7 +1129,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
             await refreshCampaigns();
             selectCampaign(name);
         } catch (e) {
-            setNotice("No CEP bridge — open this panel inside After Effects.");
+            setNotice("No CEP bridge. Open this panel inside After Effects.");
         }
     };
 
@@ -1197,7 +1197,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
             `Remove "${campaignName}" from this machine's campaign list?\n\n` +
                 `It also disappears from Localised Library, along with that campaign's saved component entries and custom folders. ` +
                 `Files on disk are untouched, and you can add it back by pointing at its Markets folder again.\n\n` +
-                `This changes nothing for anyone else — use "Retire for team" if the volume has been archived.`
+                `This changes nothing for anyone else. Use "Retire for team" if the volume has been archived.`
         );
         if (!ok) return;
         try {
@@ -1213,7 +1213,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
             await refreshCampaignStatus();
             setNotice(`Removed "${campaignName}" from this machine.`);
         } catch (e) {
-            setNotice("No CEP bridge — open this panel inside After Effects.");
+            setNotice("No CEP bridge. Open this panel inside After Effects.");
         }
     };
 
@@ -1229,7 +1229,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
             setNotice((res as { message?: string; error?: string }).message || (res as { error?: string }).error || "");
             await refreshCampaignStatus();
         } catch (e) {
-            setNotice("No CEP bridge — open this panel inside After Effects.");
+            setNotice("No CEP bridge. Open this panel inside After Effects.");
         }
     };
 
@@ -1253,7 +1253,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
             setNotice((res as { message?: string; error?: string }).message || (res as { error?: string }).error || "");
             await refreshCampaignStatus();
         } catch (e) {
-            setNotice("No CEP bridge — open this panel inside After Effects.");
+            setNotice("No CEP bridge. Open this panel inside After Effects.");
         }
     };
 
@@ -1266,7 +1266,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                 setMastersAuto(false);
             }
         } catch (e) {
-            setNotice("No CEP bridge — open this panel inside After Effects.");
+            setNotice("No CEP bridge. Open this panel inside After Effects.");
         }
     };
 
@@ -1280,7 +1280,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                 setScan(null);
             }
         } catch (e) {
-            setNotice("No CEP bridge — open this panel inside After Effects.");
+            setNotice("No CEP bridge. Open this panel inside After Effects.");
         }
     };
 
@@ -1291,7 +1291,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
         setSetupOpen(false);
         setNotice(null);
         if (!isBridge()) {
-            setNotice("No CEP bridge — open this panel inside After Effects to scan.");
+            setNotice("No CEP bridge. Open this panel inside After Effects to scan.");
             return;
         }
         if (!marketsRoot) {
@@ -1319,7 +1319,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
             setExcludedRows({});
             setNotice(
                 territories.length
-                    ? `${territories.length} territor${territories.length === 1 ? "y" : "ies"} — open one to read its specs.`
+                    ? `${territories.length} territor${territories.length === 1 ? "y" : "ies"}. Open one to read its specs.`
                     : "No territories found under that Markets folder."
             );
         } catch (e: any) {
@@ -1531,7 +1531,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
             csvIndex++;
         });
         if (!rowsToRun.length) {
-            setNotice(`${t.territory} · ${b.batch}: every row is excluded — nothing to localise.`);
+            setNotice(`${t.territory} · ${b.batch}: every row is excluded. Nothing to localise.`);
             return;
         }
         setBatchStatus((s) => ({ ...s, [key]: "running" }));
@@ -1561,7 +1561,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
             if (res.success && rows.length) showLocGenReport(csvResultToLocGenReport(res as any, `CSV Localiser · ${t.territory} · ${b.batch}`));
         } catch (e: any) {
             setBatchStatus((s) => ({ ...s, [key]: "failed" }));
-            setNotice(e?.message || "No CEP bridge — open this panel inside After Effects to run it.");
+            setNotice(e?.message || "No CEP bridge. Open this panel inside After Effects to run it.");
         } finally {
             setBusy(false);
         }
@@ -1580,7 +1580,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
             if (res.success) showMcItReport(res as unknown as McReport);
             else setNotice(res.error || "MC It! couldn't run on this batch.");
         } catch (e: any) {
-            setNotice(e?.message || "No CEP bridge — open this panel inside After Effects to run it.");
+            setNotice(e?.message || "No CEP bridge. Open this panel inside After Effects to run it.");
         } finally {
             setBusy(false);
         }
@@ -1597,7 +1597,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
             if (res === undefined) throw new Error("no bridge");
             if (!res.success) setNotice(res.error || "Couldn't open that folder.");
         } catch (e: any) {
-            setNotice(e?.message || "No CEP bridge — open this panel inside After Effects.");
+            setNotice(e?.message || "No CEP bridge. Open this panel inside After Effects.");
         }
     };
 
@@ -1670,7 +1670,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                         : undefined,
                                 }))}
                                 placeholder="Select a campaign…"
-                                emptyMessage="No campaigns yet — add one with the + button."
+                                emptyMessage="No campaigns yet. Add one with the + button."
                                 disabled={busy}
                             />
                         </div>
@@ -1685,7 +1685,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                 !campaignName
                                     ? "Pick a campaign first"
                                     : retiredEntry(campaignName)
-                                    ? `Retired by ${retiredEntry(campaignName)!.retiredBy} — click to un-retire for the team`
+                                    ? `Retired by ${retiredEntry(campaignName)!.retiredBy}. Click to un-retire for the team`
                                     : "Mark retired for the team (volume archived). Marks everyone's picker; deletes nothing."
                             }
                         >
@@ -1703,12 +1703,12 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                     </div>
                     {campaignName && retiredEntry(campaignName) && (
                         <p className="specs-campaign-retired">
-                            Retired by {retiredEntry(campaignName)!.retiredBy}. It still works here — this is a flag, not a lock.
+                            Retired by {retiredEntry(campaignName)!.retiredBy}. It still works here. This is a flag, not a lock.
                         </p>
                     )}
                     {campaignName && !retiredEntry(campaignName) && campaignReach[campaignName] === false && (
                         <p className="specs-campaign-retired">
-                            Its Markets folder isn't reachable from this machine right now — the volume may just not be mounted.
+                            Its Markets folder isn't reachable from this machine right now. The volume may just not be mounted.
                         </p>
                     )}
                 </div>
@@ -1763,7 +1763,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                 <div className="specs-run-row">
                     <div className="specs-options">
                         <CheckboxToggle checked={skipExisting} onChange={setSkipExisting} label="Skip existing files" />
-                        <Tooltip text="Swap each generated file's PNG/JPG footage for the localised versions in the territory's JPG_PNG batch folder, while the file is still open — instead of re-opening every file afterwards with MC It!">
+                        <Tooltip text="Swap each generated file's PNG/JPG footage for the localised versions in the territory's JPG_PNG batch folder, while the file is still open, instead of re-opening every file afterwards with MC It!">
                             <span>
                                 <CheckboxToggle checked={runMcIt} onChange={setRunMcIt} label="Run MC It! inline" />
                             </span>
@@ -1945,7 +1945,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                                                     <Tooltip
                                                                         text={
                                                                             mcItInlineDone[key]
-                                                                                ? "Footage was already swapped during localisation. Run this only to redo the swap — the preview will list matches again, including ones already applied."
+                                                                                ? "Footage was already swapped during localisation. Run this only to redo the swap. The preview will list matches again, including ones already applied."
                                                                                 : "Swap the placeholder PNG/JPGs in this batch's AEPs for the localised images (previews first)"
                                                                         }
                                                                     >
@@ -1994,7 +1994,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                                                     onClick={(e) => e.stopPropagation()}
                                                                     role="dialog"
                                                                     aria-modal="true"
-                                                                    aria-label={`${t.territory} — ${b.pdfName}`}
+                                                                    aria-label={`${t.territory}, ${b.pdfName}`}
                                                                 >
                                                                     <div className="specs-modal-head">
                                                                         <FileText size={14} />
@@ -2063,12 +2063,12 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                                                                     <Tooltip
                                                                                         text={
                                                                                             built
-                                                                                                ? `Already in AE/${padBatch(b.batch)} as ${built} — unticked so it won't be rebuilt. Tick it to localise it again.`
+                                                                                                ? `Already in AE/${padBatch(b.batch)} as ${built}. Unticked so it won't be rebuilt. Tick it to localise it again.`
                                                                                                 : dup >= 0
-                                                                                                ? `Duplicate of row ${dup + 1} — the specs PDF lists this deliverable twice. Both rows produce the same filename, so this one can never read as built. Leave it unticked unless row ${dup + 1} is wrong.`
+                                                                                                ? `Duplicate of row ${dup + 1}. The specs PDF lists this deliverable twice. Both rows produce the same filename, so this one can never read as built. Leave it unticked unless row ${dup + 1} is wrong.`
                                                                                                 : excluded
-                                                                                                ? "Excluded — click to include"
-                                                                                                : "Included — click to exclude (e.g. an on-hold row)"
+                                                                                                ? "Excluded. Click to include"
+                                                                                                : "Included. Click to exclude (e.g. an on-hold row)"
                                                                                         }
                                                                                     >
                                                                                         <input
@@ -2124,7 +2124,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                                                                             <Tooltip
                                                                                                 text={
                                                                                                     canMultiply
-                                                                                                        ? `No ${eff.Duration} master for ${eff.Campaign || "this campaign"} at ${eff.Size || "this size"} — but it can be built from a shorter one. See the ×  column.`
+                                                                                                        ? `No ${eff.Duration} master for ${eff.Campaign || "this campaign"} at ${eff.Size || "this size"}, but it can be built from a shorter one. See the ×  column.`
                                                                                                         : `No master matches ${eff.Campaign || "this campaign"} at ${eff.Size || "this size"} / ${eff.Duration || "this duration"}. This row would be skipped.`
                                                                                                 }
                                                                                             >
@@ -2172,7 +2172,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                                                                     parser. */}
                                                                                 <td className="specs-cell-warn">
                                                                                     {specWarnings.length > 0 && (
-                                                                                        <Tooltip text={specWarnings.join(" · ") + " — correct any cell to clear this"}>
+                                                                                        <Tooltip text={specWarnings.join(" · ") + ". Correct any cell to clear this"}>
                                                                                             <span className="specs-spec-warn" aria-label="Delivery spec looks wrong">▲</span>
                                                                                         </Tooltip>
                                                                                     )}
@@ -2206,7 +2206,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                                                                         looks wrong. */}
                                                                                     {dup >= 0 && (
                                                                                         <Tooltip
-                                                                                            text={`The specs PDF lists this deliverable twice — same artwork, campaign, site, size and duration as row ${dup + 1}. Both rows would build the same file, so only one can exist and this row will always read as unbuilt.`}
+                                                                                            text={`The specs PDF lists this deliverable twice. Same artwork, campaign, site, size and duration as row ${dup + 1}. Both rows would build the same file, so only one can exist and this row will always read as unbuilt.`}
                                                                                         >
                                                                                             <span className="specs-row-dup">dup of {dup + 1}</span>
                                                                                         </Tooltip>
@@ -2293,7 +2293,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                                                             </div>
                                                                             {problems.map((r) => (
                                                                                 <div key={r.row} className="specs-locresult-problem">
-                                                                                    Row {r.row} · {r.campaign} {r.size} {r.duration} — {r.error || "no master matched"}
+                                                                                    Row {r.row} · {r.campaign} {r.size} {r.duration}, {r.error || "no master matched"}
                                                                                 </div>
                                                                             ))}
                                                                         </>
@@ -2396,7 +2396,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                         {handoff && (
                             <div className="specs-handoff">
                                 <strong>{handoff.rows.length} row{handoff.rows.length === 1 ? "" : "s"}</strong> from{" "}
-                                <em>{handoff.jobTitle}</em> — check the territory and masters folder, then Localise.
+                                <em>{handoff.jobTitle}</em>. Check the territory and masters folder, then Localise.
                                 {handoff.skipped.length > 0 && (
                                     <span className="specs-handoff-skipped">
                                         {" "}{handoff.skipped.length} subtask{handoff.skipped.length === 1 ? " was" : "s were"} left
@@ -2488,7 +2488,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                             <Tooltip
                                                 text={
                                                     canMultiply
-                                                        ? `No ${r.duration}s master for ${buildRowCreative(r)} at ${r.width}x${r.height} — but it can be built from a shorter one. See the × column.`
+                                                        ? `No ${r.duration}s master for ${buildRowCreative(r)} at ${r.width}x${r.height}, but it can be built from a shorter one. See the × column.`
                                                         : `No master matches ${buildRowCreative(r) || "this creative"} at ${r.width}x${r.height} / ${r.duration}s. This row would be skipped.`
                                                 }
                                             >
@@ -2518,7 +2518,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                             onChange={(v) => updateBuildRow(r.id, { creative: v, custom: "" })}
                                             options={[...buildCreatives.map((c) => ({ value: c, label: c })), { value: CUSTOM_CREATIVE, label: "＋ Type a creative…" }]}
                                             placeholder="Pick creative…"
-                                            emptyMessage="No creatives scanned — pick the masters folder, or type one."
+                                            emptyMessage="No creatives scanned. Pick the masters folder, or type one."
                                         />
                                     )}
                                     {/* Optional, and deliberately NOT wrapped in a Tooltip:
@@ -2529,7 +2529,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                         type="text"
                                         placeholder="Site"
                                         aria-label="Media site name (optional)"
-                                        title="Media site name, as written in the Wrike subtask or specs PDF. Optional — leave blank for a deliverable with no site. The case you type is the case in the filename."
+                                        title="Media site name, as written in the Wrike subtask or specs PDF. Optional. Leave blank for a deliverable with no site. The case you type is the case in the filename."
                                         value={r.site}
                                         onChange={(e) => updateBuildRow(r.id, { site: e.target.value })}
                                     />

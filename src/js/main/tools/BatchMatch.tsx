@@ -153,7 +153,7 @@ const BatchMatchTool = () => {
                 setStatus({ text: "Heads up: that property is driven by an expression, so the value you captured is a computed result. Targets with expressions are skipped.", type: "error" });
             }
         } catch (e) {
-            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to use this.", type: "error" });
+            setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects to use this.", type: "error" });
         }
     };
 
@@ -163,7 +163,7 @@ const BatchMatchTool = () => {
             if (path === undefined) throw new Error("no bridge");
             if (path) { setFolder(path); setRows(null); setApplied(false); }
         } catch (e) {
-            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to use this.", type: "error" });
+            setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects to use this.", type: "error" });
         }
     };
 
@@ -210,7 +210,7 @@ const BatchMatchTool = () => {
             setChecked({});
             setStatus({ text: res.message || "Preview complete.", type: "success" });
         } catch (e) {
-            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+            setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects to run it.", type: "error" });
         } finally {
             setBusy(false);
         }
@@ -221,7 +221,7 @@ const BatchMatchTool = () => {
         const ok = await confirmDialog(
             `Write ${selectedIds.length} value(s) across ${new Set(changeRows.filter((r) => checked[r.id] !== false).map((r) => r.file)).size} project file(s)?\n\n` +
             `This edits those .aep files on disk and cannot be undone from here. Any file whose name still carries an “OV” master token is copied first and only the copy is edited.\n\n` +
-            `After Effects can only hold one project open, so your current project is closed to run the batch — AE will ask whether to save it first.`
+            `After Effects can only hold one project open, so your current project is closed to run the batch. AE will ask whether to save it first.`
         );
         if (!ok) return;
 
@@ -235,7 +235,7 @@ const BatchMatchTool = () => {
             setApplied(true);
             setStatus({ text: res.message || "Applied.", type: "success" });
         } catch (e) {
-            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+            setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects to run it.", type: "error" });
         } finally {
             setBusy(false);
         }
@@ -256,12 +256,12 @@ const BatchMatchTool = () => {
             <div className="bm-step">
                 <div className="bm-step-head"><span className="bm-step-num">1</span> Reference</div>
                 <p className="bm-hint">
-                    In After Effects, select the property you've already got right — click its name in the
-                    Timeline (an effect's Center, a Position, a slider) — then capture it.
+                    In After Effects, select the property you've already got right. Click its name in the
+                    Timeline (an effect's Center, a Position, a slider), then capture it.
                 </p>
                 <p className="bm-hint bm-hint--warn">
                     <AlertTriangle size={11} /> A run opens each project in turn, so it closes whatever you
-                    have open — AE will prompt to save it first.
+                    have open. AE will prompt to save it first.
                 </p>
                 <div className="button-row">
                     <button disabled={busy} onClick={capture}>
@@ -342,7 +342,7 @@ const BatchMatchTool = () => {
                     <CheckboxToggle checked={excludeImported} onChange={setExcludeImported} label="Ignore comps inside imported projects (“….aep” folders)" />
                     <p className="bm-hint bm-hint--warn">
                         <AlertTriangle size={11} /> Keep the second one on. A project that has imported a sibling
-                        carries that project's whole Composition/Main tree — those comps look identical to the
+                        carries that project's whole Composition/Main tree. Those comps look identical to the
                         real ones and are somebody else's deliverable.
                     </p>
                     <div className="field-row">
@@ -495,7 +495,7 @@ const BatchMatchTool = () => {
                     )}
 
                     {changeRows.length === 0 && (
-                        <div className="bm-empty"><LayersIcon size={13} /> Nothing to change — every match is already at the target value.</div>
+                        <div className="bm-empty"><LayersIcon size={13} /> Nothing to change. Every match is already at the target value.</div>
                     )}
 
                     {(sameRows.length > 0 || skipRows.length > 0) && (

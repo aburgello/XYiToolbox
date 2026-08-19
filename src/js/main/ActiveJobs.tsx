@@ -148,7 +148,7 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
         try {
             const ok = await saveJobsFeedConfig({ url, key, viewAs: setupViewAs.trim() || undefined });
             if (!ok) {
-                setSetupNote("Couldn't save — no bridge to After Effects.");
+                setSetupNote("Couldn't save. No bridge to After Effects.");
                 return;
             }
             // Fetch straight away so a wrong URL or key is reported HERE, while
@@ -333,7 +333,7 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
                         : `${localisable.length} job${localisable.length === 1 ? "" : "s"}${openCount ? ` · ${openCount} to build` : ""}`}
                 </span>
                 {jobsMock && (
-                    <Tooltip text={jobsError || "No jobs feed connected — showing sample data. Click to connect."}>
+                    <Tooltip text={jobsError || "No jobs feed connected, showing sample data. Click to connect."}>
                         <span
                             className="active-jobs-pill"
                             role="button"
@@ -434,7 +434,7 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
                         {(setupOpen || (jobsMock && open)) && (
                             <div className="active-jobs-setup">
                                 <p className="active-jobs-setup-lead">
-                                    Already set up — these only need changing if the feed moves.
+                                    Already set up. These only need changing if the feed moves.
                                 </p>
                                 <label className="active-jobs-field">
                                     <span>Feed URL</span>
@@ -459,7 +459,7 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
                                     <input
                                         type="text"
                                         value={setupViewAs}
-                                        placeholder="optional — a colleague's name, to preview their list"
+                                        placeholder="optional, a colleague's name, to preview their list"
                                         onChange={(e) => setSetupViewAs(e.target.value)}
                                     />
                                 </label>
@@ -502,7 +502,7 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
                         {impersonating && (
                             <p className="active-jobs-viewas">
                                 Viewing <strong>{listFor}</strong>'s jobs, not your own. Clear the “View as” field to go
-                                back. Your Team tag is untouched — nothing is posted or synced as {listFor}.
+                                back. Your Team tag is untouched. Nothing is posted or synced as {listFor}.
                             </p>
                         )}
 
@@ -514,7 +514,7 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
                         ) : localisable.length === 0 ? (
                             <p className="active-jobs-empty">
                                 {hiddenCount > 0
-                                    ? `Nothing to localise for ${listFor} — ${hiddenCount} job${hiddenCount === 1 ? " has" : "s have"} no deliverables.`
+                                    ? `Nothing to localise for ${listFor}, ${hiddenCount} job${hiddenCount === 1 ? " has" : "s have"} no deliverables.`
                                     : `Nothing in the feed is assigned to ${listFor}.`}
                             </p>
                         ) : (

@@ -123,12 +123,12 @@ export const ActiveJobModal: React.FC<Props> = ({ job, onClose, onOpenLocaliser 
                                 the cause. Measured on the live feed: the cached
                                 path returned 19 of 19 names, refresh returned 12. */}
                             {(job.subtaskCount ?? 0) > 0
-                                ? `Wrike says this job has ${job.subtaskCount} subtask${job.subtaskCount === 1 ? "" : "s"}, but their names didn't arrive with the feed. The job itself is fine — open it in Wrike to work from there.`
+                                ? `Wrike says this job has ${job.subtaskCount} subtask${job.subtaskCount === 1 ? "" : "s"}, but their names didn't arrive with the feed. The job itself is fine. Open it in Wrike to work from there.`
                                 : "This job has no subtasks in the feed."}
                         </p>
                     ) : usable.length === 0 ? (
                         <p className="ajm-note">
-                            Nothing here can be localised — no campaign, size or duration in the names.
+                            Nothing here can be localised. No campaign, size or duration in the names.
                         </p>
                     ) : (
                         <>
@@ -144,7 +144,7 @@ export const ActiveJobModal: React.FC<Props> = ({ job, onClose, onOpenLocaliser 
                                 ) : (
                                     <>
                                         <AlertTriangle size={12} className="ajm-warn" /> Showing {clean} of{" "}
-                                        {rows.length} — {hidden} hidden, missing fields a localise needs.
+                                        {rows.length}, {hidden} hidden, missing fields a localise needs.
                                     </>
                                 )}
                                 {(doneCount > 0 || heldCount > 0) && (

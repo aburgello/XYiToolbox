@@ -137,7 +137,7 @@ function rowWarnings(row: RowData): string[] {
         for (const v of TEMPLATE_BITRATES_MBPS) if (v < lowest) lowest = v;
         if (required > 0 && required < lowest) {
             out.push(
-                `${sizeMB}MB over ${row.duration.toFixed(1)}s needs ~${required.toFixed(2)}Mbps — ` +
+                `${sizeMB}MB over ${row.duration.toFixed(1)}s needs ~${required.toFixed(2)}Mbps, ` +
                 `below the smallest template (${lowest}), so the file will come out over size`
             );
         }
@@ -406,7 +406,7 @@ const DeliveryHubTool = () => {
             }
             const added = appendComps((loaded.comps as any[]) || []);
             if (added > 0) sfx.bop();
-            pushToast(`Delivery comp(s) created — ${added} loaded below.`);
+            pushToast(`Delivery comp(s) created. ${added} loaded below.`);
         } finally {
             setDeliveryBusy(false);
         }
@@ -471,7 +471,7 @@ const DeliveryHubTool = () => {
         // path and then report as "no specs folder".
         const withPath = rows.filter((r) => !!r.sourcePath)[0];
         const from = withPath ? withPath.sourcePath : null;
-        if (!from) { setCheckError("Add a row with a rendered file first — the specs are found next to its project."); return; }
+        if (!from) { setCheckError("Add a row with a rendered file first. The specs are found next to its project."); return; }
         setReportBusy(true);
         setCheckError(null);
         try {
@@ -703,7 +703,7 @@ const DeliveryHubTool = () => {
         setRotatingIds((s) => new Set(s).add(rowId));
         try {
             const result = await evalTS("deliveryRotate90CC", rowId);
-            if (result === undefined) { pushToast("No CEP bridge detected — open this panel inside After Effects to run it.", "error"); return; }
+            if (result === undefined) { pushToast("No CEP bridge detected. Open this panel inside After Effects to run it.", "error"); return; }
             if (!result.success || !result.comp) { pushToast(result.error || "Rotate failed.", "error"); return; }
             const rotated = result.comp;
             // Deliberately NOT makeRow() -- this REPLACES an existing row in
@@ -733,7 +733,7 @@ const DeliveryHubTool = () => {
             );
             pushToast(`Rotated → ${rotated.name}`);
         } catch {
-            pushToast("No CEP bridge detected — open this panel inside After Effects to run it.", "error");
+            pushToast("No CEP bridge detected. Open this panel inside After Effects to run it.", "error");
         } finally {
             setRotatingIds((s) => {
                 const next = new Set(s);
@@ -753,7 +753,7 @@ const DeliveryHubTool = () => {
             setBatchKey((k) => k + 1);
             if ((result.comps || []).length > 0) sfx.bop();
         } catch {
-            setCheckError("No CEP bridge — open inside After Effects.");
+            setCheckError("No CEP bridge. Open inside After Effects.");
         }
     };
 
@@ -811,18 +811,18 @@ const DeliveryHubTool = () => {
                 if (refused.length) {
                     setCheckError(
                         (refused.length === 1 ? refused[0] + " was" : refused.length + " comps were") +
-                        " NOT queued — nowhere to write to. Save the project inside the campaign, " +
+                        " NOT queued. Nowhere to write to. Save the project inside the campaign, " +
                         "then queue again. See the log below."
                     );
                     pushToast("Queued, except " + refused.length + " with no output path.");
                 } else {
-                    pushToast("Queued — you'll get a toast per file as renders finish (while this page stays open).");
+                    pushToast("Queued. You'll get a toast per file as renders finish (while this page stays open).");
                 }
                 startRenderWatch();
             }
             else setCheckError(result.error || "Something went wrong.");
         } catch {
-            setCheckError("No CEP bridge — open inside After Effects.");
+            setCheckError("No CEP bridge. Open inside After Effects.");
         } finally {
             setCheckBusy(false);
         }
@@ -861,7 +861,7 @@ const DeliveryHubTool = () => {
                 {watchingCount > 0 && (
                     <span
                         className="dh-render-watch"
-                        title="Renders being watched — you'll get a toast with the real file details as each one lands. The dot keeps pulsing even while AE hogs the bridge mid-render."
+                        title="Renders being watched. You'll get a toast with the real file details as each one lands. The dot keeps pulsing even while AE hogs the bridge mid-render."
                     >
                         <span className="dh-render-watch-dot" />
                         Watching {watchingCount} render{watchingCount > 1 ? "s" : ""}
@@ -936,7 +936,7 @@ const DeliveryHubTool = () => {
                 aiming at never sat above the row field it fills in. */}
             <div className="dh-bulk-bar">
                 <div className="dh-bar-spacer" />
-                <Tooltip text="Target file size (MB) — optional, defaults to 26 Mbps">
+                <Tooltip text="Target file size (MB). Optional, defaults to 26 Mbps">
                     <input
                         className="dh-spec-input"
                         type="text"
@@ -1014,7 +1014,7 @@ const DeliveryHubTool = () => {
                                     </Tooltip>
                                     {suggestions[row.id]?.source && (
                                         suggestions[row.id].openPath ? (
-                                            <Tooltip text={suggestions[row.id].source + " — click to open it"}>
+                                            <Tooltip text={suggestions[row.id].source + ". Click to open it"}>
                                                 <button
                                                     className="dh-row-spec"
                                                     onClick={() => {
@@ -1039,7 +1039,7 @@ const DeliveryHubTool = () => {
                                         )
                                     )}
                                     {warnings.length > 0 && (
-                                        <Tooltip text={warnings.join(" · ") + " — correct the value to clear this"}>
+                                        <Tooltip text={warnings.join(" · ") + ". Correct the value to clear this"}>
                                             <span className="dh-row-warn" aria-label="Check these numbers">▲</span>
                                         </Tooltip>
                                     )}
@@ -1158,8 +1158,8 @@ const DeliveryHubTool = () => {
                                                                 <span className={"dh-preview-tag" + (row.fps ? "" : " dh-preview-tag--native")}>{row.fps || row.frameRate} fps</span>
                                                                 {predicted && (
                                                                     <Tooltip text={predicted.capped
-                                                                        ? "The Mbps cap outranks the size target — the file will likely land below the requested MB."
-                                                                        : "The Output Module template this row will actually get — the required bitrate rounds DOWN to the nearest prebuilt template, never up."}>
+                                                                        ? "The Mbps cap outranks the size target. The file will likely land below the requested MB."
+                                                                        : "The Output Module template this row will actually get. The required bitrate rounds DOWN to the nearest prebuilt template, never up."}>
                                                                         <span className={"dh-preview-tag dh-preview-tag--template" + (predicted.capped ? " dh-preview-tag--capped" : "")}>
                                                                             → {predicted.name}
                                                                         </span>
@@ -1210,8 +1210,8 @@ const DeliveryHubTool = () => {
                                     {/* A PDF that could not be read is LISTED, not
                                         omitted. Leaving it out is indistinguishable
                                         from never having looked at it. */}
-                                    {f.error && <em> — {f.error}</em>}
-                                    {!f.error && <em> — {f.rows.length} row{f.rows.length === 1 ? "" : "s"}</em>}
+                                    {f.error && <em>, {f.error}</em>}
+                                    {!f.error && <em>, {f.rows.length} row{f.rows.length === 1 ? "" : "s"}</em>}
                                 </p>
                                 {f.rows.length > 0 && (
                                     <div className="dh-specreport-scroll">
@@ -1252,7 +1252,7 @@ const DeliveryHubTool = () => {
                                     <ul className="dh-specreport-flags">
                                         {f.rows.filter((r) => r.flags).map((r, i) => (
                                             <li key={i}>
-                                                <AlertTriangle size={10} /> {r.size || "?"} · {r.duration || "?"}s — {r.flags}
+                                                <AlertTriangle size={10} /> {r.size || "?"} · {r.duration || "?"}s, {r.flags}
                                             </li>
                                         ))}
                                     </ul>
@@ -1262,8 +1262,8 @@ const DeliveryHubTool = () => {
 
                         <div className="dh-specreport-foot">
                             <span>
-                                Read straight off the PDFs. Nothing here has been filled into a row —
-                                use the folder button for that.
+                                Read straight off the PDFs. Nothing here has been filled into a row.
+                                Use the folder button for that.
                             </span>
                             {/* THE ONE QUESTION WORTH A BUTTON HERE. A table has
                                 just been parsed off somebody else's hand-filled

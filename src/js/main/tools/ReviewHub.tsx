@@ -465,7 +465,7 @@ const ReviewSession: React.FC = () => {
                 sfx.bop();
             }
         } catch {
-            setError("No CEP bridge — open inside After Effects.");
+            setError("No CEP bridge. Open inside After Effects.");
         }
     };
 
@@ -485,7 +485,7 @@ const ReviewSession: React.FC = () => {
             if (result === undefined) throw new Error("no bridge");
             if (!result.success) pushToast(result.error || "Could not open comp.", "error");
         } catch {
-            pushToast("No CEP bridge — open inside After Effects.", "error");
+            pushToast("No CEP bridge. Open inside After Effects.", "error");
         }
     };
 
@@ -513,7 +513,7 @@ const ReviewSession: React.FC = () => {
                 : (result.error || "Could not toggle diff."),
                 result.success ? "success" : "error");
         } catch {
-            pushToast("No CEP bridge — open inside After Effects.", "error");
+            pushToast("No CEP bridge. Open inside After Effects.", "error");
         }
     };
 
@@ -582,7 +582,7 @@ const ReviewSession: React.FC = () => {
             if (result === undefined) throw new Error("no bridge");
             pushToast(result.success ? "Copied to clipboard." : result.error || "Could not copy.", result.success ? "success" : "error");
         } catch {
-            pushToast("No CEP bridge — open inside After Effects to copy.", "error");
+            pushToast("No CEP bridge. Open inside After Effects to copy.", "error");
         }
     };
 

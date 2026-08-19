@@ -586,13 +586,13 @@ export const BespokeTool = () => {
                 // folder gets picked next. Name what was skipped and why.
                 setStatus({
                     text: res.outsideAE
-                        ? `No masters under AE/ in that folder — ${res.outsideAE} .aep${res.outsideAE === 1 ? "" : "s"} sit outside it and aren't motion masters.`
+                        ? `No masters under AE/ in that folder. ${res.outsideAE} .aep${res.outsideAE === 1 ? "" : "s"} sit outside it and aren't motion masters.`
                         : "No masters found in that folder.",
                     type: "error",
                 });
             }
         } catch {
-            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+            setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects to run it.", type: "error" });
         } finally {
             setLoading(false);
         }
@@ -719,7 +719,7 @@ export const BespokeTool = () => {
                 load(picked);
             }
         } catch {
-            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+            setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects to run it.", type: "error" });
         }
     };
 
@@ -841,7 +841,7 @@ export const BespokeTool = () => {
         };
         const res = await evalTS("bespokeTemplateSave", JSON.stringify(entry));
         if (res && res.success) {
-            setStatus({ text: `Saved "${name}" — ${entry.slots.length} region${entry.slots.length === 1 ? "" : "s"} and ${guidesX.length + guidesY.length} guides.`, type: "success" });
+            setStatus({ text: `Saved "${name}". ${entry.slots.length} region${entry.slots.length === 1 ? "" : "s"} and ${guidesX.length + guidesY.length} guides.`, type: "success" });
             setSaving(false);
             setTplName("");
             const listed = await evalTS("bespokeTemplateList");
@@ -893,8 +893,8 @@ export const BespokeTool = () => {
         setRegions(next);
         setSelRegion(0);
         setStatus(unmatched.length
-            ? { text: `Loaded "${t.name}" — ${unmatched.join(", ")}; filled with the nearest, swap where needed.`, type: "error" }
-            : { text: `Loaded "${t.name}" — ${next.length} region${next.length === 1 ? "" : "s"} matched exactly.`, type: "success" });
+            ? { text: `Loaded "${t.name}". ${unmatched.join(", ")}; filled with the nearest, swap where needed.`, type: "error" }
+            : { text: `Loaded "${t.name}". ${next.length} region${next.length === 1 ? "" : "s"} matched exactly.`, type: "success" });
         // True even when slots went unmatched: the layout IS on the board, and
         // the status says which regions need swapping. Only "there was nothing
         // to fill it with" counts as not having loaded.
@@ -917,7 +917,7 @@ export const BespokeTool = () => {
     const regionsFromComp = async () => {
         const pool = (masters || []).filter((m) => !creative || (m.creative || m.name) === creative);
         if (pool.length === 0) {
-            setStatus({ text: "Pick a masters folder and a creative first — the regions need something to hold.", type: "error" });
+            setStatus({ text: "Pick a masters folder and a creative first. The regions need something to hold.", type: "error" });
             return;
         }
         try {
@@ -948,12 +948,12 @@ export const BespokeTool = () => {
             setSelRegion(0);
             setStatus({
                 text: loose.length
-                    ? `Read ${next.length} regions from "${res.name}" — ${loose.join(", ")} had no close master, swap where needed.`
+                    ? `Read ${next.length} regions from "${res.name}". ${loose.join(", ")} had no close master, swap where needed.`
                     : `Read ${next.length} regions from "${res.name}".`,
                 type: loose.length ? "error" : "success",
             });
         } catch {
-            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+            setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects to run it.", type: "error" });
         }
     };
 
@@ -1005,7 +1005,7 @@ export const BespokeTool = () => {
         setRegions([]);
         setSelRegion(0);
         setStatus({
-            text: `Tracing "${t.name}" — ${t.canvasW && t.canvasH ? `${t.canvasW}×${t.canvasH}, ` : ""}draw the regions over the reference.`,
+            text: `Tracing "${t.name}", ${t.canvasW && t.canvasH ? `${t.canvasW}×${t.canvasH}, ` : ""}draw the regions over the reference.`,
             type: "success",
         });
         return true;
@@ -1116,7 +1116,7 @@ export const BespokeTool = () => {
 
         if (!libraryReadable) {
             setStatus({
-                text: `Can't reach the screen library right now, so I can't tell whether "${pendingScreen}" is in it — reconnect to the share and open the library.`,
+                text: `Can't reach the screen library right now, so I can't tell whether "${pendingScreen}" is in it. Reconnect to the share and open the library.`,
                 type: "error",
             });
             return;
@@ -1124,14 +1124,14 @@ export const BespokeTool = () => {
         const hit = templates.filter((t) => String(t.name).toLowerCase() === wanted)[0];
         if (!hit) {
             setStatus({
-                text: `No screen called "${pendingScreen}" in the library — it's open, pick from the list.`,
+                text: `No screen called "${pendingScreen}" in the library. It's open, pick from the list.`,
                 type: "error",
             });
             return;
         }
         if (regions.length > 0) {
             setStatus({
-                text: `You have regions on the board, so I've left them alone — "${hit.name}" is in the library when you're ready.`,
+                text: `You have regions on the board, so I've left them alone. "${hit.name}" is in the library when you're ready.`,
                 type: "error",
             });
             return;
@@ -1170,7 +1170,7 @@ export const BespokeTool = () => {
         if (!mastersPath && !loading) {
             setPendingSegments("");
             setStatus({
-                text: "No campaign is loaded here, so there's nothing to build a running order from — pick one first.",
+                text: "No campaign is loaded here, so there's nothing to build a running order from. Pick one first.",
                 type: "error",
             });
             return;
@@ -1183,7 +1183,7 @@ export const BespokeTool = () => {
 
         if (segments.some((sg) => sg.tiles.length > 0)) {
             setStatus({
-                text: "You already have creatives in the running order, so I've left it alone — clear the segments first if you want me to lay this out.",
+                text: "You already have creatives in the running order, so I've left it alone. Clear the segments first if you want me to lay this out.",
                 type: "error",
             });
             return;
@@ -1207,7 +1207,7 @@ export const BespokeTool = () => {
             // The notes are not a footnote. A master placed more than once is
             // the difference between three panels and one repeated three
             // times, and it is invisible on a board of identically-sized tiles.
-            text: `Laid out ${shape} — ${total}s in total. ${plan.notes.join(" ")} Check it and press Build.`.replace(/\s+/g, " ").trim(),
+            text: `Laid out ${shape}, ${total}s in total. ${plan.notes.join(" ")} Check it and press Build.`.replace(/\s+/g, " ").trim(),
             type: plan.notes.length ? "error" : "success",
         });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1425,7 +1425,7 @@ export const BespokeTool = () => {
                 }
             }
         } catch {
-            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+            setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects to run it.", type: "error" });
         }
     };
 
@@ -1821,13 +1821,13 @@ export const BespokeTool = () => {
         // answer this button by maximising the region -- which is the only case
         // where filling both axes is certainly not what was meant.
         if (guidesX.length === 0 && guidesY.length === 0) {
-            setStatus({ text: "Add a guide first — a region fits between two guides, or between a guide and the edge of the board.", type: "error" });
+            setStatus({ text: "Add a guide first. A region fits between two guides, or between a guide and the edge of the board.", type: "error" });
             return;
         }
         const v = bracketGuides(guidesY, r.y + r.h / 2, Number(canvasH));
         const h = bracketGuides(guidesX, r.x + r.w / 2, Number(canvasW));
         if (!v && !h) {
-            setStatus({ text: "Nothing to fit to — the board has no width or height yet.", type: "error" });
+            setStatus({ text: "Nothing to fit to. The board has no width or height yet.", type: "error" });
             return;
         }
         setStatus(null);
@@ -1915,11 +1915,11 @@ export const BespokeTool = () => {
             setStatus({
                 text: res.saved
                     ? `Built and saved to ${(res.savedTo || "").split("/").slice(-2).join("/")}`
-                    : "Built — no country set, so it hasn't been filed.",
+                    : "Built. No country set, so it hasn't been filed.",
                 type: "success",
             });
         } catch {
-            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+            setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects to run it.", type: "error" });
         } finally {
             setBuilding(false);
         }
@@ -1957,11 +1957,11 @@ export const BespokeTool = () => {
             setStatus({
                 text: res.saved
                     ? `Built and saved to ${(res.savedTo || "").split("/").slice(-2).join("/")}`
-                    : "Built — no country set, so it hasn't been filed.",
+                    : "Built. No country set, so it hasn't been filed.",
                 type: "success",
             });
         } catch {
-            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects to run it.", type: "error" });
+            setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects to run it.", type: "error" });
         } finally {
             setBuilding(false);
         }
@@ -2187,8 +2187,8 @@ export const BespokeTool = () => {
     }
     if (seg && seg.tiles.length > 0 && canvasWidth > 0 && naturalWidth !== canvasWidth) {
         notes.push(naturalWidth > canvasWidth
-            ? `this segment is ${naturalWidth}px across a ${canvasWidth}px canvas — it will be scaled down to fit`
-            : `this segment is ${naturalWidth}px across a ${canvasWidth}px canvas — it will be centred with space either side`);
+            ? `this segment is ${naturalWidth}px across a ${canvasWidth}px canvas. It will be scaled down to fit`
+            : `this segment is ${naturalWidth}px across a ${canvasWidth}px canvas. It will be centred with space either side`);
     }
 
     return (
@@ -2214,12 +2214,12 @@ export const BespokeTool = () => {
                         <p className="bsp-masters">
                             {mastersPinned
                                 ? (mastersPath.split("/").pop() || mastersPath)
-                                : campaign || (mastersPath.split("/").pop() || "No masters folder — pick a campaign below")}
+                                : campaign || (mastersPath.split("/").pop() || "No masters folder. Pick a campaign below")}
                         </p>
                     </Tooltip>
                     <p className="bsp-count">
                         {loading
-                            ? "Walking the masters folder — slow the first time, instant after"
+                            ? "Walking the masters folder. Slow the first time, instant after"
                             : masters
                                 ? `${masters.length} masters under AE/${outsideAE ? ` · ${outsideAE} skipped outside it` : ""}`
                                 : "not loaded"}
@@ -2302,7 +2302,7 @@ export const BespokeTool = () => {
                             hint: c.reachable === false ? "not mounted" : undefined,
                         }))}
                         placeholder="Select a campaign…"
-                        emptyMessage="No campaigns yet — add one in the localiser."
+                        emptyMessage="No campaigns yet. Add one in the localiser."
                     />
                 </div>
                 <div className="bsp-field">
@@ -2377,7 +2377,7 @@ export const BespokeTool = () => {
             <p className="bsp-path" hidden={!mode}>
                 {territory && marketsRoot
                     ? `${marketsRoot}/${territory}/AE/${batch.trim() || "AE"}/${outName || "…"}_V01.aep`
-                    : "No country chosen — it will be built and left unsaved."}
+                    : "No country chosen. It will be built and left unsaved."}
             </p>
 
             {/* CANVAS AND RUNTIME SIT WITH THE PANE THEY DESCRIBE, not at the
@@ -2457,7 +2457,7 @@ export const BespokeTool = () => {
                         {mode === "regions" && !hasBoard && (
                             <span className="bsp-bar-group">
                                 <span className="bsp-bar-sep" />
-                                <Tooltip text="Read the comp open in After Effects — its layers become the regions">
+                                <Tooltip text="Read the comp open in After Effects. Its layers become the regions">
                                     <button className="bsp-btn bsp-btn--ghost" onClick={regionsFromComp}>
                                         <Layers size={11} /> From comp
                                     </button>
@@ -2719,7 +2719,7 @@ export const BespokeTool = () => {
                                     const skew = Math.abs(refAspect - canAspect) / canAspect;
                                     setRefMismatch(
                                         skew > 0.005
-                                            ? `Reference is ${img.naturalWidth}×${img.naturalHeight} (${refAspect.toFixed(2)}:1) but the name says ${cw}×${ch} (${canAspect.toFixed(2)}:1) — different shape, so tracing over it will be off.`
+                                            ? `Reference is ${img.naturalWidth}×${img.naturalHeight} (${refAspect.toFixed(2)}:1) but the name says ${cw}×${ch} (${canAspect.toFixed(2)}:1). Different shape, so tracing over it will be off.`
                                             : ""
                                     );
                                 }}
@@ -2736,7 +2736,7 @@ export const BespokeTool = () => {
                                     setRefMismatch(
                                         undecodable
                                             ? `This reference is a .${ext}, which the panel can't display.${more}`
-                                            : `Couldn't load that reference — the file may have moved.${more}`
+                                            : `Couldn't load that reference. The file may have moved.${more}`
                                     );
                                 }}
                             />
@@ -2862,7 +2862,7 @@ export const BespokeTool = () => {
                                     e.preventDefault();
                                 }}
                                 onDoubleClick={() => setGuidesY((gs) => gs.filter((_, n) => n !== i))}
-                                title={`y ${g} — drag to move, double-click to remove`}
+                                title={`y ${g}. Drag to move, double-click to remove`}
                             />
                         ))}
                         {guidesX.map((g, i) => (
@@ -2878,7 +2878,7 @@ export const BespokeTool = () => {
                                     e.preventDefault();
                                 }}
                                 onDoubleClick={() => setGuidesX((gs) => gs.filter((_, n) => n !== i))}
-                                title={`x ${g} — drag to move, double-click to remove`}
+                                title={`x ${g}. Drag to move, double-click to remove`}
                             />
                         ))}
                         {regions.length === 0 && (
@@ -2940,8 +2940,8 @@ export const BespokeTool = () => {
                                 <li key={r.id}>
                                     <AlertCircle size={10} />
                                     <span>
-                                        R{i + 1} {regionLabel(r.master)} is {r.master.duration}s in a {runtime}s board —
-                                        its last {over}s won't render.
+                                        R{i + 1} {regionLabel(r.master)} is {r.master.duration}s in a {runtime}s board.
+                                        Its last {over}s won't render.
                                     </span>
                                     <button
                                         className="bsp-swaplink"
@@ -3014,12 +3014,12 @@ export const BespokeTool = () => {
                                 </label>
                             ))}
                             <CheckboxToggle checked={lockRatio} onChange={setLockRatio} label="Keep ratio" />
-                            <Tooltip text={`Size ${regions[selRegion]?.master.name || "this region"} to the guides either side of it — each axis independently, and an axis with no guides takes the full span`}>
+                            <Tooltip text={`Size ${regions[selRegion]?.master.name || "this region"} to the guides either side of it. Each axis independently, and an axis with no guides takes the full span`}>
                                 <button className="bsp-btn bsp-btn--ghost" onClick={fitToGuides}>
                                     Fit to guides
                                 </button>
                             </Tooltip>
-                            <Tooltip text="Turn this region and its master a quarter clockwise — the region's width and height swap about its centre">
+                            <Tooltip text="Turn this region and its master a quarter clockwise. The region's width and height swap about its centre">
                                 <button className="bsp-btn bsp-btn--ghost" onClick={rotateRegion}>
                                     Rotate 90° {regions[selRegion].rotation ? `(${regions[selRegion].rotation}°)` : ""}
                                 </button>
@@ -3105,8 +3105,8 @@ export const BespokeTool = () => {
                     <Trash2 size={11} /> Remove segment
                 </button>
                 <Tooltip text={duplicatePanels
-                    ? "Each panel gets its own copy — edit one without touching the others"
-                    : "Every panel of a master shares one comp — edit it once and they all follow"}>
+                    ? "Each panel gets its own copy. Edit one without touching the others"
+                    : "Every panel of a master shares one comp. Edit it once and they all follow"}>
                     <span className="bsp-toggle">
                         <CheckboxToggle
                             checked={duplicatePanels}
@@ -3277,7 +3277,7 @@ export const BespokeTool = () => {
                                 "Walking the masters folder…",
                                 "Every .aep under it gets opened for its name",
                                 "On a big campaign this is a few hundred files",
-                                "It's cached after this — the next open is instant",
+                                "It's cached after this. The next open is instant",
                                 "Still going…",
                             ]}
                         />

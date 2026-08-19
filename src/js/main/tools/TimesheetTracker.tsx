@@ -245,7 +245,7 @@ const TimesheetTrackerTool = () => {
             setStatusLine("TRACKING TIME... (Active)");
             setJobLabel(jobDataRef.current.jobString);
         } catch (e) {
-            setError("No CEP bridge detected — open this panel inside After Effects to run it.");
+            setError("No CEP bridge detected. Open this panel inside After Effects to run it.");
         }
     };
 
@@ -299,7 +299,7 @@ const TimesheetTrackerTool = () => {
             if (result === undefined) throw new Error("no bridge");
             setStatusLine(result.success ? "Copied to clipboard!" : "Copy failed: " + (result.error || "unknown error"));
         } catch (e) {
-            setError("No CEP bridge detected — open this panel inside After Effects to run it.");
+            setError("No CEP bridge detected. Open this panel inside After Effects to run it.");
         }
     };
 
@@ -323,7 +323,7 @@ const TimesheetTrackerTool = () => {
     const backToBatchList = () => { tracker.backToList(); setOutput(""); };
 
     const removeBatch = async (b: Batch) => {
-        if (!(await confirmDialog(`Delete batch "${b.name}" and its tracked times?\n\nThis only clears the saved time entries — no files on disk are touched.`))) return;
+        if (!(await confirmDialog(`Delete batch "${b.name}" and its tracked times?\n\nThis only clears the saved time entries. No files on disk are touched.`))) return;
         tracker.removeBatch(b.id);
     };
 
@@ -364,7 +364,7 @@ const TimesheetTrackerTool = () => {
 
         const payload = { version: 5, exportDate: getISODate(d), rawTasks, jobOptions };
         setOutput(JSON.stringify(payload));
-        setStatusLine(`Batch JSON generated — ${rawTasks.length} file${rawTasks.length === 1 ? "" : "s"}.`);
+        setStatusLine(`Batch JSON generated, ${rawTasks.length} file${rawTasks.length === 1 ? "" : "s"}.`);
     };
 
     const activeBatch = tracker.activeBatch;
@@ -420,7 +420,7 @@ const TimesheetTrackerTool = () => {
                     {tracker.batches.length === 0 ? (
                         <div className="ts-batch-empty">
                             <Boxes size={22} />
-                            <span>No batches yet. Start one for a delivery folder, then move through its files — time is tracked per file automatically.</span>
+                            <span>No batches yet. Start one for a delivery folder, then move through its files. Time is tracked per file automatically.</span>
                         </div>
                     ) : (
                         tracker.batches.map((b) => (
@@ -462,7 +462,7 @@ const TimesheetTrackerTool = () => {
                             ? "Start, then open each file in this batch. Time is auto-logged per file."
                             : tracker.activePath
                                 ? "Tracking the open file. Switch files in AE and the clock follows."
-                                : "Clock running — open a saved AE project to start logging time to it."}
+                                : "Clock running. Open a saved AE project to start logging time to it."}
                     </p>
 
                     <div className="ts-file-list">
