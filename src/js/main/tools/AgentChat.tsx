@@ -278,7 +278,7 @@ const AgentChat: React.FC<Props> = ({ focusKey, headerSlot }) => {
             <button
                 className={"agentchat-keybtn" + (headerSlot ? " agentchat-keybtn--icon" : "") + (hasKey ? " is-set" : "")}
                 onClick={() => setKeyOpen((v) => !v)}
-                title={hasKey ? "An API key is set on this machine — click to change it" : "No API key set yet — click to add one"}
+                title={hasKey ? "An API key is set on this machine. Click to change it." : "No API key set yet. Click to add one."}
                 aria-label={hasKey ? "Change the API key" : "Set an API key"}
             >
                 <KeyRound size={14} />
@@ -334,7 +334,7 @@ const AgentChat: React.FC<Props> = ({ focusKey, headerSlot }) => {
                 <div className="agentchat-keyrow">
                     <input
                         type="password"
-                        placeholder="Paste an API key — stored on this machine only, never on the team share"
+                        placeholder="Paste an API key. Stored on this machine, never on the team share."
                         value={keyDraft}
                         onChange={(e) => setKeyDraft(e.target.value)}
                         onKeyDown={(e) => { if (e.key === "Enter") saveKey(); }}
@@ -361,9 +361,8 @@ const AgentChat: React.FC<Props> = ({ focusKey, headerSlot }) => {
                             one that overstates it: somebody trusts the claim
                             and stops watching. */}
                         <p className="agentchat-empty-body">
-                            It reads campaigns, masters, renders, spec sheets and your Wrike jobs — and it can
-                            build in After Effects: comps, layers, keyframes, expressions, easing. Every change
-                            is one Ctrl+Z, and it never presses a button that renders or delivers.
+                            Reads your campaigns, masters, renders and specs, and builds in After Effects.
+                            Every change is one Ctrl+Z. It never renders or delivers.
                         </p>
                         <div className="agentchat-examples">
                             {suggestedOpeners().map((ex) => (
