@@ -58,7 +58,7 @@ const ArtworkCheckTool = () => {
             setRes(r);
             if (!r.success) setStatus({ text: r.error || "Couldn't check this one.", type: "error" });
         } catch {
-            setStatus({ text: "No CEP bridge detected — open this panel inside After Effects.", type: "error" });
+            setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects.", type: "error" });
         } finally {
             setBusy(false);
         }
@@ -69,7 +69,7 @@ const ArtworkCheckTool = () => {
         try {
             const r = (await evalTS("artworkImportTiff", path)) as unknown as { success: boolean; error?: string };
             setStatus(r && r.success
-                ? { text: `Imported ${name}. Put it into the comp yourself — layer order, masking and scale are yours.`, type: "success" }
+                ? { text: `Imported ${name}. Put it into the comp yourself. Layer order, masking and scale are yours.`, type: "success" }
                 : { text: (r && r.error) || "Couldn't import that.", type: "error" });
             if (r && r.success) await check();
         } catch {
@@ -107,7 +107,7 @@ const ArtworkCheckTool = () => {
                             {/* The likeliest cause by far, said rather than left
                                 to be worked out: the mech was built for a name
                                 this comp no longer has. */}
-                            <em>Usually the comp has been renamed since the mech was built — check the duration
+                            <em>Usually the comp was renamed after the mech was built. Check the duration
                                 and site tokens against the JPG_PNG folder.</em>
                         </div>
                     )}
