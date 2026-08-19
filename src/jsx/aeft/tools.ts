@@ -258,14 +258,19 @@ export const organiseFolders = (): Result => {
       if (item.name === "PNG") png = item as FolderItem;
     }
 
-    if (!isValid(composition)) composition = app.project.items.addFolder("Composition");
-    if (!isValid(preComp)) preComp = app.project.items.addFolder("PreComp");
-    if (!isValid(main)) main = app.project.items.addFolder("Main");
-    if (!isValid(assets)) assets = app.project.items.addFolder("Footage");
-    if (!isValid(footage)) footage = app.project.items.addFolder("MOVs");
-    if (!isValid(artwork)) artwork = app.project.items.addFolder("Artwork");
-    if (!isValid(solids)) solids = app.project.items.addFolder("Solids");
-    if (!isValid(png)) png = app.project.items.addFolder("PNG");
+    // WAS `isValid(...)`, WHICH IS NOT A GLOBAL. ExtendScript exposes
+    // Object.isValid(), not a bare isValid(), so every one of these threw a
+    // ReferenceError and Organise Folders could never have run to completion.
+    // These are `FolderItem | undefined` filled by the loop above, so "did we
+    // find one" is plain truthiness.
+    if (!composition) composition = app.project.items.addFolder("Composition");
+    if (!preComp) preComp = app.project.items.addFolder("PreComp");
+    if (!main) main = app.project.items.addFolder("Main");
+    if (!assets) assets = app.project.items.addFolder("Footage");
+    if (!footage) footage = app.project.items.addFolder("MOVs");
+    if (!artwork) artwork = app.project.items.addFolder("Artwork");
+    if (!solids) solids = app.project.items.addFolder("Solids");
+    if (!png) png = app.project.items.addFolder("PNG");
 
     preComp!.parentFolder = composition!;
     main!.parentFolder = composition!;
@@ -802,19 +807,34 @@ export function territoryCheck(input: string): string | null {
 }
 
 
+/** The most of the frame a title box may grow to occupy. */
+const FRONTCARD_BOX_MAX = 0.9;
+
 /**
- * Shrinks a BOX text layer's type until its text fits the box it was given.
+ * Makes a BOX text layer's title fit -- by WIDENING THE BOX FIRST, and only
+ * shrinking the type if the box has run out of frame to grow into.
  *
  * The brand template's title is box text sized for a short film name, so
  * "Forgotten Island" wrapped and the second word fell outside -- the card read
  * FORGOTTEN. Nothing warned, because a text layer that overflows its box still
  * renders perfectly happily.
  *
- * Only ever makes type SMALLER, and only on box text: point text has no box to
- * overflow, and growing a title past its designed size would be a worse
- * surprise than a small one. Bails out unchanged if the measurement is not
- * telling it anything -- an unfixed title is better than one shrunk to nothing
- * by a loop that could not see what it was doing.
+ * SHRINKING WAS THE WRONG FIRST MOVE. It was all this did, and what artists
+ * actually did by hand was drag the box wider and recentre it -- because the
+ * type size is the designer's decision and the box is just the container it
+ * was given. A title set two points smaller than every other card in the
+ * campaign is a subtle inconsistency nobody catches; a wider box is invisible.
+ * So: grow, recentre, and only then shrink.
+ *
+ * THE BOX GROWS ABOUT ITS OWN CENTRE, which is the recentring step. boxTextPos
+ * is the box's TOP-LEFT, so widening alone would push the text right rather
+ * than out both ways -- the layer would fit and sit off-centre, which is worse
+ * than overflowing because it looks deliberate.
+ *
+ * Bounded by the comp, not by taste: it will not widen past FRONTCARD_BOX_MAX
+ * of the frame. Bails out unchanged if the measurement is not telling it
+ * anything -- an unfixed title is better than one mangled by a loop that could
+ * not see what it was doing.
  */
 function fitFrontcardText(layer: Layer, time: number): string {
   try {
@@ -825,23 +845,84 @@ function fitFrontcardText(layer: Layer, time: number): string {
 
     const boxHeight = doc.boxTextSize[1];
     const startSize = doc.fontSize;
+    const startWidth = doc.boxTextSize[0];
     if (!boxHeight || !startSize) return "";
 
+    // How wide the box may grow. The comp is the only honest bound -- a title
+    // box running to the frame edge is a different bug from one that wraps.
+    let maxWidth = startWidth;
+    try {
+      const comp = (layer as AVLayer).containingComp;
+      if (comp && comp.width) maxWidth = comp.width * FRONTCARD_BOX_MAX;
+    } catch (e) {
+      // No reachable comp: no widening, and the shrink below still applies.
+    }
+
+    const overflows = () => {
+      const rect = (layer as AVLayer).sourceRectAtTime(time, false);
+      if (!rect || !rect.height) return null;   // not measurable
+      return rect.height > boxHeight;
+    };
+
+    // --- 1. widen, recentring as it goes -----------------------------------
     let guard = 0;
+    while (guard < 40 && startWidth > 0) {
+      const over = overflows();
+      if (over === null) return "";
+      if (!over) break;
+      const next = prop.value as TextDocument;
+      const size = next.boxTextSize;
+      if (size[0] >= maxWidth) break;
+      // STEPPED BY THE DISTANCE LEFT TO TRAVEL, not by the starting width. A
+      // step of 5%-of-start took 40 tries to cross a wide gap and the guard
+      // stopped it short of the cap, so a very long title shrank its type
+      // while the box still had room to grow -- the exact ordering this is
+      // meant to prevent. Twenty steps reaches the cap from anywhere.
+      const step = Math.max(8, Math.round((maxWidth - startWidth) / 20));
+      const grown = Math.min(maxWidth, size[0] + step);
+      const delta = grown - size[0];
+      if (delta <= 0) break;
+      try {
+        const pos = next.boxTextPos;
+        next.boxTextSize = [grown, size[1]];
+        // Half the growth taken off the left edge, so the box expands about
+        // its centre instead of only rightwards.
+        next.boxTextPos = [pos[0] - delta / 2, pos[1]];
+        prop.setValue(next);
+      } catch (e) {
+        // boxTextPos/boxTextSize not writable on this host: stop widening
+        // rather than leaving the box grown but shifted off-centre.
+        break;
+      }
+      guard++;
+    }
+
+    // --- 2. only now, shrink ------------------------------------------------
+    guard = 0;
     while (guard < 30) {
       guard++;
-      const rect = (layer as AVLayer).sourceRectAtTime(time, false);
-      // Not measurable -- leave the layer exactly as it was.
-      if (!rect || !rect.height) return "";
-      if (rect.height <= boxHeight) break;
+      const over = overflows();
+      if (over === null) return "";
+      if (!over) break;
       const next = prop.value as TextDocument;
       if (next.fontSize <= 10) break;
       next.fontSize = next.fontSize - 2;
       prop.setValue(next);
     }
-    const endSize = (prop.value as TextDocument).fontSize;
-    if (endSize < startSize) return "shrunk from " + startSize + "pt to " + endSize + "pt to fit its box";
-    return "";
+
+    const endDoc = prop.value as TextDocument;
+    const endSize = endDoc.fontSize;
+    const endWidth = endDoc.boxTextSize[0];
+    const notes: string[] = [];
+    if (endWidth > startWidth) {
+      notes.push("box widened from " + Math.round(startWidth) + "px to " + Math.round(endWidth) + "px and recentred");
+    }
+    if (endSize < startSize) {
+      // SAID SEPARATELY, and second, because it is the compromise. A card whose
+      // type no longer matches its siblings is worth a human look.
+      notes.push("type shrunk from " + startSize + "pt to " + endSize + "pt -- it would not fit even at full width");
+    }
+    return notes.join("; ");
   } catch (e) {
     return "";
   }
@@ -912,14 +993,39 @@ function frontcardTargets(comp: CompItem): FrontcardTarget[] {
   return out;
 }
 
-function frontcardSet(target: FrontcardTarget, which: string, value: string): void {
+/**
+ * The brand template's own unfilled title, as it ships.
+ *
+ * Kept here rather than in the panel because every other fact about the
+ * template's text layers lives on this side, and a second copy in the React
+ * code is one more thing to forget when the template changes.
+ */
+const FRONTCARD_TITLE_PLACEHOLDERS = ["film title", "title", "campaign title"];
+
+function isFrontcardTitlePlaceholder(current: string): boolean {
+  const v = String(current == null ? "" : current).replace(/^\s+|\s+$/g, "").toLowerCase();
+  if (v === "") return true;
+  for (let i = 0; i < FRONTCARD_TITLE_PLACEHOLDERS.length; i++) {
+    if (v === FRONTCARD_TITLE_PLACEHOLDERS[i]) return true;
+  }
+  return false;
+}
+
+function frontcardSet(target: FrontcardTarget, which: string, value: string): string {
   const idx = (target.idx as any)[which];
-  if (!idx) return;
+  if (!idx) return "";
   const layer = target.source.layer(idx);
-  if (!layer) return;
+  if (!layer) return "";
   const prop = layer.property("Source Text") as Property;
-  if (!prop) return;
+  if (!prop) return "";
   prop.setValue(String(value));
+  // THE FIT BELONGS HERE, not at the call sites. Cheeky T fitted its title and
+  // Cheeky DT did not, so typing a real name into the panel overflowed the box
+  // and had to be dragged wider by hand -- the same card, the same layer, two
+  // different behaviours depending on which button wrote it. Doing it inside
+  // the setter means every write path gets it, including any added later.
+  if (which === "title") return fitFrontcardText(layer, 0);
+  return "";
 }
 
 // =============================================================================
@@ -1044,6 +1150,9 @@ export interface FrontcardFields {
   derived?: { title: string; artwork: string; version: string; campaign: string; duration: string; territory: string; date: string };
   /** Derived fields the name couldn't answer. */
   unresolved?: string[];
+  /** True when the card's title is still the brand template's unfilled slot,
+   *  so the panel can offer the campaign instead of echoing "Film Title". */
+  titlePlaceholder?: boolean;
   territoryToken?: string;
   countries?: { name: string; code: string }[];
   /** Set when the values were derived from a DIFFERENT comp's name than the
@@ -1080,10 +1189,21 @@ export const frontcardReadFields = (): FrontcardFields => {
     const year = String(today.getFullYear()).slice(2, 4);
     const fullDate = (day < 10 ? "0" : "") + day + "." + (month < 10 ? "0" : "") + month + "." + year;
 
+    // THE CAMPAIGN FOLDER, which is what the title actually is:
+    //   /Volumes/.../Forgotten_Island/Digital/INT/...  ->  "Forgotten Island"
+    //
+    // GUARDED ON "/Digital" BEING THERE. split() returns the whole string when
+    // the separator is absent, so a project saved anywhere else took the last
+    // path segment -- the .aep FILENAME -- and offered
+    // "FID INTL MultipleArt DOOH MotionPoster 1080x1526px 10s DE V01.aep" as a
+    // film title. An empty derivation is honest and lands in `unresolved`; that
+    // one looks like an answer.
     let derivedTitle = "";
     if (app.project.file) {
       const projPath = String(app.project.file);
-      derivedTitle = projPath.split("/Digital")[0].split("/").slice(-1)[0].split("_").join(" ");
+      if (projPath.indexOf("/Digital") !== -1) {
+        derivedTitle = projPath.split("/Digital")[0].split("/").slice(-1)[0].split("_").join(" ");
+      }
     }
 
     const unresolved: string[] = [];
@@ -1108,6 +1228,14 @@ export const frontcardReadFields = (): FrontcardFields => {
       success: true,
       frontcards: targets.length,
       compName: name,
+      // IS THE CARD'S TITLE STILL THE TEMPLATE'S PLACEHOLDER? Cheeky DT prefills
+      // from what the card says, on the principle that you are correcting
+      // reality rather than re-deriving from a filename that may be wrong. A
+      // placeholder is not reality: nobody chose it, it is the brand template's
+      // unfilled slot, and offering it as the current value is how "FILM TITLE"
+      // reaches a deliverable. Reported rather than silently swapped, so the
+      // panel decides what to do with it and the rule stays visible.
+      titlePlaceholder: isFrontcardTitlePlaceholder(readText(t0, "title")),
       current: {
         title: readText(t0, "title"),
         artwork: readText(t0, "artwork"),
@@ -1162,10 +1290,17 @@ export const frontcardWriteFields = (payload: string): Result => {
       return v.hasOwnProperty(k) && String(v[k]) !== "";
     };
 
+    // What the fit had to do, so the panel can say it. WAS READ OUT OF
+    // cheekyDTCheck'S SCOPE by mistake -- the same unbound-identifier bug as
+    // compFor, caught this time by scripts/audit-unbound-globals.cjs.
+    let titleNote = "";
     app.beginUndoGroup("Frontcard fields");
     try {
       for (let i = 0; i < targets.length; i++) {
-        if (has("title")) frontcardSet(targets[i], "title", v.title);
+        if (has("title")) {
+          const fitted = frontcardSet(targets[i], "title", v.title);
+          if (fitted !== "") titleNote = " Title " + fitted + ".";
+        }
         if (has("artwork")) frontcardSet(targets[i], "artwork", v.artwork);
         if (has("version")) frontcardSet(targets[i], "version", v.version);
         if (has("territory")) frontcardSet(targets[i], "territory", "(" + v.territory + ")");
@@ -1185,7 +1320,7 @@ export const frontcardWriteFields = (payload: string): Result => {
     } finally {
       app.endUndoGroup();
     }
-    return { success: true };
+    return { success: true, message: titleNote !== "" ? "Title" + titleNote.replace(" Title", "") : undefined };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -3015,7 +3150,10 @@ export interface MasterIndexEntry {
   orientation: string;
 }
 
-function mastersCanon(s: string): string {
+// Exported so the campaign locator can canonicalise a token the SAME way the
+// master picker does. A second canonicaliser would drift, and the drift would
+// show up as "that campaign has no masters" about one that does.
+export function mastersCanon(s: string): string {
   return String(s).toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
@@ -7571,5 +7709,65 @@ export const generateDarken = (style: string, opacityPct: number, featherPx: num
   } catch (e) {
     app.endUndoGroup();
     return { success: false, error: e.toString() };
+  }
+};
+
+// =============================================================================
+// Ask agent -- what the artist is looking at right now.
+//
+// READ-ONLY, and deliberately NOT in agentWrites.ts: that file's header claims
+// to be the whole of what the agent can change, and it only stays true if
+// nothing read-only moves in beside it.
+//
+// Sent with every question rather than fetched on demand, so it has to be cheap
+// and it has to be quiet. No comp open is a normal state, not an error.
+// =============================================================================
+
+export interface AgentContextSnapshot {
+  success: boolean;
+  compName?: string;
+  width?: number;
+  height?: number;
+  frameRate?: number;
+  seconds?: number;
+  selectedCount?: number;
+  /** A few names, not all of them -- this rides on every question. */
+  selectedNames?: string[];
+  /** Which expression dialect is legal, so set_expression need not ask. */
+  expressionEngine?: string;
+}
+
+/** How many selected layer names to name before saying "and N more". */
+const CONTEXT_NAME_LIMIT = 5;
+
+export const agentContextSnapshot = (): AgentContextSnapshot => {
+  try {
+    if (!app || !app.project) return { success: true };
+
+    const item = app.project.activeItem;
+    // Duck-typed, never instanceof against a host class (CLAUDE.md section 2).
+    if (!item || typeof (item as CompItem).layers === "undefined") {
+      return { success: true, expressionEngine: app.project.expressionEngine };
+    }
+    const comp = item as CompItem;
+
+    const names: string[] = [];
+    const sel = comp.selectedLayers;
+    for (let i = 0; i < sel.length && i < CONTEXT_NAME_LIMIT; i++) names.push(sel[i].name);
+
+    return {
+      success: true,
+      compName: comp.name,
+      width: comp.width,
+      height: comp.height,
+      frameRate: Math.round(comp.frameRate * 1000) / 1000,
+      seconds: Math.round(comp.duration * 1000) / 1000,
+      selectedCount: sel.length,
+      selectedNames: names.length ? names : undefined,
+      expressionEngine: app.project.expressionEngine,
+    };
+  } catch (e) {
+    // Context is a nicety. A question must never fail because the snapshot did.
+    return { success: true };
   }
 };

@@ -54,6 +54,7 @@ interface FrontcardFields {
     current?: FieldMap;
     derived?: FieldMap;
     unresolved?: string[];
+    titlePlaceholder?: boolean;
     territoryToken?: string;
     derivedFrom?: string;
     countries?: { name: string; code: string }[];
@@ -100,8 +101,40 @@ const CheekyDTTool = () => {
             if (res === undefined) throw new Error("no bridge");
             setCard(res);
             if (res.success && res.current) {
-                setValues({ ...res.current });
-                setTouched({});
+                // THE ONE PLACE THE CARD IS NOT TAKEN AT ITS WORD. Every field
+                // is prefilled from what the frontcard says, because you are
+                // correcting reality rather than re-deriving from a filename
+                // that may be wrong. A placeholder is the exception: nobody
+                // chose "Film Title", it is the template's unfilled slot, and
+                // echoing it back is how it reaches a deliverable.
+                //
+                // ONLY WHEN THERE IS SOMETHING TO OFFER. With the project
+                // unsaved, or saved outside a campaign folder, the host reports
+                // no derived title and the placeholder stays -- a wrong title
+                // is worse than an obvious one.
+                const prefill = { ...res.current };
+                const campaignTitle = res.titlePlaceholder ? (res.derived?.title || "") : "";
+                if (campaignTitle) prefill.title = campaignTitle;
+                setValues(prefill);
+                // MARKED TOUCHED, SO IT REACHES THE CARD. A prefill that stops
+                // at the input would leave this tool contradicting itself: the
+                // card is meant to be the only real preview, the reset button
+                // greys out once the box already holds the derived value, and
+                // the artist would be left looking at a title the deliverable
+                // does not have with no single click to commit it.
+                //
+                // Writing on open is a real side effect and worth being uneasy
+                // about, so it is bounded to the one case that cannot destroy
+                // anything: the card held the template's unfilled slot, which
+                // is nobody's work. A field somebody actually filled is never
+                // touched, which is the guarantee that matters.
+                setTouched(campaignTitle ? { title: true } : {});
+                if (campaignTitle) {
+                    setStatus({
+                        text: `The card had the template's "${res.current.title || "empty"}" title, so I've written "${campaignTitle}" from the campaign folder. One Ctrl+Z undoes it.`,
+                        type: "success",
+                    });
+                }
             } else if (!res.success) {
                 setStatus({ text: res.error || "Couldn't read the Frontcard.", type: "error" });
             }

@@ -8,7 +8,7 @@
 import { scaleCompToFit } from "./deliver";
 import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, territoryCheck, parseFilenameMeta, frontcardWrap, cheekyTCheck, organiseFolders, FRONTCARD_LEAD_IN_SECONDS, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, scanMastersForBestMatch } from "./tools";
 import { makeParentLayerOfAllUnparented, scaleAllCameraZooms } from "./deliver";
-import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, saveLocGenReport, buildDeliverableName, durationForMasterLookup, sanitiseSiteToken, camelCaseToken, camelCaseName } from "./shared";
+import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, saveLocGenReport, buildDeliverableName, durationForMasterLookup, durationDigits, sanitiseSiteToken, camelCaseToken, camelCaseName } from "./shared";
 import { loadCampaignsRaw, loadLastCampaign as loadOVLastCampaign } from "./review";
 
 
@@ -4576,7 +4576,7 @@ export const bespokeBuildRegions = (
         lines.push("  ruler guides skipped -- this After Effects has no addGuide (needs 17.1+)");
       }
 
-      const finish = bespokeFinishAndFile(out, outName, canvasW, canvasH, plan, lines);
+      const finish = bespokeFinishAndFile(out, outName, canvasW, canvasH, plan, lines, compFor);
       saved = finish.saved;
       savedTo = finish.savedTo;
     } finally {
@@ -4602,7 +4602,17 @@ function bespokeFinishAndFile(
   canvasW: number,
   canvasH: number,
   plan: { marketsRoot?: string; territory?: string; batch?: string },
-  lines: string[]
+  lines: string[],
+  // THE MASTERS THIS BUILD IMPORTED, keyed by path. PASSED IN, never reached
+  // for: this used to read a `compFor` that only existed in the two CALLERS'
+  // scopes, so it was a plain ReferenceError -- "compFor is undefined" -- the
+  // moment a build reached the frontcard step.
+  //
+  // It matters more than a crash, because this map IS the masters guard below.
+  // It failed closed (the throw aborted the save), but a guard that throws
+  // rather than checks is one swallowed catch away from not guarding at all,
+  // and CLAUDE.md section 1 requires this check to run at WRITE time.
+  compFor: { [path: string]: CompItem }
 ): { saved: boolean; savedTo: string } {
   let saved = false;
   let savedTo = "";
@@ -4947,7 +4957,7 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
         ? "Each panel is its own duplicate in \"" + outName + " panels\" -- retime one without touching the rest."
         : "Panels share one comp per master -- edit it once and every panel follows.");
       lines.push("No frontcard added: it goes over the finished canvas at " + canvasW + "x" + canvasH + ".");
-      const finish = bespokeFinishAndFile(out, outName, canvasW, canvasH, plan, lines);
+      const finish = bespokeFinishAndFile(out, outName, canvasW, canvasH, plan, lines, compFor);
       saved = finish.saved;
       savedTo = finish.savedTo;
     } finally {
