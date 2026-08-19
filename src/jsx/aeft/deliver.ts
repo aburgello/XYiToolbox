@@ -741,6 +741,10 @@ export const deliveryRotate90CC = (compId: number): DeliveryRotateResult => {
 };
 
 interface DeliveryQueueResult extends Result {
+  /** Comps deliberately left OUT of the queue because no output path could be
+   *  worked out. Named so the panel can un-tick them rather than reporting a
+   *  success it did not have. */
+  notQueued?: string[];
   log?: string;
 }
 
@@ -751,6 +755,7 @@ export const deliveryChecklistQueue = (
     app.beginUndoGroup("Bitrate Delivery Queue");
     const proj = app.project;
     let log = "";
+    const notQueued: string[] = [];
 
     for (let c = 0; c < rows.length; c++) {
       const comp = proj.itemByID(rows[c].id);
@@ -794,19 +799,55 @@ export const deliveryChecklistQueue = (
         appliedOK = false;
       }
 
+      // WHERE THIS RENDER GOES, and the answer must never be "wherever After
+      // Effects last wrote something".
+      //
+      // The .MOV source is the right answer for a localised deliverable: its
+      // comp holds the rendered master, so the file belongs beside it. A
+      // BESPOKE OR MULTI ART comp has no .MOV at all -- it is assembled from
+      // imported master .aep projects, so every source in it is a precomp --
+      // and the old code left om.file unset and queued anyway. AE then fell
+      // back to its own last-used output folder, which is how a correctly
+      // named METROBUS delivery landed in whatever folder happened to be
+      // there last. Named right, in the wrong place, and nothing on screen
+      // said so except one line of log above a Queue button that had already
+      // worked.
       const srcFolder = deliveryFindMovSourceFolder(comp);
+      // The saved project is the fallback, and a sound one: bespokeBuild saves
+      // its _V01.aep into the campaign's own batch tree, so _Delivery beside it
+      // is exactly where that render belongs.
+      const projFolder = !srcFolder && proj.file ? proj.file.parent : null;
+      const baseFolder = srcFolder || projFolder;
+
       let pathLine: string;
-      if (srcFolder) {
-        const deliveryFolder = deliveryEnsureDeliveryFolder(srcFolder);
+      let outputSet = false;
+      if (baseFolder) {
+        const deliveryFolder = deliveryEnsureDeliveryFolder(baseFolder);
         if (deliveryFolder) {
           const outFile = new File(deliveryFolder.fsName + "/" + comp.name + ".mp4");
           om.file = outFile;
-          pathLine = "  Output: " + outFile.fsName + "\n";
+          outputSet = true;
+          pathLine = "  Output: " + outFile.fsName +
+            (srcFolder ? "" : " (from this project's own folder — no .MOV in the comp)") + "\n";
         } else {
-          pathLine = "  *** Could not create _Delivery folder — output path NOT set, check manually ***\n";
+          pathLine = "  *** Could not create a _Delivery folder next to " + baseFolder.fsName + " ***\n";
         }
       } else {
-        pathLine = "  *** No .MOV source found in this comp — output path NOT set, check manually ***\n";
+        pathLine = "  *** No .MOV in this comp and the project has never been saved ***\n";
+      }
+
+      // NOT QUEUED WITHOUT A DESTINATION. Leaving it in the queue with no
+      // output path is the fail-OPEN version of this: AE picks a folder, the
+      // render succeeds, and it looks delivered. Pulling it back out means
+      // somebody has to notice -- which is the whole point.
+      if (!outputSet) {
+        try { rqItem.remove(); } catch (e) { /* already gone; the log still says why */ }
+        pathLine += "  *** NOT QUEUED — save the project somewhere in the campaign, or open the .MOV in this comp ***\n";
+        // REPORTED BY NAME, not just logged. The panel used to tick every row
+        // as queued the moment this call returned, so a comp that never made
+        // it into the queue still showed a green Queued and the only clue was
+        // a line of log nobody rereads once the button has gone green.
+        notQueued.push(comp.name);
       }
 
       log += comp.name + "\n";
@@ -830,7 +871,7 @@ export const deliveryChecklistQueue = (
     }
 
     app.endUndoGroup();
-    return { success: true, log };
+    return { success: true, log, notQueued };
   } catch (e) {
     app.endUndoGroup();
     return { success: false, error: e.toString() };

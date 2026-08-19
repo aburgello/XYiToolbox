@@ -799,8 +799,23 @@ const DeliveryHubTool = () => {
             if (result === undefined) throw new Error("no bridge");
             if (result.success) {
                 setLog(result.log || "");
-                setRows((r) => r.map((x) => ({ ...x, queued: true })));
-                pushToast("Queued — you'll get a toast per file as renders finish (while this page stays open).");
+                // ONLY WHAT ACTUALLY WENT IN. Every row used to be ticked the
+                // moment this returned, so a comp the host refused to queue --
+                // no .MOV and an unsaved project, i.e. anything Bespoke built --
+                // still showed a green Queued, and the only sign was a line of
+                // log nobody rereads once the button has gone green.
+                const refused: string[] = (result as any).notQueued || [];
+                setRows((r) => r.map((x) => ({ ...x, queued: refused.indexOf(x.name) === -1 })));
+                if (refused.length) {
+                    setCheckError(
+                        (refused.length === 1 ? refused[0] + " was" : refused.length + " comps were") +
+                        " NOT queued — nowhere to write to. Save the project inside the campaign, " +
+                        "then queue again. See the log below."
+                    );
+                    pushToast("Queued, except " + refused.length + " with no output path.");
+                } else {
+                    pushToast("Queued — you'll get a toast per file as renders finish (while this page stays open).");
+                }
                 startRenderWatch();
             }
             else setCheckError(result.error || "Something went wrong.");
