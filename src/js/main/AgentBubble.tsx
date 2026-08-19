@@ -113,21 +113,28 @@ const AgentBubble: React.FC = () => {
                 return s;
             });
         };
+        // NOT WHILE THE AGENT IS OFF. These drive a resize handle that does not
+        // exist then, and a global mousemove listener on a panel somebody has
+        // switched off is the sort of thing "opt-in" is supposed to mean the
+        // absence of. The handler early-returns without a drag in progress, so
+        // the cost was small -- but small is not the claim being made.
+        if (!enabled) return;
         window.addEventListener("mousemove", move);
         window.addEventListener("mouseup", up);
         return () => {
             window.removeEventListener("mousemove", move);
             window.removeEventListener("mouseup", up);
         };
-    }, []);
+    }, [enabled]);
 
     // A window that shrinks below a stored size would otherwise leave the panel
     // hanging off the edge, and the handle with it.
     useEffect(() => {
+        if (!enabled) return;
         const onResize = () => setSize((s) => clampSize(s.w, s.h));
         window.addEventListener("resize", onResize);
         return () => window.removeEventListener("resize", onResize);
-    }, []);
+    }, [enabled]);
     // The header node AgentChat renders its status controls into. See the slot
     // in the markup below for why this is state and not a ref.
     const [headSlot, setHeadSlot] = useState<HTMLElement | null>(null);
