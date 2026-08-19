@@ -228,6 +228,77 @@
     &:active { background: #12201e; }
 }
 
+// The fold row and the search box are one control strip. The fold's own
+// `width: 100%` is a base rule shared with the destination section, so it is
+// overridden HERE rather than changed there.
+.bsp-shelf-head {
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+}
+
+.bsp-shelf-head .bsp-fold { flex: 1; min-width: 0; width: auto; }
+
+.bsp-search {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex: 0 0 150px;
+    padding: 0 8px;
+    border: 1px solid var(--surface-border, #2b3230);
+    border-radius: var(--r-sm);
+    background: var(--surface-0, #0e0e0e);
+    color: #6f8b87;
+
+    &:focus-within { border-color: #2dd4bf; }
+    &.is-on { border-color: #2dd4bf; color: #7fe7d8; }
+
+    input {
+        flex: 1;
+        min-width: 0;
+        background: none;
+        border: none;
+        outline: none;
+        color: #cfe6e2;
+        font-size: var(--t-sm);
+
+        &::placeholder { color: #5c716e; }
+    }
+}
+
+.bsp-search-icon { flex: none; }
+
+// index.scss paints every button on hover, so a bare icon button re-declares
+// both states or it flashes blue inside the field.
+.bsp .bsp-search-x {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    padding: 2px;
+    border: none;
+    border-radius: var(--r-xs);
+    background: none;
+    color: #6f8b87;
+    cursor: pointer;
+
+    &:hover { background: #1c2b29; color: #cfe6e2; }
+    &:active { background: #12201e; }
+}
+
+// STOOD DOWN, NOT DISABLED. A query outranks these while it is there, and
+// clicking one clears the query and takes the shelf back, so they stay live.
+.bsp-filters.is-standdown,
+.bsp-creatives.is-standdown {
+    opacity: 0.4;
+}
+
+.bsp-search-note {
+    margin: 0 0 8px;
+    color: #6f8b87;
+    font-size: var(--t-micro);
+}
+
 .bsp-fold-caret {
     flex: none;
     transition: transform var(--dur) var(--ease-snap);

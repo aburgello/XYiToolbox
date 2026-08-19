@@ -28,7 +28,7 @@
 // step. Shipping a Build button that guessed would be worse than not having one.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { AlertCircle, ChevronRight, Copy, Globe2, Layers, LayoutGrid, Library, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, RotateCcw, Square as SquareIcon, Trash2, X } from "lucide-react";
+import { AlertCircle, ChevronRight, Copy, Globe2, Layers, LayoutGrid, Library, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, RotateCcw, Search, Square as SquareIcon, Trash2, X } from "lucide-react";
 import { csi, evalTS } from "../../lib/utils/bolt";
 import { deriveMastersFromMarkets } from "../lib/mastersRoot";
 // AGENT-HOOK — remove with the agent. See docs: grep AGENT-HOOK.
@@ -293,6 +293,53 @@ function distinguish(stem: string, edges: { pre: number; suf: number }): string 
     return kept.join("_");
 }
 
+/** Case, spacing, underscores and hyphens dropped. Identity is what survives.
+ *  Deliberately a local copy of multiArt's normalise rather than an import:
+ *  everything under lib/agent/ deletes with the agent, and the shelf search is
+ *  not part of it. */
+const searchNorm = (s: string) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/**
+ * ONE SEARCH TOKEN AGAINST ONE MASTER. Every token has to hit something, so
+ * words narrow rather than widen: "tr" finds Trio, "tr 10" finds Trio at ten
+ * seconds, "10" finds every ten second master on the shelf.
+ *
+ * A BARE NUMBER IS NEVER MATCHED AGAINST THE NAME. Every 1080-wide master has
+ * "10" in its filename, so a substring match would answer "all of them" to the
+ * one query the artists asked for by name. A number is a duration or a
+ * dimension here, and nothing else.
+ *
+ * Text tokens are tested FIELD BY FIELD, never against the fields joined: a
+ * joined blob lets one token straddle two of them and match a string no master
+ * actually contains.
+ */
+function tokenHitsMaster(tok: string, m: BespokeMaster): boolean {
+    const sizeQ = /^(\d{2,5})\s*[xX\u00d7]\s*(\d{2,5})/.exec(tok);
+    if (sizeQ) {
+        const want = sizeQ[1] + "x" + sizeQ[2];
+        const has = /(\d{2,5})\s*[xX\u00d7]\s*(\d{2,5})/.exec(String(m.size || ""));
+        return (has ? has[1] + "x" + has[2] : "") === want || m.width + "x" + m.height === want;
+    }
+    if (/^\d+$/.test(tok)) {
+        return m.duration === tok || String(m.width) === tok || String(m.height) === tok;
+    }
+    const t = searchNorm(tok);
+    if (!t) return false;
+    // THE ORIENTATION MATCHES BY PREFIX, not by substring. It is the one field
+    // with a fixed vocabulary, and "tr" sits inside "portrait" -- which put
+    // every portrait master on the shelf into the answer for "tr 10", the exact
+    // query this box was asked for. "port" still finds them.
+    if (searchNorm(m.orientation).indexOf(t) === 0) return true;
+    const fields = [m.name, m.creative, m.artwork, m.site, m.territory, m.film, m.region];
+    for (const f of fields) if (searchNorm(f).indexOf(t) !== -1) return true;
+    return false;
+}
+
+function masterMatchesQuery(m: BespokeMaster, tokens: string[]): boolean {
+    for (const tok of tokens) if (!tokenHitsMaster(tok, m)) return false;
+    return true;
+}
+
 /** Below this a region collapses and can never be grabbed again. */
 const MIN_REGION = 24;
 
@@ -533,6 +580,12 @@ export const BespokeTool = () => {
     // re-deciding what you just decided is worse than no filter.
     const [orientTouched, setOrientTouched] = useState(false);
     const [durFilter, setDurFilter] = useState("");
+    // THE BOX IS BACK, but it is not the flat name search that was pulled out
+    // of here. That one needed the filename you were looking for before it was
+    // any use. This one matches word by word across every field a master has,
+    // so "tr 10" is a whole query and nobody has to know how the file is
+    // spelled.
+    const [query, setQuery] = useState("");
 
     // --- masters -----------------------------------------------------------
     const load = useCallback(async (root: string) => {
@@ -2107,20 +2160,36 @@ export const BespokeTool = () => {
         return out.sort((a, b) => Number(a) - Number(b));
     }, [masters, creative]);
 
+    const searchTokens = useMemo(
+        () => query.trim().toLowerCase().split(/\s+/).filter(Boolean),
+        [query]
+    );
+    const searching = searchTokens.length > 0;
+
     const matches = useMemo(() => {
         const out: BespokeMaster[] = [];
         for (const m of masters || []) {
-            if (creative && (m.creative || m.name) !== creative) continue;
-            // No pill selected means no orientation filter, not "none of them".
-            if (orient && m.orientation !== orient) continue;
-            if (durFilter && m.duration !== durFilter) continue;
+            // A QUERY OUTRANKS THE FILTERS RATHER THAN NARROWING INSIDE THEM.
+            // One creative is ALWAYS selected here, so a search scoped to the
+            // filters could never answer "tr 10" from a creative other than the
+            // one already showing, which is most of what anyone types a
+            // creative's name in for. Clearing the box hands the shelf straight
+            // back to the filters, exactly as they were left.
+            if (searchTokens.length) {
+                if (!masterMatchesQuery(m, searchTokens)) continue;
+            } else {
+                if (creative && (m.creative || m.name) !== creative) continue;
+                // No pill selected means no orientation filter, not "none of them".
+                if (orient && m.orientation !== orient) continue;
+                if (durFilter && m.duration !== durFilter) continue;
+            }
             out.push(m);
             if (out.length >= MAX_MATCHES) break;
         }
         // Widest first, then longest: a tile picker is usually reaching for the
         // biggest thing that fits.
         return out.sort((a, b) => b.width - a.width || Number(b.duration) - Number(a.duration));
-    }, [masters, creative, orient, durFilter]);
+    }, [masters, creative, orient, durFilter, searchTokens]);
 
     // --- composition -------------------------------------------------------
     const seg = segments[Math.min(current, segments.length - 1)];
@@ -3164,20 +3233,23 @@ export const BespokeTool = () => {
             )}
 
             {/* --- the picker ----------------------------------------------- */}
-            {/* FOLDED BY DEFAULT. The grid is the tallest thing in the tool and
-                it is only needed at the moment you add a master -- the rest of
-                the time it pushes the canvas off screen. The summary carries
-                the state that matters while it is shut: which creative is
-                filtered, and how many masters that leaves.
+            {/* OPEN ON ARRIVAL. Picking a master is the first thing anyone does
+                in this tool, and the summary carries the state that matters
+                while it is shut: what is filtered or searched, and how many
+                masters that leaves.
                 It opens itself for a SWAP, because a swap is a request to pick
                 something and closing the list you were sent to would be
                 perverse. */}
             </div>
             <div className="bsp-work-side">
+            {/* TWO CONTROLS, ONE ROW. The search box cannot sit inside the fold
+                button: an input nested in a button is invalid markup, and every
+                keystroke would land on the thing that opens and shuts the
+                shelf. */}
+            <div className="bsp-shelf-head" hidden={!mode}>
             <button
                 className={"bsp-fold" + (pickerOpen || swapTarget >= 0 ? " is-on" : "")}
                 onClick={() => setPickerOpen((v) => !v)}
-                hidden={!mode}
             >
                 <ChevronRight size={11} className="bsp-fold-caret" />
                 <span className="bsp-fold-label">
@@ -3188,11 +3260,47 @@ export const BespokeTool = () => {
                 <span className="bsp-fold-summary">
                     {swapTarget >= 0
                         ? "its position is kept"
-                        : `${creative || "no creative"} · ${matches.length} master${matches.length === 1 ? "" : "s"}`}
+                        : `${searching ? `"${query.trim()}"` : creative || "no creative"} · ${matches.length === MAX_MATCHES ? `${MAX_MATCHES}+` : matches.length} master${matches.length === 1 ? "" : "s"}`}
                 </span>
             </button>
+            <div className={"bsp-search" + (searching ? " is-on" : "")}>
+                <Search size={11} className="bsp-search-icon" />
+                <input
+                    type="text"
+                    value={query}
+                    // The example IS the documentation: two half-words and a
+                    // number is the shape of every real query here, and it is
+                    // not a shape anyone guesses from the word "search".
+                    placeholder="Search. Try Tr 10"
+                    aria-label="Search the masters shelf"
+                    onChange={(e) => {
+                        const v = e.target.value;
+                        setQuery(v);
+                        // Filtering a shelf that is folded away is not
+                        // filtering: the results have to be on screen for the
+                        // typing to mean anything.
+                        if (v) setPickerOpen(true);
+                    }}
+                    onKeyDown={(e) => {
+                        if (e.key === "Escape") { setQuery(""); e.currentTarget.blur(); }
+                    }}
+                />
+                {searching && (
+                    <Tooltip text="Clear the search and go back to the filters">
+                        <button className="bsp-search-x" onClick={() => setQuery("")}>
+                            <X size={10} />
+                        </button>
+                    </Tooltip>
+                )}
+            </div>
+            </div>
             <div className="bsp-picker" hidden={!mode || (!pickerOpen && swapTarget < 0)}>
-                <div className="bsp-filters">
+                {/* THE TWO CONTROLS DO NOT FIGHT: whichever was touched last
+                    wins. A query stands the filters down and dims them, and
+                    touching any of them clears the query rather than combining
+                    with it -- an AND of the two silently answers "nothing" for
+                    a creative you can see is on the shelf. */}
+                <div className={"bsp-filters" + (searching ? " is-standdown" : "")}>
                     {ORIENTATION_ORDER.map((key) => {
                         const Icon = ORIENTATION_ICON[key];
                         const n = orientCounts[key] || 0;
@@ -3205,6 +3313,7 @@ export const BespokeTool = () => {
                                 // and either way the automatic guess stands
                                 // down -- an explicit choice outranks it.
                                 onClick={() => {
+                                    setQuery("");
                                     setOrientTouched(true);
                                     setOrient((cur) => (cur === key ? "" : key));
                                 }}
@@ -3217,13 +3326,18 @@ export const BespokeTool = () => {
                     <Dropdown
                         className="bsp-dur"
                         value={durFilter}
-                        onChange={setDurFilter}
+                        onChange={(v) => { setQuery(""); setDurFilter(v); }}
                         options={[{ value: "", label: "Any duration" }]
                             .concat(durations.map((d) => ({ value: d, label: `${d}s` })))}
                         placeholder="Any duration"
                         emptyMessage="No durations to filter by."
                     />
                 </div>
+                {searching && (
+                    <p className="bsp-search-note">
+                        Searching every creative on the shelf. Clear the box to go back to the filters.
+                    </p>
+                )}
                 {/* SAME SHAPE AS THE SCREEN LIBRARY: the primary axis is a
                     vertical rail, the results are a grid beside it. Creative is
                     to masters what territory is to screens -- the question you
@@ -3231,7 +3345,7 @@ export const BespokeTool = () => {
                     which hid every creative past the fourth on a busy campaign
                     and cost the grid a whole row of height to do it. */}
                 <div className="bsp-picker-body">
-                <div className="bsp-creatives">
+                <div className={"bsp-creatives" + (searching ? " is-standdown" : "")}>
                     {/* THE FULL NAME, ON HOVER. The rail ellipsises -- it has to,
                         or one long creative name widens it and squeezes the
                         grid -- and "GUTTE…" next to "JUNG…" is not a choice
@@ -3248,8 +3362,8 @@ export const BespokeTool = () => {
                     {creatives.map((c) => (
                         <Tooltip key={c.name} text={c.name} delay={220}>
                             <button
-                                className={"bsp-creative" + (creative === c.name ? " is-on" : "")}
-                                onClick={() => setCreative(c.name)}
+                                className={"bsp-creative" + (creative === c.name && !searching ? " is-on" : "")}
+                                onClick={() => { setQuery(""); setCreative(c.name); }}
                             >
                                 <span className="bsp-creative-sw" style={{ background: hueFor(c.name) }} />
                                 <span className="bsp-creative-nm">{c.name}</span><em>{c.count}</em>
@@ -3285,12 +3399,23 @@ export const BespokeTool = () => {
                         />
                     )}
                     {!loading && !masters && <p className="bsp-none">Pick a masters folder to browse.</p>}
-                    {!loading && masters && matches.length === 0 && <p className="bsp-none">No master matches those filters.</p>}
+                    {!loading && masters && matches.length === 0 && (
+                        <p className="bsp-none">
+                            {searching
+                                ? `No master matches "${query.trim()}". Every word has to hit something.`
+                                : "No master matches those filters."}
+                        </p>
+                    )}
                     {!loading && matches.map((m) => (
                         <MasterCard
                             key={m.path}
                             master={m}
-                            label={shortNameOf(m)}
+                            // THE CREATIVE, but only while searching. The card
+                            // normally leaves it out because the rail beside it
+                            // is already saying it -- and a search spans every
+                            // creative, so there the rail says nothing about
+                            // this card and the name is the whole answer.
+                            label={searching ? (m.creative || shortNameOf(m)) : shortNameOf(m)}
                             preview={previewOf(m)}
                             swapping={swapTarget >= 0}
                             used={regions.filter((r) => r.master.path === m.path).length}
