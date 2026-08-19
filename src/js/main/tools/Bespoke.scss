@@ -1610,7 +1610,13 @@
     left: 0;
     overflow: hidden;
     pointer-events: none;
+    transition: opacity var(--dur) var(--ease-snap);
 }
+
+// PAST THE END OF ITS OWN MASTER. The layer is not there in the render either,
+// so the panel drops to its flat colour rather than sitting on a last frame the
+// delivered file will not contain.
+.bsp-region-clip.is-spent { opacity: 0.08; }
 
 /* Sized and turned inline (the swap at 90/270 is a ratio only React knows) and
    centred with a transform. Safe here specifically because regions are plain
@@ -2033,6 +2039,50 @@
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+}
+
+// THE BOARD'S OWN TRANSPORT. Directly under the board, full width, so the
+// handle travels the same distance the board is wide.
+.bsp-preview {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.bsp .bsp-scrub {
+    flex: 1;
+    min-width: 0;
+    height: 4px;
+    margin: 0;
+    padding: 0;
+    border-radius: var(--r-pill);
+    background: #1e2a28;
+    appearance: none;
+    -webkit-appearance: none;
+    cursor: pointer;
+
+    &::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 11px;
+        height: 11px;
+        border: none;
+        border-radius: 50%;
+        background: #2dd4bf;
+        cursor: pointer;
+    }
+
+    &:focus-visible { outline: 2px solid #7fe7d8; outline-offset: 3px; }
+}
+
+.bsp-preview-t {
+    flex: none;
+    color: #6f8b87;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: var(--t-micro);
+    // The seconds tick through 0.0 to 10.0 and the row must not shuffle as
+    // they do.
+    min-width: 62px;
+    text-align: right;
 }
 
 .bsp-guidebar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 6px; }

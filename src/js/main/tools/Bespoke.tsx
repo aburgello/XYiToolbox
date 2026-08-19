@@ -28,7 +28,7 @@
 // step. Shipping a Build button that guessed would be worse than not having one.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { AlertCircle, ChevronRight, Copy, Globe2, Image as ImageIcon, Layers, LayoutGrid, Library, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, RotateCcw, Search, Square as SquareIcon, Trash2, X } from "lucide-react";
+import { AlertCircle, ChevronRight, Copy, Globe2, Image as ImageIcon, Layers, LayoutGrid, Library, Pause, Play, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, RotateCcw, Search, Square as SquareIcon, Trash2, X } from "lucide-react";
 import { csi, evalTS } from "../../lib/utils/bolt";
 import { deriveMastersFromMarkets } from "../lib/mastersRoot";
 // AGENT-HOOK — remove with the agent. See docs: grep AGENT-HOOK.
@@ -209,17 +209,61 @@ const MasterCard: React.FC<{
  *     exactly bespokeBuildRegions' faceW/faceH swap before the cover scale.
  * Anything else here would be a picture of a layout nobody is going to get.
  */
-const RegionShot: React.FC<{ src: string; rotation: number; w: number; h: number }> = ({
-    src, rotation, w, h,
+const RegionShot: React.FC<{
+    src: string;
+    rotation: number;
+    w: number;
+    h: number;
+    /** The board is playing. Every region gets this at once. */
+    playing?: boolean;
+    /** Where the board's clock is, in seconds. Applied while paused. */
+    seek?: number;
+}> = ({
+    src, rotation, w, h, playing, seek = 0,
 }) => {
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const [broken, setBroken] = useState(false);
+    /**
+     * THE PANEL HAS RUN OUT BEFORE THE BOARD HAS.
+     *
+     * Every region is built as one layer added at time 0 with its own length,
+     * inside a comp that is the board's runtime -- so past the master's own
+     * duration that panel is simply not there. A preview holding its last frame
+     * would be showing something the render will not contain, which is the
+     * quiet half of the same mismatch the overrun warning covers out loud.
+     */
+    const [spent, setSpent] = useState(false);
     const poster = usePosterFrame(videoRef, () => {});
+
+    // ONE CLOCK FOR THE WHOLE BOARD. Each panel plays itself, but they all
+    // start and stop on the same prop, which is what makes eight of them read
+    // as one composition rather than eight loops out of step.
+    useEffect(() => {
+        const v = videoRef.current;
+        if (!v) return;
+        if (!playing) { v.pause(); return; }
+        const d = isFinite(v.duration) ? v.duration : 0;
+        try { v.currentTime = d ? Math.min(seek, d) : seek; } catch (e) { /* not seekable yet */ }
+        setSpent(!!d && seek > d);
+        v.play().catch(() => { /* autoplay refused -- the still frame stands */ });
+        // `seek` is deliberately not a dependency: while playing, the video
+        // keeps its own time and re-seeking it every tick is the stutter.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [playing]);
+
+    useEffect(() => {
+        const v = videoRef.current;
+        if (!v || playing) return;
+        const d = isFinite(v.duration) ? v.duration : 0;
+        try { v.currentTime = d ? Math.min(seek, d) : seek; } catch (e) { /* nothing to seek to yet */ }
+        setSpent(!!d && seek > d);
+    }, [seek, playing]);
+
     if (!src || broken) return null;
 
     const turned = rotation === 90 || rotation === 270;
     return (
-        <span className="bsp-region-clip">
+        <span className={"bsp-region-clip" + (spent ? " is-spent" : "")}>
             <span
                 className="bsp-region-shot"
                 style={{
@@ -240,6 +284,7 @@ const RegionShot: React.FC<{ src: string; rotation: number; w: number; h: number
                         onLoadedMetadata={poster.onLoadedMetadata}
                         onSeeked={poster.onSeeked}
                         onLoadedData={poster.onLoadedData}
+                        onEnded={() => setSpent(true)}
                         onError={() => setBroken(true)}
                     />
                 )}
@@ -1615,6 +1660,72 @@ export const BespokeTool = () => {
             window.removeEventListener("keydown", esc);
         };
     }, [dropChoice]);
+
+    /**
+     * PLAYING THE BOARD, not the masters one at a time.
+     *
+     * The board already draws each region's render as a still, which answers
+     * "does the composition read" and nothing about "does it read at 6 seconds
+     * in" -- which is the question a bespoke screen is actually judged on: two
+     * panels going white together, an endcard landing while its neighbour is
+     * mid-transition. Every region seeks to the same second, so the board can
+     * be scrubbed as one thing.
+     *
+     * THE CLOCK IS NOT REACT STATE. It ticks at 60Hz, and re-rendering a
+     * component this size sixty times a second to move a slider is how a
+     * preview becomes the reason the panel feels slow. The videos play
+     * themselves; this only moves the handle and the readout, through refs.
+     * State carries the two things that genuinely change the tree: whether it
+     * is playing, and where it was parked when it stopped.
+     */
+    const scrubRef = React.useRef<HTMLInputElement>(null);
+    const clockRef = React.useRef<HTMLSpanElement>(null);
+    const [previewT, setPreviewT] = useState(0);
+    const [previewPlay, setPreviewPlay] = useState(false);
+    const boardSecs = Math.max(0.1, Number(runtime) || 10);
+
+    const showClock = (t: number) => {
+        if (scrubRef.current) scrubRef.current.value = String(t);
+        if (clockRef.current) clockRef.current.textContent = `${t.toFixed(1)}s`;
+    };
+
+    const togglePreview = () => {
+        // Pressing play at the end starts it again rather than doing nothing.
+        if (!previewPlay && previewT >= boardSecs - 0.05) {
+            setPreviewT(0);
+            showClock(0);
+        }
+        setPreviewPlay((v) => !v);
+    };
+
+    useEffect(() => {
+        if (!previewPlay) return;
+        const from = previewT;
+        const t0 = performance.now();
+        let raf = 0;
+        const tick = () => {
+            const t = from + (performance.now() - t0) / 1000;
+            // STOPS AT THE BOARD'S RUNTIME, whatever the masters are. A 15s
+            // master in a 10s board renders its first 10s and nothing else, and
+            // a preview that ran on to 15 would be showing frames the delivered
+            // file does not have.
+            if (t >= boardSecs) {
+                showClock(boardSecs);
+                setPreviewT(boardSecs);
+                setPreviewPlay(false);
+                return;
+            }
+            showClock(t);
+            raf = requestAnimationFrame(tick);
+        };
+        raf = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(raf);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [previewPlay]);
+
+    // A board that changes under a running preview stops it: the regions being
+    // rearranged mid-play is not a preview of anything.
+    useEffect(() => { setPreviewPlay(false); }, [mode, refPath]);
 
     const beginMasterDrag = (m: BespokeMaster, e: React.MouseEvent<HTMLElement>) => {
         // Regions only. A Multi Art segment has no coordinates to drop onto --
@@ -3134,7 +3245,14 @@ export const BespokeTool = () => {
                                         found beside it. Behind everything else
                                         and click-through, so dragging the region
                                         still hits the region. */}
-                                    <RegionShot src={previewOf(r.master)} rotation={r.rotation || 0} w={r.w} h={r.h} />
+                                    <RegionShot
+                                        src={previewOf(r.master)}
+                                        rotation={r.rotation || 0}
+                                        w={r.w}
+                                        h={r.h}
+                                        playing={previewPlay}
+                                        seek={previewT}
+                                    />
                                     {/* The marks below are what a quarter turn
                                         moves when there is NO artwork to turn --
                                         a flat colour block looks identical
@@ -3269,6 +3387,42 @@ export const BespokeTool = () => {
                     </div>
                     </div>
 
+                    {/* UNDER THE BOARD, because it is the board's own transport
+                        and not another filter on the shelf. Only with regions
+                        on it: there is nothing to play otherwise. */}
+                    {regions.length > 0 && (
+                        <div className="bsp-preview">
+                            <Tooltip text={previewPlay ? "Pause" : `Play the board through its ${boardSecs}s`}>
+                                <button className="bsp-btn bsp-btn--ghost bsp-btn--icon" onClick={togglePreview}>
+                                    {previewPlay ? <Pause size={12} /> : <Play size={12} />}
+                                </button>
+                            </Tooltip>
+                            {/* UNCONTROLLED ON PURPOSE. The handle is moved by
+                                the clock through a ref while playing, so making
+                                React own its value would put a re-render of this
+                                whole tool between every frame and the next. */}
+                            <input
+                                ref={scrubRef}
+                                className="bsp-scrub"
+                                type="range"
+                                min="0"
+                                max={String(boardSecs)}
+                                step="0.04"
+                                defaultValue="0"
+                                aria-label="Scrub the board"
+                                onChange={(e) => {
+                                    const t = Number(e.target.value) || 0;
+                                    setPreviewPlay(false);
+                                    setPreviewT(t);
+                                    if (clockRef.current) clockRef.current.textContent = `${t.toFixed(1)}s`;
+                                }}
+                            />
+                            <span className="bsp-preview-t">
+                                <span ref={clockRef}>0.0s</span> / {boardSecs}s
+                            </span>
+                        </div>
+                    )}
+
                     {/* What is LEFT of the old guides row: the buttons moved
                         into the bar above, so this appears only when there is
                         something to say about a guide you have selected. */}
@@ -3382,10 +3536,15 @@ export const BespokeTool = () => {
                                     ))
                                 )}
                             </span>
-                            {/* WHICH BOX IS WHICH. Four bare numbers in a row is
-                                a guess every time -- and x/y/w/h is the order
-                                they are stored in, not an order anyone reads. */}
-                            {(["x", "y", "w", "h"] as const).map((k) => (
+                            {/* SIZE ONLY. x and y were here too, and typing a
+                                region's position by hand is not how anyone
+                                places one: the board is dragged on, and where a
+                                region has to land EXACTLY it lands on a guide --
+                                which is typed, to the pixel, and then snapped to
+                                by Fit to guides. Two numbers nobody used cost
+                                two thirds of the readable width of this row.
+                                The guide's own coordinate field stays. */}
+                            {(["w", "h"] as const).map((k) => (
                                 <label className="bsp-num" key={k}>
                                     <span className="bsp-num-k">{k}</span>
                                     <input
