@@ -14,6 +14,18 @@
 // Island" wrapping to two lines and falling out of a one-line box -- and to
 // show the order of operations is right. It is not a substitute for looking at
 // a rendered card.
+//
+// IT NOW CLIPS LIKE AE DOES, and that correction is the whole point of this
+// revision. AE renders NOTHING past the bottom of a text box, and
+// sourceRectAtTime reports what is RENDERED -- so a title that has already
+// wrapped and been cut off measures exactly one line high and reads as
+// fitting. The old model returned the full wrapped height, which no version of
+// AE will ever return, so the overflow test passed here and did nothing on a
+// real card: "Forgotten Island" shipped as FORGOTTEN for another day.
+//
+// A box layer therefore reports the CLIPPED height, and a point-text probe
+// layer (comp.layers.addText) reports the true unwrapped width -- which is how
+// the fix learns what the box needs to be.
 //   node scripts/probe-frontcard-fit.cjs
 // =============================================================================
 "use strict";
@@ -44,7 +56,20 @@ function textLayer(name, text, opts = {}) {
         doc.fontSize = v.fontSize; doc.boxTextSize = v.boxTextSize; doc.boxTextPos = v.boxTextPos;
       },
     }),
+    // What AE would RENDER: lines past the bottom of the box do not exist.
     sourceRectAtTime() {
+      const lines = L._wrappedLines();
+      const shown = Math.max(1, Math.min(lines, Math.floor(doc.boxTextSize[1] / (doc.fontSize * LEAD))));
+      return {
+        left: 0, top: 0,
+        width: Math.min(doc.boxTextSize[0], inkWidth(doc.text, doc.fontSize)),
+        height: shown * doc.fontSize * LEAD,
+      };
+    },
+    // The truth the model knows and AE will not tell you: how many lines the
+    // text actually needs. Tests assert against this, never against the
+    // clipped rect, or they assert that clipping happened.
+    _wrappedLines() {
       const perLine = Math.max(1, Math.floor(doc.boxTextSize[0] / (doc.fontSize * GLYPH)));
       const words = String(doc.text).split(" ");
       let lines = 1, cur = 0;
@@ -52,11 +77,45 @@ function textLayer(name, text, opts = {}) {
         const add = (cur ? 1 : 0) + w.length;
         if (cur + add > perLine && cur > 0) { lines++; cur = w.length; } else cur += add;
       }
-      return { left: 0, top: 0, width: doc.boxTextSize[0], height: lines * doc.fontSize * LEAD };
+      return lines;
     },
     _doc: doc,
   };
   return L;
+}
+
+/** One line of this string, unwrapped, at this size. */
+function inkWidth(text, fontSize) {
+  return String(text).length * fontSize * GLYPH;
+}
+
+/**
+ * A point-text layer, as comp.layers.addText() makes one: no box, so it never
+ * wraps and its rect is the true width of the string. This is what the fix
+ * adds, measures and removes.
+ */
+function pointTextProbe(text, onRemove) {
+  const doc = { text: String(text), fontSize: 60, boxText: false, boxTextSize: [0, 0], boxTextPos: [0, 0] };
+  return {
+    name: "probe", enabled: true, removed: false,
+    property: () => ({
+      get value() {
+        const copy = Object.assign({}, doc);
+        copy.toString = function () { return doc.text; };
+        return copy;
+      },
+      setValue(v) {
+        if (typeof v === "string") { doc.text = v; return; }
+        if (v.text !== undefined) doc.text = v.text;
+        doc.fontSize = v.fontSize;
+      },
+    }),
+    sourceRectAtTime() {
+      return { left: 0, top: 0, width: inkWidth(doc.text, doc.fontSize), height: doc.fontSize * LEAD };
+    },
+    remove() { this.removed = true; onRemove(this); },
+    _doc: doc,
+  };
 }
 
 function scene(title, opts) {
@@ -74,14 +133,24 @@ function scene(title, opts) {
   inner[7] = t;
   const source = { layer: (n) => inner[n - 1], numLayers: 16 };
   const fc = { name: "Frontcard", source, property: () => ({ value: "", setValue() {} }) };
+  // Every probe layer the fix adds, so a test can insist none were left behind.
+  const probes = [];
   const comp = {
     name: "FID_INTL_MultipleArt_DOOH_MotionPoster_1080x1526px_10s_DE_V01",
     numLayers: 1, layer: () => fc, width: 1080, height: 1526, duration: 10,
     frameDuration: 1 / 25, time: 0, selectedLayers: [], selectedProperties: [],
+    layers: {
+      addText(str) {
+        const probe = pointTextProbe(str, () => {});
+        probes.push(probe);
+        return probe;
+      },
+    },
+    _probes: probes,
   };
   // containingComp is what bounds the widening.
   t.containingComp = comp;
-  return { comp, t, title };
+  return { comp, t, title, probes };
 }
 
 let pass = 0, fail = 0;
@@ -103,7 +172,7 @@ function run(label, title, opts) {
   console.log(`\n  ${label}`);
   console.log(`      box ${before.w}px -> ${Math.round(after.w)}px   type ${before.size}pt -> ${after.size}pt   centre ${centreBefore} -> ${centreAfter}`);
   if (r && r.message) console.log("      " + String(r.message).trim().slice(0, 120));
-  return { before, after, centreBefore, centreAfter, r, layer: s.t };
+  return { before, after, centreBefore, centreAfter, r, layer: s.t, probes: s.probes };
 }
 
 console.log("\n=== a long title in a box built for a short one ===");
@@ -112,7 +181,12 @@ console.log("\n=== a long title in a box built for a short one ===");
   check("the box grew", g.after.w > g.before.w, `${g.before.w} -> ${g.after.w}`);
   check("it stayed centred", Math.abs(g.centreAfter - g.centreBefore) < 0.001, `${g.centreBefore} -> ${g.centreAfter}`);
   check("the type was NOT shrunk", g.after.size === g.before.size, `${g.before.size} -> ${g.after.size}`);
-  check("it actually fits now", g.layer.sourceRectAtTime().height <= g.layer._doc.boxTextSize[1]);
+  // AGAINST THE WRAP, NOT THE RECT. The rect is clipped, so asking it whether
+  // the text fits is asking a question that can only ever answer yes -- which
+  // is exactly how the old fit passed this probe while shipping FORGOTTEN.
+  check("it actually fits now", g.layer._wrappedLines() === 1, `${g.layer._wrappedLines()} lines`);
+  check("no probe layer was left behind", g.probes.length > 0 && g.probes.every((x) => x.removed),
+    `${g.probes.length} added, ${g.probes.filter((x) => x.removed).length} removed`);
   check("never past 90% of the frame", g.after.w <= 1080 * 0.9 + 0.001, `${g.after.w} vs ${1080 * 0.9}`);
 }
 
@@ -127,7 +201,8 @@ console.log("\n=== Cheeky DT: typing a title writes AND fits ===");
   check("the DT path writes the title", sc.t._doc.text === "FORGOTTEN ISLAND", sc.t._doc.text);
   check("the DT path now fits it too", after > before, `${before} -> ${after}`);
   check("and keeps it centred", Math.abs(cAfter - cBefore) < 0.001, `${cBefore} -> ${cAfter}`);
-  check("it fits", sc.t.sourceRectAtTime().height <= sc.t._doc.boxTextSize[1]);
+  check("it fits", sc.t._wrappedLines() === 1, `${sc.t._wrappedLines()} lines`);
+  check("no probe layer was left behind", sc.probes.length > 0 && sc.probes.every((x) => x.removed));
 }
 
 console.log("\n=== a title too long for even a full-width box ===");
@@ -141,6 +216,7 @@ console.log("\n=== a title too long for even a full-width box ===");
   check("widened to the cap", w >= 1080 * 0.9 - 0.001, String(w));
   check("and only THEN shrank", size1 < size0, `${size0} -> ${size1}`);
   check("the compromise is reported", /would not fit even at full width/.test(String(r && r.message)), String(r && r.message));
+  check("and the title is on one line after it", sc.t._wrappedLines() === 1, `${sc.t._wrappedLines()} lines`);
 }
 
 console.log("\n=== a title that already fits is left alone ===");

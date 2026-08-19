@@ -811,6 +811,53 @@ export function territoryCheck(input: string): string | null {
 const FRONTCARD_BOX_MAX = 0.9;
 
 /**
+ * The true width of one unwrapped line of a string, measured by a PROBE LAYER.
+ *
+ * THIS EXISTS BECAUSE A BOX TEXT LAYER CANNOT BE ASKED WHETHER IT OVERFLOWS.
+ * AE renders nothing past the bottom of a text box, and sourceRectAtTime
+ * reports what is RENDERED -- so a title that has already wrapped and been cut
+ * off measures exactly one line high and reads as fitting. The previous fit
+ * asked exactly that question, got "fits" every time, and widened nothing:
+ * "Forgotten Island" kept shipping as FORGOTTEN with the fix supposedly in.
+ *
+ * A point-text layer has no box, so it never wraps and its rect is the whole
+ * string. Added disabled, measured, and removed inside the caller's undo group.
+ * It does take the selection while it exists, which is invisible unless the
+ * frontcard precomp happens to be the open timeline.
+ *
+ * Null means "could not measure", and every caller treats that as leave it
+ * alone: an untouched title beats one mangled by a guess.
+ */
+function measureUnwrapped(comp: CompItem, doc: TextDocument, text: string): { w: number; h: number } | null {
+  if (!comp || !text) return null;
+  if (!comp.layers || typeof comp.layers.addText !== "function") return null;
+  let probe: TextLayer | null = null;
+  try {
+    probe = comp.layers.addText(String(text));
+    if (!probe) return null;
+    try { probe.enabled = false; } catch (e) { /* never rendered anyway */ }
+    const pprop = probe.property("Source Text") as Property;
+    if (!pprop) return null;
+    const pdoc = pprop.value as TextDocument;
+    if (!pdoc) return null;
+    // The measurement is only worth anything at the real type size, and only
+    // in the real face -- a fallback font of a different width would answer a
+    // question about a title nobody is setting.
+    pdoc.fontSize = doc.fontSize;
+    try { pdoc.font = doc.font; } catch (e) { /* host refused the face */ }
+    try { pdoc.tracking = doc.tracking; } catch (e) { /* older host */ }
+    pprop.setValue(pdoc);
+    const rect = probe.sourceRectAtTime(0, false);
+    if (!rect || !rect.width || !rect.height) return null;
+    return { w: rect.width, h: rect.height };
+  } catch (e) {
+    return null;
+  } finally {
+    try { if (probe) probe.remove(); } catch (e) { /* nothing left to remove */ }
+  }
+}
+
+/**
  * Makes a BOX text layer's title fit -- by WIDENING THE BOX FIRST, and only
  * shrinking the type if the box has run out of frame to grow into.
  *
@@ -826,15 +873,20 @@ const FRONTCARD_BOX_MAX = 0.9;
  * campaign is a subtle inconsistency nobody catches; a wider box is invisible.
  * So: grow, recentre, and only then shrink.
  *
- * THE BOX GROWS ABOUT ITS OWN CENTRE, which is the recentring step. boxTextPos
- * is the box's TOP-LEFT, so widening alone would push the text right rather
- * than out both ways -- the layer would fit and sit off-centre, which is worse
- * than overflowing because it looks deliberate.
+ * MEASURED, NOT PROBED-AND-STEPPED. This used to grow the box in steps and ask
+ * after each one whether the layer still overflowed. That question has no
+ * honest answer on box text (see measureUnwrapped), so the loop exited on its
+ * first pass and the box never moved. One measurement of what the title
+ * actually wants gives the answer outright, and the arithmetic below is the
+ * whole decision.
+ *
+ * THE BOX GROWS ABOUT ITS OWN CENTRE. boxTextPos is the box's TOP-LEFT, so
+ * widening alone would push the text right rather than out both ways -- the
+ * layer would fit and sit off-centre, which is worse than overflowing because
+ * it looks deliberate.
  *
  * Bounded by the comp, not by taste: it will not widen past FRONTCARD_BOX_MAX
- * of the frame. Bails out unchanged if the measurement is not telling it
- * anything -- an unfixed title is better than one mangled by a loop that could
- * not see what it was doing.
+ * of the frame.
  */
 function fitFrontcardText(layer: Layer, time: number): string {
   try {
@@ -843,76 +895,78 @@ function fitFrontcardText(layer: Layer, time: number): string {
     const doc = prop.value as TextDocument;
     if (!doc || !doc.boxText) return "";
 
+    const startWidth = doc.boxTextSize[0];
     const boxHeight = doc.boxTextSize[1];
     const startSize = doc.fontSize;
-    const startWidth = doc.boxTextSize[0];
-    if (!boxHeight || !startSize) return "";
+    if (!startWidth || !boxHeight || !startSize) return "";
 
-    // How wide the box may grow. The comp is the only honest bound -- a title
-    // box running to the frame edge is a different bug from one that wraps.
-    let maxWidth = startWidth;
+    let comp: CompItem | null = null;
     try {
-      const comp = (layer as AVLayer).containingComp;
-      if (comp && comp.width) maxWidth = comp.width * FRONTCARD_BOX_MAX;
+      comp = (layer as AVLayer).containingComp;
     } catch (e) {
-      // No reachable comp: no widening, and the shrink below still applies.
+      comp = null;
     }
+    if (!comp || !comp.width) return "";
+    const maxWidth = comp.width * FRONTCARD_BOX_MAX;
 
-    const overflows = () => {
-      const rect = (layer as AVLayer).sourceRectAtTime(time, false);
-      if (!rect || !rect.height) return null;   // not measurable
-      return rect.height > boxHeight;
-    };
+    const line = measureUnwrapped(comp, doc, String(doc.text));
+    if (!line) return "";
 
-    // --- 1. widen, recentring as it goes -----------------------------------
-    let guard = 0;
-    while (guard < 40 && startWidth > 0) {
-      const over = overflows();
-      if (over === null) return "";
-      if (!over) break;
-      const next = prop.value as TextDocument;
-      const size = next.boxTextSize;
-      if (size[0] >= maxWidth) break;
-      // STEPPED BY THE DISTANCE LEFT TO TRAVEL, not by the starting width. A
-      // step of 5%-of-start took 40 tries to cross a wide gap and the guard
-      // stopped it short of the cap, so a very long title shrank its type
-      // while the box still had room to grow -- the exact ordering this is
-      // meant to prevent. Twenty steps reaches the cap from anywhere.
-      const step = Math.max(8, Math.round((maxWidth - startWidth) / 20));
-      const grown = Math.min(maxWidth, size[0] + step);
-      const delta = grown - size[0];
-      if (delta <= 0) break;
-      try {
-        const pos = next.boxTextPos;
-        next.boxTextSize = [grown, size[1]];
-        // Half the growth taken off the left edge, so the box expands about
-        // its centre instead of only rightwards.
-        next.boxTextPos = [pos[0] - delta / 2, pos[1]];
-        prop.setValue(next);
-      } catch (e) {
-        // boxTextPos/boxTextSize not writable on this host: stop widening
-        // rather than leaving the box grown but shifted off-centre.
-        break;
+    // HOW MANY LINES THE BOX CAN SHOW, which is the difference between a title
+    // that must fit on one line and one the designer built a two-line box for.
+    let lines = Math.floor(boxHeight / line.h + 0.01);
+    if (lines < 1) lines = 1;
+
+    // What the title needs. One line is the real case and is exact, plus a
+    // hair so the last glyph is not resting on the box edge. A taller box is
+    // an APPROXIMATION -- wrapping never divides evenly, so it asks for a fifth
+    // more than the even split rather than pretending to know where the break
+    // lands.
+    const pad = Math.max(6, line.w * 0.02);
+    let need = line.w + pad;
+    if (lines > 1) need = (line.w / lines) * 1.2;
+
+    let endWidth = startWidth;
+    if (need > startWidth) {
+      const grown = Math.min(maxWidth, Math.ceil(need));
+      const delta = grown - startWidth;
+      if (delta > 0) {
+        try {
+          const next = prop.value as TextDocument;
+          const pos = next.boxTextPos;
+          next.boxTextSize = [grown, boxHeight];
+          // Half the growth taken off the left edge, so the box expands about
+          // its centre instead of only rightwards.
+          next.boxTextPos = [pos[0] - delta / 2, pos[1]];
+          prop.setValue(next);
+          endWidth = grown;
+        } catch (e) {
+          // boxTextPos/boxTextSize not writable on this host: leave the box
+          // alone rather than grown but shifted off-centre.
+        }
       }
-      guard++;
     }
 
-    // --- 2. only now, shrink ------------------------------------------------
-    guard = 0;
-    while (guard < 30) {
-      guard++;
-      const over = overflows();
-      if (over === null) return "";
-      if (!over) break;
-      const next = prop.value as TextDocument;
-      if (next.fontSize <= 10) break;
-      next.fontSize = next.fontSize - 2;
-      prop.setValue(next);
+    // ONLY NOW, SHRINK, and only when the cap genuinely cannot hold the title.
+    // Scaled in one step rather than stepped down two points at a time: the
+    // measurement is linear in font size, so the right size is arithmetic.
+    let endSize = startSize;
+    if (need > maxWidth) {
+      const scaled = Math.floor(startSize * (maxWidth / need));
+      let wanted = scaled;
+      if (wanted < 10) wanted = 10;
+      if (wanted < startSize) {
+        try {
+          const next = prop.value as TextDocument;
+          next.fontSize = wanted;
+          prop.setValue(next);
+          endSize = wanted;
+        } catch (e) {
+          // Type size refused: the box is still wider than it was.
+        }
+      }
     }
 
-    const endDoc = prop.value as TextDocument;
-    const endSize = endDoc.fontSize;
-    const endWidth = endDoc.boxTextSize[0];
     const notes: string[] = [];
     if (endWidth > startWidth) {
       notes.push("box widened from " + Math.round(startWidth) + "px to " + Math.round(endWidth) + "px and recentred");
