@@ -546,12 +546,13 @@ export const TOOLS: ToolEntry[] = [
         categories: ["localise"],
         icon: FileSearch,
         Component: ArtworkCheckTool,
-        actions: ["Check this deliverable", "Import"],
+        actions: ["Check this deliverable", "Pick the JPG_PNG folder", "Pick the Tiffs or Edit folder", "Import"],
         // Read-only: it reads a sheet and reports. "Import" brings a file into
         // the project and is deliberately NOT listed as read, so nothing can
-        // press it on somebody's behalf.
+        // press it on somebody's behalf. Nor is the folder picker: it opens a
+        // modal AE dialog that only a person at the machine can answer.
         actionSafety: { "Check this deliverable": "read" },
-        description: "Which art edit this deliverable is supposed to use, read off the mech sheet in JPG_PNG, and whether that tiff is actually in the project.",
+        description: "Which art edit this deliverable is supposed to use, read off the mech sheet in JPG_PNG, and whether that tiff is actually in the project. Point it at the JPG_PNG folder yourself when it can't find one above the project.",
     },
     {
         id: "check",

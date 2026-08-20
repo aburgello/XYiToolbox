@@ -14,7 +14,7 @@
 // fetching the correct file is the tedious half and the half that goes wrong.
 // =============================================================================
 import React, { useState } from "react";
-import { FileSearch, Download, FolderOpen, RefreshCw } from "lucide-react";
+import { FileSearch, Download, FolderOpen, FolderSearch, RefreshCw, X } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
@@ -22,12 +22,16 @@ import "../shared.scss";
 import "./formTool.scss";
 import "./ArtworkCheck.scss";
 
+/** One .aep motion edit, and the folder it came out of — "Tiffs" or "Edit",
+ *  which mean different things and are labelled as such. */
+interface Edit { name: string; path: string; folder: string }
+
 interface Row {
     type: string; name: string; filePath: string; inProject: boolean;
     /** The .aep motion edit built from this tiff — what a motion deliverable
      *  actually needs. "" when the creative folder has none for it. */
     editName?: string; editPath?: string;
-    editVariants?: { name: string; path: string }[];
+    editVariants?: Edit[];
 }
 interface CheckResult {
     success: boolean;
@@ -38,9 +42,23 @@ interface CheckResult {
     rows?: Row[];
     creative?: string;
     editsFolder?: string;
-    edits?: { name: string; path: string }[];
+    editFolders?: string[];
+    edits?: Edit[];
+    componentsFolder?: string;
+    componentsPicked?: boolean;
     unexpected?: string[];
     verdict?: "match" | "mismatch" | "no-reference";
+    jpgPngFolder?: string;
+    picked?: boolean;
+    /** The failure is "I couldn't find the folder", which is answerable by
+     *  pointing at it. */
+    needsFolder?: boolean;
+}
+
+/** Last path segment, either separator — the panel runs on both platforms. */
+function leafName(path: string): string {
+    const cut = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+    return cut === -1 ? path : path.substring(cut + 1) || path;
 }
 
 const ArtworkCheckTool = () => {
@@ -48,20 +66,68 @@ const ArtworkCheckTool = () => {
     const [busy, setBusy] = useState(false);
     const [status, setStatus] = useState<{ text: string; type: "success" | "error" } | null>(null);
     const [showAll, setShowAll] = useState(false);
+    // A manually picked JPG_PNG folder, for when the walk up from the project
+    // finds nothing. SESSION-ONLY on purpose: it belongs to the deliverable in
+    // front of you, and a path remembered across jobs would quietly check the
+    // next one against the last one's sheets.
+    const [folder, setFolder] = useState("");
+    const [needsFolder, setNeedsFolder] = useState(false);
+    // The creative's Tiffs/Edit folder, for the creatives this can't name from
+    // the deliverable. Session-only for the same reason as the one above.
+    const [components, setComponents] = useState("");
 
-    const check = async () => {
+    /** Overrides are passed explicitly rather than read from state, so picking
+     *  a folder can check against it in the same tick. */
+    const check = async (override?: string, comp?: string) => {
+        const path = override === undefined ? folder : override;
+        const compPath = comp === undefined ? components : comp;
         setBusy(true);
         setStatus(null);
         try {
-            const r = (await evalTS("artworkCheck")) as unknown as CheckResult | undefined;
+            const r = (await evalTS("artworkCheck", path, compPath)) as unknown as CheckResult | undefined;
             if (r === undefined) throw new Error("no bridge");
             setRes(r);
+            setNeedsFolder(!r.success && !!r.needsFolder);
             if (!r.success) setStatus({ text: r.error || "Couldn't check this one.", type: "error" });
         } catch {
             setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects.", type: "error" });
         } finally {
             setBusy(false);
         }
+    };
+
+    const pickFolder = async () => {
+        try {
+            const path = (await evalTS("selectArtworkJpgPngFolder")) as unknown as string | null | undefined;
+            if (path === undefined) throw new Error("no bridge");
+            if (!path) return;                       // cancelled, which is fine
+            setFolder(path);
+            await check(path);
+        } catch {
+            setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects.", type: "error" });
+        }
+    };
+
+    const clearFolder = async () => {
+        setFolder("");
+        await check("");
+    };
+
+    const pickComponents = async () => {
+        try {
+            const path = (await evalTS("selectArtworkComponentsFolder")) as unknown as string | null | undefined;
+            if (path === undefined) throw new Error("no bridge");
+            if (!path) return;
+            setComponents(path);
+            await check(undefined, path);
+        } catch {
+            setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects.", type: "error" });
+        }
+    };
+
+    const clearComponents = async () => {
+        setComponents("");
+        await check(undefined, "");
     };
 
     const importEdit = async (path: string, name: string) => {
@@ -89,10 +155,36 @@ const ArtworkCheckTool = () => {
     return (
         <div className="form-tool artwork-check">
             <div className="button-row">
-                <button disabled={busy} onClick={check}>
+                <button disabled={busy} onClick={() => check()}>
                     {busy ? <RefreshCw size={14} /> : <FileSearch size={14} />} Check this deliverable
                 </button>
             </div>
+
+            {/* Offered when the walk-up failed, and kept on screen once a
+                folder is in use so it is never a mystery which one was read. */}
+            {(needsFolder || folder !== "") && (
+                <div className="ac-folder">
+                    {folder === "" ? (
+                        <button className="ac-folder-pick" disabled={busy} onClick={pickFolder}>
+                            <FolderSearch size={12} /> Pick the JPG_PNG folder
+                        </button>
+                    ) : (
+                        <>
+                            <Tooltip text={folder}>
+                                <span className="ac-folder-path">
+                                    <FolderSearch size={11} />
+                                    <em>{leafName(folder)}</em>
+                                </span>
+                            </Tooltip>
+                            <button className="ac-folder-pick" disabled={busy} onClick={pickFolder}>Change</button>
+                            <button className="ac-folder-clear" disabled={busy} onClick={clearFolder}
+                                title="Go back to finding it from the project">
+                                <X size={11} />
+                            </button>
+                        </>
+                    )}
+                </div>
+            )}
 
             {res && res.success && (
                 <div className="ac-result">
@@ -109,6 +201,13 @@ const ArtworkCheckTool = () => {
                                 this comp no longer has. */}
                             <em>Usually the comp was renamed after the mech was built. Check the duration
                                 and site tokens against the JPG_PNG folder.</em>
+                            {/* The other cause, and the one this fixes: it read
+                                the wrong JPG_PNG. */}
+                            {folder === "" && (
+                                <button className="ac-folder-pick" disabled={busy} onClick={pickFolder}>
+                                    <FolderSearch size={12} /> Pick the JPG_PNG folder yourself
+                                </button>
+                            )}
                         </div>
                     )}
 
@@ -144,7 +243,7 @@ const ArtworkCheckTool = () => {
                                 <div className="ac-row ac-row--alt" key={v.path}>
                                     <div className="ac-row-text">
                                         <strong>{v.name}</strong>
-                                        <span>another cut of the same edit</span>
+                                        <span>another cut of the same edit · {v.folder}</span>
                                     </div>
                                     <button className="ac-import" disabled={busy}
                                         onClick={() => importEdit(v.path, v.name)}>
@@ -177,22 +276,89 @@ const ArtworkCheckTool = () => {
                     {alternatives.length > 0 && (
                         <div className="ac-alts">
                             <button className="ac-alts-toggle" onClick={() => setShowAll((v) => !v)}>
-                                <FolderOpen size={12} /> {showAll ? "Hide" : "Show"} the other {res.creative} motion edits ({alternatives.length})
+                                <FolderOpen size={12} /> {showAll ? "Hide" : "Show"} the other {res.creative || "available"} motion edits ({alternatives.length})
                             </button>
-                            {showAll && alternatives.map((t) => (
-                                <div className="ac-row ac-row--alt" key={t.path}>
-                                    <div className="ac-row-text"><strong>{t.name}</strong></div>
-                                    <button className="ac-import" disabled={busy} onClick={() => importEdit(t.path, t.name)}>
-                                        <Download size={12} /> Import
+                            {/* GROUPED BY FOLDER, because the two are not the
+                                same kind of thing: Tiffs holds the animated
+                                version of one piece of artwork, Edit holds cuts
+                                of the whole spot. Lumping them together would
+                                offer a 15sec edit as if it were artwork. */}
+                            {showAll && (res.editFolders || []).map((name) => {
+                                const inFolder = alternatives.filter((t) => t.folder === name);
+                                if (inFolder.length === 0) return null;
+                                return (
+                                    <div key={name}>
+                                        <p className="ac-alts-group">
+                                            {name}
+                                            <em>{name.toLowerCase().indexOf("edit") === 0
+                                                ? "cuts of the whole spot"
+                                                : "one per piece of artwork"}</em>
+                                        </p>
+                                        {inFolder.map((t) => (
+                                            <div className="ac-row ac-row--alt" key={t.path}>
+                                                <div className="ac-row-text"><strong>{t.name}</strong></div>
+                                                <button className="ac-import" disabled={busy} onClick={() => importEdit(t.path, t.name)}>
+                                                    <Download size={12} /> Import
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {/* Not every creative HAS a Tiffs or an Edit — Bracelet and
+                        Portal LOS have neither — so an empty list is a normal
+                        answer, said plainly, with the way out beside it. */}
+                    {(res.edits || []).length === 0 && (
+                        <div className="ac-folder ac-folder--comp">
+                            {components === "" ? (
+                                <button className="ac-folder-pick" disabled={busy} onClick={pickComponents}>
+                                    <FolderSearch size={12} />
+                                    {res.creative
+                                        ? `No Tiffs or Edit folder in ${res.creative} — pick one`
+                                        : "No motion edits found — pick the Tiffs or Edit folder"}
+                                </button>
+                            ) : (
+                                <>
+                                    <Tooltip text={components}>
+                                        <span className="ac-folder-path">
+                                            <FolderSearch size={11} />
+                                            <em>nothing in {leafName(components)}</em>
+                                        </span>
+                                    </Tooltip>
+                                    <button className="ac-folder-pick" disabled={busy} onClick={pickComponents}>Change</button>
+                                    <button className="ac-folder-clear" disabled={busy} onClick={clearComponents}
+                                        title="Go back to finding it from the campaign">
+                                        <X size={11} />
                                     </button>
-                                </div>
-                            ))}
+                                </>
+                            )}
+                        </div>
+                    )}
+
+                    {(res.edits || []).length > 0 && components !== "" && (
+                        <div className="ac-folder ac-folder--comp">
+                            <Tooltip text={components}>
+                                <span className="ac-folder-path">
+                                    <FolderSearch size={11} />
+                                    <em>{leafName(components)}</em>
+                                </span>
+                            </Tooltip>
+                            <button className="ac-folder-pick" disabled={busy} onClick={pickComponents}>Change</button>
+                            <button className="ac-folder-clear" disabled={busy} onClick={clearComponents}
+                                title="Go back to finding it from the campaign">
+                                <X size={11} />
+                            </button>
                         </div>
                     )}
 
                     {res.csvPath && (
                         <Tooltip text={res.csvPath}>
-                            <p className="ac-source">read from the mech sheet in JPG_PNG</p>
+                            <p className="ac-source">
+                                read from the mech sheet in {res.picked ? "the folder you picked" : "JPG_PNG"}
+                            </p>
                         </Tooltip>
                     )}
                 </div>

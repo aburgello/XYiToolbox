@@ -85,6 +85,17 @@ so this whole class of bug is structurally invisible in browser preview.
   versions and languages. A null lookup must be **reported, never
   `continue`d past** — a rig that half-applies and claims success is the
   actual bug here.
+- **`File.name` / `Folder.name` are URI-ENCODED — decode before comparing.**
+  They are the name portion of a URI, so anything outside ASCII arrives
+  percent-escaped, and macOS stores accents DECOMPOSED: Finland's
+  `…BioRexSeinäjoki…` reads back as `…BioRexSeina%CC%88joki…`. Normalising that
+  raw is silently catastrophic — stripping the punctuation keeps the HEX, so
+  the key grows a literal `cc88` and matches nothing, with no error anywhere.
+  Use `decodeURI`/`File.decode` (or `displayName`), and fold accents to ASCII
+  as well, or the precomposed spelling of the same name keys differently again.
+  `artwork.ts`'s `decodeName()`/`foldAccents()` do both; `team.ts` and
+  `tools.ts` decode but do not fold. Czechia, Poland and Serbia are all one
+  accented site name away from this.
 - **Never walk a property tree upward via `propertyGroup(1)` in a collector** —
   it returns the PARENT and blows up exponentially. This froze AE solid once.
 - Return `{success, error}` shapes; never throw across the bridge.
@@ -336,6 +347,25 @@ accept both** — size with or without `px`, duration as `s` or `sec`.
 A master that fails to parse is **silently dropped, not reported** — the
 symptom is a file missing from OV Library or "no master matched", never an
 error. Naming Audit's `masters` mode therefore flags neither convention.
+
+**JPG_PNG writes an ASPECT-RATIO token that AE does not.** The mech pipeline's
+folders and sheets carry it next to the pixel size — `..._Metrobus
+_9x16_1080x1920px_10s_FR` against AE's `..._Metrobus_1080x1920px_10s_FR` — and
+the casing and spacing are not reliable either. Anything pairing a deliverable
+to its mech sheet must key on `artwork.ts`'s `deliverableKey()`, which drops a
+token of the form `<≤2 digits>x<≤2 digits>` and nothing else. Dropping it is
+safe because the ratio is redundant with the size beside it; a SIZE (three
+digits and up) is never dropped, so two deliverables can still never collide.
+
+**The masters tree is a SIBLING CAMPAIGN, and art edits live in `Tiffs` OR
+`Edit`.** `XY026040_…_Markets` holds the territories; `XY026039_…_Masters` holds
+`Support/Motion_Components`. Find it by testing each level's siblings for that
+folder (`findMotionComponents`), never by pattern-matching a job number or a
+`_Masters` suffix. Inside a creative, `Tiffs` (also spelled `TIFFs`) holds one
+`.aep` per piece of artwork, named after the tiff, so a sheet's ART row pairs to
+it; `Edit` holds cuts of the whole spot (`FID_PORTALTOPARADISE_EDIT_10sec`)
+whose names pair to nothing by design and are offered, never matched. Plenty of
+creatives have neither folder — an empty list is a normal answer, not a fault.
 
 ---
 
