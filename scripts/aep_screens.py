@@ -264,6 +264,160 @@ def score_reference(name, path, w, h, cw, ch):
     return score
 
 
+# Folder names that hold the CLIENT'S OWN spec material, sitting beside the
+# template rather than inside it: Bio_Rex_Tripla/{AE_template, Specs}. Nothing
+# in the .aep ever points at these, so no amount of parsing finds them.
+SPEC_DIR_WORDS = ("spec", "specs", "specsheet", "specsheets", "specification",
+                  "specifications")
+
+# How far up from the .aep to look for one. The estate is 19 templates at
+# Country/x.aep and the rest one to three levels deeper, and the NEAREST spec
+# folder wins -- walking to the top would hang every screen in a country off
+# the same shared folder.
+SPEC_WALK_UP = 3
+SPEC_MAX_FILES = 60
+
+# A disk find loses a tie with something the artist actually linked inside the
+# template. Every file in a Specs folder scores the +40 for the word "spec" in
+# its path, deserved or not, so without this a stray photo in Specs would
+# outrank a real in-situ image in the .aep.
+SPEC_TIEBREAK = -5
+
+
+def _u16(b, i, big):
+    return (b[i] << 8 | b[i + 1]) if big else (b[i + 1] << 8 | b[i])
+
+
+def image_size(path):
+    """(width, height) from the file HEADER, or (0, 0).
+
+    Worth the parsing: size is 90 points of the reference score, and a spec
+    drawing is usually a scaled copy of the screen, which the aspect-ratio test
+    catches. Reading the header beats opening the image, and these live on a
+    network share.
+    """
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(262144)
+    except Exception:
+        return (0, 0)
+    if len(head) < 24:
+        return (0, 0)
+    try:
+        if head[:8] == b"\x89PNG\r\n\x1a\n":
+            return (_u16(head, 18, True) | head[16] << 24 | head[17] << 16,
+                    _u16(head, 22, True) | head[20] << 24 | head[21] << 16)
+        if head[:3] == b"GIF":
+            return (_u16(head, 6, False), _u16(head, 8, False))
+        if head[:2] == b"\xff\xd8":
+            i = 2
+            while i + 9 < len(head):
+                if head[i] != 0xFF:
+                    i += 1
+                    continue
+                marker = head[i + 1]
+                # SOF0-SOF15 carry the dimensions; DHT/JPG/DAC do not.
+                if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+                    return (_u16(head, i + 7, True), _u16(head, i + 5, True))
+                seg = _u16(head, i + 2, True)
+                if seg <= 0:
+                    break
+                i += 2 + seg
+            return (0, 0)
+        if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+            if head[12:16] == b"VP8X":
+                w = head[24] | head[25] << 8 | head[26] << 16
+                h = head[27] | head[28] << 8 | head[29] << 16
+                return (w + 1, h + 1)
+            if head[12:16] == b"VP8 ":
+                return (_u16(head, 26, False) & 0x3FFF, _u16(head, 28, False) & 0x3FFF)
+    except Exception:
+        return (0, 0)
+    return (0, 0)
+
+
+def _spec_dirs_near(aep_path):
+    """The nearest spec folder(s) above the .aep, or []."""
+    here = os.path.dirname(os.path.abspath(aep_path))
+    for _ in range(SPEC_WALK_UP + 1):
+        found = []
+        try:
+            for entry in os.scandir(here):
+                if not entry.is_dir():
+                    continue
+                name = entry.name
+                if name.startswith("_") or name.startswith("."):
+                    continue
+                flat = re.sub(r"[^a-z0-9]", "", name.lower())
+                if flat in SPEC_DIR_WORDS:
+                    found.append(entry.path)
+        except OSError:
+            return []
+        if found:
+            return found
+        parent = os.path.dirname(here)
+        if parent == here:
+            return []
+        here = parent
+    return []
+
+
+def find_spec_images(aep_path, cw, ch):
+    """Every plausible reference sitting in a Specs folder BESIDE the template.
+
+    The scoring is the same one the in-.aep candidates go through, because the
+    question is the same one: is this the diagram an artist can trace over?
+    Files are ranked, never filtered on the folder alone -- a Specs folder holds
+    the resolution PDF, the client's deck and the odd render as readily as it
+    holds the screen drawing.
+    """
+    out = []
+    for spec_dir in _spec_dirs_near(aep_path):
+        for root, dirs, files in os.walk(spec_dir):
+            # Same convention as the rest of the toolbox: _Old, _Archive and
+            # Auto-Save folders are not part of any scan.
+            dirs[:] = [d for d in dirs if not d.startswith("_") and not d.startswith(".")
+                       and "auto-save" not in d.lower()]
+            if root[len(spec_dir):].count(os.sep) >= 2:
+                dirs[:] = []
+            for name in files:
+                if name.startswith("."):
+                    continue
+                if not name.lower().endswith(IMG_EXT):
+                    continue
+                path = os.path.join(root, name)
+                w, h = image_size(path)
+                score = score_reference(name, path, w, h, cw, ch)
+                if score <= 0:
+                    continue
+                out.append({"path": path, "width": w, "height": h,
+                            "renderable": name.lower().endswith(RENDERABLE_EXT),
+                            "source": "specs", "score": score + SPEC_TIEBREAK})
+                if len(out) >= SPEC_MAX_FILES:
+                    return out
+    return out
+
+
+def merge_references(*lists):
+    """One ranked list, best first, each path appearing once."""
+    everything = []
+    for lst in lists:
+        everything.extend(lst)
+    everything.sort(key=lambda r: -r["score"])
+    seen, out = set(), []
+    for r in everything:
+        try:
+            key = os.path.normcase(os.path.realpath(r["path"]))
+        except Exception:
+            key = os.path.normcase(r["path"])
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"path": r["path"], "width": r["width"], "height": r["height"],
+                    "renderable": r["renderable"], "source": r.get("source", "aep")})
+    return out
+
+
 def find_references(app, comp):
     """EVERY plausible reference, best first.
 
@@ -295,7 +449,8 @@ def find_references(app, comp):
             continue
         seen.add(path)
         out.append({"path": path, "width": w, "height": h,
-                    "renderable": path.lower().endswith(RENDERABLE_EXT)})
+                    "renderable": path.lower().endswith(RENDERABLE_EXT),
+                    "source": "aep", "score": s})
     return out
 
 
@@ -303,7 +458,13 @@ def read_one(path):
     try:
         app = py_aep.parse(path)
     except Exception as exc:
-        return {"path": path, "ok": False, "error": "%s: %s" % (type(exc).__name__, exc)}
+        # STILL WORTH ANSWERING. Roughly one template in fifteen is on an AE
+        # version py-aep cannot read, and those screens have never had a
+        # reference of any kind -- but the Specs folder beside them is just
+        # files on disk. The row stays ok:false, because the .aep genuinely
+        # was not read and the count must keep saying so.
+        return {"path": path, "ok": False, "error": "%s: %s" % (type(exc).__name__, exc),
+                "references": merge_references(find_spec_images(path, 0, 0))}
     try:
         comp = pick_main_comp(app, path)
         if comp is None:
@@ -311,7 +472,8 @@ def read_one(path):
         slots, depth = find_slots(comp)
         cw = getattr(comp, "width", 0) or 0
         ch = getattr(comp, "height", 0) or 0
-        refs = find_references(app, comp)
+        refs = merge_references(find_references(app, comp),
+                                find_spec_images(path, cw, ch))
         return {
             "path": path,
             "ok": True,
@@ -332,7 +494,8 @@ def read_one(path):
             } for s in slots],
         }
     except Exception as exc:
-        return {"path": path, "ok": False, "error": "%s: %s" % (type(exc).__name__, exc)}
+        return {"path": path, "ok": False, "error": "%s: %s" % (type(exc).__name__, exc),
+                "references": merge_references(find_spec_images(path, 0, 0))}
 
 
 def main():

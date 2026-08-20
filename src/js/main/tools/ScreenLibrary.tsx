@@ -491,11 +491,16 @@ const ScreenLibrary: React.FC<{
                 // a heuristic and gets it wrong often enough that the artist
                 // needs to be able to step to the next one on the canvas.
                 const byPath: Record<string, string[]> = {};
+                const fromSpecs: Record<string, boolean> = {};
                 res.results.forEach((r) => {
-                    if (!r.ok) return;
+                    // NOT gated on r.ok. A template py-aep can't parse still has
+                    // a Specs folder beside it on disk, and those screens have
+                    // never had a reference of any kind.
                     const list = (r.references || []).map((x) => x.path).filter(Boolean);
-                    if (list.length === 0 && r.reference) list.push(r.reference);
+                    if (list.length === 0 && r.ok && r.reference) list.push(r.reference);
                     if (list.length) byPath[r.path] = list;
+                    const best = (r.references || [])[0];
+                    if (best && best.source === "specs") fromSpecs[r.path] = true;
                 });
                 // Templates that were READ but yielded nothing send an empty
                 // path, which clears whatever is on the row. That is what makes
@@ -506,7 +511,10 @@ const ScreenLibrary: React.FC<{
                 const readable: Record<string, boolean> = {};
                 res.results.forEach((r) => { if (r.ok) readable[r.path] = true; });
                 const rows = templates
-                    .filter((e) => readable[e.templatePath as string])
+                    // An unreadable template is filed only when the disk gave
+                    // us something: sending it an empty list would clear a good
+                    // reference on the strength of a failure.
+                    .filter((e) => readable[e.templatePath as string] || byPath[e.templatePath as string])
                     .map((e) => {
                         const list = byPath[e.templatePath as string] || [];
                         return { id: e.id, referencePath: list[0] || "", referencePaths: list };
@@ -514,6 +522,12 @@ const ScreenLibrary: React.FC<{
                 const unreadable = res.results.filter((r) => !r.ok).length;
 
                 const found = rows.filter((r) => !!r.referencePath).length;
+                // Said out loud in the status line, because it is the answer to
+                // "why does this screen suddenly have one": it came off the
+                // disk beside the template, not out of the .aep.
+                const specCount = templates.filter(
+                    (e) => fromSpecs[e.templatePath as string] && (byPath[e.templatePath as string] || []).length
+                ).length;
                 if (rows.length === 0) {
                     onStatus(`Couldn't read any of those ${templates.length} templates.`, "error");
                 } else if (found === 0) {
@@ -527,6 +541,7 @@ const ScreenLibrary: React.FC<{
                         // silent shortfall is the failure mode to avoid.
                         onStatus(
                             `Found references for ${saved.updated} screen${saved.updated === 1 ? "" : "s"}` +
+                            (specCount ? `, ${specCount} from a Specs folder` : "") +
                             (unreadable ? ` — ${unreadable} template${unreadable === 1 ? "" : "s"} couldn't be read.` : "."),
                             "success"
                         );

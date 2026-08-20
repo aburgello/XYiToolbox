@@ -25,6 +25,15 @@
 // The slot half is deliberately NOT applied automatically -- see enrichScreens'
 // note. A reference that is wrong costs one click; a wrong slot silently
 // rearranges somebody's board.
+//
+// THE SPECS FOLDER IS READ TOO, and it is not a footnote: the client's own
+// material sits BESIDE the template (Bio_Rex_Tripla/{AE_template, Specs}) where
+// nothing inside the .aep ever points at it. Measured over a 90-template
+// sample: 53 screens had a reference, 60 do now, 23 more gained extra
+// candidates to step through, and one of the newly-covered screens is an .aep
+// py-aep cannot parse at all -- which is why a row with ok:false can still
+// carry references. 147 of the spec files are PDFs, which Chromium cannot
+// paint, so they are not offered.
 // =============================================================================
 import { child_process, fs, path, os } from "../../lib/cep/node";
 
@@ -59,7 +68,10 @@ export interface EnrichedScreen {
     reference?: string;
     /** Every plausible candidate, best first -- the panel lets the artist step
      *  through these, because the scoring is a heuristic and misses. */
-    references?: { path: string; width: number; height: number; renderable: boolean }[];
+    /** `source` is "aep" for something linked inside the template and "specs"
+     *  for a file found in a Specs folder beside it. A row with ok:false can
+     *  still carry these — the .aep was unreadable, the folder was not. */
+    references?: { path: string; width: number; height: number; renderable: boolean; source?: string }[];
     slots?: EnrichedSlot[];
 }
 
