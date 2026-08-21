@@ -1008,55 +1008,24 @@
 // checks. Deliberately quiet: it is a once-per-delivery action, not part of
 // the browsing loop, so it must not compete with the variant cards above it.
 // =============================================================================
-.master-check {
-    margin-top: 14px;
-    padding: 13px 15px;
-    border: 1px solid var(--surface-edge, #333);
-    border-radius: 8px;
-    background: var(--surface-0, #1a1a1a);
-}
-
-.master-check-row {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-}
-
-.master-check-text {
-    flex: 1;
-    min-width: 0;
-
-    strong {
-        display: block;
-        font-size: 12.5px;
-        font-weight: 650;
-        color: #ddd;
-    }
-
-    span {
-        display: block;
-        font-size: 11px;
-        color: #8a8a8a;
-        line-height: 1.45;
-        margin-top: 2px;
-    }
-}
-
-// Has its own background, so index.scss's global button:hover/:active
-// ($active #20639b) would paint straight over it — both re-declared here.
+// Sized to sit in the filter row beside the sort toggle and the count, not as
+// a panel of its own. Has its own background, so index.scss's global
+// button:hover/:active ($active #20639b) would paint straight over it -- both
+// re-declared here.
 .master-check-btn {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 6px;
-    flex-shrink: 0;
+    gap: 5px;
+    flex: none;
     background: var(--cat-grad);
     border: 1px solid var(--cat-border);
     color: #fff;
     border-radius: 6px;
-    padding: 7px 14px;
-    font-size: 11.5px;
+    padding: 6px 11px;
+    font-size: 11px;
     font-weight: 600;
     cursor: pointer;
+    white-space: nowrap;
 
     &:hover:not(:disabled) { background: var(--cat-grad); filter: brightness(1.12); }
     &:active:not(:disabled) { background: var(--cat-grad); filter: brightness(0.94); }
@@ -1066,7 +1035,7 @@
 }
 
 .master-check-note {
-    margin: 10px 0 0;
+    margin: 8px 0 0;
     font-family: "SF Mono", "Fira Code", "Consolas", monospace;
     font-size: 10.5px;
     color: #8a8a8a;

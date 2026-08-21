@@ -1338,6 +1338,19 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
                         <span className="result-count">
                             {totalVisible} of {records.length}
                         </span>
+                        {/* UP HERE WITH THE OTHER CONTROLS, and one line high.
+                            It used to sit under the list as a paragraph with a
+                            button beside it, which cost four rows of masters on
+                            a docked panel to explain something you press once a
+                            campaign. The explanation moved into the tooltip. */}
+                        {selectedCampaign && (
+                            <Tooltip text={`Reads every master in ${selectedCampaign.name} and reports size, duration, missing footage and layer differences. Opens in your browser.`}>
+                                <button className="master-check-btn" disabled={checkBusy} onClick={runCheck}>
+                                    {checkBusy ? <RefreshCw size={12} className="spin" /> : <ClipboardCheck size={12} />}
+                                    {checkBusy ? "Checking…" : "Check"}
+                                </button>
+                            </Tooltip>
+                        )}
                     </div>
                 )}
 
@@ -1374,33 +1387,10 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
                         })}
                 </div>
 
-                {/* Master check — sits under the masters because that's what it
-                    checks, and it checks the WHOLE campaign, not the creative
-                    currently selected above. The report deliberately opens in a
-                    browser rather than in here: it's a wide table meant for a
-                    sign-off read, and the panel is a narrow dock. */}
-                {selectedCampaign && (
-                    <div className="master-check">
-                        <div className="master-check-row">
-                            <div className="master-check-text">
-                                <strong>Check the masters</strong>
-                                <span>
-                                    Reads every master in {selectedCampaign.name} and reports size,
-                                    duration, missing footage and layer differences. Opens in your browser.
-                                </span>
-                            </div>
-                            <button
-                                className="master-check-btn"
-                                disabled={checkBusy}
-                                onClick={runCheck}
-                            >
-                                {checkBusy ? <RefreshCw size={13} className="spin" /> : <ClipboardCheck size={13} />}
-                                {checkBusy ? "Checking…" : "Run check"}
-                            </button>
-                        </div>
-                        {checkNote && <p className="master-check-note">{checkNote}</p>}
-                    </div>
-                )}
+                {/* Only the OUTCOME lives down here now. The control moved up
+                    into the filter row; a note appears when there is something
+                    to say and takes no space when there is not. */}
+                {checkNote && <p className="master-check-note">{checkNote}</p>}
             </div>
 
             <div className="toast-stack">
