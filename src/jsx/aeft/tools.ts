@@ -620,13 +620,15 @@ export function parseFilenameMeta(name: string): FilenameMeta {
   const verMatch = name.match(regVPart);
   if (verMatch) version = verMatch[1];
 
-  if (regionMatch && regionMatch.index !== undefined && sizeMatch) {
+  // `size` rather than a match object: the size is read by firstSizeToken now,
+  // and indexOf finds the same place whether or not a px follows it.
+  if (regionMatch && regionMatch.index !== undefined && size) {
     let startOfDesc = regionMatch.index + regionMatch[0].length;
     const dgtlMarker = "_DGTL_";
     const dgtlIndex = name.indexOf(dgtlMarker, regionMatch.index);
     if (dgtlIndex !== -1) startOfDesc = dgtlIndex + dgtlMarker.length;
 
-    const endOfDesc = name.indexOf("_" + sizeMatch[0]);
+    const endOfDesc = name.indexOf("_" + size);
 
     if (endOfDesc > startOfDesc) {
       const middlePart = name.substring(startOfDesc, endOfDesc);
