@@ -565,9 +565,30 @@ interface FilenameMeta {
   region: string;
 }
 
+/**
+ * The size token, and ONLY when it is a token.
+ *
+ * `/(\d+x\d+)/` takes the first match in the string, and a site name can
+ * contain that shape: FID_INTL_TVSpot_DOOH_Hoyts3x3_1920x1080_30s_NZ_V01.mov
+ * parsed as 3x3, which is a real deliverable and it failed the import of every
+ * component selected with it. A grid, a wall, a bank of screens -- "3x3",
+ * "4x3", "2x2" -- all read as resolutions.
+ *
+ * sanitiseSiteToken defuses this when the toolbox WRITES a name, but names
+ * already on disk were written by people, so the readers have to hold their end
+ * up too. Delimited first: a size sits between underscores or at either end of
+ * the name, while a collision is welded to letters. The loose match is kept as
+ * a fallback so nothing that parsed before stops parsing now.
+ */
+export function firstSizeToken(name: string): string {
+  const delimited = String(name || "").match(/(?:^|_)(\d+x\d+)(?:px)?(?=_|\.|$)/i);
+  if (delimited) return delimited[1];
+  const loose = String(name || "").match(/(\d+x\d+)(?:px)?/i);
+  return loose ? loose[1] : "";
+}
+
 export function parseFilenameMeta(name: string): FilenameMeta {
   const artworkTypes = ["DOOH", "DFOH", "DINTH", "FOH"];
-  const regSize = /(\d+x\d+)(?:px)?/;
   const regDur = /(\d+)s(?:ec)?/;
   const regTerPart = /_([A-Z]{2})(?:_|$)/;
   const regVPart = /(V\d+)/;
@@ -588,8 +609,7 @@ export function parseFilenameMeta(name: string): FilenameMeta {
     filmTitle = name.substring(0, regionMatch.index);
   }
 
-  const sizeMatch = name.match(regSize);
-  if (sizeMatch) size = sizeMatch[1];
+  size = firstSizeToken(name);
 
   const durMatch = name.match(regDur);
   if (durMatch) duration = durMatch[1] + "sec";
@@ -2565,8 +2585,9 @@ function mcItParseFilename(filename: string): McItParsed {
   if (finalTokens.length > 1 && /^[A-Z]{2}$/.test(finalTokens[finalTokens.length - 1])) finalTokens.pop();
 
   const firstOne = finalTokens.join("_").toUpperCase();
-  const resMatch = filename.match(/\d+x\d+/i);
-  const thirdOne = resMatch ? resMatch[0] : "";
+  // Delimited first, for the same reason as firstSizeToken: a "3x3" welded
+  // into a site name is not this file's resolution.
+  const thirdOne = firstSizeToken(filename);
   const pngNumberMatch = filename.match(/\d+\./);
   const pngNumber = pngNumberMatch ? pngNumberMatch[0].replace(".", "") : "";
 
