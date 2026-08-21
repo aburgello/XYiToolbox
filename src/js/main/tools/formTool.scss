@@ -1882,8 +1882,39 @@
         gap: 6px;
         align-items: center;
 
+        // The typed creative and its way back to the list, as one cell.
+        > .specs-build-custom-wrap {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            min-width: 0;
+
+            > .specs-build-custom { flex: 1; min-width: 0; }
+        }
+
+        .specs-build-pick {
+            flex: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 22px;
+            height: 28px;
+            border-radius: 6px;
+            color: #999;
+            background: var(--ov-bg, #1e1e1e);
+            border: 1px solid var(--surface-edge, #3a3a3a);
+            cursor: pointer;
+
+            // index.scss's global button:hover/:active would otherwise paint
+            // this blue.
+            &:hover { background: rgba(255, 255, 255, 0.07); color: #ddd; }
+            &:active { background: rgba(255, 255, 255, 0.1); color: #ddd; }
+        }
+
         > input[type="number"],
         > .specs-build-site,
+        > .specs-build-custom-wrap > .specs-build-custom,
         > .specs-build-custom {
             background: var(--ov-bg, #1e1e1e);
             border: 1px solid var(--surface-edge, #3a3a3a);

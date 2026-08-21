@@ -88,11 +88,14 @@ import turkGif from "../../assets/happy_shock_2.gif";
 import "../shared.scss";
 import "./Toolset.scss";
 
-// Turk It celebrates crossing V03 -- reuses the exact overlay markup/CSS
+// Turk It celebrates crossing V05 -- reuses the exact overlay markup/CSS
 // classes (.logo-easter-egg-overlay/-gif, main.scss) the logo click
 // easter egg already established, rather than inventing a second
 // full-panel-gif pattern for what's visually the same thing.
-const TURK_IT_CELEBRATION_THRESHOLD = 3;
+//
+// Raised from V03: a fourth version is an ordinary day, and a celebration that
+// fires on an ordinary day stops being one.
+const TURK_IT_CELEBRATION_THRESHOLD = 5;
 
 export interface ActionResult {
     success: boolean;

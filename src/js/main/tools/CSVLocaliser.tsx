@@ -2503,15 +2503,42 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                         options={ARTWORK_TYPES.map((a) => ({ value: a, label: a }))}
                                     />
                                     {r.creative === CUSTOM_CREATIVE ? (
-                                        <input
-                                            className="specs-build-custom"
-                                            type="text"
-                                            placeholder="Creative name"
-                                            value={r.custom}
-                                            autoFocus
-                                            onChange={(e) => updateBuildRow(r.id, { custom: e.target.value })}
-                                            onBlur={(e) => { if (!e.target.value.trim()) updateBuildRow(r.id, { creative: "" }); }}
-                                        />
+                                        // A TYPED CREATIVE KEEPS THE LIST BESIDE IT.
+                                        //
+                                        // Rows arriving from Wrike come in as custom, because a
+                                        // subtask name is whatever somebody typed there --
+                                        // "MultipleArt" and the like. That used to leave the row as
+                                        // a bare text box with no way back to the campaign's real
+                                        // creatives without clearing it first. The button swaps to
+                                        // the list; typing over the top still wins, which is the
+                                        // case that has to keep working.
+                                        <div className="specs-build-custom-wrap">
+                                            <input
+                                                className="specs-build-custom"
+                                                type="text"
+                                                placeholder="Creative name"
+                                                value={r.custom}
+                                                autoFocus
+                                                onChange={(e) => updateBuildRow(r.id, { custom: e.target.value })}
+                                                onBlur={(e) => { if (!e.target.value.trim()) updateBuildRow(r.id, { creative: "" }); }}
+                                            />
+                                            {buildCreatives.length > 0 && (
+                                                <Tooltip text={`Pick from the ${buildCreatives.length} creatives in this campaign instead`}>
+                                                    <button
+                                                        type="button"
+                                                        className="specs-build-pick"
+                                                        onClick={() => updateBuildRow(r.id, {
+                                                            creative: buildCreatives.indexOf(r.custom.trim()) !== -1
+                                                                ? r.custom.trim()
+                                                                : "",
+                                                            custom: "",
+                                                        })}
+                                                    >
+                                                        <ChevronDown size={11} />
+                                                    </button>
+                                                </Tooltip>
+                                            )}
+                                        </div>
                                     ) : (
                                         <Dropdown
                                             value={r.creative}
