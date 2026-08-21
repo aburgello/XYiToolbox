@@ -96,6 +96,29 @@ so this whole class of bug is structurally invisible in browser preview.
   `artwork.ts`'s `decodeName()`/`foldAccents()` do both; `team.ts` and
   `tools.ts` decode but do not fold. Czechia, Poland and Serbia are all one
   accented site name away from this.
+- **An EFFECT'S POINT PROPERTIES ARE WRITE-ONLY.** `setValue` and
+  `setValueAtTime` work on Corner Pin, Bezier Warp and CC Cylinder; READING one
+  back throws `invalid numeric result (divide by zero?)`, from `.value` and
+  `valueAtTime` alike, and so does any compound param (CC Cylinder's Position,
+  Rotation, Light). So a tool that places geometry must OWN it — the panel is
+  the only copy, AE is written to and never asked. Do not build a "read the
+  comp back into the panel" feature on these without probing first.
+- **Masks apply in LAYER space, BEFORE effects; layer Scale applies AFTER
+  them.** A mask on a corner-pinned layer is warped along with the picture, so
+  composing a mask with a warp means precomping the warped layer and masking
+  THAT (`insitu.ts`'s `<Face> SHAPE`). The same ordering is what lets a wrapped
+  CC Cylinder be scaled up to fill its own comp.
+- **A scripted Puppet pin is not a pin.** `ADBE FreePin3`, its Mesh Atom and its
+  PosPin Atoms all add successfully and every `canAddProperty` says yes — but a
+  scripted pin has `Vtx Index -1` and the first `setValue` on its position
+  throws. The mesh is UI-only. Anything puppet-shaped must start from pins an
+  artist placed (`puppeteer.ts` refuses to rig an unbound one).
+- **Effect matchNames, measured rather than assumed:** Bezier Warp is
+  `ADBE BEZMESH` (`ADBE Bezier Warp` is refused); CC Power Pin's corners start
+  at `-0002`, not `-0001`; CC Cylinder at Radius 100 covers `0.321` of its
+  layer's width (1/PI — the width IS the circumference) and leaves the height
+  untouched. Numbers like these come from rendering a frame and reading it
+  back, never from reasoning.
 - **Never walk a property tree upward via `propertyGroup(1)` in a collector** —
   it returns the PARENT and blows up exponentially. This froze AE solid once.
 - Return `{success, error}` shapes; never throw across the bridge.
@@ -205,6 +228,17 @@ confirm raised by a palette action still wins.
 (`home` | `category` | `tool`); `backTo` carries the previous screen.
 
 - `localise` → `screens/LocaliseScreen.tsx` (bespoke)
+- **Bespoke has THREE modes**, chosen once at the door: `multi` (equal-panel
+  tiling), `regions` (masters placed on a traced board) and `insitu` (the build
+  on a photo of the site). Insitu takes the whole page from
+  `tools/InsituBoard.tsx` and shares none of the region machinery — a quad over
+  a photograph has no board size, no guides and no running order, and threading
+  a third value through forty `mode === "multi"` branches would put a third
+  meaning on every one of them.
+- **One screen, one library card.** A `BespokeTemplate` can carry BOTH a region
+  layout and an `insitu` payload (faces as a JSON string, per the bridge rule),
+  so a screen laid out either way shows up in both boards with the same
+  filtering. Never start a second library for a second kind of layout.
 - `tools` → `screens/ToolsScreen.tsx` → `RailScreen`
 - `review` → jumps straight to the `review-hub` tool
 - `deliver` → jumps straight to the `delivery-hub` tool
@@ -357,6 +391,16 @@ token of the form `<≤2 digits>x<≤2 digits>` and nothing else. Dropping it is
 safe because the ratio is redundant with the size beside it; a SIZE (three
 digits and up) is never dropped, so two deliverables can still never collide.
 
+**A SIZE IS ONLY A SIZE WHEN IT IS A TOKEN.** `/(\d+x\d+)/` takes the FIRST
+match in a filename, and site names carry that shape — a grid, a wall, a bank of
+screens: `Hoyts3x3`, `Westfield4x3`, `2x2`. `FID_INTL_TVSpot_DOOH_Hoyts3x3_
+1920x1080_30s_NZ_V01.mov` parsed as `3x3` and failed Delivery's import of every
+component selected with it; MCit had the same bug on the same shape, where it
+silently swapped nothing. Read a size only where it is delimited — between
+underscores or at either end, optional `px` — via `firstSizeToken` (`tools.ts`).
+`sanitiseSiteToken`/`guardSiteToken` defuse this when the toolbox WRITES a name;
+the readers have to hold their end up for names people wrote themselves.
+
 **The masters tree is a SIBLING CAMPAIGN, and art edits live in `Tiffs` OR
 `Edit`.** `XY026040_…_Markets` holds the territories; `XY026039_…_Masters` holds
 `Support/Motion_Components`. Find it by testing each level's siblings for that
@@ -407,6 +451,21 @@ creatives have neither folder — an empty list is a normal answer, not a fault.
   a comment as fact.
 - **Browser preview never runs ExtendScript.** Anything ExtendScript-only needs
   a real-AE pass before you call it done.
+- **DRIVE THE BUILT BUNDLE INSIDE AE — it is the only gate `src/jsx` has.**
+  `osascript -e 'tell application "Adobe After Effects 2026" to DoScriptFile
+  "…"'` with a script that does `$.evalFile(dist/cep/jsx/index.js)`, calls the
+  real exports, and writes its answer to a temp file. Two bugs shipped in one
+  day for want of this: a `compId` added to the wrong function's return, and a
+  `sizeMatch` whose declaration was deleted while two later lines still used it.
+  Both compiled clean, and `yarn build` says nothing about either.
+- **For geometry, RENDER A FRAME AND LOOK AT IT.** `comp.saveFrameToPng(0,
+  file)` is how every corner-pin, warp, drum and mask in `insitu.ts` was
+  confirmed — and how three separate "it builds fine" claims turned out to be
+  wrong. A build that returns `success: true` has proved nothing about where
+  the picture landed.
+- **A probe must clean up after itself.** These run against whatever project
+  the artist has open: create into a throwaway comp, remove everything you
+  made, never `save()`, and check the item count afterwards.
 - Don't re-flag the `AnimatePresence`/rAF stall in an automated preview tab as a
   bug — inspect React state directly, or trust a real foregrounded browser.
 - Verify low-alpha colours and layout via computed style, not screenshots.
@@ -439,6 +498,12 @@ tree for exercising real scan/reveal paths inside AE.
 (unhooked on request), `tools/DeliveryChecklist.tsx` (superseded by
 DeliveryHub), `tools/Placeholder.tsx` (`makePlaceholder` now has zero call
 sites), `screens/CategoryScreen.tsx` (unreachable fallback).
+
+**Recent, and easy to mistake for orphaned:** `tools/Puppeteer.tsx` +
+`jsx/aeft/puppeteer.ts` (registered in `TOOLS`, Tools category),
+`tools/InsituBoard.tsx` + `jsx/aeft/insitu.ts` (reached ONLY through Bespoke's
+mode chooser, so it has no registry entry of its own), and
+`main/lib/detectShapes.ts` (used by both boards' Detect).
 
 **Genuinely orphaned, no live front door:** `tools/TrueCompDuplicator.tsx`
 (backend still maintained and reachable from the Toolset grid),
