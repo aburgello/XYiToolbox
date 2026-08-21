@@ -2330,3 +2330,23 @@
         transform: none;
     }
 }
+
+// Tracing a region by its corners.
+.bsp-canvas.is-tracing { cursor: crosshair; }
+
+.bsp-tracept {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    margin: -8px 0 0 -8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    border-radius: 50%;
+    color: #08110f;
+    background: #ffd24a;
+    border: 1px solid #6b5410;
+    pointer-events: none;
+    z-index: 3;
+}

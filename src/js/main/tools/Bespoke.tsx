@@ -28,7 +28,7 @@
 // step. Shipping a Build button that guessed would be worse than not having one.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { AlertCircle, ChevronRight, Copy, Frame, Globe2, Image as ImageIcon, Layers, LayoutGrid, Library, Pause, Play, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, RotateCcw, Search, Square as SquareIcon, Trash2, X } from "lucide-react";
+import { AlertCircle, ChevronRight, Copy, Crosshair, Frame, Globe2, Image as ImageIcon, Layers, Wand2, LayoutGrid, Library, Pause, Play, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, RotateCcw, Search, Square as SquareIcon, Trash2, X } from "lucide-react";
 import { csi, evalTS } from "../../lib/utils/bolt";
 import { deriveMastersFromMarkets } from "../lib/mastersRoot";
 import InsituBoard from "./InsituBoard";
@@ -44,6 +44,7 @@ import CheckboxToggle from "../CheckboxToggle";
 import LoadingChatter from "../LoadingChatter";
 import ScreenLibrary, { ScreenEntry } from "./ScreenLibrary";
 import { confirmDialog } from "../Dialog";
+import { detectShapes } from "../lib/detectShapes";
 import "../shared.scss";
 import "./Bespoke.scss";
 
@@ -646,6 +647,11 @@ export const BespokeTool = () => {
     // creative, so editing it once should show up everywhere. Duplicating is
     // the opt-in, for when panels genuinely need to differ.
     const [duplicatePanels, setDuplicatePanels] = useState(false);
+    // A bespoke is assembled from MASTERS, which are the OV files, so a board
+    // built for Italy arrives full of English artwork. When the country's own
+    // build of a master already exists -- and by this point in a job it nearly
+    // always does -- that is the thing that should go in.
+    const [useLocalised, setUseLocalised] = useState(false);
 
     // TWO MODES. Multi Art is the equal-panel tiling that ships today; Bespoke
     // places a master anywhere on the canvas, traced over the deliverable's own
@@ -1777,6 +1783,125 @@ export const BespokeTool = () => {
         setSelRegion(regions.length);
     };
 
+    /**
+     * FOUR CLICKS, ONE REGION.
+     *
+     * Detection answers a spec sheet full of separate panels. It cannot answer
+     * an arch, because the whole chevron is one connected shape and a box round
+     * it is a box with two triangles of somebody else's artwork in it. Tracing
+     * the corners is the answer there, and it is the same gesture the in-situ
+     * board already uses.
+     *
+     * STRAIGHT SIDES, ALWAYS. The four points say where the region is and how
+     * big, never which way it leans: a Bespoke region is an upright window by
+     * design, and anything on a slant is angled later by other means. So the
+     * points are read as a bounding box, and a sloppy fourth click costs a few
+     * pixels of size rather than tilting the whole thing.
+     */
+    const [tracePts, setTracePts] = useState<{ x: number; y: number }[]>([]);
+    const [tracing, setTracing] = useState(false);
+
+    const regionFromTrace = (pts: { x: number; y: number }[]) => {
+        const master = regions.length
+            ? regions[Math.min(selRegion, regions.length - 1)].master
+            : (masters || [])[0];
+        if (!master) { setStatus({ text: "Pick a master first — every region needs one.", type: "error" }); return; }
+
+        const xs = pts.map((p) => p.x);
+        const ys = pts.map((p) => p.y);
+        const minX = Math.min(xs[0], xs[1], xs[2], xs[3]);
+        const maxX = Math.max(xs[0], xs[1], xs[2], xs[3]);
+        const minY = Math.min(ys[0], ys[1], ys[2], ys[3]);
+        const maxY = Math.max(ys[0], ys[1], ys[2], ys[3]);
+        const w = Math.max(1, Math.round(maxX - minX));
+        const h = Math.max(1, Math.round(maxY - minY));
+
+        setRegions((prev) => prev.concat([{
+            id: nextSegId++,
+            master,
+            rotation: 0,
+            x: Math.round(minX),
+            y: Math.round(minY),
+            w,
+            h,
+        }]));
+        setSelRegion(regions.length);
+        setTracePts([]);
+        setStatus({ text: `Region traced, ${w}×${h}.`, type: "success" });
+    };
+
+    /**
+     * Reads the reference and proposes a region for every shape in it.
+     *
+     * A spec sheet is a drawing of the regions: flat background, solid panels,
+     * every one of them already the right shape in the right place. Tracing
+     * them by hand is copying a drawing that is sitting in front of you.
+     *
+     * QUARTER TURNS ONLY, because that is what a region is (see Region.rotation
+     * above). A panel drawn at 3 degrees comes back axis-aligned and slightly
+     * wrong rather than rotated and slightly wrong -- so anything genuinely on
+     * an angle is reported as needing a hand, not quietly squared off.
+     */
+    const detectRegions = async () => {
+        if (!refPath) { setStatus({ text: "No reference image to read.", type: "error" }); return; }
+        const cw = Number(canvasW) || 0;
+        const ch = Number(canvasH) || 0;
+        if (!cw || !ch) { setStatus({ text: "Set the canvas size first — the shapes are scaled onto it.", type: "error" }); return; }
+        const master = regions.length ? regions[Math.min(selRegion, regions.length - 1)].master : (masters || [])[0];
+        if (!master) { setStatus({ text: "Pick a master first — every region needs one.", type: "error" }); return; }
+
+        try {
+            const found = await detectShapes(refPath);
+            if (!found.shapes.length) {
+                setStatus({ text: `Nothing to propose — ${found.why || "no shapes found"}.`, type: "error" });
+                return;
+            }
+            // The reference is rarely the canvas's size, and only its ASPECT is
+            // trusted elsewhere, so the shapes are scaled by width and height
+            // independently onto the board.
+            const kx = cw / (found.imageW || cw);
+            const ky = ch / (found.imageH || ch);
+
+            let angled = 0;
+            const made: Region[] = [];
+            for (let i = 0; i < found.shapes.length; i++) {
+                const c = found.shapes[i].corners;
+                const xs = [c[0][0], c[1][0], c[2][0], c[3][0]];
+                const ys = [c[0][1], c[1][1], c[2][1], c[3][1]];
+                const minX = Math.min(xs[0], xs[1], xs[2], xs[3]);
+                const maxX = Math.max(xs[0], xs[1], xs[2], xs[3]);
+                const minY = Math.min(ys[0], ys[1], ys[2], ys[3]);
+                const maxY = Math.max(ys[0], ys[1], ys[2], ys[3]);
+
+                // How far off square is the top edge? Anything past a couple of
+                // degrees is a shape this cannot honestly express.
+                const dx = c[1][0] - c[0][0];
+                const dy = c[1][1] - c[0][1];
+                const deg = Math.abs(Math.atan2(dy, dx) * 180 / Math.PI);
+                if (deg > 2 && deg < 178) angled++;
+
+                made.push({
+                    id: nextSegId++,
+                    master,
+                    rotation: 0,
+                    x: Math.round(minX * kx),
+                    y: Math.round(minY * ky),
+                    w: Math.max(1, Math.round((maxX - minX) * kx)),
+                    h: Math.max(1, Math.round((maxY - minY) * ky)),
+                });
+            }
+            setRegions((prev) => prev.concat(made));
+            setSelRegion(regions.length);
+            setStatus({
+                text: `${made.length} region${made.length === 1 ? "" : "s"} from the reference, all on ${master.name}.` +
+                    (angled ? ` ${angled} sit${angled === 1 ? "s" : ""} on an angle — regions only do quarter turns, so those need a hand.` : ""),
+                type: angled ? "error" : "success",
+            });
+        } catch {
+            setStatus({ text: "Couldn't read that reference's pixels.", type: "error" });
+        }
+    };
+
     /** The same region, centred where the cursor let go of it. */
     const addRegionAt = (m: BespokeMaster, clientX: number, clientY: number) => {
         const rect = stageRef.current ? stageRef.current.getBoundingClientRect() : null;
@@ -2611,6 +2736,7 @@ export const BespokeTool = () => {
                 seconds: Number(runtime) || 0,
                 name: outName.trim(),
                 marketsRoot, territory, batch: batch.trim(),
+                useLocalised,
                 regions: regions.map((r) => ({ path: r.master.path, x: r.x, y: r.y, w: r.w, h: r.h, rotation: r.rotation || 0 })),
                 // The reference and the rulers travel with the plan so the
                 // built comp opens looking like the panel it was traced in.
@@ -3148,6 +3274,25 @@ export const BespokeTool = () => {
                         </button>
                     </Tooltip>
                 )}
+                {mode === "regions" && (
+                    <Tooltip text={tracing
+                        ? `Click the four corners. ${tracePts.length} of 4.`
+                        : "Trace a region by clicking its four corners, instead of dragging one into place."}>
+                        <button
+                            className={"bsp-btn bsp-btn--ghost bsp-btn--icon" + (tracing ? " is-on" : "")}
+                            onClick={() => { setTracing((v) => !v); setTracePts([]); }}
+                        >
+                            <Crosshair size={12} />
+                        </button>
+                    </Tooltip>
+                )}
+                {mode === "regions" && refPath && (
+                    <Tooltip text="Read the reference and propose a region for every shape in it. Flat-colour spec sheets only — it says so and proposes nothing on a photograph.">
+                        <button className="bsp-btn bsp-btn--ghost bsp-btn--icon" onClick={detectRegions}>
+                            <Wand2 size={12} />
+                        </button>
+                    </Tooltip>
+                )}
                 <Tooltip text="Re-read the masters folder">
                     <button className="bsp-btn bsp-btn--ghost bsp-btn--icon" onClick={() => load(mastersPath)} disabled={loading || !mastersPath}>
                         <RefreshCw size={12} className={loading ? "spin" : ""} />
@@ -3614,8 +3759,24 @@ export const BespokeTool = () => {
                             onKeyDown={onBoardKey}
                         />
                     <div
-                        className={"bsp-canvas" + (masterDrag && masterDrag.over ? " is-drop" : "")}
+                        className={"bsp-canvas" + (masterDrag && masterDrag.over ? " is-drop" : "") + (tracing ? " is-tracing" : "")}
                         ref={stageRef}
+                        onMouseDown={(e) => {
+                            if (!tracing) return;
+                            const rect = stageRef.current ? stageRef.current.getBoundingClientRect() : null;
+                            if (!rect || !rect.width || !rect.height) return;
+                            const cw = Number(canvasW) || 1920;
+                            const ch = Number(canvasH) || 1080;
+                            const at = {
+                                x: ((e.clientX - rect.left) / rect.width) * cw,
+                                y: ((e.clientY - rect.top) / rect.height) * ch,
+                            };
+                            const next = tracePts.concat([at]);
+                            // Clockwise from the top left, and the fourth click
+                            // finishes it -- no button to find afterwards.
+                            if (next.length === 4) { regionFromTrace(next); setTracing(false); return; }
+                            setTracePts(next);
+                        }}
                         // Measured: an explicit rectangle, no ratio trick.
                         // Unmeasured (first paint): fall back to the padding-box
                         // ratio so the board still appears at the right shape
@@ -3624,6 +3785,17 @@ export const BespokeTool = () => {
                             ? { width: `${stageBox.w}px`, height: `${stageBox.h}px`, paddingBottom: 0 }
                             : { width: "100%", paddingBottom: `${((Number(canvasH) || 1080) / (Number(canvasW) || 1920)) * 100}%` }}
                     >
+                        {tracing && tracePts.map((p, i) => (
+                            <div
+                                key={`tp${i}`}
+                                className="bsp-tracept"
+                                style={{
+                                    left: `${(p.x / (Number(canvasW) || 1920)) * 100}%`,
+                                    top: `${(p.y / (Number(canvasH) || 1080)) * 100}%`,
+                                }}
+                            >{i + 1}</div>
+                        ))}
+
                         {/* file:// because the panel is itself a file:// page --
                             CEP has no server to fetch a local image through. */}
                         {refPath && (
@@ -3863,6 +4035,13 @@ export const BespokeTool = () => {
                                         <b>From the open comp</b>
                                         <span>Its layers become the regions</span>
                                     </button>
+                                    {refPath && (
+                                        <button className="bsp-route" onClick={detectRegions}>
+                                            <Wand2 size={17} />
+                                            <b>Read the reference</b>
+                                            <span>Its shapes become the regions</span>
+                                        </button>
+                                    )}
                                     {libraryReadable && (
                                         <button className="bsp-route" onClick={() => setLibraryOpen(true)}>
                                             <Library size={17} />
@@ -4578,6 +4757,23 @@ export const BespokeTool = () => {
                             </button>
                         )}
                     </div>
+                )}
+                {/* THE COUNTRY'S OWN BUILD, when one exists. Only offered with
+                    a country set, because without one there is nowhere to look.
+                    Off by default: it changes which file lands in the board,
+                    which is not something to do quietly. */}
+                {mode === "regions" && territory !== "" && (
+                    <Tooltip text={useLocalised
+                        ? `Looks in ${territory}/AE for each master's own localised build, matched on creative and ratio. Falls back to the master when there isn't one, and the report says which was which.`
+                        : `Builds from the OV masters. Tick this to use ${territory}'s own builds where they exist.`}>
+                        <span className="bsp-toggle">
+                            <CheckboxToggle
+                                checked={useLocalised}
+                                onChange={setUseLocalised}
+                                label={`Use ${territory}'s localised builds`}
+                            />
+                        </span>
+                    </Tooltip>
                 )}
                 <Tooltip text={mode === "regions"
                     ? (regions.length ? "Import the masters and assemble the regions" : "Add a region first")

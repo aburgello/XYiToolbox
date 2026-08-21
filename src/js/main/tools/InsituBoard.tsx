@@ -27,6 +27,7 @@ import { csi, evalTS } from "../../lib/utils/bolt";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
 import ScreenLibrary, { ScreenEntry } from "./ScreenLibrary";
+import { detectShapes } from "../lib/detectShapes";
 import "./InsituBoard.scss";
 
 export interface InsituMaster { path: string; name: string; width: number; height: number }
@@ -79,6 +80,9 @@ export interface Face {
     cylinderRotation: number;
     /** How many degrees of the drum the artwork covers. */
     cylinderWrap: number;
+    /** The real outline, when Detect found one worth keeping. Built as a mask
+     *  rather than a warped quad -- see insitu.ts. */
+    outline: [number, number][];
     opacity: number;
     blend: string;
 }
@@ -262,6 +266,7 @@ function newFace(id: number, w: number, h: number, name: string): Face {
         sourceId: 0, sourceName: "", masterPath: "",
         wrapDeg: 0, bulge: 0.14,
         cylinder: false, cylinderRadius: 100, cylinderRotation: 0, cylinderWrap: 180,
+        outline: [],
         opacity: 100, blend: "normal",
     };
 }
@@ -1363,6 +1368,73 @@ const InsituBoard: React.FC<Props> = ({
         }
     };
 
+    /**
+     * Proposes a face for every shape it can find in the plate.
+     *
+     * Only ever an offer: the shapes land as ordinary faces with ordinary
+     * handles, so a corner that came out two pixels wide of the mark is
+     * nudged like any other.
+     */
+    const detect = async () => {
+        if (!plate || !backdrop) return;
+        setBusy(true);
+        try {
+            const found = await detectShapes(backdrop);
+            if (found.shapes.length === 0) {
+                say(`Nothing to propose — ${found.why || "no shapes found"}.`, "error");
+                return;
+            }
+            let id = faces.reduce((m, f) => Math.max(m, f.id), 0);
+            const made: Face[] = found.shapes.map((sh) => {
+                id += 1;
+                const base = newFace(id, plate.w, plate.h, `Face ${id}`);
+                const [ul, ur, lr, ll] = sh.corners;
+                // A SHAPE THAT ISN'T A QUAD KEEPS ITS OUTLINE. An arch, an
+                // L-shaped facade or anything with a bite out of it builds as
+                // a mask; a plain rectangle has nothing to gain from one.
+                if (!sh.complex) {
+                    return fixCells({ ...base, grid: [[ul, ur], [ll, lr]], outline: [] });
+                }
+                // A MASKED FACE IS PLACED TO ITS OUTLINE'S BOX, not to the four
+                // extreme corners. The mask keeps everything inside the
+                // outline, and an outline reaches past its own quad wherever it
+                // curves -- a rounded cap sits above the corners it replaces --
+                // so a quad-sized piece of artwork leaves the plate showing
+                // through in exactly those places.
+                let minX = sh.outline[0][0];
+                let maxX = minX;
+                let minY = sh.outline[0][1];
+                let maxY = minY;
+                for (let i = 1; i < sh.outline.length; i++) {
+                    if (sh.outline[i][0] < minX) minX = sh.outline[i][0];
+                    if (sh.outline[i][0] > maxX) maxX = sh.outline[i][0];
+                    if (sh.outline[i][1] < minY) minY = sh.outline[i][1];
+                    if (sh.outline[i][1] > maxY) maxY = sh.outline[i][1];
+                }
+                return fixCells({
+                    ...base,
+                    grid: [
+                        [[minX, minY], [maxX, minY]],
+                        [[minX, maxY], [maxX, maxY]],
+                    ],
+                    outline: sh.outline,
+                });
+            });
+            remember(faces);
+            setFaces((prev) => prev.concat(made));
+            setSel(faces.length);
+            setSelCell([0, 0]);
+            const masked = made.filter((f) => f.outline.length > 0).length;
+            say(`${made.length} shape${made.length === 1 ? "" : "s"} found` +
+                (masked ? `, ${masked} kept as an outline mask` : "") +
+                ". Check the corners, then give each one its artwork.", "success");
+        } catch {
+            say("Couldn't read that plate's pixels.", "error");
+        } finally {
+            setBusy(false);
+        }
+    };
+
     const build = async () => {
         if (!plate) { say("Pick a backdrop first.", "error"); return; }
         setBusy(true);
@@ -1380,7 +1452,7 @@ const InsituBoard: React.FC<Props> = ({
                     masterPath: f.masterPath, sourceId: f.sourceId,
                     wrapDeg: f.wrapDeg, cylinder: f.cylinder,
                     cylinderRadius: f.cylinderRadius, cylinderRotation: f.cylinderRotation,
-                    cylinderWrap: f.cylinderWrap,
+                    cylinderWrap: f.cylinderWrap, outline: f.outline,
                     name: f.name, opacity: f.opacity, blend: f.blend,
                 }))),
             }))) as unknown as { success: boolean; error?: string; faces?: number; missing?: string[] } | undefined;
@@ -1466,6 +1538,9 @@ const InsituBoard: React.FC<Props> = ({
                             </button>
                         </Tooltip>
                         <button className="ins-mini" onClick={undo}>Undo</button>
+                        <Tooltip text="Finds the shapes in a flat-colour plate — a spec sheet or a render — and proposes a face for each. Says so and proposes nothing when the plate is a photograph.">
+                            <button className="ins-mini" disabled={busy} onClick={detect}>Detect</button>
+                        </Tooltip>
                         <button className={"ins-mini" + (marking ? " is-on" : "")}
                             onClick={() => { setMarking((v) => !v); setMarks([]); setMarkRow(null); }}>
                             Trace
@@ -1584,7 +1659,17 @@ const InsituBoard: React.FC<Props> = ({
                             </div>
 
                             <svg className="ins-quads" viewBox={`0 0 ${plate.w} ${plate.h}`} preserveAspectRatio="none">
-                                {faces.map((f, fi) => f.cells.map((row, r) => row.map((_, c) => (
+                                {/* A masked face draws its real outline, because
+                                    that is what will be built. */}
+                                {faces.map((f, fi) => (f.outline.length >= 3 ? (
+                                    <path
+                                        key={`out-${f.id}`}
+                                        className={"ins-quad" + (fi === sel ? " is-on is-seg" : "")}
+                                        d={`M ${f.outline.map((p) => `${p[0]},${p[1]}`).join(" L ")} Z`}
+                                        onMouseDown={() => { setSel(fi); setSelSide(null); }}
+                                    />
+                                ) : null))}
+                                {faces.map((f, fi) => (f.outline.length >= 3 ? null : f.cells.map((row, r) => row.map((_, c) => (
                                     <path
                                         key={`${f.id}-${r}-${c}`}
                                         className={"ins-quad" + (fi === sel ? " is-on" : "") +
@@ -1592,7 +1677,7 @@ const InsituBoard: React.FC<Props> = ({
                                         d={cellPath(f, r, c)}
                                         onMouseDown={() => { setSel(fi); setSelCell([r, c]); setSelSide(null); }}
                                     />
-                                ))))}
+                                )))))}
                                 {/* THE FOUR SIDES, thick and clickable. Highlighting
                                     one is how you say which way the next point
                                     should divide the face. */}
@@ -1822,6 +1907,14 @@ const InsituBoard: React.FC<Props> = ({
                                             <span>° turn</span>
                                         </label>
                                     </>
+                                )}
+                                {face.outline.length > 0 && (
+                                    <Tooltip text={`Built as a mask of the traced outline, ${face.outline.length} points. Drop it to go back to a four-corner quad.`}>
+                                        <button className="ins-btn ins-btn--ghost" disabled={busy}
+                                            onClick={() => patch({ outline: [] })}>
+                                            Outline mask ({face.outline.length}) ✕
+                                        </button>
+                                    </Tooltip>
                                 )}
                                 {face.cells[0] && face.cells[0][0] && face.cells[0][0].curved && (
                                     <button className="ins-btn ins-btn--ghost" disabled={busy}

@@ -115,6 +115,17 @@ export interface InsituFace {
   cylinderRotation: number;
   /** How many degrees of the drum the artwork actually covers. */
   cylinderWrap: number;
+  /**
+   * THE FACE'S REAL OUTLINE, in comp coordinates, when it has one.
+   *
+   * A chevron arch is not a quadrilateral, and a quad around it spills artwork
+   * over the gap in the middle. Given an outline, the layer is placed to the
+   * face's bounding box and MASKED to the outline instead of being warped:
+   * masks apply in layer space, before effects, so a mask on a corner-pinned
+   * layer would be warped along with the picture. Fitting rather than pinning
+   * is what keeps the mask meaning what it says.
+   */
+  outline: number[][];
   /** What to call the layer. */
   name: string;
   opacity: number;
@@ -269,6 +280,74 @@ function artworkComp(face: InsituFace, source: any, secs: number, fps: number): 
   } finally {
     app.endUndoGroup();
   }
+}
+
+/**
+ * Puts a built face into the in-situ and cuts it to its traced outline.
+ *
+ * The comp is the same size as the in-situ, so its layer sits at the origin
+ * unscaled and the outline's comp coordinates ARE its layer coordinates --
+ * no conversion, nothing to get wrong.
+ */
+function maskFaceComp(into: CompItem, faceComp: CompItem, face: InsituFace, outline: number[][]): void {
+  const lay = into.layers.add(faceComp);
+  lay.name = String(face.name || "Face");
+  lay.moveToBeginning();
+  const tr = lay.property("ADBE Transform Group") as PropertyGroup;
+  (tr.property("ADBE Anchor Point") as Property).setValue([0, 0]);
+  (tr.property("ADBE Position") as Property).setValue([0, 0]);
+  if (Number(face.opacity) >= 0) {
+    (tr.property("ADBE Opacity") as Property).setValue(Number(face.opacity));
+  }
+  (lay as any).blendingMode = blendMode(face.blend);
+
+  const verts: number[][] = [];
+  for (let i = 0; i < outline.length; i++) {
+    verts.push([Number(outline[i][0]), Number(outline[i][1])]);
+  }
+
+  // SMOOTH WHERE IT CURVES, SHARP WHERE IT TURNS.
+  //
+  // A traced outline is a polygon, so a rounded cap arrives as a fan of short
+  // straight segments visibly trying to be a curve. AE masks carry tangents,
+  // so each vertex gets a Catmull-Rom handle -- which leaves collinear points
+  // dead straight, bends the sampled curves properly, and is skipped at a real
+  // corner, where a handle would round off something that should stay square.
+  const inT: number[][] = [];
+  const outT: number[][] = [];
+  const CORNER_TURN = Math.cos(35 * Math.PI / 180);
+  for (let i = 0; i < verts.length; i++) {
+    const prev = verts[(i - 1 + verts.length) % verts.length];
+    const next = verts[(i + 1) % verts.length];
+    const here = verts[i];
+    const ax = here[0] - prev[0];
+    const ay = here[1] - prev[1];
+    const bx = next[0] - here[0];
+    const by = next[1] - here[1];
+    const la = Math.sqrt(ax * ax + ay * ay);
+    const lb = Math.sqrt(bx * bx + by * by);
+    let straightness = 1;
+    if (la > 0 && lb > 0) straightness = (ax * bx + ay * by) / (la * lb);
+    if (straightness < CORNER_TURN) {
+      inT.push([0, 0]);
+      outT.push([0, 0]);
+      continue;
+    }
+    const tx = (next[0] - prev[0]) / 6;
+    const ty = (next[1] - prev[1]) / 6;
+    inT.push([-tx, -ty]);
+    outT.push([tx, ty]);
+  }
+
+  const mask = (lay.property("ADBE Mask Parade") as PropertyGroup)
+    .addProperty("ADBE Mask Atom") as PropertyGroup;
+  mask.name = String(face.name || "Face") + " outline";
+  const shape = new Shape();
+  shape.vertices = verts;
+  shape.inTangents = inT;
+  shape.outTangents = outT;
+  shape.closed = true;
+  (mask.property("ADBE Mask Shape") as Property).setValue(shape);
 }
 
 /** Where each rib sits along the screen, 0..1, measured along the TOP edge.
@@ -451,6 +530,31 @@ export const insituBuild = (configJson: string): InsituResult => {
         build = artworkComp(face, build,
           Number(cfg.duration) > 0 ? Number(cfg.duration) : 10, fps);
 
+        // A MASKED FACE IS BUILT INTO ITS OWN COMP, THEN MASKED.
+        //
+        // Masks apply in layer space, before effects, so a mask on a
+        // corner-pinned layer is warped along with the picture. The first
+        // version dodged that by fitting the artwork to a bounding box instead
+        // of warping it -- which quietly threw away Round, the bezier sides and
+        // the cells for any face carrying an outline, so a traced tower came
+        // back as a flat crop of the artwork.
+        //
+        // Building the face into a comp the size of the in-situ and masking
+        // THAT layer composes properly: the warp happens inside, the mask
+        // applies to the finished result, and every control still means what
+        // it says.
+        const outline = face.outline || [];
+        const needsMask = outline.length >= 3;
+        let target = comp;
+        let faceComp: CompItem | null = null;
+        if (needsMask) {
+          faceComp = app.project.items.addComp(
+            String(face.name || "Face") + " SHAPE", comp.width, comp.height, 1,
+            Number(cfg.duration) > 0 ? Number(cfg.duration) : 10, fps);
+          faceComp.comment = INSITU_MARK;
+          target = faceComp;
+        }
+
         // EVERY FACE IS A GRID OF CELLS. One cell is the flat panel that used
         // to be the special case; the only difference is how many pieces the
         // artwork is cut into, and each cell decides for itself whether it is
@@ -482,7 +586,7 @@ export const insituBuild = (configJson: string): InsituResult => {
                 ? sliceComp(build, us[c], us[c + 1], vs[r], vs[r + 1],
                     String(face.name || "Face") + "_r" + (r + 1) + "c" + (c + 1), secs, fps, folder as FolderItem)
                 : build;
-              const cell = comp.layers.add(piece);
+              const cell = target.layers.add(piece);
               cell.name = String(face.name || "Face") + (many ? " r" + (r + 1) + "c" + (c + 1) : "");
               cell.moveToBeginning();
               const cTr = cell.property("ADBE Transform Group") as PropertyGroup;
@@ -532,6 +636,7 @@ export const insituBuild = (configJson: string): InsituResult => {
               }
             }
           }
+          if (faceComp) maskFaceComp(comp, faceComp, face, outline);
           placed++;
           continue;
         }
@@ -651,7 +756,7 @@ export const insituBuild = (configJson: string): InsituResult => {
           cylSource = drum;
         }
 
-        const lay = comp.layers.add(cylSource);
+        const lay = target.layers.add(cylSource);
         lay.name = String(face.name || build.name);
         lay.moveToBeginning();
         const lTr = lay.property("ADBE Transform Group") as PropertyGroup;
@@ -702,6 +807,7 @@ export const insituBuild = (configJson: string): InsituResult => {
           (pin.property(PIN_LL) as Property).setValue(llP);
           (pin.property(PIN_LR) as Property).setValue(lrP);
         }
+        if (faceComp) maskFaceComp(comp, faceComp, face, outline);
         placed++;
       }
 

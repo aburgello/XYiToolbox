@@ -4374,6 +4374,104 @@ export const bespokeRegionsFromComp = (): {
   }
 };
 
+/**
+ * THE COUNTRY'S OWN VERSION OF A MASTER, when it already exists.
+ *
+ * A bespoke is assembled from masters, which are the OV files -- so a board
+ * built for Italy arrives full of English artwork and somebody swaps every
+ * piece by hand afterwards. The localised deliverable is usually already
+ * sitting in <markets>/<Territory>/AE, built earlier in the same job, and it is
+ * the thing that should have gone in.
+ *
+ * MATCHED ON CREATIVE AND SHAPE, never on shape alone. The ratio is what makes
+ * a swap legitimate -- a 2390x1792 panel can stand in for a 1195x896 one -- but
+ * ratio by itself would happily drop another creative's deliverable into the
+ * board, which is the failure this codebase keeps having to design against. A
+ * candidate has to be the SAME CREATIVE and the same ratio; the closest area
+ * wins, and an exact size beats everything.
+ *
+ * Returns "" when there is nothing suitable, and the master is used unchanged.
+ */
+function bespokeIdentityOf(fileName: string): string {
+  let stem = String(fileName || "");
+  const dot = stem.lastIndexOf(".");
+  if (dot > 0) stem = stem.substring(0, dot);
+  const parts = stem.split("_");
+  const out: string[] = [];
+  const skip = ["FID", "INTL", "DGTL", "DOOH", "DINTH", "DFOH", "OV"];
+  for (let i = 0; i < parts.length; i++) {
+    const tok = parts[i];
+    if (!tok) continue;
+    // Everything up to the size token identifies the creative and the site.
+    if (/^\d{2,5}x\d{2,5}(px)?$/i.test(tok)) break;
+    let isSkip = false;
+    for (let k = 0; k < skip.length; k++) if (tok.toUpperCase() === skip[k]) isSkip = true;
+    if (isSkip) continue;
+    out.push(tok.toUpperCase().replace(/[^A-Z0-9]/g, ""));
+  }
+  return out.join("_");
+}
+
+function bespokeSizeOf(fileName: string): number[] {
+  const m = String(fileName || "").match(/(\d{2,5})x(\d{2,5})/i);
+  if (!m) return [0, 0];
+  return [Number(m[1]), Number(m[2])];
+}
+
+function bespokeLocalisedFor(marketsRoot: string, territory: string, masterPath: string): string {
+  if (!marketsRoot || !territory) return "";
+  const aeRoot = new Folder(marketsRoot + "/" + territory + "/AE");
+  // .exists on a DIRECTORY is the one team-folder test that is trustworthy.
+  if (!aeRoot.exists) return "";
+
+  const masterName = String(new File(masterPath).name);
+  const wantId = bespokeIdentityOf(masterName);
+  const masterSize = bespokeSizeOf(masterName);
+  if (!wantId) return "";
+  if (!(masterSize[0] > 0) || !(masterSize[1] > 0)) return "";
+  const wantRatio = masterSize[0] / masterSize[1];
+  const masterArea = masterSize[0] * masterSize[1];
+
+  let bestPath = "";
+  let bestScore = -1;
+
+  const walk = function (folder: Folder, depth: number): void {
+    if (depth > 3) return;
+    const kids = folder.getFiles();
+    for (let i = 0; i < kids.length; i++) {
+      const kid = kids[i] as any;
+      if (typeof kid.getFiles === "function") {
+        if (String(kid.name).charAt(0) === "_") continue;
+        if (String(kid.name).indexOf("Auto-Save") !== -1) continue;
+        walk(kid as Folder, depth + 1);
+        continue;
+      }
+      const nm = String(kid.name);
+      if (nm.length < 5) continue;
+      if (nm.substring(nm.length - 4).toLowerCase() !== ".aep") continue;
+      if (bespokeIdentityOf(nm) !== wantId) continue;
+
+      const size = bespokeSizeOf(nm);
+      if (!(size[0] > 0) || !(size[1] > 0)) continue;
+      const ratio = size[0] / size[1];
+      // Half a percent, which separates 1920x1080 from 1920x1088.
+      if (Math.abs(ratio - wantRatio) / wantRatio > 0.005) continue;
+
+      // Exact size first, then whichever is closest in area.
+      let score = 1000;
+      if (size[0] === masterSize[0] && size[1] === masterSize[1]) score = 2000;
+      else {
+        const area = size[0] * size[1];
+        const bigger = area > masterArea ? area : masterArea;
+        score = 1000 - Math.round((Math.abs(area - masterArea) / bigger) * 1000);
+      }
+      if (score > bestScore) { bestScore = score; bestPath = String(kid.fsName); }
+    }
+  };
+  walk(aeRoot, 0);
+  return bestPath;
+}
+
 export const bespokeBuildRegions = (
   planJson: string
 ): { success: boolean; error?: string; report?: string; saved?: boolean; savedTo?: string } => {
@@ -4383,6 +4481,8 @@ export const bespokeBuildRegions = (
       regions: BespokeRegion[]; name?: string;
       marketsRoot?: string; territory?: string; batch?: string;
       refPath?: string; guidesX?: number[]; guidesY?: number[];
+      /** Place the country's own build of each master where one exists. */
+      useLocalised?: boolean;
     };
     if (!plan || !plan.regions || plan.regions.length === 0) {
       return { success: false, error: "Nothing to build -- add a region first." };
@@ -4401,8 +4501,25 @@ export const bespokeBuildRegions = (
       // One import per master, however many regions use it -- same rule as the
       // tiled mode, for the same reason: a master drags in ~70 project items.
       const compFor: { [path: string]: CompItem } = {};
+      // A master's localised twin, worked out once per master.
+      const swapFor: { [path: string]: string } = {};
       for (let r = 0; r < plan.regions.length; r++) {
-        const path = String(plan.regions[r].path);
+        const asked = String(plan.regions[r].path);
+        let path = asked;
+        if (plan.useLocalised) {
+          if (typeof swapFor[asked] === "undefined") {
+            swapFor[asked] = bespokeLocalisedFor(
+              String(plan.marketsRoot || ""), String(plan.territory || ""), asked);
+          }
+          if (swapFor[asked]) {
+            path = swapFor[asked];
+            lines.push("localised: " + String(new File(asked).name)
+              + "  ->  " + String(new File(path).name));
+          } else {
+            lines.push("no localised twin for " + String(new File(asked).name) + " — using the master");
+          }
+          plan.regions[r].path = path;
+        }
         if (compFor[path]) continue;
         const folderName = String(path).split("/").pop();
         try {
@@ -4458,6 +4575,7 @@ export const bespokeBuildRegions = (
         const cover = Math.max(reg.w / faceW, reg.h / faceH);
         (layer.property("Scale") as Property).setValue([cover * 100, cover * 100]);
         (layer.property("Position") as Property).setValue([reg.x + reg.w / 2, reg.y + reg.h / 2]);
+
         // transform.rotation, never property("Rotation") -- display-name
         // lookups collide across layer types.
         if (turn !== 0) (layer.transform.rotation as Property).setValue(turn);
