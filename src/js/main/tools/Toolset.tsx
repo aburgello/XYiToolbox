@@ -88,14 +88,16 @@ import turkGif from "../../assets/happy_shock_2.gif";
 import "../shared.scss";
 import "./Toolset.scss";
 
-// Turk It celebrates crossing V05 -- reuses the exact overlay markup/CSS
+// Turk It celebrates at random -- reuses the exact overlay markup/CSS
 // classes (.logo-easter-egg-overlay/-gif, main.scss) the logo click
 // easter egg already established, rather than inventing a second
 // full-panel-gif pattern for what's visually the same thing.
 //
-// Raised from V03: a fourth version is an ordinary day, and a celebration that
-// fires on an ordinary day stops being one.
-const TURK_IT_CELEBRATION_THRESHOLD = 5;
+// A ONE IN TWENTY CHANCE, not a version threshold. Tying it to V03 meant it
+// fired on every deliverable of a busy day and never on a quiet one, which is
+// backwards: the surprise is the whole point, and a surprise you can predict
+// from the version number is just a notification.
+const TURK_IT_CELEBRATION_ODDS = 20;
 
 export interface ActionResult {
     success: boolean;
@@ -1199,13 +1201,8 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
             return;
         }
         reportResult(result, action.successText, action.successSound);
-        // Turk It reports the highest resulting version as maxVersion (see
-        // aeft/tools.ts's turkIt) -- outside ActionResult's own strict
-        // shape, hence the cast, same as any other cross-bridge extra
-        // field this app reads opportunistically.
         if (action.id === "turk-it" && result && result.success) {
-            const maxVersion = Number((result as { maxVersion?: number }).maxVersion);
-            if (!isNaN(maxVersion) && maxVersion > TURK_IT_CELEBRATION_THRESHOLD) {
+            if (Math.floor(Math.random() * TURK_IT_CELEBRATION_ODDS) === 0) {
                 if (turkGifTimer.current) clearTimeout(turkGifTimer.current);
                 setShowTurkGif(true);
                 turkGifTimer.current = setTimeout(() => setShowTurkGif(false), 3000);
