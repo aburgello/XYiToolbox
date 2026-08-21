@@ -21,6 +21,7 @@ import {
     FileSignature,
     Languages,
     SlidersHorizontal,
+    Bone,
     Clapperboard,
     FileText,
     ShieldCheck,
@@ -78,6 +79,7 @@ const SafeGeneratorTool     = React.lazy(() => import("./tools/SafeGenerator"));
 const EditToolsTool         = React.lazy(() => import("./tools/EditTools"));
 const FindReplaceTool       = React.lazy(() => import("./tools/FindReplace"));
 const MasterOfNullsTool     = React.lazy(() => import("./tools/MasterOfNulls"));
+const PuppeteerTool         = React.lazy(() => import("./tools/Puppeteer"));
 const WallToolsTool         = React.lazy(() => import("./tools/WallTools"));
 const ExtremeTools01Tool    = React.lazy(() => import("./tools/ExtremeTools01"));
 const ExtremeTools02Tool    = React.lazy(() => import("./tools/ExtremeTools02"));
@@ -131,6 +133,7 @@ const PREFETCH_MAP: Record<string, () => Promise<any>> = {
     "edit-tools":         () => import("./tools/EditTools"),
     "find-replace":       () => import("./tools/FindReplace"),
     "master-of-nulls":    () => import("./tools/MasterOfNulls"),
+    "puppeteer":          () => import("./tools/Puppeteer"),
     "wall-tools":         () => import("./tools/WallTools"),
     "extreme-tools-01":   () => import("./tools/ExtremeTools01"),
     "extreme-tools-02":   () => import("./tools/ExtremeTools02"),
@@ -615,6 +618,22 @@ export const TOOLS: ToolEntry[] = [
         Component: FindReplaceTool,
         actions: ["Replace String (Comps)", "Replace String (All Items)"],
         description: "Renames project items whose name contains the search string.",
+    },
+    {
+        id: "puppeteer",
+        label: "Puppeteer",
+        categories: ["tools"],
+        icon: Bone,
+        Component: PuppeteerTool,
+        actions: [
+            "Find puppets", "Rename", "Null per pin", "Bake to keys", "Freeze here",
+            "Capture", "Stagger", "Overshoot after the last key", "Set",
+        ],
+        // Read-only: finding puppets reports and changes nothing. Everything
+        // else writes to somebody's rig, so nothing else is listed and the
+        // agent cannot press it.
+        actionSafety: { "Find puppets": "read" },
+        description: "Rig and animate Puppet Warp pins: a control null for each, poses, sway and wiggle, follow-through.",
     },
     {
         id: "master-of-nulls",

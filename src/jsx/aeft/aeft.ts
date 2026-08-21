@@ -40,6 +40,8 @@ export * from "./effects";
 export * from "./team";
 export * from "./artwork";
 export * from "./preflight";
+export * from "./puppeteer";
+export * from "./insitu";
 export * from "./wordGame";
 // The Ask agent's write surface. Its own file on purpose -- see its header:
 // "what can the agent do to my project?" should be answerable by reading one

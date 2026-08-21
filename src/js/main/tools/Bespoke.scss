@@ -1171,6 +1171,30 @@
     letter-spacing: -0.01em;
 }
 
+.bsp-choose-wide {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    margin-top: 10px;
+    padding: 20px 14px;
+    border-radius: 8px;
+    background: #0f1413;
+    border: 1px solid #263130;
+    cursor: pointer;
+
+    // The same accent the cards' icons carry -- it is the third way in, not a
+    // lesser one.
+    svg { color: #2dd4bf; }
+    b { font-size: var(--t-xl, 16px); font-weight: 600; color: #e6f2f0; letter-spacing: -0.01em; }
+
+    // index.scss's global button:hover/:active paints over anything that does
+    // not re-declare both.
+    &:hover { background: #172422; border-color: #2dd4bf; }
+    &:active { background: #12201e; border-color: #2dd4bf; }
+}
+
 .bsp-choose-cards {
     // Two side by side, dropping to one column before either gets too narrow
     // to read its own description.

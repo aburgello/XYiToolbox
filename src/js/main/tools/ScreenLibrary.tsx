@@ -61,6 +61,8 @@ export interface ScreenEntry {
     stamp: string;
     kind?: "layout" | "template";
     templatePath?: string;
+    /** An in-situ laid out for this same screen. See team.ts. */
+    insitu?: { backdrop: string; faces: string; compName: string; stamp: string };
     screen?: string;
     status?: "active" | "archive";
     referencePath?: string;
@@ -208,7 +210,13 @@ const ScreenCard: React.FC<{
                 {kind === "layout" ? <Wireframe entry={entry} band={52} /> : <UntracedMark entry={entry} band={52} />}
             </div>
 
-            <div className="scl-card-name" title={entry.name}>{entry.name}</div>
+            <div className="scl-card-name" title={entry.name}>
+                {entry.name}
+                {/* ONE CARD, BOTH LAYOUTS. A screen laid out for an in-situ
+                    says so here as well as in the Insitu board, so the two
+                    stop being separate libraries kept in step by hand. */}
+                {entry.insitu ? <span className="scl-card-insitu" title={`In-situ saved ${entry.insitu.stamp}`}>IN SITU</span> : null}
+            </div>
             <div className="scl-card-meta">
                 <span className="scl-card-size">{size}</span>
                 {kind === "layout" ? (

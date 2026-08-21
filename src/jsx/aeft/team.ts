@@ -805,6 +805,25 @@ export interface BespokeTemplate {
   referencePaths?: string[];
   /** Retired screens stay in the file and drop out of the default view. */
   status?: "active" | "archive";
+  /**
+   * THE IN-SITU FOR THIS SCREEN, if one has been laid out.
+   *
+   * One entry, two layouts: the regions a Bespoke build uses and the faces an
+   * in-situ places on a photograph are both about the same physical screen, so
+   * they belong on the same card rather than in two libraries that have to be
+   * kept in step by hand. Optional and read defensively, like everything else
+   * added after this file shipped.
+   *
+   * `faces` is a JSON STRING rather than an array of objects: the panel hands
+   * this straight across `evalTS`, where nested arrays of objects lose their
+   * values in transit (CLAUDE.md section 2).
+   */
+  insitu?: {
+    backdrop: string;
+    faces: string;
+    compName: string;
+    stamp: string;
+  };
 }
 
 /**

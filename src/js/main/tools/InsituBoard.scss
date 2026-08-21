@@ -1,0 +1,530 @@
+.insitu {
+
+    // formTool.scss's input skin is nested under `.field-row`, so nothing here
+    // inherits it. Same values, applied where this tool actually puts fields.
+    input[type="text"] {
+        background: var(--surface-0, #1f1f1f);
+        border: 1px solid var(--surface-edge, #3a3a3a);
+        color: #ddd;
+        border-radius: 5px;
+        padding: 6px 8px;
+        font-size: 11px;
+        box-sizing: border-box;
+
+        &::placeholder { color: #6c6c6c; }
+        &:focus {
+            outline: none;
+            border-color: var(--cat-border, var(--ov-accent, #3a5a8a));
+            box-shadow: 0 0 0 2px var(--cat-glow, rgba(58, 90, 138, 0.35));
+        }
+    }
+    .ins-bar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 10px;
+    }
+
+    .ins-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        flex: none;
+        padding: 5px 10px;
+        font-size: 10.5px;
+        border-radius: 5px;
+        color: #e8e8e8;
+        background: rgba(90, 200, 180, 0.14);
+        border: 1px solid rgba(90, 200, 180, 0.36);
+        cursor: pointer;
+
+        // index.scss's global button:hover/:active repaints anything that
+        // doesn't re-declare both.
+        &:hover { background: rgba(90, 200, 180, 0.2); color: #fff; }
+        &:active { background: rgba(90, 200, 180, 0.26); color: #fff; }
+        &:disabled { opacity: 0.45; cursor: default; }
+    }
+
+    .ins-btn--ghost {
+        color: #bbb;
+        background: rgba(255, 255, 255, 0.05);
+        border-color: rgba(255, 255, 255, 0.12);
+        &:hover { background: rgba(255, 255, 255, 0.09); color: #ddd; }
+        &:active { background: rgba(255, 255, 255, 0.12); color: #ddd; }
+    }
+
+    .ins-name { flex: 1; min-width: 0; }
+    .ins-num { width: 44px; text-align: center; }
+
+    .ins-inline {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        flex: none;
+        font-size: 10px;
+        opacity: 0.7;
+    }
+
+    .ins-pick {
+        padding: 22px;
+        text-align: center;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.09);
+
+        .ins-pick-q { margin: 0 0 12px; font-size: 12px; color: #ddd; }
+    }
+
+    .ins-suggest { margin-top: 14px; }
+    .ins-lbl { margin: 0 0 6px; font-size: 9.5px; letter-spacing: 0.08em; opacity: 0.45; }
+
+    .ins-sug {
+        display: block;
+        width: 100%;
+        margin-top: 4px;
+        padding: 5px 9px;
+        font-size: 10px;
+        text-align: left;
+        border-radius: 4px;
+        color: #ccc;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.11);
+        cursor: pointer;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+
+        &:hover { background: rgba(255, 255, 255, 0.09); color: #eee; }
+        &:active { background: rgba(255, 255, 255, 0.12); color: #eee; }
+    }
+
+    .ins-stage-wrap {
+        position: relative;
+        // Room for handles that sit outside the plate.
+        padding: 34px;
+
+        // Zoomed, the plate is bigger than the panel and scrolls. The stage
+        // keeps its own aspect through padding-bottom, so nothing needs to
+        // know how tall it became.
+        &.is-zoomed {
+            overflow: auto;
+            max-height: 62vh;
+            // Slim, because at this size the scrollbars are a fallback for the
+            // wheel and the alt-drag rather than the way anybody navigates.
+            &::-webkit-scrollbar { width: 8px; height: 8px; }
+            &::-webkit-scrollbar-thumb {
+                background: rgba(255, 255, 255, 0.16);
+                border-radius: 4px;
+            }
+            &::-webkit-scrollbar-track { background: transparent; }
+        }
+    }
+
+    .ins-zoom {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        margin-bottom: 5px;
+    }
+
+    .ins-mini {
+        flex: none;
+        min-width: 26px;
+        padding: 2px 7px;
+        font-size: 10px;
+        border-radius: 4px;
+        color: #bbb;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        cursor: pointer;
+
+        &:hover { background: rgba(255, 255, 255, 0.09); color: #ddd; }
+        &:active { background: rgba(255, 255, 255, 0.12); color: #ddd; }
+    }
+
+    .ins-stage {
+        position: relative;
+        width: 100%;
+        height: 0;                       // padding-box ratio: aspect-ratio is
+        border-radius: 6px;              // Chrome 88 and the target is 74
+        background: #111;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        // NOT hidden. A bezier handle belongs outside the shape as often as
+        // inside it, and clipping the stage put the handle for a bowed bottom
+        // edge beyond the plate where it could not be grabbed at all.
+        overflow: visible;
+    }
+
+    // The plate and the painted artwork ARE clipped -- they have no business
+    // outside the photograph.
+    .ins-clip {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        border-radius: 6px;
+    }
+
+    .ins-plate {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: fill;                // the stage is already the plate's ratio
+        user-select: none;
+        pointer-events: none;
+    }
+
+    // The warped artwork sits under the outlines and takes no clicks.
+    .ins-paint-layer {
+        position: absolute;
+        top: 0;
+        left: 0;
+        pointer-events: none;
+    }
+
+    .ins-paint {
+        position: absolute;
+        top: 0;
+        left: 0;
+        background-repeat: no-repeat;
+        // A hairline overlap hides the seam between two cells that share an
+        // edge; without it the plate shows through as a bright line.
+        outline: 0.5px solid transparent;
+    }
+
+    .ins-quads {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        // The paths take clicks (that is how a segment is selected); nothing
+        // else in the overlay should.
+        pointer-events: none;
+
+        path,
+        polyline { pointer-events: auto; cursor: pointer; }
+    }
+
+    .ins-seg-lbl { font-size: 9.5px; opacity: 0.5; flex: none; }
+
+    .ins-shape {
+        display: flex;
+        gap: 3px;
+        flex: none;
+    }
+
+    .ins-shape-b {
+        padding: 5px 12px;
+        font-size: 10.5px;
+        border-radius: 4px;
+        color: #aaa;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        cursor: pointer;
+
+        &:hover { background: rgba(255, 255, 255, 0.09); color: #ddd; }
+        &:active { background: rgba(255, 255, 255, 0.12); color: #ddd; }
+
+        &.is-on {
+            color: #eafffb;
+            background: rgba(90, 200, 180, 0.2);
+            border-color: rgba(90, 200, 180, 0.45);
+        }
+    }
+
+    .ins-more {
+        margin-left: auto;
+        padding: 3px 8px;
+        font-size: 10px;
+        border-radius: 4px;
+        color: #8b8b8b;
+        background: transparent;
+        border: 1px solid transparent;
+        cursor: pointer;
+
+        &:hover { color: #ddd; background: rgba(255, 255, 255, 0.06); }
+        &:active { color: #ddd; background: rgba(255, 255, 255, 0.09); }
+    }
+
+    .ins-quad {
+        fill: rgba(90, 200, 180, 0.14);
+        stroke: rgba(90, 200, 180, 0.55);
+        stroke-width: 2;
+        vector-effect: non-scaling-stroke;
+
+        &.is-on {
+            fill: rgba(90, 200, 180, 0.2);
+            stroke: rgba(120, 230, 210, 0.8);
+        }
+
+        // The one the buttons will act on.
+        &.is-seg {
+            fill: rgba(120, 230, 210, 0.32);
+            stroke: #b6fff0;
+            stroke-width: 3;
+        }
+    }
+
+    .ins-handle {
+        position: absolute;
+        width: 11px;
+        height: 11px;
+        margin: -6px 0 0 -6px;           // flexbox can't centre on a coordinate,
+        border-radius: 50%;              // and a transform would fight nothing here
+        background: rgba(20, 30, 30, 0.85);
+        border: 2px solid rgba(90, 200, 180, 0.6);
+        cursor: grab;
+
+        &.is-on { border-color: #78e6d2; background: #0d1a1a; }
+        &:active { cursor: grabbing; }
+    }
+
+    // Where one segment ends and the next begins.
+    .ins-ribs line {
+        stroke: rgba(120, 230, 210, 0.5);
+        stroke-width: 1;
+        stroke-dasharray: 3 3;
+        vector-effect: non-scaling-stroke;
+    }
+
+    // Diamond, so a rib end is never mistaken for a corner or a tangent.
+    .ins-rib {
+        position: absolute;
+        width: 9px;
+        height: 9px;
+        margin: -5px 0 0 -5px;
+        background: #0d1a1a;
+        border: 2px solid #78e6d2;
+        border-radius: 2px;
+        transform: rotate(45deg);
+        cursor: grab;
+
+        &.is-on { background: #78e6d2; }
+        &:active { cursor: grabbing; }
+    }
+
+    // The four outer sides, thick enough to click without hunting.
+    .ins-side {
+        fill: none;
+        stroke: transparent;
+        stroke-width: 14;
+        vector-effect: non-scaling-stroke;
+        cursor: pointer;
+
+        &.is-on { stroke: rgba(120, 230, 210, 0.5); }
+    }
+
+    .ins-tan-lines line {
+        stroke: rgba(120, 230, 210, 0.45);
+        stroke-width: 1;
+        vector-effect: non-scaling-stroke;
+    }
+
+    // Smaller and square, so a tangent never reads as a corner.
+    .ins-tan {
+        position: absolute;
+        width: 8px;
+        height: 8px;
+        margin: -4px 0 0 -4px;
+        background: #0d1a1a;
+        border: 1px solid #78e6d2;
+        cursor: grab;
+
+        &:active { cursor: grabbing; }
+    }
+
+    .ins-pick-row { display: flex; gap: 6px; justify-content: center; }
+
+    .ins-src {
+        flex: 1;
+        min-width: 0;
+        span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    }
+
+    .ins-curve.is-on {
+        color: #eafffb;
+        background: rgba(90, 200, 180, 0.2);
+        border-color: rgba(90, 200, 180, 0.45);
+    }
+
+    .ins-grip {
+        position: absolute;
+        width: 20px;
+        height: 20px;
+        margin: -10px 0 0 -10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        font-size: 9px;
+        color: #cfeee8;
+        background: rgba(12, 26, 26, 0.75);
+        border: 1px solid rgba(90, 200, 180, 0.45);
+        cursor: move;
+
+        &.is-on { color: #fff; border-color: #78e6d2; }
+    }
+
+    // A window onto one spot, magnified, with the crosshair marking where the
+    // pointer actually is.
+    .ins-loupe {
+        position: relative;
+        width: 100%;
+        height: 190px;
+        margin-top: 8px;
+        overflow: hidden;
+        border-radius: 6px;
+        background: #0b0f0f;
+        border: 1px solid rgba(120, 230, 210, 0.3);
+        pointer-events: none;
+    }
+
+    .ins-loupe-inner {
+        position: absolute;
+        width: 100%;
+
+        .ins-plate { position: relative; height: auto; }
+        .ins-quads { position: absolute; inset: 0; }
+        .ins-quad { fill: none; stroke-width: 1; }
+    }
+
+    .ins-loupe-cross {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 13px;
+        height: 13px;
+        margin: -7px 0 0 -7px;
+        border: 1px solid rgba(255, 255, 255, 0.75);
+        border-radius: 50%;
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+    }
+
+    .ins-stage.is-marking { cursor: crosshair; }
+
+    // The keystroke catcher: focused, invisible, and untouchable by the mouse.
+    .ins-keygrab {
+        // FIXED, not absolute: an element inside the scrolling box is something
+        // the browser will scroll to when it takes focus. Out of that box, it
+        // cannot drag the view anywhere.
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+        border: none;
+        padding: 0;
+    }
+
+    // A traced point, numbered in the order it was clicked.
+    .ins-mark {
+        position: absolute;
+        width: 14px;
+        height: 14px;
+        margin: -7px 0 0 -7px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 8px;
+        border-radius: 50%;
+        color: #08110f;
+        background: #ffd24a;
+        border: 1px solid #6b5410;
+        pointer-events: none;
+
+        &.is-done { background: #78e6d2; width: 10px; height: 10px; margin: -5px 0 0 -5px; }
+    }
+
+    .ins-mini.is-go {
+        color: #eafffb;
+        background: rgba(90, 200, 180, 0.22);
+        border-color: rgba(90, 200, 180, 0.5);
+    }
+
+    // The point the arrows and the number fields will move.
+    .ins-handle.is-picked,
+    .ins-rib.is-picked {
+        background: #ffd24a;
+        border-color: #ffd24a;
+        box-shadow: 0 0 0 2px rgba(255, 210, 74, 0.3);
+    }
+
+    .ins-mini.is-on {
+        color: #eafffb;
+        background: rgba(90, 200, 180, 0.2);
+        border-color: rgba(90, 200, 180, 0.45);
+    }
+
+    .ins-faces {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 5px;
+        margin-top: 10px;
+    }
+
+    .ins-face {
+        position: relative;
+        display: block;
+        flex: none;
+        padding: 5px 22px 5px 10px;
+        text-align: left;
+        border-radius: 5px;
+        color: #bbb;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        cursor: pointer;
+
+        strong { display: block; font-size: 10.5px; }
+        span { display: block; font-size: 9px; opacity: 0.55; }
+
+        &:hover { background: rgba(255, 255, 255, 0.08); color: #ddd; }
+        &:active { background: rgba(255, 255, 255, 0.11); color: #ddd; }
+
+        &.is-on {
+            color: #fff;
+            background: rgba(90, 200, 180, 0.14);
+            border-color: rgba(90, 200, 180, 0.4);
+        }
+    }
+
+    .ins-face-x {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        display: inline-flex;
+        opacity: 0.4;
+
+        &:hover { opacity: 0.9; color: #f0a0a0; }
+    }
+
+    .ins-props {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 8px;
+    }
+
+    .ins-select {
+        flex: 1;
+        min-width: 0;
+        font-size: 10px;
+        padding: 5px 6px;
+        border-radius: 4px;
+        color: #ddd;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+    }
+
+    .ins-select--sm { flex: none; width: 84px; }
+
+    .ins-props--quiet {
+        margin-top: 6px;
+        padding-top: 6px;
+        border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .ins-plate-note { margin: 8px 0 0; font-size: 9.5px; opacity: 0.45; }
+}

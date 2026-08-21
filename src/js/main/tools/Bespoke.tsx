@@ -28,9 +28,10 @@
 // step. Shipping a Build button that guessed would be worse than not having one.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { AlertCircle, ChevronRight, Copy, Globe2, Image as ImageIcon, Layers, LayoutGrid, Library, Pause, Play, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, RotateCcw, Search, Square as SquareIcon, Trash2, X } from "lucide-react";
+import { AlertCircle, ChevronRight, Copy, Frame, Globe2, Image as ImageIcon, Layers, LayoutGrid, Library, Pause, Play, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, RotateCcw, Search, Square as SquareIcon, Trash2, X } from "lucide-react";
 import { csi, evalTS } from "../../lib/utils/bolt";
 import { deriveMastersFromMarkets } from "../lib/mastersRoot";
+import InsituBoard from "./InsituBoard";
 // AGENT-HOOK — remove with the agent. See docs: grep AGENT-HOOK.
 import { usePendingFill } from "../lib/agent/fieldHandoff";
 import { parseSegmentSpec, planSegments } from "../lib/agent/multiArt";
@@ -42,6 +43,7 @@ import SegmentedToggle from "../SegmentedToggle";
 import CheckboxToggle from "../CheckboxToggle";
 import LoadingChatter from "../LoadingChatter";
 import ScreenLibrary, { ScreenEntry } from "./ScreenLibrary";
+import { confirmDialog } from "../Dialog";
 import "../shared.scss";
 import "./Bespoke.scss";
 
@@ -651,7 +653,7 @@ export const BespokeTool = () => {
     // UNSET until chosen. Which kind of build this is gets decided once per
     // deliverable and never revisited, so it is a question asked at the door
     // rather than a switch sat permanently above the work.
-    const [mode, setMode] = useState<"multi" | "regions" | null>(null);
+    const [mode, setMode] = useState<"multi" | "regions" | "insitu" | null>(null);
     const [regions, setRegions] = useState<Region[]>([]);
     const [selRegion, setSelRegion] = useState(0);
     const [refPath, setRefPath] = useState("");
@@ -1243,6 +1245,57 @@ export const BespokeTool = () => {
      * pixel scale. adoptReference parses what it can from the filename; these
      * two assignments are applied after it so the entry wins.
      */
+    /**
+     * The in-situ that belongs to this screen, offered once the board exists.
+     *
+     * A screen laid out for an in-situ is nearly always ALSO going to want one
+     * built, and the artist has just made the exact thing that goes on the
+     * wall. Asking here saves reopening the board, finding the screen again and
+     * pointing the faces at a comp that is already selected in front of them.
+     *
+     * ASKED, NEVER ASSUMED: it makes comps and imports a plate, which is not
+     * something to do to somebody's project because they pressed Build.
+     */
+    const offerInsitu = async (compId: number, compName: string) => {
+        if (!activeScreen) return;
+        let entry: BespokeTemplate | null = null;
+        for (let i = 0; i < templates.length; i++) {
+            if (templates[i].id === activeScreen.id) entry = templates[i];
+        }
+        const saved = entry && (entry as any).insitu ? (entry as any).insitu : null;
+        if (!saved || !saved.faces) return;
+
+        const ok = await confirmDialog(
+            `${activeScreen.name} has an in-situ saved. Build that too, with the board you just made on it?`
+        );
+        if (!ok) return;
+
+        try {
+            const faces = JSON.parse(saved.faces) as Array<Record<string, unknown>>;
+            // THE BOARD THAT WAS JUST BUILT, not the item the layout was saved
+            // with -- that id belonged to whatever project it was traced in.
+            for (let i = 0; i < faces.length; i++) {
+                if (compId) faces[i].sourceId = compId;
+                faces[i].sourceName = compName;
+            }
+            const built = (await evalTS("insituBuild", JSON.stringify({
+                backdrop: saved.backdrop,
+                compName: saved.compName || `${activeScreen.name}_INSITU`,
+                width: 0, height: 0,
+                duration: Number(boardSecs) || 10,
+                frameRate: 25,
+                facesJson: JSON.stringify(faces),
+            }))) as unknown as { success: boolean; error?: string; faces?: number } | undefined;
+            if (built && built.success) {
+                setStatus({ text: `In-situ built too, ${built.faces} face${built.faces === 1 ? "" : "s"}.`, type: "success" });
+            } else {
+                setStatus({ text: (built && built.error) || "The in-situ didn't build.", type: "error" });
+            }
+        } catch {
+            setStatus({ text: "That screen's in-situ wouldn't read.", type: "error" });
+        }
+    };
+
     /** Returns whether tracing actually started -- the library closes on it. */
     const traceTemplate = (t: BespokeTemplate): boolean => {
         if (!t.referencePath) {
@@ -2568,7 +2621,8 @@ export const BespokeTool = () => {
                 guidesY: guidesY,
             };
             const res = (await evalTS("bespokeBuildRegions", JSON.stringify(plan))) as unknown as
-                { success: boolean; error?: string; report?: string; saved?: boolean; savedTo?: string } | undefined;
+                { success: boolean; error?: string; report?: string; saved?: boolean; savedTo?: string;
+                  compId?: number; compName?: string } | undefined;
             if (res === undefined) throw new Error("no bridge");
             if (!res.success) { setStatus({ text: res.error || "The build failed.", type: "error" }); return; }
             setReport(res.report || "(built)");
@@ -2578,6 +2632,7 @@ export const BespokeTool = () => {
                     : "Built. No country set, so it hasn't been filed.",
                 type: "success",
             });
+            await offerInsitu(res.compId || 0, res.compName || "");
         } catch {
             setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects to run it.", type: "error" });
         } finally {
@@ -3028,6 +3083,25 @@ export const BespokeTool = () => {
         }
     }
 
+    // INSITU TAKES THE WHOLE PAGE, and shares none of the region machinery
+    // below it. A quad over a photograph has no board size, no guides and no
+    // running order; threading a third value through forty `mode === "multi"`
+    // branches would put a third meaning on every one of them.
+    if (mode === "insitu") {
+        return (
+            <div className="form-tool bsp">
+                <InsituBoard
+                    masters={masters}
+                    suggestions={refs}
+                    defaultName={outName}
+                    templates={templates}
+                    onReloadTemplates={refreshTemplates}
+                    onBack={() => setMode(null)}
+                />
+            </div>
+        );
+    }
+
     return (
         <div className="form-tool bsp">
             {/* The masters folder belongs to the work, not to the question at the
@@ -3097,6 +3171,13 @@ export const BespokeTool = () => {
                             <b>Bespoke</b>
                         </button>
                     </div>
+                    {/* A ROW, NOT A THIRD CARD. An in-situ is what happens after
+                        a build exists, so it does not belong in the same
+                        three-way choice as how to make one. */}
+                    <button className="bsp-choose-wide" onClick={() => setMode("insitu")}>
+                        <Frame size={20} />
+                        <b>Insitu</b>
+                    </button>
                     {/* A WAY BACK INTO YESTERDAY'S WORK. Every job passes
                         through this screen and it was two cards and a lot of
                         black; the screens the team saved most recently are the

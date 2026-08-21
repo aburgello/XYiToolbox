@@ -4425,6 +4425,10 @@ export const bespokeBuildRegions = (
 
       const outName = plan.name && plan.name !== "" ? plan.name : "Bespoke_" + canvasW + "x" + canvasH;
       const out = app.project.items.addComp(outName, canvasW, canvasH, 1, seconds, fps);
+      // Kept so the panel can offer this screen's in-situ straight afterwards,
+      // with the board that was just built on the wall.
+      builtId = Number((out as any).id);
+      builtName = String(out.name);
       out.label = 1;
       lines.push("");
       lines.push("built " + outName + "  " + canvasW + "x" + canvasH + "  "
@@ -4582,7 +4586,12 @@ export const bespokeBuildRegions = (
     } finally {
       app.endUndoGroup();
     }
-    return { success: true, report: lines.join("\n"), saved: saved, savedTo: savedTo };
+    return {
+      success: true, report: lines.join("\n"), saved: saved, savedTo: savedTo,
+      // The board that was just built, so the panel can offer this screen's
+      // in-situ with the real thing on the wall.
+      compId: builtId, compName: builtName,
+    };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
