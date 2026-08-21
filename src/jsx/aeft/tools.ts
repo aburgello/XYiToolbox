@@ -2573,6 +2573,20 @@ function mcItParseFilename(filename: string): McItParsed {
   return { firstOne, secondOne, thirdOne, pngNumber };
 }
 
+/** The creative alone, i.e. the first token of the identity. The artwork being
+ *  replaced is usually the OV file, which has no site token, so comparing the
+ *  whole identity would reject the very case this tool exists for. */
+function mcItCreativeOf(identity: string): string {
+  const bits = String(identity || "").split("_");
+  return mcItNormaliseIdentity(bits.length > 0 ? bits[0] : "");
+}
+
+/** Separators and case dropped, so PortalToParadise and PORTAL_TO_PARADISE are
+ *  the same creative and Trio is not. */
+function mcItNormaliseIdentity(name: string): string {
+  return String(name || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
 function mcItGetAllImageFiles(folder: Folder): File[] {
   const out: File[] = [];
   const items = folder.getFiles();
@@ -2858,10 +2872,40 @@ export function mcItApplyToOpenProject(
         const originalExt = mcItGetExt(originalName);
         const parsedOriginal = mcItParseFilename(originalName);
 
+        // IS THIS FOOTAGE EVEN THIS DELIVERABLE'S ARTWORK?
+        //
+        // Nothing asked. Every image in the project was a candidate for
+        // replacement, so a design element that happened to be a PNG at the
+        // comp's resolution -- a logo, an outline, an exported Figma asset --
+        // was swapped for the deliverable's artwork and reported as a clean
+        // replacement. Real example, from a Portal To Paradise build:
+        //
+        //   402065-1_K1c_006_FORGOTTEN_ISLAND_Logo_Black_sRGB_Edited_OutlinewGlow_1.png
+        //     -> FID_INTL_Trio_DOOH_ARTMEDIAMall_1920x1080px_10s_IT1.png
+        //
+        // The CREATIVE only, not the whole identity: the file being replaced is
+        // normally the OV artwork, which carries no site token, so
+        // PORTALTOPARADISE has to match PORTALTOPARADISE_ARTMEDIAMALL.
+        const aepCreativeToken = mcItCreativeOf(parsedAEP.firstOne);
+        const origCreativeToken = mcItCreativeOf(parsedOriginal.firstOne);
+        if (aepCreativeToken !== "" && origCreativeToken !== aepCreativeToken) {
+          projReport.items.push({
+            folder: targetFolder.name,
+            name: originalName,
+            action: "no-match",
+            reason: "Not this deliverable's artwork — it is " +
+              (parsedOriginal.firstOne || "unnamed") + ", the deliverable is " + parsedAEP.firstOne + ".",
+            key: itemKey,
+          });
+          continue;
+        }
+
         // Count how many candidates survive each successive filter, so the
         // log shows exactly which filter is the wall.
         let cSameType = 0;
         let cPlusRes = 0;
+        let cPlusCreative = 0;
+        const creativesSeen: string[] = [];
         const resSeenSameType: string[] = [];
         const validCandidates: File[] = [];
         for (let k = 0; k < imageFiles.length; k++) {
@@ -2885,6 +2929,30 @@ export function mcItApplyToOpenProject(
           if (parsedCandidate.thirdOne && resSeenSameType.join(",").indexOf(parsedCandidate.thirdOne) === -1) resSeenSameType.push(parsedCandidate.thirdOne);
           if (parsedAEP.thirdOne !== parsedCandidate.thirdOne) continue;
           cPlusRes++;
+
+          // THE CANDIDATE HAS TO BE FOR THIS DELIVERABLE'S CREATIVE.
+          //
+          // Nothing above this line looks at WHICH creative a file belongs to:
+          // same file type, same resolution and same trailing number were the
+          // whole test. On a PortalToParadise deliverable that let
+          // FID_INTL_Trio_..._IT1.png through every filter -- it is a PNG, it
+          // is 1920x1080, it ends in 1 -- and findBestComponentFile then took
+          // it, because its accept threshold is 0.01 and an unrelated logo
+          // resembles both candidates equally badly. The result was another
+          // creative's artwork inside a finished deliverable, reported as a
+          // clean replacement.
+          //
+          // `firstOne` is the creative and site tokens the parser already
+          // extracts, so this is an exact comparison of the thing that
+          // identifies a deliverable, not another guess on top of the guessing.
+          const candCreative = mcItNormaliseIdentity(parsedCandidate.firstOne);
+          const aepCreative = mcItNormaliseIdentity(parsedAEP.firstOne);
+          if (creativesSeen.join(",").indexOf(parsedCandidate.firstOne) === -1) {
+            creativesSeen.push(parsedCandidate.firstOne);
+          }
+          if (aepCreative !== "" && candCreative !== aepCreative) continue;
+          cPlusCreative++;
+
           if (parsedOriginal.pngNumber !== parsedCandidate.pngNumber) continue;
           validCandidates.push(candidate);
         }
@@ -2906,6 +2974,8 @@ export function mcItApplyToOpenProject(
           let reason = "No candidate survived the filters.";
           if (cSameType === 0) reason = "No same-type (" + originalExt + ") candidate in the image folder.";
           else if (cPlusRes === 0) reason = "No candidate at the AEP's resolution " + (parsedAEP.thirdOne || "?") + " — sizes seen: " + resSeenSameType.join(", ") + ".";
+          else if (cPlusCreative === 0) reason = "No candidate for " + (parsedAEP.firstOne || "this deliverable")
+            + " at that resolution — found " + creativesSeen.join(", ") + ".";
           else if (validCandidates.length === 0) reason = "No candidate ending in '" + (parsedOriginal.pngNumber || "<none>") + "' at that resolution.";
           projReport.items.push({
             folder: targetFolder.name,
