@@ -178,6 +178,11 @@ const WorkflowBubble: React.FC = () => {
                             for. */}
                         <WorkflowBoard
                             variant="panel"
+                            // The panel is hidden with CSS, never unmounted, so
+                            // the board has to be told when it is off screen --
+                            // otherwise it polls AE forever behind a closed
+                            // bubble.
+                            active={open}
                             onSelectTool={(id) => { navigateToTool(id); }}
                         />
                     </div>

@@ -267,9 +267,14 @@ const SHAPED: Record<string, (args: unknown[]) => unknown> = {
 
     workflowContext: () => ({
         success: true,
-        project: "FID_INTL_Trio_DOOH_Ingresso_1920x1080px_10s_BR_V01.aep",
-        creative: "TRIO",
-        creativeLabel: "Trio",
+        // Flips every 45s so the panel's polling can be seen doing its job in
+        // the demo, the way opening another project in AE would. Slow enough
+        // not to yank a demo out from under somebody reading it.
+        project: (Math.floor(Date.now() / 45000) % 2)
+            ? "FID_INTL_PortalToParadise_DOOH_Ingresso_1920x1080px_10s_BR_V01.aep"
+            : "FID_INTL_Trio_DOOH_Ingresso_1920x1080px_10s_BR_V01.aep",
+        creative: (Math.floor(Date.now() / 45000) % 2) ? "PORTALTOPARADISE" : "TRIO",
+        creativeLabel: (Math.floor(Date.now() / 45000) % 2) ? "PortalToParadise" : "Trio",
         campaign: "Forgotten Island",
         campaigns: [
             { name: "Paw Patrol Dino", mastersRoot: "/Volumes/universal/Paramount/PawPatrol/Markets" },

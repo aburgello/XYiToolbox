@@ -7668,3 +7668,54 @@ Sorted by a decorated index rather than a bare comparator: `Array.prototype.sort
 is only guaranteed stable from ES2019, and this has to preserve post order
 within each group on whatever the host runs. The sort only lifts the universal
 ones — it never reorders notes relative to each other inside a group.
+
+### It only ever detected once, and it could not find the campaign
+
+Two bugs behind one symptom: the panel named "Portal to Paradise" while AE's
+title bar said `…Batch_01_PRE/FID_INTL_Trio_DOOH_EmpenaRJ_…aep`, with "no
+campaign" underneath.
+
+**Detection ran at mount, and the panel never unmounts.** It is hidden with CSS
+so the board read and scroll position survive a close — which also meant the
+creative was whatever had been open the first time somebody pressed the
+launcher, possibly days and six projects ago. It now polls `workflowContext`
+every 4s while the panel is on screen, with a re-entrancy guard so a slow bridge
+cannot stack calls, and an `active` prop from the bubble so a collapsed panel
+does not poll AE forever. CEP has no project-changed event to listen for; Time
+Tracker's own job detection polls for exactly the same reason.
+
+**Picking a creative pins it.** Autotracking without that is worse than none:
+you open the picker to read another creative's workflow and four seconds later
+the board yanks itself back to whatever is open. While pinned, the header shows
+what *is* open as a one-click chip instead of switching behind you. Nothing open,
+or a project whose name carries no creative, never blanks a board you were
+reading — it just stops being the thing that is detected.
+
+**And "no campaign" was a two-roots problem.** OV Library saves a campaign
+against its MASTERS tree (`XY026039_…_Masters`); Localised Library saves the
+same campaign against its MARKETS tree (`XY026040_…_Markets`). Those are SIBLING
+folders (CLAUDE.md §5), so a working file under `…_Markets/Brazil/AE/…` shares
+no path prefix with the masters root at all. `workflowContext` kept whichever
+store it read first and dropped the other as a duplicate name — so on any
+machine with the campaign in OV Library, every real working file failed to match.
+
+Both roots are kept now and all of them are tested, longest match winning. Plus
+a fallback for when neither root matches — a campaign saved on one tree while
+the artist works out of the other, or a root recorded under a different mount
+prefix: the real tree carries the campaign in a folder name
+(`/Forgotten_Island/Digital/INT/…`), so the path is walked and folder names
+compared canonically, longest name winning so "Portal" cannot claim a file
+belonging to "Portal To Paradise". Same technique `detectCurrentTerritory`
+already uses. Names under four characters are not evidence.
+
+Driven headlessly over the real path shape — seven cases including a markets
+file with the campaign saved only against the masters root, which is the one
+that produced "no campaign", and an unrelated path that must still resolve to
+nothing.
+
+**And the panel behaviour was verified against an invariant rather than a
+name.** The demo mock flips which project is "open" so polling can be seen
+working, which makes any assertion on a specific creative a race. The real
+invariant is that the header only claims "open in AE" when the board matches
+what is detected — so: unpinned claims it, pinning drops the claim, the nudge
+appears, and following restores it. That holds no matter when the mock flips.

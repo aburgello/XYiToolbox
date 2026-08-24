@@ -26,7 +26,7 @@ import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import {
     ListChecks, Plus, X, Trash2, Pencil, Check, RotateCcw, StickyNote,
     RefreshCw, AlertCircle, FolderSearch, ChevronLeft, GripVertical, Users,
-    ArrowRight, Link2, Link2Off, Search, Globe, FolderOpen, Wand2, MoreHorizontal,
+    ArrowRight, Link2, Link2Off, Search, Globe, FolderOpen, Wand2, MoreHorizontal, Crosshair,
 } from "lucide-react";
 import { TOOLS } from "../toolRegistry";
 import { evalTS } from "../../lib/utils/bolt";
@@ -495,7 +495,11 @@ const WorkflowBoardTool: React.FC<{
     /** "panel" is the floating bubble: tighter, and it drops the chrome the
      *  tool page already draws around it. */
     variant?: "page" | "panel";
-}> = ({ onSelectTool, variant }) => {
+    /** False while the bubble is collapsed. The panel is hidden with CSS rather
+     *  than unmounted, so without this it would keep polling AE forever behind
+     *  a closed panel. */
+    active?: boolean;
+}> = ({ onSelectTool, variant, active = true }) => {
     const reduced = useReducedMotion();
     const panel = variant === "panel";
 
@@ -519,6 +523,16 @@ const WorkflowBoardTool: React.FC<{
     // follows the picker.
     const [campaign, setCampaign] = useState("");
     const [creative, setCreative] = useState("");
+    /**
+     * The artist chose this creative by hand, so stop following the open
+     * project.
+     *
+     * Autotracking without this is worse than no autotracking: you open the
+     * picker to read another creative's workflow, and four seconds later the
+     * board yanks itself back to whatever is open in AE. Picking pins; the
+     * header then offers to follow rather than doing it behind you.
+     */
+    const [pinned, setPinned] = useState(false);
 
     const [picking, setPicking] = useState(false);
     const [pickCampaign, setPickCampaign] = useState("");
@@ -589,29 +603,70 @@ const WorkflowBoardTool: React.FC<{
         }
     }, [toast]);
 
+    /**
+     * WHAT IS OPEN IN AE RIGHT NOW.
+     *
+     * Polled, because CEP has no "project changed" event to listen for — the
+     * same reason Time Tracker's own job detection polls. Cheap: the host side
+     * reads `app.project.file`, two settings keys and a filename parse; nothing
+     * walks the disk.
+     *
+     * Guarded against re-entry, so a slow bridge cannot stack calls, and only
+     * while the panel is actually on screen.
+     */
+    const detecting = useRef(false);
+    const detect = useCallback(async (applyToView: boolean) => {
+        if (detecting.current) return;
+        detecting.current = true;
+        try {
+            const ctx = (await evalTS("workflowContext")) as {
+                success: boolean; project?: string; creative?: string; creativeLabel?: string;
+                campaign?: string; campaigns?: CampaignRef[];
+            };
+            if (!ctx || !ctx.success) return;
+            const label = ctx.creativeLabel || ctx.creative || "";
+            setCampaigns(ctx.campaigns || []);
+            setDetected({ project: ctx.project || "", creative: label, campaign: ctx.campaign || "" });
+            // NOTHING OPEN IS NOT AN INSTRUCTION. Closing a project, or opening
+            // one whose name carries no creative, must not blank a board you
+            // were reading — it just stops being the thing that is detected.
+            if (!label) return;
+            if (!applyToView) return;
+            setCampaign(ctx.campaign || "");
+            setCreative(label);
+            setPickCampaign(ctx.campaign || "");
+        } catch {
+            /* AE busy, or nothing open. The picker covers it. */
+        } finally {
+            detecting.current = false;
+        }
+    }, []);
+
+    /** Follow the open project again, from the header's own nudge. */
+    const followDetected = () => {
+        if (!detected.creative) return;
+        setPinned(false);
+        setCampaign(detected.campaign);
+        setCreative(detected.creative);
+        setPickCampaign(detected.campaign);
+        setPicking(false);
+        sfx.click();
+    };
+
+    // RE-DETECT WHILE THE PANEL IS UP. It is mounted once and hidden with CSS,
+    // so a mount-only detection meant the board still named whatever was open
+    // the first time you pressed the launcher — days ago, on a machine that has
+    // been through six projects since.
+    useEffect(() => {
+        if (!active) return;
+        detect(!pinned);
+        const id = window.setInterval(() => detect(!pinned), 4000);
+        return () => window.clearInterval(id);
+    }, [active, pinned, detect]);
+
     useEffect(() => {
         let cancelled = false;
         (async () => {
-            try {
-                const ctx = (await evalTS("workflowContext")) as {
-                    success: boolean; project?: string; creative?: string; creativeLabel?: string;
-                    campaign?: string; campaigns?: CampaignRef[];
-                };
-                if (cancelled || !ctx || !ctx.success) return;
-                // THE FILENAME'S OWN SPELLING where there is one. The matching
-                // token is upper-cased and that is lossy: "PORTALTOPARADISE"
-                // formats to "Portaltoparadise" and nothing can do better,
-                // while "PortalToParadise" formats to "Portal To Paradise".
-                // Matching still canonicalises, so the two stay interchangeable.
-                const label = ctx.creativeLabel || ctx.creative || "";
-                setDetected({ project: ctx.project || "", creative: label, campaign: ctx.campaign || "" });
-                setCampaigns(ctx.campaigns || []);
-                setCampaign(ctx.campaign || "");
-                setCreative(label);
-                setPickCampaign(ctx.campaign || "");
-            } catch {
-                /* nothing open, or AE busy -- the picker covers it */
-            }
             try {
                 const t = (await evalTS("workflowTicksLoad")) as { success: boolean; message?: string };
                 if (!cancelled && t && t.success && t.message) setTicks(JSON.parse(t.message));
@@ -1026,6 +1081,8 @@ const WorkflowBoardTool: React.FC<{
     const choose = (campName: string, creativeName: string) => {
         setCampaign(campName);
         setCreative(creativeName);
+        // Picking by hand stops the poll moving the board underneath you.
+        setPinned(true);
         setPicking(false);
         setEditing(false);
     };
@@ -1047,12 +1104,25 @@ const WorkflowBoardTool: React.FC<{
                         </span>
                         <span className="wfb-id-sub">
                             {campaign || "no campaign"}
-                            {detected.project && detected.creative === creative && detected.campaign === campaign
-                                ? <em> · from {detected.project}</em>
+                            {detected.project && detected.creative === creative
+                                ? <em> · open in AE</em>
                                 : null}
                         </span>
                     </div>
                 </div>
+
+                {/* PINNED SOMEWHERE ELSE. The poll does not move the board
+                    under somebody who picked a creative by hand, so it says
+                    what is actually open instead and offers one click back.
+                    Doing it silently is the version people would hate. */}
+                {pinned && detected.creative && canon(detected.creative) !== canon(creative) && (
+                    <Tooltip text={`${detected.project} is open`}>
+                        <button type="button" className="wfb-follow" onClick={followDetected}>
+                            <Crosshair size={11} />
+                            <span>{prettyCreative(detected.creative)}</span>
+                        </button>
+                    </Tooltip>
+                )}
 
                 <div className="wfb-head-actions">
                     <Tooltip text="Pick a different creative">
@@ -1239,7 +1309,7 @@ const WorkflowBoardTool: React.FC<{
                                 <div className="wfb-others">
                                     <span className="wfb-others-label">This campaign already has:</span>
                                     {creativesWithWorkflow.map((name) => (
-                                        <button key={name} type="button" className="wfb-chip" onClick={() => setCreative(name)}>
+                                        <button key={name} type="button" className="wfb-chip" onClick={() => { setCreative(name); setPinned(true); }}>
                                             {prettyCreative(name)}
                                         </button>
                                     ))}

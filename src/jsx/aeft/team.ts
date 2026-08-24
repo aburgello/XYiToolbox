@@ -3169,7 +3169,8 @@ interface WorkflowContext extends Result {
   creativeLabel?: string;
   /** Campaign whose masters root contains this project, "" when none does. */
   campaign?: string;
-  /** Every campaign the panel knows, for the picker. */
+  /** Every campaign the panel knows, for the picker. One root each -- the
+   *  panel only needs somewhere to scan creatives and territories from. */
   campaigns?: { name: string; mastersRoot: string }[];
 }
 
@@ -3203,29 +3204,78 @@ export const workflowContext = (): WorkflowContext => {
       if (item && typeof (item as CompItem).numLayers === "number") project = item.name;
     }
 
-    const camps: { name: string; mastersRoot: string }[] = [];
-    const ov = loadCampaignsRaw();
-    for (let i = 0; i < ov.length; i++) camps.push({ name: ov[i].name, mastersRoot: ov[i].mastersRoot });
-    const loc = loadLocLibCampaigns();
-    for (let j = 0; j < loc.length; j++) {
-      let dupe = false;
-      for (let k = 0; k < camps.length; k++) {
-        if (camps[k].name.toLowerCase() === loc[j].name.toLowerCase()) { dupe = true; break; }
+    // ONE CAMPAIGN CAN HAVE TWO ROOTS, and that was the bug.
+    //
+    // OV Library saves a campaign against its MASTERS tree
+    // (`XY026039_…_Masters`); Localised Library saves the same campaign against
+    // its MARKETS tree (`XY026040_…_Markets`). They are SIBLING folders, not
+    // parent and child (CLAUDE.md §5), so a working file under
+    // `…_Markets/Brazil/AE/…` shares no prefix with the masters root at all.
+    // The old code kept whichever store was read first and dropped the other as
+    // a duplicate name, so on any machine that has the campaign in OV Library,
+    // every real working file failed to match and came back "no campaign".
+    //
+    // Both roots are kept now and all of them are tested.
+    const camps: { name: string; mastersRoot: string; roots: string[] }[] = [];
+    function addCampaign(name: string, root: string): void {
+      if (!name) return;
+      for (let c = 0; c < camps.length; c++) {
+        if (camps[c].name.toLowerCase() !== name.toLowerCase()) continue;
+        if (root && camps[c].roots.indexOf(root) === -1) camps[c].roots.push(root);
+        // The FIRST root stays the primary one, because that is what
+        // scanCreatives and the territory scan are handed.
+        if (root && !camps[c].mastersRoot) camps[c].mastersRoot = root;
+        return;
       }
-      if (!dupe) camps.push({ name: loc[j].name, mastersRoot: loc[j].marketsRoot });
+      camps.push({ name: name, mastersRoot: root, roots: root ? [root] : [] });
     }
+    const ov = loadCampaignsRaw();
+    for (let i = 0; i < ov.length; i++) addCampaign(ov[i].name, ov[i].mastersRoot);
+    const loc = loadLocLibCampaigns();
+    for (let j = 0; j < loc.length; j++) addCampaign(loc[j].name, loc[j].marketsRoot);
 
     let campaign = "";
     let bestLen = 0;
     if (projectPath) {
       const hay = projectPath.toLowerCase();
       for (let m = 0; m < camps.length; m++) {
-        const root = String(camps[m].mastersRoot || "").toLowerCase();
-        if (!root) continue;
-        if (hay.indexOf(root) !== 0) continue;
-        if (root.length <= bestLen) continue;
-        bestLen = root.length;
-        campaign = camps[m].name;
+        for (let r = 0; r < camps[m].roots.length; r++) {
+          const root = String(camps[m].roots[r] || "").toLowerCase();
+          if (!root) continue;
+          if (hay.indexOf(root) !== 0) continue;
+          // Longest root wins, so a campaign nested inside another campaign's
+          // tree resolves to the inner one.
+          if (root.length <= bestLen) continue;
+          bestLen = root.length;
+          campaign = camps[m].name;
+        }
+      }
+
+      // STILL NOTHING: MATCH THE CAMPAIGN'S NAME AGAINST THE PATH ITSELF.
+      //
+      // A campaign saved against one of its trees on a machine where the artist
+      // works out of the other, or a root typed with a different mount prefix,
+      // both land here. The real tree carries the campaign in a folder name --
+      // `/Forgotten_Island/Digital/INT/XY026040_…` — so the name is in the path
+      // even when no saved root is.
+      //
+      // Same technique detectCurrentTerritory already uses: walk the path's
+      // folder names and compare them canonically. Longest name wins, so
+      // "Portal" cannot claim a file belonging to "Portal To Paradise".
+      if (!campaign) {
+        const parts = projectPath.split("/");
+        let bestName = 0;
+        for (let n = 0; n < camps.length; n++) {
+          const want = workflowCanon(camps[n].name);
+          if (want.length < 4) continue;   // too short to be evidence
+          for (let q = 0; q < parts.length; q++) {
+            if (workflowCanon(parts[q]).indexOf(want) === -1) continue;
+            if (want.length <= bestName) continue;
+            bestName = want.length;
+            campaign = camps[n].name;
+            break;
+          }
+        }
       }
     }
 

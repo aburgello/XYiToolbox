@@ -1722,3 +1722,29 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     // at 11px the panel's sans B reads as a letter rather than a control.
     font-family: Georgia, "Times New Roman", serif;
 }
+
+// "Trio is open" — shown only while you have pinned a different creative by
+// hand. One click back to following the project; never a silent switch.
+.workflow-board .wfb-follow {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: none;
+    max-width: 120px;
+    padding: 3px 8px;
+    border: 1px solid var(--cat-border, #fb923c);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--cat-icon, #fdba74);
+    font-size: 9.5px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+
+    &:hover { background: rgba(255, 255, 255, 0.1); }
+    &:active { background: rgba(255, 255, 255, 0.1); }
+
+    svg { flex: none; }
+
+    span { overflow: hidden; text-overflow: ellipsis; }
+}
