@@ -966,12 +966,20 @@
         }
         &:active { background: rgba(255, 255, 255, 0.07); }
 
+        // THE PAGE'S OWN ACCENT, not the theme's. `--cat-*` is the category
+        // tint Deliver carries (orange), set as an inline style on the mounted
+        // tool -- every other selected/active state in this file keys off it,
+        // and a tab picked out in the theme accent read as belonging to a
+        // different screen. `--cat-glow` is deliberately NOT used as the fill:
+        // it is tuned for hover at 0.35 alpha and glares at rest.
         &.is-on {
             opacity: 1;
-            border-color: var(--ov-accent, #4a9eff);
+            border-color: var(--cat-border, #fb923c);
             background: rgba(255, 255, 255, 0.08);
 
             &:hover, &:active { background: rgba(255, 255, 255, 0.08); }
+
+            .dh-spectab-name { color: var(--cat-icon, #fdba74); }
         }
     }
 

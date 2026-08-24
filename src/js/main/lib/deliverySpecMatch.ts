@@ -105,9 +105,23 @@ export function findSpecsFolder(sourcePath: string): string | null {
     return null;
 }
 
-/** Lowercase alphanumerics only, for loose filename comparison. */
+/**
+ * Lowercase alphanumerics only, accents folded first.
+ *
+ * THE FOLD IS NOT COSMETIC. Stripping non-alphanumerics on its own DELETES an
+ * accented letter rather than plainening it, so Brazil's `MarinaLEDPraça&Pier`
+ * squashed to `marinaledpraapier` -- the c gone entirely -- and no longer
+ * matched the comp's own `MarinaLEDPracaPier`. Same for `RelógioDigital01`.
+ * Decompose first and drop the combining marks, and both spellings land on the
+ * same key. (This is the panel-side twin of `artwork.ts`'s `foldAccents`;
+ * Chromium has `normalize`, ExtendScript does not.)
+ */
 function squash(s: string): string {
-    return String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    return String(s || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "");
 }
 
 /**
@@ -152,6 +166,38 @@ export interface SpecSuggestion {
 
 const EMPTY: SpecSuggestion = { sizeMB: "", maxMbps: "", source: "", openPath: "", searched: false };
 
+/**
+ * The rows of one sheet that describe this comp. Exported so it can be driven
+ * headlessly -- the matching rule is the part worth testing, and it used to be
+ * buried in the middle of a function that needs a Specs folder on disk.
+ *
+ * Size and duration, then the SITE when those alone leave more than one row.
+ * Brazil's Batch 1 sheet has JockeyClub and MarinaTotens both at
+ * 1080x1920 · 15s, so size and duration alone called them ambiguous and left
+ * both rows blank -- next to seven rows that filled themselves in, which reads
+ * as the panel giving up rather than as a real question. The sheet names the
+ * site and so does the comp, so ask it.
+ *
+ * NOT the fuzzy scoring tier 2 uses, and that distinction is the rule this
+ * whole file is built on: a loose match may decide which PDF a human opens,
+ * never which number goes into a delivery. This is exact equality on a
+ * normalised name -- case, spacing, punctuation and accents folded, nothing
+ * else. `MarinaLEDPraça&Pier` and `MarinaLEDPracaPier` are the same site
+ * written twice; `JockeyClub` and `JockeyClubDATE` are not, and stay
+ * ambiguous. And the narrowing only counts when it leaves EXACTLY one row.
+ */
+export function specRowsForComp(rows: SpecRow[], parts: CompNameParts): SpecRow[] {
+    const hits = rows.filter(
+        (r) => r.Size === parts.size && String(r.Duration) === String(parts.duration)
+    );
+    if (hits.length > 1 && parts.site) {
+        const want = squash(parts.site);
+        const bySite = hits.filter((r) => r.Site && squash(r.Site) === want);
+        if (bySite.length === 1) return bySite;
+    }
+    return hits;
+}
+
 export async function suggestForComp(compName: string, sourcePath: string): Promise<SpecSuggestion> {
     // EVERY EXIT SAYS WHY. These all used to return EMPTY, which the caller
     // discards (searched:false), so the row showed nothing at all -- identical
@@ -182,6 +228,9 @@ export async function suggestForComp(compName: string, sourcePath: string): Prom
     // but it is remembered, because "I found your spec and it doesn't say"
     // is a real answer and used to be thrown away.
     let matchedButSilent: SpecSuggestion | null = null;
+    /** More than one row matched and the site couldn't separate them. Held for
+     *  the same reason as above: a later PDF may still answer cleanly. */
+    let ambiguous: SpecSuggestion | null = null;
 
     // --- tier 1: a real delivery table -------------------------------------
     for (const file of pdfs) {
@@ -194,9 +243,8 @@ export async function suggestForComp(compName: string, sourcePath: string): Prom
         } catch {
             continue;
         }
-        const hits = rows.filter(
-            (r) => r.Size === parts.size && String(r.Duration) === String(parts.duration)
-        );
+        const hits = specRowsForComp(rows, parts);
+
         // Exactly one, or nothing. An ambiguous match stays blank: a wrong
         // target size means a file delivered over its limit, and a blank field
         // costs one manual entry.
@@ -231,8 +279,13 @@ export async function suggestForComp(compName: string, sourcePath: string): Prom
                 openPath: path.join(specsDir, file),
             };
         }
-        if (hits.length > 1) {
-            return {
+        // STILL AMBIGUOUS -- REMEMBERED, NOT RETURNED. This used to end the
+        // search outright, so one crowded sheet early in the folder hid a
+        // later one that answers cleanly. A Specs folder holds a PRE and a
+        // POST sheet per batch and they describe overlapping sizes; whichever
+        // `readdir` happened to reach first decided the row.
+        if (hits.length > 1 && !ambiguous) {
+            ambiguous = {
                 ...EMPTY,
                 searched: true,
                 source: `${hits.length} rows in ${file} match ${parts.size} · ${parts.duration}s — pick one yourself`,
@@ -243,6 +296,8 @@ export async function suggestForComp(compName: string, sourcePath: string): Prom
 
     // A confident table match beats a filename guess, even with nothing to fill.
     if (matchedButSilent) return matchedButSilent;
+    // ...and a real question about a real row beats a guess at a filename.
+    if (ambiguous) return ambiguous;
 
     // --- tier 2: point at the likeliest document ---------------------------
     if (parts.site) {

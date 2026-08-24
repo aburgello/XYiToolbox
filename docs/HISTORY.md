@@ -7114,3 +7114,47 @@ of `dist/cep/assets/style-*.css` to confirm the new rules land at
 `.delivery-hub .dh-specreport .dh-spectab…` — (0,3,0), so `index.scss`'s global
 `button:hover` cannot paint over them — and that nothing in the block uses a
 feature past Chromium 74.
+
+### The two rows that wouldn't autofill
+
+Nine deliverables, seven filled in, two blank — JockeyClub and MarinaTotens,
+both `1080x1920 · 15s`. Which looks like the panel giving up, and isn't: the
+sheet has both of them at that size, `suggestForComp` matched on size and
+duration alone, and its rule for more than one hit is to refuse ("a wrong
+target size means a file delivered over its limit, and a blank field costs one
+manual entry"). Right rule, incomplete question — the sheet names the site and
+so does the comp, and neither was being asked.
+
+It matters more than a blank field: with nothing filled in, both rows fell to
+the 26 Mbps default. 26 Mbps over 15s is ~48 MB against a 5 MB cap.
+
+Three changes, all inside tier 1, none of them loosening it into tier 2's fuzzy
+matching — a loose match may still only decide which PDF a human opens:
+
+- `specRowsForComp` narrows a multi-row hit by SITE, and takes the answer only
+  when it leaves exactly one row. Exact equality on a normalised name; nothing
+  scored, nothing partial. Extracted as an export so the rule can be driven
+  headlessly, which is the point of it existing separately at all.
+- **`squash` folds accents instead of deleting them.** It stripped
+  non-alphanumerics, which removes an accented letter outright:
+  `MarinaLEDPraça&Pier` became `marinaledpraapier` — no c — and stopped
+  matching the comp's own `MarinaLEDPracaPier`. NFD, drop the combining marks,
+  then squash. `RelógioDigital01` had the same problem. This is CLAUDE.md's
+  decode-and-fold rule showing up a third time, in the one place it had only
+  ever been half-applied.
+- **An ambiguous sheet no longer ends the search.** It returned immediately, so
+  whichever PDF `readdir` reached first decided the row — and a Specs folder
+  holds a PRE and a POST sheet per batch describing overlapping sizes. Held
+  like `matchedButSilent` already was, and returned only if no later sheet
+  answers cleanly.
+
+`scripts/probe-spec-match.cjs` drives the real exported matcher over the real
+Batch 1 rows, ampersand and cedilla included. What must stay ambiguous is
+tested as hard as what must now resolve: `JockeyClub` does not claim the PRE
+sheet's `JockeyClubDATE` (a prefix match would have paired them), and two rows
+for the same site at one size still refuse.
+
+**The selected tab uses `--cat-border`/`--cat-icon`, not `--ov-accent`.** The
+category tint is what every other active state in `DeliveryHub.scss` keys off;
+a tab picked out in the theme accent read as belonging to a different screen.
+`--cat-glow` stays out of it — CLAUDE.md's rule, it is tuned for hover.
