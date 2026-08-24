@@ -7504,3 +7504,54 @@ actually has ("the Brazil CTA notes"); making them exclusive would mean picking
 which half to ask. Both cost nothing until they exist — the territory row
 appears only when more than one territory has notes, and tags filter by clicking
 the chip already on a note, so neither takes permanent estate.
+
+### It read as a form, not as house rules
+
+Four things, and one of them was a real bug.
+
+**The picker opened on a retired campaign.** `openPicker` fell back to
+`campaigns[0]`, which is whichever campaign was added to this machine FIRST —
+and on a machine that has been going a while, that is a finished one. So the
+picker opened on Paw Patrol Dino every time, greyed and unselectable, and going
+back reverted to it. The greying looked broken rather than deliberate. It now
+falls back to the first campaign that is not retired. Verified on the exact path
+that failed: with nothing detected, the picker opens on Forgotten Island, and
+clicking a retired chip still does nothing.
+
+**ALL-CAPS folder names came back shouting.** `PORTAL_TO_PARADISE` and
+`CHARMED TOOLKIT` are real folders, and the "leave an existing acronym alone"
+rule read every word of them as an acronym. If the whole string is upper-case
+there is no acronym to preserve — nothing to contrast it against — so it is
+lowered first and re-cased like anything else. That also had to disable the
+short-word-is-a-code rule for those names: `Portal_brb` means BRB because
+somebody chose lower case for it while choosing upper for Portal, but
+`PAW_PATROL_DINO` chose nothing, and applying the rule there gave "PAW Patrol
+Dino". `FID_DOOH_MASTER` consequently reads "Fid Dooh Master" — there is no way
+to tell those apart, and wrong-but-readable beats wrong-and-shouty.
+
+**Three buttons under a four-step list made it a form.** Reset, Edit steps and a
+delete-for-everyone bin took a full row under the steps, which invited you to
+change a thing the team agreed once and you are supposed to follow. Editing a
+workflow is rare and deliberate; it does not get equal billing with the content.
+Now: one quiet ⋯ opening a Droplet (the panel's own popover, so Escape and
+outside-click already work), and the row is the byline. "Reset" became "Clear my
+ticks" — the old label said nothing about *whose* progress, on a board that is
+otherwise shared.
+
+**The progress ring went.** It sat under the creative name saying 2/8 while the
+rail beside the steps already said the same thing in the one place you are
+looking. The count moved into the byline, which had room.
+
+**The creative picker.** Every row carried a "none yet" tag, so most of the list
+was labelled with the absence of a thing — noise that made the documented ones
+harder to pick out, not easier. Now the ones with a workflow sort first, carry a
+left rail and their step/note counts, and everything else is quieter with no
+marker at all. A search appears past eight creatives; under that it is faster to
+read than to type.
+
+**And the filtering was invisible.** Tags could only be filtered by clicking a
+chip already on a note — which works, but you had to already know it. Both
+filters now live in the same row in the notes header, each appearing only when
+there is more than one of its kind to choose between. With a single note there
+is still nothing to filter, and a control that can only ever hide things is not
+worth the estate.

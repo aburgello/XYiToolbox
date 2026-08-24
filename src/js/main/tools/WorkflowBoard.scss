@@ -252,41 +252,102 @@
     overflow-y: auto;
 }
 
+.workflow-board .wfb-creative-search {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 7px 9px 0;
+    padding: 4px 7px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.25);
+
+    svg { flex: none; opacity: 0.45; }
+
+    input {
+        flex: 1;
+        min-width: 0;
+        padding: 1px 0;
+        border: none;
+        background: none;
+        color: inherit;
+        font-size: 10.5px;
+
+        &:focus { outline: none; }
+    }
+}
+
+.workflow-board .wfb-creative-sep {
+    margin: 7px 0 3px;
+    padding: 0 2px;
+    font-size: 8.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    opacity: 0.3;
+}
+
 .workflow-board .wfb-creative {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
     width: 100%;
-    padding: 5px 8px;
-    border: 1px solid rgba(255, 255, 255, 0.07);
-    border-radius: 4px;
+    padding: 7px 9px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 5px;
     background: rgba(255, 255, 255, 0.02);
     color: inherit;
     font-size: 11px;
     text-align: left;
     cursor: pointer;
+    transition:
+        background-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
+        border-color 160ms cubic-bezier(0.22, 1, 0.36, 1);
 
-    &:hover { background: rgba(255, 255, 255, 0.07); border-color: var(--cat-border, #fb923c); }
+    &:hover {
+        background: rgba(255, 255, 255, 0.07);
+        border-color: rgba(45, 212, 191, 0.35);
+    }
     &:active { background: rgba(255, 255, 255, 0.07); }
 
-    &.has-wf { border-left: 2px solid var(--cat-border, #fb923c); }
+    // Documented. A left rail rather than a badge on the right: it lines the
+    // written-up ones into a visible column you can run your eye down, which a
+    // trailing tag cannot do.
+    &.has-wf {
+        border-left: 2px solid var(--cat-border, #fb923c);
+        background: rgba(255, 255, 255, 0.035);
+    }
+
+    // NOTHING WRITTEN DOWN gets no marker at all. It used to carry a "none yet"
+    // tag on every row, which meant most of the list was labelled with the
+    // absence of a thing — noise that made the ones that DO have a workflow
+    // harder to pick out, not easier.
+    &:not(.has-wf) { opacity: 0.62; }
+    &:not(.has-wf):hover { opacity: 1; }
 }
 
-.workflow-board .wfb-creative-name { overflow-wrap: break-word; }
+.workflow-board .wfb-creative-name {
+    min-width: 0;
+    overflow-wrap: break-word;
+}
 
-.workflow-board .wfb-creative-tag {
+.workflow-board .wfb-creative-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+}
+
+.workflow-board .wfb-creative-count {
     display: flex;
     align-items: center;
     gap: 3px;
-    flex: none;
     font-size: 9px;
-    opacity: 0.75;
+    font-variant-numeric: tabular-nums;
     color: var(--cat-icon, #fdba74);
+    opacity: 0.85;
 
     svg { flex: none; }
-
-    &.wfb-creative-tag--none { color: inherit; opacity: 0.35; }
 }
 
 .workflow-board .wfb-typein {
@@ -1484,4 +1545,59 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     &:disabled { opacity: 0.35; }
 
     &::placeholder { letter-spacing: 0.02em; opacity: 0.45; }
+}
+
+// ── the options menu ────────────────────────────────────────────────────────
+//
+// Editing a workflow is rare and deliberate. Three buttons in a row under the
+// steps made it read as a form you were being invited to change; one quiet ⋯
+// makes it something you go and find.
+
+.workflow-board .wfb-btn.wfb-btn--quiet {
+    border-color: transparent;
+    background: none;
+    opacity: 0.45;
+
+    &:hover { background: rgba(255, 255, 255, 0.07); opacity: 1; }
+    &:active { background: rgba(255, 255, 255, 0.07); }
+}
+
+.workflow-board .wfb-by em {
+    font-style: normal;
+    opacity: 0.85;
+}
+
+// PORTALED, so it is outside .workflow-board and cannot be scoped under it.
+// Same reason Dialog and DragOverlay have to re-apply the category tint.
+.droplet-panel.wfb-menu {
+    min-width: 168px;
+    padding: 4px;
+}
+
+.droplet-panel.wfb-menu .wfb-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 8px;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    color: inherit;
+    font-size: 11px;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover { background: rgba(255, 255, 255, 0.08); }
+    &:active { background: rgba(255, 255, 255, 0.08); }
+
+    &:disabled {
+        opacity: 0.3;
+        cursor: default;
+        &:hover, &:active { background: none; }
+    }
+
+    svg { flex: none; opacity: 0.65; }
+
+    &.wfb-menu-item--danger:hover { color: #f87171; }
 }

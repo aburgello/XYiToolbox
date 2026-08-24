@@ -26,7 +26,7 @@ import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import {
     ListChecks, Plus, X, Trash2, Pencil, Check, RotateCcw, StickyNote,
     RefreshCw, AlertCircle, FolderSearch, ChevronLeft, GripVertical, Users,
-    ArrowRight, Link2, Link2Off, Search, Globe, FolderOpen, Wand2,
+    ArrowRight, Link2, Link2Off, Search, Globe, FolderOpen, Wand2, MoreHorizontal,
 } from "lucide-react";
 import { TOOLS } from "../toolRegistry";
 import { evalTS } from "../../lib/utils/bolt";
@@ -35,6 +35,7 @@ import { sfx } from "../../lib/utils/sfx";
 import { confirmDialog } from "../Dialog";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
+import Droplet from "../Droplet";
 import "../shared.scss";
 import "./WorkflowBoard.scss";
 
@@ -155,12 +156,23 @@ function prettyCreative(s: string): string {
     const raw = String(s || "").trim();
     if (!raw) return "";
 
-    // No lower-case anywhere: the parser's token. Nothing to split on.
-    if (raw === raw.toUpperCase() && raw.indexOf("_") === -1 && raw.indexOf("-") === -1) {
+    // NOTHING BUT CAPITALS IS SHOUTING, NOT ACRONYMS. `PORTAL_TO_PARADISE` and
+    // `CHARMED TOOLKIT` are real folder names, and the "leave an acronym alone"
+    // rule below read every word of them as an acronym and printed them back
+    // unchanged. If the whole string is upper-case there is no acronym to
+    // preserve — there is nothing to contrast it against — so it is lowered
+    // first and re-cased by the same rules as anything else.
+    const shouting = raw === raw.toUpperCase();
+    const work = shouting ? raw.toLowerCase() : raw;
+
+    // A single run of capitals with no separator is the parser's token
+    // ("PORTALTOPARADISE"). Nothing can recover the word breaks, so it just
+    // gets a leading capital.
+    if (shouting && raw.indexOf("_") === -1 && raw.indexOf("-") === -1 && raw.indexOf(" ") === -1) {
         return raw.charAt(0) + raw.slice(1).toLowerCase();
     }
 
-    const words = raw
+    const words = work
         .replace(/[_-]+/g, " ")
         // camelCase and PascalCase: "PortalToParadise" -> "Portal To Paradise".
         // The second pattern catches an acronym running into a word
@@ -174,7 +186,15 @@ function prettyCreative(s: string): string {
         if (w === w.toUpperCase() && /[A-Z]/.test(w)) return w;          // already an acronym
         const lower = w.toLowerCase();
         if (i > 0 && JOINERS.indexOf(lower) !== -1) return lower;         // never the first word
-        if (lower.length <= 3 && /^[a-z]+$/.test(w)) return w.toUpperCase();
+        // THE CODE RULE NEEDS A MIXED-CASE NAME TO MEAN ANYTHING. `Portal_brb`
+        // says "brb" is a code because somebody chose lower case for it while
+        // choosing upper for Portal. In `PAW_PATROL_DINO` nothing was chosen —
+        // it is all capitals — so applying it there gave "PAW Patrol Dino".
+        // A shouting name loses that signal, and guessing without it is worse
+        // than title-casing everything. (`FID_DOOH_MASTER` therefore comes back
+        // as "Fid Dooh Master"; there is no way to tell those apart, and the
+        // wrong-but-readable answer beats a wrong-and-shouty one.)
+        if (!shouting && lower.length <= 3 && /^[a-z]+$/.test(w)) return w.toUpperCase();
         return w.charAt(0).toUpperCase() + w.slice(1);
     }).join(" ");
 }
@@ -446,38 +466,6 @@ const LinkPicker: React.FC<{
     );
 };
 
-// ---------------------------------------------------------------------------
-// Progress ring. Reads at a glance from across a desk, which a "4/7" does not.
-// ---------------------------------------------------------------------------
-const ProgressRing: React.FC<{ done: number; total: number }> = ({ done, total }) => {
-    const reduced = useReducedMotion();
-    const R = 15;
-    const C = 2 * Math.PI * R;
-    const frac = total > 0 ? done / total : 0;
-    const complete = total > 0 && done === total;
-    return (
-        <div className={"wfb-ring" + (complete ? " is-complete" : "")}>
-            <svg width="36" height="36" viewBox="0 0 36 36">
-                <circle className="wfb-ring-track" cx="18" cy="18" r={R} fill="none" strokeWidth="3" />
-                <motion.circle
-                    className="wfb-ring-bar"
-                    cx="18" cy="18" r={R} fill="none" strokeWidth="3"
-                    strokeLinecap="round"
-                    strokeDasharray={C}
-                    // Drawn from twelve o'clock. A CSS transform would fight
-                    // nothing here (Framer only animates the offset), but the
-                    // rotation belongs to the geometry, so it stays on the SVG.
-                    transform="rotate(-90 18 18)"
-                    initial={false}
-                    animate={{ strokeDashoffset: C * (1 - frac) }}
-                    transition={reduced ? { duration: 0 } : { type: "spring", stiffness: 160, damping: 24 }}
-                />
-            </svg>
-            <span className="wfb-ring-label">{done}/{total}</span>
-        </div>
-    );
-};
-
 /**
  * THE THREE CURVES, and there are only three.
  *
@@ -536,6 +524,9 @@ const WorkflowBoardTool: React.FC<{
     const [pickCampaign, setPickCampaign] = useState("");
     const [folderCreatives, setFolderCreatives] = useState<string[] | null>(null);
     const [scanning, setScanning] = useState(false);
+    /** Filters the creative list. A campaign can carry twenty folders and the
+     *  one you want is rarely near the top alphabetically. */
+    const [creativeQuery, setCreativeQuery] = useState("");
 
     const [ticks, setTicks] = useState<Record<string, Record<string, boolean>>>({});
     const [editing, setEditing] = useState(false);
@@ -923,7 +914,14 @@ const WorkflowBoardTool: React.FC<{
     // --- the picker ----------------------------------------------------------
 
     const openPicker = async () => {
-        setPickCampaign(campaign || (campaigns[0] ? campaigns[0].name : ""));
+        // NEVER LAND ON A RETIRED CAMPAIGN. This used to be `campaigns[0]`,
+        // which is whichever was added to this machine first — and a machine
+        // that has been going a while has a finished campaign there. Opening
+        // the picker on one you cannot even select, every time, made the
+        // greying look broken rather than deliberate.
+        const live = campaigns.filter((c) => !retired[c.name.toLowerCase()]);
+        const fallback = live[0] || campaigns[0];
+        setPickCampaign(campaign || (fallback ? fallback.name : ""));
         setPicking(true);
     };
 
@@ -953,24 +951,45 @@ const WorkflowBoardTool: React.FC<{
      *  anything the board already carries that the tree didn't show. */
     const pickable = useMemo(() => {
         const seen: Record<string, boolean> = {};
-        const out: { name: string; hasWorkflow: boolean }[] = [];
+        const out: { name: string; steps: number; notes: number; hasWorkflow: boolean }[] = [];
         const want = canon(pickCampaign);
-        const withWf: Record<string, boolean> = {};
-        entries.filter((e) => canon(e.campaign) === want).forEach((e) => { withWf[canon(e.creative)] = true; });
-        (folderCreatives || []).forEach((n) => {
-            const c = canon(n);
+        const mine = entries.filter((e) => canon(e.campaign) === want);
+        const wf: Record<string, WorkflowEntry> = {};
+        mine.forEach((e) => { wf[canon(e.creative)] = e; });
+
+        const push = (name: string) => {
+            const c = canon(name);
             if (seen[c]) return;
             seen[c] = true;
-            out.push({ name: n, hasWorkflow: !!withWf[c] });
+            const hit = wf[c];
+            out.push({
+                name,
+                steps: hit ? hit.steps.length : 0,
+                notes: hit ? (hit.notes || []).length : 0,
+                hasWorkflow: !!hit,
+            });
+        };
+        (folderCreatives || []).forEach(push);
+        // A creative with a workflow but no folder on disk still has to be
+        // reachable -- the folder may be on a share that is not mounted.
+        mine.forEach((e) => push(e.creative));
+
+        // WHAT THE TEAM HAS WRITTEN COMES FIRST. Alphabetical put a folder
+        // nobody has documented above the workflow you were looking for, which
+        // is the wrong way round for a list you open to find a workflow.
+        return out.sort((a, b) => {
+            if (a.hasWorkflow !== b.hasWorkflow) return a.hasWorkflow ? -1 : 1;
+            return a.name.localeCompare(b.name);
         });
-        entries.filter((e) => canon(e.campaign) === want).forEach((e) => {
-            const c = canon(e.creative);
-            if (seen[c]) return;
-            seen[c] = true;
-            out.push({ name: e.creative, hasWorkflow: true });
-        });
-        return out.sort((a, b) => a.name.localeCompare(b.name));
     }, [folderCreatives, entries, pickCampaign]);
+
+    const pickableShown = useMemo(() => {
+        const q = creativeQuery.trim().toLowerCase();
+        if (!q) return pickable;
+        return pickable.filter((c) =>
+            c.name.toLowerCase().indexOf(q) !== -1 ||
+            prettyCreative(c.name).toLowerCase().indexOf(q) !== -1);
+    }, [pickable, creativeQuery]);
 
     const choose = (campName: string, creativeName: string) => {
         setCampaign(campName);
@@ -1002,8 +1021,6 @@ const WorkflowBoardTool: React.FC<{
                         </span>
                     </div>
                 </div>
-
-                {entry && !editing && <ProgressRing done={doneCount} total={entry.steps.length} />}
 
                 <div className="wfb-head-actions">
                     <Tooltip text="Pick a different creative">
@@ -1081,6 +1098,27 @@ const WorkflowBoardTool: React.FC<{
                             })}
                         </div>
 
+                        {/* A SEARCH, because a campaign carries twenty folders
+                            and the one you want is rarely near the top
+                            alphabetically. Only when there is enough to hunt
+                            through — under about eight it is faster to read. */}
+                        {pickable.length > 8 && (
+                            <div className="wfb-creative-search">
+                                <Search size={11} />
+                                <input
+                                    type="text"
+                                    value={creativeQuery}
+                                    placeholder="Find a creative…"
+                                    onChange={(e) => setCreativeQuery(e.target.value)}
+                                />
+                                {creativeQuery && (
+                                    <button type="button" className="wfb-mini" onClick={() => setCreativeQuery("")} title="Clear">
+                                        <X size={10} />
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
                         <div className="wfb-creatives">
                             {scanning && <p className="wfb-empty-line">Reading the masters tree…</p>}
                             {!scanning && pickable.length === 0 && (
@@ -1090,22 +1128,43 @@ const WorkflowBoardTool: React.FC<{
                                         : "No creatives found for that campaign."}
                                 </p>
                             )}
-                            {pickable.map((c, i) => (
-                                <motion.button
-                                    key={c.name}
-                                    type="button"
-                                    className={"wfb-creative" + (c.hasWorkflow ? " has-wf" : "")}
-                                    onClick={() => choose(pickCampaign, c.name)}
-                                    initial={{ opacity: 0, y: 4 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    transition={{ ...ease, delay: rowDelay(i) }}
-                                >
-                                    <span className="wfb-creative-name">{prettyCreative(c.name)}</span>
-                                    {c.hasWorkflow
-                                        ? <span className="wfb-creative-tag"><ListChecks size={9} /> workflow</span>
-                                        : <span className="wfb-creative-tag wfb-creative-tag--none">none yet</span>}
-                                </motion.button>
-                            ))}
+                            {!scanning && pickable.length > 0 && pickableShown.length === 0 && (
+                                <p className="wfb-empty-line">Nothing matches “{creativeQuery}”.</p>
+                            )}
+                            {pickableShown.map((c, i) => {
+                                // The divider between documented and not, drawn
+                                // once at the boundary rather than as two
+                                // separate lists — one list you can scan beats
+                                // two you have to notice.
+                                const first = i > 0 && pickableShown[i - 1].hasWorkflow && !c.hasWorkflow;
+                                return (
+                                    <React.Fragment key={c.name}>
+                                        {first && <p className="wfb-creative-sep">Nothing written down yet</p>}
+                                        <motion.button
+                                            type="button"
+                                            className={"wfb-creative" + (c.hasWorkflow ? " has-wf" : "")}
+                                            onClick={() => choose(pickCampaign, c.name)}
+                                            initial={{ opacity: 0, y: 4 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            transition={reduced ? { duration: 0 } : { ...SPRING.snappy, delay: rowDelay(i) }}
+                                        >
+                                            <span className="wfb-creative-name">{prettyCreative(c.name)}</span>
+                                            {c.hasWorkflow && (
+                                                <span className="wfb-creative-meta">
+                                                    <span className="wfb-creative-count" title={`${c.steps} step${c.steps === 1 ? "" : "s"}`}>
+                                                        <ListChecks size={9} />{c.steps}
+                                                    </span>
+                                                    {c.notes > 0 && (
+                                                        <span className="wfb-creative-count" title={`${c.notes} note${c.notes === 1 ? "" : "s"}`}>
+                                                            <StickyNote size={9} />{c.notes}
+                                                        </span>
+                                                    )}
+                                                </span>
+                                            )}
+                                        </motion.button>
+                                    </React.Fragment>
+                                );
+                            })}
                         </div>
 
                         {/* THE LAST RESORT, AND IT HAS TO EXIST. A creative
@@ -1281,24 +1340,69 @@ const WorkflowBoardTool: React.FC<{
                                 )}
                             </ol>
 
+                            {/* THIS IS HOUSE RULES, NOT A FORM.
+                                Three buttons sat here — Reset, Edit steps and a
+                                Delete-for-everyone bin — taking a full row under
+                                a four-step list. It made the workflow read as a
+                                document you were being invited to change, when
+                                it is something the team agreed once and you
+                                follow. Editing is rare and deliberate; it does
+                                not get equal billing with the steps.
+
+                                So: one quiet ⋯, and the row is the byline. The
+                                Droplet is the same popover the rest of the panel
+                                uses, so Escape and outside-click already work. */}
                             <div className="wfb-steps-foot">
                                 <span className="wfb-by">
                                     <Users size={10} /> {entry.author || "unknown"}
                                     {entry.updatedAt ? ` · ${shortStamp(entry.updatedAt)}` : ""}
+                                    {doneCount > 0 && <em> · {doneCount}/{entry.steps.length} done</em>}
                                 </span>
-                                <div className="wfb-steps-foot-actions">
-                                    <button type="button" className="wfb-btn" onClick={resetTicks} disabled={doneCount === 0}>
-                                        <RotateCcw size={12} /><span>Reset</span>
-                                    </button>
-                                    <button type="button" className="wfb-btn" onClick={startEditing}>
-                                        <Pencil size={12} /><span>Edit steps</span>
-                                    </button>
-                                    <Tooltip text="Delete this workflow for everyone">
-                                        <button type="button" className="wfb-btn wfb-btn--icon wfb-btn--danger" onClick={deleteEntry}>
-                                            <Trash2 size={12} />
+                                <Droplet
+                                    panelClassName="wfb-menu"
+                                    trigger={({ toggle }) => (
+                                        <button
+                                            type="button"
+                                            className="wfb-btn wfb-btn--icon wfb-btn--quiet"
+                                            onClick={toggle}
+                                            title="Workflow options"
+                                            aria-label="Workflow options"
+                                        >
+                                            <MoreHorizontal size={13} />
                                         </button>
-                                    </Tooltip>
-                                </div>
+                                    )}
+                                >
+                                    {(close) => (
+                                        <>
+                                            <button
+                                                type="button"
+                                                className="wfb-menu-item"
+                                                disabled={doneCount === 0}
+                                                onClick={() => { close(); resetTicks(); }}
+                                            >
+                                                <RotateCcw size={12} />
+                                                {/* "Reset" said nothing about
+                                                    WHOSE progress, on a board
+                                                    that is otherwise shared. */}
+                                                <span>Clear my ticks</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="wfb-menu-item"
+                                                onClick={() => { close(); startEditing(); }}
+                                            >
+                                                <Pencil size={12} /><span>Edit steps</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="wfb-menu-item wfb-menu-item--danger"
+                                                onClick={() => { close(); deleteEntry(); }}
+                                            >
+                                                <Trash2 size={12} /><span>Delete for the team</span>
+                                            </button>
+                                        </>
+                                    )}
+                                </Droplet>
                             </div>
 
                             {/* ── notes ─────────────────────────────────── */}
@@ -1310,9 +1414,14 @@ const WorkflowBoardTool: React.FC<{
                                     // countries when the notes cover two is
                                     // fifteen ways to find an empty list.
                                     const used: string[] = [];
+                                    const usedTags: string[] = [];
                                     entry.notes.forEach((n) => {
                                         if (n.territory && used.indexOf(n.territory) === -1) used.push(n.territory);
+                                        (n.tags || []).forEach((t) => {
+                                            if (usedTags.indexOf(t) === -1) usedTags.push(t);
+                                        });
                                     });
+                                    usedTags.sort();
                                     // TWO FILTERS THAT COMPOSE. "Brazil" and
                                     // "CTA" together is the question somebody
                                     // actually has; making them exclusive would
@@ -1326,35 +1435,26 @@ const WorkflowBoardTool: React.FC<{
                                                 <StickyNote size={11} />
                                                 <span>Notes</span>
                                                 <em>{shown.length}{(terrFilter || tagFilter) ? ` of ${entry.notes.length}` : ""}</em>
-                                                {tagFilter && (
-                                                    <button
-                                                        type="button"
-                                                        className="wfb-tag is-on"
-                                                        onClick={() => setTagFilter("")}
-                                                        title="Show every tag"
-                                                    >
-                                                        {tagFilter}<X size={8} />
-                                                    </button>
-                                                )}
+
                                                 {/* THE FILTER COSTS NOTHING UNTIL IT
                                                     EXISTS. One flag per territory that
                                                     actually has notes, and only when
                                                     there is more than one — below that
                                                     a filter is a control that can only
                                                     ever hide things. */}
-                                                {used.length > 1 && (
+                                                {(used.length > 1 || usedTags.length > 1) && (
                                                     <span className="wfb-notes-filter">
-                                                        {terrFilter && (
+                                                        {(terrFilter || tagFilter) && (
                                                             <button
                                                                 type="button"
                                                                 className="wfb-flagchip wfb-flagchip--clear"
-                                                                onClick={() => setTerrFilter("")}
+                                                                onClick={() => { setTerrFilter(""); setTagFilter(""); }}
                                                                 title="Show every note"
                                                             >
                                                                 <X size={9} />
                                                             </button>
                                                         )}
-                                                        {used.map((code) => (
+                                                        {used.length > 1 && used.map((code) => (
                                                             <button
                                                                 key={code}
                                                                 type="button"
@@ -1363,6 +1463,25 @@ const WorkflowBoardTool: React.FC<{
                                                                 title={territoryName(code)}
                                                             >
                                                                 <span className="wfb-flag">{flagFor(code) || code}</span>
+                                                            </button>
+                                                        ))}
+                                                        {/* TAGS LIVE IN THE SAME ROW as the
+                                                            flags. They used to be reachable
+                                                            only by clicking a chip already on
+                                                            a note, which works but is invisible
+                                                            — you had to already know it. Both
+                                                            filters in one place is one thing to
+                                                            learn, and it still costs nothing
+                                                            when there is only one of each. */}
+                                                        {usedTags.length > 1 && usedTags.map((t) => (
+                                                            <button
+                                                                key={t}
+                                                                type="button"
+                                                                className={"wfb-tag" + (tagFilter === t ? " is-on" : "")}
+                                                                onClick={() => setTagFilter(tagFilter === t ? "" : t)}
+                                                                title={tagFilter === t ? "Show every tag" : `Show only ${t}`}
+                                                            >
+                                                                {t}
                                                             </button>
                                                         ))}
                                                     </span>
