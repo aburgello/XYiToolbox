@@ -7243,3 +7243,49 @@ width, so nothing relayouts per frame; rows use explicit per-item `delay`
 rather than nested `staggerChildren`; the progress ring's label is centred with
 flexbox, never a transform, because Framer owns the inline transform on
 anything it animates.
+
+### Steps that take you there
+
+A checklist that says "use MC It! for this" is still asking you to go and find
+MC It!. So a step can carry a LINK, and pressing it lands you on the tool the
+step is about — the checklist becomes a route through the panel rather than a
+list of instructions about it.
+
+**It navigates; it does not press the button.** That boundary is the whole
+design decision here, and it is not caution for its own sake: several one-click
+actions carry follow-up UI that only exists where they normally live. MC It!
+opens a report you pick per-file overrides in; Cheeky T opens a review modal for
+anything the filename couldn't answer. Firing those from a checklist row would
+run the ExtendScript and silently drop the half of the feature that asks you
+questions. So a link opens the page and NAMES the button — "Cheeky DT ·
+Territory Check" — and you press it with the tool's own chrome around you.
+
+`lib/agent/navigation.ts` already refuses to press anything the registry hasn't
+graded "read", for a related reason: it matches on button TEXT, so relabelling a
+button silently changes what is permitted. This tool deliberately does not
+import that module at all — it uses `onSelectTool`, the prop ToolScreen and
+LocaliseScreen already pass, so a non-agent feature doesn't acquire a dependency
+on the agent's removal (CLAUDE.md §9).
+
+**Both halves of a link are re-validated on every render, never trusted.** A
+shared JSON outlives a tool id and a button label:
+
+- tool id no longer in `TOOLS` → a dashed amber "missing" chip. It is a
+  `<span>`, so there is nothing to click; it cannot navigate nowhere.
+- button label no longer in that tool's `actions` → the chip still navigates
+  (the page is still right) but strikes the label and says so in the tooltip.
+  Sending somebody to the correct page to hunt for a button that was renamed
+  is worse than admitting it moved.
+
+The picker offers only what the registry holds — tools by label, then that
+tool's own `actions` — so an unlinkable tool cannot be linked to and a button
+that doesn't exist cannot be named. It drops below the step list rather than
+inside the row (a row is a flex line of inputs; a 200px list in it fights all of
+them for width), which meant it needed to say which step it was editing — its
+header echoes the step's text.
+
+Verified by driving the built panel in a browser: pressing a step's chip leaves
+the board and lands on OV Swap, the picker lists all 45 registered tools, and no
+page errors. The demo board carries a linked step, a link with a named button,
+and a deliberately broken one so the dead-chip path is visible without breaking
+anything to see it.

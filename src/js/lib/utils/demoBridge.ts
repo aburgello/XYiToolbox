@@ -206,7 +206,7 @@ const DEMO_SCAN: { territory: string; screen: string; file: string; w: number; h
 // be looked at outside AE.
 interface DemoWorkflow {
     id: string; campaign: string; creative: string; key: string;
-    steps: { id: string; text: string }[];
+    steps: { id: string; text: string; link?: { tool: string; action?: string } }[];
     notes: { id: string; text: string; author: string; stamp: string }[];
     author: string; updatedAt: string;
 }
@@ -222,8 +222,11 @@ let demoWorkflows: DemoWorkflow[] = [
             { id: "s1", text: "Title treatment from Components — never rebuilt" },
             { id: "s2", text: "Pedigree from Components" },
             { id: "s3", text: "Tagline from Components" },
-            { id: "s4", text: "Date from Components, check the territory format" },
+            { id: "s4", text: "Date from Components, check the territory format", link: { tool: "cheeky-dt", action: "Territory Check" } },
             { id: "s5", text: "Billing block swapped for the local one" },
+            { id: "s6", text: "Swap the OV artwork for the territory export", link: { tool: "ov-swap" } },
+            { id: "s7", text: "Then queue it", link: { tool: "delivery-hub", action: "Load Selected Comps" } },
+            { id: "s8", text: "A link whose tool has since been removed", link: { tool: "tool-that-went-away" } },
         ],
         notes: [
             { id: "n1", text: "BR tagline runs long — the Components version is already tracked tighter, don't re-scale it.", author: "Ana", stamp: "Fri Aug 22 2026 11:02:00 GMT+0100" },

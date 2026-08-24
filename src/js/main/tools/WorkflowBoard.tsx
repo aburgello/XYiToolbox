@@ -26,7 +26,9 @@ import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import {
     ListChecks, Plus, X, Trash2, Pencil, Check, RotateCcw, StickyNote,
     RefreshCw, AlertCircle, FolderSearch, ChevronLeft, GripVertical, Users,
+    ArrowRight, Link2, Link2Off, Search,
 } from "lucide-react";
+import { TOOLS } from "../toolRegistry";
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import { sfx } from "../../lib/utils/sfx";
@@ -37,7 +39,25 @@ import Tooltip from "../Tooltip";
 import "../shared.scss";
 import "./WorkflowBoard.scss";
 
-interface WorkflowStep { id: string; text: string }
+/**
+ * WHERE A STEP SENDS YOU.
+ *
+ * `tool` is a registry id, validated against TOOLS at render time -- a shared
+ * file naming a tool that no longer exists renders a dead chip that says so,
+ * and never navigates anywhere. `action` is the exact visible label of a button
+ * inside that tool, shown on arrival so you know what to press.
+ *
+ * NAVIGATE, DON'T PRESS, and that boundary is deliberate. Several one-click
+ * actions carry follow-up UI that only exists where they normally live -- MC
+ * It! opens a report you pick overrides in, Cheeky T opens a review modal for
+ * anything the filename couldn't answer. Firing those from here would run the
+ * ExtendScript and drop the half of the feature that asks you questions. So a
+ * link opens the page and names the button; you press it, with the tool's own
+ * chrome around you.
+ */
+interface WorkflowLink { tool: string; action?: string }
+
+interface WorkflowStep { id: string; text: string; link?: WorkflowLink }
 interface WorkflowNote { id: string; text: string; author: string; stamp: string }
 interface WorkflowEntry {
     id: string;
@@ -91,6 +111,155 @@ function shortStamp(stamp: string): string {
 let uid = 0;
 const nextId = (prefix: string) => `${prefix}-${Date.now()}-${uid++}`;
 
+/** The registry entry a link points at, or null when it points at nothing.
+ *  A shared file outlives a tool id: this is checked on every render rather
+ *  than trusted, so a rename shows as a dead chip instead of a dead click. */
+function toolFor(link: WorkflowLink | undefined) {
+    if (!link || !link.tool) return null;
+    return TOOLS.filter((t) => t.id === link.tool)[0] || null;
+}
+
+// ---------------------------------------------------------------------------
+// "Take me there." The chip that turns a checklist into a route through the
+// panel: press it and you land on the tool the step is about, with the button
+// to press named before you go.
+// ---------------------------------------------------------------------------
+const StepLinkChip: React.FC<{
+    link: WorkflowLink;
+    onGo: (toolId: string) => void;
+    disabled?: boolean;
+}> = ({ link, onGo, disabled }) => {
+    const entry = toolFor(link);
+    if (!entry) {
+        return (
+            <span className="wfb-link wfb-link--dead" title={`This step links to "${link.tool}", which isn't a tool in this panel any more.`}>
+                <Link2Off size={10} /> missing
+            </span>
+        );
+    }
+    // The button is NAMED, not pressed -- see WorkflowLink. Whether the label
+    // still exists is checked too: a button renamed since the link was written
+    // sends you to the right page with a name that is no longer there, and
+    // saying nothing would be worse than saying "it moved".
+    const known = link.action ? (entry.actions || []).indexOf(link.action) !== -1 : true;
+    const hint = link.action
+        ? (known
+            ? `Opens ${entry.label} — then press “${link.action}”`
+            : `Opens ${entry.label}. It no longer has a button called “${link.action}”.`)
+        : `Opens ${entry.label}`;
+    return (
+        <Tooltip text={hint}>
+            <button
+                type="button"
+                className="wfb-link"
+                disabled={disabled}
+                onClick={(e) => { e.stopPropagation(); onGo(entry.id); }}
+            >
+                <ArrowRight size={10} />
+                <span>{entry.label}</span>
+                {link.action && <em className={known ? undefined : "is-stale"}>{link.action}</em>}
+            </button>
+        </Tooltip>
+    );
+};
+
+// ---------------------------------------------------------------------------
+// Picking what a step links to. Tools first, then that tool's own buttons --
+// both come straight off the registry, so a tool that isn't registered cannot
+// be linked to and a button that doesn't exist cannot be named.
+// ---------------------------------------------------------------------------
+const LinkPicker: React.FC<{
+    value?: WorkflowLink;
+    /** The step being linked, echoed in the header. The picker drops below the
+     *  whole list rather than inside its row, so without this there is nothing
+     *  on screen saying which of seven steps you are pointing somewhere. */
+    stepText: string;
+    onPick: (link: WorkflowLink | undefined) => void;
+    onClose: () => void;
+}> = ({ value, stepText, onPick, onClose }) => {
+    const [query, setQuery] = useState("");
+    const [tool, setTool] = useState(value ? value.tool : "");
+    const q = query.trim().toLowerCase();
+    const matches = useMemo(() => {
+        const all = TOOLS.slice().sort((a, b) => a.label.localeCompare(b.label));
+        if (!q) return all;
+        return all.filter((t) =>
+            t.label.toLowerCase().indexOf(q) !== -1 ||
+            t.id.toLowerCase().indexOf(q) !== -1 ||
+            (t.categories || []).join(" ").toLowerCase().indexOf(q) !== -1);
+    }, [q]);
+    const chosen = TOOLS.filter((t) => t.id === tool)[0];
+
+    return (
+        <div className="wfb-linkpick">
+            <div className="wfb-linkpick-for">
+                <Link2 size={10} />
+                <span>{stepText.trim() || "this step"}</span>
+            </div>
+            <div className="wfb-linkpick-head">
+                <Search size={11} />
+                <input
+                    type="text"
+                    autoFocus
+                    value={query}
+                    placeholder="Which tool should this step open?"
+                    onChange={(e) => setQuery(e.target.value)}
+                />
+                <button type="button" className="wfb-mini" onClick={onClose} title="Close"><X size={11} /></button>
+            </div>
+
+            {!chosen && (
+                <div className="wfb-linkpick-list">
+                    {matches.map((t) => (
+                        <button key={t.id} type="button" className="wfb-linkpick-row" onClick={() => setTool(t.id)}>
+                            <t.icon size={12} />
+                            <span className="wfb-linkpick-name">{t.label}</span>
+                            <em>{(t.categories || []).join(" · ")}</em>
+                        </button>
+                    ))}
+                    {matches.length === 0 && <p className="wfb-empty-line">No tool matches that.</p>}
+                </div>
+            )}
+
+            {chosen && (
+                <div className="wfb-linkpick-list">
+                    <button type="button" className="wfb-linkpick-back" onClick={() => setTool("")}>
+                        <ChevronLeft size={11} /> {chosen.label}
+                    </button>
+                    <button
+                        type="button"
+                        className="wfb-linkpick-row"
+                        onClick={() => { onPick({ tool: chosen.id }); onClose(); }}
+                    >
+                        <ArrowRight size={12} />
+                        <span className="wfb-linkpick-name">Just open it</span>
+                    </button>
+                    {(chosen.actions || []).map((a) => (
+                        <button
+                            key={a}
+                            type="button"
+                            className="wfb-linkpick-row"
+                            onClick={() => { onPick({ tool: chosen.id, action: a }); onClose(); }}
+                        >
+                            <ArrowRight size={12} />
+                            <span className="wfb-linkpick-name">…and press “{a}”</span>
+                        </button>
+                    ))}
+                    {(chosen.actions || []).length === 0 && (
+                        <p className="wfb-empty-line">This tool has no named buttons to point at.</p>
+                    )}
+                </div>
+            )}
+
+            {value && (
+                <button type="button" className="wfb-linkpick-clear" onClick={() => { onPick(undefined); onClose(); }}>
+                    <Link2Off size={11} /> Remove the link
+                </button>
+            )}
+        </div>
+    );
+};
+
 // ---------------------------------------------------------------------------
 // Progress ring. Reads at a glance from across a desk, which a "4/7" does not.
 // ---------------------------------------------------------------------------
@@ -123,7 +292,7 @@ const ProgressRing: React.FC<{ done: number; total: number }> = ({ done, total }
     );
 };
 
-const WorkflowBoardTool: React.FC = () => {
+const WorkflowBoardTool: React.FC<{ onSelectTool?: (toolId: string) => void }> = ({ onSelectTool }) => {
     const reduced = useReducedMotion();
 
     const [entries, setEntries] = useState<WorkflowEntry[]>([]);
@@ -237,6 +406,24 @@ const WorkflowBoardTool: React.FC = () => {
         setTicks(next);
         try { await evalTS("workflowTicksSave", JSON.stringify(next)); } catch { /* local only; not worth a toast */ }
     }, []);
+
+    /**
+     * Follow a step's link.
+     *
+     * `onSelectTool` is the prop both screens that mount a tool already pass
+     * (ToolScreen and LocaliseScreen), so this is the panel's own tool-to-tool
+     * channel rather than a second one -- and deliberately NOT the agent's
+     * navigator, which lives in lib/agent and would tie this feature to the
+     * agent's removal.
+     */
+    const goTo = useCallback((toolId: string) => {
+        if (!onSelectTool) {
+            toast("error", "This screen can't navigate — open Workflows from the Localise screen.");
+            return;
+        }
+        sfx.click();
+        onSelectTool(toolId);
+    }, [onSelectTool, toast]);
 
     const toggleStep = (stepId: string) => {
         const forKey = { ...(ticks[activeKey] || {}) };
@@ -614,6 +801,12 @@ const WorkflowBoardTool: React.FC = () => {
                                                         </span>
                                                     }
                                                 />
+                                                {s.link && (
+                                                    <StepLinkChip
+                                                        link={s.link}
+                                                        onGo={goTo}
+                                                    />
+                                                )}
                                             </motion.li>
                                         );
                                     })}
@@ -771,7 +964,19 @@ const StepEditor: React.FC<{
     ease: any;
     rowDelay: (i: number) => number;
 }> = ({ steps, setSteps, busy, onCancel, onSave, ease, rowDelay }) => {
+    // Which row has its link picker open, by index. One at a time: the picker
+    // is a list of every tool in the panel and two of them open at once is a
+    // page you have to scroll to find the step you were editing.
+    const [linking, setLinking] = useState<number | null>(null);
     const set = (i: number, text: string) => setSteps(steps.map((s, j) => (j === i ? { ...s, text } : s)));
+    const setLink = (i: number, link: WorkflowLink | undefined) =>
+        setSteps(steps.map((s, j) => {
+            if (j !== i) return s;
+            const next = { ...s };
+            if (link) next.link = link;
+            else delete next.link;
+            return next;
+        }));
     const remove = (i: number) => setSteps(steps.filter((_, j) => j !== i));
     const move = (i: number, by: number) => {
         const j = i + by;
@@ -807,6 +1012,14 @@ const StepEditor: React.FC<{
                                 placeholder="What has to happen?"
                                 onChange={(e) => set(i, e.target.value)}
                             />
+                            <button
+                                type="button"
+                                className={"wfb-mini" + (s.link ? " is-on" : "")}
+                                onClick={() => setLinking(linking === i ? null : i)}
+                                title={s.link ? "Change where this step sends you" : "Send this step somewhere"}
+                            >
+                                <Link2 size={11} />
+                            </button>
                             <button type="button" className="wfb-mini" onClick={() => move(i, -1)} disabled={i === 0} title="Move up">↑</button>
                             <button type="button" className="wfb-mini" onClick={() => move(i, 1)} disabled={i === steps.length - 1} title="Move down">↓</button>
                             <button type="button" className="wfb-mini wfb-mini--danger" onClick={() => remove(i)} title="Remove"><X size={11} /></button>
@@ -814,6 +1027,28 @@ const StepEditor: React.FC<{
                     ))}
                 </AnimatePresence>
             </ul>
+            {/* Rendered OUTSIDE the row rather than inside it: the row is a
+                flex line of inputs and buttons, and a 200px list dropped into
+                it fights every one of them for width. */}
+            <AnimatePresence initial={false}>
+                {linking !== null && steps[linking] && (
+                    <motion.div
+                        key={steps[linking].id}
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={ease}
+                        style={{ overflow: "hidden" }}
+                    >
+                        <LinkPicker
+                            stepText={steps[linking].text}
+                            value={steps[linking].link}
+                            onPick={(link) => setLink(linking, link)}
+                            onClose={() => setLinking(null)}
+                        />
+                    </motion.div>
+                )}
+            </AnimatePresence>
             <div className="wfb-editor-foot">
                 <button type="button" className="wfb-btn" onClick={add}>
                     <Plus size={12} /><span>Add step</span>

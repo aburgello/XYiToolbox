@@ -644,3 +644,190 @@
     &.toast-success { border-color: #2e6b3e; svg:first-child { color: #6bcf7f; } }
     &.toast-error   { border-color: #7a2e2e; svg:first-child { color: #e07a7a; } }
 }
+
+// ── step links ──────────────────────────────────────────────────────────────
+//
+// The chip that turns a checklist into a route through the panel. Sits at the
+// end of the step row, outside the checkbox's own hit area -- pressing "go
+// there" must never also tick the box.
+
+.workflow-board .wfb-link {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: none;
+    margin-left: 4px;
+    padding: 2px 7px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--cat-icon, #fdba74);
+    font-size: 9.5px;
+    cursor: pointer;
+    white-space: nowrap;
+
+    &:hover { background: rgba(255, 255, 255, 0.1); border-color: var(--cat-border, #fb923c); }
+    &:active { background: rgba(255, 255, 255, 0.1); }
+
+    svg { flex: none; }
+
+    em {
+        font-style: normal;
+        opacity: 0.7;
+        // The button name is secondary to the tool name; it wraps to nothing
+        // and truncates rather than widening the row on a narrow dock.
+        max-width: 90px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+
+        // A label that no longer exists in that tool. Said, not hidden.
+        &.is-stale { color: #e0b050; text-decoration: line-through; }
+    }
+
+    // A link to a tool that has since been removed or renamed. Inert on
+    // purpose -- it is a <span>, so there is nothing to click.
+    &.wfb-link--dead {
+        color: #e0b050;
+        opacity: 0.8;
+        cursor: default;
+        border-style: dashed;
+    }
+}
+
+.workflow-board .wfb-mini.is-on {
+    color: var(--cat-icon, #fdba74);
+    border-color: var(--cat-border, #fb923c);
+    opacity: 1;
+}
+
+// ── link picker ─────────────────────────────────────────────────────────────
+
+.workflow-board .wfb-linkpick {
+    margin-top: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: 5px;
+    background: rgba(0, 0, 0, 0.22);
+}
+
+.workflow-board .wfb-linkpick-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+
+    svg { flex: none; opacity: 0.5; }
+
+    input {
+        flex: 1;
+        min-width: 0;
+        padding: 2px 0;
+        border: none;
+        background: none;
+        color: inherit;
+        font-size: 10.5px;
+
+        &:focus { outline: none; }
+    }
+}
+
+.workflow-board .wfb-linkpick-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 5px;
+    max-height: 190px;
+    overflow-y: auto;
+}
+
+.workflow-board .wfb-linkpick-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    width: 100%;
+    padding: 4px 7px;
+    border: none;
+    border-radius: 3px;
+    background: none;
+    color: inherit;
+    font-size: 10.5px;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover { background: rgba(255, 255, 255, 0.07); }
+    &:active { background: rgba(255, 255, 255, 0.07); }
+
+    svg { flex: none; opacity: 0.6; }
+
+    em {
+        flex: none;
+        font-style: normal;
+        font-size: 9px;
+        opacity: 0.4;
+    }
+}
+
+.workflow-board .wfb-linkpick-name {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: break-word;
+}
+
+.workflow-board .wfb-linkpick-back {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 7px;
+    border: none;
+    border-radius: 3px;
+    background: none;
+    color: var(--cat-icon, #fdba74);
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+
+    &:hover { background: rgba(255, 255, 255, 0.06); }
+    &:active { background: rgba(255, 255, 255, 0.06); }
+
+    svg { flex: none; }
+}
+
+.workflow-board .wfb-linkpick-clear {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    width: 100%;
+    padding: 6px 8px;
+    border: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+    background: none;
+    color: inherit;
+    font-size: 10px;
+    cursor: pointer;
+    opacity: 0.6;
+
+    &:hover { background: rgba(255, 255, 255, 0.05); opacity: 1; color: #f87171; }
+    &:active { background: rgba(255, 255, 255, 0.05); }
+
+    svg { flex: none; }
+}
+
+// Which step the picker is pointing somewhere. It drops below the whole list
+// rather than inside a row, so it has to say so itself.
+.workflow-board .wfb-linkpick-for {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    font-size: 9.5px;
+    color: var(--cat-icon, #fdba74);
+
+    svg { flex: none; }
+
+    span {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+}
