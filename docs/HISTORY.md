@@ -7289,3 +7289,91 @@ the board and lands on OV Swap, the picker lists all 45 registered tools, and no
 page errors. The demo board carries a linked step, a link with a named button,
 and a deliberately broken one so the dead-chip path is visible without breaking
 anything to see it.
+
+---
+
+## 2026-08-24 — The agent comes out, Workflows takes its place
+
+Removed on cost: the API bill was never going to make sense for a studio tool
+that had to be right. CLAUDE.md §9 had budgeted this at 25 files / ~7,800 lines
+deleted and 447 lines of surgery across 9 files, and that estimate held.
+
+**The marker did its job.** `grep -rn AGENT-HOOK src/` found all 16 sites, and
+one of them was exactly the trap §9 warned about: `Bespoke.tsx` imports
+`parseSegmentSpec`/`planSegments` at the top but *uses* them in an effect three
+hundred lines below the fill receiver. Cutting by import alone leaves a file
+that compiles and a feature that silently does nothing. The real test was
+`pendingScreen`/`pendingSegments`: once the receiver was gone, every remaining
+reference to both was a `setState("")`, so the two effects were dead and went
+with it. Following imports would have missed that; following the marker found it.
+
+**Two files survived, and they are not agent code any more.**
+
+- `lib/navigation.ts` → `lib/navigation.ts`. It outlived the agent because the
+  problem was never an agent problem: something in main.tsx's shell needs to
+  change the screen, and the bubble is exactly that — it floats above every
+  screen, so it has no `onSelectTool` prop and no parent to ask. **Its click
+  gate stays**, and the reason changed only in who it protects against: a stored
+  workflow link naming a button by TEXT is the same hazard as a model naming
+  one, because relabelling a button silently changes what the link may press.
+- `lib/agent/bubbleControl.ts` → `lib/workflowBubble.ts`. The mechanics of a
+  panel that outlives navigation, with its toggle living somewhere else, were
+  right. What sat inside it was the problem.
+
+**A new localStorage key, not the agent's.** Reusing `xyi.agent.enabled` would
+have handed a Workflows bubble to every machine that once switched the agent on,
+and — much worse — permanently hidden it from anyone who tried the agent and
+turned it off. They would never have seen the feature and would have had nothing
+to click to find out.
+
+### The bubble
+
+The panel is now the checklist's front door, not a button on the Localise
+screen. That is not a placement preference: a step's whole job is to send you to
+another tool, and on a tool page following a link unmounts the list you were
+following. You would arrive at the right screen having lost your place. Mounted
+in main.tsx's shell, the list is still there when you land — driven in a browser
+and confirmed: pressing "→ OV Swap" from the bubble navigates and leaves the
+board open at 3/8.
+
+`WorkflowBoard` renders in both surfaces, switched by `variant` rather than
+forked. The panel variant changes only what actually stops fitting at 380px; a
+second layout would drift from the first the moment either was touched.
+
+**The panel pins its own `--cat-*`, and this was a real bug caught on screen.**
+Everything inside keys off the category tint, which is set as an inline style on
+whichever tool is mounted — so the first build came up orange over the home
+screen and would have been teal over Localise. The one surface that never
+changes would have been the only thing changing colour. It declares teal on
+`.wfbub-panel` and the cascade inside lands there instead.
+
+### The rows, made tactile
+
+The old rows were a checkbox and a label: a form to fill in. What this actually
+is, is an order of operations that ends with the job done, and half the steps
+hand you to another tool. So they became **numbered nodes on a rail that fills
+in behind you** — the same metaphor the launcher's Route icon carries — with
+each step a card you press rather than a line you click.
+
+Motion personality: **Physical**, three curves, no more. And one constraint the
+motion pipeline does not know about: **CSS `linear()` spring easing is Chrome
+113 and the build target is chrome74**, so the entire Tier-1 palette is
+unavailable. Framer's springs are computed in JS and work anywhere — they are
+also the better choice here, because they carry velocity through an interruption,
+which matters when somebody ticks four boxes in a second.
+
+- `SPRING.snappy` for arrivals, `.smooth` for settles (the rail fill, the ring),
+  `.bouncy` for the tick alone — a small element, pressed rarely enough per
+  session that a real pop is a reward rather than a tax.
+- One cubic-bezier for hover. Spring overshoot on hover reads as jitter.
+- The card is **pressed** with `whileTap`, never lifted with a CSS transform:
+  Framer owns that element's transform and a CSS translate would be overwritten
+  the moment the tap fired. The hover is a surface change instead.
+- The rail fill is `scaleY` on a `transform-origin`, never an animated height.
+- **No perpetual animation on the launcher.** The agent's FAB rotated a conic
+  gradient forever and justified it at fourteen seconds a turn. A docked panel
+  is small, and something moving in the corner of your eye all day is precisely
+  what people turn a feature off for. Tactility here is response to touch —
+  press compression, hover lift — not motion of its own.
+
+Bundle: 3,272 kB → 3,198 kB (~27 kB gzipped).

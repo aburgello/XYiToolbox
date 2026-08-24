@@ -12,8 +12,7 @@ import { ArrowLeft } from "lucide-react";
 import { TOOLS, categoryStyleVars } from "../toolRegistry";
 import { ToolErrorBoundary } from "../ToolErrorBoundary";
 import { PaletteTrigger, triggerPalette } from "../CommandPalette";
-// AGENT-HOOK — remove with the agent. See docs: grep AGENT-HOOK.
-import { navigateToTool } from "../lib/agent/navigation";
+import { navigateToTool } from "../lib/navigation";
 
 interface Props {
     toolId: string;

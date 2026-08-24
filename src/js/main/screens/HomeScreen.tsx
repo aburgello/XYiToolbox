@@ -15,11 +15,10 @@ import {
     FolderOpen,
     FolderPlus,
     Pencil,
+    Route,
 } from "lucide-react";
-import AskIcon from "../AskIcon";
 import { evalTS } from "../../lib/utils/bolt";
-// AGENT-HOOK — remove with the agent. See docs: grep AGENT-HOOK.
-import { isAgentEnabled, toggleAgentEnabled, subscribeToBubble } from "../lib/agent/bubbleControl";
+import { isWorkflowBubbleEnabled, toggleWorkflowBubbleEnabled, subscribeToBubble } from "../lib/workflowBubble";
 import { confirmDialog, promptDialog } from "../Dialog";
 import { TOOLS, CATEGORIES, categoryStyleVars, prefetchTool } from "../toolRegistry";
 import { iconWiggle, cardLift, categoryLift } from "../animations";
@@ -54,13 +53,12 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
     // Favourites group Toolset renders further down this same screen.
     const { favoriteIds, toggleFavorite, boxOpen, toggleFavoritesBox } = useFavorites(TOOLS);
     const [foldersOpen, setFoldersOpen] = useState(false);
-    // AGENT-HOOK — remove with the agent.
-    // Mirrored from bubbleControl, and SUBSCRIBED rather than read once: the
+    // Mirrored from workflowBubble, and SUBSCRIBED rather than read once: the
     // bubble's own X and its launcher change the shared state too, so a button
     // that only read it at mount would sit lit up over a bubble somebody had
     // already dismissed.
-    const [agentOn, setAgentOn] = useState(isAgentEnabled);
-    useEffect(() => subscribeToBubble(() => setAgentOn(isAgentEnabled())), []);
+    const [wfOn, setWfOn] = useState(isWorkflowBubbleEnabled);
+    useEffect(() => subscribeToBubble(() => setWfOn(isWorkflowBubbleEnabled())), []);
     const [folders, setFolders] = useState<{ label: string; path: string }[] | null>(null);
 
     const loadFolders = useCallback(async () => {
@@ -358,19 +356,19 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
                                     <FolderOpen size={14} />
                                 </button>
                             </Tooltip>
-                            {/* OPT-IN, and off until somebody says otherwise.
-                                A floating launcher over every screen is a
-                                thing you should have chosen -- same reasoning
-                                the sound effects used, which is what this
-                                replaced. Turning it on opens it, so the button
+                            {/* ON by default, unlike the agent this replaced:
+                                a creative's checklist is the studio's own
+                                house rules, not an experiment to opt into.
+                                The toggle stays because a docked panel is
+                                small. Turning it on opens it, so the button
                                 visibly does something. */}
-                            <Tooltip text={agentOn ? "Ask — on. Click to remove it from the panel" : "Ask — an assistant for campaigns, masters and tools"}>
+                            <Tooltip text={wfOn ? "Workflows — on. Click to remove it from the panel" : "Workflows — the team's checklist for the creative you're on"}>
                                 <button
-                                    className={agentOn ? "favorites-toggle active" : "favorites-toggle"}
-                                    onClick={() => toggleAgentEnabled()}
-                                    aria-pressed={agentOn}
+                                    className={wfOn ? "favorites-toggle active" : "favorites-toggle"}
+                                    onClick={() => toggleWorkflowBubbleEnabled()}
+                                    aria-pressed={wfOn}
                                 >
-                                    <AskIcon size={14} />
+                                    <Route size={14} />
                                 </button>
                             </Tooltip>
                             <TeamDroplet />

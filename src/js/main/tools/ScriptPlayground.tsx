@@ -1,6 +1,4 @@
 import React, { useState } from "react";
-// AGENT-HOOK — remove with the agent. See docs: grep AGENT-HOOK.
-import { usePendingFill } from "../lib/agent/fieldHandoff";
 import { Play, Trash2, Save, Pencil, X, Terminal, LayoutList, MousePointerClick, Check } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import StatusIcon from "../StatusIcon";
@@ -48,32 +46,6 @@ const ScriptPlayground: React.FC = () => {
      * suggestion — so the status line says who wrote it and that it has not
      * run. That is the whole mitigation, and it is why this is allowed.
      */
-    // AGENT-HOOK — remove with the agent.
-    usePendingFill("script-playground", (fill) => {
-        if (typeof fill.code !== "string" || !fill.code.trim()) return;
-
-        // An EMPTY box counts as untouched too, not just the starting default.
-        // Clearing a script that misbehaved and asking for another is the most
-        // obvious thing to do next, and treating the empty result as "the
-        // artist's work" refused to fill it — which is precisely how this was
-        // reported.
-        const untouched = !code.trim() || code === DEFAULT_SCRIPT;
-        if (!untouched) {
-            setStatus({
-                type: "error",
-                text: "Ask wrote a script for you, but there was already one in the box — yours is untouched. Clear it and ask again if you want theirs.",
-            });
-            return;
-        }
-
-        setCode(fill.code);
-        setOutput(null);
-        setStatus({
-            type: "success",
-            text: "Ask wrote this — read it before you run it. Nothing has run yet.",
-        });
-    });
-
     // Save-as-tool: a script saved here either becomes a one-click Toolset
     // grid button (Toolset.tsx auto-adds every "button"-kind entry to its
     // own "Custom Tools" group) or a "page" entry that just lives in the

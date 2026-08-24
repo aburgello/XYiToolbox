@@ -1,0 +1,221 @@
+// =============================================================================
+// src/js/main/WorkflowBubble.scss
+// -----------------------------------------------------------------------------
+// chrome74 target (CLAUDE.md §3): no color-mix(), no :has(), no min()/max()/
+// clamp(), no aspect-ratio, no @property.
+//
+// AND ONE THE MOTION PIPELINE DOES NOT KNOW ABOUT: CSS `linear()` spring
+// easing — the whole Tier-1 palette — is Chrome 113. On this target the only
+// real spring physics available are Framer Motion's, computed in JS. So
+// anything that must feel sprung is animated in React; CSS here uses the
+// Tier-2 cubic-beziers, which is what they exist for.
+//
+// Z-INDEX, against the order in CLAUDE.md §3
+// (toasts/video 1000 · CommandPalette 1900 · Dialog 2000): the bubble sits at
+// 1500 — above page content and toasts, but BELOW the command palette and
+// Dialog, so a confirm raised from anywhere still wins over it.
+//
+// Both buttons re-declare :hover AND :active: index.scss's global
+// button:hover/:active ($active: #20639b) otherwise paints over them.
+// =============================================================================
+
+// THE THREE CURVES, and there are only three. A fourth is the tell that the
+// palette leaked.
+$snap:   cubic-bezier(0.22, 1, 0.36, 1);    // hover / press feedback
+$out:    cubic-bezier(0.16, 1, 0.3, 1);     // entries, reveals
+$smooth: cubic-bezier(0.65, 0, 0.35, 1);    // open / close, position
+
+.wfbub-fab {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    z-index: 1500;
+
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+    background: var(--surface-1, #262626);
+    color: #cfe9e2;
+    cursor: pointer;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+    // Named properties, never `all`: `all` would animate the box-shadow and
+    // the border off the GPU on every hover.
+    transition:
+        transform 200ms $snap,
+        box-shadow 200ms $snap,
+        color 200ms $snap;
+
+    // NO PERPETUAL RING. The agent's launcher rotated a conic gradient forever
+    // and justified it at fourteen seconds a turn; a docked panel is small and
+    // something moving in the corner of your eye all day is the thing people
+    // turn features off for. Tactility here comes from responding to touch,
+    // not from moving on its own.
+    &:hover {
+        transform: translateY(-2px);
+        color: #ffffff;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5), 0 0 14px rgba(45, 212, 191, 0.28);
+        background: var(--surface-1, #262626);
+    }
+
+    // PRESS COMPRESSION. The single cheapest thing that makes a control feel
+    // like an object rather than a picture of one: it gives way under the
+    // cursor and springs back.
+    &:active {
+        transform: translateY(0) scale(0.94);
+        transition: transform 90ms $snap;
+        background: var(--surface-1, #262626);
+    }
+}
+
+.wfbub-panel {
+    // ITS OWN ACCENT, PINNED. Everything inside keys off `--cat-*`, which is
+    // the CATEGORY tint — set as an inline style on whichever tool is mounted.
+    // For a panel that follows you around the app that is exactly wrong: the
+    // checklist would come up orange over Deliver, teal over Localise and the
+    // bare fallback over home, so the one surface that never changes would be
+    // the one thing changing colour. Declared here, on the panel, so the
+    // cascade inside it lands on this instead.
+    //
+    // Teal, matching the launcher and the route it draws.
+    --cat-border: #2dd4bf;
+    --cat-icon: #5eead4;
+    --cat-grad: linear-gradient(135deg, #10796d, #0b463f);
+
+    position: fixed;
+    right: 18px;
+    bottom: 70px;              // clears the FAB
+    z-index: 1500;
+
+    // Defaults only — WorkflowBubble.tsx sets width/height inline once the
+    // panel has been resized, and clamps to the window itself. These caps stay
+    // as the backstop for a first run with nothing stored, and they MUST match
+    // clampSize(): a stored size larger than a CSS cap would stop the box while
+    // the drag carried on, which is the corner coming away from the cursor.
+    width: 380px;
+    max-width: calc(100vw - 36px);
+    height: 540px;
+    max-height: calc(100vh - 90px);
+
+    display: flex;
+    flex-direction: column;
+
+    background: rgba(24, 27, 33, 0.98);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    box-shadow: 0 10px 34px rgba(0, 0, 0, 0.55);
+    overflow: hidden;
+
+    // HIDDEN, NOT UNMOUNTED — the board read and the scroll position survive a
+    // close. visibility (not display) so the collapse can animate, and
+    // pointer-events off so a hidden panel never eats a click.
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    // Rises from the launcher rather than appearing: it comes from down there,
+    // and 10px of travel is enough to say so.
+    transform: translateY(10px) scale(0.985);
+    transform-origin: bottom right;
+    transition:
+        opacity 180ms $smooth,
+        transform 180ms $smooth,
+        visibility 0s linear 180ms;
+
+    &.is-open {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+        transform: translateY(0) scale(1);
+        transition:
+            opacity 200ms $out,
+            transform 200ms $out,
+            visibility 0s;
+    }
+
+    // Nothing animates while a resize drag is live: a transition on transform
+    // during a drag is the panel lagging behind the cursor.
+    &.is-resizing { transition: none; }
+}
+
+/* THE RESIZE HANDLE.
+
+   Top-left, because the panel is pinned bottom-right and that is the only
+   corner with room to travel. It sits ABOVE the header (z-index) so the corner
+   stays grabbable rather than being covered by the title.
+
+   Deliberately not `resize: both` on the panel: the UA handle only ever appears
+   bottom-right, which here is the corner welded to the screen edge, and it
+   needs `overflow` other than hidden — which this panel relies on to clip its
+   own rounded corners. */
+.wfbub-resize {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 16px;
+    height: 16px;
+    z-index: 2;
+    cursor: nwse-resize;
+    // A quiet corner mark rather than a control: two hairlines that read as a
+    // grip when you are looking for one and disappear when you are not.
+    background:
+        linear-gradient(to right,  rgba(255, 255, 255, 0.28) 0 7px, transparent 7px) top left / 7px 1px no-repeat,
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.28) 0 7px, transparent 7px) top left / 1px 7px no-repeat;
+
+    &:hover {
+        background:
+            linear-gradient(to right,  rgba(255, 255, 255, 0.6) 0 11px, transparent 11px) top left / 11px 1px no-repeat,
+            linear-gradient(to bottom, rgba(255, 255, 255, 0.6) 0 11px, transparent 11px) top left / 1px 11px no-repeat;
+    }
+}
+
+.wfbub-head {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.wfbub-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: #cfe9e2;
+
+    svg { flex: none; }
+}
+
+.wfbub-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    padding: 3px;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 160ms $snap, transform 160ms $snap;
+
+    &:hover { background: none; opacity: 1; }
+    &:active { background: none; transform: scale(0.9); }
+}
+
+.wfbub-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 8px;
+}

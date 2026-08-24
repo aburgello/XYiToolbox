@@ -553,7 +553,10 @@ tree for exercising real scan/reveal paths inside AE.
 DeliveryHub), `tools/Placeholder.tsx` (`makePlaceholder` now has zero call
 sites), `screens/CategoryScreen.tsx` (unreachable fallback).
 
-**Recent, and easy to mistake for orphaned:** `tools/Puppeteer.tsx` +
+**Recent, and easy to mistake for orphaned:** `WorkflowBubble.tsx` +
+`tools/WorkflowBoard.tsx` + the workflow exports in `jsx/aeft/team.ts` (the
+bubble is mounted in `main.tsx`, not reached through the registry — see §9),
+`tools/Puppeteer.tsx` +
 `jsx/aeft/puppeteer.ts` (registered in `TOOLS`, Tools category),
 `tools/InsituBoard.tsx` + `jsx/aeft/insitu.ts` (reached ONLY through Bespoke's
 mode chooser, so it has no registry entry of its own), and
@@ -586,26 +589,47 @@ spliced unquoted into a shell command). `TOOLBOX_VERSION` lives in
 
 ---
 
-## 9. THE ASK AGENT, AND HOW TO REMOVE IT
+## 9. THE WORKFLOWS BUBBLE
 
-The agent is opt-in and off by default: `bubbleControl.ts` reads
-`xyi.agent.enabled` from localStorage, `AgentBubble` returns null when it is
-unset, and nothing is rendered or listened for. A machine that never turns it
-on is a machine where it does not exist.
+**The Ask agent is gone** (2026-08-24), removed on API cost. `lib/agent/`,
+`AgentBubble`, `AgentChat`, `AskAbout`, `AskIcon`, `agentWrites.ts` and the
+`probe-agent-*`/`bench-providers` scripts are all deleted; `grep -rn AGENT-HOOK
+src/` returns nothing. Don't re-add an LLM dependency without asking. Two files
+survived it and are NOT agent code any more:
 
-**Every integration point is marked `AGENT-HOOK`.** `grep -rn AGENT-HOOK src/`
-is the complete list — 14 sites across 9 files. That marker is load-bearing:
-the coupling is small but it is spread thin, and a removal done by reading
-imports alone over-cuts `Bespoke.tsx`, where the fill receiver sits between
-unrelated state declarations.
+- **`lib/navigation.ts`** — opens a tool by registry id from anywhere. It
+  outlived the agent because the problem is not an agent problem: something in
+  main.tsx's shell needs to change the screen. Its **click gate stays**: a
+  caller may only auto-press a button the registry grades `actionSafety: "read"`,
+  because `autoAction` matches on button TEXT and relabelling a button would
+  otherwise silently change what a stored link is permitted to press.
+- **`lib/workflowBubble.ts`** — enabled/open state for the floating panel.
 
-Removing it, measured on a real trial:
+**The bubble is the Workflows feature's front door**, mounted in main.tsx's
+shell so it survives navigation — which it must, because a step's whole job is
+to send you to another tool, and a tool page would unmount the list you were
+following. `WorkflowBoard` renders in both, switched by `variant`: `"panel"` in
+the bubble, `"page"` for the registry entry ⌘K finds. It is deliberately NOT in
+`LocaliseScreen`'s `TOOLS_ROW` any more.
 
-- **25 files delete outright, ~7,800 lines** — all of `lib/agent/`,
-  `AgentBubble`, `AgentChat`, `AskAbout`, `AskIcon`, `agentWrites.ts` and the
-  `probe-agent-*` scripts.
-- **447 lines of surgery across 9 shared files**, every one a self-contained
-  block behind a named import. `Bespoke.tsx` is 253 of those and is the only
-  one worth doing by hand.
+- **Enabled defaults ON**, unlike the agent, under its own key
+  (`xyi.workflows.bubble`). Never reuse `xyi.agent.enabled`: a machine that
+  switched the agent off would get a permanently hidden checklist it has never
+  seen. The home toggle is the `Route` icon in HomeScreen's picker row.
+- **The panel pins its own `--cat-*`.** Everything inside keys off the category
+  tint, set per mounted tool — so a panel that follows you around would come up
+  orange over Deliver and teal over Localise. It declares teal on
+  `.wfbub-panel` and the cascade inside lands there.
+- Hidden with CSS, never unmounted: a close must not throw away the board read.
+- `clampSize()` in the TSX and the `max-width`/`max-height` in the SCSS must
+  agree. If CSS caps lower, the box stops while the drag carries on and the
+  corner comes away from the cursor.
 
-Half a day, and nothing else in the panel depends on it.
+**Motion: PHYSICAL personality, three curves, no more.** Framer springs
+(`SPRING.snappy` arrivals, `.smooth` settles, `.bouncy` the tick alone) plus one
+cubic-bezier for hover. **CSS `linear()` spring easing is Chrome 113 and the
+target is chrome74** — JS-computed springs are the only real ones available
+here. Steps are numbered nodes on a rail that fills in behind you; a card is
+pressed (`whileTap`), never lifted with a CSS transform, because Framer owns
+that element's transform. No perpetual animation on the launcher — the agent's
+rotating ring is exactly what people turn a feature off for.

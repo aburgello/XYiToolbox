@@ -39,10 +39,8 @@ import CommandPalette from "./CommandPalette";
 import { GsapScreenTransition } from "./gsap/components/GsapScreenTransition";
 import { useTheme } from "./hooks/useTheme";
 import { registerSoftReload } from "./softReload";
-// AGENT-HOOK — remove with the agent. See docs: grep AGENT-HOOK.
-import { setNavigator } from "./lib/agent/navigation";
-import { setAgentScreen } from "./lib/agent/context";
-import AgentBubble from "./AgentBubble";
+import { setNavigator } from "./lib/navigation";
+import WorkflowBubble from "./WorkflowBubble";
 // ---------------------------------------------------------------------------
 // Screen type -- exported so screen components can reference it without a
 // circular import (they import Screen, Main imports them).
@@ -115,21 +113,6 @@ const Main = () => {
             else setScreen({ type: "tool", toolId, backTo: screen, autoAction });
         });
         return () => setNavigator(null);
-    }, [screen]);
-    // WHERE THE ARTIST IS, for the Ask agent's per-question context line.
-    //
-    // The ids only -- context.ts turns them into words. main.tsx does not
-    // import the tool registry today and should not start doing so for a
-    // caption.
-    useEffect(() => {
-        // AGENT-HOOK — remove with the agent.
-        setAgentScreen(
-            screen.type === "category"
-                ? { type: "category", categoryId: screen.categoryId }
-                : screen.type === "tool"
-                    ? { type: "tool", toolId: screen.toolId }
-                    : { type: "home" }
-        );
     }, [screen]);
     // Auto-fires a named button inside a tool's component after it mounts.
     // Used when a search hit matches an inner action (e.g. "Trott 2.0") --
@@ -211,7 +194,7 @@ const Main = () => {
             <CommandPalette screen={screen} onNavigate={setScreen} />
             {/* Outside GsapScreenTransition on purpose -- the whole point is
                 that it survives screen changes, transcript and all. */}
-            <AgentBubble />
+            <WorkflowBubble />
             <DialogHost />
             <PreFlightHost />
             <McItReportHost />

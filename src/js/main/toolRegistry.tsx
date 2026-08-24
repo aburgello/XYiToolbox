@@ -183,78 +183,23 @@ export interface ToolEntry {
     /** Short description shown in the tool content header. */
     description?: string;
     /**
-     * AGENT-HOOK — remove with the agent.
-     *
-     * What each button in `actions` actually DOES, keyed by its exact label.
-     *
-     * A PARALLEL FIELD rather than richer `actions` entries, because
-     * CommandPalette and HomeScreen both iterate `actions` as plain strings
-     * for search -- changing that type breaks both.
-     *
-     * Read by the Ask agent (lib/agent/capabilities.ts). Without it the agent
-     * has a button's NAME and nothing else, so anything it says about what a
-     * button does is inferred from the label: it told an artist "Bespoke It"
-     * was for "custom territory handling" when it is for several masters in
-     * one deliverable. Optional and sparse on purpose -- fill it in where a
-     * label alone is misleading, not everywhere for completeness.
-     */
-    actionNotes?: Record<string, string>;
-    /**
-     * Whether the Ask agent may press a button itself, keyed by exact label.
+     * Whether a stored link may press a button itself, keyed by exact label.
      *
      *   "read"  — inspects, scans, refreshes, or opens a form. Changes nothing
-     *             on disk or in the project. The agent may click it.
+     *             on disk or in the project. Safe to auto-click on arrival.
      *   "write" — generates, saves, renders, deletes, or otherwise produces
-     *             work. The agent NEVER clicks it: it opens the page and says
-     *             which button to press.
+     *             work. NEVER auto-clicked: the page opens and names the
+     *             button to press.
      *
      * UNLISTED LABELS DEFAULT TO "write". Unknown means don't touch — a new
-     * button should not become agent-clickable by having been forgotten here.
+     * button should not become auto-clickable by having been forgotten here.
      *
      * The dangerous case is not an empty form, it is a LOADED one: an artist
      * who has already set their roots and picked a campaign is exactly the
-     * artist most likely to be talking to the agent, and "press Generate" then
-     * runs against real config with no picker to catch it.
-     *
-     * Filling a form's FIELDS is neither of these -- see the note on
-     * localiseHandoff.ts. It changes React state, nothing else, and the artist
-     * still presses the button.
+     * artist a workflow step sends here, and "press Generate" then runs against
+     * real config with no picker to catch it.
      */
     actionSafety?: Record<string, "read" | "write">;
-    /**
-     * WHICH OF THIS TOOL'S FIELDS THE AGENT MAY FILL IN, keyed by a stable
-     * field id the tool itself understands.
-     *
-     * Filling a field is not a write and not an undoable edit -- it is a
-     * PROPOSAL. It changes React state, it is visible before it does anything,
-     * it can be typed over, and it is inert until the artist presses the
-     * button. That is a stronger guarantee than "undoable": undoable means it
-     * happened and you reversed it; this means it has not happened yet.
-     * prefill_batch already works exactly this way.
-     *
-     * THE RISK IS NOT THE FILLING, IT IS WHAT THE FIELD FEEDS. Two kinds:
-     *
-     *   A size, a duration, a territory, a batch row — the field's own type
-     *   bounds the damage. The worst case is a wrong value you can see. These
-     *   are what this list is for.
-     *
-     *   A script body, an output path, a filename that decides where files
-     *   land — the field bounds nothing. Filling one is not proposing a value,
-     *   it is authoring the action, and the button afterwards is a formality
-     *   rather than a decision. These are never listed.
-     *
-     * UNLISTED FIELDS, AND UNLISTED TOOLS, ARE NOT FILLABLE. Same fail-closed
-     * rule as actionSafety: a field must not become agent-fillable by having
-     * been forgotten here.
-     *
-     * Two rules the filler enforces regardless of what this list says: the
-     * agent fills and STOPS -- it never fills and submits, even for a button
-     * graded "read" -- and it never silently replaces a value the artist
-     * already typed, because overwriting your work is where a proposal turns
-     * into a destructive act.
-     */
-    /** AGENT-HOOK — remove with the agent. */
-    fillableFields?: string[];
     /**
      * Set when this tool's real home is a category's bespoke screen rather
      * than its own tool page. Navigating an artist here should land them on
@@ -362,9 +307,8 @@ export const TOOLS: ToolEntry[] = [
         // "Film Title" was retitled.
         //
         // Generate Name is NOT in actionSafety, so it defaults to "write" and
-        // the agent cannot press it. That is the whole shape of this feature:
+        // nothing auto-presses it. That is the whole shape of this feature:
         // it fills the form and stops.
-        fillableFields: ["filmTitle", "artworkType", "campaign", "site", "territory"],
     },
     {
         id: "campaign-localiser",
@@ -373,7 +317,7 @@ export const TOOLS: ToolEntry[] = [
         icon: Languages,
         Component: CampaignLocaliserTool,
         // ONLY TROTT IS ADVERTISED, and this list is what advertising means:
-        // `actions` drives search, ⌘K and the agent's capability list, so a
+        // `actions` drives search, ⌘K and the workflow link picker, so a
         // button left out of it is still on the page and still pressable, just
         // no longer something the panel offers you as a way to localise.
         //
@@ -387,7 +331,7 @@ export const TOOLS: ToolEntry[] = [
         actions: ["Trott 2.0"],
         description: "",
         // WRITES — it opens a master and saves to a new _V01.aep, never over
-        // the master itself (CLAUDE.md §1). Worth the agent being able to say
+        // the master itself (CLAUDE.md §1). Worth a workflow step being able to say
         // so, since "generate" alone does not tell an artist whether anything
         // of theirs is at risk.
         //
@@ -395,12 +339,7 @@ export const TOOLS: ToolEntry[] = [
         // nothing, they are keyed by label so they simply go unread, and they
         // are the description to restore if the routing decision is ever
         // reversed.
-        actionNotes: {
-            "Generate Files": "Generates the localised files for the campaign. Writes new _V01.aep files; the master itself is never written to.",
-            "Generate Files (don't replace)": "Same as Generate Files, but skips any deliverable that already exists instead of regenerating it.",
-            "Trott 2.0": "A generation variant that also writes to new _V01.aep files rather than the master.",
-        },
-        // Generates deliverables. Never agent-clickable.
+        // Generates deliverables. Never auto-clickable.
         actionSafety: {
             "Generate Files": "write",
             "Generate Files (don't replace)": "write",
@@ -428,13 +367,6 @@ export const TOOLS: ToolEntry[] = [
         // artist should be sent -- in context with the rest of the pipeline,
         // not on an isolated tool page.
         livesIn: "localise",
-        actionNotes: {
-            "Scan territories": "Walks the campaign's markets root and reports what each territory still needs. Read-only — nothing is generated.",
-            "Re-scan": "Same as Scan territories, shown once a scan already exists. Refreshes it.",
-            "Build a Batch": "Opens a row builder for picking creatives and sizes by hand, when there is no CSV to drive the batch.",
-            "Bespoke It": "Hands off to the Bespoke tool, for a deliverable made of SEVERAL masters at once (e.g. three portrait panels on one metrobus). Not for territory handling.",
-            "Add row": "Adds one more deliverable row inside Build a Batch.",
-        },
         actionSafety: {
             "Scan territories": "read",
             "Re-scan": "read",
@@ -505,35 +437,10 @@ export const TOOLS: ToolEntry[] = [
         icon: Layers,
         Component: BespokeTool,
         actions: ["Bespoke", "Bespokin", "Multiple Art", "Add segment", "Remove segment", "Screen library", "Library", "Seed from templates", "Find references", "Trace", "Save this layout"],
-        // ARRIVING IN A STATE, not pressing a button. Bespoke opens on the mode
-        // chooser, so "Screen library" does not exist yet for anything to click
-        // -- which is why this tool has no actionSafety and every button stays
-        // unpressable. The agent reaches the library through these instead.
-        //
-        //   mode             "regions" (Bespoke) or "multi" (Multi Art)
-        //   libraryOpen      "true" to open the screen library
-        //   libraryTerritory a country to filter the library's rail to
-        //   screenName       adopt that screen as the reference — ONLY onto an
-        //                    empty board. Replacing regions is panel state and
-        //                    no Ctrl+Z brings them back, so with work in
-        //                    progress the receiver opens the library instead
-        //                    and says why.
-        //   mastersRoot      point the shelf at a campaign, using the path
-        //                    list_campaigns returned
-        //   segments         a Multi Art running order, as a JSON array of
-        //                    {seconds, count, creative, orientation, size}.
-        //                    Matched against the loaded shelf by
-        //                    lib/agent/multiArt.ts, which forgives spelling and
-        //                    refuses ambiguity. Same empty-board rule as
-        //                    screenName, and it never presses Build.
-        //   canvasWidth      the DELIVERABLE's size — not a master's. A spec
-        //   canvasHeight     saying 1080x1526 is describing this, and the
-        //   runtimeSeconds   masters that fill it are whatever the campaign
-        //                    has in that shape.
-        fillableFields: [
-            "mode", "libraryOpen", "libraryTerritory", "screenName", "mastersRoot", "segments",
-            "canvasWidth", "canvasHeight", "runtimeSeconds",
-        ],
+        // NO actionSafety, and that is not an omission. Bespoke opens on the
+        // mode chooser, so "Screen library" does not exist yet for anything to
+        // click — every button here stays unpressable by a stored link, and a
+        // workflow step that wants the library has to open the tool and say so.
         description: "Compose a deliverable from several masters. Creatives tiled across the frame, segments played in order. For MultipleArt rows, where no single master fits.",
     },
     {
@@ -644,7 +551,7 @@ export const TOOLS: ToolEntry[] = [
         ],
         // Read-only: finding puppets reports and changes nothing. Everything
         // else writes to somebody's rig, so nothing else is listed and the
-        // agent cannot press it.
+        // nothing auto-presses it.
         actionSafety: { "Find puppets": "read" },
         description: "Rig and animate Puppet Warp pins: a control null for each, poses, sway and wiggle, follow-through.",
     },
@@ -767,7 +674,7 @@ export const TOOLS: ToolEntry[] = [
         // reasoning behind it was wrong in a specific, reusable way.
         //
         // It ran: filling this textarea grants `runScript` through the front
-        // end. It does not. The agent can already author arbitrary
+        // end. It does not. A saved custom tool can already hold arbitrary
         // ExtendScript — it does that in chat and the artist pastes it — so
         // filling the box adds no capability, it removes a clipboard
         // round-trip. What grants execution is the RUN button, and that is
@@ -779,13 +686,12 @@ export const TOOLS: ToolEntry[] = [
         // receiver rather than here: a filled box reads as READY where a chat
         // message reads as a suggestion. So the tool fills only an untouched
         // box, never over the artist's own work, and says plainly that what is
-        // in there was written by the agent and has not been run.
+        // in there was pasted in and has not been run.
         //
         // Still no actionSafety: neither "Run Script" nor "Clear Output" is
-        // agent-clickable. And "Save as Tool" stays out of reach — a saved
+        // auto-clickable. And "Save as Tool" stays out of reach — a saved
         // custom tool re-runs later on one click with nobody reading it, which
         // is a different and worse thing than a filled box.
-        fillableFields: ["code"],
     },
     {
         id: "my-tools",

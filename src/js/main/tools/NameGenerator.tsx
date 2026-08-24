@@ -7,8 +7,6 @@
 // the selected project item(s) -- never touches a file on disk.
 // =============================================================================
 import React, { useState } from "react";
-// AGENT-HOOK — remove with the agent. See docs: grep AGENT-HOOK.
-import { usePendingFill } from "../lib/agent/fieldHandoff";
 import { Wand2, ScanSearch, RotateCcw } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import StatusIcon from "../StatusIcon";
@@ -50,39 +48,6 @@ const NameGeneratorTool = () => {
      * Take-once, keyed by tool id, so coming back here later cannot silently
      * re-fill a form already dealt with.
      */
-    // AGENT-HOOK — remove with the agent.
-    usePendingFill("name-generator", (fill) => {
-        const setters: Record<string, [string, (v: string) => void]> = {
-            filmTitle: [filmTitle, setFilmTitle],
-            artworkType: [artworkType, setArtworkType],
-            campaign: [campaign, setCampaign],
-            site: [site, setSite],
-            territory: [territory, setTerritory],
-        };
-
-        const filled: string[] = [];
-        const kept: string[] = [];
-        for (const key in fill) {
-            if (!Object.prototype.hasOwnProperty.call(fill, key)) continue;
-            const slot = setters[key];
-            if (!slot) continue;
-            const [current, set] = slot;
-            if (current.trim()) { kept.push(key); continue; }
-            set(fill[key]);
-            filled.push(key);
-        }
-
-        if (!filled.length && !kept.length) return;
-        setStatus({
-            type: kept.length ? "error" : "success",
-            text: [
-                filled.length ? `Filled ${filled.join(", ")} — check them and press Generate Name.` : "",
-                kept.length ? `Left your own ${kept.join(", ")} alone.` : "",
-                "Nothing has been generated yet.",
-            ].filter(Boolean).join(" "),
-        });
-    });
-
     const run = async (label: string, fn: () => Promise<any>, onResult?: (r: any) => void) => {
         setStatus(null);
         setBusy(true);

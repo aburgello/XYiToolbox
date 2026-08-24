@@ -32,9 +32,6 @@ import { AlertCircle, ChevronRight, Copy, Crosshair, Frame, Globe2, Image as Ima
 import { csi, evalTS } from "../../lib/utils/bolt";
 import { deriveMastersFromMarkets } from "../lib/mastersRoot";
 import InsituBoard from "./InsituBoard";
-// AGENT-HOOK — remove with the agent. See docs: grep AGENT-HOOK.
-import { usePendingFill } from "../lib/agent/fieldHandoff";
-import { parseSegmentSpec, planSegments } from "../lib/agent/multiArt";
 import { usePosterFrame, pickPreviewRender, isImageFile, type RenderEntry } from "../lib/renderPreview";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
@@ -367,9 +364,9 @@ function distinguish(stem: string, edges: { pre: number; suf: number }): string 
 }
 
 /** Case, spacing, underscores and hyphens dropped. Identity is what survives.
- *  Deliberately a local copy of multiArt's normalise rather than an import:
- *  everything under lib/agent/ deletes with the agent, and the shelf search is
- *  not part of it. */
+ *  Kept local on purpose: it was a copy of the agent's normalise rather than an
+ *  import, precisely so the shelf search would survive that feature's removal.
+ *  It did. */
 const searchNorm = (s: string) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
 /**
@@ -684,14 +681,6 @@ export const BespokeTool = () => {
     // changes -- see bespokeTemplateSave in team.ts.
     const [templates, setTemplates] = useState<BespokeTemplate[]>([]);
     const [templatesRead, setTemplatesRead] = useState(false);
-    // A screen the agent asked for, held until the library has actually been
-    // read. See the resolver below.
-    const [pendingScreen, setPendingScreen] = useState("");
-    // A Multi Art running order the agent proposed, held until the masters
-    // shelf has actually been read. Same reason as pendingScreen: matching
-    // creatives against an empty shelf answers "no such creative" about a
-    // campaign nobody has opened yet.
-    const [pendingSegments, setPendingSegments] = useState("");
     const [saving, setSaving] = useState(false);
     const [tplName, setTplName] = useState("");
     const [layouts, setLayouts] = useState<Record<string, { regions: Region[]; guidesX: number[]; guidesY: number[] }>>({});
@@ -1348,189 +1337,6 @@ export const BespokeTool = () => {
      * why. Same rule as the Script Playground box -- never quietly overwrite
      * something somebody was in the middle of.
      */
-    // AGENT-HOOK — remove with the agent.
-    usePendingFill("bespoke", (fill) => {
-        const asked: string[] = [];
-
-        if (fill.mode === "regions" || fill.mode === "multi") {
-            setMode(fill.mode);
-            asked.push(fill.mode === "regions" ? "Bespoke mode" : "Multi Art mode");
-        }
-        if (fill.libraryTerritory) setLibraryTerritory(fill.libraryTerritory);
-
-        // POINTED AT A CAMPAIGN, using the path list_campaigns already handed
-        // the agent. Pinned, because arriving with a folder chosen and then
-        // having the campaign effect quietly derive a different one underneath
-        // is the kind of thing nobody notices until the wrong artwork builds.
-        if (fill.mastersRoot) {
-            setMastersPinned(true);
-            setMastersPath(fill.mastersRoot);
-            load(fill.mastersRoot);
-            asked.push("the masters folder");
-        }
-
-        // THE DELIVERABLE'S OWN SIZE, which is not the same question as which
-        // master fills it. The spec's "1080x1526px" is this canvas; the masters
-        // that go in it are whatever the campaign has in that shape. Keeping
-        // them apart is the whole reason both are fillable.
-        const dim = (v: string) => {
-            const n = Math.round(Number(v));
-            return n >= 4 && n <= 30000 ? String(n) : "";
-        };
-        const cw = dim(fill.canvasWidth || "");
-        const ch = dim(fill.canvasHeight || "");
-        if (cw) setCanvasW(cw);
-        if (ch) setCanvasH(ch);
-        if (cw && ch) asked.push(`a ${cw}x${ch} canvas`);
-        const secs = Number(fill.runtimeSeconds);
-        if (isFinite(secs) && secs > 0 && secs <= 3600) {
-            setRuntime(String(secs));
-            asked.push(`a ${secs}s runtime`);
-        }
-
-        // A running order implies Multi Art. Held for the resolver below.
-        if (fill.segments) {
-            setMode("multi");
-            setPendingSegments(fill.segments);
-        }
-
-        // A screen name implies the library, and implies Bespoke mode -- asking
-        // for a layout and landing on the mode chooser would be the same
-        // half-arrival this exists to fix.
-        const wanted = (fill.screenName || "").trim().toLowerCase();
-        if (wanted) setMode((m) => m || "regions");
-
-        if (fill.libraryOpen === "true" || wanted) {
-            setLibraryOpen(true);
-            asked.push("the screen library");
-        }
-
-        if (!wanted) {
-            if (asked.length) setStatus({ text: "Opened " + asked.join(" and ") + ".", type: "success" });
-            return;
-        }
-
-        // HANDED TO THE RESOLVER BELOW RATHER THAN ANSWERED HERE. The library
-        // is read by an effect keyed on `mode`, and this fill is usually what
-        // sets `mode` -- so at this instant `templates` is still empty and
-        // looking the name up here answers "no screen called that" about a
-        // library nobody has read yet. Confidently wrong, and it sends somebody
-        // off to trace a screen that already exists.
-        setPendingScreen(fill.screenName || "");
-    });
-
-    /**
-     * The screen the agent asked for, resolved once the library is actually
-     * readable -- not before, and not forever.
-     *
-     * Three distinct answers, kept distinct: not read yet (wait), read and
-     * unreachable (say so -- the screen may well exist), read and no match
-     * (say so -- it does not).
-     */
-    useEffect(() => {
-        if (!pendingScreen || !templatesRead) return;
-        const wanted = pendingScreen.trim().toLowerCase();
-        setPendingScreen("");
-
-        if (!libraryReadable) {
-            setStatus({
-                text: `Can't reach the screen library right now, so I can't tell whether "${pendingScreen}" is in it. Reconnect to the share and open the library.`,
-                type: "error",
-            });
-            return;
-        }
-        const hit = templates.filter((t) => String(t.name).toLowerCase() === wanted)[0];
-        if (!hit) {
-            setStatus({
-                text: `No screen called "${pendingScreen}" in the library. It's open, pick from the list.`,
-                type: "error",
-            });
-            return;
-        }
-        if (regions.length > 0) {
-            setStatus({
-                text: `You have regions on the board, so I've left them alone. "${hit.name}" is in the library when you're ready.`,
-                type: "error",
-            });
-            return;
-        }
-        // traceTemplate, not loadTemplate: "open one as reference" is the
-        // reference image and canvas to draw against, not somebody else's
-        // masters dropped into regions.
-        if (traceTemplate(hit)) setLibraryOpen(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [pendingScreen, templatesRead, templates, libraryReadable]);
-
-    /**
-     * THE RUNNING ORDER, resolved against the masters actually on the shelf.
-     *
-     * The model reads the sentence; this decides what the words point at. See
-     * lib/agent/multiArt.ts for why that split is the whole design -- the
-     * spelling of a creative is forgiven, the identity of one never is.
-     *
-     * WAITS FOR THE SHELF, and can tell the three reasons it might be empty
-     * apart: no campaign chosen, a read still running, or a campaign that
-     * genuinely has no masters. Answering "no creative called Trio" while the
-     * folder is still being read is the same confidently-wrong failure the
-     * screen resolver above exists to avoid.
-     *
-     * ONLY ONTO AN EMPTY BOARD. Segments are panel state and no Ctrl+Z brings
-     * them back, so work already laid out is never replaced -- the request is
-     * refused and the artist is told, exactly as with a traced screen.
-     *
-     * IT DOES NOT BUILD. Assembling the running order is the tedious part;
-     * pressing Build is the part with consequences, and that stays the
-     * artist's -- Bespoke advertises no actionSafety, so the agent cannot
-     * press it.
-     */
-    useEffect(() => {
-        if (!pendingSegments) return;
-        if (!mastersPath && !loading) {
-            setPendingSegments("");
-            setStatus({
-                text: "No campaign is loaded here, so there's nothing to build a running order from. Pick one first.",
-                type: "error",
-            });
-            return;
-        }
-        if (loading || masters === null) return;   // the read is still running
-        setPendingSegments("");
-
-        const parsed = parseSegmentSpec(pendingSegments);
-        if (!parsed.ok) { setStatus({ text: parsed.error, type: "error" }); return; }
-
-        if (segments.some((sg) => sg.tiles.length > 0)) {
-            setStatus({
-                text: "You already have creatives in the running order, so I've left it alone. Clear the segments first if you want me to lay this out.",
-                type: "error",
-            });
-            return;
-        }
-
-        const plan = planSegments(parsed.specs, masters);
-        if (!plan.ok) { setStatus({ text: plan.error, type: "error" }); return; }
-
-        // nextSegId, NOT the index. That counter is shared with regions and
-        // already past 0, so index ids would collide with the very next
-        // "Add segment" -- two segments with one id, which is a duplicate
-        // React key and a segment that edits its twin.
-        setSegments(plan.segments.map((sg) => ({ id: nextSegId++, tiles: sg.tiles as BespokeMaster[], seconds: sg.seconds })));
-        setCurrent(0);
-
-        const total = plan.segments.reduce((n, sg) => n + sg.seconds, 0);
-        const shape = plan.segments
-            .map((sg) => `${sg.seconds}s of ${sg.tiles.length} ${sg.tiles[0].creative || sg.tiles[0].name}`)
-            .join(", then ");
-        setStatus({
-            // The notes are not a footnote. A master placed more than once is
-            // the difference between three panels and one repeated three
-            // times, and it is invisible on a board of identically-sized tiles.
-            text: `Laid out ${shape}, ${total}s in total. ${plan.notes.join(" ")} Check it and press Build.`.replace(/\s+/g, " ").trim(),
-            type: plan.notes.length ? "error" : "success",
-        });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [pendingSegments, masters, loading, mastersPath, segments]);
-
     // ── board shortcuts, deliberately OPT-IN ────────────────────────────────
     // AE binds the arrow keys to "nudge the selected LAYER in the comp", so a
     // panel that grabbed them permanently would quietly break that for the rest

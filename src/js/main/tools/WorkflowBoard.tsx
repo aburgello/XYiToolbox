@@ -292,8 +292,38 @@ const ProgressRing: React.FC<{ done: number; total: number }> = ({ done, total }
     );
 };
 
-const WorkflowBoardTool: React.FC<{ onSelectTool?: (toolId: string) => void }> = ({ onSelectTool }) => {
+/**
+ * THE THREE CURVES, and there are only three.
+ *
+ * Personality: PHYSICAL — the checklist should feel like objects you press,
+ * not rows you click. Springs everywhere something arrives or settles, one
+ * cubic-bezier for hover feedback (spring overshoot on hover reads as jitter).
+ *
+ * Framer's springs, NOT CSS `linear()`: that whole palette is Chrome 113 and
+ * the build target is chrome74, so JS-computed physics is the only real spring
+ * available here. It is also the better one — Framer carries velocity through
+ * an interruption, which matters when somebody ticks four boxes in a second.
+ */
+const SPRING = {
+    /** Arrivals: rows, chips, notes. Fast, barely overshoots. */
+    snappy: { type: "spring", stiffness: 400, damping: 30, mass: 1 },
+    /** Settles: the progress ring, panel-level position. */
+    smooth: { type: "spring", stiffness: 200, damping: 24, mass: 1 },
+    /** The tick itself, and only the tick. A small element, pressed rarely
+     *  enough per session that a real pop is a reward rather than a tax. */
+    bouncy: { type: "spring", stiffness: 500, damping: 18, mass: 1 },
+} as const;
+/** Hover only. */
+const SNAP = { type: "tween", duration: 0.18, ease: [0.22, 1, 0.36, 1] } as const;
+
+const WorkflowBoardTool: React.FC<{
+    onSelectTool?: (toolId: string) => void;
+    /** "panel" is the floating bubble: tighter, and it drops the chrome the
+     *  tool page already draws around it. */
+    variant?: "page" | "panel";
+}> = ({ onSelectTool, variant }) => {
     const reduced = useReducedMotion();
+    const panel = variant === "panel";
 
     const [entries, setEntries] = useState<WorkflowEntry[]>([]);
     // "Couldn't read" is NOT "nothing there". A failed read must never blank a
@@ -593,7 +623,7 @@ const WorkflowBoardTool: React.FC<{ onSelectTool?: (toolId: string) => void }> =
     const rowDelay = (i: number) => (reduced ? 0 : Math.min(i, 12) * 0.035);
 
     return (
-        <div className="workflow-board">
+        <div className={"workflow-board" + (panel ? " is-panel" : "")}>
             {/* ── who am I looking at ──────────────────────────────────── */}
             <div className="wfb-head">
                 <div className="wfb-id">
@@ -763,18 +793,60 @@ const WorkflowBoardTool: React.FC<{ onSelectTool?: (toolId: string) => void }> =
 
                     {entry && !editing && (
                         <>
-                            <ul className="wfb-steps">
-                                <AnimatePresence initial={false}>
-                                    {entry.steps.map((s, i) => {
-                                        const on = !!myTicks[s.id];
-                                        return (
-                                            <motion.li
-                                                key={s.id}
-                                                className={"wfb-step" + (on ? " is-done" : "")}
-                                                initial={{ opacity: 0, x: -6 }}
-                                                animate={{ opacity: 1, x: 0 }}
-                                                exit={{ opacity: 0 }}
-                                                transition={{ ...ease, delay: rowDelay(i) }}
+                            {/* A ROUTE, NOT A LIST OF ROWS.
+                                The small flat rows read as a form to fill in;
+                                what this actually is, is an order of
+                                operations that ends with the job done — and
+                                half the steps hand you on to another tool. So
+                                the steps are numbered nodes on a rail, the rail
+                                fills in behind you as you go, and each step is
+                                a card you press rather than a line you click.
+                                The metaphor is the same one the launcher icon
+                                carries. */}
+                            <ol className="wfb-steps">
+                                {entry.steps.map((s, i) => {
+                                    const on = !!myTicks[s.id];
+                                    // The rail segment ABOVE this node is
+                                    // travelled once the step before it is
+                                    // done — so the line fills behind you.
+                                    const prevOn = i > 0 && !!myTicks[entry.steps[i - 1].id];
+                                    return (
+                                        <motion.li
+                                            key={s.id}
+                                            className={"wfb-step" + (on ? " is-done" : "")}
+                                            initial={{ opacity: 0, y: 6 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            transition={reduced ? { duration: 0 } : { ...SPRING.snappy, delay: rowDelay(i) }}
+                                        >
+                                            <span className="wfb-rail" aria-hidden="true">
+                                                {i > 0 && (
+                                                    <span className="wfb-rail-line">
+                                                        <motion.span
+                                                            className="wfb-rail-fill"
+                                                            initial={false}
+                                                            animate={{ scaleY: prevOn ? 1 : 0 }}
+                                                            transition={reduced ? { duration: 0 } : SPRING.smooth}
+                                                        />
+                                                    </span>
+                                                )}
+                                                <span className={"wfb-node" + (on ? " is-on" : "")}>
+                                                    <span className="wfb-node-num">{i + 1}</span>
+                                                </span>
+                                            </span>
+
+                                            {/* PRESSED, NOT CLICKED. whileTap
+                                                compresses the whole card, which
+                                                is the cheapest thing that makes
+                                                a control feel like an object.
+                                                Framer owns the transform here,
+                                                so the card's hover lift is a
+                                                translate it can compose with —
+                                                never a CSS transform, which
+                                                would be overwritten. */}
+                                            <motion.div
+                                                className="wfb-step-card"
+                                                whileTap={reduced ? undefined : { scale: 0.985 }}
+                                                transition={SNAP}
                                             >
                                                 <CheckboxToggle
                                                     checked={on}
@@ -796,25 +868,20 @@ const WorkflowBoardTool: React.FC<{ onSelectTool?: (toolId: string) => void }> =
                                                                 className="wfb-step-strike"
                                                                 initial={false}
                                                                 animate={{ scaleX: on ? 1 : 0 }}
-                                                                transition={reduced ? { duration: 0 } : { duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                                                                transition={reduced ? { duration: 0 } : SPRING.snappy}
                                                             />
                                                         </span>
                                                     }
                                                 />
-                                                {s.link && (
-                                                    <StepLinkChip
-                                                        link={s.link}
-                                                        onGo={goTo}
-                                                    />
-                                                )}
-                                            </motion.li>
-                                        );
-                                    })}
-                                </AnimatePresence>
+                                                {s.link && <StepLinkChip link={s.link} onGo={goTo} />}
+                                            </motion.div>
+                                        </motion.li>
+                                    );
+                                })}
                                 {entry.steps.length === 0 && (
                                     <li className="wfb-empty-line">This workflow has no steps yet.</li>
                                 )}
-                            </ul>
+                            </ol>
 
                             <div className="wfb-steps-foot">
                                 <span className="wfb-by">

@@ -372,10 +372,21 @@
 
 // ── the checklist ───────────────────────────────────────────────────────────
 
+// ── the route ───────────────────────────────────────────────────────────────
+//
+// The steps were flat rows with a checkbox: a form to fill in. What this
+// actually is, is an order of operations that ends with the job done, and half
+// the steps hand you on to another tool. So they are numbered nodes on a rail
+// that fills in behind you, and each step is a card you press.
+//
+// THE THREE CURVES, and there are only three here. Anything that arrives or
+// settles is a Framer spring in the TSX (CSS `linear()` springs are Chrome 113,
+// the target is chrome74); CSS handles hover and press only.
+$wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
+
 .workflow-board .wfb-steps {
     display: flex;
     flex-direction: column;
-    gap: 2px;
     margin: 0;
     padding: 0;
     list-style: none;
@@ -383,16 +394,146 @@
 
 .workflow-board .wfb-step {
     display: flex;
-    align-items: center;
-    padding: 1px 0;
-
-    &.is-done .wfb-step-text { opacity: 0.45; }
+    align-items: stretch;
+    // No gap between rows: the rail is continuous, and a gap would cut it.
+    padding: 0;
 }
 
-// The containing block for the strike is the TEXT, not the row -- anchored to
+// ── the rail ────────────────────────────────────────────────────────────────
+
+.workflow-board .wfb-rail {
+    position: relative;
+    flex: none;
+    width: 26px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    // The connector runs the full height of the row, so the node needs the
+    // padding rather than the rail.
+    padding-top: 9px;
+}
+
+// The segment ABOVE a node. Absolutely positioned so it spans the gap the
+// padding creates, rather than being a flex child that pushes the node down.
+.workflow-board .wfb-rail-line {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    // A hairline, offset by half its own width. No transform: Framer owns the
+    // transform on the fill inside it, and a translate here would be a second
+    // transform on a different element — safe, but the margin is simpler.
+    margin-left: -1px;
+    width: 2px;
+    height: 11px;
+    border-radius: 1px;
+    background: rgba(255, 255, 255, 0.1);
+    overflow: hidden;
+}
+
+.workflow-board .wfb-rail-fill {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: var(--cat-border, #fb923c);
+    // Grows DOWNWARD from the node above, because that is the direction you
+    // travelled. scaleY on a transform-origin, never an animated height.
+    transform-origin: top center;
+}
+
+.workflow-board .wfb-node {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 18px;
+    height: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.04);
+    font-size: 9px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.75;
+    transition:
+        border-color 200ms $wfb-snap,
+        background-color 200ms $wfb-snap,
+        color 200ms $wfb-snap,
+        opacity 200ms $wfb-snap;
+
+    &.is-on {
+        opacity: 1;
+        border-color: var(--cat-border, #fb923c);
+        background: var(--cat-border, #fb923c);
+        // Against a filled accent node the number has to go dark, not light.
+        color: #12151a;
+    }
+}
+
+.workflow-board .wfb-node-num { line-height: 1; }
+
+// ── the card ────────────────────────────────────────────────────────────────
+
+.workflow-board .wfb-step-card {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+    margin: 2px 0 2px 4px;
+    padding: 2px 6px 2px 2px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.022);
+    // NAMED PROPERTIES, never `all`: `all` would animate the border and the
+    // background off the GPU on every hover.
+    transition:
+        background-color 180ms $wfb-snap,
+        border-color 180ms $wfb-snap;
+
+    // Hover is a surface change, not a lift: Framer owns this element's
+    // transform for the press compression, and a CSS translate here would be
+    // overwritten the moment whileTap fired.
+    &:hover {
+        background: rgba(255, 255, 255, 0.055);
+        border-color: rgba(255, 255, 255, 0.09);
+    }
+}
+
+.workflow-board .wfb-step.is-done .wfb-step-card {
+    background: rgba(255, 255, 255, 0.012);
+
+    .wfb-step-text { opacity: 0.42; }
+}
+
+// CheckboxToggle carries its own base rules; these scope the checklist's own
+// sizing to this tool rather than changing the shared primitive.
+.workflow-board .wfb-step .wfb-step-box {
+    // Fills the card so the whole line is the hit target, not just the glyph.
+    flex: 1;
+    min-width: 0;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 6px 6px;
+    background: none;
+    text-align: left;
+
+    // The card behind it carries the hover surface; a second one on top of it
+    // reads as two overlapping controls.
+    &:hover, &:active { background: none; }
+
+    svg { flex: none; margin-top: 1px; }
+}
+
+.workflow-board .wfb-step-text {
+    font-size: 11px;
+    line-height: 1.45;
+    overflow-wrap: break-word;
+    transition: opacity 200ms $wfb-snap;
+}
+
+// The containing block for the strike is the TEXT, not the row — anchored to
 // the row it spanned the full width and read as a rule under each ticked step.
-// inline-block so it takes the width of the words, and the wrap is what a
-// multi-line step strikes through.
+// inline-block so it takes the width of the words.
 .workflow-board .wfb-step-textwrap {
     position: relative;
     display: inline-block;
@@ -410,30 +551,6 @@
     // would relayout every frame.
     transform-origin: left center;
     pointer-events: none;
-}
-
-// CheckboxToggle carries its own base rules; these scope the checklist's own
-// sizing to this tool rather than changing the shared primitive.
-.workflow-board .wfb-step .wfb-step-box {
-    // Fills the row so the whole line is the hit target, not just the glyph.
-    flex: 1;
-    min-width: 0;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 5px 8px;
-    border-radius: 4px;
-    text-align: left;
-
-    &:hover { background: rgba(255, 255, 255, 0.05); }
-    &:active { background: rgba(255, 255, 255, 0.05); }
-
-    svg { flex: none; margin-top: 1px; }
-}
-
-.workflow-board .wfb-step-text {
-    font-size: 11px;
-    line-height: 1.45;
-    overflow-wrap: break-word;
 }
 
 .workflow-board .wfb-steps-foot {
@@ -830,4 +947,40 @@
         white-space: nowrap;
         text-overflow: ellipsis;
     }
+}
+
+// ── inside the floating panel ───────────────────────────────────────────────
+//
+// Same component, ~380px of width instead of the tool page's full column. Only
+// the things that actually stop fitting are changed — a second layout would
+// drift from the first the moment either was touched.
+
+.workflow-board.is-panel {
+    gap: 6px;
+    font-size: 10.5px;
+
+    .wfb-head {
+        // The identity, the ring and two buttons do not fit on one line at
+        // panel width; the actions wrap under rather than squeezing the name.
+        flex-wrap: wrap;
+        padding: 7px 8px;
+    }
+
+    .wfb-id { flex: 1 1 100%; }
+
+    .wfb-head-actions { margin-left: auto; }
+
+    .wfb-id-creative { font-size: 12px; }
+
+    // The picker and the notes both scroll inside the panel's own scroller;
+    // a second nested scroll region gives two scrollbars a few pixels apart.
+    .wfb-creatives { max-height: 150px; }
+    .wfb-linkpick-list { max-height: 140px; }
+
+    .wfb-empty { padding: 18px 12px; }
+
+    // Toasts are the shell's job, not a floating panel's: fixed-positioned
+    // toasts from inside a fixed panel land in the window corner, detached
+    // from the thing that raised them.
+    .wfb-toasts { position: static; margin-top: 6px; }
 }
