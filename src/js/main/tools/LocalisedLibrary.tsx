@@ -900,6 +900,10 @@ const LocalisedLibraryTool = () => {
                             : campaignReach[c.name] === false
                             ? "not mounted"
                             : undefined,
+                        // Greyed and unclickable, same as CSV Localiser's. The
+                        // current value stays selectable so the trigger can
+                        // still show what you are on -- see DropdownOption.
+                        disabled: !!retiredCampaigns[c.name.toLowerCase()],
                     }))}
                     placeholder="Select a campaign…"
                     emptyMessage="No campaigns yet — add one with the folder icon."

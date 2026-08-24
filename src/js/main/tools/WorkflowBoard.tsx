@@ -26,14 +26,13 @@ import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import {
     ListChecks, Plus, X, Trash2, Pencil, Check, RotateCcw, StickyNote,
     RefreshCw, AlertCircle, FolderSearch, ChevronLeft, GripVertical, Users,
-    ArrowRight, Link2, Link2Off, Search,
+    ArrowRight, Link2, Link2Off, Search, Globe,
 } from "lucide-react";
 import { TOOLS } from "../toolRegistry";
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import { sfx } from "../../lib/utils/sfx";
 import { confirmDialog } from "../Dialog";
-import CheckboxToggle from "../CheckboxToggle";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
 import "../shared.scss";
@@ -58,7 +57,17 @@ import "./WorkflowBoard.scss";
 interface WorkflowLink { tool: string; action?: string }
 
 interface WorkflowStep { id: string; text: string; link?: WorkflowLink }
-interface WorkflowNote { id: string; text: string; author: string; stamp: string }
+interface WorkflowNote {
+    id: string;
+    text: string;
+    author: string;
+    stamp: string;
+    /** ISO-3166 alpha-2, or absent. Notes are overwhelmingly per-territory --
+     *  "for Brazil, watch the two-line gutters" -- and an untagged wall of them
+     *  is a wall you have to read to find the two that apply to you. */
+    territory?: string;
+}
+interface Territory { name: string; code: string }
 interface WorkflowEntry {
     id: string;
     campaign: string;
@@ -89,14 +98,63 @@ function keyFor(campaign: string, creative: string): string {
     return canon(campaign) + "|" + canon(creative);
 }
 
-/** A creative token comes back SHOUTED, because that is what matching needs.
- *  Nobody wants to read a screen of TRIO, so title-case it for display only --
- *  the stored value is never touched. */
+/**
+ * A CREATIVE NAME, MADE READABLE.
+ *
+ * These arrive from two places and neither is written for a human:
+ *
+ *   the masters tree   Portal_to_paradise, International_payoff, Portal_brb
+ *   the filename parser PORTALTOPARADISE  (upper-cased, because that is what
+ *                                          matching needs)
+ *
+ * So: split on underscores, hyphens and camelCase boundaries, then decide each
+ * word on its own.
+ *
+ * THE THREE RULES, and each exists because of a real name in one campaign:
+ *
+ *   - A SHORT LOWERCASE WORD IS A CODE, not a word. `Portal_brb` and
+ *     `Portal_los` are BRB and LOS — territory and cut markers this studio
+ *     writes in lower case — so a three-letter token is upper-cased.
+ *   - EXCEPT A JOINING WORD. That rule alone turns `Portal_to_paradise` into
+ *     "Portal TO Paradise", which is worse than what it replaced, so the
+ *     handful of English words that legitimately appear mid-name stay lower.
+ *   - AN EXISTING ACRONYM IS LEFT ALONE. `DOOH`, `OV`, `TT` are already
+ *     upper-case and title-casing them would be actively wrong.
+ *
+ * A fully upper-case name has already lost its word boundaries — nothing can
+ * recover "Portal To Paradise" from "PORTALTOPARADISE" without a dictionary —
+ * so it is title-cased whole. That path is now rare: `workflowContext` carries
+ * the creative's ORIGINAL spelling from the filename alongside the matching
+ * token, precisely so this does not have to guess.
+ */
+const JOINERS = ["to", "of", "the", "and", "a", "an", "in", "on", "at", "for", "by", "vs", "or", "with"];
+
 function prettyCreative(s: string): string {
-    const raw = String(s || "");
+    const raw = String(s || "").trim();
     if (!raw) return "";
-    if (raw !== raw.toUpperCase()) return raw;   // already mixed case; leave it
-    return raw.charAt(0) + raw.slice(1).toLowerCase();
+
+    // No lower-case anywhere: the parser's token. Nothing to split on.
+    if (raw === raw.toUpperCase() && raw.indexOf("_") === -1 && raw.indexOf("-") === -1) {
+        return raw.charAt(0) + raw.slice(1).toLowerCase();
+    }
+
+    const words = raw
+        .replace(/[_-]+/g, " ")
+        // camelCase and PascalCase: "PortalToParadise" -> "Portal To Paradise".
+        // The second pattern catches an acronym running into a word
+        // ("DOOHMaster" -> "DOOH Master") rather than splitting the acronym.
+        .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+        .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+        .split(/\s+/)
+        .filter((w) => w !== "");
+
+    return words.map((w, i) => {
+        if (w === w.toUpperCase() && /[A-Z]/.test(w)) return w;          // already an acronym
+        const lower = w.toLowerCase();
+        if (i > 0 && JOINERS.indexOf(lower) !== -1) return lower;         // never the first word
+        if (lower.length <= 3 && /^[a-z]+$/.test(w)) return w.toUpperCase();
+        return w.charAt(0).toUpperCase() + w.slice(1);
+    }).join(" ");
 }
 
 /** "Mon Aug 24 2026 17:13:46 GMT+0100" -> "24 Aug". The full stamp stays in
@@ -111,9 +169,56 @@ function shortStamp(stamp: string): string {
 let uid = 0;
 const nextId = (prefix: string) => `${prefix}-${Date.now()}-${uid++}`;
 
+/**
+ * `**bold**`, and NOTHING else.
+ *
+ * A step that reads "select the main comp (**not** the frontcard one)" needs
+ * the one word carrying the whole instruction to be findable at a glance —
+ * these get skimmed by somebody halfway through a job, not read.
+ *
+ * Deliberately not a markdown library and deliberately not `**` plus italics
+ * plus links plus code. Steps and notes are typed into a small input by
+ * somebody in a hurry; every extra syntax is another way to get a literal
+ * asterisk on screen, and a link would duplicate what the step's own link chip
+ * already does properly.
+ *
+ * REACT ELEMENTS, never `dangerouslySetInnerHTML`. This text arrives from a
+ * shared file on the team folder, and while the people writing it are
+ * colleagues, "trusted author" is not a reason to hand a string to an HTML
+ * parser — the split below cannot produce markup at all.
+ */
+function richText(text: string): React.ReactNode {
+    const raw = String(text || "");
+    if (raw.indexOf("**") === -1) return raw;
+    // Split KEEPING the delimiters' contents: odd indices are the bold runs.
+    const parts = raw.split(/\*\*([^*]+)\*\*/g);
+    return parts.map((part, i) => (i % 2 === 1
+        ? <strong key={i}>{part}</strong>
+        : <React.Fragment key={i}>{part}</React.Fragment>));
+}
+
 /** The registry entry a link points at, or null when it points at nothing.
  *  A shared file outlives a tool id: this is checked on every render rather
  *  than trusted, so a rename shows as a dead chip instead of a dead click. */
+/**
+ * The flag for an ISO code, built from regional indicator symbols.
+ *
+ * DEGRADES TO THE CODE ITSELF, which is why this is worth doing at all: a
+ * platform without flag glyphs renders the two regional indicators as their
+ * plain letters, so "BR" is what you see. There is no fallback to write —
+ * the failure mode is already the right answer.
+ *
+ * Codes this codebase carries are not all two letters ("BE_FR" for Belgium
+ * French); anything that is not exactly two A-Z characters gets no flag rather
+ * than a wrong one.
+ */
+function flagFor(code: string): string {
+    const c = String(code || "").toUpperCase();
+    if (!/^[A-Z]{2}$/.test(c)) return "";
+    return String.fromCodePoint(0x1f1e6 + (c.charCodeAt(0) - 65))
+         + String.fromCodePoint(0x1f1e6 + (c.charCodeAt(1) - 65));
+}
+
 function toolFor(link: WorkflowLink | undefined) {
     if (!link || !link.tool) return null;
     return TOOLS.filter((t) => t.id === link.tool)[0] || null;
@@ -333,6 +438,11 @@ const WorkflowBoardTool: React.FC<{
     const [me, setMe] = useState("");
 
     const [campaigns, setCampaigns] = useState<CampaignRef[]>([]);
+    /** Lower-cased name -> who retired it. Best-effort: an unreachable team
+     *  folder leaves this empty, which shows every campaign as live rather than
+     *  greying the lot — the same "no data is not the same as couldn't read"
+     *  rule the board itself follows. */
+    const [retired, setRetired] = useState<Record<string, string>>({});
     const [detected, setDetected] = useState<{ project: string; creative: string; campaign: string }>({
         project: "", creative: "", campaign: "",
     });
@@ -350,6 +460,16 @@ const WorkflowBoardTool: React.FC<{
     const [editing, setEditing] = useState(false);
     const [draftSteps, setDraftSteps] = useState<WorkflowStep[]>([]);
     const [noteDraft, setNoteDraft] = useState("");
+    // The territory being attached to the note being typed, and the picker's
+    // open state. Both reset after a post: a tag is per-note, and a sticky one
+    // would quietly file the next three notes under Brazil.
+    const [noteTerritory, setNoteTerritory] = useState("");
+    const [terrPickerOpen, setTerrPickerOpen] = useState(false);
+    // Fetched once per campaign root, lazily -- the picker is the only thing
+    // that needs it and most sessions never open it.
+    const [territories, setTerritories] = useState<{ markets: Territory[]; all: Territory[] } | null>(null);
+    /** Reading the notes, not writing one: "" is every territory. */
+    const [terrFilter, setTerrFilter] = useState("");
     const [busy, setBusy] = useState(false);
     const [toasts, setToasts] = useState<Toast[]>([]);
     const toastSeq = useRef(0);
@@ -389,14 +509,20 @@ const WorkflowBoardTool: React.FC<{
         (async () => {
             try {
                 const ctx = (await evalTS("workflowContext")) as {
-                    success: boolean; project?: string; creative?: string; campaign?: string;
-                    campaigns?: CampaignRef[];
+                    success: boolean; project?: string; creative?: string; creativeLabel?: string;
+                    campaign?: string; campaigns?: CampaignRef[];
                 };
                 if (cancelled || !ctx || !ctx.success) return;
-                setDetected({ project: ctx.project || "", creative: ctx.creative || "", campaign: ctx.campaign || "" });
+                // THE FILENAME'S OWN SPELLING where there is one. The matching
+                // token is upper-cased and that is lossy: "PORTALTOPARADISE"
+                // formats to "Portaltoparadise" and nothing can do better,
+                // while "PortalToParadise" formats to "Portal To Paradise".
+                // Matching still canonicalises, so the two stay interchangeable.
+                const label = ctx.creativeLabel || ctx.creative || "";
+                setDetected({ project: ctx.project || "", creative: label, campaign: ctx.campaign || "" });
                 setCampaigns(ctx.campaigns || []);
                 setCampaign(ctx.campaign || "");
-                setCreative(ctx.creative || "");
+                setCreative(label);
                 setPickCampaign(ctx.campaign || "");
             } catch {
                 /* nothing open, or AE busy -- the picker covers it */
@@ -406,6 +532,20 @@ const WorkflowBoardTool: React.FC<{
                 if (!cancelled && t && t.success && t.message) setTicks(JSON.parse(t.message));
             } catch {
                 /* a corrupt tick store starts empty rather than breaking the tool */
+            }
+            try {
+                const board = (await evalTS("teamCampaignBoard")) as {
+                    read?: boolean; rows?: { name: string; retiredBy: string }[];
+                } | null;
+                if (!cancelled && board && board.read) {
+                    const next: Record<string, string> = {};
+                    (board.rows || []).forEach((r) => { if (r.retiredBy) next[r.name.toLowerCase()] = r.retiredBy; });
+                    setRetired(next);
+                }
+            } catch {
+                /* team folder unreachable -- nothing is greyed, which is right:
+                   "couldn't ask" must not render as "nothing is retired" in one
+                   direction or "everything is" in the other. */
             }
             if (!cancelled) await loadBoard(false);
         })();
@@ -431,11 +571,55 @@ const WorkflowBoardTool: React.FC<{
 
     const myTicks = ticks[activeKey] || {};
     const doneCount = entry ? entry.steps.filter((s) => myTicks[s.id]).length : 0;
+    /** Where you are. -1 once everything is done, so nothing is lit at the end
+     *  — a finished route should read as finished, not as still pointing
+     *  somewhere. */
+    const firstUndone = useMemo(() => {
+        if (!entry) return -1;
+        for (let i = 0; i < entry.steps.length; i++) {
+            if (!myTicks[entry.steps[i].id]) return i;
+        }
+        return -1;
+    }, [entry, myTicks]);
 
     const persistTicks = useCallback(async (next: Record<string, Record<string, boolean>>) => {
         setTicks(next);
         try { await evalTS("workflowTicksSave", JSON.stringify(next)); } catch { /* local only; not worth a toast */ }
     }, []);
+
+    /** The campaign's own root, for the territory scan. */
+    const campaignRoot = useMemo(() => {
+        const hit = campaigns.filter((c) => c.name === campaign)[0];
+        return hit ? hit.mastersRoot : "";
+    }, [campaigns, campaign]);
+
+    useEffect(() => {
+        if (!terrPickerOpen || territories !== null) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const r = (await evalTS("workflowTerritories", campaignRoot)) as {
+                    success: boolean; markets?: Territory[]; all?: Territory[];
+                };
+                if (cancelled || !r || !r.success) return;
+                setTerritories({ markets: r.markets || [], all: r.all || [] });
+            } catch {
+                // An unmounted share is a normal state: the picker says it
+                // couldn't look rather than claiming the campaign has none.
+                if (!cancelled) setTerritories({ markets: [], all: [] });
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [terrPickerOpen, territories, campaignRoot]);
+
+    /** Display name for a stored code. Falls back to the code, which is already
+     *  the useful half — a note tagged BR reads fine as "BR". */
+    const territoryName = useCallback((code: string) => {
+        if (!territories) return code;
+        const all = territories.markets.concat(territories.all);
+        const hit = all.filter((t) => t.code === code)[0];
+        return hit ? hit.name : code;
+    }, [territories]);
 
     /**
      * Follow a step's link.
@@ -539,13 +723,15 @@ const WorkflowBoardTool: React.FC<{
         const body = noteDraft.trim();
         if (!body || !entry) return;
         setBusy(true);
-        const r = (await evalTSSafe("workflowAddNote", entry.id, body)) as {
+        const r = (await evalTSSafe("workflowAddNote", entry.id, body, noteTerritory)) as {
             success: boolean; error?: string; entries?: WorkflowEntry[];
         };
         setBusy(false);
         if (!r || !r.success) { toast("error", (r && r.error) || "Couldn't post the note."); return; }
         if (r.entries) setEntries(r.entries);
         setNoteDraft("");
+        setNoteTerritory("");
+        setTerrPickerOpen(false);
         sfx.click();
     };
 
@@ -691,16 +877,32 @@ const WorkflowBoardTool: React.FC<{
                                     No campaigns saved yet — add one in OV Library or Localised Library first.
                                 </p>
                             )}
-                            {campaigns.map((c) => (
-                                <button
-                                    key={c.name}
-                                    type="button"
-                                    className={"wfb-camp" + (c.name === pickCampaign ? " is-on" : "")}
-                                    onClick={() => setPickCampaign(c.name)}
-                                >
-                                    {c.name}
-                                </button>
-                            ))}
+                            {campaigns.map((c) => {
+                                // A FINISHED CAMPAIGN IS NOT A PLACE TO WRITE A
+                                // WORKFLOW. Greyed and unclickable here for the
+                                // same reason as in the other two pickers, and
+                                // listed rather than hidden so "where did it
+                                // go" never comes up. The one you are already
+                                // on stays clickable: a campaign retired while
+                                // you had it open must not strand you with a
+                                // board you cannot get back to.
+                                const off = !!retired[c.name.toLowerCase()] && c.name !== pickCampaign;
+                                return (
+                                    <button
+                                        key={c.name}
+                                        type="button"
+                                        className={"wfb-camp"
+                                            + (c.name === pickCampaign ? " is-on" : "")
+                                            + (off ? " is-retired" : "")}
+                                        aria-disabled={off || undefined}
+                                        title={off ? `Retired by ${retired[c.name.toLowerCase()]}` : undefined}
+                                        onClick={() => { if (!off) setPickCampaign(c.name); }}
+                                    >
+                                        {c.name}
+                                        {off && <em>retired</em>}
+                                    </button>
+                                );
+                            })}
                         </div>
 
                         <div className="wfb-creatives">
@@ -806,6 +1008,12 @@ const WorkflowBoardTool: React.FC<{
                             <ol className="wfb-steps">
                                 {entry.steps.map((s, i) => {
                                     const on = !!myTicks[s.id];
+                                    // WHERE YOU ARE: the first step not yet
+                                    // done. A checklist is a set of independent
+                                    // boxes; a route has a position, and this
+                                    // is a route — so one step is lit and the
+                                    // rest are context around it.
+                                    const current = !on && i === firstUndone;
                                     // The rail segment ABOVE this node is
                                     // travelled once the step before it is
                                     // done — so the line fills behind you.
@@ -813,7 +1021,9 @@ const WorkflowBoardTool: React.FC<{
                                     return (
                                         <motion.li
                                             key={s.id}
-                                            className={"wfb-step" + (on ? " is-done" : "")}
+                                            className={"wfb-step"
+                                                + (on ? " is-done" : "")
+                                                + (current ? " is-current" : "")}
                                             initial={{ opacity: 0, y: 6 }}
                                             animate={{ opacity: 1, y: 0 }}
                                             transition={reduced ? { duration: 0 } : { ...SPRING.snappy, delay: rowDelay(i) }}
@@ -829,8 +1039,10 @@ const WorkflowBoardTool: React.FC<{
                                                         />
                                                     </span>
                                                 )}
-                                                <span className={"wfb-node" + (on ? " is-on" : "")}>
-                                                    <span className="wfb-node-num">{i + 1}</span>
+                                                <span className={"wfb-node" + (on ? " is-on" : "") + (current ? " is-current" : "")}>
+                                                    {on
+                                                        ? <Check size={11} strokeWidth={3} />
+                                                        : <span className="wfb-node-num">{i + 1}</span>}
                                                 </span>
                                             </span>
 
@@ -839,40 +1051,50 @@ const WorkflowBoardTool: React.FC<{
                                                 is the cheapest thing that makes
                                                 a control feel like an object.
                                                 Framer owns the transform here,
-                                                so the card's hover lift is a
-                                                translate it can compose with —
-                                                never a CSS transform, which
-                                                would be overwritten. */}
+                                                so the card's hover is a surface
+                                                change — never a CSS transform,
+                                                which would be overwritten. */}
                                             <motion.div
                                                 className="wfb-step-card"
                                                 whileTap={reduced ? undefined : { scale: 0.985 }}
                                                 transition={SNAP}
                                             >
-                                                <CheckboxToggle
-                                                    checked={on}
-                                                    onChange={() => toggleStep(s.id)}
-                                                    className="wfb-step-box"
-                                                    label={
-                                                        // The strike lives INSIDE the text span, not
-                                                        // beside it. As a sibling it stretched the
-                                                        // whole row and read as a horizontal rule
-                                                        // under every ticked step rather than as a
-                                                        // line through the words.
-                                                        <span className="wfb-step-textwrap">
-                                                            <span className="wfb-step-text">{s.text}</span>
-                                                            {/* Sweeps rather than appears, which is
-                                                                the difference between a tick that
-                                                                feels like progress and one that
-                                                                feels like a redraw. */}
-                                                            <motion.span
-                                                                className="wfb-step-strike"
-                                                                initial={false}
-                                                                animate={{ scaleX: on ? 1 : 0 }}
-                                                                transition={reduced ? { duration: 0 } : SPRING.snappy}
-                                                            />
-                                                        </span>
-                                                    }
-                                                />
+                                                {/* NO CHECKBOX. The row IS the
+                                                    control: a numbered route
+                                                    with one step lit says where
+                                                    you are far better than four
+                                                    identical empty squares, and
+                                                    the box was costing 20px of
+                                                    a 380px panel to say nothing
+                                                    the node does not already.
+                                                    A BUTTON, not a div with a
+                                                    click handler, so it is
+                                                    focusable and Enter works —
+                                                    and a sibling of the link
+                                                    chip rather than its parent,
+                                                    because a button inside a
+                                                    button is invalid and the
+                                                    inner one stops firing. */}
+                                                <button
+                                                    type="button"
+                                                    className="wfb-step-hit"
+                                                    aria-pressed={on}
+                                                    onClick={() => toggleStep(s.id)}
+                                                >
+                                                    <span className="wfb-step-textwrap">
+                                                        <span className="wfb-step-text">{richText(s.text)}</span>
+                                                        {/* Sweeps rather than appears, which is
+                                                            the difference between a tick that
+                                                            feels like progress and one that
+                                                            feels like a redraw. */}
+                                                        <motion.span
+                                                            className="wfb-step-strike"
+                                                            initial={false}
+                                                            animate={{ scaleX: on ? 1 : 0 }}
+                                                            transition={reduced ? { duration: 0 } : SPRING.snappy}
+                                                        />
+                                                    </span>
+                                                </button>
                                                 {s.link && <StepLinkChip link={s.link} onGo={goTo} />}
                                             </motion.div>
                                         </motion.li>
@@ -905,36 +1127,113 @@ const WorkflowBoardTool: React.FC<{
 
                             {/* ── notes ─────────────────────────────────── */}
                             <div className="wfb-notes">
-                                <div className="wfb-notes-head">
-                                    <StickyNote size={11} />
-                                    <span>Notes</span>
-                                    <em>{entry.notes.length}</em>
-                                </div>
-                                <AnimatePresence initial={false}>
-                                    {entry.notes.map((n, i) => (
-                                        <motion.div
-                                            key={n.id}
-                                            className="wfb-note"
-                                            initial={{ opacity: 0, y: 4 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                            exit={{ opacity: 0, height: 0 }}
-                                            transition={{ ...ease, delay: rowDelay(i) }}
-                                        >
-                                            <p className="wfb-note-text">{n.text}</p>
-                                            <span className="wfb-note-by" title={n.stamp}>
-                                                {n.author}{n.stamp ? ` · ${shortStamp(n.stamp)}` : ""}
-                                            </span>
-                                            {/* Your own notes only. Somebody
-                                                else's is theirs to withdraw. */}
-                                            {n.author === me && (
-                                                <button type="button" className="wfb-note-x" onClick={() => removeNote(n.id)}>
-                                                    <X size={10} />
-                                                </button>
+                                {(() => {
+                                    // WHICH TERRITORIES THIS BOARD ACTUALLY HAS
+                                    // NOTES FOR. Not every territory in the
+                                    // campaign: a filter row offering fifteen
+                                    // countries when the notes cover two is
+                                    // fifteen ways to find an empty list.
+                                    const used: string[] = [];
+                                    entry.notes.forEach((n) => {
+                                        if (n.territory && used.indexOf(n.territory) === -1) used.push(n.territory);
+                                    });
+                                    const shown = terrFilter
+                                        ? entry.notes.filter((n) => n.territory === terrFilter)
+                                        : entry.notes;
+                                    return (
+                                        <>
+                                            <div className="wfb-notes-head">
+                                                <StickyNote size={11} />
+                                                <span>Notes</span>
+                                                <em>{shown.length}{terrFilter ? ` of ${entry.notes.length}` : ""}</em>
+                                                {/* THE FILTER COSTS NOTHING UNTIL IT
+                                                    EXISTS. One flag per territory that
+                                                    actually has notes, and only when
+                                                    there is more than one — below that
+                                                    a filter is a control that can only
+                                                    ever hide things. */}
+                                                {used.length > 1 && (
+                                                    <span className="wfb-notes-filter">
+                                                        {terrFilter && (
+                                                            <button
+                                                                type="button"
+                                                                className="wfb-flagchip wfb-flagchip--clear"
+                                                                onClick={() => setTerrFilter("")}
+                                                                title="Show every note"
+                                                            >
+                                                                <X size={9} />
+                                                            </button>
+                                                        )}
+                                                        {used.map((code) => (
+                                                            <button
+                                                                key={code}
+                                                                type="button"
+                                                                className={"wfb-flagchip" + (terrFilter === code ? " is-on" : "")}
+                                                                onClick={() => setTerrFilter(terrFilter === code ? "" : code)}
+                                                                title={territoryName(code)}
+                                                            >
+                                                                <span className="wfb-flag">{flagFor(code) || code}</span>
+                                                            </button>
+                                                        ))}
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            <AnimatePresence initial={false}>
+                                                {shown.map((n, i) => (
+                                                    <motion.div
+                                                        key={n.id}
+                                                        className="wfb-note"
+                                                        initial={{ opacity: 0, y: 4 }}
+                                                        animate={{ opacity: 1, y: 0 }}
+                                                        exit={{ opacity: 0, height: 0 }}
+                                                        transition={reduced ? { duration: 0 } : { ...SPRING.snappy, delay: rowDelay(i) }}
+                                                    >
+                                                        <p className="wfb-note-text">{richText(n.text)}</p>
+                                                        <span className="wfb-note-by" title={n.stamp}>
+                                                            {n.territory && (
+                                                                <span className="wfb-note-terr" title={territoryName(n.territory)}>
+                                                                    <span className="wfb-flag">{flagFor(n.territory) || n.territory}</span>
+                                                                </span>
+                                                            )}
+                                                            {n.author}{n.stamp ? ` · ${shortStamp(n.stamp)}` : ""}
+                                                        </span>
+                                                        {/* Your own notes only. Somebody
+                                                            else's is theirs to withdraw. */}
+                                                        {n.author === me && (
+                                                            <button type="button" className="wfb-note-x" onClick={() => removeNote(n.id)}>
+                                                                <X size={10} />
+                                                            </button>
+                                                        )}
+                                                    </motion.div>
+                                                ))}
+                                            </AnimatePresence>
+                                            {shown.length === 0 && entry.notes.length > 0 && (
+                                                <p className="wfb-empty-line">No notes for {territoryName(terrFilter)}.</p>
                                             )}
-                                        </motion.div>
-                                    ))}
-                                </AnimatePresence>
+                                        </>
+                                    );
+                                })()}
+
                                 <div className="wfb-note-add">
+                                    {/* A GLOBE, NOT A DROPDOWN. The panel is
+                                        380px and already dense; a permanent
+                                        country selector next to the input would
+                                        cost a third of the row to say nothing
+                                        most of the time. Closed it is one
+                                        glyph; open it is a search over this
+                                        campaign's own territories. */}
+                                    <button
+                                        type="button"
+                                        className={"wfb-terr-btn" + (noteTerritory ? " is-on" : "")}
+                                        onClick={() => setTerrPickerOpen((v) => !v)}
+                                        disabled={!me || busy}
+                                        title={noteTerritory ? `Tagged ${territoryName(noteTerritory)} — click to change` : "Tag this note with a territory"}
+                                    >
+                                        {noteTerritory
+                                            ? <span className="wfb-flag">{flagFor(noteTerritory) || noteTerritory}</span>
+                                            : <Globe size={12} />}
+                                    </button>
                                     <input
                                         type="text"
                                         value={noteDraft}
@@ -947,7 +1246,26 @@ const WorkflowBoardTool: React.FC<{
                                         <Plus size={12} /><span>Add</span>
                                     </button>
                                 </div>
-                            </div>
+
+                                <AnimatePresence initial={false}>
+                                    {terrPickerOpen && (
+                                        <motion.div
+                                            initial={{ opacity: 0, height: 0 }}
+                                            animate={{ opacity: 1, height: "auto" }}
+                                            exit={{ opacity: 0, height: 0 }}
+                                            transition={ease}
+                                            style={{ overflow: "hidden" }}
+                                        >
+                                            <TerritoryPicker
+                                                territories={territories}
+                                                value={noteTerritory}
+                                                onPick={(code) => { setNoteTerritory(code); setTerrPickerOpen(false); }}
+                                                onClose={() => setTerrPickerOpen(false)}
+                                            />
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                                                        </div>
                         </>
                     )}
                 </div>
@@ -969,6 +1287,98 @@ const WorkflowBoardTool: React.FC<{
                         </motion.div>
                     ))}
                 </AnimatePresence>
+            </div>
+        </div>
+    );
+};
+
+// ---------------------------------------------------------------------------
+// Tagging a note with a territory.
+//
+// TWO LISTS, and the order is the whole design. What the campaign has on disk
+// comes first — five or six folders, which is the answer nearly every time and
+// short enough to click without typing. The full ISO list is underneath, behind
+// the search, because `markets` is legitimately empty in three ordinary cases:
+// the share is not mounted, the campaign was saved against its masters root
+// rather than its markets root (sibling trees, CLAUDE.md §5), or the note is
+// about a territory whose folder does not exist yet. A picker that offered
+// nothing in any of those would fail exactly when somebody is writing down what
+// they just learned.
+// ---------------------------------------------------------------------------
+const TerritoryPicker: React.FC<{
+    territories: { markets: Territory[]; all: Territory[] } | null;
+    value: string;
+    onPick: (code: string) => void;
+    onClose: () => void;
+}> = ({ territories, value, onPick, onClose }) => {
+    const [query, setQuery] = useState("");
+    const q = query.trim().toLowerCase();
+    const match = (t: Territory) =>
+        t.name.toLowerCase().indexOf(q) !== -1 || t.code.toLowerCase().indexOf(q) !== -1;
+
+    const markets = territories ? territories.markets : [];
+    const onDisk: Record<string, boolean> = {};
+    markets.forEach((t) => { onDisk[t.code] = true; });
+    // The full list only once something has been typed: dropping 250 countries
+    // into a 380px panel the moment the globe is pressed buries the six that
+    // matter.
+    const rest = (q && territories ? territories.all.filter((t) => match(t) && !onDisk[t.code]) : []).slice(0, 40);
+    const near = markets.filter(match);
+
+    return (
+        <div className="wfb-terrpick">
+            <div className="wfb-terrpick-head">
+                <Search size={11} />
+                <input
+                    type="text"
+                    autoFocus
+                    value={query}
+                    placeholder={markets.length ? "This campaign's territories…" : "Search every territory…"}
+                    onChange={(e) => setQuery(e.target.value)}
+                />
+                {value && (
+                    <button type="button" className="wfb-mini" onClick={() => onPick("")} title="Remove the tag">
+                        <Link2Off size={11} />
+                    </button>
+                )}
+                <button type="button" className="wfb-mini" onClick={onClose} title="Close"><X size={11} /></button>
+            </div>
+
+            <div className="wfb-terrpick-list">
+                {territories === null && <p className="wfb-empty-line">Reading the campaign's markets folder…</p>}
+                {territories !== null && markets.length === 0 && !q && (
+                    <p className="wfb-empty-line">
+                        Couldn't read this campaign's markets folder — search for a territory instead.
+                    </p>
+                )}
+                {near.map((t) => (
+                    <button
+                        key={"m-" + t.code}
+                        type="button"
+                        className={"wfb-terrpick-row" + (t.code === value ? " is-on" : "")}
+                        onClick={() => onPick(t.code)}
+                    >
+                        <span className="wfb-flag">{flagFor(t.code) || t.code}</span>
+                        <span className="wfb-terrpick-name">{t.name}</span>
+                        <em>{t.code}</em>
+                    </button>
+                ))}
+                {rest.length > 0 && <p className="wfb-terrpick-sep">Not in this campaign</p>}
+                {rest.map((t) => (
+                    <button
+                        key={"a-" + t.code}
+                        type="button"
+                        className={"wfb-terrpick-row is-far" + (t.code === value ? " is-on" : "")}
+                        onClick={() => onPick(t.code)}
+                    >
+                        <span className="wfb-flag">{flagFor(t.code) || t.code}</span>
+                        <span className="wfb-terrpick-name">{t.name}</span>
+                        <em>{t.code}</em>
+                    </button>
+                ))}
+                {q && near.length === 0 && rest.length === 0 && (
+                    <p className="wfb-empty-line">Nothing matches “{query}”.</p>
+                )}
             </div>
         </div>
     );

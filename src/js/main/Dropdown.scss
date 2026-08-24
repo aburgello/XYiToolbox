@@ -147,3 +147,16 @@
     color: #d0a458;
     background: rgba(208, 164, 88, 0.13);
 }
+
+// Listed but not selectable — a retired campaign. Greyed rather than removed:
+// an option that simply vanished is indistinguishable from one somebody
+// deleted, and the next question is always "where did it go".
+.dropdown-option.is-disabled {
+    opacity: 0.38;
+    cursor: default;
+
+    // The hover surface would promise a click that never lands.
+    &:hover, &.focused { background: none; }
+
+    .dropdown-option-hint { opacity: 1; }
+}

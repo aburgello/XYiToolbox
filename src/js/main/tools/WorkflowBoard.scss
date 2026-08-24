@@ -465,9 +465,22 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
         opacity: 1;
         border-color: var(--cat-border, #fb923c);
         background: var(--cat-border, #fb923c);
-        // Against a filled accent node the number has to go dark, not light.
+        // Against a filled accent node the tick has to go dark, not light.
         color: #12151a;
     }
+
+    // WHERE YOU ARE. A ring rather than a fill: the filled node means done, and
+    // two states that both fill would be one state with two colours. Static —
+    // a pulsing "you are here" in a docked panel is the perpetual animation
+    // CLAUDE.md bans, and it would be pulsing all day.
+    &.is-current {
+        opacity: 1;
+        border-color: var(--cat-border, #fb923c);
+        color: var(--cat-icon, #fdba74);
+        box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.14);
+    }
+
+    svg { flex: none; }
 }
 
 .workflow-board .wfb-node-num { line-height: 1; }
@@ -499,29 +512,60 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     }
 }
 
+// THE STEP YOU ARE ON. A brighter surface and an accent edge, so the eye lands
+// on it before it reads anything — which is the whole reason the checkboxes
+// came out. Everything above it is struck through, everything below is dimmer;
+// this is the one row at full strength.
+.workflow-board .wfb-step.is-current .wfb-step-card {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(45, 212, 191, 0.35);
+
+    &:hover { background: rgba(255, 255, 255, 0.085); }
+}
+
+.workflow-board .wfb-step.is-current .wfb-step-text {
+    color: #ffffff;
+    font-weight: 500;
+}
+
+// Steps still ahead of you: present, readable, quieter than the current one.
+.workflow-board .wfb-step:not(.is-current):not(.is-done) .wfb-step-text {
+    opacity: 0.66;
+}
+
 .workflow-board .wfb-step.is-done .wfb-step-card {
     background: rgba(255, 255, 255, 0.012);
 
     .wfb-step-text { opacity: 0.42; }
 }
 
-// CheckboxToggle carries its own base rules; these scope the checklist's own
-// sizing to this tool rather than changing the shared primitive.
-.workflow-board .wfb-step .wfb-step-box {
-    // Fills the card so the whole line is the hit target, not just the glyph.
+// THE WHOLE LINE IS THE CONTROL. No checkbox: the numbered node already says
+// done-or-not, and a square beside it was a second answer to the same question
+// costing 20px of a 380px panel.
+.workflow-board .wfb-step .wfb-step-hit {
     flex: 1;
     min-width: 0;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 6px 6px;
+    padding: 7px 6px;
+    border: none;
     background: none;
+    color: inherit;
+    font: inherit;
     text-align: left;
+    cursor: pointer;
 
     // The card behind it carries the hover surface; a second one on top of it
-    // reads as two overlapping controls.
+    // reads as two overlapping controls. index.scss's global button:hover
+    // paints over anything, so both states are re-declared.
     &:hover, &:active { background: none; }
 
-    svg { flex: none; margin-top: 1px; }
+    // The card is what looks focused, not a ring around the text.
+    &:focus { outline: none; }
+    &:focus-visible { outline: none; }
+}
+
+.workflow-board .wfb-step-hit:focus-visible ~ * ,
+.workflow-board .wfb-step-card:focus-within {
+    border-color: var(--cat-border, #fb923c);
 }
 
 .workflow-board .wfb-step-text {
@@ -983,4 +1027,214 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     // toasts from inside a fixed panel land in the window corner, detached
     // from the thing that raised them.
     .wfb-toasts { position: static; margin-top: 6px; }
+}
+
+// `**bold**` in a step or a note. Weight AND a lift out of the dimmed body
+// colour: at 11px on a dark panel, weight alone is nearly invisible — which is
+// the whole point of marking the word that carries the instruction.
+.workflow-board .wfb-step-text strong,
+.workflow-board .wfb-note-text strong {
+    font-weight: 700;
+    color: #ffffff;
+}
+
+// ── territory on a note ─────────────────────────────────────────────────────
+//
+// A flag rather than a code, and the flag DEGRADES TO the code: a platform with
+// no flag glyphs renders the two regional indicators as their plain letters, so
+// the fallback is already the right answer and there is none to write.
+
+.workflow-board .wfb-flag {
+    // Emoji metrics differ from the UI font; a fixed line-height keeps a flag
+    // from making its row a pixel taller than its neighbours.
+    font-size: 11px;
+    line-height: 1;
+    letter-spacing: 0;
+}
+
+.workflow-board .wfb-notes-filter {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: auto;
+}
+
+.workflow-board .wfb-flagchip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 20px;
+    height: 18px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+    // Held back so an unselected row of flags reads as a control, not as
+    // decoration competing with the notes underneath.
+    opacity: 0.5;
+    transition: opacity 160ms cubic-bezier(0.22, 1, 0.36, 1),
+                border-color 160ms cubic-bezier(0.22, 1, 0.36, 1);
+
+    &:hover { background: rgba(255, 255, 255, 0.07); opacity: 1; }
+    &:active { background: rgba(255, 255, 255, 0.07); }
+
+    &.is-on {
+        opacity: 1;
+        border-color: var(--cat-border, #fb923c);
+        background: rgba(255, 255, 255, 0.07);
+    }
+
+    &.wfb-flagchip--clear { opacity: 0.45; }
+    &.wfb-flagchip--clear:hover { color: #f87171; }
+}
+
+.workflow-board .wfb-note-terr {
+    display: inline-flex;
+    align-items: center;
+    margin-right: 5px;
+    // Full strength while the rest of the byline is dimmed: the flag is the
+    // part somebody is scanning for.
+    opacity: 1;
+}
+
+// ── the globe, and what it opens ────────────────────────────────────────────
+
+.workflow-board .wfb-terr-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.25);
+    color: inherit;
+    cursor: pointer;
+    opacity: 0.65;
+    transition: opacity 160ms cubic-bezier(0.22, 1, 0.36, 1),
+                border-color 160ms cubic-bezier(0.22, 1, 0.36, 1);
+
+    &:hover { background: rgba(255, 255, 255, 0.07); opacity: 1; }
+    &:active { background: rgba(255, 255, 255, 0.07); }
+    &:disabled { opacity: 0.3; cursor: default; }
+    &:disabled:hover, &:disabled:active { background: rgba(0, 0, 0, 0.25); }
+
+    &.is-on {
+        opacity: 1;
+        border-color: var(--cat-border, #fb923c);
+    }
+
+    svg { flex: none; }
+}
+
+.workflow-board .wfb-terrpick {
+    margin-top: 5px;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: 5px;
+    background: rgba(0, 0, 0, 0.22);
+}
+
+.workflow-board .wfb-terrpick-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 7px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+
+    svg { flex: none; opacity: 0.5; }
+
+    input {
+        flex: 1;
+        min-width: 0;
+        padding: 2px 0;
+        border: none;
+        background: none;
+        color: inherit;
+        font-size: 10.5px;
+
+        &:focus { outline: none; }
+    }
+}
+
+.workflow-board .wfb-terrpick-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 4px;
+    max-height: 170px;
+    overflow-y: auto;
+}
+
+.workflow-board .wfb-terrpick-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    width: 100%;
+    padding: 3px 6px;
+    border: none;
+    border-radius: 3px;
+    background: none;
+    color: inherit;
+    font-size: 10.5px;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover { background: rgba(255, 255, 255, 0.07); }
+    &:active { background: rgba(255, 255, 255, 0.07); }
+
+    // Not one of this campaign's own markets. Dimmed rather than hidden: it is
+    // a legitimate pick, just not the likely one.
+    &.is-far { opacity: 0.6; }
+
+    &.is-on { color: var(--cat-icon, #fdba74); }
+
+    em {
+        flex: none;
+        font-style: normal;
+        font-size: 9px;
+        opacity: 0.4;
+        font-variant-numeric: tabular-nums;
+    }
+}
+
+.workflow-board .wfb-terrpick-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.workflow-board .wfb-terrpick-sep {
+    margin: 5px 0 2px;
+    padding: 0 6px;
+    font-size: 8.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    opacity: 0.35;
+}
+
+// A campaign the team has finished with. Listed, greyed, unclickable — the
+// picker is the live campaigns, and the finished ones are visibly out of play
+// rather than absent and unexplained.
+.workflow-board .wfb-camp.is-retired {
+    opacity: 0.34;
+    cursor: default;
+
+    // The hover surface would promise a click that never lands.
+    &:hover, &:active { background: rgba(255, 255, 255, 0.03); }
+
+    em {
+        margin-left: 5px;
+        font-style: normal;
+        font-size: 8.5px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: #e0b050;
+    }
 }

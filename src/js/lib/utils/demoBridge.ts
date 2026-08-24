@@ -207,7 +207,7 @@ const DEMO_SCAN: { territory: string; screen: string; file: string; w: number; h
 interface DemoWorkflow {
     id: string; campaign: string; creative: string; key: string;
     steps: { id: string; text: string; link?: { tool: string; action?: string } }[];
-    notes: { id: string; text: string; author: string; stamp: string }[];
+    notes: { id: string; text: string; author: string; stamp: string; territory?: string }[];
     author: string; updatedAt: string;
 }
 const demoWfKey = (c: string, cr: string) =>
@@ -219,18 +219,18 @@ let demoWorkflows: DemoWorkflow[] = [
         creative: "TRIO",
         key: demoWfKey("Forgotten Island", "TRIO"),
         steps: [
-            { id: "s1", text: "Title treatment from Components — never rebuilt" },
+            { id: "s1", text: "Title treatment from Components — **never** rebuilt" },
             { id: "s2", text: "Pedigree from Components" },
             { id: "s3", text: "Tagline from Components" },
-            { id: "s4", text: "Date from Components, check the territory format", link: { tool: "cheeky-dt", action: "Territory Check" } },
+            { id: "s4", text: "Date from Components — check the **territory format**", link: { tool: "cheeky-dt", action: "Territory Check" } },
             { id: "s5", text: "Billing block swapped for the local one" },
             { id: "s6", text: "Swap the OV artwork for the territory export", link: { tool: "ov-swap" } },
             { id: "s7", text: "Then queue it", link: { tool: "delivery-hub", action: "Load Selected Comps" } },
             { id: "s8", text: "A link whose tool has since been removed", link: { tool: "tool-that-went-away" } },
         ],
         notes: [
-            { id: "n1", text: "BR tagline runs long — the Components version is already tracked tighter, don't re-scale it.", author: "Ana", stamp: "Fri Aug 22 2026 11:02:00 GMT+0100" },
-            { id: "n2", text: "Date component was rebuilt for Batch 2. Use the one in Support/Motion_Components, not the Batch 1 copy.", author: "Antonio", stamp: "Mon Aug 24 2026 09:41:00 GMT+0100" },
+            { id: "n1", text: "BR tagline runs long — the Components version is already tracked tighter, don't re-scale it.", author: "Ana", stamp: "Fri Aug 22 2026 11:02:00 GMT+0100", territory: "BR" },
+            { id: "n2", text: "Date component was rebuilt for Batch 2. Use the one in Support/Motion_Components, not the Batch 1 copy.", author: "Antonio", stamp: "Mon Aug 24 2026 09:41:00 GMT+0100", territory: "FR" },
         ],
         author: "Ana",
         updatedAt: "Mon Aug 24 2026 09:41:00 GMT+0100",
@@ -238,8 +238,8 @@ let demoWorkflows: DemoWorkflow[] = [
     {
         id: "wf-demo-2",
         campaign: "Forgotten Island",
-        creative: "PORTALTOPARADISE",
-        key: demoWfKey("Forgotten Island", "PORTALTOPARADISE"),
+        creative: "PortalToParadise",
+        key: demoWfKey("Forgotten Island", "PortalToParadise"),
         steps: [
             { id: "p1", text: "Artwork slot _OV → territory export" },
             { id: "p2", text: "Check the drum wrap still lines up after the swap" },
@@ -258,10 +258,12 @@ const SHAPED: Record<string, (args: unknown[]) => unknown> = {
         success: true,
         project: "FID_INTL_Trio_DOOH_Ingresso_1920x1080px_10s_BR_V01.aep",
         creative: "TRIO",
+        creativeLabel: "Trio",
         campaign: "Forgotten Island",
         campaigns: [
-            { name: "Forgotten Island", mastersRoot: "/Volumes/universal/Universal_Pictures/Forgotten_Island/Digital/INT/XY026039_Masters" },
-            { name: "Portal To Paradise", mastersRoot: "/Volumes/universal/Universal_Pictures/Portal/Digital/INT/XY025911_Masters" },
+            { name: "Paw Patrol Dino", mastersRoot: "/Volumes/universal/Paramount/PawPatrol/Markets" },
+            { name: "Forgotten Island", mastersRoot: "/Volumes/universal/Universal_Pictures/Forgotten_Island/Digital/INT/XY026040_Markets" },
+            { name: "Odyssey", mastersRoot: "/Volumes/universal/Universal_Pictures/Odyssey/Markets" },
         ],
     }),
 
@@ -301,6 +303,28 @@ const SHAPED: Record<string, (args: unknown[]) => unknown> = {
             : w));
         return { success: true, read: true, entries: demoWorkflows, me: "Antonio" };
     },
+
+    workflowTerritories: () => ({
+        success: true,
+        markets: [
+            { name: "Brazil", code: "BR" }, { name: "France", code: "FR" },
+            { name: "Germany", code: "DE" }, { name: "Italy", code: "IT" },
+            { name: "Spain", code: "ES" }, { name: "New Zealand", code: "NZ" },
+        ],
+        all: [
+            { name: "Brazil", code: "BR" }, { name: "France", code: "FR" },
+            { name: "Germany", code: "DE" }, { name: "Italy", code: "IT" },
+            { name: "Spain", code: "ES" }, { name: "New Zealand", code: "NZ" },
+            { name: "Australia", code: "AU" }, { name: "Japan", code: "JP" },
+            { name: "Mexico", code: "MX" }, { name: "Portugal", code: "PT" },
+            { name: "United Kingdom", code: "GB" }, { name: "United States of America", code: "US" },
+        ],
+    }),
+
+    teamCampaignBoard: () => ({
+        success: true, read: true,
+        rows: [{ name: "Odyssey", retiredBy: "Ana" }, { name: "Paw Patrol Dino", retiredBy: "Antonio" }],
+    }),
 
     workflowTicksLoad: () => ({ success: true, message: demoTicks }),
     workflowTicksSave: (args) => { demoTicks = String(args[0]); return ok(); },

@@ -36,12 +36,24 @@ export interface DropdownOption {
     value: string;
     label: string;
     /** Small trailing note on the option row, e.g. "not mounted" / "retired".
-     *  Purely informational: it never changes what selecting the option does,
-     *  and an option carrying one is still selectable on purpose -- a campaign
-     *  on an unmounted volume is a normal thing to pick while the share is
-     *  offline. Also shown on the closed trigger when that option is the
-     *  selected one, or the state would vanish the moment the list closes. */
+     *  Purely informational: a hint NEVER changes what selecting the option
+     *  does, and an option carrying one is still selectable on purpose -- a
+     *  campaign on an unmounted volume is a normal thing to pick while the
+     *  share is offline. Use `disabled` when it should not be pickable. Also
+     *  shown on the closed trigger when that option is the selected one, or the
+     *  state would vanish the moment the list closes. */
     hint?: string;
+    /** Listed but not selectable: greyed, unclickable, skipped by the keyboard.
+     *
+     *  LISTED, not filtered out — that distinction is the point. A retired
+     *  campaign that simply vanished from the picker is indistinguishable from
+     *  one somebody deleted, and the next question is always "where did it go".
+     *  Greyed, it answers itself.
+     *
+     *  A disabled option that is the CURRENT VALUE stays selectable: the
+     *  trigger has to be able to show what is selected, and retiring the
+     *  campaign you are standing on must not lock you out of un-retiring it. */
+    disabled?: boolean;
 }
 
 interface Props {
@@ -97,7 +109,10 @@ const Dropdown: React.FC<Props> = ({ value, onChange, options, placeholder = "Se
                     } else if (e.key === "Enter") {
                         e.preventDefault();
                         const opt = options[focusedIndex];
-                        if (opt) {
+                        // A disabled option is unreachable by mouse; Enter has
+                        // to agree, or the keyboard would be a way round the
+                        // one rule the mouse respects.
+                        if (opt && !(opt.disabled && opt.value !== value)) {
                             onChange(opt.value);
                             close();
                         }
@@ -128,10 +143,15 @@ const Dropdown: React.FC<Props> = ({ value, onChange, options, placeholder = "Se
                                 className={
                                     "dropdown-option" +
                                     (opt.value === value ? " selected" : "") +
-                                    (i === focusedIndex ? " focused" : "")
+                                    (i === focusedIndex ? " focused" : "") +
+                                    (opt.disabled && opt.value !== value ? " is-disabled" : "")
                                 }
+                                aria-disabled={opt.disabled && opt.value !== value ? true : undefined}
                                 onMouseEnter={() => setFocusedIndex(i)}
                                 onClick={() => {
+                                    // The current value is always pickable even
+                                    // when disabled -- see DropdownOption.
+                                    if (opt.disabled && opt.value !== value) return;
                                     onChange(opt.value);
                                     close();
                                 }}

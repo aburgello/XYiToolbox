@@ -7377,3 +7377,76 @@ which matters when somebody ticks four boxes in a second.
   press compression, hover lift — not motion of its own.
 
 Bundle: 3,272 kB → 3,198 kB (~27 kB gzipped).
+
+### Bold, territories on notes, and a route with a position
+
+**`**bold**` in steps and notes.** Deliberately not a markdown library and
+deliberately only bold: these get typed into a small input by somebody in a
+hurry and skimmed by somebody halfway through a job, so every extra syntax is
+another way to get a literal asterisk on screen. Rendered as React elements,
+never `dangerouslySetInnerHTML` — the text comes off a shared file, and
+"trusted author" is not a reason to hand a string to an HTML parser.
+
+**Notes carry a territory.** Almost every note is per-market — "for Brazil,
+watch the two-line gutters" — and an untagged wall of them is a wall you have to
+read to find the two that apply to you.
+
+- **A globe, not a dropdown.** The panel is 380px and already dense; a permanent
+  country selector next to the input would cost a third of the row to say
+  nothing most of the time. Closed it is one glyph.
+- The picker offers **the campaign's own markets folders first** (via
+  `scanTerritories`, the same function Localised Library derives its list from,
+  so the two can't disagree), with the full ISO list behind the search. Both
+  are returned every time, because `markets` is legitimately empty in three
+  ordinary cases: share not mounted, campaign saved against its masters root
+  rather than its markets root (sibling trees, §5), or a territory whose folder
+  doesn't exist yet. A picker that offered nothing in any of those would fail
+  exactly when somebody is writing down what they just learned.
+- **Flags degrade to the code.** A platform without flag glyphs renders the two
+  regional indicators as their plain letters, so "BR" is what you see — the
+  fallback is already the right answer and there is none to write.
+- **The filter costs nothing until it exists.** One flag per territory that
+  actually has notes, and only when there is more than one — below that a filter
+  is a control that can only ever hide things.
+
+**Creative names, formatted.** They arrive as `Portal_to_paradise` from the
+masters tree or `PORTALTOPARADISE` from the filename parser. Three rules, each
+from a real name in one campaign: a short lowercase word is a code (`Portal_brb`
+→ Portal BRB), except a joining word (`Portal_to_paradise` → Portal to Paradise,
+not "Portal TO Paradise"), and an existing acronym is left alone (`DOOHMaster` →
+DOOH Master). Upper-casing is lossy in a way nothing undoes, so `workflowContext`
+now returns `creativeLabel` — the token in its *original* spelling — alongside
+the matching token. Matching still canonicalises; only the display changed.
+
+**The checkboxes came out.** A checklist is a set of independent boxes; this is
+a route, and a route has a position. The numbered node already said
+done-or-not, so a square beside it was a second answer to the same question
+costing 20px of a 380px panel. Now: done steps get a filled node and a struck
+line, the first undone step is lit (accent edge, white text, a ring on its node),
+everything ahead is dimmer, and the whole row is the control. The hit area is a
+`<button>` and a **sibling** of the link chip rather than its parent — a button
+inside a button is invalid and the inner one stops firing. The "you are here"
+ring is static: a pulsing marker in a docked panel would be pulsing all day.
+
+### Retired campaigns actually retire
+
+Retiring marked pickers with a label and changed nothing else, so a finished
+campaign sat in the list looking exactly as pickable as a live one — the flag
+was decorative. `DropdownOption` gains `disabled`: greyed, unclickable, skipped
+by the keyboard (Enter had to agree, or the keyboard would be a way round the
+one rule the mouse respects). Applied in CSV Localiser, Localised Library and
+Workflows' own campaign chips.
+
+**Listed, not filtered out.** An option that simply vanished is
+indistinguishable from one somebody deleted, and the next question is always
+"where did it go". Greyed, it answers itself.
+
+**Two escapes, because greying a picker is otherwise a one-way door.** A
+disabled option that IS the current value stays selectable — the trigger has to
+show what is selected, and retiring the campaign you are standing on must leave
+you able to un-retire it. And for any *other* retired campaign, CSV Localiser
+gains a restore button that renders only while something is retired: zero estate
+the rest of the time. A separate button rather than a mode on the archive one,
+because the archive button means "do this to what I am looking at" and a second
+meaning that only appears in certain states is how a control becomes
+unpredictable.

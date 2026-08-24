@@ -23,6 +23,7 @@ import {
     FolderPlus,
     Share2,
     Archive,
+    ArchiveRestore,
     Trash2,
     Library,
     PlayCircle,
@@ -51,7 +52,7 @@ import { fs, path } from "../../lib/cep/node";
 import CheckboxToggle from "../CheckboxToggle";
 import Tooltip from "../Tooltip";
 import Dropdown from "../Dropdown";
-import { alertDialog, confirmDialog, promptDialog } from "../Dialog";
+import { alertDialog, confirmDialog, promptDialog, selectDialog } from "../Dialog";
 import { showMcItReport, type McReport } from "../McItReportModal";
 import { showLocGenReport, type LocGenReport, type LocGenRow } from "../LocGenReportModal";
 import { specRowWarnings, type SpecRow } from "../lib/pdfSpecs";
@@ -1236,6 +1237,40 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
     // Mark retired for the whole studio (or undo that). Advisory: it marks
     // every picker, and stops NEW machines pulling the campaign on sync, but
     // never deletes a local list entry -- not even this machine's.
+    /**
+     * BRING ONE BACK, and this exists because of the greying above.
+     *
+     * Retired campaigns are unselectable in every picker now, and the retire
+     * button acts on the SELECTED campaign — so without this, retiring one and
+     * then navigating away would leave it permanently un-retirable by anyone
+     * who was not standing on it at the time. That is a trap, not a policy.
+     *
+     * A separate button rather than a mode on the archive one: the archive
+     * button means "do this to what I am looking at", and a second meaning that
+     * only appears in certain states is how a control becomes unpredictable.
+     * It renders only while something is retired, so it costs nothing the rest
+     * of the time.
+     */
+    const restoreRetiredCampaign = async () => {
+        const names = teamCampaigns.rows.filter((r) => r.retiredBy).map((r) => r.name);
+        if (!names.length) return;
+        const pick = await selectDialog("Bring which campaign back?", names.map((n) => {
+            const row = teamCampaigns.rows.find((r) => r.name === n);
+            return row && row.retiredBy ? `${n} — retired by ${row.retiredBy}` : n;
+        }));
+        if (pick === null) return;
+        try {
+            const res = await evalTS("teamSetCampaignRetired", names[pick], false);
+            if (res === undefined) throw new Error("no bridge");
+            setNotice((res as { message?: string; error?: string }).message
+                || (res as { error?: string }).error
+                || `"${names[pick]}" is back in everyone's picker.`);
+            await refreshCampaignStatus();
+        } catch {
+            setNotice("Couldn't reach the team folder.");
+        }
+    };
+
     const toggleRetireCampaign = async () => {
         if (!campaignName) return;
         const already = !!retiredEntry(campaignName);
@@ -1668,6 +1703,21 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                         : campaignReach[c.name] === false
                                         ? "not mounted"
                                         : undefined,
+                                    // RETIRED MEANS RETIRED. It used to be a
+                                    // label on a fully selectable row, which
+                                    // made the flag decorative -- a finished
+                                    // campaign sat in the list looking exactly
+                                    // as pickable as a live one. Greyed and
+                                    // unclickable, the picker is the live
+                                    // campaigns and the finished ones are
+                                    // visibly out of play.
+                                    //
+                                    // NOT filtered out, and not disabled when
+                                    // it is the current value: retiring the
+                                    // campaign you are standing on must leave
+                                    // you able to un-retire it, and the archive
+                                    // button acts on the selection.
+                                    disabled: !!retiredEntry(c.name),
                                 }))}
                                 placeholder="Select a campaign…"
                                 emptyMessage="No campaigns yet. Add one with the + button."
@@ -1697,13 +1747,27 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                 <Archive size={14} />
                             </button>
                         </Tooltip>
+                        {/* ONLY WHILE SOMETHING IS RETIRED. Zero estate the
+                            rest of the time, and impossible to miss when it
+                            matters. */}
+                        {teamCampaigns.rows.some((r) => r.retiredBy) && (
+                            <Tooltip text="Bring a retired campaign back into everyone's picker">
+                                <button
+                                    className="icon-btn specs-campaign-btn"
+                                    disabled={busy}
+                                    onClick={restoreRetiredCampaign}
+                                >
+                                    <ArchiveRestore size={14} />
+                                </button>
+                            </Tooltip>
+                        )}
                         <Tooltip text={campaignName ? `Remove "${campaignName}" from this machine` : "Pick a campaign to remove it"}>
                             <button className="icon-btn specs-campaign-btn specs-campaign-btn--danger" disabled={busy || !campaignName} onClick={removeCampaign}><Trash2 size={14} /></button>
                         </Tooltip>
                     </div>
                     {campaignName && retiredEntry(campaignName) && (
                         <p className="specs-campaign-retired">
-                            Retired by {retiredEntry(campaignName)!.retiredBy}. It still works here. This is a flag, not a lock.
+                            Retired by {retiredEntry(campaignName)!.retiredBy}. Still fully usable while it is selected — but it is greyed out in every picker now, so switching away is one-way until somebody brings it back.
                         </p>
                     )}
                     {campaignName && !retiredEntry(campaignName) && campaignReach[campaignName] === false && (

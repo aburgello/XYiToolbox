@@ -25,10 +25,10 @@
 // PROFILE_KEYS too.
 // =============================================================================
 import { Result, SETTINGS_SECTION, decode } from "./shared";
-import { expressionsBankLoad, expressionsBankSave, loadCustomTools, saveCustomTools, mastersSkipFolder, creativeTokenOf } from "./tools";
+import { expressionsBankLoad, expressionsBankSave, loadCustomTools, saveCustomTools, mastersSkipFolder, creativeTokenOf, TC_COUNTRIES } from "./tools";
 import { loadCombos, saveCombos, EffectComboEntry } from "./effects";
 import { loadCampaignsRaw, saveCampaign, loadCampaignBanner, setCampaignBanner } from "./review";
-import { loadLocLibCampaigns, saveLocLibCampaign } from "./localise";
+import { loadLocLibCampaigns, saveLocLibCampaign, scanTerritories } from "./localise";
 
 const TEAM_FOLDER_KEY = "TeamFolderPath";
 
@@ -2799,6 +2799,10 @@ export interface WorkflowNote {
   /** Whoever posted it. Never guessed -- an untagged machine is refused. */
   author: string;
   stamp: string;
+  /** ISO-3166 alpha-2, or absent. Optional on purpose: plenty of notes are
+   *  about the creative rather than one market, and forcing a territory would
+   *  file those under whichever country happened to be selected. */
+  territory?: string;
 }
 
 export interface WorkflowEntry {
@@ -2981,7 +2985,7 @@ export const workflowDeleteEntry = (id: string): WorkflowBoardResult => {
  * note posted while somebody else is editing the steps cannot be lost between
  * their read and their write.
  */
-export const workflowAddNote = (entryId: string, text: string): WorkflowBoardResult => {
+export const workflowAddNote = (entryId: string, text: string, territory?: string): WorkflowBoardResult => {
   try {
     if (!teamFolder()) return { success: false, error: "Team folder not set." };
     const me = loadLocalSetting(MACHINE_OWNER_KEY);
@@ -2997,11 +3001,16 @@ export const workflowAddNote = (entryId: string, text: string): WorkflowBoardRes
     let found = false;
     for (let i = 0; i < shared.length; i++) {
       if (shared[i].id !== entryId) continue;
+      // Upper-cased and stripped to letters and an underscore: the codes this
+      // codebase carries are not all two letters ("BE_FR"), and a code stored
+      // in whatever case the caller sent would never match another panel's.
+      const terr = String(territory || "").toUpperCase().replace(/[^A-Z_]/g, "");
       shared[i].notes.push({
         id: "note-" + new Date().getTime() + "-" + Math.floor(Math.random() * 100000),
         text: body,
         author: me,
         stamp: new Date().toString(),
+        territory: terr,
       });
       found = true;
       break;
@@ -3045,8 +3054,19 @@ export const workflowDeleteNote = (entryId: string, noteId: string): WorkflowBoa
 interface WorkflowContext extends Result {
   /** The open project's filename, "" when nothing is open. */
   project?: string;
-  /** Creative token read out of it, "" when the name doesn't carry one. */
+  /** Creative token read out of it, upper-cased -- what MATCHING uses. */
   creative?: string;
+  /**
+   * The same creative AS THE FILENAME SPELLS IT: "PortalToParadise", not
+   * "PORTALTOPARADISE".
+   *
+   * Carried separately because upper-casing is lossy in a way nothing can undo.
+   * The matcher needs one case-folded token; a person needs the word breaks,
+   * and no amount of formatting recovers "Portal To Paradise" from a run of
+   * seventeen capitals without a dictionary. So the parser keeps its answer and
+   * the display gets the original.
+   */
+  creativeLabel?: string;
   /** Campaign whose masters root contains this project, "" when none does. */
   campaign?: string;
   /** Every campaign the panel knows, for the picker. */
@@ -3109,10 +3129,26 @@ export const workflowContext = (): WorkflowContext => {
       }
     }
 
+    // The token in the raw name whose canon matches, kept in its own spelling.
+    // A plain scan rather than another parse: whatever creativeTokenOf decided
+    // is the creative, this finds that exact token again, so the two can never
+    // disagree about which word it is.
+    const creative = creativeTokenOf(project);
+    let creativeLabel = "";
+    if (creative) {
+      const bits = String(project).split("_");
+      for (let b = 0; b < bits.length; b++) {
+        if (workflowCanon(bits[b]) !== creative) continue;
+        creativeLabel = bits[b];
+        break;
+      }
+    }
+
     return {
       success: true,
       project: project,
-      creative: creativeTokenOf(project),
+      creative: creative,
+      creativeLabel: creativeLabel,
       campaign: campaign,
       campaigns: camps,
     };
@@ -3144,6 +3180,93 @@ export const workflowTicksSave = (json: string): Result => {
     JSON.parse(json);
     app.settings.saveSetting(SETTINGS_SECTION, WORKFLOW_TICKS_KEY, json);
     return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// --- territories, for tagging a note -----------------------------------------
+
+interface WorkflowTerritory {
+  /** As the folder is spelled, or the ISO name when it came from the list. */
+  name: string;
+  /** ISO-3166 alpha-2, or "" when the folder name matches no country. */
+  code: string;
+}
+
+interface WorkflowTerritoryResult extends Result {
+  /** This campaign's own territory folders. Empty is a NORMAL answer -- an
+   *  unmounted share, or a campaign whose root is the masters tree rather than
+   *  the markets one. The picker falls back to `all`. */
+  markets?: WorkflowTerritory[];
+  all?: WorkflowTerritory[];
+}
+
+function territoryCanon(s: string): string {
+  return String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+/** The ISO code for a folder name, or "" when it is not a country we know.
+ *  A campaign's markets folder is spelled by whoever made it -- "Brazil",
+ *  "BRAZIL", "Brasil" -- so this is a normalised compare, never equality. */
+function territoryCodeFor(name: string): string {
+  const want = territoryCanon(name);
+  if (!want) return "";
+  for (let i = 0; i < TC_COUNTRIES.length; i++) {
+    if (territoryCanon(TC_COUNTRIES[i].name) === want) return TC_COUNTRIES[i].code;
+  }
+  // A folder named by its code ("BR", "DE") is just as common as one named
+  // by its country.
+  for (let j = 0; j < TC_COUNTRIES.length; j++) {
+    if (territoryCanon(TC_COUNTRIES[j].code) === want) return TC_COUNTRIES[j].code;
+  }
+  return "";
+}
+
+/**
+ * Territories a note can be tagged with.
+ *
+ * TWO LISTS, and both are returned every time.
+ *
+ * `markets` is what the campaign actually has on disk -- five or six folders,
+ * which is the list somebody wants 95% of the time and short enough to click
+ * rather than search. It comes from `scanTerritories`, the same function
+ * Localised Library already derives its territory list from, so a folder that
+ * tool shows and this one does not would be a real inconsistency rather than
+ * two opinions.
+ *
+ * `all` is ISO-3166. It exists because `markets` is EMPTY in three completely
+ * normal situations -- the share is not mounted, the campaign was saved against
+ * its masters root rather than its markets root (they are sibling trees, see
+ * CLAUDE.md §5), or the note is about a territory whose folder does not exist
+ * yet. A picker that offered nothing in any of those cases would be a picker
+ * that fails exactly when somebody is writing down what they just learned.
+ *
+ * The FOLDER'S OWN SPELLING is kept as the name. "Brasil" on disk stays
+ * "Brasil"; only its code is looked up.
+ */
+export const workflowTerritories = (root: string): WorkflowTerritoryResult => {
+  try {
+    const all: WorkflowTerritory[] = [];
+    for (let i = 0; i < TC_COUNTRIES.length; i++) {
+      all.push({ name: TC_COUNTRIES[i].name, code: TC_COUNTRIES[i].code });
+    }
+
+    const markets: WorkflowTerritory[] = [];
+    const path = String(root || "");
+    if (path) {
+      const names = scanTerritories(path);
+      for (let j = 0; j < names.length; j++) {
+        const code = territoryCodeFor(names[j]);
+        // A folder that is not a country is not a territory -- "Support",
+        // "_Archive", "Motion_Components". Dropped rather than offered, or the
+        // picker fills with folders nobody would tag a note with.
+        if (!code) continue;
+        markets.push({ name: names[j], code: code });
+      }
+    }
+
+    return { success: true, markets: markets, all: all };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

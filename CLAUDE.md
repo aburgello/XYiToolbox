@@ -261,7 +261,10 @@ confirm raised by a palette action still wins.
 **Shared primitives — use these, don't re-roll them:** `Dialog` (never
 `window.alert/confirm/prompt`; natives show the panel's `file://` path),
 `StatusIcon` (never a local CheckCircle/AlertCircle ternary), `CheckboxToggle`
-(never a native checkbox), `Tooltip`, `Droplet`, `Dropdown`, `SegmentedToggle`
+(never a native checkbox — but a design with no checkbox at all is a different
+thing: WorkflowBoard's steps are a numbered route where the node carries
+done-or-not, and adding a square beside it would be a second answer to the same
+question), `Tooltip`, `Droplet`, `Dropdown`, `SegmentedToggle`
 (needs a unique `name` or two instances share one Framer `layoutId`),
 `ArcadeFrame`, `ToolErrorBoundary`.
 
@@ -312,9 +315,17 @@ tab-separated lines (JSON only where a real map is needed).
   guess a name.
 - A shared campaign can be **retired** (`teamSetCampaignRetired`). It is a
   FLAG, not a delete: it never removes the shared row and never touches
-  anyone's local list — it marks pickers and stops `teamSyncShared` pulling
-  into either campaign list. Never "finish the job" by deleting local rows
-  from a shared file.
+  anyone's local list — it stops `teamSyncShared` pulling into either campaign
+  list, and since 2026-08-24 it greys the campaign out and makes it
+  **unselectable** in every picker (`DropdownOption.disabled`, and Workflows'
+  own campaign chips). Never "finish the job" by deleting local rows from a
+  shared file.
+- **A disabled option that IS the current value stays selectable**, in the
+  Dropdown and in Workflows alike. Retiring the campaign you are standing on
+  must not lock you out of un-retiring it, and the trigger has to be able to
+  show what is selected. The way back for any *other* retired campaign is CSV
+  Localiser's restore button, which renders only while something is retired —
+  without it, greying the pickers would be a one-way door.
 - Campaign reachability (`locLibCampaignStatus`) is the one place `.exists`
   is allowed on a team path, because the target is a DIRECTORY. `false` means
   "not mounted right now", never "gone" — never auto-remove on it.
