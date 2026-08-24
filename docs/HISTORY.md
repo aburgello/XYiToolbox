@@ -7450,3 +7450,57 @@ the rest of the time. A separate button rather than a mode on the archive one,
 because the archive button means "do this to what I am looking at" and a second
 meaning that only appears in certain states is how a control becomes
 unpredictable.
+
+### Notes that do things
+
+Three additions, one mechanism.
+
+**Words in a note can open a folder or a tool.** "Check the masters" makes
+*masters* clickable; "make sure to run Artwork Check" opens the tool. The
+obvious design — a link syntax like `[masters](/Volumes/…)` — is wrong twice
+over: nobody is typing a NAS path by hand into a one-line input, and a literal
+`[` in ordinary prose would then be a broken link. So the links are a **side
+table** next to the body, matched by `label` at render time. The body stays
+exactly what somebody typed. That is CLAUDE.md's "never store user-authored text
+in a delimited value" rule, one level up.
+
+The compose flow has no syntax and no typing: press the wand, the note you have
+written becomes clickable words, pick one, then say where it goes — a folder
+picker or the same tool list the steps use. Two clicks, and the label can't
+fail to match the body because it *came from* the body.
+
+Details that are not obvious until they bite:
+- Labels are **regex-escaped** before matching. A folder name can hold `(`, `+`,
+  `[` — the same trap CLAUDE.md records for `.match()` on a filename.
+- **Longest label first**, or "Artwork" eats the front of "Artwork Check" and
+  leaves " Check" dangling as plain text.
+- **Bold is resolved first**, links matched only inside the plain runs, so the
+  two can never interleave into something neither meant.
+- A label that no longer appears in the body is **still shown**, as a chip under
+  the note. An edited sentence must not silently drop somebody's link.
+- Folder opening reuses `revealUsefulFolder`, whose `Folder.exists` gate is the
+  one case CLAUDE.md permits: `.exists` is untrustworthy on a NAS *file*, and
+  this is a directory.
+- `evalTS`, not `evalTSSafe`, for the folder picker: it is a real OS dialog and
+  can sit open for as long as somebody browses, so a 15s timeout would report an
+  ordinary decision as a failure. Cancelling returns "" — a one-click action
+  returns null-ish on cancel, never a fake error.
+
+**Tags.** Free-form chips — CTA, TT, LEGALS — **upper-cased on the way in**.
+These are a vocabulary the team builds by typing, and one that distinguishes
+"CTA" from "cta" from "Cta" is three tags where everybody meant one: the filter
+then shows three chips and each hides two thirds of the notes. The composer
+suggests tags already on the board, which is the actual mechanism by which the
+vocabulary stays small — one click beats retyping.
+
+The tag row sits *under* the composer rather than in it: that row is already a
+globe, an input, a wand and Add, and a fifth control would leave the input about
+forty pixels wide. Enter and comma both commit a tag (a comma is what people
+type between tags without being told to), and Enter there must not post the note
+— that is the input above.
+
+**Filtering composes.** Territory and tag together is the question somebody
+actually has ("the Brazil CTA notes"); making them exclusive would mean picking
+which half to ask. Both cost nothing until they exist — the territory row
+appears only when more than one territory has notes, and tags filter by clicking
+the chip already on a note, so neither takes permanent estate.

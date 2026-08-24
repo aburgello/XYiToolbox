@@ -636,6 +636,20 @@ the bubble, `"page"` for the registry entry ⌘K finds. It is deliberately NOT i
   agree. If CSS caps lower, the box stops while the drag carries on and the
   corner comes away from the cursor.
 
+**A note carries more than text.** `territory` (ISO-2, upper-cased host-side),
+`tags` (free-form, upper-cased so the vocabulary converges instead of splitting
+into CTA/cta/Cta), and `links` — words in the body that open a folder or a tool.
+
+**`links` is a SIDE TABLE, never markup in the text.** A link syntax
+(`[masters](/Volumes/…)`) fails twice: nobody types a NAS path into a one-line
+input, and a literal `[` in prose becomes a broken link. The body stays exactly
+what somebody typed and the links sit beside it, matched by `label` at render
+time — the same rule as "never store user-authored text in a delimited value",
+one level up. A label that no longer appears in the body is still shown as a
+chip: an edited sentence must not silently drop somebody's link. Labels are
+regex-escaped before matching and sorted longest-first, or "Artwork" eats the
+front of "Artwork Check".
+
 **Motion: PHYSICAL personality, three curves, no more.** Framer springs
 (`SPRING.snappy` arrivals, `.smooth` settles, `.bouncy` the tick alone) plus one
 cubic-bezier for hover. **CSS `linear()` spring easing is Chrome 113 and the

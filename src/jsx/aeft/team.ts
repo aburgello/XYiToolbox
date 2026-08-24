@@ -2803,6 +2803,44 @@ export interface WorkflowNote {
    *  about the creative rather than one market, and forcing a territory would
    *  file those under whichever country happened to be selected. */
   territory?: string;
+  /**
+   * Words in this note that DO something: open a folder, or open a tool.
+   *
+   * A SIDE TABLE, not markup in the text. The obvious design is a link syntax
+   * -- `[masters](/Volumes/...)` -- and it is wrong twice over: nobody is
+   * typing a NAS path by hand into a one-line input, and a literal `[` in
+   * ordinary prose would then be a broken link. CLAUDE.md's rule about
+   * user-authored text and delimiters is the same rule one level up: the note
+   * body stays exactly what somebody typed, and the links live beside it.
+   *
+   * `label` is matched against the body at render time. A label that no longer
+   * appears in the text is still SHOWN, as a chip under the note -- an edited
+   * sentence must not silently drop the link somebody attached to it.
+   */
+  links?: WorkflowNoteLink[];
+  /**
+   * Free-form labels: "CTA", "TT", "LEGALS".
+   *
+   * UPPER-CASED ON THE WAY IN, deliberately. These are a vocabulary the team
+   * builds by typing, and a vocabulary that distinguishes "CTA" from "cta" from
+   * "Cta" is three tags where everybody meant one -- the filter then shows
+   * three chips and each hides two thirds of the notes. Same canonicalise-for-
+   * matching rule the campaign keys follow, applied to something short enough
+   * that the canonical form is also the readable one.
+   */
+  tags?: string[];
+}
+
+export interface WorkflowNoteLink {
+  /** The word to make clickable, as it appears in the note. */
+  label: string;
+  /** A folder to open. Set for a folder link, absent for a tool one. */
+  path?: string;
+  /** A registry tool id. Validated PANEL-SIDE against TOOLS on every render:
+   *  this file has never heard of the registry and should not learn it. */
+  tool?: string;
+  /** A button inside that tool, named on arrival rather than pressed. */
+  action?: string;
 }
 
 export interface WorkflowEntry {
@@ -2985,7 +3023,13 @@ export const workflowDeleteEntry = (id: string): WorkflowBoardResult => {
  * note posted while somebody else is editing the steps cannot be lost between
  * their read and their write.
  */
-export const workflowAddNote = (entryId: string, text: string, territory?: string): WorkflowBoardResult => {
+export const workflowAddNote = (
+  entryId: string,
+  text: string,
+  territory?: string,
+  linksJson?: string,
+  tagsJson?: string,
+): WorkflowBoardResult => {
   try {
     if (!teamFolder()) return { success: false, error: "Team folder not set." };
     const me = loadLocalSetting(MACHINE_OWNER_KEY);
@@ -3005,12 +3049,68 @@ export const workflowAddNote = (entryId: string, text: string, territory?: strin
       // codebase carries are not all two letters ("BE_FR"), and a code stored
       // in whatever case the caller sent would never match another panel's.
       const terr = String(territory || "").toUpperCase().replace(/[^A-Z_]/g, "");
+      // A JSON STRING across the bridge, per CLAUDE.md: an array of objects
+      // spliced into eval'd ExtendScript source loses its values in transit.
+      const links: WorkflowNoteLink[] = [];
+      if (linksJson) {
+        try {
+          const parsed = JSON.parse(linksJson);
+          if (parsed instanceof Array) {
+            for (let f = 0; f < parsed.length; f++) {
+              const item = parsed[f];
+              if (!item) continue;
+              if (!item.label) continue;
+              // A link has to go SOMEWHERE. One with neither a path nor a tool
+              // renders as a word that looks clickable and is not, which is
+              // worse than no link at all.
+              const hasPath = !!item.path;
+              const hasTool = !!item.tool;
+              if (!hasPath && !hasTool) continue;
+              const entryLink: WorkflowNoteLink = { label: String(item.label) };
+              if (hasPath) entryLink.path = String(item.path);
+              if (hasTool) entryLink.tool = String(item.tool);
+              if (item.action) entryLink.action = String(item.action);
+              links.push(entryLink);
+            }
+          }
+        } catch (e3) {
+          // A note with unreadable links is still a note. Posting it without
+          // them beats refusing to post it at all.
+        }
+      }
+      const tags: string[] = [];
+      if (tagsJson) {
+        try {
+          const parsedTags = JSON.parse(tagsJson);
+          if (parsedTags instanceof Array) {
+            for (let t = 0; t < parsedTags.length; t++) {
+              // Letters, digits, spaces and a hyphen. Anything else is
+              // punctuation somebody typed by accident, and a tag that differs
+              // from its neighbour by a stray full stop is a second tag.
+              const tag = String(parsedTags[t] || "")
+                .toUpperCase()
+                .replace(/[^A-Z0-9 \-]/g, "")
+                .replace(/\s+/g, " ")
+                .replace(/^ +| +$/g, "");
+              if (!tag) continue;
+              if (tag.length > 24) continue;
+              // indexOf is polyfilled; `includes` is not (CLAUDE.md §2).
+              if (tags.indexOf(tag) !== -1) continue;
+              tags.push(tag);
+            }
+          }
+        } catch (e4) {
+          // A note with unreadable tags is still a note.
+        }
+      }
       shared[i].notes.push({
         id: "note-" + new Date().getTime() + "-" + Math.floor(Math.random() * 100000),
         text: body,
         author: me,
         stamp: new Date().toString(),
         territory: terr,
+        links: links,
+        tags: tags,
       });
       found = true;
       break;
@@ -3182,6 +3282,28 @@ export const workflowTicksSave = (json: string): Result => {
     return { success: true };
   } catch (e) {
     return { success: false, error: e.toString() };
+  }
+};
+
+/**
+ * Pick a folder to hang off a word in a note.
+ *
+ * Its own export rather than reusing `selectUsefulFolder`: that one's dialog
+ * says "Select a folder to add:", which is the Useful Folders question, and a
+ * file picker whose prompt is about a different feature is how somebody picks
+ * the wrong thing.
+ *
+ * Returns "" on cancel, never an error shape -- cancelling a picker is not a
+ * failure, and a one-click action must return null-ish rather than a fake
+ * error (CLAUDE.md's bridge rule).
+ */
+export const workflowSelectFolder = (): string => {
+  try {
+    const folder = Folder.selectDialog("Pick the folder this word should open:");
+    if (!folder) return "";
+    return folder.fsName;
+  } catch (e) {
+    return "";
   }
 };
 

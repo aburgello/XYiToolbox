@@ -207,7 +207,8 @@ const DEMO_SCAN: { territory: string; screen: string; file: string; w: number; h
 interface DemoWorkflow {
     id: string; campaign: string; creative: string; key: string;
     steps: { id: string; text: string; link?: { tool: string; action?: string } }[];
-    notes: { id: string; text: string; author: string; stamp: string; territory?: string }[];
+    notes: { id: string; text: string; author: string; stamp: string; territory?: string; tags?: string[];
+             links?: { label: string; path?: string; tool?: string; action?: string }[] }[];
     author: string; updatedAt: string;
 }
 const demoWfKey = (c: string, cr: string) =>
@@ -229,8 +230,16 @@ let demoWorkflows: DemoWorkflow[] = [
             { id: "s8", text: "A link whose tool has since been removed", link: { tool: "tool-that-went-away" } },
         ],
         notes: [
-            { id: "n1", text: "BR tagline runs long — the Components version is already tracked tighter, don't re-scale it.", author: "Ana", stamp: "Fri Aug 22 2026 11:02:00 GMT+0100", territory: "BR" },
-            { id: "n2", text: "Date component was rebuilt for Batch 2. Use the one in Support/Motion_Components, not the Batch 1 copy.", author: "Antonio", stamp: "Mon Aug 24 2026 09:41:00 GMT+0100", territory: "FR" },
+            { id: "n1", text: "BR tagline runs long — the Components version is already tracked tighter, don't re-scale it.", author: "Ana", stamp: "Fri Aug 22 2026 11:02:00 GMT+0100", territory: "BR",
+              tags: ["TT", "LEGALS"],
+              links: [{ label: "Components", path: "/Volumes/universal/Universal_Pictures/Forgotten_Island/Support/Motion_Components" }] },
+            { id: "n3", text: "Before you render, make sure to run Artwork Check against the sheet.",
+              author: "Ana", stamp: "Sat Aug 23 2026 14:10:00 GMT+0100",
+              tags: ["CTA"],
+              links: [{ label: "Artwork Check", tool: "artwork-check" }] },
+            { id: "n2", text: "Date component was rebuilt for Batch 2. Use the one in Support/Motion_Components, not the Batch 1 copy.", author: "Antonio", stamp: "Mon Aug 24 2026 09:41:00 GMT+0100", territory: "FR",
+              tags: ["TT"],
+              links: [{ label: "Support/Motion_Components", path: "/Volumes/universal/Universal_Pictures/Forgotten_Island/Support/Motion_Components" }] },
         ],
         author: "Ana",
         updatedAt: "Mon Aug 24 2026 09:41:00 GMT+0100",
@@ -303,6 +312,8 @@ const SHAPED: Record<string, (args: unknown[]) => unknown> = {
             : w));
         return { success: true, read: true, entries: demoWorkflows, me: "Antonio" };
     },
+
+    workflowSelectFolder: () => "/Volumes/universal/Universal_Pictures/Forgotten_Island/Support/Motion_Components",
 
     workflowTerritories: () => ({
         success: true,

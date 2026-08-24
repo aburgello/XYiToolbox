@@ -26,7 +26,7 @@ import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import {
     ListChecks, Plus, X, Trash2, Pencil, Check, RotateCcw, StickyNote,
     RefreshCw, AlertCircle, FolderSearch, ChevronLeft, GripVertical, Users,
-    ArrowRight, Link2, Link2Off, Search, Globe,
+    ArrowRight, Link2, Link2Off, Search, Globe, FolderOpen, Wand2,
 } from "lucide-react";
 import { TOOLS } from "../toolRegistry";
 import { evalTS } from "../../lib/utils/bolt";
@@ -66,6 +66,28 @@ interface WorkflowNote {
      *  "for Brazil, watch the two-line gutters" -- and an untagged wall of them
      *  is a wall you have to read to find the two that apply to you. */
     territory?: string;
+    links?: WorkflowNoteLink[];
+    /** Free-form labels — "CTA", "TT". Upper-cased host-side so the vocabulary
+     *  converges instead of fragmenting into three spellings of one tag. */
+    tags?: string[];
+}
+
+/**
+ * A word in a note that does something.
+ *
+ * "Check the **masters**" opens the folder; "run **Artwork Check**" opens the
+ * tool. Same idea as a step's link, attached to a word rather than a row,
+ * because a note is a sentence and the thing worth clicking is inside it.
+ *
+ * A SIDE TABLE rather than markup in the text -- see the host-side comment.
+ * Exactly one of `path` / `tool` is set; a link with neither is dropped on the
+ * way in, since a word that looks clickable and is not is worse than no link.
+ */
+interface WorkflowNoteLink {
+    label: string;
+    path?: string;
+    tool?: string;
+    action?: string;
 }
 interface Territory { name: string; code: string }
 interface WorkflowEntry {
@@ -187,6 +209,65 @@ const nextId = (prefix: string) => `${prefix}-${Date.now()}-${uid++}`;
  * colleagues, "trusted author" is not a reason to hand a string to an HTML
  * parser — the split below cannot produce markup at all.
  */
+/** Regex-safe. A folder or a tool label can hold `(`, `+`, `[` -- the same trap
+ *  CLAUDE.md records for `.match()` on a filename, one layer up. */
+function escapeRe(s: string): string {
+    return String(s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * A note body: `**bold**` first, then any linked words inside what is left.
+ *
+ * BOLD IS RESOLVED FIRST and links are matched only within the plain runs, so
+ * the two can never interleave into something neither of them meant. A label
+ * that happens to sit inside a bold run simply stays bold and unlinked -- a
+ * corner nobody will hit, and the alternative is a parser with two nesting
+ * rules to get wrong.
+ *
+ * LONGEST LABEL FIRST, or "Artwork" would eat the front of "Artwork Check" and
+ * leave " Check" dangling as plain text.
+ */
+function noteBody(
+    text: string,
+    links: WorkflowNoteLink[] | undefined,
+    onOpen: (link: WorkflowNoteLink) => void,
+): React.ReactNode {
+    const usable = (links || []).filter((l) => l && l.label);
+    if (!usable.length) return richText(text);
+
+    const byLength = usable.slice().sort((a, b) => b.label.length - a.label.length);
+    const re = new RegExp("(" + byLength.map((l) => escapeRe(l.label)).join("|") + ")", "gi");
+
+    const linkify = (chunk: string, keyBase: string): React.ReactNode => {
+        const parts = chunk.split(re);
+        return parts.map((part, i) => {
+            if (i % 2 === 0) return <React.Fragment key={keyBase + "-" + i}>{part}</React.Fragment>;
+            const hit = byLength.filter((l) => l.label.toLowerCase() === part.toLowerCase())[0];
+            if (!hit) return <React.Fragment key={keyBase + "-" + i}>{part}</React.Fragment>;
+            return (
+                <button
+                    key={keyBase + "-" + i}
+                    type="button"
+                    className="wfb-inline-link"
+                    onClick={() => onOpen(hit)}
+                    title={hit.path
+                        ? hit.path
+                        : `Opens ${hit.tool}${hit.action ? ` — then press “${hit.action}”` : ""}`}
+                >
+                    {hit.path ? <FolderOpen size={9} /> : <ArrowRight size={9} />}
+                    {part}
+                </button>
+            );
+        });
+    };
+
+    const raw = String(text || "");
+    if (raw.indexOf("**") === -1) return linkify(raw, "p");
+    return raw.split(/\*\*([^*]+)\*\*/g).map((part, i) => (i % 2 === 1
+        ? <strong key={"b" + i}>{part}</strong>
+        : <React.Fragment key={"t" + i}>{linkify(part, "t" + i)}</React.Fragment>));
+}
+
 function richText(text: string): React.ReactNode {
     const raw = String(text || "");
     if (raw.indexOf("**") === -1) return raw;
@@ -470,6 +551,18 @@ const WorkflowBoardTool: React.FC<{
     const [territories, setTerritories] = useState<{ markets: Territory[]; all: Territory[] } | null>(null);
     /** Reading the notes, not writing one: "" is every territory. */
     const [terrFilter, setTerrFilter] = useState("");
+    /** Links being attached to the note being typed. */
+    const [noteLinks, setNoteLinks] = useState<WorkflowNoteLink[]>([]);
+    /** The word chosen to link, while its destination is still being picked.
+     *  "" means the word chooser is closed. */
+    const [linkWord, setLinkWord] = useState("");
+    const [wordPicking, setWordPicking] = useState(false);
+    const [toolPicking, setToolPicking] = useState(false);
+    /** Tags on the note being typed, and the box they are typed into. */
+    const [noteTags, setNoteTags] = useState<string[]>([]);
+    const [tagDraft, setTagDraft] = useState("");
+    /** Reading, not writing: "" is every tag. */
+    const [tagFilter, setTagFilter] = useState("");
     const [busy, setBusy] = useState(false);
     const [toasts, setToasts] = useState<Toast[]>([]);
     const toastSeq = useRef(0);
@@ -719,11 +812,75 @@ const WorkflowBoardTool: React.FC<{
 
     // --- notes ---------------------------------------------------------------
 
+    /** Distinct words in the note being typed, in order, for the chooser.
+     *  Punctuation is stripped so clicking "masters." attaches to "masters" --
+     *  the label has to match what the renderer will find in the body. */
+    const draftWords = useMemo(() => {
+        const seen: Record<string, boolean> = {};
+        const out: string[] = [];
+        noteDraft.split(/\s+/).forEach((w) => {
+            const clean = w.replace(/^[^\w&'-]+|[^\w&'-]+$/g, "");
+            if (!clean) return;
+            const key = clean.toLowerCase();
+            if (seen[key]) return;
+            seen[key] = true;
+            out.push(clean);
+        });
+        return out;
+    }, [noteDraft]);
+
+    /** Every tag already on this board, for the suggestion row -- the whole
+     *  reason the vocabulary stays small is that the tag you want is usually
+     *  one somebody already typed. */
+    const knownTags = useMemo(() => {
+        const seen: Record<string, boolean> = {};
+        const out: string[] = [];
+        entries.forEach((e) => (e.notes || []).forEach((n) => (n.tags || []).forEach((t) => {
+            if (seen[t]) return;
+            seen[t] = true;
+            out.push(t);
+        })));
+        return out.sort();
+    }, [entries]);
+
+    const addTag = (raw: string) => {
+        const tag = raw.toUpperCase().replace(/[^A-Z0-9 \-]/g, "").replace(/\s+/g, " ").trim();
+        if (!tag || tag.length > 24) return;
+        setNoteTags((prev) => (prev.indexOf(tag) === -1 ? prev.concat([tag]) : prev));
+        setTagDraft("");
+    };
+
+    const attachLink = (link: WorkflowNoteLink) => {
+        setNoteLinks((prev) => prev.filter((l) => l.label.toLowerCase() !== link.label.toLowerCase()).concat([link]));
+        setLinkWord("");
+        setWordPicking(false);
+        setToolPicking(false);
+    };
+
+    /** Pick a folder for the chosen word. The picker is a real OS dialog on the
+     *  host side, so this can sit for as long as somebody browses -- evalTS
+     *  rather than evalTSSafe, whose 15s timeout would report an ordinary
+     *  decision as a failure. */
+    const attachFolder = async (word: string) => {
+        try {
+            const path = (await evalTS("workflowSelectFolder")) as string;
+            // Cancelled. Not an error, and not a toast.
+            if (!path) { setLinkWord(""); setWordPicking(false); return; }
+            attachLink({ label: word, path });
+        } catch {
+            toast("error", "Couldn't open the folder picker.");
+            setLinkWord("");
+            setWordPicking(false);
+        }
+    };
+
     const addNote = async () => {
         const body = noteDraft.trim();
         if (!body || !entry) return;
         setBusy(true);
-        const r = (await evalTSSafe("workflowAddNote", entry.id, body, noteTerritory)) as {
+        // ONE JSON STRING for the links: an array of objects spliced into
+        // eval'd ExtendScript source loses its values in transit.
+        const r = (await evalTSSafe("workflowAddNote", entry.id, body, noteTerritory, JSON.stringify(noteLinks), JSON.stringify(noteTags))) as {
             success: boolean; error?: string; entries?: WorkflowEntry[];
         };
         setBusy(false);
@@ -731,9 +888,28 @@ const WorkflowBoardTool: React.FC<{
         if (r.entries) setEntries(r.entries);
         setNoteDraft("");
         setNoteTerritory("");
+        setNoteLinks([]);
+        setNoteTags([]);
+        setTagDraft("");
+        setLinkWord("");
+        setWordPicking(false);
         setTerrPickerOpen(false);
         sfx.click();
     };
+
+    /** Follow a note's inline link: a folder in Finder, or a tool in the panel. */
+    const openNoteLink = useCallback(async (link: WorkflowNoteLink) => {
+        if (link.path) {
+            sfx.click();
+            // revealUsefulFolder gates on Folder.exists, which CLAUDE.md allows
+            // precisely here: `.exists` is only untrustworthy on a FILE over the
+            // NAS, and this is a directory.
+            const r = (await evalTSSafe("revealUsefulFolder", link.path)) as { success: boolean; error?: string };
+            if (r && !r.success) toast("error", r.error || "Couldn't open that folder.");
+            return;
+        }
+        if (link.tool) goTo(link.tool);
+    }, [goTo, toast]);
 
     const removeNote = async (noteId: string) => {
         if (!entry) return;
@@ -1137,15 +1313,29 @@ const WorkflowBoardTool: React.FC<{
                                     entry.notes.forEach((n) => {
                                         if (n.territory && used.indexOf(n.territory) === -1) used.push(n.territory);
                                     });
-                                    const shown = terrFilter
-                                        ? entry.notes.filter((n) => n.territory === terrFilter)
-                                        : entry.notes;
+                                    // TWO FILTERS THAT COMPOSE. "Brazil" and
+                                    // "CTA" together is the question somebody
+                                    // actually has; making them exclusive would
+                                    // mean picking which half of it to ask.
+                                    const shown = entry.notes.filter((n) =>
+                                        (!terrFilter || n.territory === terrFilter) &&
+                                        (!tagFilter || (n.tags || []).indexOf(tagFilter) !== -1));
                                     return (
                                         <>
                                             <div className="wfb-notes-head">
                                                 <StickyNote size={11} />
                                                 <span>Notes</span>
-                                                <em>{shown.length}{terrFilter ? ` of ${entry.notes.length}` : ""}</em>
+                                                <em>{shown.length}{(terrFilter || tagFilter) ? ` of ${entry.notes.length}` : ""}</em>
+                                                {tagFilter && (
+                                                    <button
+                                                        type="button"
+                                                        className="wfb-tag is-on"
+                                                        onClick={() => setTagFilter("")}
+                                                        title="Show every tag"
+                                                    >
+                                                        {tagFilter}<X size={8} />
+                                                    </button>
+                                                )}
                                                 {/* THE FILTER COSTS NOTHING UNTIL IT
                                                     EXISTS. One flag per territory that
                                                     actually has notes, and only when
@@ -1189,7 +1379,22 @@ const WorkflowBoardTool: React.FC<{
                                                         exit={{ opacity: 0, height: 0 }}
                                                         transition={reduced ? { duration: 0 } : { ...SPRING.snappy, delay: rowDelay(i) }}
                                                     >
-                                                        <p className="wfb-note-text">{richText(n.text)}</p>
+                                                        <p className="wfb-note-text">{noteBody(n.text, n.links, openNoteLink)}</p>
+                                                        {(n.tags || []).length > 0 && (
+                                                            <span className="wfb-note-tags">
+                                                                {(n.tags || []).map((t) => (
+                                                                    <button
+                                                                        key={t}
+                                                                        type="button"
+                                                                        className={"wfb-tag" + (tagFilter === t ? " is-on" : "")}
+                                                                        onClick={() => setTagFilter(tagFilter === t ? "" : t)}
+                                                                        title={tagFilter === t ? "Show every tag" : `Show only ${t}`}
+                                                                    >
+                                                                        {t}
+                                                                    </button>
+                                                                ))}
+                                                            </span>
+                                                        )}
                                                         <span className="wfb-note-by" title={n.stamp}>
                                                             {n.territory && (
                                                                 <span className="wfb-note-terr" title={territoryName(n.territory)}>
@@ -1209,7 +1414,10 @@ const WorkflowBoardTool: React.FC<{
                                                 ))}
                                             </AnimatePresence>
                                             {shown.length === 0 && entry.notes.length > 0 && (
-                                                <p className="wfb-empty-line">No notes for {territoryName(terrFilter)}.</p>
+                                                <p className="wfb-empty-line">
+                                                    No notes for {[terrFilter ? territoryName(terrFilter) : "", tagFilter]
+                                                        .filter(Boolean).join(" · ")}.
+                                                </p>
                                             )}
                                         </>
                                     );
@@ -1242,10 +1450,171 @@ const WorkflowBoardTool: React.FC<{
                                         onChange={(e) => setNoteDraft(e.target.value)}
                                         onKeyDown={(e) => { if (e.key === "Enter") addNote(); }}
                                     />
+                                    {/* MAKE A WORD DO SOMETHING. Pressed, it
+                                        turns the note you have typed into
+                                        clickable words -- pick one, then say
+                                        where it goes. No syntax to remember and
+                                        no path to type: the two things that
+                                        make a link syntax unusable in a
+                                        one-line input. */}
+                                    <Tooltip text="Link a word in this note to a folder or a tool">
+                                        <button
+                                            type="button"
+                                            className={"wfb-terr-btn" + (noteLinks.length ? " is-on" : "")}
+                                            onClick={() => { setWordPicking((v) => !v); setLinkWord(""); setToolPicking(false); }}
+                                            disabled={!me || busy || !noteDraft.trim()}
+                                        >
+                                            <Wand2 size={12} />
+                                        </button>
+                                    </Tooltip>
                                     <button type="button" className="wfb-btn" onClick={addNote} disabled={!me || busy || !noteDraft.trim()}>
                                         <Plus size={12} /><span>Add</span>
                                     </button>
                                 </div>
+
+                                {/* What is already attached, before posting.
+                                    Shown as chips rather than by highlighting
+                                    the input, because an <input> cannot carry
+                                    styled runs and faking one with an overlay is
+                                    a caret-alignment problem nobody needs. */}
+                                {/* TAGS, typed. A row of chips under the input
+                                    rather than a field beside it: the composer
+                                    row is already a globe, an input, a wand and
+                                    Add, and a fifth control in it would leave
+                                    the input itself about forty pixels wide. */}
+                                <div className="wfb-tagbar">
+                                    {noteTags.map((t) => (
+                                        <span key={t} className="wfb-tag is-draft">
+                                            {t}
+                                            <button
+                                                type="button"
+                                                onClick={() => setNoteTags((prev) => prev.filter((x) => x !== t))}
+                                                title="Remove"
+                                            >
+                                                <X size={8} />
+                                            </button>
+                                        </span>
+                                    ))}
+                                    <input
+                                        type="text"
+                                        className="wfb-taginput"
+                                        value={tagDraft}
+                                        placeholder={noteTags.length ? "+ tag" : "+ tag (CTA, TT…)"}
+                                        disabled={!me || busy}
+                                        onChange={(e) => setTagDraft(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            // Enter and comma both commit. A
+                                            // comma is what people type between
+                                            // tags without being told to, and
+                                            // Enter here must NOT post the note
+                                            // -- that is the input above.
+                                            if (e.key === "Enter" || e.key === ",") {
+                                                e.preventDefault();
+                                                addTag(tagDraft);
+                                            } else if (e.key === "Backspace" && !tagDraft && noteTags.length) {
+                                                setNoteTags((prev) => prev.slice(0, -1));
+                                            }
+                                        }}
+                                        onBlur={() => { if (tagDraft.trim()) addTag(tagDraft); }}
+                                    />
+                                    {/* What the team already uses, minus what is
+                                        on this note. One click beats retyping,
+                                        and it is why the vocabulary converges. */}
+                                    {knownTags.filter((t) => noteTags.indexOf(t) === -1).slice(0, 6).map((t) => (
+                                        <button
+                                            key={t}
+                                            type="button"
+                                            className="wfb-tag wfb-tag--suggest"
+                                            disabled={!me || busy}
+                                            onClick={() => addTag(t)}
+                                        >
+                                            {t}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {noteLinks.length > 0 && (
+                                    <div className="wfb-notelinks">
+                                        {noteLinks.map((l) => (
+                                            <span key={l.label} className="wfb-notelink">
+                                                {l.path ? <FolderOpen size={9} /> : <ArrowRight size={9} />}
+                                                <em>{l.label}</em>
+                                                <span className="wfb-notelink-to">
+                                                    {l.path
+                                                        ? l.path.split("/").filter(Boolean).slice(-1)[0]
+                                                        : (toolFor({ tool: l.tool || "" }) || { label: l.tool }).label}
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setNoteLinks((prev) => prev.filter((x) => x.label !== l.label))}
+                                                    title="Remove this link"
+                                                >
+                                                    <X size={9} />
+                                                </button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+
+                                <AnimatePresence initial={false}>
+                                    {wordPicking && (
+                                        <motion.div
+                                            initial={{ opacity: 0, height: 0 }}
+                                            animate={{ opacity: 1, height: "auto" }}
+                                            exit={{ opacity: 0, height: 0 }}
+                                            transition={ease}
+                                            style={{ overflow: "hidden" }}
+                                        >
+                                            <div className="wfb-wordpick">
+                                                <p className="wfb-wordpick-hint">
+                                                    {linkWord
+                                                        ? <>Where should “<strong>{linkWord}</strong>” go?</>
+                                                        : "Which word should be clickable?"}
+                                                </p>
+                                                {!linkWord && (
+                                                    <div className="wfb-wordpick-words">
+                                                        {draftWords.map((w) => (
+                                                            <button
+                                                                key={w}
+                                                                type="button"
+                                                                className="wfb-word"
+                                                                onClick={() => setLinkWord(w)}
+                                                            >
+                                                                {w}
+                                                            </button>
+                                                        ))}
+                                                        {draftWords.length === 0 && (
+                                                            <p className="wfb-empty-line">Type the note first.</p>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                {linkWord && !toolPicking && (
+                                                    <div className="wfb-wordpick-where">
+                                                        <button type="button" className="wfb-btn" onClick={() => attachFolder(linkWord)}>
+                                                            <FolderOpen size={12} /><span>A folder…</span>
+                                                        </button>
+                                                        <button type="button" className="wfb-btn" onClick={() => setToolPicking(true)}>
+                                                            <ArrowRight size={12} /><span>A tool…</span>
+                                                        </button>
+                                                        <button type="button" className="wfb-btn wfb-btn--icon" onClick={() => setLinkWord("")} title="Pick a different word">
+                                                            <ChevronLeft size={12} />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                                {linkWord && toolPicking && (
+                                                    <LinkPicker
+                                                        stepText={linkWord}
+                                                        onPick={(link) => {
+                                                            if (link) attachLink({ label: linkWord, tool: link.tool, action: link.action });
+                                                            else { setToolPicking(false); }
+                                                        }}
+                                                        onClose={() => setToolPicking(false)}
+                                                    />
+                                                )}
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
 
                                 <AnimatePresence initial={false}>
                                     {terrPickerOpen && (

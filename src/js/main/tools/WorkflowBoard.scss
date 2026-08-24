@@ -1238,3 +1238,250 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
         color: #e0b050;
     }
 }
+
+// ── a word in a note that does something ────────────────────────────────────
+//
+// Inline in the sentence, not a chip after it: "Check the masters" reads as a
+// sentence with one live word, which is the whole point. Underlined rather than
+// only coloured — colour alone is not an affordance, and at 10.5px on a dark
+// panel an accent word reads as emphasis rather than as a link.
+
+.workflow-board .wfb-inline-link {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 3px;
+    margin: 0;
+    padding: 0 2px;
+    border: none;
+    border-radius: 3px;
+    background: none;
+    color: var(--cat-icon, #fdba74);
+    font: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    // dotted, so it never reads as a typo'd underline in prose
+    text-decoration-style: dotted;
+    cursor: pointer;
+
+    &:hover {
+        background: rgba(255, 255, 255, 0.08);
+        text-decoration-style: solid;
+    }
+    &:active { background: rgba(255, 255, 255, 0.08); }
+
+    svg {
+        flex: none;
+        // Baseline-aligned icons sit a hair high next to lowercase text.
+        transform: translateY(1px);
+        opacity: 0.75;
+    }
+}
+
+// ── attached, before posting ────────────────────────────────────────────────
+
+.workflow-board .wfb-notelinks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.workflow-board .wfb-notelink {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 4px 2px 6px;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.035);
+    font-size: 9px;
+
+    svg { flex: none; opacity: 0.6; }
+
+    em {
+        font-style: normal;
+        font-weight: 600;
+        color: var(--cat-icon, #fdba74);
+    }
+
+    button {
+        display: flex;
+        align-items: center;
+        padding: 1px;
+        border: none;
+        border-radius: 3px;
+        background: none;
+        color: inherit;
+        cursor: pointer;
+        opacity: 0.4;
+
+        &:hover { background: none; opacity: 1; color: #f87171; }
+        &:active { background: none; }
+    }
+}
+
+.workflow-board .wfb-notelink-to {
+    max-width: 110px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    opacity: 0.5;
+}
+
+// ── picking the word ────────────────────────────────────────────────────────
+
+.workflow-board .wfb-wordpick {
+    margin-top: 5px;
+    padding: 7px;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: 5px;
+    background: rgba(0, 0, 0, 0.22);
+}
+
+.workflow-board .wfb-wordpick-hint {
+    margin: 0 0 6px;
+    font-size: 10px;
+    opacity: 0.6;
+
+    strong { color: var(--cat-icon, #fdba74); font-weight: 600; }
+}
+
+.workflow-board .wfb-wordpick-words {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    // A long note is a lot of words; the row scrolls rather than pushing the
+    // composer off the panel.
+    max-height: 120px;
+    overflow-y: auto;
+}
+
+.workflow-board .wfb-word {
+    padding: 2px 7px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    color: inherit;
+    font-size: 10px;
+    cursor: pointer;
+
+    &:hover { background: rgba(255, 255, 255, 0.09); border-color: var(--cat-border, #fb923c); }
+    &:active { background: rgba(255, 255, 255, 0.09); }
+}
+
+.workflow-board .wfb-wordpick-where {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+}
+
+// ── tags ────────────────────────────────────────────────────────────────────
+//
+// Short, upper-cased, and the same chip everywhere it appears: on a note, in
+// the composer, as a suggestion, as the active filter. One shape means you
+// learn it once — a filter chip that looked different from the thing it filters
+// is two things to learn.
+
+.workflow-board .wfb-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    flex: none;
+    padding: 1px 6px;
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.04);
+    color: inherit;
+    font-size: 8.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    line-height: 1.6;
+    white-space: nowrap;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 160ms cubic-bezier(0.22, 1, 0.36, 1),
+                border-color 160ms cubic-bezier(0.22, 1, 0.36, 1);
+
+    &:hover { background: rgba(255, 255, 255, 0.09); opacity: 1; }
+    &:active { background: rgba(255, 255, 255, 0.09); }
+
+    &.is-on {
+        opacity: 1;
+        border-color: var(--cat-border, #fb923c);
+        color: var(--cat-icon, #fdba74);
+        background: rgba(255, 255, 255, 0.07);
+    }
+
+    // On the note being written: solid, because it is a decision not a filter.
+    &.is-draft {
+        opacity: 1;
+        border-color: var(--cat-border, #fb923c);
+        color: var(--cat-icon, #fdba74);
+        cursor: default;
+    }
+
+    // Already in the team's vocabulary. Held back so the row reads as "what you
+    // have tagged" first and "what you could" second.
+    &.wfb-tag--suggest {
+        opacity: 0.38;
+        border-style: dashed;
+
+        &:hover { opacity: 0.85; }
+        &:disabled { opacity: 0.2; cursor: default; }
+        &:disabled:hover { background: rgba(255, 255, 255, 0.04); }
+    }
+
+    button {
+        display: flex;
+        align-items: center;
+        padding: 0;
+        border: none;
+        background: none;
+        color: inherit;
+        cursor: pointer;
+        opacity: 0.55;
+
+        &:hover { background: none; opacity: 1; color: #f87171; }
+        &:active { background: none; }
+    }
+
+    svg { flex: none; }
+}
+
+.workflow-board .wfb-note-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    margin: 4px 0 2px;
+}
+
+.workflow-board .wfb-tagbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 3px;
+    margin-top: 4px;
+}
+
+.workflow-board .wfb-taginput {
+    flex: 1;
+    // Enough for a tag, never enough to push the suggestions onto their own
+    // line on a 380px panel.
+    min-width: 62px;
+    max-width: 110px;
+    padding: 2px 6px;
+    border: 1px dashed rgba(255, 255, 255, 0.13);
+    border-radius: 9px;
+    background: none;
+    color: inherit;
+    font-size: 8.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+
+    &:focus { outline: none; border-color: var(--cat-border, #fb923c); border-style: solid; }
+    &:disabled { opacity: 0.35; }
+
+    &::placeholder { letter-spacing: 0.02em; opacity: 0.45; }
+}
