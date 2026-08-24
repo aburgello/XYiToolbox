@@ -306,3 +306,37 @@
 
     &:hover { color: #fff; border-color: #4a4a4a; }
 }
+
+// Collapsed skips. A real project card carries five design elements (logo
+// variants, Type.png, Asset 1@4x) around four actual swaps, so the skips are
+// folded behind this line and default to hidden.
+//
+// BACKGROUND, HOVER AND ACTIVE ALL DECLARED: index.scss's global
+// button:hover/:active ($active #20639b) paints over any custom button that
+// leaves them to the cascade -- see CLAUDE.md.
+.mcit-skipped-toggle {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    width: 100%;
+    margin-top: 2px;
+    padding: 3px 8px;
+    font-size: 10.5px;
+    color: #7e7e84;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    border-radius: 5px;
+    cursor: pointer;
+
+    &:hover { background: rgba(255, 255, 255, 0.04); color: #a8a8ae; }
+    &:active { background: rgba(255, 255, 255, 0.07); color: #a8a8ae; }
+
+    svg { flex: 0 0 auto; }
+}
+
+.mcit-skipped-hint {
+    margin-left: auto;
+    font-size: 10px;
+    color: #5e5e64;
+}

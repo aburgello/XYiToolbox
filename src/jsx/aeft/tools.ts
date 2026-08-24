@@ -581,7 +581,15 @@ interface FilenameMeta {
  * a fallback so nothing that parsed before stops parsing now.
  */
 export function firstSizeToken(name: string): string {
-  const delimited = String(name || "").match(/(?:^|_)(\d+x\d+)(?:px)?(?=_|\.|$)/i);
+  // THREE DIGITS EACH SIDE, because that is the whole difference between a
+  // SIZE and a RATIO. JPG_PNG writes an aspect-ratio token that AE does not --
+  // "..._Metrobus_9x16_1080x1920px_10s_FR" -- and it is delimited exactly like
+  // a size, so the old /(\d+x\d+)/ took "9x16" and every reader downstream
+  // compared it against a real 1080x1920 and found nothing. Real pixel sizes
+  // are three digits and up (3552x128 is the smallest in the tree), so the
+  // digit count separates them cleanly; this is the same test as artwork.ts's
+  // isRatioToken, applied on the reading side.
+  const delimited = String(name || "").match(/(?:^|_)(\d{3,}x\d{3,})(?:px)?(?=_|\.|$)/i);
   if (delimited) return delimited[1];
   const loose = String(name || "").match(/(\d+x\d+)(?:px)?/i);
   return loose ? loose[1] : "";
@@ -2560,7 +2568,20 @@ interface McItParsed {
 }
 
 function mcItParseFilename(filename: string): McItParsed {
-  const resolutionRegex = /\d+x\d+px?/i;
+  // ANCHORED, AND THE "px" IS WHAT'S OPTIONAL -- NOT THE "p".
+  //
+  // This was /\d+x\d+px?/i, which reads as "\d+x\d+" then a REQUIRED "p"
+  // then an optional "x". So it only ever fired on the new "1920x1080px"
+  // spelling: on a legacy "..._1920x1080_10sec_OV" name nothing stopped the
+  // token walk and `firstOne` swallowed the size, the duration and the
+  // territory, and on a JPG_PNG name it walked straight past the "9x16" ratio
+  // token and welded it onto the identity -- PORTALTOPARADISE_DUFRYEZ_9X16
+  // against the deliverable's PORTALTOPARADISE_DUFRYEZ, so the creative filter
+  // rejected the one file that was right.
+  //
+  // Anchored per token so a SITE name keeps its grid: "Hoyts3x3" is part of
+  // the identity and must not end the walk (see firstSizeToken).
+  const resolutionRegex = /^\d+x\d+(?:px)?$/i;
   let secondOne = "";
   if (filename.indexOf("DOOH") !== -1) secondOne = "DOOH";
   else if (filename.indexOf("DINTH") !== -1) secondOne = "DINTH";
@@ -2597,8 +2618,11 @@ function mcItParseFilename(filename: string): McItParsed {
 }
 
 /** The creative alone, i.e. the first token of the identity. The artwork being
- *  replaced is usually the OV file, which has no site token, so comparing the
- *  whole identity would reject the very case this tool exists for. */
+ *  replaced carries the MASTER's identity -- no site token, the master's size
+ *  and the master's duration ("..._PortalToParadise_DOOH_3840x586px_10s_OV1")
+ *  against a deliverable's "..._PortalToParadise_DOOH_DufryEZ_512x96px_15s" --
+ *  so only the creative is common to both. Comparing the whole identity would
+ *  reject the very case this tool exists for. */
 function mcItCreativeOf(identity: string): string {
   const bits = String(identity || "").split("_");
   return mcItNormaliseIdentity(bits.length > 0 ? bits[0] : "");
@@ -2608,6 +2632,56 @@ function mcItCreativeOf(identity: string): string {
  *  the same creative and Trio is not. */
 function mcItNormaliseIdentity(name: string): string {
   return String(name || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+/**
+ * The project's OWN top-level folder of this name.
+ *
+ * `app.project.item(i)` enumerates every item at EVERY depth, flat, so
+ * "the first FolderItem called Footage" is not the project's Footage -- it is
+ * whichever one the enumeration reaches first, and an imported sibling project
+ * brings its own. Measured in a real Brazil working copy: four folders named
+ * Footage, and the winner was #30, inside the imported
+ * FID_INTL_Portal_2L_DATE_BR_RGB.aep, holding a single stray logo PNG. The
+ * project's own Footage -- six PNGs, nine Artwork items -- was #60 and was
+ * never looked at, so MC It! reported "0/1 replaced" on eleven projects and
+ * every filter downstream got blamed for it.
+ *
+ * CLAUDE.md already records this hazard for comps ("exclude comps whose
+ * ancestor folder name ends .aep"); it applies to folders identically.
+ *
+ * Root is identified by `parentFolder` being null on the root folder itself,
+ * NOT by its name -- "Root" is a display name and display names are the thing
+ * that changes between AE versions and languages.
+ */
+export function ownProjectFolder(proj: Project, name: string): FolderItem | null {
+  let fallback: FolderItem | null = null;
+  for (let i = 1; i <= proj.numItems; i++) {
+    const item = proj.item(i) as FolderItem;
+    // Duck-typed rather than `instanceof FolderItem`: numItems is the property
+    // we are about to use, and CompItem/FootageItem do not have it.
+    if (typeof (item as any).numItems !== "number") continue;
+    if (item.name !== name) continue;
+    const parent = item.parentFolder;
+    if (parent && !parent.parentFolder) return item;
+    // A project that nests its Footage is unusual but not wrong; take the
+    // first such folder ONLY if it is not inside an imported project.
+    if (!fallback && !underImportedProject(item)) fallback = item;
+  }
+  return fallback;
+}
+
+/** True when any ancestor folder is an imported `.aep`'s own tree. */
+function underImportedProject(item: Item): boolean {
+  let f = item.parentFolder;
+  let guard = 0;
+  while (f && f.parentFolder && guard < 50) {
+    const n = String(f.name).toLowerCase();
+    if (n.length > 4 && n.substring(n.length - 4) === ".aep") return true;
+    f = f.parentFolder;
+    guard++;
+  }
+  return false;
 }
 
 function mcItGetAllImageFiles(folder: Folder): File[] {
@@ -2695,12 +2769,43 @@ function mcItDeriveImageFolder(aepFolder: Folder): string {
   const want = canon(decode(aepFolder.name));
 
   const kids = jpgRoot.getFiles();
+  const folders: Folder[] = [];
   for (let i = 0; i < kids.length; i++) {
     const k = kids[i];
-    if (k instanceof Folder) {
-      if (canon(decode(k.name)) === want) return k.fsName;
-    }
+    if (typeof (k as any).getFiles !== "function") continue;
+    if (String(k.name).charAt(0) === "_") continue;      // _Old, _Delivered
+    folders.push(k as Folder);
   }
+
+  // Exact first, and it stays the only thing that can win outright.
+  for (let i = 0; i < folders.length; i++) {
+    if (canon(decode(folders[i].name)) === want) return folders[i].fsName;
+  }
+
+  // A SUFFIXED BATCH IS STILL THAT BATCH. Real tree: AE/Batch_1 beside
+  // JPG_PNG/Batch_1_PRE, which failed outright and swapped no footage at all.
+  // The suffix says something about the batch (a pre-run, a re-cut); it does
+  // not make it a different one.
+  //
+  // THE NEXT CHARACTER MUST NOT BE A DIGIT, or "Batch_1" would match
+  // "Batch_10" -- canon strips the separators, so the two are one character
+  // apart and the wrong pairing swaps another batch's artwork in.
+  const hits: Folder[] = [];
+  for (let i = 0; i < folders.length; i++) {
+    const have = canon(decode(folders[i].name));
+    let prefixed = false;
+    if (have.length > want.length && have.substring(0, want.length) === want) {
+      prefixed = "0123456789".indexOf(have.charAt(want.length)) === -1;
+    }
+    // And the other way round: AE/Batch_1_PRE beside JPG_PNG/Batch_1.
+    if (!prefixed && want.length > have.length && want.substring(0, have.length) === have) {
+      prefixed = "0123456789".indexOf(want.charAt(have.length)) === -1;
+    }
+    if (prefixed) hits.push(folders[i]);
+  }
+  // Exactly one, or none: two candidates is a question, and guessing at it
+  // would put another batch's artwork into a finished deliverable.
+  if (hits.length === 1) return hits[0].fsName;
   return "";
 }
 
@@ -2797,14 +2902,10 @@ export function mcItApplyToOpenProject(
   const parsedAEP = mcItParseFilename(aepFileName);
   const projReport: McItProjectReport = { aep: aepFileName, resolution: parsedAEP.thirdOne || "", items: [] };
 
-  let footageFolder: FolderItem | null = null;
-  for (let i = 1; i <= proj.numItems; i++) {
-    const item = proj.item(i);
-    if (item instanceof FolderItem && item.name === "Footage") {
-      footageFolder = item;
-      break;
-    }
-  }
+  // THE PROJECT'S OWN Footage, not an imported sibling's -- see
+  // ownProjectFolder, which is the whole reason this tool reported
+  // "0 would be replaced" across a batch.
+  const footageFolder = ownProjectFolder(proj, "Footage");
   if (!footageFolder) {
     projReport.skipped = "No project folder named exactly 'Footage'.";
     return projReport;
@@ -2895,29 +2996,47 @@ export function mcItApplyToOpenProject(
         const originalExt = mcItGetExt(originalName);
         const parsedOriginal = mcItParseFilename(originalName);
 
-        // IS THIS FOOTAGE EVEN THIS DELIVERABLE'S ARTWORK?
+        // IS THIS FOOTAGE EVEN A LOCALISATION TARGET?
         //
-        // Nothing asked. Every image in the project was a candidate for
-        // replacement, so a design element that happened to be a PNG at the
-        // comp's resolution -- a logo, an outline, an exported Figma asset --
-        // was swapped for the deliverable's artwork and reported as a clean
-        // replacement. Real example, from a Portal To Paradise build:
+        // A dedicated PNG/JPG folder is NOT all targets, which is the
+        // assumption this tool shipped with. The real one, measured:
         //
-        //   402065-1_K1c_006_FORGOTTEN_ISLAND_Logo_Black_sRGB_Edited_OutlinewGlow_1.png
-        //     -> FID_INTL_Trio_DOOH_ARTMEDIAMall_1920x1080px_10s_IT1.png
+        //   402065-1_K1c_006_FORGOTTEN_ISLAND_Logo_..._OutlinewGlow.png
+        //   402065-1_K1c_006_FORGOTTEN_ISLAND_Logo_..._OutlinewGlow_1.png
+        //   402065-1_K1c_006_FORGOTTEN_ISLAND_Logo_..._OutlinewGlow_REV.png
+        //   Asset 1@4x.png
+        //   FID_INTL_PortalToParadise_DOOH_3840x586px_10s_OV1.png   <- target
+        //   FID_INTL_PortalToParadise_DOOH_3840x586px_10s_OV2.png   <- target
         //
-        // The CREATIVE only, not the whole identity: the file being replaced is
-        // normally the OV artwork, which carries no site token, so
-        // PORTALTOPARADISE has to match PORTALTOPARADISE_ARTMEDIAMALL.
+        // Four design elements beside the two artwork slots, and the "_1" on
+        // that logo is the trailing number the matcher pairs on -- so without
+        // this gate it is swapped for the deliverable's _BR1 export and
+        // reported as a clean replacement.
+        //
+        // THE CREATIVE ONLY. The target carries the MASTER's identity: no site
+        // token, the master's size, the master's duration. PORTALTOPARADISE is
+        // all it shares with PORTALTOPARADISE_DUFRYEZ, and it is enough --
+        // K1C and an unparseable "Asset 1@4x" are both rejected by it.
+        //
+        // SKIPPED, not no-match: these files are not this deliverable's
+        // artwork and never will be, so they are not a failure to report. The
+        // preview's count reads "2/2 replaced" rather than "2/6" with four red
+        // warnings that mean nothing.
+        //
+        // (Briefly removed on the strength of a preview that showed only the
+        // logo. That preview was reading an IMPORTED SIBLING PROJECT's Footage
+        // folder -- see ownProjectFolder -- and the project's own artwork was
+        // never in it. The filter was never the problem.)
         const aepCreativeToken = mcItCreativeOf(parsedAEP.firstOne);
         const origCreativeToken = mcItCreativeOf(parsedOriginal.firstOne);
         if (aepCreativeToken !== "" && origCreativeToken !== aepCreativeToken) {
           projReport.items.push({
             folder: targetFolder.name,
             name: originalName,
-            action: "no-match",
-            reason: "Not this deliverable's artwork — it is " +
-              (parsedOriginal.firstOne || "unnamed") + ", the deliverable is " + parsedAEP.firstOne + ".",
+            action: "skipped",
+            reason: "Not this deliverable's artwork — it is "
+              + (parsedOriginal.firstOne || "unnamed") + ", the deliverable is "
+              + parsedAEP.firstOne + ".",
             key: itemKey,
           });
           continue;
@@ -2976,6 +3095,17 @@ export function mcItApplyToOpenProject(
           if (aepCreative !== "" && candCreative !== aepCreative) continue;
           cPlusCreative++;
 
+          // THE ARTWORK SLOT, AND NO NUMBER IS ITSELF A SLOT.
+          //
+          // "..._OV2.png" is replaced by "..._BR2.png", and "..._OV.jpg" by
+          // "..._BR.jpg" -- the absence of a number is as much a slot as a "2",
+          // so this stays an EXACT comparison. Measured against the real Batch_2
+          // mech output, where the jpg candidates for one deliverable are
+          // _BR.jpg, _BR2.jpg, _BR_ARTWORK_1.jpg and _BR_ARTWORK_2.jpg:
+          // exact equality picks _BR.jpg for the unnumbered original and leaves
+          // nothing to guess at. Relaxing it to "skip the filter when the
+          // original has no number" turned that one exact answer into four
+          // candidates and a question.
           if (parsedOriginal.pngNumber !== parsedCandidate.pngNumber) continue;
           validCandidates.push(candidate);
         }
@@ -2999,7 +3129,7 @@ export function mcItApplyToOpenProject(
           else if (cPlusRes === 0) reason = "No candidate at the AEP's resolution " + (parsedAEP.thirdOne || "?") + " — sizes seen: " + resSeenSameType.join(", ") + ".";
           else if (cPlusCreative === 0) reason = "No candidate for " + (parsedAEP.firstOne || "this deliverable")
             + " at that resolution — found " + creativesSeen.join(", ") + ".";
-          else if (validCandidates.length === 0) reason = "No candidate ending in '" + (parsedOriginal.pngNumber || "<none>") + "' at that resolution.";
+          else if (validCandidates.length === 0) reason = "No candidate for artwork slot '" + (parsedOriginal.pngNumber || "<none>") + "' at that resolution.";
           projReport.items.push({
             folder: targetFolder.name,
             name: originalName,
@@ -3106,6 +3236,7 @@ export const mcIt = (aepFolderPath?: string, imageFolderPath?: string, dryRun?: 
     if (imageFiles.length === 0) return { success: false, error: "No Image files found in " + imageRootFolder.fsName };
 
     let processedCount = 0;
+    let changedCount = 0;   // projects with at least one replacement
     let replacedCount = 0;
 
     // Structured run report. Accumulated in this script-scope array (survives
@@ -3129,7 +3260,15 @@ export const mcIt = (aepFolderPath?: string, imageFolderPath?: string, dryRun?: 
       // uses -- shared, not duplicated (see mcItApplyToOpenProject above).
       const projReport = mcItApplyToOpenProject(proj, aepFile.name, imageFiles, dryRun, overrides[aepFile.name]);
       projects.push(projReport);
-      replacedCount += mcItCountReplaced(projReport);
+      const thisProject = mcItCountReplaced(projReport);
+      replacedCount += thisProject;
+      // Counted separately from processedCount, which is every project that
+      // OPENED. A project can process cleanly and change nothing, so reporting
+      // "N images across <processed> projects" reads as though the work were
+      // spread over all of them -- 20 images across 11 projects, while the
+      // Apply button correctly offered 8. Two right numbers describing
+      // different sets, one of them worded as if it described the other.
+      if (thisProject > 0) changedCount++;
 
       if (projReport.skipped) continue;
 
@@ -3143,8 +3282,8 @@ export const mcIt = (aepFolderPath?: string, imageFolderPath?: string, dryRun?: 
     const result: McItResult = {
       success: true,
       message: dryRun
-        ? "Dry run — would replace " + replacedCount + " image(s) across " + processedCount + " project(s). Nothing was saved."
-        : "Processed " + processedCount + " project(s), replaced " + replacedCount + " image(s).",
+        ? "Dry run — would replace " + replacedCount + " image(s) in " + changedCount + " of " + processedCount + " project(s). Nothing was saved."
+        : "Replaced " + replacedCount + " image(s) in " + changedCount + " of " + processedCount + " project(s).",
       aepFolder: projectFolder.fsName,
       imageFolder: imageRootFolder.fsName,
       imageCount: imageFiles.length,

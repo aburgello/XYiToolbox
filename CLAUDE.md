@@ -354,9 +354,18 @@ Naming Audit, which skips only `Auto-Save`/`_Archive`/`_Old`/`_DEV`.
 - Campaign matching uses token boundaries on the FILENAME side only.
 - Never re-add Artwork to the CSV built-row core match — `reshapeSpecs` defaults
   it to `"DOOH"`, and a field that can silently default cannot be required.
-- When walking "every comp in the project" across a batch, exclude comps whose
-  ancestor folder name ends `.aep` — an imported sibling project brings its own
-  `Composition/Main` tree.
+- **`app.project.item(i)` IS FLAT** — it walks every item at every depth, so
+  "the first FolderItem named X" is not the project's X. An imported sibling
+  project brings its own `Composition/Main` AND its own `Footage`. Measured in
+  one Brazil working copy: four folders named `Footage`, the project's own one
+  third in the enumeration — MC It! and JPEG Loc both read an imported
+  project's stray logo instead of the artwork, reporting `0/1 replaced` across
+  eleven projects with every downstream filter taking the blame. Use
+  `ownProjectFolder` (`tools.ts`): root-level wins, otherwise refuse one under
+  a `.aep` ancestor. Root is `parentFolder.parentFolder == null`, never the
+  name `"Root"` — that is a display name. Same rule when walking "every comp in
+  the project" across a batch: exclude comps whose ancestor folder name ends
+  `.aep`.
 - Never re-derive Master Tools' preset comp sizes from an aspect ratio; they are
   literal artist-tuned pixel values. Re-read the live `XYi_Toolbox.jsx`
   `ComSiz(w,h)` wiring.
@@ -400,6 +409,40 @@ silently swapped nothing. Read a size only where it is delimited — between
 underscores or at either end, optional `px` — via `firstSizeToken` (`tools.ts`).
 `sanitiseSiteToken`/`guardSiteToken` defuse this when the toolbox WRITES a name;
 the readers have to hold their end up for names people wrote themselves.
+
+**Delimited is not enough on a JPG_PNG name — a RATIO is delimited too.**
+`_9x16_` sits between underscores exactly like a size, so `firstSizeToken` also
+requires **three digits each side** (the same test as `artwork.ts`'s
+`isRatioToken`; the smallest real size in the tree is `3552x128`). Without it
+MCit read `9x16` as the resolution of a `..._9x16_2440x2160px_...` mech export
+and matched it against nothing.
+
+**`/\d+x\d+px?/` REQUIRES the `p`** — the `?` binds to the `x` alone, so that
+regex fires only on the new `1920x1080px` spelling and walks straight past a
+legacy `1920x1080` and past a `9x16` ratio. Anchor it per token and make the
+whole suffix optional: `/^\d+x\d+(?:px)?$/`. Anchoring is what keeps a site's
+grid (`Hoyts3x3`) inside the identity. *(Live violation: `jpegLocGimme`
+(`localise.ts`) still has the unfixed regex, and reads its resolution with a
+bare `/\d+x\d+/i`.)*
+
+**A DEDICATED `PNG`/`JPG` FOLDER IS NOT ALL TARGETS.** Measured in a real
+Brazil working copy, `Footage/PNG` held three FORGOTTEN_ISLAND logo variants
+and an `Asset 1@4x.png` beside the two artwork slots — and one logo ends `_1`,
+which is the trailing number MCit pairs on, so without a gate it is swapped for
+the deliverable's `_BR1` export and reported as a clean replacement. Gate on the
+CREATIVE ONLY (`mcItCreativeOf`): the target carries the MASTER's identity —
+no site token, the master's size, the master's duration
+(`…_PortalToParadise_DOOH_3840x586px_10s_OV1.png` against a deliverable's
+`…_PortalToParadise_DOOH_DufryEZ_512x96px_15s`) — so `PORTALTOPARADISE` is all
+they share and it is enough. Report those as **skipped**, not `no-match`: they
+are not this deliverable's artwork and never will be.
+
+**MCit's artwork slot is an EXACT match, and no number is itself a slot.**
+`_OV2` → `_BR2`, and `_OV` → `_BR`. The real Batch_2 mech output offers
+`_BR.jpg`, `_BR2.jpg`, `_BR_ARTWORK_1.jpg` and `_BR_ARTWORK_2.jpg` for one
+deliverable; exact equality picks `_BR.jpg` for an unnumbered original and
+leaves nothing to guess at. Relaxing it to "skip the filter when the original
+has no number" turns one exact answer into four candidates and a question.
 
 **The masters tree is a SIBLING CAMPAIGN, and art edits live in `Tiffs` OR
 `Edit`.** `XY026040_…_Markets` holds the territories; `XY026039_…_Masters` holds

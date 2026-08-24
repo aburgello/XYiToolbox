@@ -6,7 +6,7 @@
 // see its header comment for context.
 // =============================================================================
 import { scaleCompToFit } from "./deliver";
-import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, territoryCheck, parseFilenameMeta, frontcardWrap, cheekyTCheck, organiseFolders, FRONTCARD_LEAD_IN_SECONDS, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, scanMastersForBestMatch } from "./tools";
+import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, territoryCheck, parseFilenameMeta, frontcardWrap, cheekyTCheck, organiseFolders, FRONTCARD_LEAD_IN_SECONDS, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, scanMastersForBestMatch, firstSizeToken, ownProjectFolder } from "./tools";
 import { makeParentLayerOfAllUnparented, scaleAllCameraZooms } from "./deliver";
 import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, saveLocGenReport, buildDeliverableName, durationForMasterLookup, durationDigits, sanitiseSiteToken, camelCaseToken, camelCaseName } from "./shared";
 import { loadCampaignsRaw, loadLastCampaign as loadOVLastCampaign } from "./review";
@@ -585,7 +585,13 @@ interface JpegLocParsed {
 // filename tokenisers, which return campaign/artwork and skip the resolution
 // and trailing number entirely.
 function jpegLocGimme(filename: string): JpegLocParsed {
-  const resolutionRegex = /\d+x\d+px?/i;
+  // NOT the source's /\d+x\d+px?/i -- the `?` there binds to the `x` alone, so
+  // the `p` is REQUIRED and the walk only ever stopped on a "1920x1080px"
+  // token, running off the end of a legacy "..._1920x1080_10sec_OV" name and
+  // straight past a JPG_PNG "9x16" ratio. Anchored per token so a site's grid
+  // ("Hoyts3x3") stays part of the identity. See MC It!'s twin of this
+  // function and CLAUDE.md.
+  const resolutionRegex = /^\d+x\d+(?:px)?$/i;
   let secondOne = "";
   if (filename.indexOf("DOOH") !== -1) secondOne = "DOOH";
   else if (filename.indexOf("DINTH") !== -1) secondOne = "DINTH";
@@ -606,8 +612,11 @@ function jpegLocGimme(filename: string): JpegLocParsed {
   if (finalTokens.length > 1 && /^[A-Z]{2}$/.test(finalTokens[finalTokens.length - 1])) finalTokens.pop();
   const firstOne = finalTokens.join("_").toUpperCase();
 
-  const resMatch = filename.match(/\d+x\d+/i);
-  const thirdOne = resMatch ? resMatch[0] : "";
+  // The MATCH KEY, so it is the one token here that must not be guessed at:
+  // a bare /\d+x\d+/i takes the FIRST shape in the name, which is "3x3" in
+  // FID_INTL_TVSpot_DOOH_Hoyts3x3_1920x1080_30s_NZ and "9x16" on a mech
+  // export. Delimited, three digits each side -- see firstSizeToken.
+  const thirdOne = firstSizeToken(filename);
   const pngNumberMatch = filename.match(/\d+\./);
   const pngNumber = pngNumberMatch ? pngNumberMatch[0].replace(".", "") : "";
 
@@ -635,12 +644,13 @@ function jpegLocGetAllAepFiles(folder: Folder): File[] {
   return aepFiles;
 }
 
+// NOT the source's flat "first FolderItem with this name" scan.
+// app.project.item(i) walks every item at every depth, so an imported sibling
+// project's own Footage folder wins whenever it is enumerated first -- and it
+// often is. Measured in a real working copy: four folders named Footage, the
+// project's own one third in the list. See ownProjectFolder (tools.ts).
 function jpegLocFindProjectFolderByName(name: string): FolderItem | null {
-  for (let i = 1; i <= app.project.numItems; i++) {
-    const item = app.project.item(i);
-    if (item instanceof FolderItem && item.name === name) return item;
-  }
-  return null;
+  return ownProjectFolder(app.project, name);
 }
 
 export const jpegLoc = (): Result => {
@@ -3834,6 +3844,81 @@ function nameAuditKnownTerritory(code: string): boolean {
   return false;
 }
 
+/**
+ * Tokens that ANOTHER TOOL WILL MISREAD, named before they cost anybody a day.
+ *
+ * Every filename parser in this toolbox takes the FIRST match of its shape in
+ * the string, and a site name sits ahead of the real size, duration, version
+ * and territory tokens -- so a collision wins outright. The family is already
+ * written down in shared.ts's guardSiteToken, which defuses these when the
+ * toolbox WRITES a name; nothing checked the names people write themselves.
+ *
+ *   Hoyts3x3   -> read as the size 3x3. Delivery failed the import of every
+ *                 component selected with it, and MCit silently swapped
+ *                 nothing, because no candidate is 3x3.
+ *   Odeon5s    -> read as the duration.
+ *   PathV2     -> read as the version, and Cheeky DT stamps it on the card.
+ *   _SW_       -> read as the territory instead of the real one at the end.
+ *
+ * Detected by DISAGREEMENT rather than by a blacklist: read each field the
+ * loose way the tools do, read it again anchored to token boundaries, and
+ * report where the two answers differ. That needs no list of bad site names and
+ * catches shapes nobody has thought of yet.
+ */
+export function nameAuditTokenTraps(fileName: string): string[] {
+  const out: string[] = [];
+  let stem = String(fileName || "");
+  const dot = stem.lastIndexOf(".");
+  if (dot > 0) stem = stem.substring(0, dot);
+
+  // SIZE. Loose takes the first WxH anywhere; anchored takes the first that is
+  // a token in its own right.
+  const sizeLoose = stem.match(/(\d+x\d+)(?:px)?/i);
+  const sizeReal = stem.match(/(?:^|_)(\d+x\d+)(?:px)?(?=_|$)/i);
+  if (sizeLoose && sizeReal && sizeLoose[1].toLowerCase() !== sizeReal[1].toLowerCase()) {
+    out.push("\"" + sizeLoose[1] + "\" will be read as the SIZE instead of "
+      + sizeReal[1] + " -- Delivery and MCit both take the first match");
+  }
+
+  // DURATION.
+  const durLoose = stem.match(/(\d+)s(?:ec)?/i);
+  const durReal = stem.match(/(?:^|_)(\d+)s(?:ec)?(?=_|$)/i);
+  if (durLoose && durReal && durLoose[1] !== durReal[1]) {
+    out.push("\"" + durLoose[0] + "\" will be read as the DURATION instead of "
+      + durReal[0].replace(/^_/, ""));
+  }
+
+  // VERSION and TERRITORY are both "first wins" where the truth is the LAST
+  // one, so the test is whether there is more than one.
+  const parts = stem.split("_");
+  const versions: string[] = [];
+  const territories: string[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    if (/^V\d+$/i.test(parts[i])) versions.push(parts[i]);
+    if (/^[A-Z]{2}$/.test(parts[i])) territories.push(parts[i]);
+  }
+  // A bare V<digits> INSIDE a token is the shape that bites -- "PathV2" is not
+  // a token of its own, so the split above never sees it.
+  for (let i = 0; i < parts.length; i++) {
+    if (/^V\d+$/i.test(parts[i])) continue;
+    const inner = parts[i].match(/V(\d+)/);
+    if (inner && versions.length > 0) {
+      out.push("\"" + parts[i] + "\" contains \"" + inner[0]
+        + "\", which will be read as the VERSION instead of " + versions[versions.length - 1]);
+      break;
+    }
+  }
+  if (versions.length > 1) {
+    out.push("More than one version token (" + versions.join(", ")
+      + ") -- the first one wins wherever these are read");
+  }
+  if (territories.length > 1) {
+    out.push("More than one two-letter token (" + territories.join(", ")
+      + ") -- the first is read as the TERRITORY, and the real one is usually last");
+  }
+  return out;
+}
+
 function nameAuditWalk(folder: Folder, rel: string, all: NameAuditRow[], mode: string): void {
   let items: File[] | Folder[];
   try {
@@ -3904,6 +3989,11 @@ function nameAuditWalk(folder: Folder, rel: string, all: NameAuditRow[], mode: s
     // The masters-mode question that still matters is the anchor check above:
     // no region/size/duration token means the master lookup can never find
     // this file, whichever convention it is on.
+
+    // A name can be perfectly conventional and STILL be misread, so this runs
+    // whatever the checks above concluded.
+    const traps = nameAuditTokenTraps(fileName);
+    for (let t = 0; t < traps.length; t++) issues.push(traps[t]);
 
     all.push({ name: fileName, folder: rel, convention: convention, issues: issues });
   }

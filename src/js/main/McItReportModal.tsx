@@ -15,7 +15,7 @@
 // way. The report interfaces mirror McItResult host-side.
 // =============================================================================
 import React, { useEffect, useState } from "react";
-import { Image as ImageIcon, X, CheckCircle2, AlertTriangle, CircleSlash, CheckSquare, Square, Wrench, FolderSearch, Undo2 } from "lucide-react";
+import { Image as ImageIcon, X, CheckCircle2, AlertTriangle, CircleSlash, CheckSquare, Square, Wrench, FolderSearch, Undo2, ChevronRight, ChevronDown } from "lucide-react";
 import { evalTS } from "../lib/utils/bolt";
 import "./McItReportModal.scss";
 
@@ -168,6 +168,11 @@ const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply
     // Which no-match item currently has its candidate list open (aep + key).
     const [fixing, setFixing] = useState<string | null>(null);
     const [pickError, setPickError] = useState<string | null>(null);
+    // Which projects have their skipped items expanded, keyed by .aep. Absent =
+    // collapsed: a real project card carries five design elements (logo
+    // variants, a Type.png, an Asset 1@4x) around four actual swaps, and the
+    // skips are the half nobody needs to read.
+    const [showSkipped, setShowSkipped] = useState<Record<string, boolean>>({});
 
     const setOverride = (aep: string, key: string, choice: { name: string; path: string } | null) =>
         setOverrides((prev) => {
@@ -193,6 +198,10 @@ const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply
     };
 
     const projects = report.projects || [];
+    // File.name comes off ExtendScript URI-ENCODED, so "Asset 1@4x.png" arrives
+    // as "Asset%201@4x.png". Decoded for DISPLAY ONLY -- itemKey() still keys on
+    // the raw name, which is what the backend matches an override against.
+    const pretty = (n: string) => { try { return decodeURI(String(n || "")); } catch { return String(n || ""); } };
     const ovOf = (aep: string, key: string) => overrides[aep]?.[key];
     const manualCount = (p: McProjectRep) =>
         p.items.filter((i) => i.action === "no-match" && ovOf(p.aep, itemKey(i))).length;
@@ -243,6 +252,7 @@ const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply
                 {projects.map((proj) => {
                     const replaced = proj.items.filter((i) => i.action === "replaced").length;
                     const misses = proj.items.filter((i) => i.action === "no-match").length;
+                    const skippedCount = proj.items.filter((i) => i.action === "skipped").length;
                     const selectable = onApply && !proj.skipped && replaced > 0;
                     const off = selectable && !isOn(proj.aep);
                     return (
@@ -270,7 +280,7 @@ const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply
                                 )}
                             </div>
                             {proj.skipped && <div className="mcit-proj-skip">{proj.skipped}</div>}
-                            {proj.items.map((it, idx) => {
+                            {proj.items.filter((i) => i.action !== "skipped" || showSkipped[proj.aep]).map((it, idx) => {
                                 const key = itemKey(it);
                                 const fix = it.action === "no-match" ? ovOf(proj.aep, key) : undefined;
                                 // Manual fixing is only offered while previewing:
@@ -281,13 +291,13 @@ const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply
                                 <div key={idx} className={"mcit-item mcit-item--" + (fix ? "replaced" : it.action)}>
                                     {fix || it.action === "replaced" ? <CheckCircle2 size={13} /> : it.action === "no-match" ? <AlertTriangle size={13} /> : <CircleSlash size={13} />}
                                     <div className="mcit-item-text">
-                                        <span className="mcit-item-name">{it.name}</span>
+                                        <span className="mcit-item-name">{pretty(it.name)}</span>
                                         {it.action === "replaced" && it.newName && (
-                                            <span className="mcit-item-detail">→ {it.newName}{it.manual ? " · picked by hand" : ""}</span>
+                                            <span className="mcit-item-detail">→ {pretty(it.newName)}{it.manual ? " · picked by hand" : ""}</span>
                                         )}
                                         {fix && (
                                             <span className="mcit-item-detail">
-                                                → {fix.name}
+                                                → {pretty(fix.name)}
                                                 <span className="mcit-manual-tag">your pick</span>
                                                 <button type="button" className="mcit-fix-undo" onClick={() => setOverride(proj.aep, key, null)} title="Undo this pick">
                                                     <Undo2 size={11} /> undo
@@ -340,6 +350,17 @@ const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply
                                 </div>
                                 );
                             })}
+                            {skippedCount > 0 && (
+                                <button
+                                    type="button"
+                                    className="mcit-skipped-toggle"
+                                    onClick={() => setShowSkipped((prev) => ({ ...prev, [proj.aep]: !prev[proj.aep] }))}
+                                >
+                                    {showSkipped[proj.aep] ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                                    {skippedCount} not a localisation target
+                                    <span className="mcit-skipped-hint">{showSkipped[proj.aep] ? "hide" : "show"}</span>
+                                </button>
+                            )}
                             {!proj.skipped && proj.items.length === 0 && (
                                 <div className="mcit-proj-skip">No PNG/JPG footage items found in its target folders.</div>
                             )}
