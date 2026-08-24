@@ -1601,3 +1601,36 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
 
     &.wfb-menu-item--danger:hover { color: #f87171; }
 }
+
+// Removed a step in the editor. An undo line rather than a confirm dialog: the
+// removal is a draft edit, and a modal on every X is a dialog people learn to
+// dismiss without reading — which is exactly the reflex the Save confirm then
+// has to survive.
+.workflow-board .wfb-undo {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    overflow: hidden;
+    padding: 5px 8px;
+    border: 1px solid rgba(224, 176, 80, 0.28);
+    border-radius: 4px;
+    background: rgba(224, 176, 80, 0.08);
+    font-size: 10px;
+    color: #e0b050;
+
+    svg { flex: none; }
+
+    span {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+
+    .wfb-btn {
+        border-color: rgba(224, 176, 80, 0.4);
+        color: #e0b050;
+        opacity: 1;
+    }
+}

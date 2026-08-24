@@ -759,6 +759,26 @@ const WorkflowBoardTool: React.FC<{
             .map((s) => ({ ...s, text: s.text.trim() }))
             .filter((s) => s.text !== "");
         if (!creative) { toast("error", "Pick a creative first."); return; }
+
+        // THE CONFIRM BELONGS AT THE IRREVERSIBLE MOMENT, not at every click in
+        // the editor. Removing a step there is a draft edit that Cancel already
+        // throws away; pressing Save is what reaches the team folder and cannot
+        // be undone. So the question is asked once, here, and names exactly
+        // what will be lost rather than asking "are you sure" about a list.
+        if (entry) {
+            const kept: Record<string, boolean> = {};
+            steps.forEach((st) => { kept[st.id] = true; });
+            const dropped = entry.steps.filter((st) => !kept[st.id]);
+            if (dropped.length) {
+                const ok = await confirmDialog(
+                    `Save, removing ${dropped.length} step${dropped.length === 1 ? "" : "s"} for the whole team?\n\n` +
+                    dropped.map((st) => "· " + st.text).join("\n") +
+                    "\n\nThere is no undo."
+                );
+                if (!ok) return;
+            }
+        }
+
         setBusy(true);
         const payload: WorkflowEntry = {
             id: entry ? entry.id : "",
@@ -904,6 +924,17 @@ const WorkflowBoardTool: React.FC<{
 
     const removeNote = async (noteId: string) => {
         if (!entry) return;
+        const note = entry.notes.filter((n) => n.id === noteId)[0];
+        // CONFIRMED, AND THE NOTE IS QUOTED. This is a shared file with no undo
+        // and no version history: a mis-click here loses somebody's writing
+        // permanently, and "are you sure?" without saying WHICH note is a
+        // question you cannot actually answer when four of them are on screen.
+        const ok = await confirmDialog(
+            "Delete this note?\n\n" +
+            "“" + (note ? note.text : "") + "”\n\n" +
+            "It goes for the whole team, and there is no undo."
+        );
+        if (!ok) return;
         const r = (await evalTSSafe("workflowDeleteNote", entry.id, noteId)) as {
             success: boolean; error?: string; entries?: WorkflowEntry[];
         };
@@ -1933,6 +1964,8 @@ const StepEditor: React.FC<{
     // is a list of every tool in the panel and two of them open at once is a
     // page you have to scroll to find the step you were editing.
     const [linking, setLinking] = useState<number | null>(null);
+    /** The last step removed here, held so it can be put back. */
+    const [undo, setUndo] = useState<{ step: WorkflowStep; index: number } | null>(null);
     const set = (i: number, text: string) => setSteps(steps.map((s, j) => (j === i ? { ...s, text } : s)));
     const setLink = (i: number, link: WorkflowLink | undefined) =>
         setSteps(steps.map((s, j) => {
@@ -1942,7 +1975,25 @@ const StepEditor: React.FC<{
             else delete next.link;
             return next;
         }));
-    const remove = (i: number) => setSteps(steps.filter((_, j) => j !== i));
+    // UNDO RATHER THAN A CONFIRM. Removing a step in the editor is a draft edit
+    // -- Cancel already discards the lot, and the real point of no return is
+    // Save, which asks its own question and names what it is about to drop. A
+    // modal on every X here would be a dialog you learn to dismiss without
+    // reading, which is worse than none: it trains the reflex that the Save
+    // confirm then has to survive.
+    const remove = (i: number) => {
+        setUndo({ step: steps[i], index: i });
+        setSteps(steps.filter((_, j) => j !== i));
+    };
+    const undoRemove = () => {
+        if (!undo) return;
+        const next = steps.slice();
+        // Back where it was, not on the end -- a step restored to the bottom of
+        // a running order is a different instruction.
+        next.splice(Math.min(undo.index, next.length), 0, undo.step);
+        setSteps(next);
+        setUndo(null);
+    };
     const move = (i: number, by: number) => {
         const j = i + by;
         if (j < 0 || j >= steps.length) return;
@@ -2011,6 +2062,31 @@ const StepEditor: React.FC<{
                             onPick={(link) => setLink(linking, link)}
                             onClose={() => setLinking(null)}
                         />
+                    </motion.div>
+                )}
+            </AnimatePresence>
+            <AnimatePresence initial={false}>
+                {undo && (
+                    <motion.div
+                        className="wfb-undo"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={ease}
+                    >
+                        <RotateCcw size={11} />
+                        <span>Removed “{undo.step.text || "an empty step"}”</span>
+                        <button type="button" className="wfb-btn" onClick={undoRemove}>
+                            <span>Undo</span>
+                        </button>
+                        <button
+                            type="button"
+                            className="wfb-mini"
+                            onClick={() => setUndo(null)}
+                            title="Dismiss"
+                        >
+                            <X size={10} />
+                        </button>
                     </motion.div>
                 )}
             </AnimatePresence>

@@ -7555,3 +7555,31 @@ filters now live in the same row in the notes header, each appearing only when
 there is more than one of its kind to choose between. With a single note there
 is still nothing to filter, and a control that can only ever hide things is not
 worth the estate.
+
+### Confirmations, put where the damage is
+
+A shared file with no version history and no undo: a mis-click loses somebody
+else's writing permanently. But a dialog on every X is a dialog people learn to
+dismiss without reading, and that reflex is exactly what the dialog that
+*matters* then has to survive. So the question is asked once, at the point of no
+return, and it names what is about to be lost.
+
+- **Deleting a note asks, and quotes the note.** "Are you sure?" without saying
+  which one is a question you cannot answer with four notes on screen.
+- **Removing a step in the editor does NOT ask** — it is a draft edit that
+  Cancel already discards. It gets an inline **Undo** instead, which puts the
+  step back *at its original index*: a step restored to the bottom of a running
+  order is a different instruction.
+- **Saving asks only when steps would be lost**, and lists them by name. That is
+  the moment the change reaches the team folder, and the only one that cannot be
+  taken back.
+- Deleting the whole workflow already confirmed, naming the step and note counts
+  going with it.
+
+Link chips and tag chips in the composer get nothing: they are one click to put
+back and have not been shared with anyone yet.
+
+Verified in the browser: cancelling the note dialog leaves all three notes;
+removing a step in the editor goes 8 → 7 with an undo bar and back to 8 on Undo;
+saving after a removal asks "Save, removing 1 step for the whole team?" and
+names it.
