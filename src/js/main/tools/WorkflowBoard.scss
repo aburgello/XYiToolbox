@@ -1092,16 +1092,11 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     gap: 6px;
     font-size: 10.5px;
 
-    .wfb-head {
-        // The identity, the ring and two buttons do not fit on one line at
-        // panel width; the actions wrap under rather than squeezing the name.
-        flex-wrap: wrap;
-        padding: 7px 8px;
-    }
-
-    .wfb-id { flex: 1 1 100%; }
-
-    .wfb-head-actions { margin-left: auto; }
+    // ONE LINE. The wrap here existed because the identity, the progress ring
+    // and two buttons did not fit across 380px — the actions dropped under
+    // rather than squeezing the name. The ring has gone, so they fit, and the
+    // wrap was costing a whole row of height to say nothing.
+    .wfb-head { padding: 7px 8px; }
 
     .wfb-id-creative { font-size: 12px; }
 

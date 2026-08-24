@@ -1477,9 +1477,31 @@ const WorkflowBoardTool: React.FC<{
                                     // "CTA" together is the question somebody
                                     // actually has; making them exclusive would
                                     // mean picking which half of it to ask.
-                                    const shown = entry.notes.filter((n) =>
-                                        (!terrFilter || n.territory === terrFilter) &&
-                                        (!tagFilter || (n.tags || []).indexOf(tagFilter) !== -1));
+                                    // UNIVERSAL NOTES FIRST. A note with no
+                                    // territory applies to every version of the
+                                    // creative, so it is the one everybody
+                                    // needs to read; a Brazil note is only for
+                                    // whoever is on Brazil. Sorted by post order
+                                    // before this, so within each group the
+                                    // oldest still reads first — this only
+                                    // lifts the universal ones above the rest,
+                                    // it does not shuffle them.
+                                    const shown = entry.notes
+                                        .filter((n) =>
+                                            (!terrFilter || n.territory === terrFilter) &&
+                                            (!tagFilter || (n.tags || []).indexOf(tagFilter) !== -1))
+                                        .map((n, i) => ({ n, i }))
+                                        .sort((a, b) => {
+                                            const au = a.n.territory ? 1 : 0;
+                                            const bu = b.n.territory ? 1 : 0;
+                                            if (au !== bu) return au - bu;
+                                            // Array.prototype.sort is only
+                                            // guaranteed stable from ES2019;
+                                            // carrying the index makes it so
+                                            // regardless of the host.
+                                            return a.i - b.i;
+                                        })
+                                        .map((x) => x.n);
                                     return (
                                         <>
                                             <div className="wfb-notes-head">

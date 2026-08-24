@@ -7643,3 +7643,28 @@ CLAUDE.md's rule about positioned elements and non-positioned siblings.
 
 Measured after the fix: every joint 21px, both halves drawn, including through
 the two-line row.
+
+### Two small ones the screenshots caught
+
+**The header was wrapping for a reason that no longer existed.** `.wfb-id` had
+`flex: 1 1 100%` in the panel variant, forcing the Change/refresh buttons onto
+their own line — put there because the identity, the progress ring and two
+buttons genuinely did not fit across 380px, and squeezing the creative name was
+the worse trade. The ring came out two commits ago and nothing removed the wrap
+with it, so the panel was spending a whole row of height to say nothing.
+Measured after: one line, 63px.
+
+That is the general shape of it — a workaround outliving the constraint it was
+built for is invisible until somebody looks at the screen, because nothing about
+it is wrong in isolation.
+
+**Universal notes now sort to the top.** A note with no territory applies to
+every version of the creative, so it is the one everybody has to read; a Brazil
+note only matters to whoever is on Brazil. They were in post order, which put
+"every territory: the black frame is 1 second" underneath two territory-specific
+ones.
+
+Sorted by a decorated index rather than a bare comparator: `Array.prototype.sort`
+is only guaranteed stable from ES2019, and this has to preserve post order
+within each group on whatever the host runs. The sort only lifts the universal
+ones — it never reorders notes relative to each other inside a group.

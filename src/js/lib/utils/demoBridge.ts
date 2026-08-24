@@ -233,6 +233,8 @@ let demoWorkflows: DemoWorkflow[] = [
             { id: "n1", text: "BR tagline runs long — the Components version is already tracked tighter, don't re-scale it.", author: "Ana", stamp: "Fri Aug 22 2026 11:02:00 GMT+0100", territory: "BR",
               tags: ["TT", "LEGALS"],
               links: [{ label: "Components", path: "/Volumes/universal/Universal_Pictures/Forgotten_Island/Support/Motion_Components" }] },
+            { id: "n4", text: "**Every** territory: the black frame at the end is 1 second, not 12 frames.",
+              author: "Antonio", stamp: "Mon Aug 25 2026 10:05:00 GMT+0100", tags: ["LEGALS"] },
             { id: "n3", text: "Before you render, make sure to run Artwork Check against the sheet.",
               author: "Ana", stamp: "Sat Aug 23 2026 14:10:00 GMT+0100",
               tags: ["CTA"],
