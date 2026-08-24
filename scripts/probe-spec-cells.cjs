@@ -100,6 +100,53 @@ console.log("\n=== the checks that already worked still do ===");
           r.BitRate === "8" && /read as kbps/.test(r.Flags), r.BitRate + " | " + r.Flags);
 }
 
+console.log("\n=== a unit written without a space ===");
+// The Brazil sheet: "950KB" and "700KB" in the FILE SIZE column, no space.
+// The unit tests were \bk(b|ilo) and friends, and that \b needs a NON-WORD
+// character before the k -- so a glued unit matched nothing, fell through to
+// the unitless branch and came back as 950 MB. Delivery autofilled a cap a
+// thousand times the real one, unflagged, because a bare 950 is an ordinary
+// MB figure.
+{
+    const r = shape({ fileSize: "950KB" });
+    check("950KB is 0.95 MB, not 950", r.FileSize === "0.95", r.FileSize);
+}
+{
+    const r = shape({ fileSize: "700KB" });
+    check("700KB is 0.7 MB", r.FileSize === "0.7", r.FileSize);
+}
+{
+    const r = shape({ fileSize: "950 KB" });
+    check("and the spaced spelling still agrees", r.FileSize === "0.95", r.FileSize);
+}
+{
+    const r = shape({ fileSize: "2GB" });
+    check("2GB is 2000 MB, not 2", r.FileSize === "2000", r.FileSize);
+}
+{
+    const r = shape({ fileSize: "5MB" });
+    check("5MB is still 5", r.FileSize === "5", r.FileSize);
+}
+{
+    const r = shape({ fileSize: "800 kilobytes" });
+    check("the spelled-out form still converts", r.FileSize === "0.8", r.FileSize);
+}
+{
+    // Same hole in the bitrate column, and here nothing else caught it: 800 is
+    // under the thousand the last-ditch kbps guess keys on.
+    const r = shape({ bitRate: "800kbps" });
+    check("800kbps is 0.8 Mbps, not 800", r.BitRate === "0.8", r.BitRate);
+}
+{
+    const r = shape({ bitRate: "8000kbps" });
+    check("8000kbps is 8 Mbps", r.BitRate === "8", r.BitRate);
+}
+{
+    const r = shape({ bitRate: "8Mbps", frameRate: "25", duration: "10" });
+    check("8Mbps glued is read plainly and not flagged",
+          r.BitRate === "8" && r.Flags === "", r.BitRate + " | " + r.Flags);
+}
+
 console.log("\n=== the real oOh sheet that started this ===");
 // FILE SIZE column reads "MP4" (its own header invites it: "KB, MB, PRO RES"),
 // and the actual cap sits in SPECIFIC VIDEO REQUIREMENTS as "Max size 21mb".

@@ -421,9 +421,20 @@ and matched it against nothing.
 regex fires only on the new `1920x1080px` spelling and walks straight past a
 legacy `1920x1080` and past a `9x16` ratio. Anchor it per token and make the
 whole suffix optional: `/^\d+x\d+(?:px)?$/`. Anchoring is what keeps a site's
-grid (`Hoyts3x3`) inside the identity. *(Live violation: `jpegLocGimme`
-(`localise.ts`) still has the unfixed regex, and reads its resolution with a
-bare `/\d+x\d+/i`.)*
+grid (`Hoyts3x3`) inside the identity. *(`jpegLocGimme` (`localise.ts`) carried
+the unfixed regex and a bare `/\d+x\d+/i` for its resolution until 2026-08-24;
+both now match MC It!'s.)*
+
+**`\b` DOES NOT SEPARATE A NUMBER FROM ITS UNIT.** `\b` needs a NON-WORD
+character, and a digit is a word character — so `/\bk(b|ilo)/i` matches
+`950 KB` and does not match `950KB`, which is how a person actually types it.
+Both spellings are in the same spec sheet. In `pdfSpecs.ts` the glued one fell
+past every unit test to the unitless branch and Delivery autofilled **950 MB
+against a real cap of 950 KB** — a thousand times the allowance, with no flag,
+because a bare 950 is an ordinary MB figure. `2GB` had the same hole inverted
+(read as 2 MB), and `800kbps` in the bitrate column as 800 Mbps. Lex the unit
+off the token (`cellNumbers` already does) and use THAT; keep the `\b` tests
+only for spelled-out forms (`800 kilobytes`), which carry no unit token.
 
 **A DEDICATED `PNG`/`JPG` FOLDER IS NOT ALL TARGETS.** Measured in a real
 Brazil working copy, `Footage/PNG` held three FORGOTTEN_ISLAND logo variants

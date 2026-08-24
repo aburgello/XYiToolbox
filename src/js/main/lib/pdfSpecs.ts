@@ -385,6 +385,28 @@ function normaliseFileSize(v: string): { mb: number | null; note: string } {
     return { mb: solo.value, note: `file size column holds "${raw}", which is a bitrate` };
   }
 
+  // THE UNIT OFF THE TOKEN ITSELF, BEFORE ANY REGEX ON THE WHOLE CELL.
+  //
+  // The unit tests below are `\bk(b|ilo)` and friends, and `\b` needs a
+  // NON-WORD character in front of the k -- so they only ever fired when the
+  // sheet put a space between the number and its unit. "950 KB" converted;
+  // "950KB", which is how a person actually types it, matched nothing, fell
+  // through to the unitless branch, and came back as 950 MB. A Brazil sheet
+  // spelled it exactly that way and Delivery autofilled 950 MB against a real
+  // cap of 950 KB -- a thousand times the allowance, with no flag on the row
+  // because a bare 950 is a perfectly ordinary MB figure. "2GB" had the same
+  // hole in the other direction (read as 2 MB).
+  //
+  // cellNumbers already lexed the unit correctly, glued or spaced; this just
+  // stops throwing that answer away. The regexes below stay for the spelled-out
+  // forms ("2 gigabytes", "800 kilobytes"), which carry no unit token.
+  if (solo && (solo.unit === "gb" || solo.unit === "mb" || solo.unit === "kb")) {
+    const mb = solo.unit === "gb" ? solo.value * 1000
+             : solo.unit === "kb" ? solo.value / 1000
+             : solo.value;
+    return { mb, note: "" };
+  }
+
   const n = firstNumber(raw);
   if (n === null) return { mb: null, note: "" };
   if (/\bg(b|ig)/i.test(raw)) return { mb: n * 1000, note: "" };
@@ -426,6 +448,19 @@ function normaliseBitrate(v: string): { mbps: number | null; note: string } {
   }
   if (solo && (solo.unit === "fps" || solo.unit === "hz")) {
     return { mbps: solo.value, note: `bitrate column holds "${raw}", which is a frame rate` };
+  }
+
+  // The RIGHT unit, taken off the token -- same hole as normaliseFileSize's.
+  // "800kbps" written without a space matched neither the kbps branch above nor
+  // the `\bk(b|ilo)` test below (that `\b` needs a non-word character before
+  // the k), and 800 is under the thousand the last-ditch branch keys on, so it
+  // came back as 800 Mbps. "8000kbps" only survived because the kbps guess
+  // below happened to land on the same answer.
+  if (solo && (solo.unit === "kbps" || solo.unit === "kbit/s")) {
+    return { mbps: solo.value / 1000, note: "" };
+  }
+  if (solo && (solo.unit === "mbps" || solo.unit === "mbit/s" || solo.unit === "mbits")) {
+    return { mbps: solo.value, note: "" };
   }
 
   const n = firstNumber(raw);

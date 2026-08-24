@@ -7004,3 +7004,113 @@ double-clicked from the share: `/Volumes/newmedia` is mounted `nodev,nosuid`
 and macOS refuses to exec from it — the standalone `Layer Report.command`
 launcher has to be copied local first, which is why it resolves its payload
 from a candidate list rather than `dirname $0`.
+
+---
+
+## 2026-08-24 — Delivery: a 950 KB cap read as 950 MB, and two sheets stacked
+
+**The report.** A Brazil batch came back with Delivery's autofill offering
+**950 MB** on the two Ingresso rows. The sheet asks for 950 KB.
+
+**The parser.** `pdfSpecs.ts`'s `normaliseFileSize` ended with a unit test per
+suffix:
+
+```
+if (/\bg(b|ig)/i.test(raw)) return { mb: n * 1000, note: "" };
+if (/\bk(b|ilo)/i.test(raw)) return { mb: n / 1000, note: "" };
+if (/\bm(b|eg)/i.test(raw)) return { mb: n, note: "" };
+```
+
+`\b` is a boundary between a word character and a non-word one, and a DIGIT is
+a word character. So `950 KB` — with the space — converts, and `950KB` matches
+nothing at all. It fell through to the last branch, which converts only a bare
+number of a thousand or more ("almost certainly KB, but not certainly enough to
+convert silently"), and 950 is under that. Out came 950 MB, with **no flag**,
+because a bare 950 in an MB column is a perfectly ordinary figure.
+
+Measured before the fix, and every one of these is a spelling a real sheet uses:
+
+```
+"950KB"  -> 950      "950 KB" -> 0.95
+"700KB"  -> 700      "2GB"    -> 2      (2 MB, 500x under)
+"800kbps"-> 800 Mbps (bitrate column, same hole)
+```
+
+`8000kbps` survived only by accident: the `n >= 1000` kbps guess two lines
+further down landed on the same answer.
+
+**The fix.** `cellNumbers` had lexed the unit correctly all along — glued or
+spaced — and both functions were throwing that answer away. They now use it,
+and the `\b` tests stay only for the spelled-out forms (`800 kilobytes`), which
+carry no unit token for the lexer to find. Nine cases added to
+`scripts/probe-spec-cells.cjs`.
+
+Nothing downstream needed changing, and it is worth saying why: the template
+list starts at 0.6 Mbps, so a 950 KB cap over 10s (0.76 Mbps required) picks
+`H264_0.6MBPS_MOS` and lands around 750 KB — inside the cap, no warning, right
+answer. Before the fix the same row asked for 760 Mbps, clamped to the top of the
+list, and the panel's own preview said so: `-> H264_60MBPS` beside a 950 KB
+cap, which is the screenshot that started this.
+Driven headlessly through the real `predictRowTemplate`/`rowWarnings`:
+
+```
+950 KB (fixed)    -> H264_0.6MBPS_MOS   no warning
+950 MB (the bug)  -> H264_60MBPS_MOS    no warning   <- >= 1000 is the flag's
+                                                        threshold; 950 is under
+5 MB / 15s        -> H264_2.4MBPS_MOS   no warning   <- matches the panel
+700 KB            -> H264_0.6MBPS_MOS   "needs ~0.56Mbps, below the smallest
+                                         template (0.6), so the file will come
+                                         out over size"
+```
+
+Two of those match the screenshot that started this exactly — `H264_60MBPS` on
+the Ingresso rows and `H264_2.4MBPS` on the Marina one — which is what makes it
+the whole chain that was verified rather than the parser alone. And the 700 KB
+row now draws a real warning the studio had never once seen, because the number
+reaching it used to be a thousand times too big to trigger anything.
+
+**Not fixed, and deliberately.** `specRowWarnings` flags any size ≥ 1000 as
+"looks like KB, not MB", so a legitimate `2GB` (now 2000 MB) draws a spurious
+flag. That predates this change — `2 GB` with a space always converted and
+always drew it. The function is pure and re-runnable on an edited row, which is
+the property that lets a warning disappear the moment somebody corrects the
+value; carrying a hidden "the unit was explicit" field through the reshape to
+suppress one advisory flag would cost that. GB-scale DOOH deliverables do not
+exist, and the value is now right, which is the part that mattered.
+
+### The spec report, divided
+
+Two complaints in one: every PDF in a Specs folder rendered its full table
+stacked, so a folder holding `... - Batch 1 - PRE` and `... - Batch 1 - POST`
+put nineteen rows of near-identical numbers down the panel with nothing marking
+where one document ended. And there was no way to open the sheet itself.
+
+- One tab per PDF, one table on screen. Tabs carry the row count, an `unread`
+  marker for a PDF this parser could not read, and the flag count.
+- **The tab labels drop the shared words.** Sheets in one folder differ in about
+  two segments out of eight, so tabs labelled with the full name are as hard to
+  scan as the stacked tables were. `splitSpecNames` splits off the run of `" - "`
+  segments every file shares, shows it once above the strip, and leaves the tabs
+  carrying only what tells them apart — falling back to full names when nothing
+  is shared, and never eating the last segment even when one name is a strict
+  prefix of another.
+- **Open PDF**, per sheet — offered even for one the parser could not read,
+  which is the case where you need it most. `openSpecPdf` spawns `open`
+  (`explorer` on Windows) with `openURLInDefaultBrowser` as the fallback, the
+  same handoff `masterCheck.ts`'s `openReport` uses and for the same reason.
+  **Not gated on the file existing**: the path came out of the directory listing
+  that just read the PDF, and Specs folders are on the NAS, where asking is the
+  thing you must not do. `SpecReportFile` now carries the full path from that
+  listing rather than letting a caller rebuild it from `folder` + `file`.
+- Sub-megabyte caps print as KB (`formatSizeMB`). The stored value stays MB —
+  that is what the bitrate maths and the row field take — but "0.7 MB" is a
+  number you have to convert in your head before you can compare it against the
+  sheet in front of you, and half this campaign's caps are under a megabyte.
+
+**Verified:** both tsconfigs clean, `yarn build` clean, both audit gates clean,
+34/34 in `probe-spec-cells.cjs`, and `splitSpecNames`/`formatSizeMB` driven
+headlessly over the real Brazil filenames. The compiled CSS was read back out
+of `dist/cep/assets/style-*.css` to confirm the new rules land at
+`.delivery-hub .dh-specreport .dh-spectab…` — (0,3,0), so `index.scss`'s global
+`button:hover` cannot paint over them — and that nothing in the block uses a
+feature past Chromium 74.

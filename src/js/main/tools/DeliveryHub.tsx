@@ -3,11 +3,11 @@
 // =============================================================================
 import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence, useAnimate, useReducedMotion } from "motion/react";
-import { Truck, ListPlus, Trash2, ChevronsDown, Send, AlertCircle, AlertTriangle, Check, X, Volume2, VolumeX, Folder, FileText, RotateCcw } from "lucide-react";
+import { Truck, ListPlus, Trash2, ChevronsDown, Send, AlertCircle, AlertTriangle, Check, X, Volume2, VolumeX, Folder, FileText, RotateCcw, ExternalLink } from "lucide-react";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import { evalTS } from "../../lib/utils/bolt";
 import { sfx } from "../../lib/utils/sfx";
-import { suggestForComp, readSpecReport, type SpecSuggestion, type SpecReport } from "../lib/deliverySpecMatch";
+import { suggestForComp, readSpecReport, openSpecPdf, type SpecSuggestion, type SpecReport } from "../lib/deliverySpecMatch";
 // AGENT-HOOK — remove with the agent. See docs: grep AGENT-HOOK.
 import { setLoadedSpecReport, setLoadedDeliveryRows } from "../lib/agent/deliveryContext";
 import AskAbout from "../AskAbout";
@@ -173,6 +173,54 @@ function predictRowTemplate(row: RowData): { name: string; capped: boolean } | n
     }
     if (best === null) best = TEMPLATE_BITRATES_MBPS[0];
     return { name: "H264_" + String(best) + "MBPS_MOS", capped };
+}
+
+/**
+ * A size for READING, which is not the same as a size for calculating.
+ *
+ * Caps under a megabyte are ordinary on DOOH -- Brazil's sheet asks for 700 KB
+ * and 950 KB -- and "0.7 MB" is a number you have to stop and convert in your
+ * head before you can compare it with the sheet in front of you. The stored
+ * value stays MB, because that is what the bitrate maths and the row field both
+ * take; only the printed string changes.
+ */
+function formatSizeMB(mb: string): string {
+    const n = parseFloat(mb);
+    if (!isFinite(n) || n <= 0) return mb + " MB";
+    if (n < 1) return String(Math.round(n * 1000)) + " KB";
+    return mb + " MB";
+}
+
+/**
+ * Spec PDFs in one folder are named for one campaign, so their names differ in
+ * about two words out of eight: "FID - BR - DOOH - Batch 1 - PRE" beside
+ * "... - POST". Tabs labelled with the whole thing are eight words of identical
+ * text and one word that matters, which is exactly as hard to scan as the
+ * stacked tables were.
+ *
+ * So: split off the run of " - " segments every file shares and show it once,
+ * leaving the tabs carrying only what tells them apart. Falls back to the full
+ * names whenever there is nothing shared (or only one file), and never trims a
+ * name down to nothing -- the last segment always stays on the tab.
+ */
+function splitSpecNames(names: string[]): { shared: string; tails: string[] } {
+    const stems = names.map((n) => n.replace(/\.pdf$/i, "").trim());
+    if (stems.length < 2) return { shared: "", tails: stems };
+
+    const parts = stems.map((n) => n.split(/\s+-\s+/));
+    let common = 0;
+    const shortest = Math.min.apply(null, parts.map((p) => p.length));
+    // `shortest - 1`: the segment that distinguishes a file is never eaten,
+    // even when one name is a strict prefix of another.
+    while (common < shortest - 1 &&
+           parts.every((p) => p[common].toLowerCase() === parts[0][common].toLowerCase())) {
+        common++;
+    }
+    if (common === 0) return { shared: "", tails: stems };
+    return {
+        shared: parts[0].slice(0, common).join(" - "),
+        tails: parts.map((p) => p.slice(common).join(" - ")),
+    };
 }
 
 function getShortLabel(fullName: string): string {
@@ -425,6 +473,11 @@ const DeliveryHubTool = () => {
     // silent, wrong, or simply describes sizes nobody ordered.
     const [report, setReport] = useState<SpecReport | null>(null);
     const [reportBusy, setReportBusy] = useState(false);
+    // WHICH SHEET IS ON SCREEN. One at a time: a Specs folder holds a PRE and a
+    // POST sheet per batch, and rendering all of them stacked put nineteen rows
+    // of near-identical numbers on the page with nothing to say where one sheet
+    // ended and the next began.
+    const [specTab, setSpecTab] = useState(0);
 
     // AGENT-HOOK — remove with the agent.
     // PUBLISHED FOR THE AGENT, on every change. Asked about "these three
@@ -477,6 +530,7 @@ const DeliveryHubTool = () => {
         try {
             const r = await readSpecReport(from);
             setReport(r);
+            setSpecTab(0);
             // PUBLISHED FOR THE AGENT. It cannot reach this folder on its own --
             // the campaign sits beside the masters root rather than above it --
             // so what is on screen is the only reliable copy.
@@ -1152,7 +1206,7 @@ const DeliveryHubTool = () => {
                                                                 {/* No target size is a valid state now -- show what it'll
                                                                     actually render at rather than leaving a blank gap. */}
                                                                 {row.sizeMB
-                                                                    ? <span className="dh-preview-tag">{row.sizeMB} MB</span>
+                                                                    ? <span className="dh-preview-tag">{formatSizeMB(row.sizeMB)}</span>
                                                                     : <span className="dh-preview-tag dh-preview-tag--native">{DEFAULT_MBPS} Mbps</span>}
                                                                 {row.duration > 0 && <span className="dh-preview-tag">{row.duration} sec</span>}
                                                                 <span className={"dh-preview-tag" + (row.fps ? "" : " dh-preview-tag--native")}>{row.fps || row.frameRate} fps</span>
@@ -1203,62 +1257,120 @@ const DeliveryHubTool = () => {
 
                         {report.note && <p className="dh-specreport-note">{report.note}</p>}
 
-                        {report.files.map((f) => (
-                            <div className="dh-specreport-file" key={f.file}>
-                                <p className="dh-specreport-name">
-                                    {f.file}
-                                    {/* A PDF that could not be read is LISTED, not
-                                        omitted. Leaving it out is indistinguishable
-                                        from never having looked at it. */}
-                                    {f.error && <em>, {f.error}</em>}
-                                    {!f.error && <em>, {f.rows.length} row{f.rows.length === 1 ? "" : "s"}</em>}
-                                </p>
-                                {f.rows.length > 0 && (
-                                    <div className="dh-specreport-scroll">
-                                        <table className="dh-specreport-table">
-                                            <thead>
-                                                <tr>
-                                                    <th>Size</th><th>Secs</th><th>Bitrate</th>
-                                                    <th>Fps</th><th>Max file</th><th>Sound</th><th>Site</th><th>Notes</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {f.rows.map((r, i) => (
-                                                    <tr key={i} className={r.flags ? "is-flagged" : undefined}>
-                                                        <td>{r.size || "—"}</td>
-                                                        <td>{r.duration || "—"}</td>
-                                                        <td>{r.bitRate ? r.bitRate + " Mbps" : "—"}</td>
-                                                        <td>{r.fps || "—"}</td>
-                                                        <td>{r.fileSize ? r.fileSize + " MB" : "—"}</td>
-                                                        <td>{r.sound || "—"}</td>
-                                                        <td>{r.site || r.country || "—"}</td>
-                                                        {/* VERBATIM. The parser reads one
-                                                            phrasing of "max size"; the sheet is
-                                                            the authority and this is where the
-                                                            unparseable half of it lives. */}
-                                                        <td className="dh-specreport-notes">{r.notes || "—"}</td>
-                                                    </tr>
+                        {(() => {
+                            const files = report.files;
+                            if (!files.length) return null;
+                            const { shared, tails } = splitSpecNames(files.map((f) => f.file));
+                            // A tab index can outlive the report it indexed --
+                            // read the specs twice and the second folder may
+                            // hold fewer sheets. Clamp rather than render blank.
+                            const idx = specTab < files.length ? specTab : 0;
+                            const active = files[idx];
+                            const flagged = (f: typeof active) => f.rows.filter((r) => r.flags).length;
+
+                            return (
+                                <>
+                                    {files.length > 1 && (
+                                        <div className="dh-spectabs">
+                                            {shared && <span className="dh-spectabs-shared">{shared} —</span>}
+                                            {files.map((f, i) => (
+                                                <button
+                                                    key={f.file}
+                                                    type="button"
+                                                    className={"dh-spectab" + (i === idx ? " is-on" : "")}
+                                                    onClick={() => setSpecTab(i)}
+                                                >
+                                                    <span className="dh-spectab-name">{tails[i]}</span>
+                                                    {f.error
+                                                        ? <span className="dh-spectab-count is-bad">unread</span>
+                                                        : <span className="dh-spectab-count">{f.rows.length}</span>}
+                                                    {flagged(f) > 0 && (
+                                                        <span className="dh-spectab-flag">
+                                                            <AlertTriangle size={9} /> {flagged(f)}
+                                                        </span>
+                                                    )}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    <div className="dh-specreport-file" key={active.file}>
+                                        <div className="dh-specreport-filehead">
+                                            <p className="dh-specreport-name">
+                                                {active.file}
+                                                {/* A PDF that could not be read is LISTED, not
+                                                    omitted. Leaving it out is indistinguishable
+                                                    from never having looked at it. */}
+                                                {active.error && <em>, {active.error}</em>}
+                                                {!active.error && <em>, {active.rows.length} row{active.rows.length === 1 ? "" : "s"}</em>}
+                                            </p>
+                                            {/* THE SHEET ITSELF, one click away. The parser
+                                                reads the table it was taught and prints its
+                                                doubts underneath; every one of those doubts
+                                                ends with somebody wanting to look at the
+                                                original, and until now that meant finding the
+                                                Specs folder by hand. Offered even for a PDF
+                                                this parser could not read -- that is the case
+                                                where you need it most. */}
+                                            <Tooltip text="Open this sheet in your PDF viewer">
+                                                <button
+                                                    type="button"
+                                                    className="dh-specopen"
+                                                    onClick={() => openSpecPdf(active.path)}
+                                                >
+                                                    <ExternalLink size={11} />
+                                                    <span>Open PDF</span>
+                                                </button>
+                                            </Tooltip>
+                                        </div>
+                                        {active.rows.length > 0 && (
+                                            <div className="dh-specreport-scroll">
+                                                <table className="dh-specreport-table">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Size</th><th>Secs</th><th>Bitrate</th>
+                                                            <th>Fps</th><th>Max file</th><th>Sound</th><th>Site</th><th>Notes</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {active.rows.map((r, i) => (
+                                                            <tr key={i} className={r.flags ? "is-flagged" : undefined}>
+                                                                <td>{r.size || "—"}</td>
+                                                                <td>{r.duration || "—"}</td>
+                                                                <td>{r.bitRate ? r.bitRate + " Mbps" : "—"}</td>
+                                                                <td>{r.fps || "—"}</td>
+                                                                <td>{r.fileSize ? formatSizeMB(r.fileSize) : "—"}</td>
+                                                                <td>{r.sound || "—"}</td>
+                                                                <td>{r.site || r.country || "—"}</td>
+                                                                {/* VERBATIM. The parser reads one
+                                                                    phrasing of "max size"; the sheet is
+                                                                    the authority and this is where the
+                                                                    unparseable half of it lives. */}
+                                                                <td className="dh-specreport-notes">{r.notes || "—"}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+                                        {/* THE PARSER'S OWN DOUBTS, said out loud. These
+                                            tables are filled in by hand and routinely put
+                                            the fps in the bitrate column; pdfSpecs flags
+                                            that rather than silently correcting it, and
+                                            hiding the flag here would undo the point. */}
+                                        {active.rows.some((r) => r.flags) && (
+                                            <ul className="dh-specreport-flags">
+                                                {active.rows.filter((r) => r.flags).map((r, i) => (
+                                                    <li key={i}>
+                                                        <AlertTriangle size={10} /> {r.size || "?"} · {r.duration || "?"}s, {r.flags}
+                                                    </li>
                                                 ))}
-                                            </tbody>
-                                        </table>
+                                            </ul>
+                                        )}
                                     </div>
-                                )}
-                                {/* THE PARSER'S OWN DOUBTS, said out loud. These
-                                    tables are filled in by hand and routinely put
-                                    the fps in the bitrate column; pdfSpecs flags
-                                    that rather than silently correcting it, and
-                                    hiding the flag here would undo the point. */}
-                                {f.rows.some((r) => r.flags) && (
-                                    <ul className="dh-specreport-flags">
-                                        {f.rows.filter((r) => r.flags).map((r, i) => (
-                                            <li key={i}>
-                                                <AlertTriangle size={10} /> {r.size || "?"} · {r.duration || "?"}s, {r.flags}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                )}
-                            </div>
-                        ))}
+                                </>
+                            );
+                        })()}
 
                         <div className="dh-specreport-foot">
                             <span>

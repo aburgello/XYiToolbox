@@ -32,7 +32,7 @@
 // drive a prefilled number -- that would put a wrong bitrate into a real
 // delivery, which nothing downstream would catch.
 // =============================================================================
-import { fs, path } from "../../lib/cep/node";
+import { child_process, fs, path } from "../../lib/cep/node";
 import { parsePdfDeliverySpecs, reshapeSpecs, type SpecRow } from "./pdfSpecs";
 
 export interface CompNameParts {
@@ -301,6 +301,11 @@ export interface SpecReportRow {
 
 export interface SpecReportFile {
     file: string;
+    /** Full path to the PDF, so the panel can hand it to the OS. Taken from the
+     *  directory listing that found it rather than rebuilt by a caller out of
+     *  `folder` + `file`, which is how a name with an accent in it stops
+     *  opening on one machine and not another. */
+    path: string;
     rows: SpecReportRow[];
     /** Set when this PDF could not be read at all. */
     error?: string;
@@ -312,6 +317,33 @@ export interface SpecReport {
     files: SpecReportFile[];
     /** Why there is nothing to show, when there is nothing to show. */
     note: string;
+}
+
+/**
+ * Hands a spec PDF to the OS to open in whatever reads PDFs there.
+ *
+ * NOT gated on the file existing. Two reasons, and the second is the one that
+ * matters: the path came out of the directory listing that just read the PDF,
+ * so it demonstrably exists; and Specs folders live on the studio NAS, where
+ * CLAUDE.md's rule holds -- attempt the operation and let its failure be the
+ * answer, never ask a network mount whether a file is there.
+ *
+ * `open`/`explorer` rather than a file:// handoff, for the same reason
+ * masterCheck's openReport does it: CEP's browser handoff is inconsistent with
+ * local files. That one stays as the fallback.
+ */
+export function openSpecPdf(fullPath: string): void {
+    try {
+        const win = String((window as any).cep_node?.process?.platform || "") === "win32";
+        if (win) child_process.spawn("explorer", [fullPath], { detached: true });
+        else child_process.spawn("open", [fullPath], { detached: true });
+    } catch {
+        try {
+            (window as any).cep?.util?.openURLInDefaultBrowser("file://" + fullPath);
+        } catch {
+            /* nothing more to try; the panel shows the folder path either way */
+        }
+    }
 }
 
 export async function readSpecReport(sourcePath: string): Promise<SpecReport> {
@@ -332,14 +364,15 @@ export async function readSpecReport(sourcePath: string): Promise<SpecReport> {
 
     const files: SpecReportFile[] = [];
     for (const file of pdfs) {
+        const full = path.join(specsDir, file);
         try {
-            const bytes = new Uint8Array(fs.readFileSync(path.join(specsDir, file)));
+            const bytes = new Uint8Array(fs.readFileSync(full));
             const raw = await parsePdfDeliverySpecs(bytes);
             if (!raw) {
                 // A PDF with no readable table is a normal thing -- plenty are
                 // a page of prose -- and saying so beats omitting the file and
                 // leaving somebody wondering whether it was even looked at.
-                files.push({ file, rows: [], error: "no table this parser could read" });
+                files.push({ file, path: full, rows: [], error: "no table this parser could read" });
                 continue;
             }
             // "" rather than a country code: the report is the document's
@@ -347,6 +380,7 @@ export async function readSpecReport(sourcePath: string): Promise<SpecReport> {
             const rows = reshapeSpecs(raw, "");
             files.push({
                 file,
+                path: full,
                 rows: rows.map((r) => ({
                     size: r.Size || "",
                     duration: String(r.Duration || ""),
@@ -361,7 +395,7 @@ export async function readSpecReport(sourcePath: string): Promise<SpecReport> {
                 })),
             });
         } catch (e) {
-            files.push({ file, rows: [], error: String((e as Error).message || e) });
+            files.push({ file, path: full, rows: [], error: String((e as Error).message || e) });
         }
     }
 
