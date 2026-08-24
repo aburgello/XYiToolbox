@@ -24,8 +24,8 @@
 // preference). If a future setting holds a credential, keep it out of
 // PROFILE_KEYS too.
 // =============================================================================
-import { Result, SETTINGS_SECTION } from "./shared";
-import { expressionsBankLoad, expressionsBankSave, loadCustomTools, saveCustomTools, mastersSkipFolder } from "./tools";
+import { Result, SETTINGS_SECTION, decode } from "./shared";
+import { expressionsBankLoad, expressionsBankSave, loadCustomTools, saveCustomTools, mastersSkipFolder, creativeTokenOf } from "./tools";
 import { loadCombos, saveCombos, EffectComboEntry } from "./effects";
 import { loadCampaignsRaw, saveCampaign, loadCampaignBanner, setCampaignBanner } from "./review";
 import { loadLocLibCampaigns, saveLocLibCampaign } from "./localise";
@@ -1491,6 +1491,7 @@ function sharedTypeNoun(expectedType: string, count: number): string {
     : expectedType === SHARED_WORDGAME_TYPE ? "result"
     : expectedType === SHARED_POSTERGAME_TYPE ? "result"
     : expectedType === SHARED_NERDLE_INVITES_TYPE ? "invite"
+    : expectedType === SHARED_WORKFLOWS_TYPE ? "creative workflow"
     : "item";
   return count === 1 ? singular : singular + "s";
 }
@@ -2748,6 +2749,401 @@ export const teamArcadeScores = (): { success: boolean; me?: string; scores?: Ar
     // a transient NAS/AE hiccup is served as a legitimately empty board, and
     // the caller wipes a good one.
     return { success: true, me: me, scores: list || [], read: list !== null };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// =============================================================================
+// CREATIVE WORKFLOWS -- the checklist a creative has to be localised BY.
+// =============================================================================
+//
+// Every creative carries house rules that are not in any spec sheet and not
+// derivable from a filename: Trio's title treatment, pedigree, tagline and date
+// all come from Components rather than being rebuilt, and the person who knows
+// that is whoever did it last. That knowledge currently lives in somebody's
+// head, or in a Slack message from four months ago.
+//
+// So: the STEPS and the NOTES are shared, and the TICKS are not.
+//
+// That split is the whole design. Steps and notes are what the team knows about
+// the creative and they belong to the creative -- one copy, on the NAS, the
+// same for everyone. A tick is one artist's progress through one job: two
+// people localising BR and FR of the same creative on the same afternoon must
+// not be able to uncheck each other's boxes, and neither of them wants the
+// board to open pre-ticked because somebody finished a different territory.
+// Ticks are therefore local (app.settings), and there is a Reset for the next
+// job.
+//
+// KEYED ON CAMPAIGN + CREATIVE, canonicalised. A creative name repeats across
+// campaigns -- the thumbnail overrides already carry this exact rule and for
+// the same reason -- and a component list that changed between campaigns has to
+// have somewhere to live. `mastersCanon`-style folding (upper, alphanumerics
+// only) so "Portal To Paradise" and "PortalToParadise" are one campaign.
+
+const SHARED_WORKFLOWS_FILE = "shared-workflows.json";
+const SHARED_WORKFLOWS_TYPE = "xyi-shared-workflows";
+
+/** Local only -- see the header. One JSON map, because a step id is generated
+ *  but a key is built from names people typed, and no delimiter is safe there. */
+const WORKFLOW_TICKS_KEY = "WorkflowTicks";
+
+export interface WorkflowStep {
+  id: string;
+  text: string;
+}
+
+export interface WorkflowNote {
+  id: string;
+  text: string;
+  /** Whoever posted it. Never guessed -- an untagged machine is refused. */
+  author: string;
+  stamp: string;
+}
+
+export interface WorkflowEntry {
+  id: string;
+  /** As typed, for display. */
+  campaign: string;
+  creative: string;
+  /** What matching actually uses: canon(campaign) + "|" + canon(creative). */
+  key: string;
+  steps: WorkflowStep[];
+  notes: WorkflowNote[];
+  author: string;
+  updatedAt: string;
+}
+
+/** Upper-case alphanumerics. Same shape as mastersCanon, applied to names
+ *  people type rather than to paths. */
+function workflowCanon(s: string): string {
+  return String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+export function workflowKeyFor(campaign: string, creative: string): string {
+  return workflowCanon(campaign) + "|" + workflowCanon(creative);
+}
+
+/** Everything a shared entry must have before it is worth writing. Entries
+ *  written by an older/newer panel that fail this are DROPPED on read rather
+ *  than crashing the board -- one bad row must not cost the other twenty. */
+function validWorkflowEntry(e: WorkflowEntry): boolean {
+  if (!e) return false;
+  if (!e.id) return false;
+  if (!e.creative) return false;
+  if (!(e.steps instanceof Array)) return false;
+  return true;
+}
+
+function readWorkflowEntries(): WorkflowEntry[] | null {
+  const raw = readSharedFile<WorkflowEntry>(SHARED_WORKFLOWS_FILE, SHARED_WORKFLOWS_TYPE);
+  if (raw === null) return null;
+  const out: WorkflowEntry[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    const e = raw[i];
+    if (!validWorkflowEntry(e)) continue;
+    if (!(e.notes instanceof Array)) e.notes = [];
+    // Rebuilt rather than trusted: an entry saved before the key existed, or
+    // one hand-edited in the JSON, still has to match.
+    e.key = workflowKeyFor(e.campaign, e.creative);
+    out.push(e);
+  }
+  return out;
+}
+
+interface WorkflowBoardResult extends Result {
+  /** FALSE means "couldn't read", which is NOT the same as an empty board --
+   *  the panel keeps whatever it already had rather than blanking the screen. */
+  read?: boolean;
+  entries?: WorkflowEntry[];
+  /** This machine's tag, so the UI can grey out posting before it is asked. */
+  me?: string;
+}
+
+export const workflowBoardLoad = (): WorkflowBoardResult => {
+  try {
+    const me = loadLocalSetting(MACHINE_OWNER_KEY);
+    if (!teamFolder()) return { success: true, read: false, entries: [], me: me };
+    const entries = readWorkflowEntries();
+    if (entries === null) {
+      // No file yet is a NORMAL first run, and indistinguishable here from a
+      // share that went away mid-session. read:false covers both, and the
+      // panel's own "did I have rows a moment ago" is what tells them apart.
+      return { success: true, read: false, entries: [], me: me };
+    }
+    return { success: true, read: true, entries: entries, me: me };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/**
+ * Create or replace one creative's workflow.
+ *
+ * RE-READS THE SHARED FILE FIRST and replaces only this entry. Two artists
+ * editing two different creatives at the same moment must not overwrite each
+ * other, and a whole-board write from stale state is exactly how that happens.
+ */
+export const workflowSaveEntry = (entryJson: string): WorkflowBoardResult => {
+  try {
+    if (!teamFolder()) return { success: false, error: "Team folder not set -- set it in the Team menu on the home screen first." };
+    const me = loadLocalSetting(MACHINE_OWNER_KEY);
+    if (!me) return { success: false, error: "This machine isn't tagged with your name yet -- set it in the Team menu, so the team knows who wrote this." };
+
+    let entry: WorkflowEntry | null = null;
+    try {
+      entry = JSON.parse(entryJson) as WorkflowEntry;
+    } catch (e2) {
+      return { success: false, error: "Could not read the workflow data." };
+    }
+    if (!entry) return { success: false, error: "Could not read the workflow data." };
+    if (!entry.creative) return { success: false, error: "A workflow needs a creative." };
+    if (!(entry.steps instanceof Array)) entry.steps = [];
+
+    const shared = readWorkflowEntries() || [];
+    entry.key = workflowKeyFor(entry.campaign, entry.creative);
+    entry.updatedAt = new Date().toString();
+    if (!entry.author) entry.author = me;
+    if (!entry.id) entry.id = "wf-" + new Date().getTime() + "-" + Math.floor(Math.random() * 100000);
+    if (!(entry.notes instanceof Array)) entry.notes = [];
+
+    let replaced = false;
+    for (let i = 0; i < shared.length; i++) {
+      // By KEY, not by id: two people can each create "Trio" for the same
+      // campaign before either has seen the other's, and the board must end up
+      // with one Trio rather than two that shadow each other forever.
+      if (shared[i].key !== entry.key) continue;
+      // NOTES ARE NOT THE EDITOR'S TO DISCARD. Whoever is saving steps may
+      // have been holding this entry on screen while somebody else added a
+      // note, and a note lost this way leaves no trace that it existed.
+      const keptNotes = shared[i].notes;
+      entry.notes = mergeWorkflowNotes(keptNotes, entry.notes);
+      entry.id = shared[i].id;
+      shared[i] = entry;
+      replaced = true;
+      break;
+    }
+    if (!replaced) shared.push(entry);
+
+    if (!writeSharedFile(SHARED_WORKFLOWS_FILE, SHARED_WORKFLOWS_TYPE, shared)) {
+      return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
+    }
+    return { success: true, read: true, entries: shared, me: me };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/** Union by note id, keeping the on-disk copy's order and appending anything
+ *  the caller is holding that disk hasn't seen. */
+function mergeWorkflowNotes(onDisk: WorkflowNote[], incoming: WorkflowNote[]): WorkflowNote[] {
+  const out: WorkflowNote[] = [];
+  const seen: { [id: string]: boolean } = {};
+  const a = onDisk instanceof Array ? onDisk : [];
+  const b = incoming instanceof Array ? incoming : [];
+  for (let i = 0; i < a.length; i++) {
+    if (!a[i] || !a[i].id) continue;
+    if (seen[a[i].id]) continue;
+    seen[a[i].id] = true;
+    out.push(a[i]);
+  }
+  for (let j = 0; j < b.length; j++) {
+    if (!b[j] || !b[j].id) continue;
+    if (seen[b[j].id]) continue;
+    seen[b[j].id] = true;
+    out.push(b[j]);
+  }
+  return out;
+}
+
+export const workflowDeleteEntry = (id: string): WorkflowBoardResult => {
+  try {
+    if (!teamFolder()) return { success: false, error: "Team folder not set." };
+    const shared = readWorkflowEntries();
+    if (shared === null) return { success: false, error: "Nothing on the team board to delete." };
+    const remaining: WorkflowEntry[] = [];
+    for (let i = 0; i < shared.length; i++) {
+      if (shared[i].id === id) continue;
+      remaining.push(shared[i]);
+    }
+    if (remaining.length === shared.length) return { success: false, error: "That workflow is no longer on the board." };
+    if (!writeSharedFile(SHARED_WORKFLOWS_FILE, SHARED_WORKFLOWS_TYPE, remaining)) {
+      return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
+    }
+    return { success: true, read: true, entries: remaining, me: loadLocalSetting(MACHINE_OWNER_KEY) };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/**
+ * Append one note. Its own call rather than part of a whole-entry save, so a
+ * note posted while somebody else is editing the steps cannot be lost between
+ * their read and their write.
+ */
+export const workflowAddNote = (entryId: string, text: string): WorkflowBoardResult => {
+  try {
+    if (!teamFolder()) return { success: false, error: "Team folder not set." };
+    const me = loadLocalSetting(MACHINE_OWNER_KEY);
+    // REFUSED, NOT GUESSED. An unsigned note on a shared board is worse than
+    // no note: the next person cannot tell whether it is house rule or one
+    // artist's opinion, and has nobody to ask.
+    if (!me) return { success: false, error: "This machine isn't tagged with your name yet -- set it in the Team menu before posting a note." };
+    const body = String(text || "").replace(/^\s+|\s+$/g, "");
+    if (!body) return { success: false, error: "The note is empty." };
+
+    const shared = readWorkflowEntries();
+    if (shared === null) return { success: false, error: "Couldn't read the team board -- is the NAS mounted?" };
+    let found = false;
+    for (let i = 0; i < shared.length; i++) {
+      if (shared[i].id !== entryId) continue;
+      shared[i].notes.push({
+        id: "note-" + new Date().getTime() + "-" + Math.floor(Math.random() * 100000),
+        text: body,
+        author: me,
+        stamp: new Date().toString(),
+      });
+      found = true;
+      break;
+    }
+    if (!found) return { success: false, error: "That workflow is no longer on the board -- reload and try again." };
+    if (!writeSharedFile(SHARED_WORKFLOWS_FILE, SHARED_WORKFLOWS_TYPE, shared)) {
+      return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
+    }
+    return { success: true, read: true, entries: shared, me: me };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+export const workflowDeleteNote = (entryId: string, noteId: string): WorkflowBoardResult => {
+  try {
+    if (!teamFolder()) return { success: false, error: "Team folder not set." };
+    const shared = readWorkflowEntries();
+    if (shared === null) return { success: false, error: "Couldn't read the team board -- is the NAS mounted?" };
+    for (let i = 0; i < shared.length; i++) {
+      if (shared[i].id !== entryId) continue;
+      const kept: WorkflowNote[] = [];
+      for (let j = 0; j < shared[i].notes.length; j++) {
+        if (shared[i].notes[j].id === noteId) continue;
+        kept.push(shared[i].notes[j]);
+      }
+      shared[i].notes = kept;
+      break;
+    }
+    if (!writeSharedFile(SHARED_WORKFLOWS_FILE, SHARED_WORKFLOWS_TYPE, shared)) {
+      return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
+    }
+    return { success: true, read: true, entries: shared, me: loadLocalSetting(MACHINE_OWNER_KEY) };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// --- what am I working on right now ----------------------------------------
+
+interface WorkflowContext extends Result {
+  /** The open project's filename, "" when nothing is open. */
+  project?: string;
+  /** Creative token read out of it, "" when the name doesn't carry one. */
+  creative?: string;
+  /** Campaign whose masters root contains this project, "" when none does. */
+  campaign?: string;
+  /** Every campaign the panel knows, for the picker. */
+  campaigns?: { name: string; mastersRoot: string }[];
+}
+
+/**
+ * What the open project says it is.
+ *
+ * The creative comes from the FILENAME via the localiser's own parser
+ * (`creativeTokenOf`), not from a folder name: a working copy can sit anywhere,
+ * and the name is the thing that travels with it.
+ *
+ * The campaign comes from the PATH -- the campaign whose masters root this file
+ * is inside. Longest root wins, so a campaign nested inside another campaign's
+ * tree resolves to the inner one rather than to whichever was saved first.
+ *
+ * Every field can legitimately be "". Nothing open, a scratch project, a file
+ * saved outside every known campaign: all normal, all answered with a picker
+ * rather than an error.
+ */
+export const workflowContext = (): WorkflowContext => {
+  try {
+    let project = "";
+    let projectPath = "";
+    if (app.project.file) {
+      project = decode(app.project.file.name);
+      projectPath = app.project.file.fsName;
+    }
+    // Nothing saved yet -- fall back to the active comp, which on a localise
+    // job is named after the deliverable anyway.
+    if (!project) {
+      const item = app.project.activeItem;
+      if (item && typeof (item as CompItem).numLayers === "number") project = item.name;
+    }
+
+    const camps: { name: string; mastersRoot: string }[] = [];
+    const ov = loadCampaignsRaw();
+    for (let i = 0; i < ov.length; i++) camps.push({ name: ov[i].name, mastersRoot: ov[i].mastersRoot });
+    const loc = loadLocLibCampaigns();
+    for (let j = 0; j < loc.length; j++) {
+      let dupe = false;
+      for (let k = 0; k < camps.length; k++) {
+        if (camps[k].name.toLowerCase() === loc[j].name.toLowerCase()) { dupe = true; break; }
+      }
+      if (!dupe) camps.push({ name: loc[j].name, mastersRoot: loc[j].marketsRoot });
+    }
+
+    let campaign = "";
+    let bestLen = 0;
+    if (projectPath) {
+      const hay = projectPath.toLowerCase();
+      for (let m = 0; m < camps.length; m++) {
+        const root = String(camps[m].mastersRoot || "").toLowerCase();
+        if (!root) continue;
+        if (hay.indexOf(root) !== 0) continue;
+        if (root.length <= bestLen) continue;
+        bestLen = root.length;
+        campaign = camps[m].name;
+      }
+    }
+
+    return {
+      success: true,
+      project: project,
+      creative: creativeTokenOf(project),
+      campaign: campaign,
+      campaigns: camps,
+    };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// --- ticks: local, per campaign+creative -----------------------------------
+
+interface WorkflowTicksResult extends Result {
+  /** The raw JSON map, "{}" when nothing has been ticked yet. */
+  message?: string;
+}
+
+export const workflowTicksLoad = (): WorkflowTicksResult => {
+  try {
+    const raw = loadLocalSetting(WORKFLOW_TICKS_KEY);
+    return { success: true, message: raw ? raw : "{}" };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+export const workflowTicksSave = (json: string): Result => {
+  try {
+    // Parsed before it is stored, so a malformed write can never make the
+    // whole store unreadable on the next open.
+    JSON.parse(json);
+    app.settings.saveSetting(SETTINGS_SECTION, WORKFLOW_TICKS_KEY, json);
+    return { success: true };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

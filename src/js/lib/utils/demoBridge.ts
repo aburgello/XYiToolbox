@@ -199,7 +199,115 @@ const DEMO_SCAN: { territory: string; screen: string; file: string; w: number; h
     { territory: "Australia", screen: "QV_MELBOURNE", file: "QV_4096x2304px_10s.aep", w: 4096, h: 2304 },
 ];
 
+// --- Creative workflows -------------------------------------------------
+// A real-shaped board so the demo shows the tool doing its job rather than its
+// empty state, and so the layout can be driven in a browser at all -- nothing
+// under src/jsx runs in preview, so this IS the only place the checklist can
+// be looked at outside AE.
+interface DemoWorkflow {
+    id: string; campaign: string; creative: string; key: string;
+    steps: { id: string; text: string }[];
+    notes: { id: string; text: string; author: string; stamp: string }[];
+    author: string; updatedAt: string;
+}
+const demoWfKey = (c: string, cr: string) =>
+    c.toUpperCase().replace(/[^A-Z0-9]/g, "") + "|" + cr.toUpperCase().replace(/[^A-Z0-9]/g, "");
+let demoWorkflows: DemoWorkflow[] = [
+    {
+        id: "wf-demo-1",
+        campaign: "Forgotten Island",
+        creative: "TRIO",
+        key: demoWfKey("Forgotten Island", "TRIO"),
+        steps: [
+            { id: "s1", text: "Title treatment from Components — never rebuilt" },
+            { id: "s2", text: "Pedigree from Components" },
+            { id: "s3", text: "Tagline from Components" },
+            { id: "s4", text: "Date from Components, check the territory format" },
+            { id: "s5", text: "Billing block swapped for the local one" },
+        ],
+        notes: [
+            { id: "n1", text: "BR tagline runs long — the Components version is already tracked tighter, don't re-scale it.", author: "Ana", stamp: "Fri Aug 22 2026 11:02:00 GMT+0100" },
+            { id: "n2", text: "Date component was rebuilt for Batch 2. Use the one in Support/Motion_Components, not the Batch 1 copy.", author: "Antonio", stamp: "Mon Aug 24 2026 09:41:00 GMT+0100" },
+        ],
+        author: "Ana",
+        updatedAt: "Mon Aug 24 2026 09:41:00 GMT+0100",
+    },
+    {
+        id: "wf-demo-2",
+        campaign: "Forgotten Island",
+        creative: "PORTALTOPARADISE",
+        key: demoWfKey("Forgotten Island", "PORTALTOPARADISE"),
+        steps: [
+            { id: "p1", text: "Artwork slot _OV → territory export" },
+            { id: "p2", text: "Check the drum wrap still lines up after the swap" },
+        ],
+        notes: [],
+        author: "Antonio",
+        updatedAt: "Thu Aug 21 2026 16:20:00 GMT+0100",
+    },
+];
+let demoTicks = '{"FORGOTTENISLAND|TRIO":{"s1":true,"s2":true}}';
+
 const SHAPED: Record<string, (args: unknown[]) => unknown> = {
+    workflowBoardLoad: () => ({ success: true, read: true, entries: demoWorkflows, me: "Antonio" }),
+
+    workflowContext: () => ({
+        success: true,
+        project: "FID_INTL_Trio_DOOH_Ingresso_1920x1080px_10s_BR_V01.aep",
+        creative: "TRIO",
+        campaign: "Forgotten Island",
+        campaigns: [
+            { name: "Forgotten Island", mastersRoot: "/Volumes/universal/Universal_Pictures/Forgotten_Island/Digital/INT/XY026039_Masters" },
+            { name: "Portal To Paradise", mastersRoot: "/Volumes/universal/Universal_Pictures/Portal/Digital/INT/XY025911_Masters" },
+        ],
+    }),
+
+    workflowSaveEntry: (args) => {
+        try {
+            const entry = JSON.parse(String(args[0])) as DemoWorkflow;
+            entry.key = demoWfKey(entry.campaign, entry.creative);
+            entry.updatedAt = new Date().toString();
+            if (!entry.id) entry.id = "wf-demo-" + Date.now();
+            if (!entry.author) entry.author = "Antonio";
+            const prior = demoWorkflows.filter((w) => w.key === entry.key)[0];
+            if (prior) entry.notes = prior.notes;
+            demoWorkflows = demoWorkflows.filter((w) => w.key !== entry.key).concat([entry]);
+            return { success: true, read: true, entries: demoWorkflows, me: "Antonio" };
+        } catch {
+            return { success: false, error: "Demo mode couldn't parse that workflow." };
+        }
+    },
+
+    workflowDeleteEntry: (args) => {
+        demoWorkflows = demoWorkflows.filter((w) => w.id !== String(args[0]));
+        return { success: true, read: true, entries: demoWorkflows, me: "Antonio" };
+    },
+
+    workflowAddNote: (args) => {
+        const id = String(args[0]);
+        demoWorkflows = demoWorkflows.map((w) => (w.id === id
+            ? { ...w, notes: w.notes.concat([{ id: "n-" + Date.now(), text: String(args[1]), author: "Antonio", stamp: new Date().toString() }]) }
+            : w));
+        return { success: true, read: true, entries: demoWorkflows, me: "Antonio" };
+    },
+
+    workflowDeleteNote: (args) => {
+        const id = String(args[0]);
+        demoWorkflows = demoWorkflows.map((w) => (w.id === id
+            ? { ...w, notes: w.notes.filter((n) => n.id !== String(args[1])) }
+            : w));
+        return { success: true, read: true, entries: demoWorkflows, me: "Antonio" };
+    },
+
+    workflowTicksLoad: () => ({ success: true, message: demoTicks }),
+    workflowTicksSave: (args) => { demoTicks = String(args[0]); return ok(); },
+
+    // DELIBERATELY NO scanCreatives MOCK. This table is consulted before a
+    // caller's own fallback (see bolt.ts), so shaping it here would hand OV
+    // Library these names instead of its own MOCK_CREATIVES. Unhandled is the
+    // right answer: the workflow picker treats an unreadable tree as "couldn't
+    // look", which is a path worth seeing in the demo anyway.
+
     // --- Bespoke screen library ---------------------------------------------
     // `read: true` on purpose: an unreadable share hides the Library button
     // entirely, and a demo that hid the feature it is demonstrating would be

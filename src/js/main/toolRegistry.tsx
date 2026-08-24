@@ -55,6 +55,7 @@ import {
     Crosshair,
     ScanSearch,
     Moon,
+    ListChecks,
 } from "lucide-react";
 
 // --- Lazy tool imports --------------------------------------------------
@@ -65,6 +66,7 @@ const NameGeneratorTool     = React.lazy(() => import("./tools/NameGenerator"));
 const CampaignLocaliserTool = React.lazy(() => import("./tools/CampaignLocaliser"));
 const CSVLocaliserTool      = React.lazy(() => import("./tools/CSVLocaliser"));
 const ArtworkCheckTool     = React.lazy(() => import("./tools/ArtworkCheck"));
+const WorkflowBoardTool    = React.lazy(() => import("./tools/WorkflowBoard"));
 const EditGeneratorTool     = React.lazy(() => import("./tools/EditGenerator"));
 const GenerateCueSheetTool  = React.lazy(() => import("./tools/GenerateCueSheet"));
 const CheekyDTTool          = React.lazy(() => import("./tools/CheekyDT"));
@@ -565,6 +567,17 @@ export const TOOLS: ToolEntry[] = [
         Component: CheckTool,
         actions: ["Aspect Ratio Rename", "Effects Used", "Comp / Footage Details", "File Name Check", "Marker Comment Guide", "Render Check"],
         description: "A QC grab bag: aspect-ratio rename, effects-used report, comp/footage details, filename check, marker guide, and a render timecode checker.",
+    },
+    {
+        // LOCALISE, not Tools: it answers "how do I localise this one",
+        // which is the question the rest of that screen exists for.
+        id: "creative-workflow",
+        label: "Workflows",
+        categories: ["localise"],
+        icon: ListChecks,
+        Component: WorkflowBoardTool,
+        actions: ["Change", "Start one", "Edit steps", "Reset", "Add", "Save for the team"],
+        description: "The team's checklist for localising a creative — which Components to use, what to watch for — plus shared notes. Reads the creative off the open project; pick any creative on the campaign if it can't.",
     },
     {
         id: "delivery-hub",

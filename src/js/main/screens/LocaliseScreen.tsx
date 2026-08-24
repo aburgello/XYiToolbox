@@ -11,7 +11,7 @@ import { motion, useReducedMotion } from "motion/react";
 import gsap from "gsap";
 import LoadingChatter from "../LoadingChatter";
 import {    Layers,
- ArrowLeft, ArrowRight, BookOpen, FileSignature, Stamp, ClipboardCheck, Clapperboard, FileText, Copy, Image as ImageIcon, FileSpreadsheet, Rabbit, ScanSearch, Repeat, FileSearch } from "lucide-react";
+ ArrowLeft, ArrowRight, BookOpen, FileSignature, Stamp, ClipboardCheck, Clapperboard, FileText, Copy, Image as ImageIcon, FileSpreadsheet, Rabbit, ScanSearch, Repeat, FileSearch, ListChecks} from "lucide-react";
 import { TOOLS, categoryStyleVars, type ToolProps } from "../toolRegistry";
 import { ToolErrorBoundary } from "../ToolErrorBoundary";
 import { PaletteTrigger, triggerPalette } from "../CommandPalette";
@@ -56,6 +56,9 @@ const PANES: { id: Pane; label: string; icon: React.ComponentType<{ size?: numbe
 // single parameterless call and so execute in place instead of opening a page
 // whose only content is that button.
 const TOOLS_ROW: (UtilityEntry & { run?: string })[] = [
+    // FIRST, because it is what you read BEFORE touching the files -- the
+    // rest of this row is what you do afterwards.
+    { id: "creative-workflow", label: "Workflows",      icon: ListChecks },
     { id: "ov-swap",           label: "OV Swap",        icon: Repeat },
     { id: "bespoke",           label: "It's Bespokin' Time", icon: Layers },
     { id: "pdf-to-csv",        label: "PDF to CSV",     icon: FileSpreadsheet, run: "pdfToCsvGenerate" },

@@ -7158,3 +7158,88 @@ for the same site at one size still refuse.
 category tint is what every other active state in `DeliveryHub.scss` keys off;
 a tab picked out in the theme accent read as belonging to a different screen.
 `--cat-glow` stays out of it — CLAUDE.md's rule, it is tuned for hover.
+
+---
+
+## 2026-08-24 — Creative workflows: the checklist a creative is localised by
+
+Every creative carries house rules that are in no spec sheet and derivable from
+no filename. Trio's title treatment, pedigree, tagline and date all come from
+Components rather than being rebuilt, and the only person who knows that is
+whoever did it last. It lived in somebody's head, or in a Slack message from
+four months ago.
+
+**The split the whole tool rests on: steps and notes are SHARED, ticks are NOT.**
+Steps and notes are what the team knows about the creative, so they belong to
+the creative — one copy on the NAS, the same for everyone. A tick is one
+artist's progress through one job. Two people localising BR and FR on the same
+afternoon must not uncheck each other's boxes, and neither wants a board that
+opens pre-ticked because somebody else finished a different territory. Ticks are
+local (`app.settings` / `WorkflowTicks`), with a Reset for the next job.
+
+Deliberately NOT in `PROFILE_KEYS`: a tick is scratch state for one job, not a
+personalisation that should follow an artist to another machine — the same
+reason usage history is excluded.
+
+**Keyed on campaign + creative, canonicalised.** A creative name repeats across
+campaigns; the thumbnail overrides already carry this exact rule for the same
+reason, and a component list that changed between campaigns has to have
+somewhere to live.
+
+**The creative comes off the OPEN PROJECT'S NAME**, through `creativeTokenOf` —
+one new export wrapping the two functions MC It! already uses, so
+`FID_INTL_Trio_DOOH_…` is Trio here and in the localiser alike. A second parser
+would drift, and the drift would read as "no workflow for this creative" on one
+that has a workflow, which is indistinguishable from nobody having written it.
+The campaign comes off the PATH: the campaign whose masters root contains the
+file, longest root winning so a campaign nested in another's tree resolves to
+the inner one.
+
+Every one of those can legitimately be empty — nothing open, a scratch project,
+a file saved outside every known campaign — and each is answered with a picker,
+never an error. The picker lists the campaign's creatives from `scanCreatives`
+off the masters tree, marks the ones that already have a workflow, and falls
+back to typing a name when the share can't be read at all. That last path is not
+a nicety: a creative whose folder is named differently, a campaign nobody has
+saved, an unmounted NAS — none of those should stop somebody writing the
+checklist down while they still remember it.
+
+**Rules the shared board follows, all of them ones this codebase already had:**
+
+- A failed read never replaces rows on screen. `read: false` is returned for
+  both "no file yet" and "share went away", the board goes stale rather than
+  empty, and says so in an inline banner — not a toast, because an unmounted
+  share is a normal state and a toast reads as a failure then vanishes before
+  it can be acted on.
+- **Posting refuses from an untagged machine.** An unsigned note on a shared
+  board is worse than no note: the next person can't tell house rule from one
+  artist's opinion, and has nobody to ask.
+- Saving steps **re-reads the file and replaces one entry**, matched by KEY
+  rather than id — two people can each create "Trio" before either has seen the
+  other's, and the board must end with one Trio, not two that shadow each other.
+  Notes are merged back in by id rather than taken from the editor's copy: an
+  editor holding the entry on screen while somebody posts a note would otherwise
+  drop it with no trace it existed.
+- Notes are their own call for the same reason, and you can only delete your
+  own.
+
+**The demo mocks are load-bearing here.** Nothing under `src/jsx` runs in
+browser preview, so `demoBridge`'s workflow entries are the only way this UI can
+be looked at outside AE — which is how the strike-through bug below was caught.
+A `scanCreatives` mock was written and then removed: `SHAPED` is consulted
+BEFORE a caller's own fallback (bolt.ts), so it would have handed OV Library
+these names instead of its own `MOCK_CREATIVES`. Unhandled is the right answer
+there, and the picker's "couldn't look" path is worth seeing in the demo anyway.
+
+**The strike-through was anchored to the row.** `left: 26px; right: 8px` on the
+`<li>` spans the full width, so a ticked step got a horizontal rule under it
+rather than a line through the words. It now lives inside the text span, which
+is `inline-block` and therefore exactly as wide as the words. Caught by driving
+the built panel in a browser and looking at it — the same lesson as rendering a
+frame for geometry, one layer up.
+
+Ticks animate with `transform-origin` on a scaleX rather than an animated
+width, so nothing relayouts per frame; rows use explicit per-item `delay`
+rather than nested `staggerChildren`; the progress ring's label is centred with
+flexbox, never a transform, because Framer owns the inline transform on
+anything it animates.

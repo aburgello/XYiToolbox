@@ -1,0 +1,646 @@
+// =============================================================================
+// src/js/main/tools/WorkflowBoard.scss
+// -----------------------------------------------------------------------------
+// Build target is chrome74, so: no color-mix(), no :has(), no aspect-ratio,
+// no min()/max()/clamp(), no @container, no cascade layers. Colours are
+// precomputed literals; the accent comes from the category tint (--cat-*),
+// which is set as an inline style on the mounted tool, never at :root.
+// =============================================================================
+
+.workflow-board {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 2px;
+    font-size: 11px;
+}
+
+// ── header ──────────────────────────────────────────────────────────────────
+
+.workflow-board .wfb-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.workflow-board .wfb-id {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    // Takes the slack so the ring and the buttons keep their size.
+    flex: 1;
+    min-width: 0;
+}
+
+.workflow-board .wfb-id-icon {
+    flex: none;
+    color: var(--cat-icon, #fdba74);
+}
+
+.workflow-board .wfb-id-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.workflow-board .wfb-id-creative {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    // A long creative name wraps rather than pushing the ring off the row.
+    overflow-wrap: break-word;
+}
+
+.workflow-board .wfb-id-sub {
+    font-size: 10px;
+    opacity: 0.55;
+    overflow-wrap: break-word;
+
+    em { font-style: normal; opacity: 0.75; }
+}
+
+.workflow-board .wfb-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: none;
+}
+
+// ── the ring ────────────────────────────────────────────────────────────────
+
+.workflow-board .wfb-ring {
+    position: relative;
+    flex: none;
+    width: 36px;
+    height: 36px;
+
+    // Flexbox, NOT a transform: Framer owns the inline transform on anything
+    // it animates, and a centring translate would be overwritten.
+    .wfb-ring-label {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 9px;
+        font-variant-numeric: tabular-nums;
+        opacity: 0.8;
+    }
+
+    .wfb-ring-track { stroke: rgba(255, 255, 255, 0.1); }
+    .wfb-ring-bar { stroke: var(--cat-border, #fb923c); }
+
+    &.is-complete {
+        .wfb-ring-bar { stroke: #4ade80; }
+        .wfb-ring-label { color: #4ade80; opacity: 1; }
+    }
+}
+
+// ── buttons ─────────────────────────────────────────────────────────────────
+//
+// index.scss's global button:hover/:active paints $active over anything with
+// its own background, so both states are re-declared on every button here.
+
+.workflow-board .wfb-btn {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex: none;
+    padding: 4px 9px;
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.04);
+    color: inherit;
+    font-size: 10.5px;
+    cursor: pointer;
+    opacity: 0.8;
+    white-space: nowrap;
+
+    &:hover { background: rgba(255, 255, 255, 0.09); opacity: 1; }
+    &:active { background: rgba(255, 255, 255, 0.09); }
+
+    &:disabled {
+        opacity: 0.32;
+        cursor: default;
+        &:hover, &:active { background: rgba(255, 255, 255, 0.04); }
+    }
+
+    svg { flex: none; }
+
+    &.wfb-btn--icon { padding: 4px 6px; }
+
+    &.wfb-btn--primary {
+        border-color: var(--cat-border, #fb923c);
+        background: var(--cat-grad, linear-gradient(135deg, #b3661f, #5c2f0e));
+        opacity: 1;
+
+        &:hover, &:active { background: var(--cat-grad, linear-gradient(135deg, #c4722a, #6b3712)); }
+        &:disabled:hover, &:disabled:active { background: var(--cat-grad, linear-gradient(135deg, #b3661f, #5c2f0e)); }
+    }
+
+    &.wfb-btn--danger:hover { color: #f87171; }
+}
+
+.workflow-board .wfb-mini {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.03);
+    color: inherit;
+    font-size: 10px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.7;
+
+    &:hover { background: rgba(255, 255, 255, 0.09); opacity: 1; }
+    &:active { background: rgba(255, 255, 255, 0.09); }
+    &:disabled { opacity: 0.25; cursor: default; }
+    &:disabled:hover, &:disabled:active { background: rgba(255, 255, 255, 0.03); }
+
+    &.wfb-mini--danger:hover { color: #f87171; }
+}
+
+// ── stale banner ────────────────────────────────────────────────────────────
+//
+// An unmounted share is a NORMAL state, so this is a quiet inline line that
+// stays put and names the fix -- never a toast that reads as a failure and
+// then vanishes before it can be acted on.
+
+.workflow-board .wfb-stale {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 5px 9px;
+    border-radius: 4px;
+    background: rgba(224, 176, 80, 0.09);
+    color: #e0b050;
+    font-size: 10px;
+    line-height: 1.45;
+
+    svg { flex: none; margin-top: 2px; }
+}
+
+// ── picker ──────────────────────────────────────────────────────────────────
+
+.workflow-board .wfb-picker {
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.workflow-board .wfb-picker-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 9px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.workflow-board .wfb-camps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 8px 9px 0;
+}
+
+.workflow-board .wfb-camp {
+    padding: 3px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.03);
+    color: inherit;
+    font-size: 10px;
+    cursor: pointer;
+    opacity: 0.7;
+
+    &:hover { background: rgba(255, 255, 255, 0.08); opacity: 1; }
+    &:active { background: rgba(255, 255, 255, 0.08); }
+
+    &.is-on {
+        opacity: 1;
+        border-color: var(--cat-border, #fb923c);
+        color: var(--cat-icon, #fdba74);
+        background: rgba(255, 255, 255, 0.07);
+        &:hover, &:active { background: rgba(255, 255, 255, 0.07); }
+    }
+}
+
+.workflow-board .wfb-creatives {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 8px 9px;
+    // A campaign can carry twenty creatives; the list scrolls rather than
+    // pushing the checklist off the page.
+    max-height: 210px;
+    overflow-y: auto;
+}
+
+.workflow-board .wfb-creative {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    padding: 5px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.02);
+    color: inherit;
+    font-size: 11px;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover { background: rgba(255, 255, 255, 0.07); border-color: var(--cat-border, #fb923c); }
+    &:active { background: rgba(255, 255, 255, 0.07); }
+
+    &.has-wf { border-left: 2px solid var(--cat-border, #fb923c); }
+}
+
+.workflow-board .wfb-creative-name { overflow-wrap: break-word; }
+
+.workflow-board .wfb-creative-tag {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    flex: none;
+    font-size: 9px;
+    opacity: 0.75;
+    color: var(--cat-icon, #fdba74);
+
+    svg { flex: none; }
+
+    &.wfb-creative-tag--none { color: inherit; opacity: 0.35; }
+}
+
+.workflow-board .wfb-typein {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 9px 9px;
+
+    input {
+        flex: 1;
+        min-width: 0;
+        padding: 4px 7px;
+        border: 1px solid rgba(255, 255, 255, 0.11);
+        border-radius: 4px;
+        background: rgba(0, 0, 0, 0.25);
+        color: inherit;
+        font-size: 10.5px;
+
+        &:focus { outline: none; border-color: var(--cat-border, #fb923c); }
+    }
+}
+
+// ── body / empty states ─────────────────────────────────────────────────────
+
+.workflow-board .wfb-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.workflow-board .wfb-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
+    padding: 26px 14px;
+    border: 1px dashed rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    text-align: center;
+
+    svg { opacity: 0.28; }
+
+    p { margin: 0; font-size: 12px; font-weight: 600; overflow-wrap: break-word; }
+    span { font-size: 10.5px; opacity: 0.55; line-height: 1.5; overflow-wrap: break-word; }
+}
+
+.workflow-board .wfb-empty-line {
+    margin: 0;
+    padding: 4px 0;
+    font-size: 10.5px;
+    opacity: 0.5;
+    line-height: 1.5;
+    overflow-wrap: break-word;
+}
+
+.workflow-board .wfb-others {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    margin-top: 6px;
+}
+
+.workflow-board .wfb-others-label {
+    width: 100%;
+    font-size: 9.5px;
+    opacity: 0.45;
+}
+
+.workflow-board .wfb-chip {
+    padding: 3px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    color: inherit;
+    font-size: 10px;
+    cursor: pointer;
+
+    &:hover { background: rgba(255, 255, 255, 0.1); border-color: var(--cat-border, #fb923c); }
+    &:active { background: rgba(255, 255, 255, 0.1); }
+}
+
+// ── the checklist ───────────────────────────────────────────────────────────
+
+.workflow-board .wfb-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.workflow-board .wfb-step {
+    display: flex;
+    align-items: center;
+    padding: 1px 0;
+
+    &.is-done .wfb-step-text { opacity: 0.45; }
+}
+
+// The containing block for the strike is the TEXT, not the row -- anchored to
+// the row it spanned the full width and read as a rule under each ticked step.
+// inline-block so it takes the width of the words, and the wrap is what a
+// multi-line step strikes through.
+.workflow-board .wfb-step-textwrap {
+    position: relative;
+    display: inline-block;
+}
+
+.workflow-board .wfb-step-strike {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+    background: currentColor;
+    opacity: 0.5;
+    // Grows from the left. transform-origin rather than animating width, which
+    // would relayout every frame.
+    transform-origin: left center;
+    pointer-events: none;
+}
+
+// CheckboxToggle carries its own base rules; these scope the checklist's own
+// sizing to this tool rather than changing the shared primitive.
+.workflow-board .wfb-step .wfb-step-box {
+    // Fills the row so the whole line is the hit target, not just the glyph.
+    flex: 1;
+    min-width: 0;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 5px 8px;
+    border-radius: 4px;
+    text-align: left;
+
+    &:hover { background: rgba(255, 255, 255, 0.05); }
+    &:active { background: rgba(255, 255, 255, 0.05); }
+
+    svg { flex: none; margin-top: 1px; }
+}
+
+.workflow-board .wfb-step-text {
+    font-size: 11px;
+    line-height: 1.45;
+    overflow-wrap: break-word;
+}
+
+.workflow-board .wfb-steps-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding-top: 6px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.workflow-board .wfb-steps-foot-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.workflow-board .wfb-by {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 9.5px;
+    opacity: 0.45;
+
+    svg { flex: none; }
+}
+
+// ── notes ───────────────────────────────────────────────────────────────────
+
+.workflow-board .wfb-notes {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 9px;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.workflow-board .wfb-notes-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10.5px;
+    font-weight: 600;
+    opacity: 0.75;
+
+    svg { flex: none; }
+    em { font-style: normal; font-weight: 400; opacity: 0.6; }
+}
+
+.workflow-board .wfb-note {
+    position: relative;
+    overflow: hidden;
+    padding: 6px 22px 6px 9px;
+    border-left: 2px solid var(--cat-border, #fb923c);
+    border-radius: 0 4px 4px 0;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.workflow-board .wfb-note-text {
+    margin: 0;
+    font-size: 10.5px;
+    line-height: 1.5;
+    overflow-wrap: break-word;
+}
+
+.workflow-board .wfb-note-by {
+    display: block;
+    margin-top: 3px;
+    font-size: 9px;
+    opacity: 0.45;
+}
+
+.workflow-board .wfb-note-x {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    padding: 2px;
+    border: none;
+    border-radius: 3px;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+    opacity: 0.35;
+
+    &:hover { background: none; opacity: 1; color: #f87171; }
+    &:active { background: none; }
+}
+
+.workflow-board .wfb-note-add {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 3px;
+
+    input {
+        flex: 1;
+        min-width: 0;
+        padding: 5px 8px;
+        border: 1px solid rgba(255, 255, 255, 0.11);
+        border-radius: 4px;
+        background: rgba(0, 0, 0, 0.25);
+        color: inherit;
+        font-size: 10.5px;
+
+        &:focus { outline: none; border-color: var(--cat-border, #fb923c); }
+        &:disabled { opacity: 0.45; }
+    }
+}
+
+// ── editor ──────────────────────────────────────────────────────────────────
+
+.workflow-board .wfb-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding: 9px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.workflow-board .wfb-editor-hint {
+    margin: 0;
+    font-size: 10px;
+    opacity: 0.5;
+}
+
+.workflow-board .wfb-editsteps {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.workflow-board .wfb-editstep {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    overflow: hidden;
+
+    input {
+        flex: 1;
+        min-width: 0;
+        padding: 5px 8px;
+        border: 1px solid rgba(255, 255, 255, 0.11);
+        border-radius: 4px;
+        background: rgba(0, 0, 0, 0.25);
+        color: inherit;
+        font-size: 10.5px;
+
+        &:focus { outline: none; border-color: var(--cat-border, #fb923c); }
+    }
+}
+
+.workflow-board .wfb-editstep-grip {
+    flex: none;
+    display: flex;
+    align-items: center;
+    opacity: 0.25;
+}
+
+.workflow-board .wfb-editor-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.workflow-board .wfb-editor-foot-right {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+// ── toasts ──────────────────────────────────────────────────────────────────
+
+.workflow-board .wfb-toasts {
+    position: fixed;
+    right: 12px;
+    bottom: 12px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    pointer-events: none;
+}
+
+.workflow-board .wfb-toasts .toast {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 11px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 5px;
+    background: #1b1b1b;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+    font-size: 10.5px;
+    pointer-events: auto;
+
+    svg { flex: none; }
+
+    &.toast-success { border-color: #2e6b3e; svg:first-child { color: #6bcf7f; } }
+    &.toast-error   { border-color: #7a2e2e; svg:first-child { color: #e07a7a; } }
+}

@@ -2684,6 +2684,22 @@ function underImportedProject(item: Item): boolean {
   return false;
 }
 
+/**
+ * The CREATIVE token of a master or deliverable filename.
+ *
+ *   FID_INTL_Trio_DOOH_Ingresso_1920x1080px_10s_BR  ->  "TRIO"
+ *   FID_INTL_PortalToParadise_DOOH_3840x586px_10s_OV1 -> "PORTALTOPARADISE"
+ *
+ * One wrapper over the two functions MC It! already uses, exported so the
+ * workflow board identifies a creative EXACTLY the way the localiser does. A
+ * second parser here would drift, and the drift would show as "no workflow for
+ * this creative" on a creative that has one -- which is indistinguishable from
+ * nobody having written it yet.
+ */
+export function creativeTokenOf(filename: string): string {
+  return mcItCreativeOf(mcItParseFilename(String(filename || "")).firstOne);
+}
+
 function mcItGetAllImageFiles(folder: Folder): File[] {
   const out: File[] = [];
   const items = folder.getFiles();
