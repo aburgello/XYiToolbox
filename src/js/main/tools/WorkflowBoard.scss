@@ -474,35 +474,63 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     padding-top: 9px;
 }
 
-// The segment ABOVE a node. Absolutely positioned so it spans the gap the
-// padding creates, rather than being a flex child that pushes the node down.
-.workflow-board .wfb-rail-line {
+// THE TWO HALVES OF THE RAIL, drawn as pseudo-elements so they stretch to
+// whatever height a row turns out to be.
+//
+// This was one absolutely-positioned 11px stub at the top of each row, which
+// only reached the node above it when every row was exactly the same height.
+// The current step's card is taller than the rest and a two-line step taller
+// again, so the first joint was missing while the others looked correct — a
+// broken chain, from a hard-coded length.
+//
+// `::before` runs from the row's top edge to the node; `::after` from the node
+// to the bottom edge. Neither is drawn on the outside end of the list, so the
+// rail starts and stops at the first and last nodes rather than trailing off.
+.workflow-board .wfb-rail::before,
+.workflow-board .wfb-rail::after {
+    content: "";
     position: absolute;
-    top: 0;
     left: 50%;
-    // A hairline, offset by half its own width. No transform: Framer owns the
-    // transform on the fill inside it, and a translate here would be a second
-    // transform on a different element — safe, but the margin is simpler.
+    // Half its own width. No transform: Framer owns transforms on animated
+    // elements in this tool and a stray one here is a trap for later.
     margin-left: -1px;
     width: 2px;
-    height: 11px;
-    border-radius: 1px;
     background: rgba(255, 255, 255, 0.1);
-    overflow: hidden;
+    transition: background-color 260ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.workflow-board .wfb-rail-fill {
-    display: block;
-    width: 100%;
-    height: 100%;
-    background: var(--cat-border, #fb923c);
-    // Grows DOWNWARD from the node above, because that is the direction you
-    // travelled. scaleY on a transform-origin, never an animated height.
-    transform-origin: top center;
+// Top edge → the node. `padding-top: 9px` is the gap, so this is exactly it.
+.workflow-board .wfb-rail::before {
+    top: 0;
+    height: 9px;
 }
+
+// The node → bottom edge. 9 + 18 clears the node itself.
+.workflow-board .wfb-rail::after {
+    top: 27px;
+    bottom: 0;
+}
+
+// TRAVELLED. Both halves of a joint are driven by the same step's done-ness --
+// the half below step N and the half above step N+1 are the same line -- so
+// they can never disagree about whether you have been through it.
+.workflow-board .wfb-rail.above-on::before,
+.workflow-board .wfb-rail.below-on::after {
+    background: var(--cat-border, #fb923c);
+}
+
+// The rail begins at the first node and ends at the last, rather than running
+// off into the padding at either end.
+.workflow-board .wfb-rail.is-first::before { display: none; }
+.workflow-board .wfb-rail.is-last::after { display: none; }
 
 .workflow-board .wfb-node {
+    // ABOVE THE RAIL. The two halves stop at the node's edges, but a rounded
+    // node over a straight line needs its own opaque fill to sit on top of --
+    // and a positioned element paints above a non-positioned sibling
+    // regardless of z-index, which is what `position: relative` buys here.
     position: relative;
+    z-index: 1;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1633,4 +1661,69 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
         color: #e0b050;
         opacity: 1;
     }
+}
+
+// ── the format bar ──────────────────────────────────────────────────────────
+//
+// Appears above an input the moment there is a selection in it. Anchored to the
+// FIELD, not to the selection: positioning over a range inside an <input> means
+// measuring text with a mirror element, which on a 380px panel buys a few
+// pixels of precision for a whole class of drift bugs.
+
+.workflow-board .wfb-note-field,
+.workflow-board .wfb-editstep-field {
+    position: relative;
+    display: flex;
+    flex: 1;
+    min-width: 0;
+}
+
+.workflow-board .wfb-note-field > input,
+.workflow-board .wfb-editstep-field > input {
+    flex: 1;
+    min-width: 0;
+}
+
+.workflow-board .wfb-formatbar {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    padding: 2px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 4px;
+    background: #23262d;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+
+    button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 20px;
+        padding: 0;
+        border: none;
+        border-radius: 3px;
+        background: none;
+        color: inherit;
+        cursor: pointer;
+        opacity: 0.8;
+
+        &:hover { background: rgba(255, 255, 255, 0.1); opacity: 1; }
+        &:active { background: rgba(255, 255, 255, 0.1); }
+
+        svg { flex: none; }
+    }
+}
+
+.workflow-board .wfb-formatbar-b {
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1;
+    // The one place a serif earns its keep: it is the universal bold mark, and
+    // at 11px the panel's sans B reads as a letter rather than a control.
+    font-family: Georgia, "Times New Roman", serif;
 }

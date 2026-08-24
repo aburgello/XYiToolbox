@@ -7583,3 +7583,63 @@ Verified in the browser: cancelling the note dialog leaves all three notes;
 removing a step in the editor goes 8 → 7 with an undo bar and back to 8 on Undo;
 saving after a removal asks "Save, removing 1 step for the whole team?" and
 names it.
+
+### Bold you can see, and a rail that joins up
+
+**Bold was never discarded — it was invisible.** `**bold**` shipped working in
+steps and notes, and nobody was ever going to type asterisks into a one-line
+input in a hurry. The feature existed and had no door.
+
+**So: select the text.** A plain `<input>` is enough — `selectionStart` /
+`selectionEnd` give the range and bolding is a string splice around it. No
+contenteditable, no rich-text model, no second source of truth for what the note
+says. The trade-off is honest: the asterisks stay visible while you type and the
+bold only appears once posted. That is also the upside — you can see and delete
+a marker you did not mean.
+
+Three things that decide whether this ships working or broken:
+
+- **`mousedown` is prevented on every button in the bar.** Without it, pressing
+  one blurs the input, the selection collapses, and the button acts on nothing.
+  That is the classic way this feature ships broken.
+- **The bar is anchored to the FIELD, not the selection.** Positioning over a
+  range inside an `<input>` means measuring text with a mirror element, which on
+  a 380px panel buys a few pixels of precision for a whole class of drift bugs.
+- **The step editor row became its own component.** `useSelection` is a hook and
+  hooks cannot be called inside a `.map()`; keying the selection by row index
+  from the parent would work right up until a row is removed or moved, at which
+  point the stored index points at somebody else's text.
+
+The same selection drives **linking**: the selected words become the label, so
+the word-chip chooser is skipped entirely and the label cannot fail to match the
+body — it was cut from it. The wand stays for people who have not selected
+anything; the bar is the fast path, the wand is the one you find without knowing.
+
+Steps get bold only. They already carry a row-level link chip, and a second
+inline mechanism in the same sentence is two answers to one question.
+
+**Caught by testing with a string longer than the selection:** `wrapBold` built
+`before + "**" + mid + "**"` and dropped `after`, so bolding the first words of
+a note silently threw away the rest of the sentence. A selection that happened
+to be the whole field would never have shown it.
+
+### The rail had a missing joint
+
+The connector between step 1 and step 2 was absent while every other joint
+looked fine. It was one absolutely-positioned **11px stub** at the top of each
+row — a hard-coded length that only reached the node above when every row was
+exactly the same height. The current step's card is taller than the rest, and a
+two-line step taller again, so the first joint fell short and the chain broke
+exactly where the eye starts.
+
+Now each row draws two pseudo-elements: top edge → node, and node → bottom edge.
+Both stretch to whatever height the row turns out to be, and neither is drawn on
+the outside end of the list, so the rail starts and stops at the first and last
+nodes rather than trailing off. The two halves of one joint are driven by the
+same step's done-ness — the half below step N and the half above step N+1 are
+the same line — so they can never disagree about whether you have been through
+it. The node takes `position: relative; z-index: 1` to paint over them, which is
+CLAUDE.md's rule about positioned elements and non-positioned siblings.
+
+Measured after the fix: every joint 21px, both halves drawn, including through
+the two-line row.

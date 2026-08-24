@@ -554,6 +554,7 @@ const WorkflowBoardTool: React.FC<{
     const [tagDraft, setTagDraft] = useState("");
     /** Reading, not writing: "" is every tag. */
     const [tagFilter, setTagFilter] = useState("");
+    const noteSel = useSelection(noteDraft);
     const [busy, setBusy] = useState(false);
     const [toasts, setToasts] = useState<Toast[]>([]);
     const toastSeq = useRef(0);
@@ -1294,17 +1295,36 @@ const WorkflowBoardTool: React.FC<{
                                             animate={{ opacity: 1, y: 0 }}
                                             transition={reduced ? { duration: 0 } : { ...SPRING.snappy, delay: rowDelay(i) }}
                                         >
-                                            <span className="wfb-rail" aria-hidden="true">
-                                                {i > 0 && (
-                                                    <span className="wfb-rail-line">
-                                                        <motion.span
-                                                            className="wfb-rail-fill"
-                                                            initial={false}
-                                                            animate={{ scaleY: prevOn ? 1 : 0 }}
-                                                            transition={reduced ? { duration: 0 } : SPRING.smooth}
-                                                        />
-                                                    </span>
-                                                )}
+                                            {/* THE RAIL IS TWO HALVES PER ROW, not
+                                                one stub between them.
+
+                                                It was a single 11px line at the
+                                                top of each row, which only ever
+                                                reached the node above when every
+                                                row was the same height. The
+                                                current step's card is taller,
+                                                and a two-line step taller again
+                                                — so the very first joint was
+                                                missing while the rest looked
+                                                fine.
+
+                                                Now each row draws from its top
+                                                edge to its node, and from its
+                                                node to its bottom edge, in CSS
+                                                pseudo-elements that stretch with
+                                                whatever height the row turns out
+                                                to be. The two halves of one
+                                                joint are driven by the same
+                                                step's done-ness, so they always
+                                                agree. */}
+                                            <span
+                                                className={"wfb-rail"
+                                                    + (i === 0 ? " is-first" : "")
+                                                    + (i === entry.steps.length - 1 ? " is-last" : "")
+                                                    + (prevOn ? " above-on" : "")
+                                                    + (on ? " below-on" : "")}
+                                                aria-hidden="true"
+                                            >
                                                 <span className={"wfb-node" + (on ? " is-on" : "") + (current ? " is-current" : "")}>
                                                     {on
                                                         ? <Check size={11} strokeWidth={3} />
@@ -1592,14 +1612,32 @@ const WorkflowBoardTool: React.FC<{
                                             ? <span className="wfb-flag">{flagFor(noteTerritory) || noteTerritory}</span>
                                             : <Globe size={12} />}
                                     </button>
-                                    <input
-                                        type="text"
-                                        value={noteDraft}
-                                        placeholder={me ? "Add a note for the team…" : "Tag this machine with your name to post"}
-                                        disabled={!me || busy}
-                                        onChange={(e) => setNoteDraft(e.target.value)}
-                                        onKeyDown={(e) => { if (e.key === "Enter") addNote(); }}
-                                    />
+                                    <span className="wfb-note-field">
+                                        <FormatBar
+                                            sel={noteSel.sel}
+                                            onBold={() => noteSel.wrapBold(noteDraft, setNoteDraft)}
+                                            onLink={() => {
+                                                // The SELECTION is the label, so
+                                                // the word chooser is skipped
+                                                // entirely -- and the label
+                                                // cannot fail to match the body,
+                                                // because it was cut from it.
+                                                if (!noteSel.selected) return;
+                                                setLinkWord(noteSel.selected);
+                                                setWordPicking(true);
+                                                setToolPicking(false);
+                                            }}
+                                        />
+                                        <input
+                                            type="text"
+                                            value={noteDraft}
+                                            placeholder={me ? "Add a note for the team…" : "Tag this machine with your name to post"}
+                                            disabled={!me || busy}
+                                            onChange={(e) => setNoteDraft(e.target.value)}
+                                            onKeyDown={(e) => { if (e.key === "Enter") addNote(); }}
+                                            {...noteSel.handlers}
+                                        />
+                                    </span>
                                     {/* MAKE A WORD DO SOMETHING. Pressed, it
                                         turns the note you have typed into
                                         clickable words -- pick one, then say
@@ -1607,6 +1645,9 @@ const WorkflowBoardTool: React.FC<{
                                         no path to type: the two things that
                                         make a link syntax unusable in a
                                         one-line input. */}
+                                    {/* Still here for when nothing is selected:
+                                        the format bar is the fast path, this is
+                                        the one you find without knowing. */}
                                     <Tooltip text="Link a word in this note to a folder or a tool">
                                         <button
                                             type="button"
@@ -1810,6 +1851,167 @@ const WorkflowBoardTool: React.FC<{
         </div>
     );
 };
+
+/**
+ * One editable step row.
+ *
+ * ITS OWN COMPONENT because `useSelection` is a hook, and hooks cannot be
+ * called inside a `.map()`. Lifting the selection into the editor and keying it
+ * by row index would work right up until a row is removed or moved, at which
+ * point the stored index points at somebody else's text.
+ */
+const StepRow: React.FC<{
+    step: WorkflowStep;
+    index: number;
+    total: number;
+    hasLink: boolean;
+    onText: (text: string) => void;
+    onMove: (by: number) => void;
+    onRemove: () => void;
+    onLink: () => void;
+}> = ({ step, index, total, hasLink, onText, onMove, onRemove, onLink }) => {
+    const sel = useSelection(step.text);
+    return (
+        <>
+            <span className="wfb-editstep-grip"><GripVertical size={11} /></span>
+            <span className="wfb-editstep-field">
+                {/* BOLD ONLY. A step already carries a row-level link chip, and
+                    a second inline mechanism in the same sentence would be two
+                    answers to one question. */}
+                <FormatBar sel={sel.sel} onBold={() => sel.wrapBold(step.text, onText)} />
+                <input
+                    type="text"
+                    value={step.text}
+                    placeholder="What has to happen?"
+                    onChange={(e) => onText(e.target.value)}
+                    {...sel.handlers}
+                />
+            </span>
+            <button
+                type="button"
+                className={"wfb-mini" + (hasLink ? " is-on" : "")}
+                onClick={onLink}
+                title={hasLink ? "Change where this step sends you" : "Send this step somewhere"}
+            >
+                <Link2 size={11} />
+            </button>
+            <button type="button" className="wfb-mini" onClick={() => onMove(-1)} disabled={index === 0} title="Move up">↑</button>
+            <button type="button" className="wfb-mini" onClick={() => onMove(1)} disabled={index === total - 1} title="Move down">↓</button>
+            <button type="button" className="wfb-mini wfb-mini--danger" onClick={onRemove} title="Remove"><X size={11} /></button>
+        </>
+    );
+};
+
+// ---------------------------------------------------------------------------
+// SELECT A WORD, THEN DO SOMETHING TO IT.
+//
+// `**bold**` and the link side table both shipped working, and both were
+// invisible: you had to know to type asterisks, and linking meant pressing a
+// wand and picking a word out of a list. Nobody types markdown into a one-line
+// input in a hurry, so in practice neither got used.
+//
+// A plain <input> is enough for this. `selectionStart`/`selectionEnd` give the
+// range, and bolding is a string splice around it — no contenteditable, no
+// rich-text model, no second source of truth for what the note says. The
+// trade-off is honest: the asterisks stay visible while you type and the bold
+// only appears once posted. That is also the upside — you can see and delete a
+// marker you did not mean.
+//
+// THE BAR IS ANCHORED TO THE INPUT, not to the selection. Positioning over a
+// range inside an <input> means measuring text with a mirror element, and on a
+// 380px panel that buys a few pixels of precision for a whole class of drift
+// bugs. Above the field, it is always where you left it.
+//
+// mousedown is PREVENTED on every button. Without that, pressing one blurs the
+// input, the selection collapses, and the button acts on nothing — the classic
+// way this feature ships broken.
+// ---------------------------------------------------------------------------
+interface Sel { start: number; end: number }
+
+const FormatBar: React.FC<{
+    sel: Sel | null;
+    onBold: () => void;
+    /** Absent on steps: a step already carries a row-level link chip, and a
+     *  second inline mechanism in the same sentence is two answers to one
+     *  question. */
+    onLink?: () => void;
+}> = ({ sel, onBold, onLink }) => {
+    if (!sel || sel.end <= sel.start) return null;
+    return (
+        <div className="wfb-formatbar" onMouseDown={(e) => e.preventDefault()}>
+            <button type="button" onClick={onBold} title="Bold the selected text">
+                <span className="wfb-formatbar-b">B</span>
+            </button>
+            {onLink && (
+                <button type="button" onClick={onLink} title="Make the selected text open a folder or a tool">
+                    <Link2 size={11} />
+                </button>
+            )}
+        </div>
+    );
+};
+
+/**
+ * Selection tracking for one input, plus the splice that wraps it.
+ *
+ * Read on every event that can move a caret. `select` alone misses the arrow
+ * keys, and `keyup` alone misses a drag that ends outside the field.
+ */
+function useSelection(value: string) {
+    const ref = useRef<HTMLInputElement | null>(null);
+    const [sel, setSel] = useState<Sel | null>(null);
+
+    const read = useCallback(() => {
+        const el = ref.current;
+        if (!el) return;
+        const start = el.selectionStart;
+        const end = el.selectionEnd;
+        if (start === null || end === null) { setSel(null); return; }
+        setSel({ start, end });
+    }, []);
+
+    /** The selected text, trimmed of the spaces a double-click drags in. */
+    const selected = sel && sel.end > sel.start ? value.slice(sel.start, sel.end).trim() : "";
+
+    const handlers = {
+        ref,
+        onSelect: read,
+        onKeyUp: read,
+        onMouseUp: read,
+        // A selection that survives losing focus would put the bar over a field
+        // somebody has left; one that dies on every blur takes the bar away
+        // before a click on it lands. Hence the preventDefault on the bar, and
+        // no onBlur here at all.
+    };
+
+    /** `**` around the selection, or off it again if it is already bold. */
+    const wrapBold = (v: string, set: (next: string) => void) => {
+        if (!sel || sel.end <= sel.start) return;
+        const before = v.slice(0, sel.start);
+        const mid = v.slice(sel.start, sel.end);
+        const after = v.slice(sel.end);
+        const already = before.slice(-2) === "**" && after.slice(0, 2) === "**";
+        const next = already
+            ? before.slice(0, -2) + mid + after.slice(2)
+            // `+ after` is not decoration: without it, bolding the first words
+            // of a note silently threw away the rest of the sentence. Caught by
+            // bolding a selection that was not the whole string.
+            : before + "**" + mid + "**" + after;
+        set(next);
+        // Put the caret back around the same words, so a second press toggles
+        // rather than wrapping again.
+        const shift = already ? -2 : 2;
+        window.setTimeout(() => {
+            const el = ref.current;
+            if (!el) return;
+            el.focus();
+            el.setSelectionRange(sel.start + shift, sel.end + shift);
+            read();
+        }, 0);
+    };
+
+    return { ref, sel, selected, handlers, wrapBold, read };
+}
 
 // ---------------------------------------------------------------------------
 // Tagging a note with a territory.
@@ -2021,24 +2223,16 @@ const StepEditor: React.FC<{
                             exit={{ opacity: 0, height: 0 }}
                             transition={{ ...ease, delay: rowDelay(i) }}
                         >
-                            <span className="wfb-editstep-grip"><GripVertical size={11} /></span>
-                            <input
-                                type="text"
-                                value={s.text}
-                                placeholder="What has to happen?"
-                                onChange={(e) => set(i, e.target.value)}
+                            <StepRow
+                                step={s}
+                                index={i}
+                                total={steps.length}
+                                hasLink={!!s.link}
+                                onText={(text) => set(i, text)}
+                                onMove={(by) => move(i, by)}
+                                onRemove={() => remove(i)}
+                                onLink={() => setLinking(linking === i ? null : i)}
                             />
-                            <button
-                                type="button"
-                                className={"wfb-mini" + (s.link ? " is-on" : "")}
-                                onClick={() => setLinking(linking === i ? null : i)}
-                                title={s.link ? "Change where this step sends you" : "Send this step somewhere"}
-                            >
-                                <Link2 size={11} />
-                            </button>
-                            <button type="button" className="wfb-mini" onClick={() => move(i, -1)} disabled={i === 0} title="Move up">↑</button>
-                            <button type="button" className="wfb-mini" onClick={() => move(i, 1)} disabled={i === steps.length - 1} title="Move down">↓</button>
-                            <button type="button" className="wfb-mini wfb-mini--danger" onClick={() => remove(i)} title="Remove"><X size={11} /></button>
                         </motion.li>
                     ))}
                 </AnimatePresence>
