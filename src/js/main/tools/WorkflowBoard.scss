@@ -7,12 +7,20 @@
 // which is set as an inline style on the mounted tool, never at :root.
 // =============================================================================
 
+// SIZES: WHAT YOU READ VS WHAT IS CHROME.
+//
+// The whole panel sat at 10.5–11px, which is a size you can design at and
+// cannot comfortably read — and a workflow is read far more often than it is
+// operated. Step text, note bodies and the creative name are the content; they
+// get a size you can take in at a glance. Counts, tags, bylines and hints are
+// furniture and stay small, which is also what keeps the density that makes a
+// 380px panel workable.
 .workflow-board {
     display: flex;
     flex-direction: column;
     gap: 8px;
     padding: 2px;
-    font-size: 11px;
+    font-size: 12px;
 }
 
 // ── header ──────────────────────────────────────────────────────────────────
@@ -48,7 +56,7 @@
 }
 
 .workflow-board .wfb-id-creative {
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
     letter-spacing: 0.01em;
     // A long creative name wraps rather than pushing the ring off the row.
@@ -56,7 +64,7 @@
 }
 
 .workflow-board .wfb-id-sub {
-    font-size: 10px;
+    font-size: 11px;
     opacity: 0.55;
     overflow-wrap: break-word;
 
@@ -118,7 +126,7 @@
     border-radius: 4px;
     background: rgba(255, 255, 255, 0.04);
     color: inherit;
-    font-size: 10.5px;
+    font-size: 11px;
     cursor: pointer;
     opacity: 0.8;
     white-space: nowrap;
@@ -271,7 +279,7 @@
         border: none;
         background: none;
         color: inherit;
-        font-size: 10.5px;
+        font-size: 11.5px;
 
         &:focus { outline: none; }
     }
@@ -292,12 +300,12 @@
     justify-content: space-between;
     gap: 8px;
     width: 100%;
-    padding: 7px 9px;
+    padding: 8px 9px;
     border: 1px solid rgba(255, 255, 255, 0.06);
     border-radius: 5px;
     background: rgba(255, 255, 255, 0.02);
     color: inherit;
-    font-size: 11px;
+    font-size: 12px;
     text-align: left;
     cursor: pointer;
     transition:
@@ -364,7 +372,7 @@
         border-radius: 4px;
         background: rgba(0, 0, 0, 0.25);
         color: inherit;
-        font-size: 10.5px;
+        font-size: 11.5px;
 
         &:focus { outline: none; border-color: var(--cat-border, #fb923c); }
     }
@@ -391,13 +399,13 @@
     svg { opacity: 0.28; }
 
     p { margin: 0; font-size: 12px; font-weight: 600; overflow-wrap: break-word; }
-    span { font-size: 10.5px; opacity: 0.55; line-height: 1.5; overflow-wrap: break-word; }
+    span { font-size: 11.5px; opacity: 0.55; line-height: 1.5; overflow-wrap: break-word; }
 }
 
 .workflow-board .wfb-empty-line {
     margin: 0;
     padding: 4px 0;
-    font-size: 10.5px;
+    font-size: 11.5px;
     opacity: 0.5;
     line-height: 1.5;
     overflow-wrap: break-word;
@@ -658,8 +666,8 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .workflow-board .wfb-step-text {
-    font-size: 11px;
-    line-height: 1.45;
+    font-size: 12.5px;
+    line-height: 1.5;
     overflow-wrap: break-word;
     transition: opacity 200ms $wfb-snap;
 }
@@ -706,7 +714,7 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     display: flex;
     align-items: center;
     gap: 4px;
-    font-size: 9.5px;
+    font-size: 11.5px;
     opacity: 0.45;
 
     svg { flex: none; }
@@ -728,7 +736,7 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 10.5px;
+    font-size: 11.5px;
     font-weight: 600;
     opacity: 0.75;
 
@@ -747,15 +755,15 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
 
 .workflow-board .wfb-note-text {
     margin: 0;
-    font-size: 10.5px;
-    line-height: 1.5;
+    font-size: 12px;
+    line-height: 1.55;
     overflow-wrap: break-word;
 }
 
 .workflow-board .wfb-note-by {
     display: block;
-    margin-top: 3px;
-    font-size: 9px;
+    margin-top: 4px;
+    font-size: 10px;
     opacity: 0.45;
 }
 
@@ -789,7 +797,7 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
         border-radius: 4px;
         background: rgba(0, 0, 0, 0.25);
         color: inherit;
-        font-size: 10.5px;
+        font-size: 12px;
 
         &:focus { outline: none; border-color: var(--cat-border, #fb923c); }
         &:disabled { opacity: 0.45; }
@@ -844,17 +852,77 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
         border-radius: 4px;
         background: rgba(0, 0, 0, 0.25);
         color: inherit;
-        font-size: 10.5px;
+        font-size: 11.5px;
 
         &:focus { outline: none; border-color: var(--cat-border, #fb923c); }
     }
 }
 
+// Framer's element. It animates the row in and out; the row inside is
+// dnd-kit's and carries the sort transform. Nothing else lives here.
+.workflow-board .wfb-editstep-wrap { list-style: none; }
+
+// THE HANDLE, and now actually one. It was a decorative span beside up/down
+// buttons — an icon that looks draggable and does nothing, which tells you the
+// list reorders by dragging and then refuses.
 .workflow-board .wfb-editstep-grip {
     flex: none;
     display: flex;
     align-items: center;
-    opacity: 0.25;
+    padding: 3px 1px;
+    border-radius: 3px;
+    cursor: grab;
+    opacity: 0.3;
+    // A drag on the handle must not select the step's text on the way past.
+    user-select: none;
+    touch-action: none;
+    transition: opacity 160ms cubic-bezier(0.22, 1, 0.36, 1);
+
+    &:hover { opacity: 0.85; background: rgba(255, 255, 255, 0.06); }
+    &:active { cursor: grabbing; }
+}
+
+// Lifted while it travels, so you can see which row you have hold of.
+.workflow-board .wfb-editstep.is-dragging {
+    z-index: 2;
+    position: relative;
+    opacity: 0.9;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+
+    .wfb-editstep-grip { opacity: 1; }
+}
+
+// The link button, labelled now that the two arrows beside it are gone.
+.workflow-board .wfb-steplink {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: none;
+    max-width: 104px;
+    padding: 3px 7px;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.03);
+    color: inherit;
+    font-size: 9.5px;
+    cursor: pointer;
+    opacity: 0.6;
+    white-space: nowrap;
+
+    &:hover { background: rgba(255, 255, 255, 0.09); opacity: 1; }
+    &:active { background: rgba(255, 255, 255, 0.09); }
+
+    svg { flex: none; }
+
+    span { overflow: hidden; text-overflow: ellipsis; }
+
+    // Already goes somewhere: the label is the tool's name, so it reads as a
+    // statement rather than an invitation.
+    &.is-on {
+        opacity: 1;
+        border-color: var(--cat-border, #fb923c);
+        color: var(--cat-icon, #fdba74);
+    }
 }
 
 .workflow-board .wfb-editor-foot {
@@ -893,7 +961,7 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     border-radius: 5px;
     background: #1b1b1b;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
-    font-size: 10.5px;
+    font-size: 11.5px;
     pointer-events: auto;
 
     svg { flex: none; }
@@ -982,7 +1050,7 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
         border: none;
         background: none;
         color: inherit;
-        font-size: 10.5px;
+        font-size: 11.5px;
 
         &:focus { outline: none; }
     }
@@ -1007,7 +1075,7 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     border-radius: 3px;
     background: none;
     color: inherit;
-    font-size: 10.5px;
+    font-size: 11.5px;
     text-align: left;
     cursor: pointer;
 
@@ -1097,7 +1165,9 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
 
 .workflow-board.is-panel {
     gap: 6px;
-    font-size: 10.5px;
+    // Matches the page variant. The panel used to run half a point smaller to
+    // buy width; at these sizes that is squinting for nothing.
+    font-size: 12px;
 
     // ONE LINE. The wrap here existed because the identity, the progress ring
     // and two buttons did not fit across 380px — the actions dropped under
@@ -1105,7 +1175,7 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     // wrap was costing a whole row of height to say nothing.
     .wfb-head { padding: 7px 8px; }
 
-    .wfb-id-creative { font-size: 12px; }
+    .wfb-id-creative { font-size: 13.5px; }
 
     // The picker and the notes both scroll inside the panel's own scroller;
     // a second nested scroll region gives two scrollbars a few pixels apart.
@@ -1246,7 +1316,7 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
         border: none;
         background: none;
         color: inherit;
-        font-size: 10.5px;
+        font-size: 11.5px;
 
         &:focus { outline: none; }
     }
@@ -1271,7 +1341,7 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     border-radius: 3px;
     background: none;
     color: inherit;
-    font-size: 10.5px;
+    font-size: 11.5px;
     text-align: left;
     cursor: pointer;
 
@@ -1479,12 +1549,12 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     align-items: center;
     gap: 3px;
     flex: none;
-    padding: 1px 6px;
+    padding: 2px 7px;
     border: 1px solid rgba(255, 255, 255, 0.13);
     border-radius: 9px;
     background: rgba(255, 255, 255, 0.04);
     color: inherit;
-    font-size: 8.5px;
+    font-size: 9.5px;
     font-weight: 600;
     letter-spacing: 0.04em;
     line-height: 1.6;
@@ -1772,7 +1842,7 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     border-radius: 5px;
     background: none;
     color: inherit;
-    font-size: 10.5px;
+    font-size: 11.5px;
     cursor: pointer;
     opacity: 0.5;
     transition: opacity 160ms cubic-bezier(0.22, 1, 0.36, 1),
@@ -1786,4 +1856,25 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     &:active { background: rgba(255, 255, 255, 0.04); }
 
     svg { flex: none; }
+}
+
+// What the panel shows when it cannot work out what you are on. A list of what
+// exists, not a sentence about what does not.
+.workflow-board .wfb-nodetect {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.workflow-board .wfb-nodetect-hint {
+    margin: 0 0 2px;
+    font-size: 11.5px;
+    line-height: 1.5;
+    opacity: 0.55;
+}
+
+.workflow-board .wfb-nodetect-group {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
 }

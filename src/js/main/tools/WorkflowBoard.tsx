@@ -28,6 +28,18 @@ import {
     RefreshCw, AlertCircle, FolderSearch, ChevronLeft, GripVertical, Users,
     ArrowRight, Link2, Link2Off, Search, Globe, FolderOpen, Wand2, MoreHorizontal, Crosshair,
 } from "lucide-react";
+import {
+    DndContext,
+    closestCenter,
+    MouseSensor,
+    TouchSensor,
+    KeyboardSensor,
+    useSensor,
+    useSensors,
+    type DragEndEvent,
+} from "@dnd-kit/core";
+import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { TOOLS } from "../toolRegistry";
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
@@ -710,6 +722,28 @@ const WorkflowBoardTool: React.FC<{
         [entries, activeKey]
     );
 
+    /**
+     * Every workflow the team has, grouped by campaign, minus the retired ones.
+     *
+     * What the panel shows when it cannot work out what you are on — which is
+     * most of the time it is opened without a project, and exactly when
+     * somebody wants to read a workflow rather than be told there isn't one.
+     */
+    const liveEntries = useMemo(() => {
+        const groups: { campaign: string; items: WorkflowEntry[] }[] = [];
+        entries
+            .filter((e) => !retired[String(e.campaign || "").toLowerCase()])
+            .slice()
+            .sort((a, b) => (a.campaign || "").localeCompare(b.campaign || "")
+                || a.creative.localeCompare(b.creative))
+            .forEach((e) => {
+                const hit = groups.filter((g) => g.campaign === e.campaign)[0];
+                if (hit) hit.items.push(e);
+                else groups.push({ campaign: e.campaign, items: [e] });
+            });
+        return groups;
+    }, [entries, retired]);
+
     /** Every creative that already has a workflow on THIS campaign. */
     const creativesWithWorkflow = useMemo(() => {
         const want = canon(campaign);
@@ -1298,13 +1332,62 @@ const WorkflowBoardTool: React.FC<{
             {/* ── the checklist ────────────────────────────────────────── */}
             {!picking && (
                 <div className="wfb-body">
+                    {/* NOTHING DETECTED IS NOT NOTHING TO SHOW.
+                        This used to be a sentence and a shrug — "open a working
+                        file, or press Change" — on a panel that already knows
+                        every workflow the team has written. Opening the bubble
+                        with no project open is exactly when you want to read
+                        one, so the ones that exist are listed. Retired
+                        campaigns are left out: they are unselectable everywhere
+                        else and a dead workflow is not a suggestion. */}
                     {!creative && (
-                        <div className="wfb-empty">
-                            <ListChecks size={26} />
-                            <p>Nothing open that names a creative.</p>
-                            <span>
-                                Open a working file — or use Change to pick a creative for any campaign.
-                            </span>
+                        <div className="wfb-nodetect">
+                            {liveEntries.length === 0 && (
+                                <div className="wfb-empty">
+                                    <ListChecks size={26} />
+                                    <p>Nothing open that names a creative.</p>
+                                    <span>
+                                        {entries.length === 0
+                                            ? "No workflows written yet — use Change to pick a creative and start one."
+                                            : "Every workflow the team has belongs to a retired campaign. Use Change to pick a creative."}
+                                    </span>
+                                </div>
+                            )}
+                            {liveEntries.length > 0 && (
+                                <>
+                                    <p className="wfb-nodetect-hint">
+                                        Nothing open that names a creative. What the team has written:
+                                    </p>
+                                    {liveEntries.map((group, gi) => (
+                                        <div className="wfb-nodetect-group" key={group.campaign}>
+                                            <p className="wfb-creative-sep">{group.campaign || "no campaign"}</p>
+                                            {group.items.map((e, i) => (
+                                                <motion.button
+                                                    key={e.id}
+                                                    type="button"
+                                                    className="wfb-creative has-wf"
+                                                    onClick={() => choose(e.campaign, e.creative)}
+                                                    initial={{ opacity: 0, y: 4 }}
+                                                    animate={{ opacity: 1, y: 0 }}
+                                                    transition={reduced ? { duration: 0 } : { ...SPRING.snappy, delay: rowDelay(gi * 3 + i) }}
+                                                >
+                                                    <span className="wfb-creative-name">{prettyCreative(e.creative)}</span>
+                                                    <span className="wfb-creative-meta">
+                                                        <span className="wfb-creative-count">
+                                                            <ListChecks size={9} />{e.steps.length}
+                                                        </span>
+                                                        {(e.notes || []).length > 0 && (
+                                                            <span className="wfb-creative-count">
+                                                                <StickyNote size={9} />{(e.notes || []).length}
+                                                            </span>
+                                                        )}
+                                                    </span>
+                                                </motion.button>
+                                            ))}
+                                        </div>
+                                    ))}
+                                </>
+                            )}
                         </div>
                     )}
 
@@ -2011,18 +2094,30 @@ const WorkflowBoardTool: React.FC<{
  */
 const StepRow: React.FC<{
     step: WorkflowStep;
-    index: number;
-    total: number;
     hasLink: boolean;
+    /** The tool this step already opens, for the button's label. */
+    linkLabel: string;
     onText: (text: string) => void;
-    onMove: (by: number) => void;
     onRemove: () => void;
     onLink: () => void;
-}> = ({ step, index, total, hasLink, onText, onMove, onRemove, onLink }) => {
+}> = ({ step, hasLink, linkLabel, onText, onRemove, onLink }) => {
     const sel = useSelection(step.text);
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: step.id });
     return (
-        <>
-            <span className="wfb-editstep-grip"><GripVertical size={11} /></span>
+        <div
+            ref={setNodeRef}
+            className={"wfb-editstep" + (isDragging ? " is-dragging" : "")}
+            style={{ transform: CSS.Transform.toString(transform), transition }}
+        >
+            {/* THE GRIP IS THE HANDLE NOW. It was a decorative <span> next to
+                up/down buttons -- an icon that looks draggable and is not, which
+                is worse than either choice on its own: it tells you the list
+                reorders by dragging and then does nothing when you try.
+                Listeners on the handle rather than the row, so a drag can never
+                start from inside the text field. */}
+            <span className="wfb-editstep-grip" {...attributes} {...listeners} title="Drag to reorder">
+                <GripVertical size={11} />
+            </span>
             <span className="wfb-editstep-field">
                 {/* BOLD ONLY. A step already carries a row-level link chip, and
                     a second inline mechanism in the same sentence would be two
@@ -2036,18 +2131,21 @@ const StepRow: React.FC<{
                     {...sel.handlers}
                 />
             </span>
+            {/* LABELLED, because the two arrows that used to crowd it are gone.
+                An unlabelled chain link next to an unlabelled X was two glyphs
+                you had to hover to tell apart; this one says what it does, and
+                names where the step already goes when it goes somewhere. */}
             <button
                 type="button"
-                className={"wfb-mini" + (hasLink ? " is-on" : "")}
+                className={"wfb-steplink" + (hasLink ? " is-on" : "")}
                 onClick={onLink}
-                title={hasLink ? "Change where this step sends you" : "Send this step somewhere"}
+                title={hasLink ? "Change where this step sends you" : "Send this step to a tool"}
             >
                 <Link2 size={11} />
+                <span>{hasLink ? linkLabel : "Link"}</span>
             </button>
-            <button type="button" className="wfb-mini" onClick={() => onMove(-1)} disabled={index === 0} title="Move up">↑</button>
-            <button type="button" className="wfb-mini" onClick={() => onMove(1)} disabled={index === total - 1} title="Move down">↓</button>
             <button type="button" className="wfb-mini wfb-mini--danger" onClick={onRemove} title="Remove"><X size={11} /></button>
-        </>
+        </div>
     );
 };
 
@@ -2408,6 +2506,36 @@ const StepEditor: React.FC<{
         setUndo({ step: steps[i], index: i });
         setSteps(steps.filter((_, j) => j !== i));
     };
+    // MouseSensor + TouchSensor, NOT PointerSensor. Toolset.tsx records why:
+    // pointer events do not behave like a real browser tab inside AE's CEP
+    // panel, so press-and-hold never registers there. An 8px activation
+    // distance so clicking into a step's text field stays a click.
+    const sensors = useSensors(
+        useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+        useSensor(TouchSensor, { activationConstraint: { distance: 8 } }),
+        // Keeps the list reorderable from the keyboard now that the up/down
+        // buttons are gone — removing them must not remove the only way to do
+        // this without a mouse.
+        useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+    );
+
+    const onDragEnd = (e: DragEndEvent) => {
+        const { active, over } = e;
+        if (!over || active.id === over.id) return;
+        const from = steps.findIndex((st) => st.id === active.id);
+        const to = steps.findIndex((st) => st.id === over.id);
+        if (from < 0 || to < 0) return;
+        const next = steps.slice();
+        next.splice(to, 0, next.splice(from, 1)[0]);
+        setSteps(next);
+        // The link picker is keyed by ROW INDEX, so a reorder leaves it
+        // pointing at whatever step now occupies that slot — you would attach a
+        // link to a step you were not looking at. Closed rather than remapped:
+        // remapping is right for a picker somebody is mid-way through, and this
+        // one is two clicks to reopen.
+        setLinking(null);
+    };
+
     const undoRemove = () => {
         if (!undo) return;
         const next = steps.slice();
@@ -2417,15 +2545,6 @@ const StepEditor: React.FC<{
         setSteps(next);
         setUndo(null);
     };
-    const move = (i: number, by: number) => {
-        const j = i + by;
-        if (j < 0 || j >= steps.length) return;
-        const next = steps.slice();
-        const tmp = next[i];
-        next[i] = next[j];
-        next[j] = tmp;
-        setSteps(next);
-    };
     const add = () => setSteps([...steps, { id: nextId("step"), text: "" }]);
 
     return (
@@ -2433,12 +2552,20 @@ const StepEditor: React.FC<{
             <p className="wfb-editor-hint">
                 These are shared with the team. Ticks stay yours.
             </p>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+                <SortableContext items={steps.map((st) => st.id)} strategy={verticalListSortingStrategy}>
             <ul className="wfb-editsteps">
                 <AnimatePresence initial={false}>
                     {steps.map((s, i) => (
+                        // TWO ELEMENTS, ONE TRANSFORM EACH. The <li> is
+                        // Framer's -- it animates the row in and out -- and the
+                        // row inside it is dnd-kit's, carrying the sort
+                        // transform. Putting both on one element means two
+                        // libraries writing the same inline style, and the last
+                        // one to render wins at random.
                         <motion.li
                             key={s.id}
-                            className="wfb-editstep"
+                            className="wfb-editstep-wrap"
                             initial={{ opacity: 0, y: -4 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, height: 0 }}
@@ -2446,11 +2573,9 @@ const StepEditor: React.FC<{
                         >
                             <StepRow
                                 step={s}
-                                index={i}
-                                total={steps.length}
                                 hasLink={!!s.link}
+                                linkLabel={(toolFor(s.link) || { label: "Link" }).label}
                                 onText={(text) => set(i, text)}
-                                onMove={(by) => move(i, by)}
                                 onRemove={() => remove(i)}
                                 onLink={() => setLinking(linking === i ? null : i)}
                             />
@@ -2458,6 +2583,8 @@ const StepEditor: React.FC<{
                     ))}
                 </AnimatePresence>
             </ul>
+                </SortableContext>
+            </DndContext>
             {/* Rendered OUTSIDE the row rather than inside it: the row is a
                 flex line of inputs and buttons, and a 200px list dropped into
                 it fights every one of them for width. */}

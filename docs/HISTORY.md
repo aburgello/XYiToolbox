@@ -7785,3 +7785,65 @@ Three details that decide whether it lands on the right word:
 Measured against an independent calculation at three positions — a word at the
 start, in the middle, and at the end of a step that overflows its field: **0px
 off at all three**, and the clamp keeps it inside the box at both extremes.
+
+### The grip was a lie
+
+"Do we really need the up and down buttons if we can already drag them?" — you
+couldn't. The grip was a decorative `<span>` with a `GripVertical` icon and no
+drag wired to it at all, sitting next to the ↑/↓ buttons that did the actual
+work. Worse than either choice alone: an icon that looks draggable and does
+nothing tells you the list reorders by dragging and then refuses when you try.
+The original comment even said drag-and-drop was more machinery than the job
+needed — and then shipped its handle anyway.
+
+Now it drags. `@dnd-kit` with **MouseSensor + TouchSensor, never PointerSensor**
+— `Toolset.tsx` already records why: pointer events do not behave like a real
+browser tab inside AE's CEP panel, so press-and-hold never registers there.
+(`CategoryScreen.tsx` uses Framer's `Reorder`, which is pointer-based; that
+screen is the unreachable fallback per §4, so its drag may never have been
+exercised in AE. Not a convention to copy.) 8px activation distance, so clicking
+into a step's text field stays a click. Listeners on the handle rather than the
+row, so a drag can never start from inside the text.
+
+**Two elements, one transform each.** The `<li>` is Framer's — it animates rows
+in and out — and the row inside is dnd-kit's, carrying the sort transform.
+Putting both on one element means two libraries writing the same inline style
+and the last to render winning at random.
+
+**The KeyboardSensor is not decoration:** the ↑/↓ buttons were the only way to
+reorder without a mouse, so removing them had to put that back.
+
+**The link button got the reclaimed space and a label.** An unlabelled chain
+link next to an unlabelled X was two glyphs you had to hover to tell apart. It
+now says "Link", or names the tool the step already opens — a statement rather
+than an invitation.
+
+**The link picker closes on reorder.** It is keyed by row index, so a drag would
+leave it pointing at whatever step now occupies that slot; you would attach a
+link to a step you were not looking at.
+
+*And a note on how this was found:* the first attempt looked wired and did
+nothing. The debug showed `aria-roledescription="sortable"` on the handle and
+`mousedown` arriving — so listeners were attached and events landed, but no drag
+started. The cause was mundane: the patch that added `DndContext` had an
+assertion fail later in the same script, so the file was never written. The
+props were real; the provider was missing. Worth remembering that "the markup
+looks right" is not evidence the wiring landed.
+
+### Sizes, and a useful empty state
+
+**The panel was 10.5–11px throughout** — a size you can design at and cannot
+comfortably read, on a thing that is read far more often than it is operated.
+Step text, note bodies and the creative name are content and went to 12.5 / 12 /
+13.5px; counts, tags, bylines and hints are furniture and took a smaller nudge,
+which is what keeps the density a 380px panel needs. The panel variant used to
+run half a point smaller than the page to buy width; at these sizes that was
+squinting for nothing, so both match now.
+
+**And "nothing detected" now lists what exists.** It was a sentence and a shrug
+on a panel that already knows every workflow the team has written — and opening
+the bubble with no project open is exactly when somebody wants to read one.
+Workflows are grouped by campaign, with their step and note counts, and clicking
+one opens it. Retired campaigns are excluded: they are unselectable everywhere
+else, and a dead workflow is not a suggestion. The genuine empty case still says
+so, and distinguishes "none written yet" from "all of them are retired".
