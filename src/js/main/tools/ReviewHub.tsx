@@ -15,6 +15,7 @@
 import React, { Suspense, useRef, useState, useEffect, createContext, useContext } from "react";
 import { motion, AnimatePresence, useReducedMotion, useAnimation } from "motion/react";
 import {
+    Eye,
     Library,
     MessageSquareDiff,
     ListPlus,
@@ -36,6 +37,7 @@ import { sfx } from "../../lib/utils/sfx";
 import { usePersistentState } from "../../lib/utils/usePersistentState";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
+import TutorialIcon from "../TutorialIcon";
 import "../shared.scss";
 import "./ReviewHub.scss";
 
@@ -810,23 +812,33 @@ const ReviewHubTool: React.FC = () => {
                         from one half to the other via Framer's `layout` prop,
                         rather than each button carrying its own separate
                         colored/rounded box. */}
-                    <div className="rh-tab-bar">
-                        <motion.div
-                            className="rh-tab-highlight"
-                            layout
-                            transition={reduced ? { duration: 0 } : { type: "spring", stiffness: 500, damping: 40 }}
-                            style={{ left: activeTab === "library" ? "0%" : "50%" }}
-                        />
-                        {TABS.map(({ id, label, Icon }) => (
-                            <button
-                                key={id}
-                                className={activeTab === id ? "rh-tab rh-tab--active" : "rh-tab"}
-                                onClick={() => { if (id !== activeTab) sfx.menu(); setActiveTab(id); }}
-                            >
-                                <Icon size={14} />
-                                {label}
-                            </button>
-                        ))}
+                    <div className="rh-tab-row">
+                        {/* THE HUB'S FRONT DOOR FOR A TUTORIAL -- see the same
+                            note in DeliveryHub. It sits OUTSIDE .rh-tab-bar on
+                            purpose: the highlight is width:50% at left 0%/50%
+                            of that box, so a third child would put the slider
+                            over the wrong half of the wrong element. */}
+                        <TutorialIcon toolId="review-hub" toolLabel="Review" className="rh-hub-icon">
+                            <Eye size={15} />
+                        </TutorialIcon>
+                        <div className="rh-tab-bar">
+                            <motion.div
+                                className="rh-tab-highlight"
+                                layout
+                                transition={reduced ? { duration: 0 } : { type: "spring", stiffness: 500, damping: 40 }}
+                                style={{ left: activeTab === "library" ? "0%" : "50%" }}
+                            />
+                            {TABS.map(({ id, label, Icon }) => (
+                                <button
+                                    key={id}
+                                    className={activeTab === id ? "rh-tab rh-tab--active" : "rh-tab"}
+                                    onClick={() => { if (id !== activeTab) sfx.menu(); setActiveTab(id); }}
+                                >
+                                    <Icon size={14} />
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
                     </div>
 
                     {/* Tab content */}

@@ -90,12 +90,42 @@
     // surface, sliding from one half to the other, so the bar always reads
     // as one continuous seamless strip rather than two separate boxes
     // meeting in the middle.
+    // The tab bar's own box, unchanged -- the sliding highlight is measured
+    // against it, so it stays exactly two tabs wide.
     .rh-tab-bar {
         position: relative;
         display: flex;
         background: var(--surface-0, #212121);
         border-bottom: 1px solid var(--surface-divider, #2a2a2a);
         flex-shrink: 0;
+    }
+
+    // The strip that carries the hub's icon alongside the tabs.
+    .rh-tab-row {
+        display: flex;
+        align-items: stretch;
+        flex-shrink: 0;
+
+        // SCOPED to this row, not changed on the base rule: flex:1 means
+        // "fill width" here and "fill height" in the column the bar used to
+        // sit in directly.
+        .rh-tab-bar {
+            flex: 1;
+            min-width: 0;
+        }
+    }
+
+    .rh-hub-icon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 34px;
+        flex-shrink: 0;
+        // Matches the bar it sits in, so the icon reads as part of the strip
+        // rather than a button parked in front of it.
+        background: var(--surface-0, #212121);
+        border-bottom: 1px solid var(--surface-divider, #2a2a2a);
+        color: var(--cat-icon, #c4b5fd);
     }
 
     .rh-tab-highlight {

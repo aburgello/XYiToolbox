@@ -3,7 +3,8 @@
 // =============================================================================
 import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence, useAnimate, useReducedMotion } from "motion/react";
-import { Truck, ListPlus, Trash2, ChevronsDown, Send, AlertCircle, AlertTriangle, Check, X, Volume2, VolumeX, Folder, FileText, RotateCcw, ExternalLink } from "lucide-react";
+import { Truck, Package, ListPlus, Trash2, ChevronsDown, Send, AlertCircle, AlertTriangle, Check, X, Volume2, VolumeX, Folder, FileText, RotateCcw, ExternalLink } from "lucide-react";
+import TutorialIcon from "../TutorialIcon";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import { evalTS } from "../../lib/utils/bolt";
 import { sfx } from "../../lib/utils/sfx";
@@ -887,6 +888,16 @@ const DeliveryHubTool = () => {
             <div className="dh-content-inner">
             {/* ── Action bar ─────────────────────────────────────── */}
             <div className="dh-action-bar">
+                {/* THE HUB'S FRONT DOOR FOR A TUTORIAL. Every other tool hangs
+                    this off the title glyph in ToolScreen's content header, but
+                    the two hubs carry their own chrome and that header is
+                    suppressed for them -- so a clip named Deliver.mp4 had
+                    nowhere to be played from. Package, not Truck: the Delivery
+                    button 6px to its right already has a truck, and two of them
+                    in one bar reads as a duplicated control. */}
+                <TutorialIcon toolId="delivery-hub" toolLabel="Deliver" className="dh-hub-icon">
+                    <Package size={16} />
+                </TutorialIcon>
                 <DeliveryButton busy={deliveryBusy} onClick={runDelivery} />
 
                 {watchingCount > 0 && (

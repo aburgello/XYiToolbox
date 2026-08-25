@@ -360,6 +360,12 @@ nobody records one.
   forty tools and answers on three trains everyone to stop pressing it.
 - The badge takes `--cat-icon`, not `--ov-accent` — it is stuck to a
   category-tinted glyph.
+- **The two hubs carry it in their own top bar**, since `ToolScreen` suppresses
+  `tool-content-header` for them (`HUB_TOOL_IDS`). Review's goes in the
+  `.rh-tab-row` wrapper BESIDE `.rh-tab-bar`, never inside it — that bar's
+  highlight is `width: 50%` sliding between exactly two children. Delivery's
+  leads `.dh-action-bar` with a `Package`, not the registry's `Truck`, which
+  the Delivery button beside it already has.
 - One bridge call per session (cached); `refreshTutorials()` on picking a new
   team folder. `_tuts` is a team-folder path opened by name, unrelated to the
   `_`-folder scan rule below.

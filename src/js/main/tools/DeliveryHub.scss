@@ -92,6 +92,18 @@
         flex-shrink: 0;
     }
 
+    // The hub's own glyph, leading the action bar. A little breathing room on
+    // the right so the badge, which overhangs the icon's box by 4px, is not
+    // touching the Delivery button beside it.
+    .dh-hub-icon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        margin-right: 4px;
+        color: var(--cat-icon, #fdba74);
+    }
+
     // ── Bulk edit bar ─────────────────────────────────────────────────────
     // MB cap, Mbps cap, fps, Apply — below Load.
     .dh-bulk-bar {

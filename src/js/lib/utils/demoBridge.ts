@@ -278,6 +278,11 @@ const SHAPED: Record<string, (args: unknown[]) => unknown> = {
         files: [
             { name: "OVSwap", path: "/Volumes/Team_Folder/_tuts/OVSwap.mp4" },
             { name: "Artwork Check", path: "/Volumes/Team_Folder/_tuts/Artwork Check.mp4" },
+            // A hub, so the icon the two hubs carry in their own chrome is
+            // exercisable in preview rather than only on a machine with the
+            // share mounted -- it is the one placement that is not the
+            // shared tool-content header.
+            { name: "Deliver", path: "/Volumes/Team_Folder/_tuts/Deliver.mp4" },
         ],
     }),
 

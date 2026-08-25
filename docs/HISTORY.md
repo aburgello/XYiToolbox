@@ -8159,3 +8159,36 @@ tell which of two same-size PDFs belongs to which of two same-size AE files —
 it copies for each, which is right when one master serves several sites and
 wrong when the AE files were already per-site. Nobody has hit the second case.
 
+---
+
+## 2026-08-25 — A front door for a clip on the two hub tools
+
+The tutorial icon shipped into `tool-content-header`, which `ToolScreen`
+suppresses for `review-hub` and `delivery-hub` (`HUB_TOOL_IDS`) because those
+two carry their own full-page chrome and would otherwise double up on a header.
+So `Deliver.mp4` matched its tool perfectly and had nowhere to be played from —
+and because the whole feature is silent by design, dropping the clip on the
+share would have looked exactly like dropping it in the wrong place.
+
+Both hubs now carry the icon at the head of their own top bar, which is the
+same visual band a tool's title glyph occupies one screen over.
+
+**Review** needed a wrapper. `.rh-tab-bar` holds an absolutely-positioned
+highlight at `width: 50%`, `left: 0%|50%`, physically sliding between two tabs —
+a third child would have put the slider over the wrong half of the wrong
+element. The icon sits in a new `.rh-tab-row` flex strip beside the bar, with
+`flex: 1` scoped to that row rather than added to the shared `.rh-tab-bar` rule
+(CLAUDE.md §3: `flex: 1` means "fill width" in a row and "fill height" in the
+column it used to sit in directly).
+
+**Delivery** takes it as the first child of `.dh-action-bar` — with a `Package`
+glyph, not the registry's `Truck`, because the Delivery button 6px to its right
+already has a truck that animates out on click, and two trucks in one bar read
+as one control drawn twice.
+
+`demoBridge`'s tutorial list gained a `Deliver` entry so the one placement that
+is NOT the shared tool header is exercisable in browser preview instead of only
+on a machine with the share mounted.
+
+**Not done:** neither hub icon has been seen in a real docked panel yet, and
+`tutorialsList` still has never run inside After Effects.
