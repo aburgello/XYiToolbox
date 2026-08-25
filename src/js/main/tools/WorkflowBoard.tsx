@@ -1572,19 +1572,32 @@ const WorkflowBoardTool: React.FC<{
                                                     aria-pressed={on}
                                                     onClick={() => toggleStep(s.id)}
                                                 >
-                                                    <span className="wfb-step-textwrap">
-                                                        <span className="wfb-step-text">{richText(s.text)}</span>
-                                                        {/* Sweeps rather than appears, which is
-                                                            the difference between a tick that
-                                                            feels like progress and one that
-                                                            feels like a redraw. */}
-                                                        <motion.span
-                                                            className="wfb-step-strike"
-                                                            initial={false}
-                                                            animate={{ scaleX: on ? 1 : 0 }}
-                                                            transition={reduced ? { duration: 0 } : SPRING.snappy}
-                                                        />
-                                                    </span>
+                                                    {/* THE STRIKE IS A BACKGROUND ON THE TEXT,
+                                                        not a bar over the row.
+                                                        It was an absolutely-positioned line at
+                                                        50% of the text's box — which is the
+                                                        middle of the WHOLE box, so a step that
+                                                        wrapped to two lines got one rule drawn
+                                                        through the gap between them rather than
+                                                        through either.
+                                                        A background on an inline element is
+                                                        painted per line box, so it strikes every
+                                                        line; `box-decoration-break: clone` is
+                                                        what makes each fragment get its own,
+                                                        instead of one box stretched across both.
+                                                        Animating `background-size` keeps the
+                                                        sweep — it still draws in rather than
+                                                        appearing, which is the difference between
+                                                        a tick that feels like progress and one
+                                                        that feels like a redraw. */}
+                                                    <motion.span
+                                                        className="wfb-step-text"
+                                                        initial={false}
+                                                        animate={{ backgroundSize: on ? "100% 1px" : "0% 1px" }}
+                                                        transition={reduced ? { duration: 0 } : SPRING.snappy}
+                                                    >
+                                                        {richText(s.text)}
+                                                    </motion.span>
                                                 </button>
                                                 {s.link && <StepLinkChip link={s.link} onGo={goTo} />}
                                             </motion.div>

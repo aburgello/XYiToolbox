@@ -7941,3 +7941,38 @@ and a neighbour doing the same thing reads as the same control twice.
 
 Measured after: 12px between them, 75px from the row's left edge. Verified from
 two tools deep — one click lands on home.
+
+### Striking through a step that wraps
+
+Reported as "on two rows the crossing goes only on the middle": a step long
+enough to wrap drew ONE rule through the gap between its lines instead of
+through each line.
+
+The cause was structural, not cosmetic. The strike was a `position: absolute`
+element at `top: 50%` inside an `inline-block` wrapper, and 50% of a four-line
+box is the space between lines two and three. Absolute positioning cannot see
+line boxes at all — there is no offset that makes one element cross four lines.
+
+The strike is now a `linear-gradient` BACKGROUND on the text span itself, which
+is `display: inline`, with `box-decoration-break: clone`. Clone is the whole
+fix: it gives every line fragment its own background box, so `background-size:
+100% 1px` is 100% of *that line*, and `background-position: 0 0.62em` is
+measured from each fragment's own top. Framer animates `backgroundSize` between
+`0% 1px` and `100% 1px`, which keeps the sweep the old element had.
+
+*Verified by finding the step that actually wraps rather than trusting an
+index.* The first probe hard-coded index 1 and reported one line fragment —
+because the board had opened on a different creative and index 1 there was a
+short step. The screenshot it captured showed a correctly-struck single line and
+proved nothing about the case being fixed. The second probe selects the first
+`.wfb-step-text` whose `getClientRects()` returns more than one distinct top,
+and measured four fragments each carrying its own full-width rule. A long,
+deliberately-wrapping step lives in `demoBridge`'s TRIO workflow so the case
+stays testable.
+
+### The home button read as disabled
+
+`.home-button` was set to `opacity: 0.55` to keep Back the primary exit. Against
+`#aac4ff` on the dark header that greys out far enough to look unavailable
+rather than secondary — the first thing anyone asked about it was whether it was
+switched off. 0.85 keeps the hierarchy without the ambiguity.

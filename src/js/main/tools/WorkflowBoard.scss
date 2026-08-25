@@ -680,33 +680,36 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     border-color: var(--cat-border, #fb923c);
 }
 
+// THE STRIKE LIVES ON THE TEXT, as a background.
+//
+// It was an absolutely-positioned 1px bar at `top: 50%` of an inline-block
+// wrapper. That is the middle of the WHOLE box, so a step wrapping to two lines
+// got a single rule drawn through the gap between them and through neither.
+//
+// A background on an INLINE element is painted per line box, and
+// `box-decoration-break: clone` is what gives each fragment its own box rather
+// than stretching one across all of them — so every line gets struck.
+// `background-size` is animated (by Framer, in the TSX) so it still sweeps in
+// rather than appearing; `no-repeat` keeps it to the one line.
+//
+// Not `text-decoration: line-through`, which would also be correct per line and
+// cannot be animated across — only its colour can, and that fades rather than
+// draws.
 .workflow-board .wfb-step-text {
+    display: inline;
     font-size: 12.5px;
     line-height: 1.5;
     overflow-wrap: break-word;
     transition: opacity 200ms $wfb-snap;
-}
 
-// The containing block for the strike is the TEXT, not the row — anchored to
-// the row it spanned the full width and read as a rule under each ticked step.
-// inline-block so it takes the width of the words.
-.workflow-board .wfb-step-textwrap {
-    position: relative;
-    display: inline-block;
-}
-
-.workflow-board .wfb-step-strike {
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 50%;
-    height: 1px;
-    background: currentColor;
-    opacity: 0.5;
-    // Grows from the left. transform-origin rather than animating width, which
-    // would relayout every frame.
-    transform-origin: left center;
-    pointer-events: none;
+    background-image: linear-gradient(currentColor, currentColor);
+    background-repeat: no-repeat;
+    // 0.62 rather than 0.5: the em box sits above the middle of a line box once
+    // line-height opens it up, so a true 50% strikes low, under the letters.
+    background-position: 0 0.62em;
+    background-size: 0% 1px;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
 }
 
 .workflow-board .wfb-steps-foot {

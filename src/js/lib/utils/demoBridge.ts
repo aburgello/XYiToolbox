@@ -222,7 +222,9 @@ let demoWorkflows: DemoWorkflow[] = [
         key: demoWfKey("Forgotten Island", "TRIO"),
         steps: [
             { id: "s1", text: "Title treatment from Components — **never** rebuilt" },
-            { id: "s2", text: "Pedigree from Components" },
+            // Long on purpose: a step that wraps is the normal case in a 380px
+            // panel, and it is the case the strike-through has to get right.
+            { id: "s2", text: "Once the components are in, select the main comp (**not** the frontcard one) and try OV Swap to automatically detect swappable components", link: { tool: "ov-swap" } },
             { id: "s3", text: "Tagline from Components" },
             { id: "s4", text: "Date from Components — check the **territory format**", link: { tool: "cheeky-dt", action: "Territory Check" } },
             { id: "s5", text: "Billing block swapped for the local one" },
