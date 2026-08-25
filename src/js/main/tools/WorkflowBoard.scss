@@ -740,14 +740,42 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
 
 // ── notes ───────────────────────────────────────────────────────────────────
 
+// NOTES CARRY THEIR OWN COLOUR. Steps and notes were reading as one list: the
+// same fill, the same radius, half a pixel between their type sizes -- and the
+// note's left bar was --cat-border at FULL strength against the current step's
+// 35%, so a note was more accented than the step you were standing on. Every
+// device in the panel was saying both things at once.
+//
+// So the accent splits by meaning. --cat-* keeps meaning WHERE YOU ARE: the
+// rail you have travelled, the node you are on, the tool a step hands you to.
+// --ov-note means STANDING KNOWLEDGE: unordered, authored, never completed.
+//
+// REDEFINED ON THE SUBTREE, not overridden selector by selector. Everything
+// inside a note already keys off --cat-*, so moving those two variables here
+// retints the bar, the tag pills, the note links, the territory chips and every
+// focus ring in one place -- and anything added to a note later inherits it for
+// free. Same mechanism the bubble uses to pin its own tint on .wfbub-panel.
+//
+// The hue is DERIVED from the theme accent in themes.ts, never a literal: a
+// fixed amber collides head-on with Ember (#fb923c) and Gold (#facc15), where
+// the steps and the notes would have come out the same colour. The fallbacks
+// below are that derivation for the default teal, for the moment before
+// applyTheme() has run.
+//
+// Portaled content is the known gap -- a picker rendered to <body> is outside
+// this subtree and keeps the category tint, the same re-apply rule CLAUDE.md
+// gives for Dialog and DragOverlay.
 .workflow-board .wfb-notes {
+    --cat-border: var(--ov-note, #d4a654);
+    --cat-icon: var(--ov-note-soft, #e2c48d);
+
     display: flex;
     flex-direction: column;
     gap: 4px;
     padding: 8px 9px;
-    border: 1px solid var(--tile-border, rgba(255, 255, 255, 0.07));
+    border: 1px solid var(--ov-note-edge, rgba(212, 166, 84, 0.18));
     border-radius: 6px;
-    background: var(--tile-bg, rgba(255, 255, 255, 0.02));
+    background: var(--ov-note-wash, rgba(212, 166, 84, 0.03));
 }
 
 .workflow-board .wfb-notes-head {
@@ -756,7 +784,10 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     gap: 6px;
     font-size: 11.5px;
     font-weight: 600;
-    opacity: 0.75;
+    // Named rather than dimmed: at 0.75 opacity on a tinted ground the heading
+    // was the one part of the section still reading as neutral chrome.
+    color: var(--ov-note-soft, #e2c48d);
+    opacity: 0.85;
 
     svg { flex: none; }
     em { font-style: normal; font-weight: 400; opacity: 0.6; }
@@ -766,9 +797,12 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     position: relative;
     overflow: hidden;
     padding: 6px 22px 6px 9px;
+    // --cat-border, which .wfb-notes above has already moved to the notes hue.
     border-left: 2px solid var(--cat-border, #fb923c);
     border-radius: 0 4px 4px 0;
-    background: rgba(255, 255, 255, 0.03);
+    // Tinted rather than the flat white wash the step cards use, so the two
+    // surfaces differ even where the accent edge is out of shot.
+    background: var(--ov-note-fill, rgba(212, 166, 84, 0.055));
 }
 
 .workflow-board .wfb-note-text {

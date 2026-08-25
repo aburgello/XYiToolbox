@@ -8378,3 +8378,88 @@ at. Nothing was saved at any point.
 **Not done:** the reported build was made with the old code, so its two masters
 are still 1920x858 and 1920x960. Rebuilding is what reshapes them; there is no
 repair pass for a build that already exists.
+
+---
+
+## 2026-08-25 — Notes and steps stopped looking like one list
+
+Reported from a Workflows panel with four steps and one note: "they feel like
+the same thing here." They did, and measurably so.
+
+| | step card | note |
+|---|---|---|
+| fill | `rgba(255,255,255,0.022)`, `0.06` current | `rgba(255,255,255,0.03)` |
+| radius | 6px | 4px |
+| body text | 12.5px | 12px |
+| emphasis | 700 `#ffffff` | 700 `#ffffff` |
+| left edge | teal @ **35%** (only when current) | teal @ **100%** |
+
+The last row is the one doing the damage. The panel pins `--cat-border` to
+`#2dd4bf` and a note used it at full strength, so the strongest "this is a step,
+and it is the one you are on" signal in the panel was being spent on something
+that was not a step at all.
+
+### What they actually are
+
+Steps are a route you walk: ordered, stateful, finite, half of them handing you
+to another tool. Notes are standing knowledge pinned beside the route:
+unordered, authored, tagged, never completed. The accent now splits along that
+line — `--cat-*` means *where you are*, `--ov-note*` means *knowledge*.
+
+Three directions were drawn as working panels and put in front of the studio:
+notes as marginalia (no card at all), notes with their own colour, and notes
+sunk into a recessed well. The studio picked the colour, explicitly setting
+aside the one-tint principle the panel was built on. Their call, and recorded
+here as a decision rather than a drift.
+
+### The fixed amber was wrong
+
+The mock used `#e8a33d`. Checking it against the shipping themes killed it:
+**Ember is `#fb923c` and Gold is `#facc15`**, so for those two the steps and the
+notes would have come out the same hue and the change would have cost those
+users everything it bought everyone else.
+
+So the hue is derived from the active accent, rotated **−134°**. The angle is
+not the complement — it is chosen so the default teal (hsl 172) lands on amber
+(hsl 38), which is the colour that was signed off; 180° would have given
+magenta. Measured across every theme:
+
+```
+default  #2dd4bf -> #d4a654 amber      gold     #facc15 -> #9c54d4 purple
+blossom  #f472b6 -> #54b5d4 cyan       crimson  #f87171 -> #5472d4 blue
+dusk     #a78bfa -> #54d456 green      emerald  #34d399 -> #d48754 orange
+ember    #fb923c -> #7054d4 violet     slate    #94a3b8 -> #a4c95e olive
+sapphire #60a5fa -> #abd454 lime
+```
+
+**Saturation is clamped at both ends.** The floor (0.5) keeps Slate usable — at
+0.20 saturation a rotated hue is a grey with an opinion, not a second colour.
+The ceiling (0.6) keeps the loud themes bearable: unclamped, Dusk gave the notes
+an acid `#32f635` and Ember an electric `#5a2dfb`, which is a primary accent,
+and notes are supporting furniture.
+
+The alpha variants are computed in JS alongside the hex, because `color-mix()`
+is Chrome 111 and the target is chrome74 — CSS here cannot derive a translucent
+fill from a custom property.
+
+### One rule instead of forty edits
+
+The retint is two custom properties redefined on `.wfb-notes`:
+
+```scss
+--cat-border: var(--ov-note, #d4a654);
+--cat-icon:   var(--ov-note-soft, #e2c48d);
+```
+
+Everything inside a note already keys off `--cat-*`, so that single move
+retints the left bar, the tag pills, the note links, the territory chips and
+every focus ring — and anything added to a note later inherits it for nothing.
+It is the same mechanism the bubble already uses to pin its own tint on
+`.wfbub-panel`. The alternative was editing each of the dozen note-scoped
+`var(--cat-...)` call sites and remembering to edit the next one too.
+
+**Not done:** a picker portaled to `<body>` is outside the subtree and keeps the
+category tint, which is the re-apply rule CLAUDE.md already gives for Dialog and
+DragOverlay. And the shared card SHAPE survives — the two still read as two
+lists, one teal and one amber, which is exactly the trade-off the colour option
+was chosen with its eyes open.

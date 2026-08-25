@@ -108,6 +108,81 @@ function rgba(hex: string, alpha: number): string {
     return `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${alpha})`;
 }
 
+// ── the notes hue ───────────────────────────────────────────────────────────
+//
+// Workflows' notes carry their own colour, because steps and notes were reading
+// as one list: same fill, same radius, and the note's left bar was the accent
+// at FULL strength against the current step's 35%, so a note was more accented
+// than the step you were standing on.
+//
+// DERIVED FROM THE ACCENT, NOT A LITERAL. A fixed amber was the first plan and
+// it collides head-on with two shipping themes -- Ember is #fb923c and Gold is
+// #facc15, so under either of those the steps and the notes would have been the
+// same hue and the distinction would have quietly cost those users everything
+// it bought everyone else. Rotating off the accent guarantees the separation in
+// every theme, present and future.
+//
+// -134 DEGREES, not the complement. It is chosen so the DEFAULT teal lands on
+// amber -- hsl(172) - 134 = hsl(38) -- which is the colour the design was
+// signed off on; 180 would have given magenta. Every other theme lands
+// somewhere clearly its own: Ember -> violet, Gold -> purple, Emerald ->
+// orange, Blossom -> cyan.
+//
+// SATURATION IS CLAMPED AT BOTH ENDS. The floor keeps Slate usable: at 0.20
+// saturation a rotated hue is a grey with an opinion, which is not a second
+// colour at all. The ceiling keeps the loud themes bearable -- unclamped, Dusk
+// gave the notes an acid #32f635 and Ember an electric #5a2dfb, which is a
+// primary accent, and notes are supporting furniture. The band puts every
+// theme's notes hue within a shade of the same weight.
+//
+// The accent every `var(--ov-accent, #hex)` in the app falls back to when no
+// theme is picked. Named here so the notes hue is derived from the same colour
+// the steps are actually drawn in, rather than from nothing.
+const DEFAULT_ACCENT = "#2dd4bf";
+const NOTE_HUE_SHIFT = -134;
+const NOTE_MIN_SAT = 0.5;
+const NOTE_MAX_SAT = 0.6;
+const NOTE_L_SOLID = 0.58;
+const NOTE_L_SOFT = 0.72;
+
+function hexToHsl(hex: string): number[] {
+    const c = parseHex(hex).map((v) => v / 255);
+    const max = Math.max(c[0], c[1], c[2]);
+    const min = Math.min(c[0], c[1], c[2]);
+    const l = (max + min) / 2;
+    if (max === min) return [0, 0, l];
+    const d = max - min;
+    const sat = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    let h;
+    if (max === c[0]) h = (c[1] - c[2]) / d + (c[1] < c[2] ? 6 : 0);
+    else if (max === c[1]) h = (c[2] - c[0]) / d + 2;
+    else h = (c[0] - c[1]) / d + 4;
+    return [h * 60, sat, l];
+}
+
+function hslToHex(h: number, sat: number, l: number): string {
+    const hh = ((h % 360) + 360) % 360;
+    const chroma = (1 - Math.abs(2 * l - 1)) * sat;
+    const x = chroma * (1 - Math.abs(((hh / 60) % 2) - 1));
+    const m = l - chroma / 2;
+    let rgb = [0, 0, 0];
+    if (hh < 60) rgb = [chroma, x, 0];
+    else if (hh < 120) rgb = [x, chroma, 0];
+    else if (hh < 180) rgb = [0, chroma, x];
+    else if (hh < 240) rgb = [0, x, chroma];
+    else if (hh < 300) rgb = [x, 0, chroma];
+    else rgb = [chroma, 0, x];
+    return "#" + rgb.map((v) => Math.round((v + m) * 255).toString(16).padStart(2, "0")).join("");
+}
+
+/** The notes accent for a given theme accent, solid and soft. */
+function noteHues(accent: string): { solid: string; soft: string } {
+    const hsl = hexToHsl(accent);
+    const sat = Math.min(Math.max(hsl[1], NOTE_MIN_SAT), NOTE_MAX_SAT);
+    const hue = hsl[0] + NOTE_HUE_SHIFT;
+    return { solid: hslToHex(hue, sat, NOTE_L_SOLID), soft: hslToHex(hue, sat, NOTE_L_SOFT) };
+}
+
 // A group's hover fill: the shipped hand-tuned value on the grey surface,
 // and a much lower lift on black -- a fill blended for #2a2a2a reads as a
 // lit patch floating on #000.
@@ -261,4 +336,16 @@ function applyPalette(
             root.removeProperty(`--pal-${i}-edge`);
         }
     }
+
+    // THE NOTES HUE, written on every apply -- including with no theme picked,
+    // where the accent everything else falls back to is the default teal. The
+    // alpha variants are computed HERE rather than in the stylesheet because
+    // color-mix() is Chrome 111 and the target is chrome74, so CSS cannot
+    // derive a translucent fill from a custom property's hex.
+    const note = noteHues(accent || DEFAULT_ACCENT);
+    root.setProperty("--ov-note", note.solid);
+    root.setProperty("--ov-note-soft", note.soft);
+    root.setProperty("--ov-note-edge", rgba(note.solid, 0.18));
+    root.setProperty("--ov-note-fill", rgba(note.solid, 0.055));
+    root.setProperty("--ov-note-wash", rgba(note.solid, 0.03));
 }

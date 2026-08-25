@@ -718,6 +718,23 @@ the bubble, `"page"` for the registry entry ⌘K finds. It is deliberately NOT i
   agree. If CSS caps lower, the box stops while the drag carries on and the
   corner comes away from the cursor.
 
+**Notes carry their own hue, and it is DERIVED, never a literal.** Steps and
+notes were reading as one list — same fill, same radius, half a pixel between
+their type sizes, and the note's left bar was `--cat-border` at full strength
+against the current step's 35%, so a note was more accented than the step you
+stood on. `--cat-*` now means *where you are*; `--ov-note*` means *standing
+knowledge*. `themes.ts` rotates the active accent by **−134°** (chosen so the
+default teal lands on the amber the design was signed off on) with saturation
+clamped to 0.5–0.6, and emits `--ov-note`, `--ov-note-soft`, `--ov-note-edge`,
+`--ov-note-fill`, `--ov-note-wash`. A FIXED amber is wrong: it collides head-on
+with Ember (`#fb923c`) and Gold (`#facc15`), where steps and notes would come
+out the same colour. Alphas are computed in JS because `color-mix()` is
+Chrome 111. The retint is applied by redefining `--cat-border`/`--cat-icon` **on
+`.wfb-notes`**, not per selector — everything inside a note already keys off
+them, so bars, tag pills, note links, territory chips and focus rings all follow,
+and anything added later inherits it. Portaled pickers are outside that subtree
+and keep the category tint.
+
 **A note carries more than text.** `territory` (ISO-2, upper-cased host-side),
 `tags` (free-form, upper-cased so the vocabulary converges instead of splitting
 into CTA/cta/Cta), and `links` — words in the body that open a folder or a tool.
