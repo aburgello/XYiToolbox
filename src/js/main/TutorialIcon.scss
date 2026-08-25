@@ -1,0 +1,53 @@
+// =============================================================================
+// src/js/main/TutorialIcon.scss
+// -----------------------------------------------------------------------------
+// Only the ADDED bits. The icon's own size, colour and background stay with
+// whichever class the call site passes (`.ls-header-icon`'s gradient tile,
+// `.tool-content-header-icon`'s bare glyph), so a tool with no tutorial is
+// untouched and one with a tutorial is that same icon plus a badge.
+// =============================================================================
+
+.has-tutorial {
+    cursor: pointer;
+    // The badge is positioned against this. `.ls-header-icon` is already
+    // relative; `.tool-content-header-icon` is not, and an unpositioned
+    // ancestor would anchor the badge to the page instead.
+    position: relative;
+
+    &:focus-visible {
+        outline: 2px solid var(--ov-accent, #4a9eff);
+        outline-offset: 3px;
+        border-radius: 8px;
+    }
+}
+
+.tutorial-play-badge {
+    position: absolute;
+    right: -4px;
+    bottom: -4px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    // THE CATEGORY TINT, not the theme accent. The icon it is stuck to is
+    // --cat-icon, and a theme-blue dot on a teal Localise glyph reads as two
+    // unrelated things touching -- the same mismatch as the batch tabs.
+    // --cat-icon is the tint's own solid colour, so it works on the bare
+    // glyph and on `.ls-header-icon`'s gradient tile alike; the theme accent
+    // is the fallback for anywhere with no category mounted.
+    background: var(--cat-icon, var(--ov-accent, #4a9eff));
+    color: #10131a;
+    // Rides on the panel background rather than the icon's, so the badge
+    // reads as a separate object stuck to the corner instead of a hole
+    // punched in the tile.
+    box-shadow: 0 0 0 2px var(--surface-0, #14161a), 0 1px 3px rgba(0, 0, 0, 0.5);
+    pointer-events: none;
+
+    svg {
+        // Optically centred: a play triangle's visual mass sits left of its
+        // bounding box, so a mathematically centred one looks shunted back.
+        margin-left: 0.5px;
+    }
+}

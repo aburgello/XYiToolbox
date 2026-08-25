@@ -34,6 +34,8 @@ import {
 import CSInterface from "../../lib/cep/csinterface";
 import { csi, evalTS } from "../../lib/utils/bolt";
 import Tooltip from "../Tooltip";
+import { VideoOverlay } from "../VideoOverlay";
+import { toFileUrl } from "../lib/fileUrl";
 import StatusIcon from "../StatusIcon";
 import Droplet from "../Droplet";
 import { alertDialog, confirmDialog, promptDialog } from "../Dialog";
@@ -231,31 +233,8 @@ function mockFor(name: string, args: any[]): any {
     }
 }
 
-// Converts a raw OS filesystem path (as returned by the ExtendScript bridge,
-// e.g. "/Volumes/Renders/HORSE/foo.mp4" or "C:\Renders\HORSE\foo.mp4") into
-// a file:// URL a <video>/<img> tag can load. Handles backslashes (Windows)
-// and Windows drive letters, which need an extra leading slash
-// (file:///C:/...) that Mac/Unix paths don't.
-function toFileUrl(p: string): string {
-    if (!p) return "";
-    if (p.startsWith("file://")) return p;
-    let normalized = p.replace(/\\/g, "/");
-    if (/^[a-zA-Z]:\//.test(normalized)) {
-        // Drive-letter path (C:/...) -- needs an extra leading slash so the
-        // drive letter isn't parsed as part of a URL scheme/host.
-        normalized = "/" + normalized;
-    } else if (normalized.startsWith("//")) {
-        // UNC network path (\\Server\Share\... before the backslash swap
-        // above) -- file://<host>/<share>/... wants exactly the TWO
-        // slashes "file://" already supplies before the host, so this
-        // leading "//" has to be stripped, not kept alongside it.
-        // Concatenating both silently produces a malformed four-slash URL
-        // that just fails to load with no error, rather than a network
-        // path a mapped-drive-letter test never would have caught.
-        normalized = normalized.substring(2);
-    }
-    return "file://" + encodeURI(normalized);
-}
+// toFileUrl moved to lib/fileUrl.ts when the tutorial overlay became its
+// second caller -- see that file for the Windows/UNC branches.
 
 // Samples an approximate dominant color off a loaded <video>'s current
 // frame via a tiny offscreen canvas, for the dynamic per-thumbnail accent
@@ -475,43 +454,9 @@ const CreativeCard: React.FC<{
     );
 };
 
-// Fullscreen-in-panel overlay shown when the user clicks "Play" on a
-// variant's render. Plays the real render file centered over everything
-// else, with native <video> controls, instead of shelling out to the OS
-// to reveal the file and launch whatever the default player happens to
-// be. Closes on Escape, on backdrop click, or via the X button.
-const VideoPlayerModal: React.FC<{ path: string; onClose: () => void }> = ({ path, onClose }) => {
-    const [error, setError] = useState(false);
-
-    useEffect(() => {
-        const onKeyDown = (e: KeyboardEvent) => {
-            if (e.key === "Escape") onClose();
-        };
-        window.addEventListener("keydown", onKeyDown);
-        return () => window.removeEventListener("keydown", onKeyDown);
-    }, [onClose]);
-
-    return (
-        <div className="video-player-overlay" onClick={onClose}>
-            <div className="video-player-frame" onClick={(e) => e.stopPropagation()}>
-                <Tooltip text="Close (Esc)">
-                    <button className="video-player-close" onClick={onClose}>
-                        <X size={16} />
-                    </button>
-                </Tooltip>
-                {error ? (
-                    <div className="video-player-error">
-                        <Film size={32} />
-                        <p>Could not play this file in the panel.</p>
-                        <p className="hint">The render works in After Effects. Try Import or Reveal instead.</p>
-                    </div>
-                ) : (
-                    <video src={toFileUrl(path)} controls autoPlay onError={() => setError(true)} />
-                )}
-            </div>
-        </div>
-    );
-};
+// The player itself is the shared VideoOverlay (portals to <body>, closes on
+// Escape/backdrop/X). It lived here until the tutorial overlay needed the
+// same thing; the render-specific failure copy stayed behind as a prop.
 
 // One row per size/duration variant, with its own hover-to-play preview of
 // that specific render (matched by stem via renderMap in the parent) --
@@ -1414,7 +1359,13 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
                 </AnimatePresence>
             </div>
 
-            {playerPath && <VideoPlayerModal path={playerPath} onClose={() => setPlayerPath(null)} />}
+            {playerPath && (
+                <VideoOverlay
+                    path={playerPath}
+                    onClose={() => setPlayerPath(null)}
+                    errorHint="The render works in After Effects. Try Import or Reveal instead."
+                />
+            )}
         </div>
     );
 };

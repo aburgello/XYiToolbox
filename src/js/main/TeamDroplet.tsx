@@ -27,6 +27,7 @@ import Tooltip from "./Tooltip";
 import CheckboxToggle from "./CheckboxToggle";
 import { confirmDialog } from "./Dialog";
 import { evalTS } from "../lib/utils/bolt";
+import { refreshTutorials } from "./lib/tutorials";
 import { requestSoftReload } from "./softReload";
 import "./TeamDroplet.scss";
 
@@ -191,6 +192,12 @@ const TeamDroplet: React.FC = () => {
                 setMounted(true);
                 showNote("Team folder set.", false);
                 refresh();
+                // The tutorial list is cached for the session and was read
+                // against the OLD folder (or against no folder at all, which
+                // is the usual case -- you set this once, on a machine that
+                // has never had it). Without this, every clip in the share
+                // just mounted stays invisible until the panel is reopened.
+                refreshTutorials();
             }
         } catch (e) {
             showNote("No CEP bridge detected. Open this panel inside After Effects.", true);

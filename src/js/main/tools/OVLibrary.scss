@@ -788,85 +788,10 @@
         font-style: italic;
     }
 
-    // In-panel player shown when clicking "Play" on a variant's render.
-    // position: fixed covers the whole panel viewport (the CEP panel is
-    // the "screen" here), so the video sits centered above every other
-    // section regardless of scroll position.
-    .video-player-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.85);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 1000;
-        padding: 24px;
-        box-sizing: border-box;
-    }
+    // The video player's own rules moved to VideoOverlay.scss. They were
+    // nested in here, and the shared component portals to <body> -- rules
+    // under `.ov-library` would have styled nothing.
 
-    .video-player-frame {
-        position: relative;
-        max-width: 100%;
-        max-height: 100%;
-        display: flex;
-
-        video {
-            max-width: 100%;
-            max-height: calc(100vh - 48px);
-            border-radius: 4px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
-            background: var(--surface-0, #000);
-            display: block;
-        }
-    }
-
-    .video-player-close {
-        position: absolute;
-        top: -12px;
-        right: -12px;
-        width: 26px;
-        height: 26px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: var(--surface-1, #2a2a2a);
-        border: 1px solid var(--surface-border, #555);
-        border-radius: 50%;
-        color: #ddd;
-        cursor: pointer;
-
-        &:hover {
-            background: var(--ov-accent, #3a5a8a);
-            color: #fff;
-        }
-    }
-
-    .video-player-error {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        padding: 48px 24px;
-        color: #999;
-        text-align: center;
-
-        svg {
-            opacity: 0.5;
-        }
-
-        p {
-            margin: 0;
-            color: #bbb;
-            font-size: 13px;
-        }
-
-        .hint {
-            margin: 0;
-            color: #777;
-            font-size: 11px;
-        }
-    }
 
     .toast-stack {
         position: absolute;

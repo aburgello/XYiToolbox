@@ -7976,3 +7976,77 @@ stays testable.
 `#aac4ff` on the dark header that greys out far enough to look unavailable
 rather than secondary — the first thing anyone asked about it was whether it was
 switched off. 0.85 keeps the hierarchy without the ambiguity.
+
+### Tutorial clips, played from the tool's own icon
+
+Antonio recorded a short screen recording explaining OV Swap and asked whether a
+clip could play in an overlay from somewhere in the tool's screen — suggesting
+the icon.
+
+**The design decision that matters is that there is no wiring per clip.** The
+match is the filename and nothing else: `_tuts/OVSwap.mp4` explains OV Swap
+because "ovswap" is what the file's name and the tool's id and label all reduce
+to. No index file to keep in step, no field on the registry entry, no code
+change. Recording a tutorial has to stay "drop the mp4 in `_tuts` and name it
+after the tool", because anything that needed a developer in the loop would
+mean two clips exist forever and the feature quietly dies. The team folder
+already had `_aep_tools` and `_zxp` beside it, so `_tuts` follows a convention
+people have seen — and it is opened by name, nothing to do with the
+`_`-folders-are-excluded scan rule.
+
+**Exact after squashing, never fuzzy.** `findBestComponentFile` exists and would
+have matched more clips. It is the wrong tool here for the reason CLAUDE.md
+gives for the CSV "already built" matcher: an unmatched clip costs one rename,
+and a mismatched one plays the wrong tool's tutorial to somebody who is standing
+in a tool specifically because they don't know how to use it. `tutorialKey`
+folds accents, lower-cases and drops non-alphanumerics, and compares for
+equality against the id *and* the label — either can be the more natural
+filename ("OVSwap" beats "ov-swap"; "Find & Replace" beats "find-and-replace").
+
+**The affordance only exists when the clip does.** No badge, no cursor, no
+`role`, no click on the thirty-odd tools with no tutorial — they render exactly
+the icon they always did. An icon that looks pressable everywhere and answers in
+three places teaches everyone to stop pressing it, taking the three real ones
+down with it.
+
+**Two things were promoted to shared rather than copied.** OVLibrary had the
+only video player and the only `toFileUrl`; the tutorial overlay was the second
+caller of both. `toFileUrl`'s Windows-drive-letter and UNC branches are exactly
+the detail that gets half-remembered on a second write, and a malformed
+`file://` URL neither throws nor logs — it shows nothing, so a wrong second copy
+would have read as a missing file. The player became `VideoOverlay` with the
+failure copy as a prop (OVLibrary's "the render works in After Effects, try
+Import or Reveal" is nonsense for a tutorial clip) and now portals to `<body>`,
+because it is opened from inside a tool's content and `position: fixed` is still
+clipped by an `overflow` ancestor — the trap Tooltip's bubble already hit.
+
+*A span with `role="button"`, not a `<button>`:* it replaces four existing
+header icons whose own classes carry their backgrounds — `.ls-header-icon`'s
+gradient tile among them — and index.scss's global `button:hover`/`:active`
+would have painted over every one.
+
+*The badge takes `--cat-icon`, not `--ov-accent`.* First build put a theme-blue
+dot on OV Swap's teal glyph, which read as two unrelated things touching: the
+same accent mismatch as the Delivery batch tabs, one component down.
+
+**Verified in two halves, because neither fails visibly on its own.**
+`scripts/probe-tutorials.cjs` drives the BUILT bundle's `tutorialsList` against
+a stubbed filesystem — `tsconfig-build.json` type-checks zero files under
+`src/jsx`, so otherwise its only gate would be an artist opening the panel. The
+stubs enforce the house rules as well as the behaviour: `File.exists` throws and
+`getFiles(mask)` throws, so a future edit reaching for either on the share fails
+the probe rather than failing silently on the NAS. It also covers the frontend's
+`tutorialKey`, since a clip the host finds and the frontend cannot key to a tool
+is the same outcome as no clip at all.
+
+*That probe immediately earned itself.* The decoded filename comes back
+**decomposed** — `decodeURI` hands back "Seina" plus a combining diaeresis, not
+the precomposed letter, exactly as CLAUDE.md says macOS stores it. Comparing
+decoded names directly would have meant a clip named on a Mac keying against
+nothing, with no error anywhere. The NFD fold in `tutorialKey` is why it works,
+and there is now a test that says so.
+
+**Not done:** the two hub tools (Review, Delivery) carry their own header chrome
+and have no `tool-content-header-icon`, so they have no front door for a clip
+yet. And `tutorialsList` has never run inside After Effects — the probe stubs
+the filesystem, it does not stub the NAS.

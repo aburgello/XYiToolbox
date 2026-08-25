@@ -266,7 +266,7 @@ thing: WorkflowBoard's steps are a numbered route where the node carries
 done-or-not, and adding a square beside it would be a second answer to the same
 question), `Tooltip`, `Droplet`, `Dropdown`, `SegmentedToggle`
 (needs a unique `name` or two instances share one Framer `layoutId`),
-`ArcadeFrame`, `ToolErrorBoundary`.
+`ArcadeFrame`, `ToolErrorBoundary`, `VideoOverlay` (the ONE video player — portals to `<body>`, closes on Esc/backdrop/X; OVLibrary's private copy was promoted, don't re-roll a second), `lib/fileUrl.ts`'s `toFileUrl` (the Windows-drive and UNC branches are why — a malformed `file://` URL shows nothing and throws nothing).
 
 **Input.** Prefer **mouse events over pointer events** for anything beyond a
 plain click — the macOS AE CEP host doesn't reliably dispatch Pointer Events.
@@ -344,6 +344,25 @@ tab-separated lines (JSON only where a real map is needed).
   so the best move becomes finding the machine nobody plays. A game below the
   threshold must also not count towards `MIN_GAMES_TO_RANK`, or a dead cabinet
   is a free entry towards qualifying.
+
+**Tutorials** are clips in `<TeamFolder>/_tuts/`, matched to a tool by
+FILENAME ALONE (`OVSwap.mp4` → OV Swap) and played from that tool's header icon
+via `TutorialIcon`. There is no index file and no registry field on purpose:
+recording one must stay "drop the mp4 in `_tuts` and name it after the tool", or
+nobody records one.
+
+- The match is **exact after squashing** (`lib/tutorials.ts`'s `tutorialKey`:
+  fold accents, lower-case, drop non-alphanumerics) against the tool's id *or*
+  its label. Never make it fuzzy — an unmatched clip costs one rename, a
+  mismatched one teaches somebody the wrong tool.
+- **The affordance only exists when the clip does.** No badge, no cursor, no
+  role, no click on a tool with no tutorial. An icon that looks pressable on
+  forty tools and answers on three trains everyone to stop pressing it.
+- The badge takes `--cat-icon`, not `--ov-accent` — it is stuck to a
+  category-tinted glyph.
+- One bridge call per session (cached); `refreshTutorials()` on picking a new
+  team folder. `_tuts` is a team-folder path opened by name, unrelated to the
+  `_`-folder scan rule below.
 
 **Folders starting with `_` are excluded from every scan.** The one exception is
 Naming Audit, which skips only `Auto-Save`/`_Archive`/`_Old`/`_DEV`.
@@ -553,6 +572,11 @@ yarn build:web  browser-only build
 Testing without studio folders: browser preview validates layout and React
 logic only. `node scripts/make-test-masters.cjs` generates a throwaway masters
 tree for exercising real scan/reveal paths inside AE.
+
+`node scripts/probe-tutorials.cjs` (after `yarn build`) drives the built
+bundle's `tutorialsList` against a stubbed filesystem whose `File.exists` and
+`getFiles(mask)` THROW — so an edit that reaches for either on the share fails
+the probe instead of failing silently on the NAS.
 
 ---
 

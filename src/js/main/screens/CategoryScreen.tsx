@@ -23,6 +23,7 @@ import { CATEGORIES, TOOLS, categoryStyleVars, type ToolEntry } from "../toolReg
 import { iconWiggle } from "../animations";
 import { useToolOrder } from "../hooks/useToolOrder";
 import { ToolErrorBoundary } from "../ToolErrorBoundary";
+import TutorialIcon from "../TutorialIcon";
 import { GsapContentSwap } from "../gsap/components/GsapContentSwap";
 import Tooltip from "../Tooltip";
 import { PaletteTrigger, triggerPalette } from "../CommandPalette";
@@ -203,9 +204,13 @@ export const CategoryScreen: React.FC<Props> = ({ categoryId, selectedToolId, on
                                         {/* ── Tool header ─────────────────────────── */}
                                         <div className="tool-content-header">
                                             <div className="tool-content-header-row">
-                                                <span className="tool-content-header-icon">
+                                                <TutorialIcon
+                                                    toolId={selectedTool.id}
+                                                    toolLabel={selectedTool.label}
+                                                    className="tool-content-header-icon"
+                                                >
                                                     <selectedTool.icon size={20} />
-                                                </span>
+                                                </TutorialIcon>
                                                 <h3 className="tool-content-header-title">{selectedTool.label}</h3>
                                             </div>
                                             {selectedTool.description && (

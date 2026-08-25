@@ -61,6 +61,7 @@ import { TOOLS, categoryStyleVars, type ToolEntry } from "../toolRegistry";
 import { iconWiggle } from "../animations";
 import { useToolOrder } from "../hooks/useToolOrder";
 import { ToolErrorBoundary } from "../ToolErrorBoundary";
+import TutorialIcon from "../TutorialIcon";
 import { GsapContentSwap } from "../gsap/components/GsapContentSwap";
 import { PaletteTrigger, triggerPalette } from "../CommandPalette";
 import { evalTS } from "../../lib/utils/bolt";
@@ -535,9 +536,13 @@ export const RailScreen: React.FC<Props> = ({
                                     <Suspense fallback={<div style={{ width: "100%", height: "100%" }} />}>
                                         <div className="tool-content-header">
                                             <div className="tool-content-header-row">
-                                                <span className="tool-content-header-icon">
+                                                <TutorialIcon
+                                                    toolId={selectedTool.id}
+                                                    toolLabel={selectedTool.label}
+                                                    className="tool-content-header-icon"
+                                                >
                                                     <selectedTool.icon size={20} />
-                                                </span>
+                                                </TutorialIcon>
                                                 <h3 className="tool-content-header-title">{selectedTool.label}</h3>
                                             </div>
                                             {selectedTool.description && (

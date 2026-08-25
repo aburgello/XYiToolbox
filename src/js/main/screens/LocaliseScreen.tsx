@@ -23,6 +23,7 @@ import CampaignLocaliserTool from "../tools/CampaignLocaliser";
 import { sfx } from "../../lib/utils/sfx";
 import "./LocaliseScreen.scss";
 import HomeButton from "../HomeButton";
+import TutorialIcon from "../TutorialIcon";
 
 interface Props {
     selectedToolId?: string;
@@ -225,13 +226,14 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
                                 has hung rather than one that is working. */}
                             <Suspense fallback={<ToolSkeleton />}>
                                 <div className="tool-content-header ls-tool-header" style={env}>
-                                    <motion.span
+                                    <TutorialIcon
+                                        toolId={tool.id}
+                                        toolLabel={tool.label}
                                         className="ls-header-icon"
-                                        whileHover={{ scale: 1.15, rotate: 8 }}
-                                        transition={{ type: "spring", stiffness: 300, damping: 15 }}
+                                        hover="pop"
                                     >
                                         <tool.icon size={24} />
-                                    </motion.span>
+                                    </TutorialIcon>
                                     <h3 className="tool-content-header-title">{tool.label}</h3>
                                     <motion.div
                                         className="ls-header-line"

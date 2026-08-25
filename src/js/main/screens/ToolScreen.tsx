@@ -14,6 +14,7 @@ import { ToolErrorBoundary } from "../ToolErrorBoundary";
 import { PaletteTrigger, triggerPalette } from "../CommandPalette";
 import { navigateToTool } from "../lib/navigation";
 import HomeButton from "../HomeButton";
+import TutorialIcon from "../TutorialIcon";
 
 interface Props {
     toolId: string;
@@ -48,9 +49,13 @@ export const ToolScreen: React.FC<Props> = ({ toolId, onBack, onHome }) => {
                                 {showHeader && (
                                     <div className="tool-content-header">
                                         <div className="tool-content-header-row">
-                                            <span className="tool-content-header-icon">
+                                            <TutorialIcon
+                                                toolId={tool.id}
+                                                toolLabel={tool.label}
+                                                className="tool-content-header-icon"
+                                            >
                                                 <tool.icon size={20} />
-                                            </span>
+                                            </TutorialIcon>
                                             <h3 className="tool-content-header-title">{tool.label}</h3>
                                         </div>
                                         {tool.description && (

@@ -3516,3 +3516,83 @@ export const workflowTerritories = (root: string): WorkflowTerritoryResult => {
     return { success: false, error: e.toString() };
   }
 };
+
+// =============================================================================
+// TUTORIALS -- short screen recordings the team drops in <TeamFolder>/_tuts/
+// -----------------------------------------------------------------------------
+// One flat folder of clips named after the tool they explain ("OVSwap.mp4"),
+// played in an overlay from the tool's own header icon. Deliberately flat and
+// deliberately convention-only: there is no index file to keep in step, so
+// recording a tutorial is "drop the mp4 in _tuts and name it after the tool",
+// which is a thing somebody will actually do at 6pm. The matching lives on the
+// frontend (lib/tutorials.ts) because that is where the tool ids and labels
+// are; the host's only job is to say what is in the folder.
+//
+// `_tuts` starts with an underscore like `_aep_tools` and `_zxp` beside it.
+// That is the team folder's own convention for "toolbox plumbing, not
+// someone's work" and is unrelated to the masters-scan rule that skips `_`
+// folders -- nothing scans the team folder root, this opens the path by name.
+// =============================================================================
+
+const TUTORIALS_DIRNAME = "_tuts";
+
+interface TutorialFile {
+  /** Filename without the extension, decoded -- "OVSwap". */
+  name: string;
+  /** Full fs path, for the <video> tag's file:// URL. */
+  path: string;
+}
+
+interface TutorialsResult extends Result {
+  files?: TutorialFile[];
+  /** False when the share isn't mounted or there's no _tuts folder yet. */
+  available?: boolean;
+}
+
+function isTutorialVideo(fileName: string): boolean {
+  const dot = fileName.lastIndexOf(".");
+  if (dot === -1) return false;
+  const ext = fileName.substring(dot + 1).toLowerCase();
+  // mp4 is what QuickTime's screen recording exports and what everyone will
+  // actually use; mov and webm are here so a clip that arrives in one of them
+  // is not silently invisible with nothing to explain it.
+  return ext === "mp4" || ext === "mov" || ext === "webm";
+}
+
+/**
+ * Everything playable in <TeamFolder>/_tuts/, or `available: false`.
+ *
+ * Never an error toast: no team folder, an unmounted share and an empty
+ * _tuts are all normal states that mean "no tutorials right now", exactly
+ * like every other team-folder feature.
+ */
+export const tutorialsList = (): TutorialsResult => {
+  try {
+    const team = teamFolder();
+    if (!team) return { success: true, available: false, files: [] };
+    const dir = new Folder(team.fsName + "/" + TUTORIALS_DIRNAME);
+    // `.exists` on a DIRECTORY is the one team-folder existence check that
+    // tells the truth (CLAUDE.md's NAS rule); the file-level checks below
+    // are the getFiles() walk, not File.exists.
+    if (!dir.exists) return { success: true, available: false, files: [] };
+    // getFiles() with NO MASK plus a manual compare, per the house rule --
+    // a mask silently misses files on the NAS.
+    const items = dir.getFiles();
+    const out: TutorialFile[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (typeof (item as Folder).getFiles === "function") continue;
+      // File.name is URI-ENCODED, so an accented or spaced filename arrives
+      // percent-escaped and would key against nothing.
+      const fileName = decode((item as File).name);
+      if (!isTutorialVideo(fileName)) continue;
+      const dot = fileName.lastIndexOf(".");
+      out.push({ name: fileName.substring(0, dot), path: (item as File).fsName });
+    }
+    return { success: true, available: true, files: out };
+  } catch (e) {
+    // Also not an error the user should see -- a permissions blip on the
+    // share means no tutorials, not a broken panel.
+    return { success: true, available: false, files: [], error: e.toString() };
+  }
+};

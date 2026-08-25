@@ -266,6 +266,21 @@ let demoWorkflows: DemoWorkflow[] = [
 let demoTicks = '{"FORGOTTENISLAND|TRIO":{"s1":true,"s2":true}}';
 
 const SHAPED: Record<string, (args: unknown[]) => unknown> = {
+    // Two clips only, and one of them for a tool that doesn't exist -- the
+    // point of the demo mock is that MOST tools have no tutorial, which is
+    // the case the header icon has to get right (no badge, no cursor, no
+    // click). A mock that answered for everything would hide exactly that.
+    // The path is fake; the overlay's error state is the honest outcome in a
+    // browser with no NAS, and worth being able to see.
+    tutorialsList: () => ({
+        success: true,
+        available: true,
+        files: [
+            { name: "OVSwap", path: "/Volumes/Team_Folder/_tuts/OVSwap.mp4" },
+            { name: "Artwork Check", path: "/Volumes/Team_Folder/_tuts/Artwork Check.mp4" },
+        ],
+    }),
+
     workflowBoardLoad: () => ({ success: true, read: true, entries: demoWorkflows, me: "Antonio" }),
 
     workflowContext: () => ({

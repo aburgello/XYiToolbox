@@ -1,0 +1,113 @@
+// =============================================================================
+// src/js/main/VideoOverlay.scss
+// -----------------------------------------------------------------------------
+// Moved out of OVLibrary.scss, where these rules were nested inside
+// `.ov-library`. The component portals to <body> now, so nesting them under a
+// tool's own class would have styled nothing.
+//
+// z-index 1000 is the toasts/video tier from CLAUDE.md -- below the command
+// palette (1900) and Dialog (2000), so a confirm raised over a playing clip
+// still wins.
+// =============================================================================
+
+.video-player-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 24px;
+    box-sizing: border-box;
+}
+
+.video-player-frame {
+    position: relative;
+    max-width: 100%;
+    max-height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+
+    video {
+        max-width: 100%;
+        // 48px is the overlay's own vertical padding; the title bar, when
+        // there is one, takes its own room above this.
+        max-height: calc(100vh - 48px);
+        border-radius: 4px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+        background: var(--surface-0, #000);
+        display: block;
+    }
+}
+
+// Only rendered when the caller passes a title -- the tutorial overlay does,
+// because nothing else on screen names the clip.
+.video-player-title {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: #e8ecf4;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.video-player-close {
+    position: absolute;
+    top: -12px;
+    right: -12px;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface-1, #2a2a2a);
+    border: 1px solid var(--surface-border, #555);
+    border-radius: 50%;
+    color: #ddd;
+    cursor: pointer;
+    z-index: 1;
+
+    // index.scss's global button:hover/:active paints over any custom button,
+    // so both are re-declared here.
+    &:hover {
+        background: var(--ov-accent, #3a5a8a);
+        color: #fff;
+    }
+
+    &:active {
+        background: var(--ov-accent, #3a5a8a);
+    }
+}
+
+.video-player-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 48px 24px;
+    color: #999;
+    text-align: center;
+
+    svg {
+        opacity: 0.5;
+    }
+
+    p {
+        margin: 0;
+        color: #bbb;
+        font-size: 13px;
+    }
+
+    .hint {
+        margin: 0;
+        color: #777;
+        font-size: 11px;
+    }
+}
