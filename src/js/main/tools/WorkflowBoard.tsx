@@ -21,7 +21,7 @@
 // outside every known campaign -- and each of those is answered with a picker,
 // never an error.
 // =============================================================================
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import {
     ListChecks, Plus, X, Trash2, Pencil, Check, RotateCcw, StickyNote,
@@ -1739,6 +1739,7 @@ const WorkflowBoardTool: React.FC<{
                                     <span className="wfb-note-field">
                                         <FormatBar
                                             sel={noteSel.sel}
+                                            x={noteSel.x}
                                             onBold={() => noteSel.wrapBold(noteDraft, setNoteDraft)}
                                             onLink={() => {
                                                 // The SELECTION is the label, so
@@ -2026,7 +2027,7 @@ const StepRow: React.FC<{
                 {/* BOLD ONLY. A step already carries a row-level link chip, and
                     a second inline mechanism in the same sentence would be two
                     answers to one question. */}
-                <FormatBar sel={sel.sel} onBold={() => sel.wrapBold(step.text, onText)} />
+                <FormatBar sel={sel.sel} x={sel.x} onBold={() => sel.wrapBold(step.text, onText)} />
                 <input
                     type="text"
                     value={step.text}
@@ -2065,10 +2066,20 @@ const StepRow: React.FC<{
 // only appears once posted. That is also the upside — you can see and delete a
 // marker you did not mean.
 //
-// THE BAR IS ANCHORED TO THE INPUT, not to the selection. Positioning over a
-// range inside an <input> means measuring text with a mirror element, and on a
-// 380px panel that buys a few pixels of precision for a whole class of drift
-// bugs. Above the field, it is always where you left it.
+// THE BAR SITS OVER THE SELECTION. It was pinned to the field's left edge —
+// cheaper, and defensible right up until you select a word on the right of a
+// long step and a button appears in the far corner pointing at nothing. A
+// control that acts on a specific thing has to be near that thing.
+//
+// An <input> exposes no Range, so the x position is measured: canvas
+// `measureText` on the substring before the selection, and again before its
+// end, against the field's own computed font. Canvas rather than a mirror
+// <span> because there is no element to insert, keep in sync, or accidentally
+// leave in the DOM — and no layout thrash from measuring on every keystroke.
+//
+// Clamped to the field, so a selection at either extreme slides the bar to the
+// edge rather than off it, and `scrollLeft` is subtracted so it still points at
+// the right word once the text is long enough to scroll inside the box.
 //
 // mousedown is PREVENTED on every button. Without that, pressing one blurs the
 // input, the selection collapses, and the button acts on nothing — the classic
@@ -2078,15 +2089,37 @@ interface Sel { start: number; end: number }
 
 const FormatBar: React.FC<{
     sel: Sel | null;
+    /** Centre of the selection, in px from the field's left edge. */
+    x: number;
     onBold: () => void;
     /** Absent on steps: a step already carries a row-level link chip, and a
      *  second inline mechanism in the same sentence is two answers to one
      *  question. */
     onLink?: () => void;
-}> = ({ sel, onBold, onLink }) => {
+}> = ({ sel, x, onBold, onLink }) => {
+    const ref = useRef<HTMLDivElement>(null);
+    const [left, setLeft] = useState(0);
+
+    // AFTER LAYOUT, not during: the bar's own width decides where its left edge
+    // goes, and that is not known until it has been measured. useLayoutEffect
+    // rather than useEffect so it never paints one frame in the wrong place.
+    useLayoutEffect(() => {
+        const el = ref.current;
+        if (!el) return;
+        const w = el.offsetWidth;
+        const field = el.parentElement ? el.parentElement.offsetWidth : 0;
+        const want = x - w / 2;
+        setLeft(Math.max(0, Math.min(want, Math.max(0, field - w))));
+    }, [x, sel]);
+
     if (!sel || sel.end <= sel.start) return null;
     return (
-        <div className="wfb-formatbar" onMouseDown={(e) => e.preventDefault()}>
+        <div
+            ref={ref}
+            className="wfb-formatbar"
+            style={{ left }}
+            onMouseDown={(e) => e.preventDefault()}
+        >
             <button type="button" onClick={onBold} title="Bold the selected text">
                 <span className="wfb-formatbar-b">B</span>
             </button>
@@ -2105,9 +2138,40 @@ const FormatBar: React.FC<{
  * Read on every event that can move a caret. `select` alone misses the arrow
  * keys, and `keyup` alone misses a drag that ends outside the field.
  */
+/**
+ * How far into an <input> a character offset sits, in px from the field's left
+ * content edge.
+ *
+ * ONE CANVAS, reused. Creating one per keystroke is a new backing store each
+ * time; this is a measuring tape, not a drawing surface.
+ *
+ * The font shorthand comes off the element itself, so it follows whatever the
+ * stylesheet says rather than a hard-coded guess that drifts the moment
+ * somebody changes a font-size. Chromium always fills the shorthand in; the
+ * fallback is there because an unstyled measurement is worse than none, and
+ * returning 0 simply puts the bar at the left edge — where it used to live.
+ */
+let measureCtx: CanvasRenderingContext2D | null = null;
+function textWidth(el: HTMLInputElement, upto: string): number {
+    try {
+        if (!measureCtx) {
+            const c = document.createElement("canvas");
+            measureCtx = c.getContext("2d");
+        }
+        if (!measureCtx) return 0;
+        const cs = window.getComputedStyle(el);
+        measureCtx.font = cs.font || `${cs.fontSize} ${cs.fontFamily}`;
+        return measureCtx.measureText(upto).width;
+    } catch {
+        return 0;
+    }
+}
+
 function useSelection(value: string) {
     const ref = useRef<HTMLInputElement | null>(null);
     const [sel, setSel] = useState<Sel | null>(null);
+    /** Centre of the selection, px from the field's left border. */
+    const [x, setX] = useState(0);
 
     const read = useCallback(() => {
         const el = ref.current;
@@ -2116,6 +2180,15 @@ function useSelection(value: string) {
         const end = el.selectionEnd;
         if (start === null || end === null) { setSel(null); return; }
         setSel({ start, end });
+        if (end <= start) return;
+        const v = el.value;
+        const a = textWidth(el, v.slice(0, start));
+        const bx = textWidth(el, v.slice(0, end));
+        const cs = window.getComputedStyle(el);
+        // Border + padding put the text's origin inside the box; scrollLeft
+        // moves it back out again once the value is longer than the field.
+        const inset = parseFloat(cs.borderLeftWidth || "0") + parseFloat(cs.paddingLeft || "0");
+        setX((a + bx) / 2 - el.scrollLeft + inset);
     }, []);
 
     /** The selected text, trimmed of the spaces a double-click drags in. */
@@ -2158,7 +2231,7 @@ function useSelection(value: string) {
         }, 0);
     };
 
-    return { ref, sel, selected, handlers, wrapBold, read };
+    return { ref, sel, x, selected, handlers, wrapBold, read };
 }
 
 // ---------------------------------------------------------------------------

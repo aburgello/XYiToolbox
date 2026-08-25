@@ -7753,3 +7753,35 @@ Closing DISCARDS the draft, so it asks first — but only once there is somethin
 to lose. A half-written note thrown away by a stray click is the same complaint
 as a deleted one, and a confirm on an empty box is the kind people learn to
 click through.
+
+### The format bar now sits over the selection
+
+It was pinned to the field's left edge — cheaper, and defensible right up until
+you select a word on the right of a long step and the button appears in the far
+corner pointing at nothing. A control that acts on a specific thing has to be
+near that thing; the earlier reasoning traded that away for implementation
+convenience and was wrong.
+
+An `<input>` exposes no Range, so the x position is measured: canvas
+`measureText` on the substring before the selection start, again before its end,
+midpoint between them. Canvas rather than a mirror `<span>` — there is no
+element to insert, keep in sync, or accidentally leave in the DOM, and no layout
+thrash from measuring on every keystroke. One context is created and reused; one
+per keystroke would be a new backing store each time.
+
+Three details that decide whether it lands on the right word:
+
+- The **font shorthand comes off the element**, so it follows the stylesheet
+  rather than a hard-coded guess that drifts the moment somebody changes a
+  font-size.
+- **Border and padding** are added — they put the text's origin inside the box —
+  and **`scrollLeft` is subtracted**, so it still points at the right word once
+  the value is long enough to scroll inside the field.
+- The bar is **clamped to the field** in a `useLayoutEffect`, because its own
+  width decides where its left edge goes and that is not known until it has been
+  measured. Layout effect rather than effect, so it never paints one frame in
+  the wrong place.
+
+Measured against an independent calculation at three positions — a word at the
+start, in the middle, and at the end of a step that overflows its field: **0px
+off at all three**, and the clamp keeps it inside the box at both extremes.
