@@ -42,6 +42,7 @@ import LoadingChatter from "../LoadingChatter";
 import ScreenLibrary, { ScreenEntry } from "./ScreenLibrary";
 import { confirmDialog } from "../Dialog";
 import { detectShapes } from "../lib/detectShapes";
+import { setTutorialSubject } from "../lib/tutorialSubject";
 import "../shared.scss";
 import "./Bespoke.scss";
 
@@ -657,6 +658,34 @@ export const BespokeTool = () => {
     // deliverable and never revisited, so it is a question asked at the door
     // rather than a switch sat permanently above the work.
     const [mode, setMode] = useState<"multi" | "regions" | "insitu" | null>(null);
+
+    // THE HEADER ICON FOLLOWS THE MODE. This tool is one registry entry over
+    // three builds that share a door and nothing else, so one tutorial for
+    // "Bespoke" would have to cover all three -- and a clip that teaches one
+    // mode while claiming to be about the tool is the mismatch the exact-match
+    // rule exists to prevent.
+    //
+    // Both spellings answer for the tiling mode on purpose: the deliverable is
+    // MultipleArt everywhere it is written down (the AE filenames, the
+    // frontcard's campaign line, the registry's action list), so that is what
+    // somebody recording the clip will type -- but MultiArt.mp4 finds it too
+    // rather than costing a rename.
+    useEffect(() => {
+        if (!mode) {
+            setTutorialSubject(null);
+            return;
+        }
+        const subject =
+            mode === "multi"
+                ? { id: "multi-art", label: "Multiple Art" }
+                : mode === "insitu"
+                ? { id: "insitu", label: "Insitu" }
+                : { id: "bespoke-board", label: "Bespoke" };
+        setTutorialSubject({ toolId: "bespoke", id: subject.id, label: subject.label });
+        // Cleared on the way out as well as on a mode change: the icon lives in
+        // the screen header, which outlives this component.
+        return () => setTutorialSubject(null);
+    }, [mode]);
     const [regions, setRegions] = useState<Region[]>([]);
     const [selRegion, setSelRegion] = useState(0);
     const [refPath, setRefPath] = useState("");
@@ -3115,7 +3144,11 @@ export const BespokeTool = () => {
                             imposed on someone who has decided before arriving. */}
                         <button className="bsp-choose-card" onClick={() => setMode("multi")}>
                             <LayoutGrid size={30} />
-                            <b>Multi Art</b>
+                            {/* MultipleArt, matching the deliverable. The AE
+                                filenames, the frontcard's campaign line and the
+                                registry's action list all say Multiple Art; this
+                                button was the only place saying Multi Art. */}
+                            <b>Multiple Art</b>
                         </button>
                         <button className="bsp-choose-card" onClick={() => setMode("regions")}>
                             <Layers size={30} />

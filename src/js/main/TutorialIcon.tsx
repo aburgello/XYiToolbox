@@ -21,6 +21,7 @@ import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Play } from "lucide-react";
 import { tutorialFor, type Tutorial } from "./lib/tutorials";
+import { getTutorialSubject, subscribeTutorialSubject } from "./lib/tutorialSubject";
 import { VideoOverlay } from "./VideoOverlay";
 import "./TutorialIcon.scss";
 
@@ -37,6 +38,24 @@ interface Props {
 export const TutorialIcon: React.FC<Props> = ({ toolId, toolLabel, className, hover = "lift", children }) => {
     const [tutorial, setTutorial] = useState<Tutorial | null>(null);
     const [playing, setPlaying] = useState(false);
+    // WHAT THIS ICON IS ABOUT RIGHT NOW. Almost always the tool it sits on;
+    // Bespoke is the exception, where the mode you picked at the door is a
+    // different subject to the tool that offered it. See lib/tutorialSubject.
+    const [subject, setSubject] = useState(getTutorialSubject);
+
+    useEffect(() => {
+        // Read once on mount as well as on change: the tool below this header
+        // sets its subject while mounting, which can land before this
+        // subscribes.
+        setSubject(getTutorialSubject());
+        return subscribeTutorialSubject(() => setSubject(getTutorialSubject()));
+    }, []);
+
+    // Scoped to this tool -- a subject belonging to another one is not ours to
+    // show, which is what keeps a stale mode off every other tool's header.
+    const mine = subject && subject.toolId === toolId ? subject : null;
+    const lookupId = mine ? mine.id : toolId;
+    const lookupLabel = mine ? mine.label : toolLabel;
 
     useEffect(() => {
         // Guarded against landing after the tool has been navigated away from:
@@ -45,13 +64,13 @@ export const TutorialIcon: React.FC<Props> = ({ toolId, toolLabel, className, ho
         // clicking through tools quickly will outrun it.
         let live = true;
         setTutorial(null);
-        tutorialFor(toolId, toolLabel).then((t) => {
+        tutorialFor(lookupId, lookupLabel).then((t) => {
             if (live) setTutorial(t);
         });
         return () => {
             live = false;
         };
-    }, [toolId, toolLabel]);
+    }, [lookupId, lookupLabel]);
 
     // The hover the icon had before this existed, unchanged, so a tool with no
     // clip looks and moves exactly as it did.
@@ -72,8 +91,8 @@ export const TutorialIcon: React.FC<Props> = ({ toolId, toolLabel, className, ho
                 transition={{ type: "spring", stiffness: 300, damping: 15 }}
                 role={tutorial ? "button" : undefined}
                 tabIndex={tutorial ? 0 : undefined}
-                title={tutorial ? "Watch the " + toolLabel + " tutorial" : undefined}
-                aria-label={tutorial ? "Watch the " + toolLabel + " tutorial" : undefined}
+                title={tutorial ? "Watch the " + lookupLabel + " tutorial" : undefined}
+                aria-label={tutorial ? "Watch the " + lookupLabel + " tutorial" : undefined}
                 onClick={tutorial ? open : undefined}
                 onKeyDown={
                     tutorial
@@ -109,7 +128,7 @@ export const TutorialIcon: React.FC<Props> = ({ toolId, toolLabel, className, ho
                 {playing && tutorial && (
                     <VideoOverlay
                         path={tutorial.path}
-                        title={toolLabel + " — tutorial"}
+                        title={lookupLabel + " — tutorial"}
                         errorHint="The clip lives in the team folder's _tuts. If the share just mounted, reopen the tool."
                         onClose={() => setPlaying(false)}
                     />

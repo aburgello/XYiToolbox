@@ -377,6 +377,15 @@ nobody records one.
   highlight is `width: 50%` sliding between exactly two children. Delivery's
   leads `.dh-action-bar` with a `Package`, not the registry's `Truck`, which
   the Delivery button beside it already has.
+- **A MODE can be a subject in its own right** (`lib/tutorialSubject.ts`), and
+  Bespoke is the only tool that needs it — three builds sharing a door and
+  nothing else. The header icon stays mounted after a mode is picked, so it is
+  contextual: the tool's clip at the chooser, the mode's clip inside one
+  (`MultipleArt.mp4`/`MultiArt.mp4`, `Bespoke.mp4`/`BespokeBoard.mp4`,
+  `Insitu.mp4`). Never answer this with a compound FILENAME syntax — a rule to
+  remember is a clip nobody records. The subject store is **scoped by
+  `toolId`** so a mode left uncleared cannot relabel another tool's header;
+  keep it that way, and keep clearing it on unmount.
 - One bridge call per session (cached); `refreshTutorials()` on picking a new
   team folder. `_tuts` is a team-folder path opened by name, unrelated to the
   `_`-folder scan rule below.

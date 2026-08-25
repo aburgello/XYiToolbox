@@ -283,6 +283,11 @@ const SHAPED: Record<string, (args: unknown[]) => unknown> = {
             // share mounted -- it is the one placement that is not the
             // shared tool-content header.
             { name: "Deliver", path: "/Volumes/Team_Folder/_tuts/Deliver.mp4" },
+            // A Bespoke MODE rather than a tool, so the contextual header icon
+            // is exercisable in preview: the badge should appear only after
+            // Multiple Art is picked at the chooser, and go again on the way
+            // back out.
+            { name: "MultipleArt", path: "/Volumes/Team_Folder/_tuts/MultipleArt.mp4" },
         ],
     }),
 

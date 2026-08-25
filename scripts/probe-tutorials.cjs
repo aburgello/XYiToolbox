@@ -141,5 +141,24 @@ check('decomposed and precomposed key the same',
 check('a different tool does NOT match', tutorialKey('OVSwap') === tutorialKey('batch-match'), false);
 check('empty name keys to empty',        tutorialKey(''), '');
 
+// Bespoke's three modes are subjects in their own right (lib/tutorialSubject),
+// looked up by the same id-or-label pair a tool uses. The tiling mode answers
+// to BOTH spellings on purpose: everything written down says MultipleArt, so
+// that is what gets typed, but the shorter form must not cost a rename.
+console.log('');
+check('MultipleArt keys to the mode label', tutorialKey('MultipleArt'), tutorialKey('Multiple Art'));
+check('MultiArt keys to the mode id',       tutorialKey('MultiArt'), tutorialKey('multi-art'));
+check('the two spellings are DIFFERENT keys',
+    tutorialKey('MultipleArt') === tutorialKey('MultiArt'), false);
+check('Insitu keys to the insitu mode',     tutorialKey('Insitu'), tutorialKey('insitu'));
+// The tool is "It's Bespokin' Time" and one of its three modes is "Bespoke",
+// so Bespoke.mp4 legitimately answers in two places -- at the door as the
+// tool's own clip, and inside the board mode. That is one clip on one tool,
+// never two tools sharing a name.
+check('Bespoke keys to the tool and the mode alike',
+    [tutorialKey('Bespoke'), tutorialKey('bespoke'), tutorialKey('bespoke-board')].join('|'),
+    'bespoke|bespoke|bespokeboard');
+check('the tool label still keys',          tutorialKey("It's Bespokin' Time"), 'itsbespokintime');
+
 console.log(fails ? '\n' + fails + ' FAILED' : '\nAll passed.');
 process.exit(fails ? 1 : 0);
