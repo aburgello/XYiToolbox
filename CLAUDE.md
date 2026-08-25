@@ -410,6 +410,19 @@ Naming Audit, which skips only `Auto-Save`/`_Archive`/`_Old`/`_DEV`.
 - Campaign matching uses token boundaries on the FILENAME side only.
 - Never re-add Artwork to the CSV built-row core match — `reshapeSpecs` defaults
   it to `"DOOH"`, and a field that can silently default cannot be required.
+- **Removing a null/solid LAYER leaves its footage ITEM in the project.**
+  `scaleCompToFit` parents to a temporary 3D null, and removing that layer left
+  an orphan behind on every call — a real working file held `Null 1` six times,
+  `Null 5` seven times and `Null 43`–`52`. Read the item off the layer BEFORE
+  removing it (the layer is no use afterwards) and drop it only when
+  `usedIn.length === 0`.
+- **A Bespoke master is reshaped to the canvas only when it is SOLO in every
+  segment it appears in** (`bespokeBuild`). A tile sharing a row is showing a
+  panel, not the deliverable, and no mech export exists at a panel's size —
+  reshaping those stacks full-frame masters on each other. Solo tiles are
+  renamed via `bespokeSoloCompName` to the deliverable's name with their own
+  creative swapped in, which is what the mech already called the artwork; the
+  creative is `campaign` **or** `siteName`, per the rule below.
 - **`app.project.item(i)` IS FLAT** — it walks every item at every depth, so
   "the first FolderItem named X" is not the project's X. An imported sibling
   project brings its own `Composition/Main` AND its own `Footage`. Measured in

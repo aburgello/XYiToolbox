@@ -8280,3 +8280,101 @@ and remove, and the item count is checked either side.
 stamps its fields, so the title on a fresh build is whatever the template or a
 later Cheeky DT pass put there. That is why this surfaced on a Multiple Art
 file. Worth deciding whether that path should stamp the card itself.
+
+---
+
+## 2026-08-25 — A solo tile takes the deliverable's shape (and a null that never left)
+
+Reported off a real Brazil MultipleArt build: the deliverable comp and its _V01
+wrapper are the size that was asked for, but the imported masters keep their
+own, so localised artwork does not fit them.
+
+### What the build actually looked like
+
+```
+BUILD  FID_INTL_MultipleArt_DOOH_1920x768px_30s_BR   1920x768  30s
+  [1] Trio             source 1920x960   scale 80.00%   15->30s
+  [2] PortalToParadise source 1920x858   scale 89.51%    0->15s
+
+MASTER  FID_INTL_PortalToParadise_DOOH_1920x858px_15s_OV   1920x858
+   [1] FID_INTL_PortalToParadise_DOOH_1920x768px_30s_BR2.jpg   4000x1600
+```
+
+The artwork is **2.5:1**, made for the 1920x768 deliverable. The master comp it
+lands in is **2.24:1**. That is a different SHAPE, not a different scale, so
+nothing can nudge it into place — it sits letterboxed with the master's own OV
+text still visible underneath, which is what the report showed.
+
+The tiles were pillarboxed for the same reason: left at native size on a
+shorter canvas, an 858-tall master scales to 89.5% and a 960-tall one to 80%,
+so a 1920px canvas was showing 1719px and 1536px of picture.
+
+### Not an oversight
+
+"LAID SIDE BY SIDE AT NATIVE SIZE, THEN CENTRED" is a deliberate decision with
+its own note: dividing the canvas into n equal panels and scaling each to fit
+"forced every tile to the canvas whether it belonged there or not". That is
+right for a tiled row and wrong for a creative that fills the frame alone, and
+the difference had never been drawn.
+
+### The rule
+
+A master is reshaped to the canvas **only when it is solo in every segment it
+appears in**. A tile sharing a row is showing a panel, not the deliverable, and
+no mech export exists at a panel's size — reshaping those would stack three
+full-frame masters on top of each other. A master used solo in one segment and
+tiled in another is left alone and says so in the report, because it cannot be
+both and the build should not pick.
+
+Measured in AE, `scaleCompToFit(1920x858 -> 1920x768)` keeps the layer at 100%
+and crops 45px off the top and bottom — full width kept, which is what a wider
+target wants. Afterwards `natural == canvasW` and `tallest == canvasH`, so
+`fit` is exactly 1 and the pillarboxing goes with it.
+
+### The name
+
+`bespokeSoloCompName` takes the deliverable's name and swaps in the master's
+creative, so the comp ends up called what the mech already called the artwork:
+
+```
+artwork  FID_INTL_PortalToParadise_DOOH_1920x768px_30s_BR2.jpg
+comp     FID_INTL_PortalToParadise_DOOH_1920x768px_30s_BR
+```
+
+**The creative is `campaign` OR `siteName`, in that order** — the second time
+in one day that mattered. Current names put the creative left of the artwork
+type, so `campaign` holds it; legacy `_DGTL_` names have the artwork type FIRST
+in the descriptive run, so `campaign` is `""` and it lives in `siteName`. The
+first cut of this read only `campaign` and silently renamed nothing on every
+legacy name — caught by the probe, not by the compiler.
+
+It is exported rather than inlined so `scripts/probe-bespoke-rename.cjs` drives
+the real function instead of a transcription of it. Eight cases: both
+conventions, the artwork-filename match, a master whose creative IS the
+deliverable's, an unparseable name on either side, and a deliverable carrying a
+site the master must not inherit.
+
+### The null that never left
+
+Found while verifying the reshape: the probe leaked five project items, and
+three of them were not the probe's fault.
+
+`scaleCompToFit` parents everything to a temporary 3D null and removes it in a
+`finally`. **Removing a null LAYER leaves its footage ITEM in the project.** So
+every call has been leaving an orphan behind since it was written. In the
+reported working file: `Footage/Solids` holds `Null 1` six times, `Null 5`
+seven times, and `Null 43` through `Null 52`.
+
+Multi Comp Scale, Scale Composition and the Bespoke frontcard step all come
+through this function, and the solo-tile reshape now runs it once per master
+per build, so it compounds from here. The item is read before the layer is
+removed — the layer object is no use afterwards — and dropped only when
+`usedIn.length === 0`.
+
+Verified against the rebuilt bundle in the real project: 233 items before each
+call, 233 after, and the probe returned the file to exactly the 228 it started
+at. Nothing was saved at any point.
+
+**Not done:** the reported build was made with the old code, so its two masters
+are still 1920x858 and 1920x960. Rebuilding is what reshapes them; there is no
+repair pass for a build that already exists.

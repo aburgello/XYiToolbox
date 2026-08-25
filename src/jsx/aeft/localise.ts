@@ -4966,6 +4966,42 @@ function bespokeFinishAndFile(
   return { saved: saved, savedTo: savedTo };
 }
 
+/**
+ * What a solo tile's imported master comp should be called: the deliverable's
+ * own name with the master's creative swapped in, or "" when that cannot be
+ * derived.
+ *
+ * The mech names its export for the DELIVERABLE with the creative inside it --
+ * FID_INTL_PortalToParadise_DOOH_1920x768px_30s_BR2.jpg against a build called
+ * FID_INTL_MultipleArt_DOOH_1920x768px_30s_BR -- so the comp has to carry that
+ * same identity or nothing pairs the two. Size, duration and territory come
+ * from the thing being delivered; only whose creative it is changes.
+ *
+ * THE CREATIVE IS `campaign` OR `siteName`, in that order, because the two
+ * conventions put it in different places. Current names have it left of the
+ * artwork type (FID_INTL_PortalToParadise_DOOH_...), so `campaign` holds it.
+ * Legacy _DGTL_ names have the artwork type FIRST in the descriptive run, so
+ * nothing sits left of it, `campaign` is "" and the creative is in `siteName`
+ * (ODY_INTL_DGTL_DOOH_HORSE_...). Reading only `campaign` is the exact bug
+ * that broke Campaign Rename for twelve days -- see CLAUDE.md section 5.
+ *
+ * Exported for scripts/probe-bespoke-rename.cjs. Deliberately pure: the
+ * caller owns the collision check, since only it knows what it has handed out.
+ */
+export function bespokeSoloCompName(outName: string, masterName: string): string {
+  const outMeta = parseFilenameMeta(String(outName));
+  const inMeta = parseFilenameMeta(String(masterName));
+  const delivCreative = outMeta.campaign !== "" ? outMeta.campaign : outMeta.siteName;
+  const mineCreative = inMeta.campaign !== "" ? inMeta.campaign : inMeta.siteName;
+  if (delivCreative === "" || mineCreative === "") return "";
+  if (String(outName).indexOf("_" + delivCreative + "_") === -1) return "";
+  const want = String(outName).split("_" + delivCreative + "_").join("_" + mineCreative + "_");
+  // A master whose creative IS the deliverable's would rename to the build
+  // comp's own name.
+  if (want === String(outName)) return "";
+  return want;
+}
+
 export const bespokeBuild = (planJson: string): { success: boolean; error?: string; report?: string; saved?: boolean; savedTo?: string } => {
   try {
     const plan = JSON.parse(planJson) as BespokePlan;
@@ -5052,6 +5088,73 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
       lines.push("");
       lines.push("built " + outName + "  " + canvasW + "x" + canvasH + "  "
         + Math.round(total * 1000) / 1000 + "s  " + Math.round(fps * 1000) / 1000 + "fps");
+
+      // --- a solo tile takes the deliverable's shape -------------------------
+      //
+      // A master that fills a segment ALONE is showing the whole deliverable,
+      // and the artwork localised into it is generated at the DELIVERABLE's
+      // size. Measured on a real Brazil build: the BR export is 4000x1600 for a
+      // 1920x768 deliverable -- 2.5:1 -- and it was being dropped into a
+      // 1920x858 master, which is 2.24:1. A different SHAPE, not a different
+      // scale, so nothing can nudge it into place: it lands letterboxed with
+      // the master's own OV text still showing through underneath it.
+      //
+      // The tiles were also pillarboxed as a side effect. Left at native size
+      // on a shorter canvas, an 858-tall master is scaled to 89.5% and a
+      // 960-tall one to 80%, so a 1920px canvas was showing 1719px and 1536px
+      // of picture. Reshaping the master first makes the fit exact and both
+      // problems go at once.
+      //
+      // ONLY WHEN THE MASTER IS SOLO IN EVERY SEGMENT IT APPEARS IN. A tile
+      // sharing a row is showing a panel, not the deliverable, and no mech
+      // export exists at a panel's size -- reshaping that one to the canvas
+      // would stack three full-frame masters on top of each other. A master
+      // used solo in one segment and tiled in another stays as it is, because
+      // it cannot be both, and it says so in the report rather than picking.
+      const soloOnly: { [path: string]: boolean } = {};
+      for (let s = 0; s < plan.segments.length; s++) {
+        const segTiles = plan.segments[s].tiles;
+        const isSolo = segTiles.length === 1;
+        for (let t = 0; t < segTiles.length; t++) {
+          const key = String(segTiles[t].path);
+          if (!soloOnly.hasOwnProperty(key)) soloOnly[key] = isSolo;
+          else if (!isSolo) soloOnly[key] = false;
+        }
+      }
+
+      // The new name comes from bespokeSoloCompName -- see the note there for
+      // why the creative is read from campaign OR siteName.
+      const takenNames: { [name: string]: boolean } = {};
+      const reshapeLines: string[] = [];
+      for (const rp in compFor) {
+        if (!compFor.hasOwnProperty(rp)) continue;
+        const rc = compFor[rp];
+        const wasName = String(rc.name);
+        const wasSize = rc.width + "x" + rc.height;
+        if (!soloOnly[rp]) {
+          reshapeLines.push("  " + wasName + " left at " + wasSize + " -- it shares a segment");
+          continue;
+        }
+        if (rc.width !== canvasW || rc.height !== canvasH) {
+          scaleCompToFit(rc, canvasW, canvasH);
+        }
+        let renamedTo = "";
+        const want = bespokeSoloCompName(outName, wasName);
+        // The collision check is the caller's: only it knows what it has
+        // already handed out this build.
+        if (want !== "" && !takenNames.hasOwnProperty(want)) {
+          rc.name = want;
+          takenNames[want] = true;
+          renamedTo = want;
+        }
+        reshapeLines.push("  " + wasName + "  " + wasSize + " -> " + rc.width + "x" + rc.height
+          + (renamedTo !== "" ? "  renamed " + renamedTo : "  (name left alone)"));
+      }
+      if (reshapeLines.length > 0) {
+        lines.push("");
+        lines.push("solo tiles reshaped to the canvas, so localised artwork fits them:");
+        for (let r = 0; r < reshapeLines.length; r++) lines.push(reshapeLines[r]);
+      }
 
       // --- lay the segments in ---------------------------------------------
       let cursor = 0;
