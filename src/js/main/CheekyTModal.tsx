@@ -29,7 +29,7 @@ export interface CheekyTInspection {
     frontcards?: number;
     compName?: string;
     shortName?: boolean;
-    values?: { artwork: string; version: string; territory: string; date: string };
+    values?: { artwork: string; version: string; territory: string; date: string; campaign: string; duration: string };
     unresolved?: string[];
     territoryToken?: string;
     countries?: { name: string; code: string }[];
@@ -54,6 +54,11 @@ export const CheekyTModal = ({ inspection, onClose }: Props) => {
     const [version, setVersion] = useState(inspection.values?.version || "");
     const [territory, setTerritory] = useState(inspection.values?.territory || "");
     const [date, setDate] = useState(inspection.values?.date || "");
+    // The campaign line's two halves. Collected here for the same reason as the
+    // rest: a name that answers neither used to leave the card's campaign line
+    // as a lone inch mark.
+    const [campaign, setCampaign] = useState(inspection.values?.campaign || "");
+    const [duration, setDuration] = useState(inspection.values?.duration || "");
     const [terQuery, setTerQuery] = useState("");
     const [terOpen, setTerOpen] = useState(false);
     const terRef = useRef<HTMLDivElement>(null);
@@ -112,7 +117,7 @@ export const CheekyTModal = ({ inspection, onClose }: Props) => {
             // all three unconditionally is safe and simpler than working out
             // which are on screen: they are prefilled with the values that run
             // already applied, and the host skips blanks entirely.
-            evalTS("cheekyTApplyFields", JSON.stringify({ artwork, version, territory }))
+            evalTS("cheekyTApplyFields", JSON.stringify({ artwork, version, territory, campaign, duration }))
                 .then((r) => {
                     const res = r as unknown as { success?: boolean; error?: string } | undefined;
                     if (res && res.success === false) {
@@ -128,7 +133,7 @@ export const CheekyTModal = ({ inspection, onClose }: Props) => {
         return () => {
             if (timer.current) window.clearTimeout(timer.current);
         };
-    }, [artwork, version, territory]);
+    }, [artwork, version, territory, campaign, duration]);
 
     // Clicking anywhere outside the picker closes it. Mousedown rather than
     // click: the list's buttons are gone from the DOM by the time a click
@@ -168,7 +173,7 @@ export const CheekyTModal = ({ inspection, onClose }: Props) => {
 
     // Counts only what is actually on screen -- a field the name answered is
     // not "still blank", it was simply never asked about.
-    const current: Record<string, string> = { artwork, version, territory };
+    const current: Record<string, string> = { artwork, version, territory, campaign, duration };
     const stillMissing = unresolved.filter((k) => !current[k]);
 
     return (
@@ -217,6 +222,39 @@ export const CheekyTModal = ({ inspection, onClose }: Props) => {
                             // of the rewritten string mid-typing.
                             onChange={(e) => setVersion(e.target.value)}
                             onBlur={() => setVersion((v) => v.toUpperCase())}
+                        />
+                    </label>
+                    )}
+
+                    {show("campaign") && (
+                    <label className={"ctm-field" + (missing("campaign") ? " is-missing" : "")}>
+                        <span className="ctm-lbl">
+                            Campaign {missing("campaign") && <AlertCircle size={10} />}
+                        </span>
+                        <input
+                            className="ctm-input"
+                            value={campaign}
+                            placeholder="Multiple Art"
+                            onChange={(e) => setCampaign(e.target.value)}
+                        />
+                    </label>
+                    )}
+
+                    {show("duration") && (
+                    <label className={"ctm-field" + (missing("duration") ? " is-missing" : "")}>
+                        <span className="ctm-lbl">
+                            Seconds {missing("duration") && <AlertCircle size={10} />}
+                        </span>
+                        <input
+                            className="ctm-input"
+                            value={duration}
+                            // A BARE NUMBER. The inch mark is the card's own and
+                            // is appended host-side, so typing one here would
+                            // double it -- and which mark a card uses is a thing
+                            // the host reads off that card, never assumes.
+                            placeholder="30"
+                            inputMode="numeric"
+                            onChange={(e) => setDuration(e.target.value.replace(/[^0-9]/g, ""))}
                         />
                     </label>
                     )}

@@ -8538,3 +8538,103 @@ item count unchanged either side.
 type-checked — the loop, the skip and the re-root have not been watched in a
 docked panel, and browser preview cannot exercise them because the whole tool is
 bridge-only.
+
+---
+
+## 2026-08-25 — Cheeky T was never reading the name at all
+
+Reported as two things: could Cheeky T "make a check on all things", put
+"Multiple Art" where the build is a MultipleArt, and stop "retrieving nothing
+and leaving the ” for seconds stranded".
+
+The third turned out to be the cause of the other two.
+
+### An underscore count standing in for a question
+
+Both Cheeky T entry points opened with `if (name.split("_").length < 8)` and,
+below that threshold, stamped `(HO Approved)` and touched nothing else. That
+count is a proxy for "does this name carry what a frontcard needs", and it was
+calibrated on the legacy convention, which spends a token on `DGTL` and usually
+another on a site:
+
+```
+ODY_INTL_DGTL_DOOH_HORSE_LOS_1920x858_10sec_OV     9 tokens
+FID_INTL_MultiArt_DOOH_SalitreWheel_1180x228px_10s_CO   8
+FID_INTL_MultipleArt_DOOH_1920x640px_30s_BR        7   <- do-nothing path
+FID_INTL_PortalToParadise_DOOH_1920x858px_15s_OV   7   <- do-nothing path
+```
+
+The current convention drops `DGTL`, so a deliverable with no site token is
+seven. Every one of those fell through the gate. "It retrieves nothing" was not
+a failed lookup — it was a name the tool never agreed to read, reporting
+success while doing nothing but stamp `(HO Approved)`.
+
+`frontcardNameUsable` — an artwork type and a size — was already in the file,
+used by the "from name" reset. It asks the real question, and both gates now
+use it. The message stopped saying "Short comp name" too: that sent people
+counting underscores at a name that was simply missing a token type.
+
+### The stranded mark, and why it grew
+
+`splitCampaignLine` handed the RAW line back on both of its bail-outs, inch mark
+included — and the caller appends a mark of its own. So every run over a line it
+could not parse added another one:
+
+```
+Multiple Art ”   ->   Multiple Art ” ”   ->   Multiple Art ” ” ”
+```
+
+each reported as a successful update. Both bail-outs now strip the mark, so a
+line the parser cannot read round-trips unchanged.
+
+The strand itself had two sources, and both are closed:
+
+- **Nothing to say is not a line.** With both halves empty, the writer put the
+  inch mark down on its own. It now leaves the line exactly as found and says
+  so in the message, naming how many cards it left alone.
+- **The half not sent comes off the card.** `frontcardWriteFields` filled the
+  half you did not edit with `""`, which is the same strand from the other
+  direction — and the review modal sends one field at a time as you type. It
+  now reads the missing half back off the card.
+
+### All things, and the creative
+
+`cheekyTCheck` had `doCampaign` and `doDuration` off — the original's fixed
+args. They are on now, which is what makes a MultipleArt build read
+"Multiple Art": `campaignWords` splits that token exactly as it splits
+PortalToParadise. The title stays off, because it is the one field derived from
+the PROJECT PATH rather than the name and it carries its own box-fit; that
+remains Cheeky DT's.
+
+The creative is read as **`campaign` or `siteName`**, in that order — the third
+consumer of that field in one day to need it, after Campaign Rename and
+Bespoke's solo rename.
+
+`cheekyTInspect` now reports both as resolvable fields, so a name that cannot
+answer them opens the review modal and collects them instead of stranding the
+line. The modal gained a Campaign field and a Seconds field; Seconds takes a
+bare number, because which inch mark a card uses is read off that card and
+appended host-side.
+
+### Verification
+
+Driven against a duplicate of a real frontcard, running Cheeky T twice over
+each starting line:
+
+```
+"Portal To Paradise 15”"  -> "Multiple Art 30”" -> "Multiple Art 30”"  STABLE
+"”"                       -> "Multiple Art 30”" -> "Multiple Art 30”"  STABLE
+"Multiple Art ”"          -> "Multiple Art 30”" -> "Multiple Art 30”"  STABLE
+"CREATIVE NAME ”"         -> "Multiple Art 30”" -> "Multiple Art 30”"  STABLE
+""                        -> "Multiple Art 30”" -> "Multiple Art 30”"  STABLE
+
+unparseable comp name, card already correct
+   -> "Portal To Paradise 15”" untouched
+```
+
+The same probe on the old code returned "Short comp name — stamped
+(HO Approved)" for all five, which is the bug as reported. Items 287 before and
+after; the artist's own cards were duplicated, never written.
+
+**Not done:** the modal's two new fields have been type-checked but not driven
+by hand — the whole path is bridge-only and browser preview cannot reach it.

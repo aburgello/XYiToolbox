@@ -467,6 +467,17 @@ token in. Neither tsconfig covers `src/jsx` and the tool returned
 `success: true` throughout — `node scripts/probe-campaign-rename.cjs` is the
 only gate, so run it after touching either function.
 
+**Never gate a name-reading tool on an underscore COUNT.** Cheeky T skipped
+parsing whenever `name.split("_").length < 8`, a proxy for "does this name carry
+what a frontcard needs" that was calibrated on the legacy convention — which
+spends a token on `DGTL` and usually another on a site
+(`ODY_INTL_DGTL_DOOH_HORSE_LOS_1920x858_10sec_OV` is nine). The current
+convention drops `DGTL`, so a deliverable with no site token is **seven**
+(`FID_INTL_MultipleArt_DOOH_1920x640px_30s_BR`) and every one of those fell down
+the do-nothing path — the reported "it retrieves nothing" was a name the tool
+never agreed to read. Ask the real question instead: `frontcardNameUsable` (an
+artwork type AND a size).
+
 **Naming conventions** (confirmed against real studio folders):
 `<mastersRoot>/AE/<Creative>/<stem>.aep`, with the comp inside named identically
 to the filename stem. Renders mirror the tree under `Renders/`, paired by

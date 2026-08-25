@@ -1182,8 +1182,17 @@ function readText(target: FrontcardTarget, which: string): string {
  */
 function splitCampaignLine(line: string): { campaign: string; duration: string } {
   const raw = String(line);
+  // THE MARK IS NEVER PART OF THE CAMPAIGN. Both bail-outs below used to hand
+  // the raw line back, mark and all -- and the caller appends a mark of its own,
+  // so every run on a line this could not parse added another one. A card left
+  // reading `Multiple Art ”` grew `Multiple Art ” ”` on the next pass, then
+  // another, and each looked like a successful update.
+  const bail = (): { campaign: string; duration: string } => ({
+    campaign: stripInch(raw).replace(/\s+$/, ""),
+    duration: "",
+  });
   const parts = raw.split(" ");
-  if (parts.length < 2) return { campaign: raw, duration: "" };
+  if (parts.length < 2) return bail();
   const last = stripInch(parts[parts.length - 1]);
   // Only treat the last token as a duration if it actually looks like one.
   let numeric = last.length > 0;
@@ -1191,7 +1200,7 @@ function splitCampaignLine(line: string): { campaign: string; duration: string }
     const c = last.charAt(i);
     if (c < "0" || c > "9") { numeric = false; break; }
   }
-  if (!numeric) return { campaign: raw, duration: "" };
+  if (!numeric) return bail();
   parts.length = parts.length - 1;
   return { campaign: parts.join(" "), duration: last };
 }
@@ -1411,9 +1420,19 @@ export const frontcardWriteFields = (payload: string): Result => {
           // every line this tool ever touched.
           const existing = readText(targets[i], "campaignLine");
           const mark = inchMarkOf(existing, "\u201D");
-          const dur = has("duration") ? stripInch(String(v.duration)) : "";
-          const camp = has("campaign") ? String(v.campaign) : "";
-          frontcardSet(targets[i], "campaignLine", (camp + " " + dur + mark).replace(/^ +/, ""));
+          // THE HALF NOT SENT COMES OFF THE CARD, not out of thin air. Editing
+          // only the creative used to blank the seconds, which is the stranded
+          // `”` from the other direction -- and the modal sends one field at a
+          // time as you type.
+          const split = splitCampaignLine(existing);
+          const dur = has("duration") ? stripInch(String(v.duration)) : split.duration;
+          const camp = has("campaign") ? String(v.campaign) : split.campaign;
+          if (camp !== "" || dur !== "") {
+            frontcardSet(
+              targets[i], "campaignLine",
+              (camp + " " + dur + mark).replace(/^ +/, "").replace(/  +/g, " "),
+            );
+          }
         }
       }
     } finally {
@@ -1432,7 +1451,7 @@ export interface CheekyTInspection {
   compName?: string;
   /** The short-name path: only "(HO Approved)" is written, nothing is parsed. */
   shortName?: boolean;
-  values?: { artwork: string; version: string; territory: string; date: string };
+  values?: { artwork: string; version: string; territory: string; date: string; campaign: string; duration: string };
   /** Field keys the filename could not answer. Drives the review modal. */
   unresolved?: string[];
   /** What was in the name where a territory should have been. */
@@ -1464,20 +1483,43 @@ export const cheekyTInspect = (): CheekyTInspection => {
     const fullDate = (day < 10 ? "0" : "") + day + "." + (month < 10 ? "0" : "") + month + "." + year;
 
     const name = comp.name;
-    if (name.split("_").length < 8) {
+    // IS THE NAME USABLE, not how many underscores are in it.
+    //
+    // This was `split("_").length < 8`, a token COUNT standing in for "does
+    // this name carry what a frontcard needs". It was calibrated on the legacy
+    // convention, which spends a token on DGTL and usually another on a site:
+    // ODY_INTL_DGTL_DOOH_HORSE_LOS_1920x858_10sec_OV is nine. The current
+    // convention drops DGTL, and a deliverable with no site token is SEVEN --
+    // FID_INTL_MultipleArt_DOOH_1920x640px_30s_BR -- so every one of those fell
+    // down the short-name path and had nothing parsed from it at all. That is
+    // the "it retrieves nothing" the studio reported: not a failed lookup, a
+    // name the tool never agreed to read.
+    //
+    // frontcardNameUsable asks the real question -- an artwork type and a size
+    // -- and it was already here, used by the "from name" reset.
+    if (!frontcardNameUsable(name)) {
       return {
         success: true, frontcards: targets.length, compName: name, shortName: true,
-        values: { artwork: "", version: "", territory: "(HO Approved)", date: fullDate },
+        values: { artwork: "", version: "", territory: "(HO Approved)", date: fullDate, campaign: "", duration: "" },
         unresolved: [], countries: names,
       };
     }
 
     const meta = parseFilenameMeta(name);
     const ter = frontcardTerritory(name);
+    // The creative is campaign OR siteName -- see the note in cheekyDTCheck.
+    const creative = campaignWords(meta.campaign !== "" ? meta.campaign : meta.siteName);
+    const seconds = meta.duration.replace("sec", "");
     const unresolved: string[] = [];
     if (!meta.artworkType) unresolved.push("artwork");
     if (!meta.version) unresolved.push("version");
     if (!ter.name) unresolved.push("territory");
+    // ASKED FOR RATHER THAN STRANDED. These two used to be outside what Cheeky
+    // T looked at, so a name that answered neither left the campaign line as a
+    // lone inch mark and reported success. Now they are collected like any
+    // other field the name could not resolve.
+    if (!creative) unresolved.push("campaign");
+    if (!seconds) unresolved.push("duration");
 
     return {
       success: true,
@@ -1489,6 +1531,8 @@ export const cheekyTInspect = (): CheekyTInspection => {
         version: meta.version || "",
         territory: ter.name || "",
         date: fullDate,
+        campaign: creative,
+        duration: seconds,
       },
       unresolved: unresolved,
       territoryToken: ter.token,
@@ -1540,9 +1584,10 @@ export const cheekyDTCheck = (
     if (!(comp instanceof CompItem)) return { success: false, error: "Select or open a composition first." };
     const name = comp.name;
 
-    // Short names (<8 underscore tokens): only the territory-check
-    // parenthetical gets touched, nothing else.
-    if (name.split("_").length < 8) {
+    // A name with nothing to read: only the territory-check parenthetical gets
+    // touched, nothing else. See the note in cheekyTInspect for why this is a
+    // question about the name's CONTENT and not its underscore count.
+    if (!frontcardNameUsable(name)) {
       let shortCards = 0;
       for (let i = 1; i <= comp.numLayers; i++) {
         const layer = comp.layer(i);
@@ -1561,7 +1606,11 @@ export const cheekyDTCheck = (
       if (shortCards === 0) return { success: false, error: "No Frontcard layer in this comp." };
       return {
         success: true, frontcards: shortCards,
-        message: "Short comp name — stamped (HO Approved) on " + shortCards + (shortCards === 1 ? " Frontcard" : " Frontcards") + ". Nothing else was touched.",
+        // Says WHY, not "short". The gate is about what the name carries, and
+        // "short comp name" sent people counting underscores at a name that was
+        // simply missing its artwork type or its size.
+        message: "This comp's name has no artwork type and size to read — stamped (HO Approved) on " +
+          shortCards + (shortCards === 1 ? " Frontcard" : " Frontcards") + ". Nothing else was touched.",
       };
     }
 
@@ -1570,7 +1619,13 @@ export const cheekyDTCheck = (
     const projPath = String(app.project.file);
     const filmTitle = projPath.split("/Digital")[0].split("/").slice(-1)[0].split("_").join(" ");
     const artworkType = meta.artworkType;
-    let campaign = campaignWords(meta.campaign);
+    // THE CREATIVE IS `campaign` OR `siteName`, in that order. Current names put
+    // it left of the artwork type; legacy _DGTL_ names have the artwork type
+    // FIRST in the descriptive run, so nothing sits left of it and the creative
+    // is in siteName. Reading only `campaign` is what broke Campaign Rename for
+    // twelve days and what Bespoke's solo rename hit the same afternoon -- this
+    // is the third consumer of the same field to want the same thing.
+    let campaign = campaignWords(meta.campaign !== "" ? meta.campaign : meta.siteName);
     let duration = meta.duration.replace("sec", "");
     const version = meta.version;
 
@@ -1589,6 +1644,8 @@ export const cheekyDTCheck = (
 
     let cards = 0;
     let titleNote = "";
+    /** Frontcards whose campaign line was left alone because nothing resolved. */
+    let campaignLeft = 0;
     for (let i = 1; i <= comp.numLayers; i++) {
       const layer = comp.layer(i);
       // indexOf, not .match() -- a layer name is not a regex pattern.
@@ -1622,9 +1679,25 @@ export const cheekyDTCheck = (
         // empty string and split("") exploded the line into characters: the
         // campaign became its first letter and the card read C". splitCampaignLine
         // answers both halves properly and returns blanks when it cannot.
-        if (!doCampaign) campaign = split.campaign;
-        if (!doDuration) duration = split.duration;
-        campaignLineProp.setValue(String(campaign + " " + duration + mark).replace(/^ +/, "").replace(/  +/g, " "));
+        // FALL BACK TO THE CARD when the name could not answer. `doCampaign`
+        // says "re-derive this", not "blank it if you can't" -- and a name that
+        // parses to nothing is exactly when what is already on the card is the
+        // better answer.
+        if (!doCampaign || campaign === "") campaign = split.campaign;
+        if (!doDuration || duration === "") duration = split.duration;
+
+        // NOTHING TO SAY IS NOT A LINE. With both halves empty this wrote the
+        // inch mark on its own -- the stranded `”` with no seconds in front of
+        // it -- and reported a clean update. Leaving the line exactly as found
+        // and saying so is the only honest answer: a blank campaign line is
+        // fixable, a card that quietly lost its own is not.
+        if (campaign === "" && duration === "") {
+          campaignLeft++;
+        } else {
+          campaignLineProp.setValue(
+            String(campaign + " " + duration + mark).replace(/^ +/, "").replace(/  +/g, " "),
+          );
+        }
 
         // NEVER stamp an unresolved territory. This used to write whatever
         // String(null) gave it, so a name the parser couldn't read put a
@@ -1654,7 +1727,12 @@ export const cheekyDTCheck = (
           (token ? "\"" + token + "\" isn't a territory we know." : "the name has no territory in it."),
       };
     }
-    return { success: true, frontcards: cards, message: "Updated " + where + "." + titleNote };
+    const leftNote = campaignLeft === 0
+      ? ""
+      : " The campaign line was left as it was on " +
+        (campaignLeft === 1 ? "one card" : campaignLeft + " cards") +
+        " — the name gave no creative or duration to write.";
+    return { success: true, frontcards: cards, message: "Updated " + where + "." + titleNote + leftNote };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -1663,7 +1741,15 @@ export const cheekyDTCheck = (
 // The "Cheeky T Check" button's exact fixed args from XYi_Toolbox.jsx:
 // (title=false, artwork=true, version=true, campaign=false, duration=false,
 // territoryCheck=true, date=true).
-export const cheekyTCheck = (): Result => cheekyDTCheck(false, true, true, false, false, true, true);
+// CAMPAIGN AND DURATION ARE ON, which the original's fixed args had off. Cheeky
+// T checks everything the FILENAME can answer -- artwork, version, territory,
+// date, and now the creative and its seconds. The title stays off because it is
+// the one field derived from the PROJECT PATH rather than the name, and it
+// carries its own box-fit; that remains Cheeky DT's.
+//
+// Turning them on is what makes a MultipleArt build read "Multiple Art":
+// campaignWords splits the token the same way it splits PortalToParadise.
+export const cheekyTCheck = (): Result => cheekyDTCheck(false, true, true, true, true, true, true);
 
 // =============================================================================
 // Replicator -- ported from toolset/XYI_Replicator.jsx, wired to the
