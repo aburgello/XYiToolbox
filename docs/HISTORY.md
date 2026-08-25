@@ -7907,3 +7907,37 @@ exported, but `demoBridge` had no mock for it, so in preview the call fell
 through to no bridge. Worth remembering that a new host function needs its demo
 mock or every browser test of it fails for a reason that has nothing to do with
 the code.
+
+### A home button beside Back
+
+Back unwinds one step, which is right for one wrong turn and wrong after a
+workflow has walked you through three tools — getting home then means pressing
+Back until it stops changing anything.
+
+`HomeButton` is its own component rather than five copies of the markup: it sits
+beside the back button on ToolScreen, CategoryScreen, ToolsScreen and both of
+LocaliseScreen's headers, and five hand-written copies of a control this small
+are five places for the label, the icon size or the hover to drift apart.
+
+Quieter than Back and icon-only. Back is what you reach for most, and two
+equally-weighted controls side by side is a decision where there should be a
+default. It lifts on hover rather than sliding left, because Back slides left
+and a neighbour doing the same thing reads as the same control twice.
+
+**Two layout traps, both from rules already written down:**
+
+- `.drill-header-row` is `justify-content: space-between` and was built for
+  exactly two children. A third lands dead centre — next to nothing, belonging
+  to neither side, which is where the home icon first appeared. `margin-right:
+  auto` pushes the gap to its right so Back and Home group together as the two
+  ways of leaving, and the palette trigger stays where it was.
+- **That margin did nothing until the `<Tooltip>` came off.** Tooltip wraps its
+  child in a span carrying `flex: 0 0 auto !important`, so the SPAN becomes the
+  flex item and the button inside stops participating in the row's layout. Same
+  family as CLAUDE.md's rule about wrapping a stretch-sized element in Tooltip,
+  and the reason the measured gap stayed at 164px through a fix that read as
+  correct. A `title` does the job, and matches Back, which has no tooltip
+  either.
+
+Measured after: 12px between them, 75px from the row's left edge. Verified from
+two tools deep — one click lands on home.

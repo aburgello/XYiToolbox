@@ -91,6 +91,11 @@ const Main = () => {
         else setScreen({ type: "home" });
     };
 
+    // Back unwinds one step; this is the whole way out. A workflow step that
+    // sends you to a tool, whose own back goes to the category it came from,
+    // is three presses from home -- and following two steps is five.
+    const goHome = () => setScreen({ type: "home" });
+
     // Lets the Ask tool open a panel tool for the artist -- registered here
     // because ToolScreen renders tool components with no props, so a module
     // handle is the same answer localiseHandoff.ts reached for the same
@@ -163,13 +168,14 @@ const Main = () => {
 
     let body: React.ReactNode;
     if (screen.type === "tool") {
-        body = <ToolScreen toolId={screen.toolId} onBack={goBack} />;
+        body = <ToolScreen toolId={screen.toolId} onBack={goBack} onHome={goHome} />;
     } else if (screen.type === "category") {
         const categoryScreen = screen;
         const screenProps = {
             selectedToolId: categoryScreen.selectedToolId,
             onSelectTool: (toolId: string) => setScreen({ ...categoryScreen, selectedToolId: toolId }),
             onBack: goBack,
+            onHome: goHome,
         };
         // Localise and Tools get bespoke screens (pipeline rail / workbench
         // dock), same per-category-special-case move as Review/Deliver's hub

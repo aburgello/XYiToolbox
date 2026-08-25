@@ -13,10 +13,12 @@ import { TOOLS, categoryStyleVars } from "../toolRegistry";
 import { ToolErrorBoundary } from "../ToolErrorBoundary";
 import { PaletteTrigger, triggerPalette } from "../CommandPalette";
 import { navigateToTool } from "../lib/navigation";
+import HomeButton from "../HomeButton";
 
 interface Props {
     toolId: string;
     onBack: () => void;
+    onHome: () => void;
 }
 
 // The two hub tools carry their own full-page header/tab chrome -- adding
@@ -25,7 +27,7 @@ interface Props {
 // per-tool internal <h2> + hint headers were removed (they duplicated it).
 const HUB_TOOL_IDS = ["review-hub", "delivery-hub"];
 
-export const ToolScreen: React.FC<Props> = ({ toolId, onBack }) => {
+export const ToolScreen: React.FC<Props> = ({ toolId, onBack, onHome }) => {
     const tool = TOOLS.find((t) => t.id === toolId);
     const showHeader = tool && !HUB_TOOL_IDS.includes(tool.id);
 
@@ -36,6 +38,7 @@ export const ToolScreen: React.FC<Props> = ({ toolId, onBack }) => {
                     <motion.button className="back-button" onClick={onBack} whileHover={{ x: -2 }}>
                         <ArrowLeft size={14} /> Back
                     </motion.button>
+                    <HomeButton onHome={onHome} />
                     <PaletteTrigger onClick={triggerPalette} />
                 </div>
                 <div className="drill-body" style={categoryStyleVars(tool?.categories[0])}>

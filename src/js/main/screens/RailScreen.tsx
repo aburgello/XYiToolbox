@@ -67,6 +67,7 @@ import { evalTS } from "../../lib/utils/bolt";
 import { sfx } from "../../lib/utils/sfx";
 import "../shared.scss";
 import "./RailScreen.scss";
+import HomeButton from "../HomeButton";
 
 export interface RailStage {
     id: string;
@@ -83,6 +84,7 @@ interface Props {
     selectedToolId?: string;
     onSelectTool: (toolId: string) => void;
     onBack: () => void;
+    onHome: () => void;
 }
 
 interface Group {
@@ -194,6 +196,7 @@ export const RailScreen: React.FC<Props> = ({
     selectedToolId,
     onSelectTool,
     onBack,
+    onHome,
 }) => {
     const reduced = useReducedMotion();
     const { getOrderedTools, saveToolOrder } = useToolOrder(TOOLS);
@@ -420,6 +423,7 @@ export const RailScreen: React.FC<Props> = ({
                     <motion.button className="back-button" onClick={onBack} whileHover={{ x: -2 }}>
                         <ArrowLeft size={14} /> Back
                     </motion.button>
+                    <HomeButton onHome={onHome} />
                     <PaletteTrigger onClick={triggerPalette} />
                 </div>
 

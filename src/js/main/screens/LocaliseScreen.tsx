@@ -22,11 +22,13 @@ import CSVLocaliserTool from "../tools/CSVLocaliser";
 import CampaignLocaliserTool from "../tools/CampaignLocaliser";
 import { sfx } from "../../lib/utils/sfx";
 import "./LocaliseScreen.scss";
+import HomeButton from "../HomeButton";
 
 interface Props {
     selectedToolId?: string;
     onSelectTool: (toolId: string) => void;
     onBack: () => void;
+    onHome: () => void;
 }
 
 interface UtilityEntry {
@@ -100,7 +102,7 @@ const toolDescription = (id: string): string =>
 // replay the full stagger every time (the effect is keyed on [tool]).
 let lsEntranceDone = false;
 
-export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, onSelectTool, onBack }) => {
+export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, onSelectTool, onBack, onHome }) => {
     const reduced = useReducedMotion();
     const [localToolId, setLocalToolId] = useState<string | null>(null);
     const effectiveToolId = parentToolId ?? localToolId;
@@ -211,6 +213,7 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
                         <motion.button className="back-button" onClick={handleBack} whileHover={{ x: -2 }}>
                             <ArrowLeft size={14} /> Back
                         </motion.button>
+                        <HomeButton onHome={onHome} />
                         <PaletteTrigger onClick={triggerPalette} />
                     </div>
                     <div className="ls-frame">
@@ -268,6 +271,7 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
                     <motion.button className="back-button" onClick={handleBack} whileHover={{ x: -2 }}>
                         <ArrowLeft size={14} /> Back
                     </motion.button>
+                    <HomeButton onHome={onHome} />
                     <PaletteTrigger onClick={triggerPalette} />
                 </div>
 

@@ -15,6 +15,7 @@ interface Props {
     selectedToolId?: string;
     onSelectTool: (toolId: string) => void;
     onBack: () => void;
+    onHome: () => void;
 }
 
 // Grouped by function, not by original toolbox tab. Order within each group

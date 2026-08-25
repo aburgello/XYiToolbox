@@ -26,12 +26,14 @@ import { ToolErrorBoundary } from "../ToolErrorBoundary";
 import { GsapContentSwap } from "../gsap/components/GsapContentSwap";
 import Tooltip from "../Tooltip";
 import { PaletteTrigger, triggerPalette } from "../CommandPalette";
+import HomeButton from "../HomeButton";
 
 interface Props {
     categoryId: string;
     selectedToolId?: string;
     onSelectTool: (toolId: string) => void;
     onBack: () => void;
+    onHome: () => void;
 }
 
 // One row in the draggable tool list. Pulled out as its own component
@@ -85,7 +87,7 @@ const SIDEBAR_MIN = 120;
 const SIDEBAR_MAX = 260;
 const SIDEBAR_DEFAULT = 170;
 
-export const CategoryScreen: React.FC<Props> = ({ categoryId, selectedToolId, onSelectTool, onBack }) => {
+export const CategoryScreen: React.FC<Props> = ({ categoryId, selectedToolId, onSelectTool, onBack, onHome }) => {
     const reduced = useReducedMotion();
     const category = CATEGORIES.find((c) => c.id === categoryId);
     const { getOrderedTools, saveToolOrder } = useToolOrder(TOOLS);
@@ -156,6 +158,7 @@ export const CategoryScreen: React.FC<Props> = ({ categoryId, selectedToolId, on
                     <motion.button className="back-button" onClick={onBack} whileHover={{ x: -2 }}>
                         <ArrowLeft size={14} /> Back
                     </motion.button>
+                    <HomeButton onHome={onHome} />
                     <PaletteTrigger onClick={triggerPalette} />
                 </div>
                 <h2>{category?.label}</h2>
