@@ -569,6 +569,16 @@ const WorkflowBoardTool: React.FC<{
     /** Reading, not writing: "" is every tag. */
     const [tagFilter, setTagFilter] = useState("");
     const noteSel = useSelection(noteDraft);
+    /**
+     * WRITING, as opposed to reading.
+     *
+     * The composer is an input, a globe, a wand, an Add button and a tag row —
+     * five controls that only matter while you are writing one note, sitting
+     * permanently under a list you are usually just reading. It made the notes
+     * section look like a form with some history above it rather than a page of
+     * house rules with a way to add to them.
+     */
+    const [composing, setComposing] = useState(false);
     const [busy, setBusy] = useState(false);
     const [toasts, setToasts] = useState<Toast[]>([]);
     const toastSeq = useRef(0);
@@ -955,6 +965,7 @@ const WorkflowBoardTool: React.FC<{
         if (r.entries) setEntries(r.entries);
         setNoteDraft("");
         setNoteTerritory("");
+        setComposing(false);
         setNoteLinks([]);
         setNoteTags([]);
         setTagDraft("");
@@ -1685,6 +1696,27 @@ const WorkflowBoardTool: React.FC<{
                                     );
                                 })()}
 
+                                {/* CLOSED, IT IS ONE LINE. Opened, it is the
+                                    whole composer. Nothing is removed — it is
+                                    the same controls, just not permanently on
+                                    screen for the nine times out of ten you
+                                    opened this panel to read. */}
+                                {!composing && me && (
+                                    <button
+                                        type="button"
+                                        className="wfb-note-open"
+                                        onClick={() => setComposing(true)}
+                                    >
+                                        <Plus size={11} /><span>Add a note</span>
+                                    </button>
+                                )}
+                                {!composing && !me && (
+                                    <p className="wfb-empty-line">
+                                        Tag this machine with your name in the Team menu to add a note.
+                                    </p>
+                                )}
+
+                                {composing && (<>
                                 <div className="wfb-note-add">
                                     {/* A GLOBE, NOT A DROPDOWN. The panel is
                                         380px and already dense; a permanent
@@ -1752,6 +1784,29 @@ const WorkflowBoardTool: React.FC<{
                                     </Tooltip>
                                     <button type="button" className="wfb-btn" onClick={addNote} disabled={!me || busy || !noteDraft.trim()}>
                                         <Plus size={12} /><span>Add</span>
+                                    </button>
+                                    {/* Closing DISCARDS the draft, so it asks
+                                        first once there is something to lose.
+                                        A half-written note thrown away by a
+                                        stray click is the same complaint as a
+                                        deleted one. */}
+                                    <button
+                                        type="button"
+                                        className="wfb-mini"
+                                        title="Close"
+                                        onClick={async () => {
+                                            const dirty = !!noteDraft.trim() || noteLinks.length > 0 || noteTags.length > 0;
+                                            if (dirty && !(await confirmDialog("Discard this note?"))) return;
+                                            setComposing(false);
+                                            setNoteDraft("");
+                                            setNoteTerritory("");
+                                            setNoteLinks([]);
+                                            setNoteTags([]);
+                                            setTerrPickerOpen(false);
+                                            setWordPicking(false);
+                                        }}
+                                    >
+                                        <X size={11} />
                                     </button>
                                 </div>
 
@@ -1900,7 +1955,7 @@ const WorkflowBoardTool: React.FC<{
                                 </AnimatePresence>
 
                                 <AnimatePresence initial={false}>
-                                    {terrPickerOpen && (
+                                    {composing && terrPickerOpen && (
                                         <motion.div
                                             initial={{ opacity: 0, height: 0 }}
                                             animate={{ opacity: 1, height: "auto" }}
@@ -1917,6 +1972,7 @@ const WorkflowBoardTool: React.FC<{
                                         </motion.div>
                                     )}
                                 </AnimatePresence>
+                                </>)}
                                                         </div>
                         </>
                     )}

@@ -7719,3 +7719,37 @@ working, which makes any assertion on a specific creative a race. The real
 invariant is that the header only claims "open in AE" when the board matches
 what is detected — so: unpinned claims it, pinning drops the claim, the nudge
 appears, and following restores it. That holds no matter when the mock flips.
+
+### The step format bar was rendering into a clip
+
+Bold and linking worked in a note and did nothing in a step. The bar was
+mounting correctly and the selection was being tracked — it was simply never
+visible.
+
+`.wfb-editstep` carried `overflow: hidden`, added so the exit animation's height
+collapse would not show content spilling. The format bar is positioned ABOVE its
+row (`bottom: calc(100% + 4px)`), so that same rule clipped it out of existence.
+It rendered, it just could never be seen — which is why it looked like the
+feature had not been wired up rather than like a CSS bug.
+
+Safe to drop the clip: the exit animates opacity to 0 alongside the height, so
+there is nothing solid left to spill by the time the row is short. Verified by
+asserting `isVisible()` rather than a node count — a count would have passed
+before the fix, which is exactly how this got missed.
+
+### Reading notes stopped looking like filling in a form
+
+The composer is an input, a globe, a wand, an Add button and a tag row — five
+controls that matter while writing one note, sitting permanently under a list
+you are usually just reading. It made the section read as a form with some
+history above it.
+
+Closed it is now one dashed line, "Add a note". Opened it is the same composer,
+unchanged — nothing was removed, it just is not on screen for the nine times out
+of ten the panel was opened to read something. An untagged machine gets the
+sentence explaining why it cannot post, in place of a button that would refuse.
+
+Closing DISCARDS the draft, so it asks first — but only once there is something
+to lose. A half-written note thrown away by a stray click is the same complaint
+as a deleted one, and a confirm on an empty box is the kind people learn to
+click through.
