@@ -8463,3 +8463,78 @@ category tint, which is the re-apply rule CLAUDE.md already gives for Dialog and
 DragOverlay. And the shared card SHAPE survives — the two still read as two
 lists, one teal and one amber, which is exactly the trade-off the colour option
 was chosen with its eyes open.
+
+---
+
+## 2026-08-25 — Edit in Context follows the selection
+
+Asked for directly: "when we click Edit in Context, it works great but I was
+wondering if we could target the selected layer straight away?"
+
+The tool opened on the active comp and listed its precomps as doorways, and you
+found the layer you had *just selected* a second time in that list. The
+selection is the thing you already pointed at; asking for it twice is exactly
+the friction the tool exists to remove.
+
+### The ask needed one round trip
+
+"Target" was ambiguous against the tool's actual model, and the ambiguity was
+worth resolving before building rather than after. **At root level the panel
+lists precomps ONLY** — they are doorways, and clicking one drills in. So a
+selected layer could mean either "open that doorway" or "make this the thing the
+arrows nudge", and the second would have meant listing every layer at root,
+changing what the tool shows. The studio picked the doorway: a plain layer
+selected up there has nothing to open, and AE's own arrow keys already nudge it.
+
+### Two rules stop it fighting the artist
+
+**Act only when the signature changes.** The signature is `compId:layerIndex`
+and it is remembered between ticks. The panel's target and AE's selection are
+two different things and the artist moves both — a poll that re-applied what it
+saw every second would undo a layer picked in the panel a moment later, using a
+selection in AE that had not actually moved. Acting on change alone is also what
+makes it safe to run continuously, which is what was asked for over a
+read-on-open-only version.
+
+**Exactly one selected layer counts.** "The selected layer" has no meaning when
+three are selected, and taking the first would be a guess the artist never made,
+so the panel leaves its target alone. Measured against a real comp: two selected
+returns `count=2, layerIndex=0`.
+
+`editInContextReveal` had to be taught to skip one tick. It selects the layer it
+just revealed and opens that comp in the viewer — a genuine selection change by
+the signature's reckoning — so without the skip, revealing a nested layer threw
+away the trail it had been revealed from.
+
+### The poll
+
+`editInContextSelection` is the cheapest call in `tools.ts`: two reads, no undo
+group, nothing written, no viewer touched. It duck-types the comp and the
+precomp rather than using `instanceof`, per section 2 — it runs about once a
+second, and two accesses of one AE object come back as different wrappers.
+
+The panel calls it through a local non-toasting wrapper. The existing `call`
+announces a missing bridge, which is right for a button and wrong once a second
+in browser preview, where it would be a panel shouting about having no After
+Effects open.
+
+### Verification
+
+Driven against the artist's open project:
+
+```
+active comp: FID_INTL_MultipleArt_DOOH_1920x640px_30s_BR_V01  (2 layers)
+nothing selected -> count=0 layerIndex=0
+select [1] Landscape_Frontcard -> isPrecomp=true sourceCompId=1804
+select [2] FID_INTL_MultipleArt… -> isPrecomp=true sourceCompId=1756
+two selected -> count=2 layerIndex=0
+selection restored: was [1] now [1]
+```
+
+The probe cycled the real comp's selection and put it back exactly as found;
+item count unchanged either side.
+
+**Not done:** the panel's behaviour itself has only been reasoned about and
+type-checked — the loop, the skip and the re-root have not been watched in a
+docked panel, and browser preview cannot exercise them because the whole tool is
+bridge-only.

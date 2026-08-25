@@ -194,6 +194,19 @@ const EditInContextTool = () => {
         }
     }, []);
 
+    // The same call without the toast. `call` announces a missing bridge, which
+    // is right for something the artist pressed and wrong about once a second
+    // in browser preview -- a poll that reports its own failure is a panel that
+    // shouts at you for having no After Effects open.
+    const quiet = useCallback(async (fn: string, ...args: unknown[]) => {
+        try {
+            const res = await (evalTS as any)(fn, ...args);
+            return res === undefined ? null : (res as any);
+        } catch (e) {
+            return null;
+        }
+    }, []);
+
     // ── load the comp the artist is standing in, and its layers ─────────────
     const loadRoot = useCallback(async () => {
         setLoading(true);
@@ -214,6 +227,65 @@ const EditInContextTool = () => {
 
     useEffect(() => { loadRoot(); }, [loadRoot]);
 
+    // ── follow the selection in After Effects ───────────────────────────────
+    //
+    // Select a precomp in the comp you are standing in and the panel opens it,
+    // instead of making you find the same layer again in the doorway list. The
+    // selection is the thing you already pointed at; asking for it twice is the
+    // friction this tool exists to remove.
+    //
+    // ONLY ON A CHANGE, never on every tick. The panel's target and AE's
+    // selection are two different things and the artist moves both: if the poll
+    // re-applied what it saw each time, picking a layer in the panel would be
+    // undone a second later by a selection in AE that had not moved. So the
+    // signature is remembered and only a genuine change in AE acts -- which is
+    // also what makes this safe to run continuously.
+    //
+    // A PRECOMP ONLY. A plain layer selected up here has nothing to open, and
+    // AE's own arrow keys already nudge it; silently doing nothing is the right
+    // answer rather than inventing a target the artist did not ask for.
+    const lastSeen = useRef<string>("");
+    const skipNext = useRef(false);
+    const rootIdRef = useRef<number | null>(null);
+    const loadingRef = useRef(false);
+    useEffect(() => { rootIdRef.current = rootId; }, [rootId]);
+    useEffect(() => { loadingRef.current = loading; }, [loading]);
+
+    useEffect(() => {
+        let alive = true;
+        let inFlight = false;
+        const tick = async () => {
+            // Never overlap a poll with itself or with a load: both would race
+            // the same state, and the bridge is single-file anyway.
+            if (!alive || inFlight || loadingRef.current) return;
+            inFlight = true;
+            try {
+                const r = await quiet("editInContextSelection");
+                if (!alive || !r || !r.success) return;
+                const sig = String(r.compId) + ":" + String(r.layerIndex || 0);
+                if (sig === lastSeen.current) return;
+                lastSeen.current = sig;
+                // Reveal selects the layer it just revealed and opens its comp,
+                // which IS a selection change -- and acting on it would throw
+                // away the trail the artist was working in. One tick of grace.
+                if (skipNext.current) { skipNext.current = false; return; }
+                if (!r.layerIndex || !r.isPrecomp || !r.sourceCompId) return;
+                const ok = await openDoorway(
+                    r.compId, r.compName, r.layerIndex, r.layerName, r.sourceCompId,
+                );
+                if (ok && alive) {
+                    setStatus({ text: 'Opened "' + r.layerName + '" — selected in After Effects.', type: "success" });
+                }
+            } finally {
+                inFlight = false;
+            }
+        };
+        const id = window.setInterval(tick, 900);
+        tick();
+        return () => { alive = false; window.clearInterval(id); };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [quiet]);
+
     // ── drill into a precomp layer ──────────────────────────────────────────
     const drill = async (layer: LayerInfo) => {
         if (!layer.isPrecomp) return;
@@ -227,6 +299,29 @@ const EditInContextTool = () => {
         setTarget(null);
         setTargetPath(null);
         setStatus(null);
+    };
+
+    /**
+     * Open one precomp as if it had been clicked in the doorway list, building
+     * the trail from scratch. Used by the selection follower, which knows the
+     * comp and the layer but has no `layers` state to look them up in -- it may
+     * be acting on a comp the panel has not listed yet.
+     */
+    const openDoorway = async (
+        compId: number, compName: string, viaIndex: number, viaName: string, sourceCompId: number,
+    ) => {
+        const l = await quiet("editInContextLayers", sourceCompId);
+        if (!l || !l.success) return false;
+        setRootId(compId);
+        setTrail([
+            { compId, compName, viaIndex: 0 },
+            { compId: sourceCompId, compName: viaName, viaIndex },
+        ]);
+        setPath([viaIndex]);
+        setLayers(l.layers || []);
+        setTarget(null);
+        setTargetPath(null);
+        return true;
     };
 
     /** Jump back to any crumb. Index 0 is the root comp. */
@@ -285,6 +380,7 @@ const EditInContextTool = () => {
 
     const reveal = async () => {
         if (!rootId || !targetPath) return;
+        skipNext.current = true;
         const r = await call("editInContextReveal", rootId, JSON.stringify(targetPath));
         if (r && r.success) say(r.message || "Selected.", "success");
         else if (r) say(r.error || "Couldn't select it.");

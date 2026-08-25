@@ -7785,6 +7785,61 @@ export const editInContextRoot = (): Result & { compId?: number; compName?: stri
   }
 };
 
+/**
+ * The comp the artist is standing in, and the ONE layer selected in it.
+ *
+ * POLLED, so it is deliberately the cheapest call in this file: two reads and
+ * no undo group, no viewer touch, nothing written. The panel follows the
+ * selection live, and a call that cost anything would be felt on every tick.
+ *
+ * ONE layer, not many. "The selected layer" has no meaning when three are
+ * selected, and picking the first of them would be a guess the artist never
+ * made -- the panel leaves its target alone instead.
+ *
+ * Duck-typed rather than `instanceof CompItem`, per CLAUDE.md section 2: two
+ * accesses of the same AE object come back as different wrappers, and this one
+ * runs about once a second.
+ */
+export const editInContextSelection = (): Result & {
+  compId?: number;
+  compName?: string;
+  selectedCount?: number;
+  layerIndex?: number;
+  layerName?: string;
+  isPrecomp?: boolean;
+  sourceCompId?: number;
+} => {
+  try {
+    const item = app.project.activeItem as any;
+    if (!item || typeof item.numLayers !== "number") {
+      return { success: false, error: "No comp is open." };
+    }
+    const comp = item as CompItem;
+    const sel = comp.selectedLayers;
+    const count = sel ? sel.length : 0;
+    if (count !== 1) {
+      return { success: true, compId: comp.id, compName: comp.name, selectedCount: count, layerIndex: 0 };
+    }
+    const layer = sel[0] as any;
+    const src = layer.source;
+    // Duck-typed for the same reason, and it is the whole question the panel
+    // asks: a layer with layers inside it is a doorway.
+    const isPre = !!(src && typeof src.numLayers === "number");
+    return {
+      success: true,
+      compId: comp.id,
+      compName: comp.name,
+      selectedCount: 1,
+      layerIndex: layer.index,
+      layerName: layer.name,
+      isPrecomp: isPre,
+      sourceCompId: isPre ? src.id : 0,
+    };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
 /** The layers of one comp, flagged so the UI knows which can be drilled into. */
 export const editInContextLayers = (compId: number): Result & { layers?: EicLayerInfo[]; compName?: string } => {
   try {

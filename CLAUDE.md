@@ -279,6 +279,15 @@ question), `Tooltip`, `Droplet`, `Dropdown`, `SegmentedToggle`
 (needs a unique `name` or two instances share one Framer `layoutId`),
 `ArcadeFrame`, `ToolErrorBoundary`, `VideoOverlay` (the ONE video player — portals to `<body>`, closes on Esc/backdrop/X; OVLibrary's private copy was promoted, don't re-roll a second), `lib/fileUrl.ts`'s `toFileUrl` (the Windows-drive and UNC branches are why — a malformed `file://` URL shows nothing and throws nothing).
 
+**Edit in Context follows AE's selection.** `editInContextSelection` is polled
+(~900ms, non-toasting) and the panel opens the selected layer's precomp. Two
+rules keep it from fighting the artist: act **only when the signature
+(`compId:layerIndex`) changes**, never re-apply what a tick merely saw — the
+panel's target and AE's selection are separate things and both get moved; and
+**exactly one** selected layer counts, since "the selected layer" means nothing
+when three are. `editInContextReveal` sets the selection itself, so it must skip
+one tick or it throws away the trail it was just revealing from.
+
 **Input.** Prefer **mouse events over pointer events** for anything beyond a
 plain click — the macOS AE CEP host doesn't reliably dispatch Pointer Events.
 For real keyboard input outside a text field, focus a hidden `<input>`
