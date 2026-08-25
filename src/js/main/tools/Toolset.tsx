@@ -37,6 +37,7 @@ import {
     RotateCw,
     RotateCcw,
     Save,
+    PackageOpen,
     PencilLine,
     X,
     FolderTree,
@@ -448,6 +449,25 @@ export const ACTIONS: ActionEntry[] = [
         group: "organise",
         safety: "additive",
         run: () => evalTSSafe("saveFromComp"),
+        successText: (result) => `Saved: ${(result.savedFiles || []).join(", ")}`,
+    },
+    {
+        id: "save-component",
+        label: "Save Component",
+        description: "Saves the selected comp out as its own reduced .aep, named after the comp, then puts your project back exactly as it was.",
+        icon: PackageOpen,
+        group: "organise",
+        // NOT "additive": this reopens the artist's project from disk, so their
+        // viewers and undo history come back fresh even though the file does
+        // not change. Worth the confirm.
+        safety: "undoable",
+        run: async () => {
+            const r = (await evalTSSafe("saveComponent")) as ActionResult & { cancelled?: boolean };
+            // A cancelled folder picker is not a failure -- same convention as
+            // every other picker in this grid.
+            if (r && (r as { cancelled?: boolean }).cancelled) return null;
+            return r;
+        },
         successText: (result) => `Saved: ${(result.savedFiles || []).join(", ")}`,
     },
     {

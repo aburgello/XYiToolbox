@@ -48,6 +48,21 @@ re-derived two or three times before anyone wrote them down.
 - Driving AE via AppleScript/`DoScript` suppresses dialogs and lets scripts
   write files they'd have prompted about — test destructive paths on COPIES.
 
+**Save Component** (`saveComponent`, `tools.ts`) never writes the artist's file.
+The sequence is save-as to the COMPONENT file, reduce in there, save it again,
+then `app.open()` the original back off disk — read the order twice: everything
+destructive happens after the pointer has moved to a file the tool just made.
+Three rules hold it up, all measured in AE 26.2:
+`app.project.reduceProject(items)` — **the API, never the `Reduce Project` menu
+command (id 2735), which is MODAL** and stops a script dead on "N items…have
+been deleted"; **reduce is not undoable from a script** (tested three ways,
+including inside `beginUndoGroup` — 5 items → 3 → 3), which is why it reopens
+rather than trusting Ctrl+Z; and it **refuses on a dirty project**, because
+`app.open()` prompts "Save changes before closing?" and at that moment the open
+project is the REDUCED one, so an artist clicking Save would write it over their
+original. Items referenced ONLY by expressions do not survive a reduce — say so,
+don't try to detect it.
+
 **Known soft spots** — not bugs, but here the constraint rests on user
 discipline rather than code: `mcIt()` takes any folder and has no
 `hasIsolatedOvToken` guard on the `.aep` filename; `runScript` is a bare `eval`

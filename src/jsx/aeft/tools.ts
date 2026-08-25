@@ -158,6 +158,148 @@ export const saveFromComp = (): SaveFromCompResult => {
 };
 
 // =============================================================================
+// Save Component -- one comp out to its own .aep, project left as it was.
+//
+// The manual job this replaces: reduce the project by hand, Save As, rename the
+// file after the comp, go back to AE and Ctrl+Z. Four steps, and the last one
+// is the one people forget.
+//
+// THE ORIGINAL FILE IS NEVER WRITTEN. Not once, not at the end, not to restore
+// the pointer. The whole sequence happens inside the COMPONENT's file:
+//
+//   save(componentFile)   the full project, under the comp's name
+//   reduceProject([comp]) in that file, not in the artist's
+//   save()                the component file again, now reduced
+//   open(originalFile)    the artist's project comes back off disk
+//
+// Read the order twice: after the first save the open project IS the component
+// file, so everything destructive from that point lands on a file this tool
+// just created. The artist's .aep is only ever read.
+//
+// CTRL+Z IS NOT AVAILABLE HERE, which is why it reopens instead. Measured three
+// ways in AE 26.2 -- reduce then undo, undo three times, and reduce wrapped in
+// beginUndoGroup/endUndoGroup -- and the project stayed reduced every time
+// (5 items -> 3 -> 3). AE's own menu command puts up a dialog claiming "You can
+// undo if desired"; a script cannot.
+//
+// THE API, NOT THE MENU COMMAND. `Reduce Project` (id 2735) is modal: it always
+// raises "N items that were not used by the selected items have been deleted",
+// which stops a script dead until somebody clicks OK. app.project.reduceProject()
+// is the same operation and returns silently -- measured, 5 items to 3 with the
+// script still running.
+//
+// REFUSES ON A DIRTY PROJECT, and that is a safety rule rather than tidiness.
+// app.open() prompts "Save changes before closing?" when there are unsaved
+// changes -- and at that moment the open project is the REDUCED one, so an
+// artist clicking Save would write it straight over their original. Requiring a
+// clean project means there is nothing for AE to ask about.
+//
+// Expressions: AE's own warning on the menu command is that items referenced
+// ONLY by expressions are not preserved, and the API is the same operation. Said
+// in the result rather than guessed at, since the panel cannot know whether a
+// given component leans on one.
+// =============================================================================
+interface SaveComponentResult {
+  success: boolean;
+  error?: string;
+  cancelled?: boolean;
+  savedFiles?: string[];
+  message?: string;
+}
+
+/** `Name.aep`, or `Name_V02.aep`, `_V03`... when that name is taken. */
+function componentTargetFile(folder: Folder, compName: string): File {
+  const base = folder.fsName + "/" + compName;
+  const first = new File(base + ".aep");
+  // .exists is trustworthy here: this is a folder the artist just picked in a
+  // dialog, not a team-folder path.
+  if (!first.exists) return first;
+  for (let v = 2; v < 100; v++) {
+    const pad = v < 10 ? "0" + v : String(v);
+    const next = new File(base + "_V" + pad + ".aep");
+    if (!next.exists) return next;
+  }
+  return new File(base + "_V99.aep");
+}
+
+export const saveComponent = (): SaveComponentResult => {
+  let originalFile: File | null = null;
+  try {
+    const proj = app.project;
+    if (!proj.file) {
+      return { success: false, error: "Save this project once first — there's nowhere to put the component yet." };
+    }
+    if (proj.dirty) {
+      return {
+        success: false,
+        error: "Save your project first. This reopens it from disk at the end, and After Effects would ask what to do about unsaved changes at exactly the wrong moment.",
+      };
+    }
+
+    // Comps only, duck-typed -- `instanceof CompItem` is the thing CLAUDE.md
+    // section 2 says not to trust.
+    const names: string[] = [];
+    for (let i = 0; i < proj.selection.length; i++) {
+      const it = proj.selection[i] as any;
+      if (it && typeof it.numLayers === "number") names.push(String(it.name));
+    }
+    if (names.length === 0) {
+      return { success: false, error: "Select the comp you want to save out, in the Project panel." };
+    }
+
+    originalFile = proj.file;
+    // Opens ON the project's own folder, which is where a component nearly
+    // always goes. Instance selectDlg rather than the static Folder.selectDialog:
+    // only the instance form can say where to start.
+    const dest = new Folder(originalFile.parent.fsName).selectDlg("Where should the component go?");
+    if (!dest) return { success: true, cancelled: true };
+
+    const savedFiles: string[] = [];
+    for (let n = 0; n < names.length; n++) {
+      // BY NAME, resolved fresh each time. After the reopen below every item
+      // object from the previous pass belongs to a project that no longer
+      // exists, so holding references across the loop would be reading freed
+      // wrappers.
+      let comp: CompItem | null = null;
+      for (let k = 1; k <= app.project.numItems; k++) {
+        const it = app.project.item(k) as any;
+        if (typeof it.numLayers === "number" && String(it.name) === names[n]) { comp = it as CompItem; break; }
+      }
+      if (!comp) continue;
+
+      const target = componentTargetFile(dest, names[n]);
+      app.project.save(target);
+      app.project.reduceProject([comp]);
+      app.project.save();
+      savedFiles.push(target.name);
+      app.open(originalFile);
+    }
+
+    if (savedFiles.length === 0) {
+      return { success: false, error: "Nothing was saved — those comps weren't in the project any more." };
+    }
+    return {
+      success: true,
+      savedFiles: savedFiles,
+      message: "Saved " + savedFiles.join(", ") +
+        ". Your project is back as it was. Anything referenced ONLY by an expression is not carried into a reduced project — worth a look if this component uses one.",
+    };
+  } catch (e) {
+    // THE PROJECT COMES BACK EVEN WHEN THIS FAILS. A throw between the save-as
+    // and the reopen would otherwise leave the artist looking at the component
+    // file, one Cmd+S from writing a reduced project over it. Saved first so the
+    // reopen cannot raise the "unsaved changes" prompt on the way past.
+    try {
+      if (originalFile && app.project.file && app.project.file.fsName !== originalFile.fsName) {
+        try { app.project.save(); } catch (eSave) { /* nothing more to do about it */ }
+        app.open(originalFile);
+      }
+    } catch (eBack) { /* reported below either way */ }
+    return { success: false, error: e.toString() };
+  }
+};
+
+// =============================================================================
 // Res-suffix naming convention (set by DRQR, honoured by Rename Main Comp and
 // Scale by Name)
 // -----------------------------------------------------------------------------

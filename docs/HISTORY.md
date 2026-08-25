@@ -8638,3 +8638,96 @@ after; the artist's own cards were duplicated, never written.
 
 **Not done:** the modal's two new fields have been type-checked but not driven
 by hand — the whole path is bridge-only and browser preview cannot reach it.
+
+---
+
+## 2026-08-25 — Save Component
+
+Asked for as a sibling to Save From Comp: prepare a component in a project, get
+just that comp out to its own `.aep` named after it, and have the project left
+exactly as it was — replacing "reduce by hand, Save As, rename the file, go back
+to AE and Ctrl+Z", where the last step is the one people forget.
+
+Three measurements decided the design, and two of them killed the obvious one.
+
+### Ctrl+Z is not available to a script
+
+The obvious build is reduce → save → undo. It does not work. Tested three ways
+in AE 26.2 — reduce then undo, undo three times, and the reduce wrapped in
+`beginUndoGroup`/`endUndoGroup` — and the project stayed reduced every time:
+
+```
+A  reduce then undo, nothing between      5 -> 3 -> 3   NOT RESTORED
+B  reduce then undo x3                    5 -> 3 -> 3   NOT RESTORED
+C  reduce inside beginUndoGroup           5 -> 3 -> 3   NOT RESTORED
+D  reduce, save, reopen from disk         5 -> 3 -> 5   RESTORED
+```
+
+AE's own dialog claims "You can undo if desired". A person can; a script cannot.
+
+### The menu command is modal
+
+`Reduce Project` is menu id 2735, and it always raises *"N items that were not
+used by the selected items have been deleted. You can undo if desired. WARNING:
+items referenced ONLY by expressions are not preserved."* That stopped the probe
+dead mid-run and needed a human to click OK — which is exactly what it would do
+to a panel button, halfway through a sequence.
+
+`app.project.reduceProject(items)` is the same operation as an API and returns
+silently: measured, 5 items to 3 with the script still running. Same family as
+`consolidateFootage` and `removeUnusedFootage`, both also present.
+
+The expressions warning is real and applies to the API too. It is reported in
+the result rather than guessed at — the panel cannot know whether a given
+component leans on one.
+
+### The order is the safety
+
+Nothing in this writes the artist's file. Not to restore the pointer, not at the
+end, not on failure:
+
+```
+save(componentFile)    the full project, under the comp's name
+reduceProject([comp])  in that file, not in the artist's
+save()                 the component file again, now reduced
+open(originalFile)     the artist's project comes back off disk
+```
+
+After the first line the open project IS the component file, so everything
+destructive from that point lands on a file this tool just created. The original
+is only ever read.
+
+### Why it refuses on a dirty project
+
+Found the way these things are usually found — a prompt appeared mid-probe:
+*"Save changes to 't.aep' before closing?"* `app.open()` asks that whenever there
+are unsaved changes, and at that point in the sequence the open project is the
+REDUCED one. An artist clicking **Save** would write a reduced project straight
+over their original. Requiring a clean project to start means there is nothing
+for AE to ask about, and the `catch` saves the component file before reopening
+for the same reason.
+
+### Verification
+
+The built bundle's export driven end to end, with `Folder.prototype.selectDlg`
+stubbed so the picker could not block:
+
+```
+unsaved project   -> "Save this project once first…"
+nothing selected  -> "Select the comp you want to save out…"
+dirty project     -> "Save your project first…"
+
+run 1 -> ["Trio_TT.aep"]      items 5 -> 5 RESTORED, file back to orig.aep, dirty=false
+run 2 -> ["Trio_TT_V02.aep"]  items 5 RESTORED
+Trio_TT.aep holds: Solids, used_by_keep, Trio_TT   (OTHER gone — genuinely reduced)
+orig.aep still holds 5 items  UNTOUCHED
+```
+
+Every probe ran on a throwaway project and refused outright if After Effects was
+holding a real one.
+
+**Not done:** the folder picker has never been opened for real — `selectDlg` was
+stubbed in every test, so "opens on the project's own folder" is from the API
+docs and one existence check, not from watching it. And a component whose layers
+are driven by expressions has not been tried; the result says so rather than the
+code detecting it.
