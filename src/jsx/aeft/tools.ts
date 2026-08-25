@@ -841,49 +841,56 @@ export function territoryCheck(input: string): string | null {
 const FRONTCARD_BOX_MAX = 0.9;
 
 /**
- * The true width of one unwrapped line of a string, measured by a PROBE LAYER.
+ * The width the title actually draws at, on one line.
  *
- * THIS EXISTS BECAUSE A BOX TEXT LAYER CANNOT BE ASKED WHETHER IT OVERFLOWS.
- * AE renders nothing past the bottom of a text box, and sourceRectAtTime
- * reports what is RENDERED -- so a title that has already wrapped and been cut
- * off measures exactly one line high and reads as fitting. The previous fit
- * asked exactly that question, got "fits" every time, and widened nothing:
- * "Forgotten Island" kept shipping as FORGOTTEN with the fix supposedly in.
+ * MEASURED ON A DUPLICATE OF THE LAYER ITSELF, not on a synthetic probe built
+ * from a few copied attributes. That probe was the bug: it carried font, size
+ * and tracking across and nothing else, so it missed that the brand template's
+ * title layer has ALL CAPS on. The layer holds "Forgotten Island" and the card
+ * draws FORGOTTEN ISLAND, and capitals are wider -- measured on the real card,
+ * 730.4px as stored against 950.7px as drawn, a 28% under-count. The fit
+ * compared 730 to a 918px box, found room to spare, grew nothing, and the
+ * title wrapped into a box one line tall. The card read FORGOTTEN.
  *
- * A point-text layer has no box, so it never wraps and its rect is the whole
- * string. Added disabled, measured, and removed inside the caller's undo group.
- * It does take the selection while it exists, which is invisible unless the
- * frontcard precomp happens to be the open timeline.
+ * Copying allCaps onto a probe is not available as a fix: allCaps and boxText
+ * are both READ-ONLY on TextDocument (AE 2026 refuses the assignment outright).
+ * Uppercasing the probe's string gets closer -- 936.6px -- and is still 14px
+ * short, because a probe has no trailing tracking and different side bearings.
+ * At tracking 80 that is two characters' worth, and the whole margin between
+ * fitting and wrapping here was 40px.
  *
- * Null means "could not measure", and every caller treats that as leave it
- * alone: an untouched title beats one mangled by a guess.
+ * A duplicate carries every one of those attributes by construction, so there
+ * is nothing left to model. boxTextSize IS writable, which is what makes this
+ * possible: widen the copy past any width it could need, ask AE how wide the
+ * text came out, throw the copy away.
  */
-function measureUnwrapped(comp: CompItem, doc: TextDocument, text: string): { w: number; h: number } | null {
-  if (!comp || !text) return null;
-  if (!comp.layers || typeof comp.layers.addText !== "function") return null;
-  let probe: TextLayer | null = null;
+function measureUnwrapped(layer: Layer, doc: TextDocument, comp: CompItem): { w: number; h: number } | null {
+  if (!comp || !comp.width) return null;
+  if (!doc || !doc.boxTextSize) return null;
+  let dup: Layer | null = null;
   try {
-    probe = comp.layers.addText(String(text));
-    if (!probe) return null;
-    try { probe.enabled = false; } catch (e) { /* never rendered anyway */ }
-    const pprop = probe.property("Source Text") as Property;
-    if (!pprop) return null;
-    const pdoc = pprop.value as TextDocument;
-    if (!pdoc) return null;
-    // The measurement is only worth anything at the real type size, and only
-    // in the real face -- a fallback font of a different width would answer a
-    // question about a title nobody is setting.
-    pdoc.fontSize = doc.fontSize;
-    try { pdoc.font = doc.font; } catch (e) { /* host refused the face */ }
-    try { pdoc.tracking = doc.tracking; } catch (e) { /* older host */ }
-    pprop.setValue(pdoc);
-    const rect = probe.sourceRectAtTime(0, false);
+    dup = layer.duplicate();
+    if (!dup) return null;
+    const dprop = dup.property("Source Text") as Property;
+    if (!dprop) return null;
+    const ddoc = dprop.value as TextDocument;
+    if (!ddoc) return null;
+    // Room it cannot possibly need, so what comes back is the title on one
+    // line. Four frames wide rather than the 0.9 cap: the cap is what the box
+    // is ALLOWED to grow to, and measuring inside it would wrap exactly the
+    // titles this exists to catch.
+    ddoc.boxTextSize = [comp.width * 4, doc.boxTextSize[1]];
+    dprop.setValue(ddoc);
+    const rect = (dup as AVLayer).sourceRectAtTime(0, false);
     if (!rect || !rect.width || !rect.height) return null;
     return { w: rect.width, h: rect.height };
   } catch (e) {
     return null;
   } finally {
-    try { if (probe) probe.remove(); } catch (e) { /* nothing left to remove */ }
+    // MUST come off. It sits above the original, so a duplicate left behind
+    // shifts every layer index below it -- and the caller writes the artwork,
+    // version and territory fields BY INDEX straight after this returns.
+    try { if (dup) dup.remove(); } catch (e) { /* nothing left to remove */ }
   }
 }
 
@@ -896,6 +903,10 @@ function measureUnwrapped(comp: CompItem, doc: TextDocument, text: string): { w:
  * FORGOTTEN. Nothing warned, because a text layer that overflows its box still
  * renders perfectly happily.
  *
+ * IT READ FORGOTTEN A SECOND TIME after this existed, because the measurement
+ * ignored the layer's All Caps: see measureUnwrapped. The arithmetic here was
+ * never wrong -- it was being handed a width 28% short of what AE would draw.
+ *
  * SHRINKING WAS THE WRONG FIRST MOVE. It was all this did, and what artists
  * actually did by hand was drag the box wider and recentre it -- because the
  * type size is the designer's decision and the box is just the container it
@@ -904,11 +915,11 @@ function measureUnwrapped(comp: CompItem, doc: TextDocument, text: string): { w:
  * So: grow, recentre, and only then shrink.
  *
  * MEASURED, NOT PROBED-AND-STEPPED. This used to grow the box in steps and ask
- * after each one whether the layer still overflowed. That question has no
- * honest answer on box text (see measureUnwrapped), so the loop exited on its
- * first pass and the box never moved. One measurement of what the title
- * actually wants gives the answer outright, and the arithmetic below is the
- * whole decision.
+ * after each one whether the layer still overflowed -- a question box text does
+ * not answer, so the loop exited on its first pass and the box never moved. One
+ * measurement of what the title actually wants gives the answer outright, and
+ * the arithmetic below is the whole decision. See measureUnwrapped for why that
+ * measurement has to be taken on the layer rather than modelled from it.
  *
  * THE BOX GROWS ABOUT ITS OWN CENTRE. boxTextPos is the box's TOP-LEFT, so
  * widening alone would push the text right rather than out both ways -- the
@@ -939,7 +950,7 @@ function fitFrontcardText(layer: Layer, time: number): string {
     if (!comp || !comp.width) return "";
     const maxWidth = comp.width * FRONTCARD_BOX_MAX;
 
-    const line = measureUnwrapped(comp, doc, String(doc.text));
+    const line = measureUnwrapped(layer, doc, comp);
     if (!line) return "";
 
     // HOW MANY LINES THE BOX CAN SHOW, which is the difference between a title
@@ -952,7 +963,11 @@ function fitFrontcardText(layer: Layer, time: number): string {
     // an APPROXIMATION -- wrapping never divides evenly, so it asks for a fifth
     // more than the even split rather than pretending to know where the break
     // lands.
-    const pad = Math.max(6, line.w * 0.02);
+    // AE needs a shade more box than the ink it draws -- bisected on the real
+    // card, the narrowest box that does not wrap is the ink width + 8.5px
+    // (0.89%). 3% clears that with room for a longer title's larger absolute
+    // slack, and is nowhere near the 0.9-of-frame cap.
+    const pad = Math.max(8, line.w * 0.03);
     let need = line.w + pad;
     if (lines > 1) need = (line.w / lines) * 1.2;
 

@@ -8192,3 +8192,91 @@ on a machine with the share mounted.
 
 **Not done:** neither hub icon has been seen in a real docked panel yet, and
 `tutorialsList` still has never run inside After Effects.
+
+---
+
+## 2026-08-25 — The frontcard read FORGOTTEN again
+
+Reported off a Multiple Art build: `Forgotten Island` on the card, second word
+missing. The fit that exists to prevent exactly this had shipped weeks earlier,
+and its own docstring names this film.
+
+### Measured on the real card, in real AE
+
+```
+Film Title  text="Forgotten Island"  allCaps=true  tracking=80
+            font=ProximaNova-Bold  size=88
+            BOX size=[918.6, 90.3]
+```
+
+| | width |
+|---|---|
+| what `measureUnwrapped` reported | 730.4 |
+| the same string uppercased | 936.6 |
+| what the layer actually draws | 950.7 |
+| narrowest box that does not wrap | 959.2 |
+| the box on the card | 918.6 |
+
+The arithmetic in `fitFrontcardText` was never wrong. It was handed 730.4,
+compared it to a 918.6px box, concluded there was 188px to spare, and grew
+nothing. The title then wrapped into a box one line tall and the second word
+was clipped.
+
+### Why the measurement was short
+
+`measureUnwrapped` built a synthetic probe: `addText`, then copy across
+`fontSize`, `font` and `tracking`. Three attributes out of however many a text
+layer has — and the one that mattered was **All Caps**, which the brand
+template has on. The layer stores `Forgotten Island` and the card draws
+FORGOTTEN ISLAND, and capitals are 28% wider.
+
+The obvious repair does not work: **`allCaps` and `boxText` are both READ-ONLY
+on `TextDocument`.** AE 2026 refuses `dd.allCaps = true` outright
+(`Unable to set "allCaps". It is a readOnly attribute.`), so a probe cannot be
+made to render like the layer. The first attempt at this fix set the probe's
+string to upper case instead, which gets to 936.6 — and would have grown the
+box to 955, which is still under 959.2 and still wraps. It would have looked
+fixed while failing on the same card.
+
+The remaining 14px is trailing tracking and side bearings. At tracking 80 that
+is two characters' worth, and the entire margin between fitting and wrapping
+here was 40px.
+
+### The fix
+
+Measure a **duplicate of the layer itself**, widened past anything it could
+need. A duplicate carries every attribute by construction — All Caps, tracking,
+faux styles, ligatures, whatever gets added to the template next — so there is
+nothing left to model. `boxTextSize` IS writable, which is what makes it
+possible.
+
+The pad went from 2% to 3% of the measured width: bisected on the real card,
+AE's own wrap threshold is ink + 8.5px (0.89%), and 2% of the *under-measured*
+width was part of how the first attempt still failed.
+
+The duplicate must come off in a `finally`. It sits directly above the original,
+so one left behind shifts every layer index below it — and `frontcardWriteFields`
+writes the artwork, version and territory fields BY INDEX immediately after the
+fit returns.
+
+### Verification
+
+Driving the rebuilt bundle's `frontcardWriteFields` against a duplicate of the
+real card, in a scratch comp:
+
+```
+frontcardWriteFields -> {"success":true,
+    "message":"Title box widened from 919px to 980px and recentred."}
+box after the fit       = 980        (needs >= 959.19)
+renders at its own box  = 950.6866
+renders unwrapped       = 950.6865   -> one line, whole title visible
+items before=177 after=177
+```
+
+The artist's own card was read and never written; the probes duplicate, measure
+and remove, and the item count is checked either side.
+
+**Not done:** the Multiple Art build path wraps and scales a frontcard but never
+stamps its fields, so the title on a fresh build is whatever the template or a
+later Cheeky DT pass put there. That is why this surfaced on a Multiple Art
+file. Worth deciding whether that path should stamp the card itself.

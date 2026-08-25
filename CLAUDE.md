@@ -96,6 +96,17 @@ so this whole class of bug is structurally invisible in browser preview.
   `artwork.ts`'s `decodeName()`/`foldAccents()` do both; `team.ts` and
   `tools.ts` decode but do not fold. Czechia, Poland and Serbia are all one
   accented site name away from this.
+- **`TextDocument.allCaps` and `.boxText` are READ-ONLY** (`boxTextSize` and
+  `boxTextPos` are not). So a text layer's rendered width cannot be reproduced
+  on a synthetic probe: copying font/size/tracking across misses All Caps, which
+  the frontcard template has on, and capitals measured 28% wider than the stored
+  mixed-case string — 730px reported against 950px drawn, so the fit found 188px
+  of room that did not exist and the card read FORGOTTEN. Uppercasing the
+  probe's string is NOT the fix either; it still misses trailing tracking and
+  side bearings by ~14px, which was enough to keep wrapping. **Measure a
+  DUPLICATE of the layer**, widened past anything it could need, and remove it
+  in a `finally` — a duplicate sits above the original and shifts every layer
+  index below it, and frontcard fields are written by index right after.
 - **An EFFECT'S POINT PROPERTIES ARE WRITE-ONLY.** `setValue` and
   `setValueAtTime` work on Corner Pin, Bezier Warp and CC Cylinder; READING one
   back throws `invalid numeric result (divide by zero?)`, from `.value` and
