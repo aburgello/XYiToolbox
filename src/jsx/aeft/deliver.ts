@@ -427,7 +427,26 @@ export function scaleCompToFit(comp: CompItem, newWidth: number, newHeight: numb
     }
     null3DLayer.position.setValue(superParentPosition);
   } finally {
+    // THE LAYER IS NOT THE ITEM. Removing a null layer leaves its FOOTAGE item
+    // behind in the project, so every call to this left one orphan null in a
+    // "Solids" folder -- measured in a real working file, a Footage/Solids
+    // holding Null 1 six times over, Null 5 seven times, and Null 43 through
+    // 52. Multi Comp Scale, Scale Composition and the Bespoke frontcard step
+    // all come through here, and the solo-tile reshape now runs it once per
+    // master per build, so this compounds.
+    //
+    // Read BEFORE the remove -- the layer object is no use afterwards -- and
+    // only dropped when nothing else uses it, since addNull will happily hand
+    // back an item that is already in the project.
+    let nullSource: AVItem | null = null;
+    try { nullSource = null3DLayer.source as AVItem; } catch (e) { nullSource = null; }
     null3DLayer.remove();
+    try {
+      if (nullSource && nullSource.usedIn && nullSource.usedIn.length === 0) nullSource.remove();
+    } catch (e) {
+      // An item AE will not part with is litter, not a failure: the caller's
+      // comp is already correctly sized and that is what it asked for.
+    }
   }
 }
 
