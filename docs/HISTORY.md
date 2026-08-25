@@ -8050,3 +8050,112 @@ and there is now a test that says so.
 and have no `tool-content-header-icon`, so they have no front door for a clip
 yet. And `tutorialsList` has never run inside After Effects — the probe stubs
 the filesystem, it does not stub the NAS.
+
+---
+
+## 2026-08-25 — Campaign Rename borrowed the wrong half of the PDF's name
+
+Reported from a real Colombia folder: the PDFs were
+`FID_INTL_MultiArt_DOOH_SalitreWheel_1180x228px_10s_CO`, the AE project was
+`FID_INTL_PortalToParadise_DOOH_MULTIART_1180x228px_10s_CO_V01`, and running
+Campaign Rename over the pair did something inexplicable rather than nothing.
+
+### What it actually did
+
+Driving the built bundle against those two names:
+
+```
+rename  FID_INTL_PortalToParadise_DOOH_MULTIART_1180x228px_10s_CO_V01.aep
+    ->  FID_INTL_PortalToParadise_DOOH_MULTIART_1180x228px_10s_CO_V01_copy.aep
+```
+
+`campaignRename` inserts the PDF's descriptive tokens between the AE name's
+four-token prefix and its resolution-onward suffix, and it read those tokens
+from `parseFilenameMeta(...).campaign`. Under the current convention `campaign`
+is the CREATIVE — `MultiArt` — and the AE file already carried `MULTIART` in
+its site slot, so the name it built was byte-identical to the name on disk. The
+`while (targetFile.exists)` loop then found the file itself, decided the target
+was taken, and appended `_copy`. Every AEP in the folder renamed itself and no
+site name ever landed.
+
+### The legacy names were broken too, and differently
+
+The probe's second fixture is the form this tool was ported against:
+
+```
+ODY_INTL_DGTL_DOOH_1920x858_10sec_OV.aep
+    ->  ODY_INTL_DGTL_DOOH__1920x858_10sec_OV.aep
+```
+
+On a `_DGTL_` name the artwork type is the FIRST descriptive token, so nothing
+sits left of it and `campaign` comes back `""`. The empty string was spliced in
+as a token, giving a double underscore. So the tool was wrong on both
+conventions at once, in opposite directions, which is why nobody had a clean
+theory about it.
+
+### Cause
+
+`d0653f6` (13 Aug, "Cheeky DT/T: campaign is left of the artwork type") re-cut
+`parseFilenameMeta` so that `campaign` is the creative alone and the new
+`siteName` holds everything right of the artwork type. That was the correct fix
+for the frontcard overflow it was chasing. `campaignRename` was a silent second
+consumer wanting the whole descriptive part, and nothing anywhere connects the
+two: `tsconfig-build.json` type-checks zero files under `src/jsx`, both fields
+are strings, and the tool reports `success: true` either way. It had been
+renaming projects to `_copy` for twelve days before anyone described the
+symptom precisely enough to chase.
+
+This is the same shape as the `bestMatch.fsName` break CLAUDE.md §6 records: a
+field rename that compiles, ships, and only shows up as behaviour.
+
+### The fix, and why one field lands both conventions
+
+`siteName` instead of `campaign`. It works for the legacy form and the current
+one for the same reason: the four-token prefix ends ON the artwork type in
+both — `FID_INTL_PortalToParadise_DOOH` and `ODY_INTL_DGTL_DOOH` — so
+"everything right of the PDF's artwork type" is exactly "everything after the
+AE file's prefix". The creative stays where it is and only the site is
+replaced; on a legacy name, where the creative lives right of `DGTL_DOOH`, it
+travels with the site because it is part of the same descriptive run.
+
+Four things went with it:
+
+- **Original casing.** The `.toUpperCase()` on the borrowed tokens was a no-op
+  on the names it was written for — legacy sites were already caps
+  (`HORSE_LOS`) — but the current convention spells them `SalitreWheel`, which
+  is how that site is written in every other name in the tree. The
+  no-resolution fallback branch compares uppercase against uppercase now that
+  the tokens themselves keep their case.
+- **The resolution scan.** It was a bare `/\d{2,4}x\d{2,4}/` per token, which
+  matches a JPG_PNG ratio token like `16x9` and cuts the name there, dropping
+  the real resolution. `parts` is already split on `_`, so the token boundary
+  was free — it is now the same three-digits-each-side test as
+  `firstSizeToken`, anchored per token.
+- **An empty site is a skip, not an empty token.** A PDF with nothing right of
+  its artwork type has no site to lend.
+- **A name that is already correct is reported, not re-`_copy`d.** The message
+  gained an "N already named" clause, so running it twice says so instead of
+  quietly doing nothing — or, before, quietly doing something worse.
+
+The prefix is also capped at the resolution index now (`resIndex < 4 ?
+resIndex : 4`), which retires the documented "a shorter filename will duplicate
+the resolution token" caveat rather than preserving it.
+
+### Verification
+
+`scripts/probe-campaign-rename.cjs` drives the built bundle's `campaignRename`
+over a stubbed filesystem, seven cases: both conventions, two sites at one size
+(one AE file, one correctly-named copy each — the shape a real campaign folder
+has), an already-correct name, a PDF with no site, a `_16x9_` ratio token, and
+a site carrying a grid (`Hoyts3x3`). All seven fail on the old code.
+
+The probe exists because this class of bug has no other gate. `yarn build` is
+silent on it, both tsconfigs are silent on it, and the tool's own return value
+says `success: true` while renaming a folder of masters to `_copy`.
+
+**Not done:** matching is still on the size token alone, which is the studio's
+confirmed intent (PDFs carry the screen name, AE files don't yet). It cannot
+tell which of two same-size PDFs belongs to which of two same-size AE files —
+it copies for each, which is right when one master serves several sites and
+wrong when the AE files were already per-site. Nobody has hit the second case.
+

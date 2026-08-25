@@ -405,6 +405,20 @@ Naming Audit, which skips only `Auto-Save`/`_Archive`/`_Old`/`_DEV`.
 - Ease **influence** is portable; ease **speed** is absolute and tied to one
   keyframe. Presets store influence only.
 
+**`parseFilenameMeta`'s `campaign` is the CREATIVE, `siteName` is the SITE.**
+Campaign is what sits LEFT of the artwork type, site is everything right of it.
+Anything wanting the whole descriptive part wants `siteName` — the four-token
+prefix ends ON the artwork type in both conventions
+(`FID_INTL_PortalToParadise_DOOH`, `ODY_INTL_DGTL_DOOH`), so "right of the
+artwork type" is exactly "after the prefix". `campaignRename` read `campaign`
+for twelve days after the field was re-cut for the frontcard: on a current-form
+name it rebuilt the AE file's own name, hit the exists-loop and renamed every
+project in the folder to `_copy`; on a legacy `_DGTL_` name, where the artwork
+type is the FIRST descriptive token, `campaign` is `""` and it spliced an empty
+token in. Neither tsconfig covers `src/jsx` and the tool returned
+`success: true` throughout — `node scripts/probe-campaign-rename.cjs` is the
+only gate, so run it after touching either function.
+
 **Naming conventions** (confirmed against real studio folders):
 `<mastersRoot>/AE/<Creative>/<stem>.aep`, with the comp inside named identically
 to the filename stem. Renders mirror the tree under `Renders/`, paired by
@@ -577,6 +591,11 @@ tree for exercising real scan/reveal paths inside AE.
 bundle's `tutorialsList` against a stubbed filesystem whose `File.exists` and
 `getFiles(mask)` THROW — so an edit that reaches for either on the share fails
 the probe instead of failing silently on the NAS.
+
+`node scripts/probe-campaign-rename.cjs` (after `yarn build`) drives
+`campaignRename` over a stubbed folder pair on BOTH naming conventions. Run it
+after touching `parseFilenameMeta` — that function has consumers who each want
+a different field, and the last change to it broke this one silently.
 
 ---
 

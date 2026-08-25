@@ -2380,16 +2380,25 @@ export const drqr = (): Result => {
 // QuickTime files by their shared size (WxH) token -- confirmed with the
 // studio this is intentional (PDFs carry the screen name, renders/AE files
 // don't yet; size is the shared anchor to line them up) -- then borrows the
-// PDF's descriptive tokens (its "campaign" field from parseFilenameMeta)
-// into the AE-side filename, inserted between a fixed 4-token prefix and
-// the resolution-onward suffix.
+// PDF's SITE tokens (parseFilenameMeta's siteName, everything right of the
+// artwork type) into the AE-side filename, inserted between the 4-token
+// prefix and the resolution-onward suffix.
 //
-// ASSUMES the AE-side filename has at least 4 tokens before its descriptive
-// part, matching the documented studio convention (e.g.
-// ODY_INTL_DGTL_DOOH_HORSE_LOS_1920x858_10sec_OV -- ODY/INTL/DGTL/DOOH is
-// the fixed prefix). A shorter filename (fewer than 4 tokens before the
-// resolution) will duplicate the resolution token in the output name --
-// this is a faithful port of that exact assumption, not a new bug.
+// siteName, NOT campaign. This read meta.campaign, which was the whole
+// descriptive part until d0653f6 re-cut it as the creative alone -- correct
+// for the frontcard it was fixing, silently wrong here. The AE file's site
+// slot then rebuilt from the PDF's CREATIVE, so on a real Colombia folder
+// FID_INTL_PortalToParadise_DOOH_MULTIART_1180x228px_10s_CO_V01 rebuilt to
+// itself and the exists-loop renamed it ..._V01_copy. Legacy _DGTL_ names
+// broke the other way: DOOH is the first descriptive token there, nothing
+// sits left of it, campaign came back "" and an empty token spliced in as
+// ODY_INTL_DGTL_DOOH__1920x858_10sec_OV.
+//
+// The 4-token prefix ends ON the artwork type in BOTH conventions
+// (FID_INTL_PortalToParadise_DOOH, ODY_INTL_DGTL_DOOH), which is why "right
+// of the PDF's artwork type" is exactly "after the AE file's prefix" -- the
+// creative stays where it is and only the site is replaced. A shorter name
+// caps the prefix at the resolution rather than duplicating it.
 //
 // Renames in place when exactly one PDF matches an AE file (copy-then-
 // verify-then-remove-original, so content is never lost even on the
@@ -2418,28 +2427,42 @@ export const campaignRename = (): CampaignRenameResult => {
     interface Parsed {
       file: File;
       size: string;
-      campaign: string;
+      /** Everything RIGHT of the artwork type -- see the header note. */
+      site: string;
     }
 
     const pdfData: Parsed[] = [];
     for (let i = 0; i < pdfFiles.length; i++) {
       const meta = parseFilenameMeta(pdfFiles[i].name);
-      pdfData.push({ file: pdfFiles[i], size: meta.size, campaign: meta.campaign });
+      pdfData.push({ file: pdfFiles[i], size: meta.size, site: meta.siteName });
     }
 
     const aeData: Parsed[] = [];
     for (let j = 0; j < aeFiles.length; j++) {
       const meta = parseFilenameMeta(aeFiles[j].name);
-      aeData.push({ file: aeFiles[j], size: meta.size, campaign: meta.campaign });
+      aeData.push({ file: aeFiles[j], size: meta.size, site: meta.siteName });
     }
 
     let renamedCount = 0;
     let duplicatedCount = 0;
+    let alreadyNamedCount = 0;
     let errorCount = 0;
 
     for (let p = 0; p < pdfData.length; p++) {
       const pdfSize = pdfData[p].size;
-      const pdfTokens = pdfData[p].campaign.toUpperCase().split(/[_\s-]+/);
+      // ORIGINAL CASING. The .toUpperCase() this replaces was a no-op on the
+      // names it was written for -- legacy sites were already caps (HORSE_LOS)
+      // -- but the current convention spells them CamelCase, and SalitreWheel
+      // is how that site is written in every other name in the tree.
+      const rawTokens = pdfData[p].site.split(/[_\s-]+/);
+      const pdfTokens: string[] = [];
+      for (let rt = 0; rt < rawTokens.length; rt++) {
+        if (rawTokens[rt] !== "") pdfTokens.push(rawTokens[rt]);
+      }
+      // Nothing to borrow: a PDF whose name has no site part cannot contribute
+      // one. Splicing the empty string in is what produced ODY_INTL_DGTL_DOOH__
+      // 1920x858_10sec_OV.
+      if (pdfTokens.length === 0) continue;
 
       for (let a = 0; a < aeData.length; a++) {
         if (aeData[a].size !== pdfSize) continue;
@@ -2450,9 +2473,13 @@ export const campaignRename = (): CampaignRenameResult => {
         const ext = oldName.substring(oldName.lastIndexOf("."));
         const parts = baseName.split("_");
 
+        // THREE DIGITS EACH SIDE, ANCHORED, matching firstSizeToken. `parts`
+        // is already split on "_", so the token boundary is free -- but the old
+        // /\d{2,4}x\d{2,4}/ still read a JPG_PNG ratio token (_16x9_) as the
+        // resolution and cut the name there.
         let resIndex = -1;
         for (let idx = 0; idx < parts.length; idx++) {
-          if (/\d{2,4}x\d{2,4}/.test(parts[idx])) {
+          if (/^\d{3,}x\d{3,}(?:px)?$/i.test(parts[idx])) {
             resIndex = idx;
             break;
           }
@@ -2460,16 +2487,34 @@ export const campaignRename = (): CampaignRenameResult => {
 
         let newBase: string;
         if (resIndex !== -1) {
-          const aePrefix = parts.slice(0, 4);
+          // Four tokens is the documented prefix (FID_INTL_PortalToParadise_
+          // DOOH, ODY_INTL_DGTL_DOOH), and it ends on the artwork type in both
+          // conventions -- which is why the PDF's siteName, everything right of
+          // ITS artwork type, is exactly what belongs after it. Capped at
+          // resIndex so a shorter name cannot splice the resolution in twice.
+          const prefixEnd = resIndex < 4 ? resIndex : 4;
+          const aePrefix = parts.slice(0, prefixEnd);
           const aeSuffix = parts.slice(resIndex);
           newBase = aePrefix.concat(pdfTokens, aeSuffix).join("_");
         } else {
           newBase = baseName;
           for (let t = 0; t < pdfTokens.length; t++) {
-            if (newBase.toUpperCase().indexOf(pdfTokens[t]) === -1) newBase += "_" + pdfTokens[t];
+            if (newBase.toUpperCase().indexOf(pdfTokens[t].toUpperCase()) === -1) {
+              newBase += "_" + pdfTokens[t];
+            }
           }
         }
         const newName = newBase + ext;
+
+        // ALREADY THE RIGHT NAME. Without this, the target path is the file
+        // itself, the exists-loop walks past it and the AEP gets renamed to
+        // ..._V01_copy.aep -- which is precisely what the whole folder did
+        // while this read meta.campaign. Reported rather than silently passed
+        // over, so "nothing happened" is a sentence and not a guess.
+        if (newName === oldName) {
+          alreadyNamedCount++;
+          continue;
+        }
 
         const folderPath = aeFile.parent.fsName;
         let targetFile = new File(folderPath + "/" + newName);
@@ -2522,7 +2567,9 @@ export const campaignRename = (): CampaignRenameResult => {
 
     return {
       success: true,
-      message: `Renamed ${renamedCount}, duplicated ${duplicatedCount}${errorCount > 0 ? `, ${errorCount} error(s)` : ""}.`,
+      message: `Renamed ${renamedCount}, duplicated ${duplicatedCount}${
+        alreadyNamedCount > 0 ? `, ${alreadyNamedCount} already named` : ""
+      }${errorCount > 0 ? `, ${errorCount} error(s)` : ""}.`,
     };
   } catch (e) {
     return { success: false, error: e.toString() };
