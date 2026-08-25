@@ -83,6 +83,8 @@ interface WorkflowNote {
     /** Free-form labels — "CTA", "TT". Upper-cased host-side so the vocabulary
      *  converges instead of fragmenting into three spellings of one tag. */
     tags?: string[];
+    /** Set once the note has been revised. `stamp` stays when it was written. */
+    editedAt?: string;
 }
 
 /**
@@ -591,6 +593,11 @@ const WorkflowBoardTool: React.FC<{
      * house rules with a way to add to them.
      */
     const [composing, setComposing] = useState(false);
+    /** The note being rewritten, or "" for a new one. The composer is the same
+     *  either way — it already has the input, the format bar, the globe, the
+     *  wand and the tag row, and a second one for editing would be two places
+     *  to fix every future bug in any of them. */
+    const [editingNote, setEditingNote] = useState("");
     const [busy, setBusy] = useState(false);
     const [toasts, setToasts] = useState<Toast[]>([]);
     const toastSeq = useRef(0);
@@ -991,15 +998,25 @@ const WorkflowBoardTool: React.FC<{
         setBusy(true);
         // ONE JSON STRING for the links: an array of objects spliced into
         // eval'd ExtendScript source loses its values in transit.
-        const r = (await evalTSSafe("workflowAddNote", entry.id, body, noteTerritory, JSON.stringify(noteLinks), JSON.stringify(noteTags))) as {
+        // ONE CALL SITE, two host functions. Everything the composer produces is
+        // identical either way; only where it lands differs.
+        const r = (editingNote
+            ? await evalTSSafe("workflowUpdateNote", entry.id, editingNote, body, noteTerritory,
+                JSON.stringify(noteLinks), JSON.stringify(noteTags))
+            : await evalTSSafe("workflowAddNote", entry.id, body, noteTerritory,
+                JSON.stringify(noteLinks), JSON.stringify(noteTags))) as {
             success: boolean; error?: string; entries?: WorkflowEntry[];
         };
         setBusy(false);
-        if (!r || !r.success) { toast("error", (r && r.error) || "Couldn't post the note."); return; }
+        if (!r || !r.success) {
+            toast("error", (r && r.error) || (editingNote ? "Couldn't save the note." : "Couldn't post the note."));
+            return;
+        }
         if (r.entries) setEntries(r.entries);
         setNoteDraft("");
         setNoteTerritory("");
         setComposing(false);
+        setEditingNote("");
         setNoteLinks([]);
         setNoteTags([]);
         setTagDraft("");
@@ -1007,6 +1024,30 @@ const WorkflowBoardTool: React.FC<{
         setWordPicking(false);
         setTerrPickerOpen(false);
         sfx.click();
+    };
+
+    /** Load one of your own notes back into the composer. */
+    const startEditNote = (n: WorkflowNote) => {
+        setEditingNote(n.id);
+        setComposing(true);
+        setNoteDraft(n.text);
+        setNoteTerritory(n.territory || "");
+        setNoteTags((n.tags || []).slice());
+        setNoteLinks((n.links || []).slice());
+        setTerrPickerOpen(false);
+        setWordPicking(false);
+    };
+
+    const cancelCompose = () => {
+        setComposing(false);
+        setEditingNote("");
+        setNoteDraft("");
+        setNoteTerritory("");
+        setNoteLinks([]);
+        setNoteTags([]);
+        setTagDraft("");
+        setTerrPickerOpen(false);
+        setWordPicking(false);
     };
 
     /** Follow a note's inline link: a folder in Finder, or a tool in the panel. */
@@ -1729,7 +1770,7 @@ const WorkflowBoardTool: React.FC<{
                                                 {shown.map((n, i) => (
                                                     <motion.div
                                                         key={n.id}
-                                                        className="wfb-note"
+                                                        className={"wfb-note" + (editingNote === n.id ? " is-editing" : "")}
                                                         initial={{ opacity: 0, y: 4 }}
                                                         animate={{ opacity: 1, y: 0 }}
                                                         exit={{ opacity: 0, height: 0 }}
@@ -1751,20 +1792,44 @@ const WorkflowBoardTool: React.FC<{
                                                                 ))}
                                                             </span>
                                                         )}
-                                                        <span className="wfb-note-by" title={n.stamp}>
+                                                        <span className="wfb-note-by" title={n.editedAt ? `Written ${n.stamp}\nEdited ${n.editedAt}` : n.stamp}>
                                                             {n.territory && (
                                                                 <span className="wfb-note-terr" title={territoryName(n.territory)}>
                                                                     <span className="wfb-flag">{flagFor(n.territory) || n.territory}</span>
                                                                 </span>
                                                             )}
                                                             {n.author}{n.stamp ? ` · ${shortStamp(n.stamp)}` : ""}
+                                                            {/* SAID, not hidden. On a shared board the
+                                                                difference between what somebody wrote
+                                                                and what it says now matters, and there
+                                                                is no history to compare against. */}
+                                                            {n.editedAt ? <em> · edited</em> : null}
                                                         </span>
                                                         {/* Your own notes only. Somebody
                                                             else's is theirs to withdraw. */}
+                                                        {/* YOURS ONLY. The host refuses an edit on
+                                                            somebody else's note regardless of what the
+                                                            panel draws — hiding a control is a
+                                                            convenience, not a permission check. */}
                                                         {n.author === me && (
-                                                            <button type="button" className="wfb-note-x" onClick={() => removeNote(n.id)}>
-                                                                <X size={10} />
-                                                            </button>
+                                                            <span className="wfb-note-own">
+                                                                <button
+                                                                    type="button"
+                                                                    className="wfb-note-x"
+                                                                    title="Edit this note"
+                                                                    onClick={() => startEditNote(n)}
+                                                                >
+                                                                    <Pencil size={10} />
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    className="wfb-note-x"
+                                                                    title="Delete this note"
+                                                                    onClick={() => removeNote(n.id)}
+                                                                >
+                                                                    <X size={10} />
+                                                                </button>
+                                                            </span>
                                                         )}
                                                     </motion.div>
                                                 ))}
@@ -1867,7 +1932,8 @@ const WorkflowBoardTool: React.FC<{
                                         </button>
                                     </Tooltip>
                                     <button type="button" className="wfb-btn" onClick={addNote} disabled={!me || busy || !noteDraft.trim()}>
-                                        <Plus size={12} /><span>Add</span>
+                                        {editingNote ? <Check size={12} /> : <Plus size={12} />}
+                                        <span>{editingNote ? "Save" : "Add"}</span>
                                     </button>
                                     {/* Closing DISCARDS the draft, so it asks
                                         first once there is something to lose.
@@ -1880,14 +1946,9 @@ const WorkflowBoardTool: React.FC<{
                                         title="Close"
                                         onClick={async () => {
                                             const dirty = !!noteDraft.trim() || noteLinks.length > 0 || noteTags.length > 0;
-                                            if (dirty && !(await confirmDialog("Discard this note?"))) return;
-                                            setComposing(false);
-                                            setNoteDraft("");
-                                            setNoteTerritory("");
-                                            setNoteLinks([]);
-                                            setNoteTags([]);
-                                            setTerrPickerOpen(false);
-                                            setWordPicking(false);
+                                            const q = editingNote ? "Discard these changes?" : "Discard this note?";
+                                            if (dirty && !(await confirmDialog(q))) return;
+                                            cancelCompose();
                                         }}
                                     >
                                         <X size={11} />

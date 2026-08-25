@@ -25,14 +25,18 @@
 
 // ── header ──────────────────────────────────────────────────────────────────
 
+// CONTAINERS FOLLOW THE THEME'S SURFACE TOKENS. `--tile-bg` and
+// `--tile-border` are what OLED forces to black and #303030; a panel full of
+// rgba(255,255,255,0.03) cards sits visibly grey on a screen that is supposed
+// to be off. The alpha values stay as fallbacks for the default surface.
 .workflow-board .wfb-head {
     display: flex;
     align-items: center;
     gap: 10px;
     padding: 8px 10px;
-    border: 1px solid rgba(255, 255, 255, 0.09);
+    border: 1px solid var(--tile-border, rgba(255, 255, 255, 0.09));
     border-radius: 6px;
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--tile-bg, rgba(255, 255, 255, 0.03));
 }
 
 .workflow-board .wfb-id {
@@ -144,13 +148,24 @@
 
     &.wfb-btn--icon { padding: 4px 6px; }
 
+    // THE ACCENT ITSELF, not a gradient of it. `--cat-grad` is a two-stop
+    // gradient the category tint publishes, and this panel pins its own accent
+    // from `--ov-accent` — a single colour, with no way to derive a darker stop
+    // from it in CSS (color-mix is Chromium 111 and banned here). So the fill
+    // is the accent flat, and the label goes dark against it, the same way the
+    // completed step nodes already do.
     &.wfb-btn--primary {
-        border-color: var(--cat-border, #fb923c);
-        background: var(--cat-grad, linear-gradient(135deg, #b3661f, #5c2f0e));
+        border-color: var(--ov-accent, #fb923c);
+        background: var(--ov-accent, #fb923c);
+        color: #12151a;
+        font-weight: 600;
         opacity: 1;
 
-        &:hover, &:active { background: var(--cat-grad, linear-gradient(135deg, #c4722a, #6b3712)); }
-        &:disabled:hover, &:disabled:active { background: var(--cat-grad, linear-gradient(135deg, #b3661f, #5c2f0e)); }
+        svg { opacity: 0.9; }
+
+        &:hover, &:active { background: var(--ov-accent, #fb923c); }
+        &:disabled { opacity: 0.4; }
+        &:disabled:hover, &:disabled:active { background: var(--ov-accent, #fb923c); }
     }
 
     &.wfb-btn--danger:hover { color: #f87171; }
@@ -205,9 +220,9 @@
 
 .workflow-board .wfb-picker {
     overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, 0.09);
+    border: 1px solid var(--tile-border, rgba(255, 255, 255, 0.09));
     border-radius: 6px;
-    background: rgba(255, 255, 255, 0.02);
+    background: var(--tile-bg, rgba(255, 255, 255, 0.02));
 }
 
 .workflow-board .wfb-picker-head {
@@ -727,9 +742,9 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     flex-direction: column;
     gap: 4px;
     padding: 8px 9px;
-    border: 1px solid rgba(255, 255, 255, 0.07);
+    border: 1px solid var(--tile-border, rgba(255, 255, 255, 0.07));
     border-radius: 6px;
-    background: rgba(255, 255, 255, 0.02);
+    background: var(--tile-bg, rgba(255, 255, 255, 0.02));
 }
 
 .workflow-board .wfb-notes-head {
@@ -811,9 +826,9 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     flex-direction: column;
     gap: 7px;
     padding: 9px;
-    border: 1px solid rgba(255, 255, 255, 0.09);
+    border: 1px solid var(--tile-border, rgba(255, 255, 255, 0.09));
     border-radius: 6px;
-    background: rgba(255, 255, 255, 0.02);
+    background: var(--tile-bg, rgba(255, 255, 255, 0.02));
 }
 
 .workflow-board .wfb-editor-hint {
@@ -1767,9 +1782,12 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     align-items: center;
     gap: 1px;
     padding: 2px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    border: 1px solid var(--surface-edge, rgba(255, 255, 255, 0.14));
     border-radius: 4px;
-    background: #23262d;
+    // --surface-2, not --surface-1: this floats ABOVE the panel, and OLED keeps
+    // that layer off black deliberately so it has something to separate it
+    // from the black underneath.
+    background: var(--surface-2, #23262d);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
 
     button {
@@ -1877,4 +1895,29 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     display: flex;
     flex-direction: column;
     gap: 3px;
+}
+
+// Your own note: edit beside delete. Both quiet — they are yours to use, not
+// a suggestion that you should.
+.workflow-board .wfb-note-own {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    display: flex;
+    align-items: center;
+    gap: 1px;
+}
+
+.workflow-board .wfb-note-own .wfb-note-x { position: static; }
+
+.workflow-board .wfb-note-by em {
+    font-style: normal;
+    opacity: 0.75;
+}
+
+// The note currently loaded into the composer, so it is obvious which one the
+// box below is about to rewrite.
+.workflow-board .wfb-note.is-editing {
+    border-left-color: var(--cat-icon, #fdba74);
+    background: rgba(255, 255, 255, 0.06);
 }

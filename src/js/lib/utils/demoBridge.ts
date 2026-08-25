@@ -208,6 +208,7 @@ interface DemoWorkflow {
     id: string; campaign: string; creative: string; key: string;
     steps: { id: string; text: string; link?: { tool: string; action?: string } }[];
     notes: { id: string; text: string; author: string; stamp: string; territory?: string; tags?: string[];
+             editedAt?: string;
              links?: { label: string; path?: string; tool?: string; action?: string }[] }[];
     author: string; updatedAt: string;
 }
@@ -308,6 +309,23 @@ const SHAPED: Record<string, (args: unknown[]) => unknown> = {
         const id = String(args[0]);
         demoWorkflows = demoWorkflows.map((w) => (w.id === id
             ? { ...w, notes: w.notes.concat([{ id: "n-" + Date.now(), text: String(args[1]), author: "Antonio", stamp: new Date().toString() }]) }
+            : w));
+        return { success: true, read: true, entries: demoWorkflows, me: "Antonio" };
+    },
+
+    workflowUpdateNote: (args) => {
+        const id = String(args[0]), noteId = String(args[1]);
+        demoWorkflows = demoWorkflows.map((w) => (w.id === id
+            ? { ...w, notes: w.notes.map((n) => (n.id === noteId
+                ? {
+                    ...n,
+                    text: String(args[2]),
+                    territory: String(args[3] || ""),
+                    links: JSON.parse(String(args[4] || "[]")),
+                    tags: JSON.parse(String(args[5] || "[]")),
+                    editedAt: new Date().toString(),
+                }
+                : n)) }
             : w));
         return { success: true, read: true, entries: demoWorkflows, me: "Antonio" };
     },

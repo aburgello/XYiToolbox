@@ -2829,6 +2829,10 @@ export interface WorkflowNote {
    * that the canonical form is also the readable one.
    */
   tags?: string[];
+  /** Set the first time the note is changed after posting. `stamp` stays the
+   *  moment it was written, because that is what the ordering and the "who said
+   *  this and when" reading both depend on. */
+  editedAt?: string;
 }
 
 export interface WorkflowNoteLink {
@@ -3045,64 +3049,9 @@ export const workflowAddNote = (
     let found = false;
     for (let i = 0; i < shared.length; i++) {
       if (shared[i].id !== entryId) continue;
-      // Upper-cased and stripped to letters and an underscore: the codes this
-      // codebase carries are not all two letters ("BE_FR"), and a code stored
-      // in whatever case the caller sent would never match another panel's.
-      const terr = String(territory || "").toUpperCase().replace(/[^A-Z_]/g, "");
-      // A JSON STRING across the bridge, per CLAUDE.md: an array of objects
-      // spliced into eval'd ExtendScript source loses its values in transit.
-      const links: WorkflowNoteLink[] = [];
-      if (linksJson) {
-        try {
-          const parsed = JSON.parse(linksJson);
-          if (parsed instanceof Array) {
-            for (let f = 0; f < parsed.length; f++) {
-              const item = parsed[f];
-              if (!item) continue;
-              if (!item.label) continue;
-              // A link has to go SOMEWHERE. One with neither a path nor a tool
-              // renders as a word that looks clickable and is not, which is
-              // worse than no link at all.
-              const hasPath = !!item.path;
-              const hasTool = !!item.tool;
-              if (!hasPath && !hasTool) continue;
-              const entryLink: WorkflowNoteLink = { label: String(item.label) };
-              if (hasPath) entryLink.path = String(item.path);
-              if (hasTool) entryLink.tool = String(item.tool);
-              if (item.action) entryLink.action = String(item.action);
-              links.push(entryLink);
-            }
-          }
-        } catch (e3) {
-          // A note with unreadable links is still a note. Posting it without
-          // them beats refusing to post it at all.
-        }
-      }
-      const tags: string[] = [];
-      if (tagsJson) {
-        try {
-          const parsedTags = JSON.parse(tagsJson);
-          if (parsedTags instanceof Array) {
-            for (let t = 0; t < parsedTags.length; t++) {
-              // Letters, digits, spaces and a hyphen. Anything else is
-              // punctuation somebody typed by accident, and a tag that differs
-              // from its neighbour by a stray full stop is a second tag.
-              const tag = String(parsedTags[t] || "")
-                .toUpperCase()
-                .replace(/[^A-Z0-9 \-]/g, "")
-                .replace(/\s+/g, " ")
-                .replace(/^ +| +$/g, "");
-              if (!tag) continue;
-              if (tag.length > 24) continue;
-              // indexOf is polyfilled; `includes` is not (CLAUDE.md §2).
-              if (tags.indexOf(tag) !== -1) continue;
-              tags.push(tag);
-            }
-          }
-        } catch (e4) {
-          // A note with unreadable tags is still a note.
-        }
-      }
+      const terr = normaliseTerritoryCode(territory);
+      const links = parseNoteLinks(linksJson);
+      const tags = parseNoteTags(tagsJson);
       shared[i].notes.push({
         id: "note-" + new Date().getTime() + "-" + Math.floor(Math.random() * 100000),
         text: body,
@@ -3116,6 +3065,130 @@ export const workflowAddNote = (
       break;
     }
     if (!found) return { success: false, error: "That workflow is no longer on the board -- reload and try again." };
+    if (!writeSharedFile(SHARED_WORKFLOWS_FILE, SHARED_WORKFLOWS_TYPE, shared)) {
+      return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
+    }
+    return { success: true, read: true, entries: shared, me: me };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/** ISO code, upper-cased. Not all codes are two letters ("BE_FR"), so the
+ *  underscore survives; everything else is punctuation somebody typed. */
+function normaliseTerritoryCode(territory?: string): string {
+  return String(territory || "").toUpperCase().replace(/[^A-Z_]/g, "");
+}
+
+/** A JSON STRING across the bridge: an array of objects spliced into eval'd
+ *  ExtendScript source loses its values in transit. */
+function parseNoteLinks(linksJson?: string): WorkflowNoteLink[] {
+  const links: WorkflowNoteLink[] = [];
+  if (!linksJson) return links;
+  try {
+    const parsed = JSON.parse(linksJson);
+    if (!(parsed instanceof Array)) return links;
+    for (let f = 0; f < parsed.length; f++) {
+      const item = parsed[f];
+      if (!item) continue;
+      if (!item.label) continue;
+      // A link has to go SOMEWHERE. One with neither a path nor a tool renders
+      // as a word that looks clickable and is not, which is worse than none.
+      const hasPath = !!item.path;
+      const hasTool = !!item.tool;
+      if (!hasPath && !hasTool) continue;
+      const entryLink: WorkflowNoteLink = { label: String(item.label) };
+      if (hasPath) entryLink.path = String(item.path);
+      if (hasTool) entryLink.tool = String(item.tool);
+      if (item.action) entryLink.action = String(item.action);
+      links.push(entryLink);
+    }
+  } catch (e) {
+    // A note with unreadable links is still a note.
+  }
+  return links;
+}
+
+/** Upper-cased, so the vocabulary converges instead of splitting into three
+ *  spellings of one tag. */
+function parseNoteTags(tagsJson?: string): string[] {
+  const tags: string[] = [];
+  if (!tagsJson) return tags;
+  try {
+    const parsed = JSON.parse(tagsJson);
+    if (!(parsed instanceof Array)) return tags;
+    for (let t = 0; t < parsed.length; t++) {
+      const tag = String(parsed[t] || "")
+        .toUpperCase()
+        .replace(/[^A-Z0-9 \-]/g, "")
+        .replace(/\s+/g, " ")
+        .replace(/^ +| +$/g, "");
+      if (!tag) continue;
+      if (tag.length > 24) continue;
+      // indexOf is polyfilled; `includes` is not (CLAUDE.md §2).
+      if (tags.indexOf(tag) !== -1) continue;
+      tags.push(tag);
+    }
+  } catch (e) {
+    // A note with unreadable tags is still a note.
+  }
+  return tags;
+}
+
+/**
+ * Rewrite one of YOUR OWN notes.
+ *
+ * THE AUTHOR CHECK IS HERE, not only on the button. The panel hides the pencil
+ * on somebody else's note, and that is a UI convenience rather than a rule --
+ * hiding a control is not a permission check, and this call is reachable
+ * regardless of what the panel chose to draw. A shared board where anyone can
+ * silently rewrite anyone's words, with no history to compare against, is worse
+ * than one nobody can edit at all.
+ *
+ * `stamp` is deliberately NOT touched. It is when the note was written, which
+ * is what the ordering and the "who said this and when" reading both depend on;
+ * an edit that moved it would reshuffle the board. `editedAt` records the change
+ * separately so the note can say it was revised.
+ */
+export const workflowUpdateNote = (
+  entryId: string,
+  noteId: string,
+  text: string,
+  territory?: string,
+  linksJson?: string,
+  tagsJson?: string,
+): WorkflowBoardResult => {
+  try {
+    if (!teamFolder()) return { success: false, error: "Team folder not set." };
+    const me = loadLocalSetting(MACHINE_OWNER_KEY);
+    if (!me) return { success: false, error: "This machine isn't tagged with your name yet -- set it in the Team menu." };
+    const body = String(text || "").replace(/^\s+|\s+$/g, "");
+    if (!body) return { success: false, error: "A note can't be empty. Delete it instead." };
+
+    const shared = readWorkflowEntries();
+    if (shared === null) return { success: false, error: "Couldn't read the team board -- is the NAS mounted?" };
+
+    let found = false;
+    for (let i = 0; i < shared.length; i++) {
+      if (shared[i].id !== entryId) continue;
+      for (let j = 0; j < shared[i].notes.length; j++) {
+        const note = shared[i].notes[j];
+        if (note.id !== noteId) continue;
+        if (note.author !== me) {
+          return { success: false, error: "That note is " + note.author + "'s. Only they can change it." };
+        }
+        note.text = body;
+        note.territory = normaliseTerritoryCode(territory);
+        note.links = parseNoteLinks(linksJson);
+        note.tags = parseNoteTags(tagsJson);
+        note.editedAt = new Date().toString();
+        found = true;
+        break;
+      }
+      break;
+    }
+    if (!found) return { success: false, error: "That note is no longer on the board -- reload and try again." };
+
     if (!writeSharedFile(SHARED_WORKFLOWS_FILE, SHARED_WORKFLOWS_TYPE, shared)) {
       return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
     }

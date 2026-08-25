@@ -7847,3 +7847,63 @@ Workflows are grouped by campaign, with their step and note counts, and clicking
 one opens it. Retired campaigns are excluded: they are unselectable everywhere
 else, and a dead workflow is not a suggestion. The genuine empty case still says
 so, and distinguishes "none written yet" from "all of them are retired".
+
+### Editing your own notes, and following the theme
+
+**Notes can be rewritten by whoever wrote them.** The pencil sits beside the X
+on your own notes only — but **the author check is on the host**, not just the
+button. Hiding a control is a UI convenience, not a permission check: the call
+is reachable regardless of what the panel drew, and a shared board where anyone
+can silently rewrite anyone's words, with no history to compare against, is
+worse than one nobody can edit.
+
+**It reuses the composer rather than adding an editor.** That box already has
+the input, the format bar, the globe, the wand and the tag row; a second one for
+editing would be two places to fix every future bug in any of them. The pencil
+loads the note back into it, the row is marked while it is loaded, and Add
+becomes Save.
+
+**`stamp` is not touched on an edit.** It is when the note was written, which is
+what the ordering and the "who said this and when" reading both depend on — an
+edit that moved it would reshuffle the board. `editedAt` records the change
+separately, and the byline says "· edited", because on a shared board the
+difference between what somebody wrote and what it says now matters.
+
+The three normalisers (territory code, links, tags) were lifted out of
+`workflowAddNote` so add and update share them. Two copies would drift, and the
+drift shows as a tag that filters in one direction only.
+
+### The panel ignored the theme
+
+It was painted `rgba(24, 27, 33, 0.98)` with a hardcoded teal accent — so on an
+OLED theme it sat visibly grey on a screen where everything around it was black,
+which is the entire point of OLED.
+
+The accent was pinned deliberately: everything inside keys off `--cat-*`, the
+CATEGORY tint set per mounted tool, so a panel that follows you around would
+come up orange over Deliver and teal over Localise. That reasoning was right and
+the fix was wrong — `--ov-accent` is *also* constant across screens, so it
+satisfies both: stable wherever you are, and whatever was picked in the theme
+menu.
+
+Surfaces now use the tokens OLED actually overrides — `--surface-1` for the
+panel, `--tile-bg`/`--tile-border` for the cards inside, `--surface-divider` for
+rules. The format bar uses `--surface-2` rather than `--surface-1`, because that
+is the layer OLED deliberately keeps off black so a floating thing has something
+to separate it from the black underneath. Solid rather than translucent, since
+0.98 alpha over black is not black.
+
+The primary button took the accent flat with a dark label, the way the completed
+step nodes already do: `--cat-grad` is a two-stop gradient the category tint
+publishes, and there is no way to derive a second stop from a single
+`--ov-accent` in CSS with `color-mix` banned on this target.
+
+Measured: on OLED the panel, header and notes box all compute to
+`rgb(0, 0, 0)`, and a pink theme accent reaches the step nodes as
+`rgb(244, 114, 182)`.
+
+*The save looked broken and wasn't:* `workflowUpdateNote` existed and was
+exported, but `demoBridge` had no mock for it, so in preview the call fell
+through to no bridge. Worth remembering that a new host function needs its demo
+mock or every browser test of it fails for a reason that has nothing to do with
+the code.

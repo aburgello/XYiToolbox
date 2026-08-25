@@ -38,10 +38,10 @@ $smooth: cubic-bezier(0.65, 0, 0.35, 1);    // open / close, position
     align-items: center;
     justify-content: center;
 
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--surface-border, rgba(255, 255, 255, 0.1));
     border-radius: 50%;
     background: var(--surface-1, #262626);
-    color: #cfe9e2;
+    color: var(--ov-accent, #cfe9e2);
     cursor: pointer;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
     // Named properties, never `all`: `all` would animate the box-shadow and
@@ -74,18 +74,20 @@ $smooth: cubic-bezier(0.65, 0, 0.35, 1);    // open / close, position
 }
 
 .wfbub-panel {
-    // ITS OWN ACCENT, PINNED. Everything inside keys off `--cat-*`, which is
-    // the CATEGORY tint — set as an inline style on whichever tool is mounted.
-    // For a panel that follows you around the app that is exactly wrong: the
-    // checklist would come up orange over Deliver, teal over Localise and the
-    // bare fallback over home, so the one surface that never changes would be
-    // the one thing changing colour. Declared here, on the panel, so the
-    // cascade inside it lands on this instead.
+    // ITS OWN ACCENT, PINNED — BUT THE THEME'S, NOT A HARDCODED ONE.
     //
-    // Teal, matching the launcher and the route it draws.
-    --cat-border: #2dd4bf;
-    --cat-icon: #5eead4;
-    --cat-grad: linear-gradient(135deg, #10796d, #0b463f);
+    // Everything inside keys off `--cat-*`, the CATEGORY tint, set as an inline
+    // style on whichever tool is mounted. For a panel that follows you around
+    // the app that is exactly wrong: the checklist would come up orange over
+    // Deliver, teal over Localise and the bare fallback over home, so the one
+    // surface that never changes would be the one thing changing colour.
+    //
+    // It was pinned to a literal teal, which fixed that and broke something
+    // else — a panel ignoring the theme somebody chose. `--ov-accent` is
+    // constant across screens too, so it satisfies both: stable wherever you
+    // are, and whatever you picked in the theme menu.
+    --cat-border: var(--ov-accent, #2dd4bf);
+    --cat-icon: var(--ov-accent, #5eead4);
 
     position: fixed;
     right: 18px;
@@ -105,8 +107,13 @@ $smooth: cubic-bezier(0.65, 0, 0.35, 1);    // open / close, position
     display: flex;
     flex-direction: column;
 
-    background: rgba(24, 27, 33, 0.98);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    // THE THEME'S SURFACE, not a literal. `--surface-1` is what OLED forces to
+    // pure black — a panel painted #181b21 sat visibly grey on an OLED screen
+    // where everything around it was black, which is the whole thing OLED is
+    // for. Solid rather than translucent for the same reason: 0.98 alpha over
+    // black is not black.
+    background: var(--surface-1, #181b21);
+    border: 1px solid var(--surface-border, rgba(255, 255, 255, 0.12));
     border-radius: 10px;
     box-shadow: 0 10px 34px rgba(0, 0, 0, 0.55);
     overflow: hidden;
@@ -178,7 +185,7 @@ $smooth: cubic-bezier(0.65, 0, 0.35, 1);    // open / close, position
     align-items: center;
     flex: 0 0 auto;
     padding: 8px 10px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid var(--surface-divider, rgba(255, 255, 255, 0.08));
 }
 
 .wfbub-title {
@@ -190,7 +197,7 @@ $smooth: cubic-bezier(0.65, 0, 0.35, 1);    // open / close, position
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.02em;
-    color: #cfe9e2;
+    color: var(--ov-accent, #cfe9e2);
 
     svg { flex: none; }
 }
