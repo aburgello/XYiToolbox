@@ -8916,3 +8916,72 @@ along; a square board gets the vertical cuts, which is the commoner ask.
 third idea from that conversation — "repeat N times across", seating copies
 directly in the guide cells — was deliberately left until these two have been
 used, since together they may already make it unnecessary.
+
+---
+
+## 2026-08-26 — 270 rotated the picture but not the geometry
+
+Reported precisely: "the rotating 270 degrees will not produce the same effect
+as the 90 degrees which is working as intended — the 270cc will not show the
+rotation properly in the reference panel, and when built it will not have the
+matte layer laid out properly but only staying in the middle of the comp."
+
+Two separate defects, and between them they account for both halves of that.
+
+### −90 is not 270
+
+Every `turned` test in the panel and in `bespokeBuildRegions` reads
+`rotation === 90 || rotation === 270`. `bespokeRegionsFromComp` takes the angle
+straight off the AE layer as `Math.round(tr.rotation.value) % 360`, and **AE
+hands back −90 for a counter-clockwise quarter turn**. In JavaScript
+`-90 % 360` is `-90`, not `270`.
+
+So a counter-clockwise region carried −90 and failed the test in both places:
+the preview did not treat it as turned, and the build left the footprint
+unswapped while still setting `transform.rotation` to −90, which renders at 270.
+A rotated picture with unrotated geometry — the cover ratio computed on the
+wrong axis and the matte built from the wrong box.
+
+```
+stored   -> turn   face          cover
+  -90    ->  270   1920x1080     38.9%     (was: turn -90, face 1080x1920, 29.6%)
+```
+
+`quarterTurn()` folds positive and snaps to the nearest quarter — so −90, −270,
+89.5, 360 and a missing value all resolve to something the tests can read — and
+it is applied at every entry point: the comp scan, the screen library, detect,
+the rotate button, and the plan handed to the build. The build normalises again
+on its own side, because a plan can arrive from a saved screen written before
+any of this.
+
+### The clamp ate the box
+
+`patchRegion` caps a region's size to the board on every change, which is right
+for a drag or a typed number and wrong for a quarter turn. `rotateRegion` swaps
+w and h, and on a board shorter than the region is wide that swap was clamped:
+
+```
+board 6720x320                     board 1920x1080
+start   rot   0   420x320          start   rot   0   420x320
+press 1 rot  90   320x320  ← lost  press 1 rot  90   320x420
+press 2 rot 180   320x320          press 2 rot 180   420x320  ← restored
+press 3 rot 270   320x320          press 3 rot 270   320x420
+```
+
+On a normal frame it round-trips exactly, which is why this only ever showed up
+on the boards the tool exists for. On the archway the first turn destroyed the
+panel's real width, 180 could not restore it, and the matte — built from
+`reg.w`/`reg.h` — came out a square.
+
+Rotation now passes `keepSize` and four presses return the panel exactly as it
+started.
+
+That does mean a turned region can extend past a short board, and the clamp was
+what enforced "a region outside the board is not a layout, it is a mistake". It
+enforced it by destroying data, so the rule moved from a silent crush to a
+visible note listing which regions run past the edge. A turned panel on a short
+board legitimately passes through that state on its way somewhere.
+
+**Not done:** arithmetic and typecheck, not driven in the panel or built in AE.
+The matte's own position was never wrong — it is the region box it is built
+from that was — so the fix is upstream of the line that looked guilty.

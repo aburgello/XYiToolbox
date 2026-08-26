@@ -504,6 +504,27 @@ const BoardTransport: React.FC<{
 };
 
 /** What a board is, for telling whether it has been changed since it loaded. */
+/**
+ * A rotation as one of 0 / 90 / 180 / 270, whatever it arrived as.
+ *
+ * EVERY TEST IN THIS FILE AND IN THE BUILD IS `=== 90 || === 270`, and AE does
+ * not promise those numbers. A layer turned counter-clockwise reads back as
+ * -90, and `-90 % 360` is -90 in JavaScript, not 270 — so a region traced from
+ * a comp came through as -90, failed the turned test in the preview AND in the
+ * build, and had its footprint left unswapped while `transform.rotation` was
+ * still set to -90 and rendered at 270. A rotated picture with unrotated
+ * geometry: the crop landed on the wrong axis and the matte was built from the
+ * wrong box.
+ *
+ * Snapped to the nearest quarter as well as folded positive, because a hand-set
+ * 89.5 is a quarter turn somebody nudged, not a fifth state.
+ */
+function quarterTurn(v: unknown): number {
+    const n = Number(v);
+    if (!isFinite(n) || n === 0) return 0;
+    return (((Math.round(n / 90) * 90) % 360) + 360) % 360;
+}
+
 function boardSignature(rs: { master: BespokeMaster; x: number; y: number; w: number; h: number; rotation: number }[]): string {
     const out: string[] = [];
     for (const r of rs) out.push(`${r.master.path}|${r.x},${r.y},${r.w},${r.h},${r.rotation || 0}`);
@@ -1134,7 +1155,7 @@ export const BespokeTool = () => {
             canvasH: h,
             guidesX, guidesY,
             slots: regions.map((r) => ({
-                x: r.x, y: r.y, w: r.w, h: r.h, rotation: r.rotation || 0,
+                x: r.x, y: r.y, w: r.w, h: r.h, rotation: quarterTurn(r.rotation),
                 masterW: r.master.width, masterH: r.master.height, masterDuration: r.master.duration,
             })),
             savedBy: "", stamp: new Date().toISOString().slice(0, 10),
@@ -1206,7 +1227,7 @@ export const BespokeTool = () => {
                 hit = best;
                 unmatched.push(`R${i + 1} wanted ${sl.masterW}×${sl.masterH}`);
             }
-            next.push({ id: nextSegId++, master: hit, x: sl.x, y: sl.y, w: sl.w, h: sl.h, rotation: sl.rotation || 0 });
+            next.push({ id: nextSegId++, master: hit, x: sl.x, y: sl.y, w: sl.w, h: sl.h, rotation: quarterTurn(sl.rotation) });
         });
         if (t.canvasW) setCanvasW(String(t.canvasW));
         if (t.canvasH) setCanvasH(String(t.canvasH));
@@ -1263,7 +1284,7 @@ export const BespokeTool = () => {
                 // 2% of aspect is a comfortable match; past that the crop badge
                 // and a swap are the honest answer.
                 if (diff / Math.max(0.0001, want) > 0.02) loose.push(s.name || `${s.w}×${s.h}`);
-                next.push({ id: nextSegId++, master: best, x: s.x, y: s.y, w: s.w, h: s.h, rotation: s.rotation || 0 });
+                next.push({ id: nextSegId++, master: best, x: s.x, y: s.y, w: s.w, h: s.h, rotation: quarterTurn(s.rotation) });
             });
             if (res.width) setCanvasW(String(res.width));
             if (res.height) setCanvasH(String(res.height));
@@ -2349,7 +2370,19 @@ export const BespokeTool = () => {
      * box to retype it would otherwise fall back to a default and quietly
      * crush every region to fit a board size nobody asked for.
      */
-    const patchRegion = (i: number, patch: Partial<Region>) =>
+    /**
+     * `keepSize` lets a change through without capping it to the board.
+     *
+     * A ROTATION MUST NOT BE LOSSY. The cap is right for a drag or a typed
+     * number — you cannot resize a region past the work — but rotateRegion swaps
+     * w and h, and on a board shorter than the region is wide that swap was
+     * clamped and the original width was gone for good. Measured on a 6720x320
+     * archway: a 420x320 panel turned once became 320x320 and never came back,
+     * so 180 did not restore it and the matte was built from a square. The same
+     * panel on 1920x1080 round-trips exactly, which is why this only ever showed
+     * up on the boards this tool exists for.
+     */
+    const patchRegion = (i: number, patch: Partial<Region>, keepSize = false) =>
         setRegions((prev) => prev.map((r, n) => {
             if (n !== i) return r;
             const merged = { ...r, ...patch };
@@ -2358,8 +2391,8 @@ export const BespokeTool = () => {
             if (!cw || !ch || cw <= 0 || ch <= 0) return merged;
             // Size first: a region can be no larger than the board, and never
             // so small it cannot be grabbed again.
-            const w = Math.max(MIN_REGION, Math.min(merged.w, cw));
-            const h = Math.max(MIN_REGION, Math.min(merged.h, ch));
+            const w = keepSize ? merged.w : Math.max(MIN_REGION, Math.min(merged.w, cw));
+            const h = keepSize ? merged.h : Math.max(MIN_REGION, Math.min(merged.h, ch));
             // Then position, against the size that survived.
             return {
                 ...merged,
@@ -2633,12 +2666,12 @@ export const BespokeTool = () => {
         const cx = r.x + r.w / 2;
         const cy = r.y + r.h / 2;
         patchRegion(selRegion, {
-            rotation: (r.rotation + 90) % 360,
+            rotation: quarterTurn(r.rotation + 90),
             w: r.h,
             h: r.w,
             x: Math.round(cx - r.h / 2),
             y: Math.round(cy - r.w / 2),
-        });
+        }, true);
     };
 
     /** Reshapes the region to its master's native ratio, so nothing is cropped. */
@@ -2667,7 +2700,7 @@ export const BespokeTool = () => {
                 name: outName.trim(),
                 marketsRoot, territory, batch: batch.trim(),
                 useLocalised,
-                regions: regions.map((r) => ({ path: r.master.path, x: r.x, y: r.y, w: r.w, h: r.h, rotation: r.rotation || 0 })),
+                regions: regions.map((r) => ({ path: r.master.path, x: r.x, y: r.y, w: r.w, h: r.h, rotation: quarterTurn(r.rotation) })),
                 // The reference and the rulers travel with the plan so the
                 // built comp opens looking like the panel it was traced in.
                 // Arrays of scalars survive the bridge; the whole plan is
@@ -3127,6 +3160,22 @@ export const BespokeTool = () => {
     const notes: string[] = [];
     if (wantSecs > 0 && Math.abs(totalSecs - wantSecs) > 0.001) {
         notes.push(`segments total ${totalSecs}s, the row asks for ${wantSecs}s`);
+    }
+    // A REGION PAST THE EDGE, SAID OUT LOUD. The size clamp used to enforce
+    // this silently, but it enforced it by destroying the box a rotation had
+    // just swapped — so rotation keeps its size now and the condition becomes a
+    // note instead. Anything past the board renders as nothing, which is worth
+    // one line and not worth refusing a layout over: Match master ratio or a
+    // drag fixes it, and on a short board a turned panel legitimately passes
+    // through this state on its way somewhere.
+    if (mode === "regions" && canvasWidth > 0 && canvasHeight > 0) {
+        const past = regions
+            .map((r, i) => ({ i, over: r.x + r.w > canvasWidth || r.y + r.h > canvasHeight }))
+            .filter((x) => x.over)
+            .map((x) => `R${x.i + 1}`);
+        if (past.length > 0) {
+            notes.push(`${past.join(", ")} ${past.length === 1 ? "runs" : "run"} past the board — anything beyond ${canvasWidth}×${canvasHeight} renders as nothing`);
+        }
     }
     if (seg && seg.tiles.length > 0 && alongCanvas > 0 && naturalWidth !== alongCanvas) {
         const axis = isColumn ? "down" : "across";

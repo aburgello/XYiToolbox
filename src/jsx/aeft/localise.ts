@@ -4665,7 +4665,13 @@ export const bespokeBuildRegions = (
         // 1080x1920 master at 90 degrees covers a region as if it were
         // 1920x1080. Right angles only, so this stays a swap and never a
         // trigonometric bounding box.
-        const turn = Math.round(Number(reg.rotation) || 0) % 360;
+        // FOLDED POSITIVE AND SNAPPED. `% 360` alone leaves a counter-clockwise
+        // angle negative -- AE hands back -90, and -90 % 360 is -90 -- which
+        // failed the `=== 90 || === 270` test below while still being set on the
+        // layer. The picture came out rotated and every number here was computed
+        // as though it were not.
+        let turn = Math.round((Number(reg.rotation) || 0) / 90) * 90;
+        turn = ((turn % 360) + 360) % 360;
         const turned = turn === 90 || turn === 270;
         const faceW = turned ? src.height : src.width;
         const faceH = turned ? src.width : src.height;

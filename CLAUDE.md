@@ -261,6 +261,19 @@ confirm raised by a palette action still wins.
   a photograph has no board size, no guides and no running order, and threading
   a third value through forty `mode === "multi"` branches would put a third
   meaning on every one of them.
+- **A rotation is one of 0/90/180/270 — normalise it, never trust the source.**
+  Every `turned` test in Bespoke and in `bespokeBuildRegions` is
+  `=== 90 || === 270`, and AE hands back **−90** for a counter-clockwise quarter
+  turn (`-90 % 360` is `-90` in JS, not 270). An unnormalised region therefore
+  rendered rotated while every number — footprint, cover, crop, matte box — was
+  computed as though it were not. `quarterTurn()` folds positive and snaps;
+  apply it at every entry point (comp scan, screen library, detect, the rotate
+  button, the plan sent to the build).
+- **Rotating a region must not be lossy.** `patchRegion` caps size to the board,
+  which is right for a drag and wrong for a quarter turn: on a 6720×320 archway
+  a 420×320 panel turned once became 320×320 and never came back. Rotation
+  passes `keepSize`, and a region past the board is a **note** now rather than
+  something silently crushed to fit.
 - **Board tools must scale to the SHAPES this tool exists for, not to 1920×1080.**
   Two were written for a normal frame and fell apart on a 6720×320 archway:
   `duplicateRegion` offset by 3% of the *smaller* side, which is 10px there, so
