@@ -1090,7 +1090,33 @@ function fitFrontcardText(layer: Layer, time: number): string {
       comp = null;
     }
     if (!comp || !comp.width) return "";
-    const maxWidth = comp.width * FRONTCARD_BOX_MAX;
+
+    // THE CAP IS IN COMP SPACE; EVERYTHING ELSE HERE IS IN LAYER SPACE.
+    //
+    // The box, the measurement and the wrap all happen inside the text layer,
+    // before its own transform. The cap does not: it is a share of the FRAME.
+    // Comparing the two directly is only right while the layer sits at 100%.
+    //
+    // A bespoke build scales the whole frontcard comp down to the deliverable's
+    // canvas -- 480x275 for one real Norway row -- and scaleCompToFit does that
+    // by scaling every layer in it. So the title was measuring ~979px against a
+    // cap of 480*0.9 = 432, deciding it could not possibly fit, and dropping
+    // 88pt to 38pt. On screen that layer is drawn at about a quarter size and
+    // the title fits with room to spare: FORGOTTEN ISLAND came out tiny on an
+    // otherwise correct card.
+    //
+    // Converting the cap into the layer's own space is the whole fix. At 100%
+    // it changes nothing.
+    let layerScale = 1;
+    try {
+      const sc = (layer as AVLayer).transform.scale.value as number[];
+      const sx = Math.abs(Number(sc[0])) / 100;
+      if (sx > 0.001) layerScale = sx;
+    } catch (e) {
+      // No scale to read: treat the layer as unscaled, which is what this
+      // assumed before it knew to ask.
+    }
+    const maxWidth = (comp.width * FRONTCARD_BOX_MAX) / layerScale;
 
     const line = measureUnwrapped(layer, doc, comp);
     if (!line) return "";
