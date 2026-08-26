@@ -9364,3 +9364,61 @@ Both declared now.
 **Not done:** none of this has been run in After Effects. The loop calls
 `app.newProject()` between builds, which is the single most consequential thing
 written today, and it has been reasoned about rather than watched.
+
+---
+
+## 2026-08-26 — The batch route was wrong way round
+
+The first cut put a "Batch…" button beside Build in Bespoke, pointing at a
+folder of deliverable folders. The studio's answer named the flaw exactly:
+*"We don't have an AEP folder yet since we haven't sent these files to localise,
+so I don't know where I'm supposed to send that batch button to."*
+
+Which is the whole point. A row is still sitting in the localiser precisely
+because it has not been built yet, so at that moment there is no folder to read.
+**The rows are the targets.**
+
+### The route already existed
+
+`CSVLocaliser` has had a **"Bespoke It"** button beside "Build a Batch" since
+the bespoke screen shipped — *"Several masters in one deliverable"* — and it
+navigated carrying nothing. And `lib/localiseHandoff.ts` already does exactly
+this job in the other direction, handing Wrike subtasks to the batch builder as
+rows, one-shot and take-once.
+
+So: a second handoff in the same module, the same discipline, and the existing
+button given something to carry.
+
+### The panel already knew which rows
+
+A complete row the masters folder cannot answer with ONE master is a Multiple
+Art deliverable — a 30s slot filled by 15s of one creative and 15s of another —
+and that is the same condition the `2×?` badge is drawn from. Those arrive
+ticked; every other complete row travels too, unticked, so the list can be
+changed on the far side rather than the choice being made here and hidden there.
+
+Rows still being looked up are excluded: "not back yet" is not the same answer
+as "no master", and preselecting on it would tick rows that turn out to be fine.
+
+### The names have to match a folder that does not exist yet
+
+Since the deliverable folders get created by the localiser later, a board built
+here has to land on the name the localiser *would* have written. So the loop
+calls `buildDeliverableName` — the one builder both paths share — and takes
+`filmTitle` and `region` from the chosen master's own name, first token and
+second, exactly as `csvLocaliserRun` does.
+
+Checked against the folders that already exist for this job:
+
+```
+FID_INTL_PortalToParadise_DOOH_1080x1920px_30s_NO
+FID_INTL_PortalToParadise_DOOH_Lagunen_1728x768px_30s_NO
+FID_INTL_PortalToParadise_DOOH_NFkino_345x496px_30s_NO
+… seven of seven match
+```
+
+The folder-scanning `bespokeBatchScan` is gone with its only caller.
+
+**Not done:** still not run in After Effects. The `app.newProject()` between
+builds remains the most consequential line written today and remains
+unwatched.

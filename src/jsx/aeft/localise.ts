@@ -6,7 +6,7 @@
 // see its header comment for context.
 // =============================================================================
 import { scaleCompToFit } from "./deliver";
-import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, territoryCheck, parseFilenameMeta, frontcardWrap, cheekyTCheck, organiseFolders, FRONTCARD_LEAD_IN_SECONDS, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, scanMastersForBestMatch, firstSizeToken, ownProjectFolder } from "./tools";
+import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, territoryCheck, parseFilenameMeta, frontcardWrap, cheekyTCheck, organiseFolders, FRONTCARD_LEAD_IN_SECONDS, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, MasterIndexEntry, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, scanMastersForBestMatch, firstSizeToken, ownProjectFolder } from "./tools";
 import { makeParentLayerOfAllUnparented, scaleAllCameraZooms } from "./deliver";
 import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, saveLocGenReport, buildDeliverableName, durationForMasterLookup, durationDigits, sanitiseSiteToken, camelCaseToken, camelCaseName } from "./shared";
 import { loadCampaignsRaw, loadLastCampaign as loadOVLastCampaign } from "./review";
@@ -5219,61 +5219,14 @@ export function bespokeSoloCompName(outName: string, masterName: string): string
 // scaled to a sliver on eight of the nine.
 // =============================================================================
 interface BespokeBatchTarget {
-  name: string;
+  /** The deliverable's own fields, exactly as the localiser holds them. */
+  artwork: string;
+  creative: string;
+  site: string;
   width: number;
   height: number;
   seconds: number;
 }
-
-export const bespokeBatchScan = (folderPath: string): Result & {
-  targets?: BespokeBatchTarget[];
-  skipped?: string[];
-} => {
-  try {
-    const root = new Folder(String(folderPath));
-    // No mask, and never .exists on the entries -- the team-folder rules apply
-    // to any share, and a batch usually lives on one.
-    const items = root.getFiles();
-    if (!items) return { success: false, error: "Couldn't read that folder." };
-    const targets: BespokeBatchTarget[] = [];
-    const skipped: string[] = [];
-    for (let i = 0; i < items.length; i++) {
-      const entry = items[i] as any;
-      // Duck-typed: a folder is the thing with getFiles on it.
-      if (!entry || typeof entry.getFiles !== "function") continue;
-      // Folder.name is the name portion of a URI, so anything outside ASCII
-      // arrives percent-escaped. Guarded, because a bare "%" in a real folder
-      // name ("50%_OFF") makes decodeURI THROW and would take the whole scan
-      // with it -- the raw name is a fine answer, a failed scan is not.
-      let name = String(entry.name);
-      try { name = decodeURI(name); } catch (eDec) { /* keep the raw name */ }
-      // The _-folder rule, same as every other scan in this codebase.
-      if (name.charAt(0) === "_" || name.charAt(0) === ".") continue;
-      // THE DELIMITED FORM ONLY, not firstSizeToken. That helper keeps a loose
-      // fallback on purpose, so nothing that used to parse stops -- but here a
-      // loose match is a comp size, and "Hoyts3x3_reference" sitting in a batch
-      // folder would come back as a 3x3 canvas and get BUILT. A folder with no
-      // proper size token is not a deliverable; it is reported and skipped.
-      const sized = name.match(/(?:^|_)(\d{3,}x\d{3,})(?:px)?(?=_|$)/i);
-      if (!sized) { skipped.push(name); continue; }
-      const size = sized[1];
-      const parts = size.split("x");
-      const w = Number(parts[0]);
-      const h = Number(parts[1]);
-      if (!w || !h) { skipped.push(name); continue; }
-      const dur = name.match(/_(\d+)s(?:ec)?(?:_|$)/);
-      targets.push({
-        name: name,
-        width: w,
-        height: h,
-        seconds: dur ? Number(dur[1]) : 0,
-      });
-    }
-    return { success: true, targets: targets, skipped: skipped };
-  } catch (e) {
-    return { success: false, error: e.toString() };
-  }
-};
 
 export const bespokeBatchBuild = (planJson: string): Result & { report?: string; built?: number } => {
   try {
@@ -5320,7 +5273,8 @@ export const bespokeBatchBuild = (planJson: string): Result & { report?: string;
       const target = targets[t];
       const size = target.width + "x" + target.height;
       lines.push("");
-      lines.push("=== " + target.name + "  " + size + " ===");
+      lines.push("=== " + target.creative
+        + (target.site ? " " + target.site : "") + "  " + size + " ===");
 
       // THE FOLDER SAYS HOW LONG THE DELIVERABLE IS. A real batch mixes them --
       // seven 30s and two 10s in the reported one -- and one recipe cannot be
@@ -5338,6 +5292,7 @@ export const bespokeBatchBuild = (planJson: string): Result & { report?: string;
 
       // Resolve the recipe against THIS canvas.
       const tiles: { path: string }[][] = [];
+      let leadMaster: MasterIndexEntry | null = null;
       let missing = "";
       for (let sgi = 0; sgi < recipe.length; sgi++) {
         const seg = recipe[sgi];
@@ -5348,6 +5303,7 @@ export const bespokeBatchBuild = (planJson: string): Result & { report?: string;
           break;
         }
         tiles.push([{ path: best.path }]);
+        if (sgi === 0) leadMaster = best;
         lines.push("  " + seg.creative + " " + secs + "s  ->  " + best.name);
       }
       if (missing !== "") {
@@ -5361,10 +5317,30 @@ export const bespokeBatchBuild = (planJson: string): Result & { report?: string;
       // starting from a project bespokeBuild has just saved.
       app.newProject();
 
+      // THE NAME THE LOCALISER WOULD HAVE WRITTEN, from the one builder that
+      // writes them. filmTitle and region come off the chosen master's own
+      // name -- first token and second -- which is exactly where
+      // csvLocaliserRun takes them from, so a board built here and a
+      // deliverable localised there cannot end up named differently.
+      const leadName = String(leadMaster ? leadMaster.name : "");
+      const nameParts = leadName.split("_");
+      const outName = buildDeliverableName({
+        filmTitle: nameParts[0] || "",
+        region: nameParts[1] || "",
+        campaign: String(target.creative),
+        artworkType: String(target.artwork),
+        site: String(target.site || ""),
+        width: target.width,
+        height: target.height,
+        duration: String(recipeSecs),
+        territory: String(plan.territory),
+      });
+      lines.push("  -> " + outName);
+
       const perTarget = {
         canvasWidth: target.width,
         canvasHeight: target.height,
-        name: target.name,
+        name: outName,
         marketsRoot: plan.marketsRoot,
         territory: plan.territory,
         batch: plan.batch,

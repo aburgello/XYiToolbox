@@ -16,7 +16,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom";
 import { motion, useReducedMotion } from "motion/react";
 import { territoryNameFlag } from "../lib/jobsFeed";
-import { takePendingBatch, type PendingBatch } from "../lib/localiseHandoff";
+import { takePendingBatch, setPendingBespoke, type PendingBatch } from "../lib/localiseHandoff";
 import {
     Layers,
     FolderSearch,
@@ -938,6 +938,60 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
 
     const buildRowCreative = (r: BuildRow) => (r.creative === CUSTOM_CREATIVE ? r.custom.trim() : r.creative);
     const buildComplete = buildRows.filter((r) => buildRowCreative(r) && r.width && r.height && r.duration);
+
+    /**
+     * The rows that ARE Multiple Art, which the panel already knows.
+     *
+     * A complete row the masters folder cannot answer with ONE master is
+     * exactly a several-creatives deliverable — a 30s slot filled by 15s of one
+     * and 15s of another — and that is the same condition the "2×?" badge is
+     * drawn from. Rows still being looked up are left out: "not back yet" is
+     * not the same answer as "no master", and sending on it would preselect
+     * rows that turn out to be fine.
+     */
+    const bespokeCandidates = buildComplete.filter((r) => {
+        const res = buildMasters[r.id];
+        return !!res && !res.master;
+    });
+
+    /**
+     * Hand the rows to Bespoke rather than a folder.
+     *
+     * THE ROWS ARE THE TARGETS. At this point in the job the AE folders do not
+     * exist — that is the whole reason these rows are still sitting here — so
+     * pointing Bespoke at a folder would be pointing it at nothing. It gets the
+     * deliverables themselves, and builds each name with the same
+     * buildDeliverableName the localiser would have used.
+     *
+     * Everything complete travels; the ones that need it arrive ticked.
+     */
+    const sendToBespoke = () => {
+        // EVERYTHING COMPLETE TRAVELS. Sending only the candidates would make
+        // the choice here and hide it there; the flag says which ones arrive
+        // ticked, and the rest are one click away from joining them.
+        const wanted = buildComplete;
+        if (!wanted.length) return;
+        const needs = (id: number) => {
+            const res = buildMasters[id];
+            return !!res && !res.master;
+        };
+        setPendingBespoke({
+            territory: buildTerritory || "",
+            batch: buildBatch || "",
+            mastersRoot: aepPath || "",
+            campaign: campaignName || "",
+            rows: wanted.map((r) => ({
+                artwork: r.artwork,
+                creative: buildRowCreative(r),
+                site: r.site,
+                width: r.width,
+                height: r.height,
+                duration: r.duration,
+                needsMulti: needs(r.id),
+            })),
+        });
+        onSelectTool?.("bespoke");
+    };
 
     // Look up a master for each COMPLETE builder row, so a row asking for a
     // duration no master has can still be offered "build it from the 15sec one
@@ -2446,11 +2500,16 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                 </button>
                 <button
                     className="specs-route"
-                    onClick={() => onSelectTool?.("bespoke")}
+                    onClick={sendToBespoke}
+                    disabled={buildComplete.length === 0}
                 >
                     <Layers size={14} />
                     <span className="specs-route-t">Bespoke It</span>
-                    <span className="specs-route-s">Several masters in one deliverable</span>
+                    <span className="specs-route-s">
+                        {bespokeCandidates.length > 0
+                            ? `${bespokeCandidates.length} row${bespokeCandidates.length === 1 ? "" : "s"} need more than one master`
+                            : "Several masters in one deliverable"}
+                    </span>
                 </button>
             </div>
 

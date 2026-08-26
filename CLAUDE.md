@@ -271,18 +271,23 @@ confirm raised by a palette action still wins.
   `Number()` NaN and the field re-rendered as 0 mid-type. Canvas W/H keep their
   live string behaviour and only resolve on Enter/blur, so the board still
   reshapes as you type.
-- **Batch Multiple Art: the FOLDERS are the brief.** `bespokeBatchScan` reads a
-  batch's subfolders — each name gives the canvas, the duration and the exact
-  deliverable name — and `bespokeBatchBuild` repeats one recipe over them,
-  resolving each segment's **creative** (not a file) per target through
+- **Batch Multiple Art comes from the LOCALISER'S ROWS, never a folder.** At the
+  point those rows exist the AE folders do not — that is why they are still
+  sitting there. CSV Localiser's **"Bespoke It"** sends every complete row via
+  `setPendingBespoke` (a second one-shot handoff beside `setPendingBatch`, same
+  take-once discipline), flagging `needsMulti` on the ones it could not answer
+  with a single master — the same condition the `2×?` badge is drawn from — and
+  those arrive ticked. `bespokeBatchBuild` repeats one recipe over the ticked
+  targets, resolving each segment's **creative** (not a file) per target through
   `pickBestMasterFromIndex`, the same scorer CSV Localiser and OV Library use.
-  Three rules: the scan takes **only the delimited three-digit size token**, not
-  `firstSizeToken`'s loose fallback (a `Hoyts3x3_reference` folder would
-  otherwise be built as a 3×3 canvas); a target whose folder duration differs
-  from the recipe total is **refused, not warned about**, since a 30s board in a
-  10s folder is wrong in the one way nobody checks; and each deliverable is its
-  own project, so it **refuses to start on a dirty project** — `app.newProject()`
-  mid-loop would otherwise raise a save prompt nobody expects.
+  It names each build with **`buildDeliverableName`**, taking `filmTitle` and
+  `region` off the chosen master's own name exactly as `csvLocaliserRun` does,
+  so a board built here cannot be named differently from the deliverable
+  localised there. Two more rules: a target whose duration differs from the
+  recipe total is **refused, not warned about** (a 30s board in a 10s
+  deliverable is wrong in the one way nobody checks); and each build is its own
+  project, so it **refuses to start on a dirty project** — `app.newProject()`
+  mid-loop would raise a save prompt nobody expects.
 - **`yarn build` does NOT run `scripts/audit-unbound-globals.cjs`.** Neither
   tsconfig checks `src/jsx`, so an undefined identifier ships silently. Run it
   after touching ExtendScript — it just caught a `decodeName` that does not

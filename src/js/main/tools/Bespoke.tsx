@@ -43,6 +43,7 @@ import ScreenLibrary, { ScreenEntry } from "./ScreenLibrary";
 import { confirmDialog } from "../Dialog";
 import { detectShapes } from "../lib/detectShapes";
 import { setTutorialSubject } from "../lib/tutorialSubject";
+import { takePendingBespoke } from "../lib/localiseHandoff";
 import "../shared.scss";
 import "./Bespoke.scss";
 
@@ -843,8 +844,9 @@ export const BespokeTool = () => {
      * already carry the canvas, the duration and the exact name each build has
      * to be called, so the batch is read rather than typed.
      */
-    const [batchTargets, setBatchTargets] = useState<{ name: string; width: number; height: number; seconds: number }[]>([]);
-    const [batchSkipped, setBatchSkipped] = useState<string[]>([]);
+    const [batchTargets, setBatchTargets] = useState<
+        { artwork: string; creative: string; site: string; width: number; height: number; seconds: number; on: boolean }[]
+    >([]);
     /**
      * Guides stop taking the mouse.
      *
@@ -2987,29 +2989,6 @@ export const BespokeTool = () => {
     };
 
     /** Assembles the whole composition and, when a country is set, files it. */
-    /** Point at the batch and read every deliverable folder in it. */
-    const pickBatchFolder = async () => {
-        try {
-            const picked = await evalTS("selectCsvLocaliserAepFolder");
-            if (typeof picked !== "string" || !picked) return;
-            const res = (await evalTS("bespokeBatchScan", picked)) as unknown as
-                { success: boolean; error?: string; targets?: typeof batchTargets; skipped?: string[] } | undefined;
-            if (!res || !res.success) {
-                setStatus({ text: (res && res.error) || "Couldn't read that folder.", type: "error" });
-                return;
-            }
-            setBatchTargets(res.targets || []);
-            setBatchSkipped(res.skipped || []);
-            setStatus({
-                text: `${(res.targets || []).length} deliverable${(res.targets || []).length === 1 ? "" : "s"} read`
-                    + ((res.skipped || []).length ? `, ${(res.skipped || []).length} skipped with no size in the name` : ""),
-                type: "success",
-            });
-        } catch {
-            setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects to run it.", type: "error" });
-        }
-    };
-
     /**
      * The same recipe, once per deliverable.
      *
@@ -3023,7 +3002,7 @@ export const BespokeTool = () => {
         setStatus(null);
         try {
             const plan = {
-                targets: batchTargets,
+                targets: batchTargets.filter((t) => t.on),
                 mastersRoot: mastersPath,
                 marketsRoot,
                 territory,
@@ -3448,6 +3427,47 @@ export const BespokeTool = () => {
     useEffect(() => {
         if (!nameTouched && !refPath) setOutName(suggestedName);
     }, [suggestedName, nameTouched, refPath]);
+
+    /**
+     * Rows sent over from the localiser, as Multiple Art targets.
+     *
+     * TAKE-ONCE, like the batch handoff it sits beside: read and cleared, so
+     * coming back to Bespoke later does not silently re-fill it with a job that
+     * has already been dealt with.
+     *
+     * The territory and batch travel with them because the build has to file
+     * itself, and at this point in the job those rows exist and the AE folders
+     * do not — which is the whole reason this route is the rows and not a
+     * folder on disk.
+     */
+    useEffect(() => {
+        const sent = takePendingBespoke();
+        if (!sent || !sent.rows.length) return;
+        setMode("multi");
+        setBatchTargets(sent.rows.map((r) => ({
+            artwork: r.artwork,
+            creative: r.creative,
+            site: r.site,
+            width: Number(r.width) || 0,
+            height: Number(r.height) || 0,
+            seconds: Number(String(r.duration).replace(/[^0-9]/g, "")) || 0,
+            // Ticked if the localiser could not answer it with one master —
+            // which is what a Multiple Art row IS. Everything else came along
+            // so it can be added, not so it gets built by accident.
+            on: r.needsMulti === true,
+        })));
+        if (sent.territory) setTerritory(sent.territory);
+        if (sent.batch) setBatch(sent.batch);
+        // marketsRoot is DERIVED from the campaign here, not stored — so the
+        // campaign is what travels, and picking it up brings the root with it.
+        if (sent.campaign) setCampaign(sent.campaign);
+        if (sent.mastersRoot) { setMastersPinned(true); setMastersPath(sent.mastersRoot); }
+        setStatus({
+            text: `${sent.rows.length} deliverable${sent.rows.length === 1 ? "" : "s"} sent over. Set the recipe once, then build them all.`,
+            type: "success",
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
     const totalSecs = segments.reduce((n, s) => n + s.seconds, 0);
     const wantSecs = Number(runtime) || 0;
     const alongCanvas = isColumn ? canvasHeight : canvasWidth;
@@ -4787,6 +4807,29 @@ export const BespokeTool = () => {
                 />
             )}
 
+            {mode === "multi" && batchTargets.length > 0 && (
+                <>
+                    <p className="bsp-lbl bsp-lbl--section">
+                        Sent from the localiser · {batchTargets.filter((t) => t.on).length} of {batchTargets.length} ticked
+                    </p>
+                    <div className="bsp-targets">
+                        {batchTargets.map((t, i) => (
+                            <button
+                                key={`${t.creative}-${t.site}-${t.width}x${t.height}-${i}`}
+                                className={"bsp-target" + (t.on ? " is-on" : "")}
+                                onClick={() => setBatchTargets((prev) => prev.map((x, n) => (n === i ? { ...x, on: !x.on } : x)))}
+                            >
+                                <span className="bsp-target-tick">{t.on ? "✓" : ""}</span>
+                                <span className="bsp-target-name">
+                                    {t.creative}{t.site ? ` · ${t.site}` : ""}
+                                </span>
+                                <span className="bsp-target-spec">{t.width}×{t.height} · {t.seconds}s</span>
+                            </button>
+                        ))}
+                    </div>
+                </>
+            )}
+
             <div className="bsp-segctl">
                 <span className="bsp-lbl">Holds for</span>
                 <NumField
@@ -5244,21 +5287,14 @@ export const BespokeTool = () => {
                         </span>
                     </Tooltip>
                 )}
-                {mode === "multi" && (
-                    <Tooltip text="Read a batch folder. Every deliverable folder in it becomes one build of this same recipe, at its own size">
-                        <button className="bsp-btn bsp-btn--ghost" onClick={pickBatchFolder}>
-                            {batchTargets.length ? `Batch · ${batchTargets.length}` : "Batch…"}
-                        </button>
-                    </Tooltip>
-                )}
                 {mode === "multi" && batchTargets.length > 0 && (
-                    <Tooltip text={`Build this recipe once for each of the ${batchTargets.length} deliverables. Each one is its own project and its own .aep, so your open project is replaced — save it first`}>
+                    <Tooltip text={`Build this recipe once for each ticked deliverable. Each is its own project and its own .aep, so your open project is replaced — save it first`}>
                         <button
                             className="bsp-btn"
                             onClick={runBatchBuild}
-                            disabled={building || blockers.length > 0}
+                            disabled={building || blockers.length > 0 || batchTargets.filter((t) => t.on).length === 0}
                         >
-                            {building ? "Building…" : `Build all ${batchTargets.length}`}
+                            {building ? "Building…" : `Build all ${batchTargets.filter((t) => t.on).length}`}
                         </button>
                     </Tooltip>
                 )}
