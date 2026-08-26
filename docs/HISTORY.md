@@ -8799,3 +8799,62 @@ an if/else now.
 Bespoke build has actually been run in After Effects with a stacked segment. The
 placement call is `[canvasW / 2, centreX[t]]` where it used to be
 `[centreX[t], canvasH / 2]`, and that swap has not been watched land.
+
+---
+
+## 2026-08-26 — The canvas follows the reference's shape
+
+Asked for as "the bespoke section should adapt its canvas size to what the
+reference added is, whether it's a library tracing option or a reference put
+in".
+
+The literal version of that is wrong, and the code already said so.
+`Bespoke.tsx` carries a written decision at the reference `<img>`: the JPGs come
+out of the PDF at whatever the export felt like — **"8000x5867 for a 3840x2816
+board is normal"** — so the filename is treated as the deliverable's spec and
+the image is *checked against* it rather than trusted. Taking the image's
+dimensions would have turned a 3840×2816 board into an 8000px comp.
+
+But the gap was real, and `swapReference`'s own comment names it: *"a candidate
+called 'Tower Ref.jpg' has no size to re-read anyway"*. `adoptReference` read a
+`WxH` token out of the filename and, when there wasn't one, left the canvas at
+whatever the last job put there — so the new reference got traced over at the
+wrong shape, with the existing warning pointing at it and nothing fixing it.
+
+### Shape from the reference, scale from the spec
+
+Precedence on adoption:
+
+1. a `WxH` token in the filename — the deliverable's own spec, unchanged;
+2. else a library entry's stored canvas — the board someone already traced;
+3. else the image's **aspect**, applied to the width already in the field.
+
+```
+reference                   entry        image       -> canvas     why
+Tower Ref.jpg               —            8000x5867   2000x1467     shape from the reference
+GRAND_REX_3840x2816.jpg     —            8000x5867   3840x2816     from the filename
+Tower Ref.jpg               3840x2816    8000x5867   3840x2816     from the library entry
+metrobus.png                —            1080x1920   2000x3556     shape from the reference
+Tower Ref.jpg               —            4000x2000   2000x1000     already the right shape
+```
+
+2000×1467 is 1.3633:1; the reference is 1.3636:1 and the real board is 1.3636:1.
+Same screen, same shape, at a size somebody can actually deliver.
+
+### Once, on adoption
+
+`shapeFromRef` holds the path that still owes the canvas a shape, and the image's
+`onLoad` clears it. That matters in both directions: the adaptation happens the
+moment a reference appears, and it happens exactly once — after that the artist
+owns the canvas and a differing aspect goes back to being the note it always
+was, not a correction applied behind them.
+
+A library entry that carries its own canvas withdraws the request, because a
+board someone traced outranks anything an image can offer. Swapping between
+sibling references of an already-traced board still never re-sizes — that path
+exists to try a better photo of the same screen, and the board is already drawn.
+
+**Not done:** verified as arithmetic and type-checked, not watched in the panel.
+The one path that cannot be reasoned about from here is what a real seeded
+template carries in `canvasW` — if those come through as 0, they now fall to the
+image's shape, which is the intended answer but has not been seen happen.

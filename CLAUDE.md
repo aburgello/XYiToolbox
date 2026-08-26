@@ -261,6 +261,15 @@ confirm raised by a palette action still wins.
   a photograph has no board size, no guides and no running order, and threading
   a third value through forty `mode === "multi"` branches would put a third
   meaning on every one of them.
+- **A reference gives the canvas its SHAPE, never its pixels.** Bespoke's
+  reference JPGs come out of the PDF at whatever the export felt like —
+  8000×5867 for a 3840×2816 board is normal — so adopting their dimensions would
+  build the deliverable at the size of a screenshot. Precedence on adoption:
+  a `WxH` token in the filename, else a library entry's stored canvas, else the
+  image's aspect applied to the width already in the field (`shapeFromRef`,
+  cleared in the img `onLoad`). It adapts **once, on adoption**; after that the
+  artist owns the canvas and a mismatch is a note, not a correction. Swapping
+  between sibling references of an already-traced board never re-sizes.
 - **A Bespoke segment runs along the canvas's LONG axis unless told otherwise.**
   `bespokeBuild` summed tile WIDTHS only, so a segment was a horizontal row
   whatever it was built on: three 844-wide portrait masters on a 256×2304 canvas

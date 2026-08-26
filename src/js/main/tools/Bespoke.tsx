@@ -705,6 +705,21 @@ export const BespokeTool = () => {
     const [regions, setRegions] = useState<Region[]>([]);
     const [selRegion, setSelRegion] = useState(0);
     const [refPath, setRefPath] = useState("");
+    /**
+     * A reference that still owes the canvas its SHAPE.
+     *
+     * Set when a reference is adopted and nothing authoritative said how big
+     * the board is — no WxH in its filename, no canvas on the library entry.
+     * The image's onLoad then applies its aspect to the width already in the
+     * field, and clears this.
+     *
+     * THE SHAPE, NEVER THE PIXELS. These JPGs come out of the PDF at whatever
+     * the export felt like — 8000x5867 for a 3840x2816 board is normal — so
+     * taking their dimensions would build the deliverable at the size of a
+     * screenshot. The reference knows what shape the screen is; only the spec
+     * knows how big it is.
+     */
+    const shapeFromRef = useRef<string>("");
     // EVERY REFERENCE IN THE PICKED FOLDER, because one job is many bespoke
     // deliverables and they sit side by side. Each has its OWN canvas and its
     // own regions -- a 3840x2816 board and a 13536x3072 ceiling share nothing
@@ -1016,7 +1031,17 @@ export const BespokeTool = () => {
         setRefMismatch("");
         const stem = (path.split("/").pop() || "").replace(/\.(jpe?g|png)$/i, "");
         const size = stem.match(/(\d+)x(\d+)(?:px)?/);
-        if (size) { setCanvasW(size[1]); setCanvasH(size[2]); }
+        if (size) {
+            setCanvasW(size[1]);
+            setCanvasH(size[2]);
+            shapeFromRef.current = "";
+        } else {
+            // "Tower Ref.jpg" has no size to read, which used to mean the canvas
+            // simply kept whatever the last job left in it and the new reference
+            // was traced over at the wrong shape. The image itself can answer
+            // that much once it paints.
+            shapeFromRef.current = path;
+        }
         const dur = stem.match(/_(\d+)s(?:ec)?(?:_|$)/);
         if (dur) setRuntime(dur[1]);
         if (!nameTouched && stem) setOutName(stem);
@@ -1353,6 +1378,9 @@ export const BespokeTool = () => {
         adoptReference(t.referencePath);
         if (t.canvasW) setCanvasW(String(t.canvasW));
         if (t.canvasH) setCanvasH(String(t.canvasH));
+        // The entry's own canvas outranks anything the image could offer, so
+        // the shape request adoptReference may have just made is withdrawn.
+        if (t.canvasW && t.canvasH) shapeFromRef.current = "";
         if (!nameTouched && t.name) setOutName(t.name);
         setRegions([]);
         setSelRegion(0);
@@ -3710,6 +3738,22 @@ export const BespokeTool = () => {
                                     if (!cw || !ch || !img.naturalWidth || !img.naturalHeight) {
                                         setRefMismatch("");
                                         return;
+                                    }
+                                    // NOTHING SAID HOW BIG THIS BOARD IS, so the
+                                    // reference gets to say what shape it is:
+                                    // keep the width that is already in the
+                                    // field and put the height under the
+                                    // reference's own aspect. Once, on adoption
+                                    // — after this the artist owns the canvas
+                                    // and a mismatch is a note, not a correction.
+                                    if (shapeFromRef.current === refPath) {
+                                        shapeFromRef.current = "";
+                                        const wanted = Math.round(cw * (img.naturalHeight / img.naturalWidth));
+                                        if (wanted > 0 && wanted !== ch) {
+                                            setCanvasH(String(wanted));
+                                            setRefMismatch("");
+                                            return;
+                                        }
                                     }
                                     const refAspect = img.naturalWidth / img.naturalHeight;
                                     const canAspect = cw / ch;
