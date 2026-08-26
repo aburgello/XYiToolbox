@@ -970,7 +970,13 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
         // the choice here and hide it there; the flag says which ones arrive
         // ticked, and the rest are one click away from joining them.
         const wanted = buildComplete;
-        if (!wanted.length) return;
+        // NOTHING TO CARRY IS NOT A REASON NOT TO GO. Bespoke is a screen in its
+        // own right; with no rows filled in this is simply the way in, which is
+        // what the button did before it learned to carry anything.
+        if (!wanted.length) {
+            onSelectTool?.("bespoke");
+            return;
+        }
         const needs = (id: number) => {
             const res = buildMasters[id];
             return !!res && !res.master;
@@ -2498,16 +2504,22 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                     <span className="specs-route-t">Build a Batch</span>
                     <span className="specs-route-s">Pick creatives and sizes by hand</span>
                 </button>
+                {/* NEVER DISABLED. This was gated on the Build-a-Batch grid
+                    having complete rows, and that grid sits BEHIND the button
+                    next to this one -- so with it closed the grid is one empty
+                    row, the count is zero, and the route to Bespoke was greyed
+                    out at exactly the moment somebody first reaches for it.
+                    Rows are a bonus this button carries when they exist, not a
+                    precondition for opening a screen that works on its own. */}
                 <button
                     className="specs-route"
                     onClick={sendToBespoke}
-                    disabled={buildComplete.length === 0}
                 >
                     <Layers size={14} />
                     <span className="specs-route-t">Bespoke It</span>
                     <span className="specs-route-s">
                         {bespokeCandidates.length > 0
-                            ? `${bespokeCandidates.length} row${bespokeCandidates.length === 1 ? "" : "s"} need more than one master`
+                            ? `Take ${bespokeCandidates.length} row${bespokeCandidates.length === 1 ? "" : "s"} that need more than one master`
                             : "Several masters in one deliverable"}
                     </span>
                 </button>
