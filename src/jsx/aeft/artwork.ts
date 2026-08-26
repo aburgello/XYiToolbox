@@ -669,6 +669,41 @@ export const artworkCheck = (jpgPngPath?: string, componentsPath?: string): Artw
           edits = found.edits;
           editFolders = found.folders;
         }
+
+        // ── A DELIVERABLE CAN DRAW ON MORE THAN ONE CREATIVE ────────────────
+        //
+        // The search above scopes to the ONE creative in the deliverable's
+        // name, which is right for every deliverable this was written for. A
+        // Multiple Art build is not one of those: 15s of PortalToParadise then
+        // 15s of Trio is named for the first, so the second's art edits sit in
+        // a creative folder nothing was looking in. Reported as "no motion edit
+        // exists for FID_INTL_Trio_Vertical_RGB_OV.tif" with the .aep of that
+        // exact name sitting in Trio's own Tiffs.
+        //
+        // So each ROW gets to name a creative too. Only folders a row actually
+        // points at are opened -- this is not a widening to "search
+        // everything", which would offer another creative's art for a row that
+        // never mentioned it.
+        const seenCreative: { [key: string]: boolean } = {};
+        if (creativeFolder) seenCreative[String(creativeFolder.name)] = true;
+        for (let rc = 0; rc < rows.length; rc++) {
+          const other = findCreativeFolder(mc, String(rows[rc].name));
+          if (!other) continue;
+          const oName = String(other.name);
+          if (seenCreative[oName]) continue;
+          seenCreative[oName] = true;
+          const extra = collectEdits(other);
+          for (let e = 0; e < extra.edits.length; e++) {
+            // LABELLED WITH THE CREATIVE it came from, because "Tiffs" alone
+            // would read as this deliverable's own and the whole point is that
+            // it is not.
+            extra.edits[e].folder = oName + " · " + extra.edits[e].folder;
+            edits.push(extra.edits[e]);
+          }
+          for (let f2 = 0; f2 < extra.folders.length; f2++) {
+            editFolders.push(oName + " · " + extra.folders[f2]);
+          }
+        }
       }
     }
 

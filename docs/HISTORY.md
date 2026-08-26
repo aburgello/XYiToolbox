@@ -9560,3 +9560,45 @@ template, wrapping and stamping through `cheekyDTCheck`:
 campaign line wraps onto two lines at 480px wide. That is the template's own
 proportions surviving a 6% scale, not a bug in the fit, but it is why a small
 card still does not look like the big one.
+
+---
+
+## 2026-08-26 — Artwork Check only ever looked in one creative
+
+Reported with the file on screen: "no motion edit exists for
+FID_INTL_Trio_Vertical_RGB_OV.tif" — and `FID_INTL_Trio_Vertical_RGB_OV.aep`
+sitting in Finder next to the tiff it is named after.
+
+Not a matching bug. A scope one.
+
+`findCreativeFolder(mc, deliverable)` picks ONE creative folder out of the
+deliverable's name and `collectEdits` searches only that. The panel says which:
+`Norway · PORTAL_TO_PARADISE`. That is right for every deliverable this tool was
+written for — one creative, one folder of art edits.
+
+A Multiple Art build is not one of those. `FID_INTL_PortalToParadise_DOOH_
+NFkino_345x496px_30s_NO` is 15s of PortalToParadise then 15s of Trio; it is
+named for the first, and the Trio rows' edits live under TRIO. Nothing was
+looking there.
+
+So each ROW gets to name a creative too:
+
+```
+row                                             creative folder searched
+FID_INTL_Trio_Vertical_RGB_OV.tif               TRIO
+FID_INTL_PortalToParadise_Vertical_RGB_OV.tif   PORTAL_TO_PARADISE
+FID_RGB_TT_NO_ON_75BLACK_Simp_OOH.psd           (falls back to the deliverable's)
+```
+
+Deliberately not a widening to "search every creative". Only folders a row
+actually points at are opened, so a row that never mentioned Trio is never
+offered Trio's art. `findCreativeFolder`'s longest-match rule still keeps a
+PortalToParadise row off PORTAL_LOS.
+
+Edits found this way are labelled with the creative they came from —
+`TRIO · Tiffs` rather than `Tiffs` — because the whole point is that they are
+not this deliverable's own.
+
+**Not done:** verified as the folder-picking rule against a real creative list,
+not by running Artwork Check on the reported deliverable. That needs the NAS
+walk and the artist's project open.

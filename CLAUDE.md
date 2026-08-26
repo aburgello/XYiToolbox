@@ -723,6 +723,17 @@ deliverable; exact equality picks `_BR.jpg` for an unnumbered original and
 leaves nothing to guess at. Relaxing it to "skip the filter when the original
 has no number" turns one exact answer into four candidates and a question.
 
+**A Multiple Art deliverable draws artwork from MORE THAN ONE creative**, so
+Artwork Check lets each ROW name a creative as well as the deliverable.
+`FID_INTL_PortalToParadise_..._30s_NO` is 15s of PortalToParadise then 15s of
+Trio, and the Trio rows' `.aep` edits sit in **Trio's** own `Tiffs` — outside the
+one creative folder `findCreativeFolder(mc, deliverable)` opens, which reported
+"no motion edit exists" with the identically-named `.aep` sitting right there.
+Only folders a row actually points at are opened — never a widen-to-everything,
+which would offer another creative's art to a row that never mentioned it — and
+cross-creative edits are labelled `TRIO · Tiffs` so they cannot be mistaken for
+this deliverable's own.
+
 **The masters tree is a SIBLING CAMPAIGN, and art edits live in `Tiffs` OR
 `Edit`.** `XY026040_…_Markets` holds the territories; `XY026039_…_Masters` holds
 `Support/Motion_Components`. Find it by testing each level's siblings for that
