@@ -3004,6 +3004,18 @@ export const BespokeTool = () => {
      * master for one of its segments is a real answer.
      */
     const [targetMasters, setTargetMasters] = useState<Record<string, (string | null)[]>>({});
+    /**
+     * A BATCH IS LOADED, so the name, canvas and seconds above stop being this
+     * build's and start being one row's.
+     *
+     * They are not hidden: the board preview is drawn from the canvas, and a
+     * preview of nothing is worse than a preview of the first row. They follow
+     * the first ticked target instead, read-only, and say so.
+     */
+    const batchLoaded = batchTargets.length > 0;
+    const previewTarget = batchTargets.filter((t) => t.on)[0] || batchTargets[0] || null;
+    const recipeSecs = segments.reduce((n, sg) => n + (Number(sg.seconds) || 0), 0);
+
     const recipeKey = segments
         .map((sg) => `${sg.tiles[0] ? (sg.tiles[0].creative || sg.tiles[0].name) : ""}@${sg.seconds}`)
         .join("|");
@@ -3485,6 +3497,20 @@ export const BespokeTool = () => {
     }, [suggestedName, nameTouched, refPath]);
 
     /**
+     * The preview follows the row it is standing in for.
+     *
+     * Without this the board sat at 2000×1000 while seven deliverables of other
+     * shapes waited below it — and worse, Row/Column follows the canvas, so the
+     * preview could show a row where every one of them would build a column.
+     */
+    useEffect(() => {
+        if (!previewTarget) return;
+        setCanvasW(String(previewTarget.width));
+        setCanvasH(String(previewTarget.height));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [previewTarget ? previewTarget.width : 0, previewTarget ? previewTarget.height : 0]);
+
+    /**
      * Rows sent over from the localiser, as Multiple Art targets.
      *
      * TAKE-ONCE, like the batch handoff it sits beside: read and cleared, so
@@ -3853,9 +3879,16 @@ export const BespokeTool = () => {
                     <span className="bsp-lbl">Deliverable name</span>
                     <input
                         className="bsp-input"
-                        value={outName}
-                        placeholder="Add a master to compose a name"
-                        onChange={(e) => { setOutName(e.target.value); setNameTouched(true); }}
+                        value={batchLoaded ? "" : outName}
+                        readOnly={batchLoaded}
+                        // Each row brings its own name, built host-side by the
+                        // same buildDeliverableName the localiser uses — so
+                        // there is nothing here to type, and a name typed here
+                        // would apply to none of them.
+                        placeholder={batchLoaded
+                            ? `Named from each row — ${batchTargets.filter((t) => t.on).length} deliverable${batchTargets.filter((t) => t.on).length === 1 ? "" : "s"}`
+                            : "Add a master to compose a name"}
+                        onChange={(e) => { if (batchLoaded) return; setOutName(e.target.value); setNameTouched(true); }}
                     />
                 </label>
                 <label className="bsp-field">
@@ -3870,26 +3903,43 @@ export const BespokeTool = () => {
                         <input
                             className="bsp-input bsp-input--n"
                             value={canvasW}
-                            onChange={(e) => setCanvasW(e.target.value)}
-                            onBlur={() => { const n = evalNumeric(canvasW); if (n !== null) setCanvasW(String(Math.round(n))); }}
-                            onKeyDown={(e) => { if (e.key === "Enter") { const n = evalNumeric(canvasW); if (n !== null) setCanvasW(String(Math.round(n))); } }}
-                            title="Canvas width. Sums work here — 5000/3"
+                            readOnly={batchLoaded}
+                            onChange={(e) => { if (batchLoaded) return; setCanvasW(e.target.value); }}
+                            onBlur={() => { if (batchLoaded) return; const n = evalNumeric(canvasW); if (n !== null) setCanvasW(String(Math.round(n))); }}
+                            onKeyDown={(e) => { if (batchLoaded || e.key !== "Enter") return; const n = evalNumeric(canvasW); if (n !== null) setCanvasW(String(Math.round(n))); }}
+                            title={batchLoaded
+                                ? "Each deliverable has its own canvas — this shows the first ticked row"
+                                : "Canvas width. Sums work here — 5000/3"}
                         />
                         <span className="bsp-x">×</span>
                         <input
                             className="bsp-input bsp-input--n"
                             value={canvasH}
-                            onChange={(e) => setCanvasH(e.target.value)}
-                            onBlur={() => { const n = evalNumeric(canvasH); if (n !== null) setCanvasH(String(Math.round(n))); }}
-                            onKeyDown={(e) => { if (e.key === "Enter") { const n = evalNumeric(canvasH); if (n !== null) setCanvasH(String(Math.round(n))); } }}
-                            title="Canvas height. Sums work here — 5000/3"
+                            readOnly={batchLoaded}
+                            onChange={(e) => { if (batchLoaded) return; setCanvasH(e.target.value); }}
+                            onBlur={() => { if (batchLoaded) return; const n = evalNumeric(canvasH); if (n !== null) setCanvasH(String(Math.round(n))); }}
+                            onKeyDown={(e) => { if (batchLoaded || e.key !== "Enter") return; const n = evalNumeric(canvasH); if (n !== null) setCanvasH(String(Math.round(n))); }}
+                            title={batchLoaded
+                                ? "Each deliverable has its own canvas — this shows the first ticked row"
+                                : "Canvas height. Sums work here — 5000/3"}
                         />
                     </span>
                 </label>
                 <label className="bsp-field">
                     <span className="bsp-lbl">Secs</span>
                     <span className="bsp-size">
-                        <input className="bsp-input bsp-input--s" value={runtime} onChange={(e) => setRuntime(e.target.value)} title="Runtime in seconds" />
+                        {/* THE RECIPE'S OWN TOTAL when a batch is loaded. Each
+                            deliverable's length is its row's, and the build
+                            refuses any row whose duration the recipe does not
+                            add up to -- so a number typed here would describe
+                            nothing that gets built. */}
+                        <input
+                            className="bsp-input bsp-input--s"
+                            value={batchLoaded ? String(recipeSecs) : runtime}
+                            readOnly={batchLoaded}
+                            onChange={(e) => { if (batchLoaded) return; setRuntime(e.target.value); }}
+                            title={batchLoaded ? "The recipe's total. Each row must ask for this many seconds" : "Runtime in seconds"}
+                        />
                     </span>
                 </label>
             </div>
@@ -3898,7 +3948,9 @@ export const BespokeTool = () => {
                 the wrong market is a redelivery, and this is the one place it
                 can be caught for free. */}
             <p className="bsp-path" hidden={!mode}>
-                {territory && marketsRoot
+                {batchLoaded && territory && marketsRoot
+                    ? `${marketsRoot}/${territory}/AE/${batch.trim() || "AE"}/  ·  ${batchTargets.filter((t) => t.on).length} file${batchTargets.filter((t) => t.on).length === 1 ? "" : "s"}, each named from its row`
+                    : territory && marketsRoot
                     ? `${marketsRoot}/${territory}/AE/${batch.trim() || "AE"}/${outName || "…"}_V01.aep`
                     : "No country chosen. It will be built and left unsaved."}
             </p>
@@ -4770,7 +4822,11 @@ export const BespokeTool = () => {
 
             {mode === "multi" && (<>
             {/* --- the frame ----------------------------------------------- */}
-            <p className="bsp-lbl bsp-lbl--section">This segment fills the frame</p>
+            <p className="bsp-lbl bsp-lbl--section">
+                {batchLoaded && previewTarget
+                    ? `This segment fills the frame — showing ${previewTarget.width}×${previewTarget.height}, the first ticked row`
+                    : "This segment fills the frame"}
+            </p>
             <div className="bsp-stage">
                 <div className={"bsp-tiles" + (isColumn ? " is-column" : "")} ref={tilesRef}>
                     {seg && seg.tiles.map((m, i) => (
