@@ -9422,3 +9422,61 @@ The folder-scanning `bespokeBatchScan` is gone with its only caller.
 **Not done:** still not run in After Effects. The `app.newProject()` between
 builds remains the most consequential line written today and remains
 unwatched.
+
+---
+
+## 2026-08-26 — A batch opens into the builder
+
+Proposed by the studio: *"we can pass everything through Build a Batch at this
+point, we can remove the modal that opens when we open a country batch and just
+parse the entire row in build a batch from there since we're making that
+better?"*
+
+### The objection that turned out to be wrong
+
+The first read said no: `SpecRow` carries `FileSize`, `BitRate`, `Fps` and
+`Sound` off the PDF, `BuildRow` models none of them, and `runBuilder` blanks
+them with a comment about an invented delivery spec being worse than an absent
+one. Dropping them looked like re-opening the hole a previous fix had closed.
+
+The studio's follow-up — *"I suppose those fields are only used in the Deliver
+section?"* — was the right question, and the answer kills the objection.
+`deliverySpecMatch.ts` **re-reads the PDFs itself** at delivery time:
+`readFileSync` → `parsePdfDeliverySpecs` → `reshapeSpecs` → match against the
+comp. Nothing about those fields ever travelled through the localiser;
+`csvLocaliserRun` reads columns 0–3 and Site positionally and ignores the rest.
+
+So the consolidation costs nothing operationally, and the modal was not even
+displaying those columns.
+
+### What actually had to travel
+
+Diffing `runBatch` against `runBuilder` — both end at the same
+`csvLocaliserRun(aepPath, csv, skipExisting, runMcIt, multiples)` with the same
+`buildLocaliserCsv` — left three real differences:
+
+- **`sourceFolder`.** `runBatch` takes it off the territory scan; `runBuilder`
+  derives `marketsRoot/territory`. A scanned folder need not be named exactly as
+  the territory is, so deriving it for a sheet-driven run could write the batch
+  somewhere else entirely. The scan's value wins whenever the grid came from a
+  sheet.
+- **`refreshBatchBuilt`.** Re-reads the output folder so rows that were just
+  written show as built. Still only on the batch header's own controls.
+- **Per-batch status and the inline result strip.** Unchanged.
+
+And two things the modal had that the grid did not:
+
+- **`specRowWarnings`** — the "this sheet said something odd" marker, never
+  auto-corrected, and the only place it is ever said. Carried across on the row.
+- **Revert** — put a row back to what the sheet said. Needs the row's index into
+  the sheet, so `BuildRow` gained `srcIndex`; a hand-typed row has neither.
+
+Manual edits and exclusions made while the modal existed are honoured on the way
+across, so opening a sheet somebody had already tidied does not undo the tidying.
+
+Round-tripped sheet → grid → CSV row: the five fields the host actually reads
+come back identical on every row.
+
+**Not done:** this is step one of two. The modal is now unreachable but still in
+the file — it comes out once a real sheet has been opened into the grid and run
+from there. And nothing here has been tried in After Effects.

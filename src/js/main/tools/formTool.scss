@@ -1937,7 +1937,33 @@
         }
     }
 
-    .specs-build-remove {
+    // Carried over from the batch modal with the rows themselves: the sheet's own
+// warning, and the way back to what it said. Both only appear on a row that
+// came FROM a sheet -- a hand-typed row has neither an origin nor anything to
+// revert to.
+.specs-build-warn {
+    flex: none;
+    display: flex;
+    align-items: center;
+    color: #fbbf24;
+    opacity: 0.9;
+}
+
+.specs-build-revert {
+    flex: none;
+    padding: 2px;
+    border: none;
+    border-radius: 3px;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+    opacity: 0.4;
+
+    &:hover { background: rgba(255, 255, 255, 0.09); opacity: 1; }
+    &:active { background: rgba(255, 255, 255, 0.09); }
+}
+
+.specs-build-remove {
         display: inline-flex;
         align-items: center;
         justify-content: center;

@@ -40,6 +40,7 @@ import {
     Plus,
     X,
     RotateCcw,
+    AlertTriangle,
     FolderOpen,
     FileCheck,
     FileX,
@@ -102,6 +103,13 @@ interface BuildRow {
     artwork: string; // DOOH | DINTH | FOH
     creative: string;
     custom: string;
+    /**
+     * WHERE THIS ROW CAME FROM, when it came from a spec sheet rather than a
+     * keyboard. The index into the sheet's own rows, so the sheet's warnings
+     * still attach to it and Revert has something to revert TO. Absent on a
+     * hand-typed row, which is the state the builder was written for.
+     */
+    srcIndex?: number;
     // Media site name, free text and OPTIONAL -- a deliverable with no site is
     // normal (that is what the whole pre-Site era of masters is), so this never
     // gates a row from being "complete". Typed as the studio writes it and
@@ -776,6 +784,18 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
     // masters, type widths/heights, and it assembles the same [METADATA]/CSV
     // csvLocaliserRun consumes. One territory at a time, by request.
     const [buildOpen, setBuildOpen] = useState(false);
+    /**
+     * The spec sheet the grid was filled from, when it was.
+     *
+     * `sourceFolder` is the one field that MUST travel: runBatch took it off the
+     * territory scan, while the builder derives marketsRoot/territory — and a
+     * scanned folder need not be named exactly as the territory is. Getting it
+     * from the scan is what keeps a sheet-driven run writing where the modal
+     * would have written.
+     */
+    const [buildOrigin, setBuildOrigin] = useState<
+        { territory: string; sourceFolder: string; pdfName: string; batch: string; rows: SpecRow[] } | null
+    >(null);
     const [buildTerritory, setBuildTerritory] = useState("");
     const [buildBatch, setBuildBatch] = useState("Batch_1");
     const [buildTerritories, setBuildTerritories] = useState<string[]>([]);
@@ -1045,6 +1065,71 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [buildOpen, aepPath, buildResolveKey]);
 
+    /**
+     * A spec sheet's batch, opened into the builder instead of a modal.
+     *
+     * The modal showed the sheet's rows read-only apart from include/exclude and
+     * a couple of edit affordances; the builder is the same columns with every
+     * cell editable, the master-resolution status, the duration multiple, and
+     * the route on to Bespoke. One editor rather than two.
+     *
+     * Rows keep their index into the sheet (`srcIndex`), which is what lets the
+     * sheet's own warnings still attach to them and what Revert reverts to.
+     */
+    const loadBatchIntoBuilder = (t: TerritoryScan, b: Batch) => {
+        const key = batchKey(t.territory, b.pdfName);
+        // Manual edits made while the modal still existed, and rows excluded
+        // there, are honoured on the way across -- otherwise opening a sheet
+        // somebody had already tidied would undo the tidying.
+        const rows = b.rows
+            .map((r, i) => ({ row: effectiveRow(key, i, r), i }))
+            .filter((x) => !isRowExcluded(key, x.i));
+        setBuildRows(rows.map((x) => {
+            const size = String(x.row.Size || "").split("x");
+            return {
+                id: buildRowId.current++,
+                artwork: x.row.Artwork || "DOOH",
+                creative: x.row.Campaign || "",
+                custom: "",
+                site: x.row.Site || "",
+                width: (size[0] || "").replace(/[^0-9]/g, ""),
+                height: (size[1] || "").replace(/[^0-9]/g, ""),
+                duration: String(x.row.Duration || "").replace(/[^0-9]/g, ""),
+                srcIndex: x.i,
+            };
+        }));
+        setBuildOrigin({
+            territory: t.territory,
+            sourceFolder: t.sourceFolder,
+            pdfName: b.pdfName,
+            batch: b.batch,
+            rows: b.rows,
+        });
+        setBuildTerritory(t.territory);
+        setBuildBatch(b.batch);
+        setBuildOpen(true);
+        setNotice(`${t.territory} · ${b.batch}: ${rows.length} row${rows.length === 1 ? "" : "s"} from ${b.pdfName}. Every cell is editable.`);
+    };
+
+    /** Put one row back to what the sheet said. */
+    const revertBuildRow = (id: number) => {
+        const row = buildRows.find((r) => r.id === id);
+        if (!row || row.srcIndex === undefined || !buildOrigin) return;
+        const src = buildOrigin.rows[row.srcIndex];
+        if (!src) return;
+        const size = String(src.Size || "").split("x");
+        setBuildRows((prev) => prev.map((r) => (r.id !== id ? r : {
+            ...r,
+            artwork: src.Artwork || "DOOH",
+            creative: src.Campaign || "",
+            custom: "",
+            site: src.Site || "",
+            width: (size[0] || "").replace(/[^0-9]/g, ""),
+            height: (size[1] || "").replace(/[^0-9]/g, ""),
+            duration: String(src.Duration || "").replace(/[^0-9]/g, ""),
+        })));
+    };
+
     const runBuilder = async () => {
         if (!aepPath) { setNotice("Pick the AEP masters folder first."); return; }
         if (!buildTerritory) { setNotice("Pick a territory to build for."); return; }
@@ -1077,7 +1162,13 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
         setNotice(null);
         try {
             const { buildLocaliserCsv } = await import("../lib/pdfSpecs");
-            const sourceFolder = path.join(marketsRoot, buildTerritory);
+            // THE SCAN'S FOLDER WINS. runBatch took this off the territory scan
+            // and the builder derived it -- and a scanned folder need not be
+            // named exactly as the territory is, so deriving it for a
+            // sheet-driven run could write the batch somewhere else entirely.
+            const sourceFolder = buildOrigin && buildOrigin.territory === buildTerritory
+                ? buildOrigin.sourceFolder
+                : path.join(marketsRoot, buildTerritory);
             const batch = buildBatch.trim() || "Batch_1";
             const csv = buildLocaliserCsv({ territory: buildTerritory, batch, sourceFolder, rows });
             // Indexed by position in buildComplete -- the same list that became
@@ -2002,7 +2093,12 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                                                 .specs-terr-main above. */}
                                                             <button
                                                                 className="specs-batch-main"
-                                                                onClick={() => toggleBatchCollapsed(key)}
+                                                                // OPENS THE BUILDER, not a modal. One editor for a
+                                                                // sheet's rows and a hand-typed batch alike -- the
+                                                                // grid is the same columns with every cell editable,
+                                                                // the master status, the duration multiple and the
+                                                                // route on to Bespoke, which the modal had none of.
+                                                                onClick={() => loadBatchIntoBuilder(t, b)}
                                                                 aria-expanded={batchOpen}
                                                                 title={batchOpen ? "Collapse this batch" : "Expand this batch"}
                                                             >
@@ -2730,6 +2826,31 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                             </Tooltip>
                                         );
                                     })()}
+                                    {/* THE SHEET'S OWN WARNING, carried across with the
+                                        row. It is the "this sheet said something odd"
+                                        signal -- a duration that did not parse, a size
+                                        that looked like a ratio -- and it is never
+                                        auto-corrected, so losing it with the modal would
+                                        lose the only place it is ever said. */}
+                                    {(() => {
+                                        if (r.srcIndex === undefined || !buildOrigin) return null;
+                                        const src = buildOrigin.rows[r.srcIndex];
+                                        if (!src) return null;
+                                        const warns = specRowWarnings(src);
+                                        if (!warns.length) return null;
+                                        return (
+                                            <Tooltip text={warns.join(" · ")}>
+                                                <span className="specs-build-warn"><AlertTriangle size={11} /></span>
+                                            </Tooltip>
+                                        );
+                                    })()}
+                                    {r.srcIndex !== undefined && buildOrigin && (
+                                        <Tooltip text={`Put this row back to what ${buildOrigin.pdfName} said`}>
+                                            <button className="specs-build-revert" onClick={() => revertBuildRow(r.id)} aria-label="Revert row">
+                                                <RotateCcw size={11} />
+                                            </button>
+                                        </Tooltip>
+                                    )}
                                     <button className="specs-build-remove" onClick={() => removeBuildRow(r.id)} disabled={buildRows.length === 1} title="Remove row"><X size={12} /></button>
                                 </div>
                             ))}

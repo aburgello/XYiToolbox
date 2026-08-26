@@ -271,6 +271,16 @@ confirm raised by a palette action still wins.
   `Number()` NaN and the field re-rendered as 0 mid-type. Canvas W/H keep their
   live string behaviour and only resolve on Enter/blur, so the board still
   reshapes as you type.
+- **A spec sheet's batch opens into Build a Batch, not a modal.** One editor for
+  a sheet's rows and a hand-typed batch alike. Two things must travel with the
+  rows or they are lost: **`sourceFolder` off the territory scan** (the builder
+  otherwise derives `marketsRoot/territory`, and a scanned folder need not be
+  named exactly as the territory is — that decides where the batch is written),
+  and each row's **`srcIndex`** into the sheet, which is what keeps
+  `specRowWarnings` attached and gives Revert something to revert to. The
+  delivery spec columns (`FileSize`/`BitRate`/`Fps`/`Sound`) do **not** need to
+  travel: `deliverySpecMatch.ts` re-reads the PDFs itself at delivery time, and
+  `csvLocaliserRun` reads columns 0–3 and Site positionally.
 - **Batch Multiple Art comes from the LOCALISER'S ROWS, never a folder.** At the
   point those rows exist the AE folders do not — that is why they are still
   sitting there. CSV Localiser's **"Bespoke It"** sends every complete row via
