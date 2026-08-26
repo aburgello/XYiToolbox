@@ -5324,6 +5324,14 @@ export const bespokeBatchBuild = (planJson: string): Result & { report?: string;
       // deliverable localised there cannot end up named differently.
       const leadName = String(leadMaster ? leadMaster.name : "");
       const nameParts = leadName.split("_");
+      // THE CODE, NOT THE FOLDER. `plan.territory` is the folder name the batch
+      // lands in ("Norway"); the deliverable's name takes the two-letter code,
+      // exactly as csvLocaliserRun does. Getting this wrong is not one bug but
+      // two: the file comes out ..._30s_Norway, and the frontcard's territory
+      // stays on the template placeholder, because frontcardTerritory looks for
+      // a two-letter token and correctly refuses to guess when there is none.
+      const territoryCodeForName =
+        getTerritoryCountryCode(String(plan.territory)) || String(plan.territory);
       const outName = buildDeliverableName({
         filmTitle: nameParts[0] || "",
         region: nameParts[1] || "",
@@ -5333,7 +5341,7 @@ export const bespokeBatchBuild = (planJson: string): Result & { report?: string;
         width: target.width,
         height: target.height,
         duration: String(recipeSecs),
-        territory: String(plan.territory),
+        territory: territoryCodeForName,
       });
       lines.push("  -> " + outName);
 
