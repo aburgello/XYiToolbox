@@ -2615,7 +2615,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                     <span className="specs-route-t">Bespoke It</span>
                     <span className="specs-route-s">
                         {bespokeCandidates.length > 0
-                            ? `Take ${bespokeCandidates.length} row${bespokeCandidates.length === 1 ? "" : "s"} that need more than one master`
+                            ? `Take ${bespokeCandidates.length} row${bespokeCandidates.length === 1 ? " that needs" : "s that need"} more than one master`
                             : "Several masters in one deliverable"}
                     </span>
                 </button>
@@ -2662,7 +2662,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                     specs table's own — the icon says what it is, and a
                                     label here would crowd a 20px column. */}
                                 <span />
-                                <span>Type</span><span>Creative</span><span>Site</span><span>Width</span><span>Height</span><span>Dur</span><span>×</span><span />
+                                <span>Type</span><span>Creative</span><span>Site</span><span>Width</span><span>Height</span><span>Dur</span><span>×</span><span /><span /><span />
                             </div>
                             {buildRows.map((r) => (
                                 <div className="specs-build-row" key={r.id}>
@@ -2832,26 +2832,32 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                         that looked like a ratio -- and it is never
                                         auto-corrected, so losing it with the modal would
                                         lose the only place it is ever said. */}
+                                    {/* BOTH SLOTS ALWAYS RENDER, empty when they do not
+                                        apply. The row is a fixed-track grid, so a
+                                        conditional child does not leave a gap — it
+                                        shifts every column after it and pushes the last
+                                        one onto a second line. Same rule the × column
+                                        already follows a few lines down. */}
                                     {(() => {
-                                        if (r.srcIndex === undefined || !buildOrigin) return null;
-                                        const src = buildOrigin.rows[r.srcIndex];
-                                        if (!src) return null;
-                                        const warns = specRowWarnings(src);
-                                        if (!warns.length) return null;
+                                        const src = r.srcIndex !== undefined && buildOrigin ? buildOrigin.rows[r.srcIndex] : null;
+                                        const warns = src ? specRowWarnings(src) : [];
+                                        if (!warns.length) return <span className="specs-build-warn" />;
                                         return (
                                             <Tooltip text={warns.join(" · ")}>
-                                                <span className="specs-build-warn"><AlertTriangle size={11} /></span>
+                                                <span className="specs-build-warn is-on"><AlertTriangle size={11} /></span>
                                             </Tooltip>
                                         );
                                     })()}
-                                    {r.srcIndex !== undefined && buildOrigin && (
+                                    {r.srcIndex !== undefined && buildOrigin ? (
                                         <Tooltip text={`Put this row back to what ${buildOrigin.pdfName} said`}>
                                             <button className="specs-build-revert" onClick={() => revertBuildRow(r.id)} aria-label="Revert row">
                                                 <RotateCcw size={11} />
                                             </button>
                                         </Tooltip>
+                                    ) : (
+                                        <span className="specs-build-revert-empty" />
                                     )}
-                                    <button className="specs-build-remove" onClick={() => removeBuildRow(r.id)} disabled={buildRows.length === 1} title="Remove row"><X size={12} /></button>
+                                    <button className="specs-build-remove" onClick={() => removeBuildRow(r.id)} disabled={buildRows.length === 1} title="Remove row" aria-label="Remove row"><X size={13} strokeWidth={2.25} /></button>
                                 </div>
                             ))}
                         </div>

@@ -1865,7 +1865,7 @@
         width: 100%;
     }
 
-    // ⬤ | Type | Creative | Site | Width | Height | Dur | × | ✕
+    // ⬤ | Type | Creative | Site | Width | Height | Dur | × | ⚠ | ↺ | ✕
     // The first column is the master-status icon, the same one the scanned
     // specs table shows per row -- a builder row's creative is free text (and,
     // for a row handed over from Active Jobs, parsed from a Wrike subtask
@@ -1878,7 +1878,11 @@
         // Site shares the flexible track with Creative (2fr/1fr) rather than
         // taking a fixed width: it is optional and often blank, so it should
         // give its room back to the creative name rather than squeeze it.
-        grid-template-columns: 20px 90px minmax(110px, 2fr) minmax(80px, 1fr) 66px 66px 66px 40px 26px;
+        // The warning and revert tracks belong to rows that came from a spec
+        // sheet. They are narrow and ALWAYS present, empty on a hand-typed row:
+        // a track that appears and disappears per row would step every column
+        // after it out of line with the header.
+        grid-template-columns: 20px 90px minmax(110px, 2fr) minmax(80px, 1fr) 66px 66px 66px 40px 14px 22px 26px;
         gap: 6px;
         align-items: center;
 
@@ -1942,15 +1946,21 @@
 // came FROM a sheet -- a hand-typed row has neither an origin nor anything to
 // revert to.
 .specs-build-warn {
-    flex: none;
     display: flex;
     align-items: center;
+    justify-content: center;
+    // Empty by default -- it is a grid track that holds the space either way.
     color: #fbbf24;
-    opacity: 0.9;
+
+    &.is-on { opacity: 0.9; }
 }
 
+.specs-build-revert-empty { display: block; }
+
 .specs-build-revert {
-    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     padding: 2px;
     border: none;
     border-radius: 3px;
@@ -1972,8 +1982,12 @@
         border-radius: 6px;
         border: 1px solid var(--surface-edge, #383838);
         background: var(--surface-0, #242424);
-        color: #999;
+        // Was #999 on a near-black fill at 12px, which reads as an empty box
+        // rather than a control -- and it was reported as exactly that.
+        color: #c9c9c9;
         cursor: pointer;
+
+        svg { display: block; }
         &:hover:not(:disabled) { border-color: #7a3a3a; color: #e08a8a; background: rgba(224, 122, 122, 0.1); }
         &:disabled { opacity: 0.4; cursor: default; }
     }
