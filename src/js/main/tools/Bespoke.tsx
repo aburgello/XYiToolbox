@@ -3943,10 +3943,16 @@ export const BespokeTool = () => {
                             ONLY UNTIL A REFERENCE IS PICKED. After that the
                             board is a backdrop being traced and these would sit
                             on top of the artwork; the bar above keeps all three
-                            for the rest of the job. */}
-                        {regions.length === 0 && (refPath ? (
-                            <span className="bsp-canvas-empty">Pick a master below, or drag one onto the board.</span>
-                        ) : (
+                            for the rest of the job.
+
+                            AND NOTHING REPLACES THEM. A one-line "Pick a master
+                            below, or drag one onto the board" used to take their
+                            place, centred across the whole stage in flat grey --
+                            over the reference, over the artwork, unreadable
+                            against a bright JPG and in the way of the one thing
+                            the board is for. It said nothing the bar above does
+                            not already offer as buttons. */}
+                        {regions.length === 0 && !refPath && (
                             <div className="bsp-canvas-start">
                                 <p className="bsp-canvas-startq">Where do the regions come from?</p>
                                 <div className="bsp-canvas-routes">
@@ -3981,7 +3987,7 @@ export const BespokeTool = () => {
                                 </div>
                                 <p className="bsp-canvas-or">or drag a master from the shelf straight onto the board</p>
                             </div>
-                        ))}
+                        )}
                     </div>
                     </div>
 

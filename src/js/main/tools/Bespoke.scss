@@ -1478,16 +1478,6 @@
     pointer-events: none;
 }
 
-.bsp-canvas-empty {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: var(--t-sm);
-    color: #6f757f;
-}
-
 // THE EMPTY BOARD ASKS THE QUESTION. Absolute over the whole stage like the
 // one-line empty state it replaces, so the board keeps its shape underneath.
 .bsp-canvas-start {
