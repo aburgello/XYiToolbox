@@ -1316,9 +1316,19 @@ export const BespokeTool = () => {
             canvasW: w,
             canvasH: h,
             guidesX, guidesY,
+            // WHAT THE SLOT IS, not just what shape it was. The library stored
+            // masterW/masterH/masterDuration and nothing else, so reloading a
+            // board matched every slot to the nearest aspect in the shelf and
+            // filled the whole thing with one master. The size stays — it is
+            // what makes a layout reusable on another campaign, where these
+            // paths mean nothing — and the identity is added beside it.
             slots: regions.map((r) => ({
                 x: r.x, y: r.y, w: r.w, h: r.h, rotation: quarterTurn(r.rotation),
                 masterW: r.master.width, masterH: r.master.height, masterDuration: r.master.duration,
+                masterPath: isPlaceholder(r) ? "" : r.master.path,
+                masterName: isPlaceholder(r) ? "" : r.master.name,
+                placeholder: isPlaceholder(r) ? true : undefined,
+                label: isPlaceholder(r) ? r.master.name : undefined,
             })),
             savedBy: "", stamp: new Date().toISOString().slice(0, 10),
             // Explicit from here on. Entries written before the library shipped
@@ -1376,7 +1386,47 @@ export const BespokeTool = () => {
         const unmatched: string[] = [];
         const next: Region[] = [];
         t.slots.forEach((sl, i) => {
-            let hit = pool.filter((m) => m.width === sl.masterW && m.height === sl.masterH && m.duration === sl.masterDuration)[0];
+            // A HOLE COMES BACK A HOLE. A placeholder's stand-in master carries
+            // the region's own box as its size, so the size matcher below read
+            // it as a master 550x320 wanted and handed back the nearest real
+            // one — which is how a board of placeholders reloaded as a board of
+            // PORTAL_TO_PARADISE.
+            if (sl.placeholder) {
+                const secs = Number(runtime) || 10;
+                const turnedSlot = quarterTurn(sl.rotation) === 90 || quarterTurn(sl.rotation) === 270;
+                next.push({
+                    id: nextSegId++,
+                    master: placeholderMaster(
+                        String(sl.label || "PLACEHOLDER"),
+                        turnedSlot ? sl.h : sl.w,
+                        turnedSlot ? sl.w : sl.h,
+                        secs,
+                    ),
+                    x: sl.x, y: sl.y, w: sl.w, h: sl.h, rotation: quarterTurn(sl.rotation),
+                });
+                return;
+            }
+            // THE SAME MASTER FIRST, BY FOUR FALLING STEPS.
+            //
+            // Path, then name, then size and duration, then size, then nearest
+            // aspect. Every one of them is a HINT and none of them can fail the
+            // load: a step that finds nothing simply hands on to the next, and
+            // the "wanted WxH" warning still only fires when even the size match
+            // comes up empty.
+            //
+            // WHY BOTH PATH AND NAME. Masters get archived, and archiving moves
+            // their directories — so a stored path is the exact answer for as
+            // long as the job is live and worthless afterwards, while the name
+            // goes on identifying the same creative wherever the file ends up.
+            // Path first because it is unambiguous when it does resolve; name
+            // second because it survives; shape last because it is what makes a
+            // layout reusable on a campaign that shares neither.
+            let hit = sl.masterPath ? pool.filter((m) => m.path === sl.masterPath)[0] : undefined;
+            if (!hit && sl.masterName) {
+                hit = pool.filter((m) => m.name === sl.masterName && m.duration === sl.masterDuration)[0];
+                if (!hit) hit = pool.filter((m) => m.name === sl.masterName)[0];
+            }
+            if (!hit) hit = pool.filter((m) => m.width === sl.masterW && m.height === sl.masterH && m.duration === sl.masterDuration)[0];
             if (!hit) hit = pool.filter((m) => m.width === sl.masterW && m.height === sl.masterH)[0];
             if (!hit) {
                 const want = sl.masterW / Math.max(1, sl.masterH);

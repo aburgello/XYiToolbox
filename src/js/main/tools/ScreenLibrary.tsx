@@ -56,6 +56,23 @@ export interface ScreenEntry {
     slots: {
         x: number; y: number; w: number; h: number; rotation: number;
         masterW: number; masterH: number; masterDuration: string;
+        /**
+         * WHICH master this slot had, so reloading in the same job gives the
+         * board back rather than the nearest shape. Optional: an entry saved
+         * before this, or one being reused on another campaign where the path
+         * means nothing, falls through to the size match as it always did.
+         */
+        masterPath?: string;
+        /**
+         * AND THE NAME, because a path rots and a name does not. Masters get
+         * archived and their directories move, so `masterPath` is the exact
+         * answer for a week and useless after; the name still identifies the
+         * same creative wherever it ends up.
+         */
+        masterName?: string;
+        /** A slot that is a hole, not a master. Carries its own name. */
+        placeholder?: boolean;
+        label?: string;
     }[];
     savedBy: string;
     stamp: string;

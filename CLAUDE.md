@@ -271,6 +271,18 @@ confirm raised by a palette action still wins.
   `Number()` NaN and the field re-rendered as 0 mid-type. Canvas W/H keep their
   live string behaviour and only resolve on Enter/blur, so the board still
   reshapes as you type.
+- **A saved screen stores what a slot IS, and every identifier is a HINT.**
+  It used to store `masterW/masterH/masterDuration` only, so reloading a board
+  matched each slot to the nearest aspect in the shelf and filled the whole
+  thing with one master. The load now falls: **path → name → size+duration →
+  size → nearest aspect**, and *no step can fail the load* — a miss hands on to
+  the next. Both path and name, because **masters get archived and archiving
+  moves directories**: a path is exact while the job is live and worthless
+  after, a name identifies the creative wherever the file ends up, and shape is
+  what still makes a layout reusable on a campaign sharing neither.
+  **A placeholder slot is restored as a placeholder** and never matched — its
+  stand-in master carries the region's own box as its size, so the size matcher
+  read `550x320 wanted` and handed back a real master.
 - **`organiseFolders` files a comp by its LABEL and nothing else** —
   `item.label === 1 ? Main : PreComp`. So red is not a colour, it is the word
   "deliverable". A Bespoke build paints exactly two red — the edit and its

@@ -9239,3 +9239,58 @@ anyway and closed that project, having first saved a copy into the scratchpad.
 See the note in the session: the guard was around the test and not around the
 cleanup. Nothing of the artist's was overwritten on disk, but the lesson is that
 a probe's teardown is part of the probe and has to sit inside the same guard.
+
+---
+
+## 2026-08-26 — A saved layout came back filled with one master
+
+Reported with three screenshots: a board of placeholders and two creatives,
+saved as `TH_IconLedArchway_TEST`, reloaded as nine copies of
+PORTAL_TO_PARADISE, over the message *"R3 wanted 550×320, R4 wanted 320×294, R5
+wanted 320×289 … filled with the nearest, swap where needed."*
+
+### The library stored shapes, not identities
+
+A saved slot carried `masterW`, `masterH` and `masterDuration` and nothing else.
+On load it looked for a master of exactly those dimensions, then for the nearest
+aspect ratio in the shelf — and since the shelf's masters are nearly all
+1080×1920, the nearest was the same one every time.
+
+That is a real design and half of it is right: a screen layout should be
+reusable on another campaign, where the original masters do not exist. It just
+had no way to say "and when they DO exist, use them".
+
+### The sizes in that warning were the placeholders
+
+550×320, 320×294, 320×289 are not master dimensions — they are the hand-drawn
+placeholder boxes from the original board. A placeholder's stand-in master
+carries the region's own box as its width and height (which is what makes the
+other twenty `r.master` reads work), so the size matcher read them as a request
+for a real master of that shape and obliged. Placeholders are now restored as
+placeholders and never go near the matcher.
+
+### Every identifier is a hint
+
+The load falls through five steps: **path → name → size+duration → size →
+nearest aspect**. No step can fail the load; a miss hands on to the next, and
+the "wanted W×H" warning still fires only when even the size match comes up
+empty.
+
+Both path AND name, because the studio pointed out the thing that decides it:
+**masters get archived, and archiving moves their directories.** A stored path
+is exact for as long as the job is live and worthless afterwards; the name goes
+on identifying the same creative wherever the file ends up; the shape is what
+makes the layout reusable somewhere that shares neither.
+
+```
+saved board          R1 PLACEHOLDER 1 · R2 PORTAL · R3 PLACEHOLDER 2 · R4 TRIO · R5 PLACEHOLDER 3
+
+before               all five PORTAL_TO_PARADISE, warned about 550x320, 320x294, 320x289
+after                the board back, nothing warned
+after, archived      the board back, nothing warned   (every path stale, names matched)
+after, elsewhere     placeholders kept, masters by shape   (no path, no name)
+```
+
+**Entries saved before this have none of the new fields**, so they still load by
+shape alone — the board in the report has to be saved again to come back
+correctly. Nothing about them breaks; they behave exactly as they did.
