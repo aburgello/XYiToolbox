@@ -9099,3 +9099,64 @@ placeholder has been built in AE. The placeholder's name is generated
 (`PLACEHOLDER 1`, `2`…) and cannot be edited yet — if these end up needing real
 names like BUMPER_L or SURROUND_TOP, that is a field on the region and a small
 follow-up.
+
+---
+
+## 2026-08-26 — Sums in the number fields
+
+Asked for directly: "lets say the canvas is 5000 pixels wide, I'd go to either
+the region fields or the guides fields and put 5000/3 to have it at the 1/3".
+
+### Why it was not merely unparsed
+
+These were controlled inputs writing a number on every keystroke —
+`onChange={(e) => patchRegion(sel, { w: Math.round(Number(e.target.value) || 0) })}`.
+Typing `5000/3` never got as far as needing a parser: the `/` made `Number()`
+return NaN, the `|| 0` turned that into 0, and the field re-rendered as `0`
+under the cursor before the `3` was typed. The expression was unreachable, not
+unsupported.
+
+So the fix is two things, and the draft state is the load-bearing one.
+`NumField` holds what was typed until Enter or blur, reverts on Escape, and only
+then asks for a number.
+
+### A parser, not eval
+
+`evalNumeric` is twenty lines of recursive descent over `+ - * / ( )` and a
+unary sign. `eval` was not on the table: this is text somebody typed into a
+panel that is itself a `file://` page with the whole ExtendScript bridge behind
+it, and CLAUDE.md already lists `runScript`'s bare eval as a known soft spot —
+a second one would be a second soft spot, for a feature whose entire grammar is
+four operators.
+
+Unreadable input leaves the field exactly as typed rather than being replaced by
+a guess. That matters mid-edit: `5000/` is a half-finished expression, not a
+request for 5000 or 0.
+
+```
+"5000/3"       -> 1667        "100+"        left alone
+"(600+300)/2"  -> 450         "5000/"       left alone
+"6720/16"      -> 420         "5000/0"      left alone
+"1920-40"      -> 1880        "(600+300"    left alone
+"1920/2/2"     -> 480         "1e3"         left alone
+"-40+100"      -> 60          "1,920"       left alone
+```
+
+`1e3` and `1,920` are refused on purpose: the character whitelist is the first
+gate, and neither is a shape anybody types into a pixel field by intent.
+
+### Where it applies
+
+Region w/h, the guide's own coordinate, the segment's seconds, and canvas W/H.
+The guide field lost its `type="number"` in the swap — a number input rejects
+`5000/3` as it is typed, which is the one thing it now has to accept.
+
+Canvas W/H keep their live string behaviour and only resolve the expression on
+Enter or blur. They are already tolerant of half-typed values by design — an
+unparsable canvas leaves the regions alone rather than falling back to a
+default — so giving them draft state would have cost the live board reshape for
+nothing.
+
+**Not done:** not typed into in the panel, only tested as arithmetic. And there
+is no way yet to refer to the canvas from inside an expression — `c/3` rather
+than `5000/3` — which is the obvious next ask if these get used.

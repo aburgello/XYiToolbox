@@ -261,6 +261,16 @@ confirm raised by a palette action still wins.
   a photograph has no board size, no guides and no running order, and threading
   a third value through forty `mode === "multi"` branches would put a third
   meaning on every one of them.
+- **Bespoke's number fields take sums** (`5000/3`, `(600+300)/2`) via
+  `evalNumeric` — a hand-rolled recursive-descent parser, **never `eval`**: this
+  is typed text in a `file://` page with the ExtendScript bridge behind it, and
+  the codebase already carries one bare eval as a known soft spot. Unreadable
+  input **leaves the field exactly as typed** — a half-finished `5000/` must not
+  become 5000 or 0 under the cursor. The fields need `NumField`'s draft state to
+  work at all: as controlled inputs writing a number per keystroke, the `/` made
+  `Number()` NaN and the field re-rendered as 0 mid-type. Canvas W/H keep their
+  live string behaviour and only resolve on Enter/blur, so the board still
+  reshapes as you type.
 - **A Bespoke placeholder is a master with NO PATH**, not a second kind of
   region. Twenty places read `r.master` — hue, preview, turned footprint,
   overrun, Match master ratio — and a master-less region would need guarding at
