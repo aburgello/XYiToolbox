@@ -4172,7 +4172,17 @@ function bespokeOrientation(name: string, w: number, h: number): string {
 // artist saves where they mean to.
 // =============================================================================
 interface BespokePlanTile { path: string; }
-interface BespokePlanSegment { seconds: number; tiles: BespokePlanTile[]; }
+interface BespokePlanSegment {
+  seconds: number;
+  tiles: BespokePlanTile[];
+  /**
+   * "row" lays the tiles across the frame, "column" stacks them down it.
+   * ABSENT MEANS FOLLOW THE CANVAS -- a portrait canvas stacks, anything else
+   * rows. Optional rather than defaulted so a plan saved before this existed
+   * still reads correctly.
+   */
+  stack?: string;
+}
 interface BespokePlan {
   canvasWidth: number;
   canvasHeight: number;
@@ -5164,39 +5174,59 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
         const secs = Number(seg.seconds) || 0;
         const n = seg.tiles.length;
 
-        // LAID SIDE BY SIDE AT NATIVE SIZE, THEN CENTRED. Dividing the canvas
+        // LAID END TO END AT NATIVE SIZE, THEN CENTRED. Dividing the canvas
         // into n equal panels and scaling each to fit forced every tile to the
-        // canvas whether it belonged there or not. Tiles now keep their own
-        // size, sit next to each other, and the group is centred -- leaving
-        // space when they do not fill it, which is a legitimate layout rather
-        // than an error to refuse.
+        // canvas whether it belonged there or not. Tiles keep their own size,
+        // sit next to each other, and the group is centred -- leaving space when
+        // they do not fill it, which is a legitimate layout rather than an error
+        // to refuse.
         //
-        // Scaled DOWN only when the row would overflow, never up: enlarging a
+        // Scaled DOWN only when the run would overflow, never up: enlarging a
         // master past its native size is how a deliverable goes soft.
+        //
+        // ALONG THE CANVAS, not always across it. This summed widths and nothing
+        // else, so a segment was a horizontal row whatever it was being built
+        // on: three 844-wide portrait masters on a 256x2304 canvas came out as
+        // three 85px slivers, on a strip labelled "this segment fills the
+        // frame". Absent an explicit choice the long axis wins, which is the
+        // reading that makes the label true.
+        // if/else, not `a || (b && c)`: that shape does not survive the ES3
+        // emit and scripts/audit-jsx-precedence.cjs rejects it outright.
+        let isColumn = false;
+        if (seg.stack === "column") {
+          isColumn = true;
+        } else if (seg.stack !== "row") {
+          isColumn = canvasH > canvasW;
+        }
+        const alongCanvas = isColumn ? canvasH : canvasW;
+        const acrossCanvas = isColumn ? canvasW : canvasH;
         let natural = 0;
         let tallest = 0;
         for (let m = 0; m < n; m++) {
           const c = compFor[String(seg.tiles[m].path)];
-          natural += c.width;
-          if (c.height > tallest) tallest = c.height;
+          natural += isColumn ? c.height : c.width;
+          const across = isColumn ? c.width : c.height;
+          if (across > tallest) tallest = across;
         }
         let fit = 1;
-        if (natural > canvasW) fit = canvasW / natural;
-        if (tallest * fit > canvasH) fit = canvasH / tallest;
+        if (natural > alongCanvas) fit = alongCanvas / natural;
+        if (tallest * fit > acrossCanvas) fit = acrossCanvas / tallest;
 
         // Offsets computed UP FRONT, not accumulated in the loop: the tiles are
         // added in reverse so the leftmost ends on top of the layer stack, and a
         // running cursor would lay them out backwards.
         const centreX: number[] = [];
-        let walk = (canvasW - natural * fit) / 2;
+        let walk = (alongCanvas - natural * fit) / 2;
         for (let m = 0; m < n; m++) {
           const c = compFor[String(seg.tiles[m].path)];
-          centreX.push(walk + (c.width * fit) / 2);
-          walk += c.width * fit;
+          const own = isColumn ? c.height : c.width;
+          centreX.push(walk + (own * fit) / 2);
+          walk += own * fit;
         }
         lines.push("");
-        lines.push("segment " + (s + 1) + ": " + n + " tile(s), " + Math.round(natural * fit)
-          + "px of a " + canvasW + "px canvas for " + secs + "s"
+        lines.push("segment " + (s + 1) + ": " + n + " tile(s) " + (isColumn ? "stacked down" : "across")
+          + " a " + canvasW + "x" + canvasH + " canvas, " + Math.round(natural * fit)
+          + "px of " + alongCanvas + "px for " + secs + "s"
           + (fit < 1 ? "  (scaled to " + Math.round(fit * 1000) / 10 + "% to fit)" : ""));
 
         // Added in reverse so the LEFTMOST tile ends up on top of the layer
@@ -5242,9 +5272,11 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
             (layer.property("Scale") as Property).setValue([fit * 100, fit * 100]);
             scaled++;
           }
-          // Placed left to right from the centred start, each tile taking its
-          // own width. Vertically centred whatever its height.
-          (layer.property("Position") as Property).setValue([centreX[t], canvasH / 2]);
+          // Placed from the centred start along whichever axis this segment
+          // runs, and centred on the other one.
+          (layer.property("Position") as Property).setValue(
+            isColumn ? [canvasW / 2, centreX[t]] : [centreX[t], canvasH / 2],
+          );
 
           // THE MASTER RUNS ON THE COMP'S OWN CLOCK. startTime 0 means its 0s
           // is the comp's 0s, so a segment simply shows whatever that master is

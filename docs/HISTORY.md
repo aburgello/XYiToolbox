@@ -8731,3 +8731,71 @@ stubbed in every test, so "opens on the project's own folder" is from the API
 docs and one existence check, not from watching it. And a component whose layers
 are driven by expressions has not been tried; the result says so rather than the
 code detecting it.
+
+---
+
+## 2026-08-26 — A Multiple Art segment could only ever be a row
+
+Reported from a Spain build: portrait canvas chosen, three portrait masters
+added, "but it always comes in a landscape set up". The panel was saying so
+itself, in three places at once — `3 × 85px` under the strip, *"this segment is
+2532px across a 256px canvas. It will be scaled down to fit"*, and above all of
+it the caption **"This segment fills the frame"**.
+
+Three 844-wide masters laid end to end are 2532px. On a 256px-wide canvas that
+scales to 10.1%, giving 85×241 tiles on a frame 2304px tall. It filled almost
+none of it.
+
+### Widths and nothing else
+
+`bespokeBuild` summed `c.width`, compared it to `canvasW`, and positioned each
+tile at `[centreX[t], canvasH / 2]`. There was no other axis in the code. The
+panel's preview did the same thing — `naturalWidth`, summed widths — so the two
+halves agreed with each other and both were wrong on a tall canvas.
+
+### The long axis, unless told otherwise
+
+A segment now carries an optional `stack` of `"row"` or `"column"`. Absent means
+follow the canvas: taller than wide stacks, anything else rows. Absent rather
+than defaulted on purpose — the layout keeps moving with the canvas while the
+artist is still deciding the size, and only stops when they pin it with the
+Row/Column buttons in the stage foot. A screen saved before this existed has no
+`stack` and reads correctly.
+
+Measured on the reported numbers:
+
+```
+case                        axis    scale     each tile   coverage
+before (always a row)       row     10.1%     85x241      256px of 256px
+after (follows the canvas)  column  30.3%     256x723     2168px of 2304px
+after, forced Row           row     10.1%     85x241      256px of 256px
+after, forced Column        column  30.3%     256x723     2168px of 2304px
+
+landscape, unchanged        row     50%       960x429     1920px of 1920px
+```
+
+The "before" row reproduces the `3 × 85px` from the screenshot exactly, which is
+what says the transcription is honest. The landscape case is untouched.
+
+### Two things that had to move with it
+
+**The preview and the build must share the rule**, or the panel draws one layout
+and AE builds another. `segmentIsColumn` in the panel and the `isColumn` block
+in `bespokeBuild` are the same three lines; the hint copy switched from "across"
+to "down" and from "either side" to "above and below" with it.
+
+**Tile drag-reordering hit-tested on x only.** `indexAtX` walked the tiles
+comparing `left`/`right`, which is meaningless once they are stacked — every
+tile spans the same x range, so the first one matches and any drag would have
+reordered to index 0. It now tests along whichever axis the thing runs, and the
+movement threshold reads the same axis. The running-order strip below is always
+horizontal and keeps the x test.
+
+The `||`/`&&` shape of the first cut was rejected by
+`scripts/audit-jsx-precedence.cjs` — it does not survive the ES3 emit — and is
+an if/else now.
+
+**Not done:** the arithmetic is verified and the panel type-checks, but no
+Bespoke build has actually been run in After Effects with a stacked segment. The
+placement call is `[canvasW / 2, centreX[t]]` where it used to be
+`[centreX[t], canvasH / 2]`, and that swap has not been watched land.

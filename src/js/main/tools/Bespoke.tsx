@@ -560,10 +560,26 @@ interface Region {
 
 interface Segment {
     id: number;
-    /** Laid across the canvas, left to right. */
+    /** Laid end to end along the segment's axis, in order. */
     tiles: BespokeMaster[];
     seconds: number;
+    /**
+     * "row" lays the tiles across the frame, "column" stacks them down it.
+     * UNSET MEANS FOLLOW THE CANVAS — a portrait canvas stacks, anything else
+     * rows. Unset rather than defaulted so changing the canvas keeps moving the
+     * layout with it until somebody says otherwise, and so a screen saved before
+     * this existed still reads correctly.
+     */
+    stack?: "row" | "column";
 }
+
+/** Which way a segment runs, given the canvas it is being built on. */
+const segmentIsColumn = (seg: Segment | undefined, w: number, h: number): boolean => {
+    if (!seg) return false;
+    if (seg.stack === "column") return true;
+    if (seg.stack === "row") return false;
+    return h > w;
+};
 
 interface StatusMsg {
     text: string;
@@ -2829,6 +2845,18 @@ export const BespokeTool = () => {
     // --- composition -------------------------------------------------------
     const seg = segments[Math.min(current, segments.length - 1)];
 
+    // DECLARED HERE, above the row-drag effect that reads it. Which way the
+    // segment runs decides how a tile drag is hit-tested, so it cannot wait
+    // until the render maths further down.
+    const canvasWidth = Number(canvasW) || 0;
+    const canvasHeight = Number(canvasH) || 0;
+    // ALONG THE SEGMENT'S OWN AXIS. The measurements below took width and
+    // nothing else, so a stacked segment was reported against the wrong edge of
+    // the canvas — and before it could stack at all, three portrait masters on
+    // a tall canvas were laid across it as slivers, under a strip that says
+    // they fill the frame.
+    const isColumn = segmentIsColumn(seg, canvasWidth, canvasHeight);
+
     /**
      * REORDERING A ROW, by dragging along it.
      *
@@ -2844,7 +2872,7 @@ export const BespokeTool = () => {
      * fully over another item: once the dragged item lands in that slot it is
      * the thing under the cursor, so nothing oscillates.
      */
-    const rowDragRef = React.useRef<{ kind: "tile" | "seg"; index: number; sx: number; moved: boolean } | null>(null);
+    const rowDragRef = React.useRef<{ kind: "tile" | "seg"; index: number; sx: number; sy: number; moved: boolean } | null>(null);
     const [rowDrag, setRowDrag] = useState<{ kind: "tile" | "seg"; index: number } | null>(null);
     const tilesRef = React.useRef<HTMLDivElement>(null);
     const timelineRef = React.useRef<HTMLDivElement>(null);
@@ -2853,7 +2881,7 @@ export const BespokeTool = () => {
         if (e.button !== 0) return;
         // The tile's own remove button is not a handle.
         if ((e.target as HTMLElement).closest && (e.target as HTMLElement).closest(".bsp-tile-x")) return;
-        rowDragRef.current = { kind, index, sx: e.clientX, moved: false };
+        rowDragRef.current = { kind, index, sx: e.clientX, sy: e.clientY, moved: false };
         setRowDrag({ kind, index });
     };
 
@@ -2865,24 +2893,36 @@ export const BespokeTool = () => {
             out.splice(to, 0, held);
             return out;
         };
-        const indexAtX = (container: HTMLElement | null, x: number) => {
+        // ALONG WHICHEVER AXIS THE THING RUNS. This tested left/right only, so
+        // in a stacked segment every tile spans the same x range and the first
+        // one matched every time -- a drag anywhere would have reordered to
+        // index 0. The running-order strip below is always horizontal.
+        const indexAt = (container: HTMLElement | null, pos: number, vertical: boolean) => {
             if (!container) return -1;
             const kids = container.querySelectorAll("[data-ri]");
             for (let i = 0; i < kids.length; i++) {
                 const r = (kids[i] as HTMLElement).getBoundingClientRect();
-                if (x >= r.left && x <= r.right) return i;
+                const lo = vertical ? r.top : r.left;
+                const hi = vertical ? r.bottom : r.right;
+                if (pos >= lo && pos <= hi) return i;
             }
-            // Between two items, or past the end of the row: leave the order
-            // where it is rather than guessing at an edge.
+            // Between two items, or past the end: leave the order where it is
+            // rather than guessing at an edge.
             return -1;
         };
         const move = (e: MouseEvent) => {
             const d = rowDragRef.current;
             if (!d) return;
-            if (!d.moved && Math.abs(e.clientX - d.sx) < 4) return;
+            const vertical = d.kind === "tile" && isColumn;
+            const travelled = vertical ? Math.abs(e.clientY - d.sy) : Math.abs(e.clientX - d.sx);
+            if (!d.moved && travelled < 4) return;
             d.moved = true;
             e.preventDefault();
-            const to = indexAtX(d.kind === "tile" ? tilesRef.current : timelineRef.current, e.clientX);
+            const to = indexAt(
+                d.kind === "tile" ? tilesRef.current : timelineRef.current,
+                vertical ? e.clientY : e.clientX,
+                vertical,
+            );
             if (to < 0 || to === d.index) return;
             const from = d.index;
             if (d.kind === "tile") {
@@ -2907,7 +2947,7 @@ export const BespokeTool = () => {
             window.removeEventListener("mouseup", up);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rowDrag ? rowDrag.kind : "", current]);
+    }, [rowDrag ? rowDrag.kind : "", current, isColumn]);
 
     /** One tile replaced, in whichever segment holds it. */
     const replaceTile = (si: number, ti: number, m: BespokeMaster) =>
@@ -2978,9 +3018,9 @@ export const BespokeTool = () => {
     }, [suggestedName, nameTouched, refPath]);
     const totalSecs = segments.reduce((n, s) => n + s.seconds, 0);
     const wantSecs = Number(runtime) || 0;
-    const canvasWidth = Number(canvasW) || 0;
-    const tileWidth = seg && seg.tiles.length ? Math.round(canvasWidth / seg.tiles.length) : 0;
-    const naturalWidth = seg ? seg.tiles.reduce((n, m) => n + m.width, 0) : 0;
+    const alongCanvas = isColumn ? canvasHeight : canvasWidth;
+    const tileWidth = seg && seg.tiles.length ? Math.round(alongCanvas / seg.tiles.length) : 0;
+    const naturalWidth = seg ? seg.tiles.reduce((n, m) => n + (isColumn ? m.height : m.width), 0) : 0;
 
     const setSeg = (fn: (s: Segment) => Segment) =>
         setSegments((prev) => prev.map((s, i) => (i === current ? fn(s) : s)));
@@ -3009,10 +3049,12 @@ export const BespokeTool = () => {
     if (wantSecs > 0 && Math.abs(totalSecs - wantSecs) > 0.001) {
         notes.push(`segments total ${totalSecs}s, the row asks for ${wantSecs}s`);
     }
-    if (seg && seg.tiles.length > 0 && canvasWidth > 0 && naturalWidth !== canvasWidth) {
-        notes.push(naturalWidth > canvasWidth
-            ? `this segment is ${naturalWidth}px across a ${canvasWidth}px canvas. It will be scaled down to fit`
-            : `this segment is ${naturalWidth}px across a ${canvasWidth}px canvas. It will be centred with space either side`);
+    if (seg && seg.tiles.length > 0 && alongCanvas > 0 && naturalWidth !== alongCanvas) {
+        const axis = isColumn ? "down" : "across";
+        const spare = isColumn ? "above and below" : "either side";
+        notes.push(naturalWidth > alongCanvas
+            ? `this segment is ${naturalWidth}px ${axis} a ${alongCanvas}px canvas. It will be scaled down to fit`
+            : `this segment is ${naturalWidth}px ${axis} a ${alongCanvas}px canvas. It will be centred with space ${spare}`);
     }
 
     /**
@@ -4093,7 +4135,7 @@ export const BespokeTool = () => {
             {/* --- the frame ----------------------------------------------- */}
             <p className="bsp-lbl bsp-lbl--section">This segment fills the frame</p>
             <div className="bsp-stage">
-                <div className="bsp-tiles" ref={tilesRef}>
+                <div className={"bsp-tiles" + (isColumn ? " is-column" : "")} ref={tilesRef}>
                     {seg && seg.tiles.map((m, i) => (
                         <motion.div
                             className={"bsp-tile" + (rowDrag && rowDrag.kind === "tile" && rowDrag.index === i ? " is-dragging" : "")}
@@ -4147,6 +4189,24 @@ export const BespokeTool = () => {
                             : "empty segment"}
                     </span>
                     <span>canvas {canvasW} × {canvasH}</span>
+                    {/* FOLLOWS THE CANVAS UNTIL SOMEBODY SAYS OTHERWISE. The
+                        buttons show which way the segment actually runs, so on a
+                        portrait canvas Column is already lit without anyone
+                        having chosen it; pressing either one pins it. */}
+                    <span className="bsp-axis">
+                        <button
+                            className={"bsp-axis-btn" + (!isColumn ? " is-on" : "")}
+                            onClick={() => setSeg((sg) => ({ ...sg, stack: "row" }))}
+                        >
+                            Row
+                        </button>
+                        <button
+                            className={"bsp-axis-btn" + (isColumn ? " is-on" : "")}
+                            onClick={() => setSeg((sg) => ({ ...sg, stack: "column" }))}
+                        >
+                            Column
+                        </button>
+                    </span>
                 </div>
             </div>
 

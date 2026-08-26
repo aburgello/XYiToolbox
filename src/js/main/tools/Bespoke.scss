@@ -408,6 +408,45 @@
     padding: 8px;
 }
 
+// STACKED, when the segment runs down the frame. The tiles are the same
+// elements either way -- only the axis they are laid on changes, so nothing
+// about a tile has to know which mode it is in.
+.bsp-tiles.is-column {
+    flex-direction: column;
+}
+
+// Row / Column, sitting in the stage foot with the canvas readout. Quiet at
+// rest: on most builds the default is already right and this is a readout of
+// what the segment is doing, not a decision waiting to be made.
+.bsp-axis {
+    display: flex;
+    gap: 2px;
+    margin-left: 8px;
+}
+
+.bsp-axis-btn {
+    padding: 1px 7px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.02);
+    color: inherit;
+    font-size: 9.5px;
+    cursor: pointer;
+    opacity: 0.55;
+
+    // index.scss's global button:hover paints over any custom button, so both
+    // states are re-declared here.
+    &:hover { background: rgba(255, 255, 255, 0.08); opacity: 1; }
+    &:active { background: rgba(255, 255, 255, 0.08); }
+
+    &.is-on {
+        border-color: var(--cat-border, #5eead4);
+        color: var(--cat-icon, #5eead4);
+        background: rgba(255, 255, 255, 0.05);
+        opacity: 1;
+    }
+}
+
 .bsp-tiles {
     display: flex;
     gap: 2px;

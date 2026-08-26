@@ -261,6 +261,17 @@ confirm raised by a palette action still wins.
   a photograph has no board size, no guides and no running order, and threading
   a third value through forty `mode === "multi"` branches would put a third
   meaning on every one of them.
+- **A Bespoke segment runs along the canvas's LONG axis unless told otherwise.**
+  `bespokeBuild` summed tile WIDTHS only, so a segment was a horizontal row
+  whatever it was built on: three 844-wide portrait masters on a 256×2304 canvas
+  came out as three 85px slivers at 10% scale, under a strip captioned "this
+  segment fills the frame". A segment now carries an optional `stack`
+  (`"row"`/`"column"`); **absent means follow the canvas**, so changing the size
+  keeps moving the layout with it until somebody pins it. Same rule in the
+  panel's preview (`segmentIsColumn`) and the build, or the two disagree about
+  what will be made. Tile drag-reordering hit-tests on the segment's own axis —
+  stacked tiles all share one x range, so a left/right test matches index 0 every
+  time.
 - **One screen, one library card.** A `BespokeTemplate` can carry BOTH a region
   layout and an `insitu` payload (faces as a JSON string, per the bridge rule),
   so a screen laid out either way shows up in both boards with the same
