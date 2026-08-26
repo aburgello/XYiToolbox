@@ -2662,7 +2662,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                     specs table's own — the icon says what it is, and a
                                     label here would crowd a 20px column. */}
                                 <span />
-                                <span>Type</span><span>Creative</span><span>Site</span><span>Width</span><span>Height</span><span>Dur</span><span>×</span><span /><span /><span />
+                                <span>Type</span><span>Creative</span><span>Site</span><span>Width</span><span>Height</span><span>Dur</span><span>×</span><span />
                             </div>
                             {buildRows.map((r) => (
                                 <div className="specs-build-row" key={r.id}>
@@ -2826,38 +2826,44 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                             </Tooltip>
                                         );
                                     })()}
-                                    {/* THE SHEET'S OWN WARNING, carried across with the
-                                        row. It is the "this sheet said something odd"
-                                        signal -- a duration that did not parse, a size
-                                        that looked like a ratio -- and it is never
-                                        auto-corrected, so losing it with the modal would
-                                        lose the only place it is ever said. */}
-                                    {/* BOTH SLOTS ALWAYS RENDER, empty when they do not
-                                        apply. The row is a fixed-track grid, so a
-                                        conditional child does not leave a gap — it
-                                        shifts every column after it and pushes the last
-                                        one onto a second line. Same rule the × column
-                                        already follows a few lines down. */}
-                                    {(() => {
-                                        const src = r.srcIndex !== undefined && buildOrigin ? buildOrigin.rows[r.srcIndex] : null;
-                                        const warns = src ? specRowWarnings(src) : [];
-                                        if (!warns.length) return <span className="specs-build-warn" />;
-                                        return (
-                                            <Tooltip text={warns.join(" · ")}>
-                                                <span className="specs-build-warn is-on"><AlertTriangle size={11} /></span>
+                                    {/* ONE CELL, NOT THREE. These went in as their own grid
+                                        tracks, which meant the row's column count had to match
+                                        the header's exactly and an absent cell shifted
+                                        everything after it — two empty boxes on rows that came
+                                        from Wrike rather than a sheet, and the remove button
+                                        squeezed into a 14px track. A group inside the last cell
+                                        has no such contract: it holds whatever applies to this
+                                        row and collapses to just the ✕ when nothing does. */}
+                                    <span className="specs-build-end">
+                                        {(() => {
+                                            const src = r.srcIndex !== undefined && buildOrigin ? buildOrigin.rows[r.srcIndex] : null;
+                                            const warns = src ? specRowWarnings(src) : [];
+                                            if (!warns.length) return null;
+                                            return (
+                                                <Tooltip text={warns.join(" · ")}>
+                                                    <span className="specs-build-warn"><AlertTriangle size={11} /></span>
+                                                </Tooltip>
+                                            );
+                                        })()}
+                                        {r.srcIndex !== undefined && buildOrigin && (
+                                            <Tooltip text={`Put this row back to what ${buildOrigin.pdfName} said`}>
+                                                <button className="specs-build-revert" onClick={() => revertBuildRow(r.id)} aria-label="Revert row">
+                                                    <RotateCcw size={11} />
+                                                </button>
                                             </Tooltip>
-                                        );
-                                    })()}
-                                    {r.srcIndex !== undefined && buildOrigin ? (
-                                        <Tooltip text={`Put this row back to what ${buildOrigin.pdfName} said`}>
-                                            <button className="specs-build-revert" onClick={() => revertBuildRow(r.id)} aria-label="Revert row">
-                                                <RotateCcw size={11} />
-                                            </button>
-                                        </Tooltip>
-                                    ) : (
-                                        <span className="specs-build-revert-empty" />
-                                    )}
-                                    <button className="specs-build-remove" onClick={() => removeBuildRow(r.id)} disabled={buildRows.length === 1} title="Remove row" aria-label="Remove row"><X size={13} strokeWidth={2.25} /></button>
+                                        )}
+                                        {/* A TYPED GLYPH, not an icon. Reported twice as an
+                                            empty button; a character cannot fail to draw. */}
+                                        <button
+                                            className="specs-build-remove"
+                                            onClick={() => removeBuildRow(r.id)}
+                                            disabled={buildRows.length === 1}
+                                            title="Remove row"
+                                            aria-label="Remove row"
+                                        >
+                                            ✕
+                                        </button>
+                                    </span>
                                 </div>
                             ))}
                         </div>
