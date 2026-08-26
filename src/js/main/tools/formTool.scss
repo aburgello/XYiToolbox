@@ -1995,7 +1995,25 @@
         &:disabled { opacity: 0.4; cursor: default; }
     }
 
-    .specs-build-actions {
+    // Beside Localise, and deliberately not styled as the primary action: it is
+// the way out for the rows Localise would skip, not a competing verb.
+.specs-build-multi {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.03);
+    color: inherit;
+    font-size: 12px;
+    cursor: pointer;
+
+    &:hover { background: rgba(255, 255, 255, 0.09); border-color: rgba(255, 255, 255, 0.22); }
+    &:active { background: rgba(255, 255, 255, 0.09); }
+}
+
+.specs-build-actions {
         display: flex;
         align-items: center;
         gap: 10px;

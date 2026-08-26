@@ -960,18 +960,32 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
     const buildComplete = buildRows.filter((r) => buildRowCreative(r) && r.width && r.height && r.duration);
 
     /**
-     * The rows that ARE Multiple Art, which the panel already knows.
+     * The rows that ARE Multiple Art — decided by what the masters folder can
+     * answer, not by the name or the length.
      *
-     * A complete row the masters folder cannot answer with ONE master is
-     * exactly a several-creatives deliverable — a 30s slot filled by 15s of one
-     * and 15s of another — and that is the same condition the "2×?" badge is
-     * drawn from. Rows still being looked up are left out: "not back yet" is
-     * not the same answer as "no master", and sending on it would preselect
-     * rows that turn out to be fine.
+     * NEITHER OBVIOUS SIGNAL SURVIVES REAL DATA. The creative's name does not:
+     * one Norway batch of these is called PortalToParadise and one Brazil batch
+     * is called MultipleArt, and both conventions are live. The duration does
+     * not either: a 30s row WITH a 30s master is an ordinary localise, and a
+     * 30s row that is 2× the same 15s creative is a duration multiple, not a
+     * composition.
+     *
+     * What actually forces you to compose is: no single master at this
+     * duration, AND shorter masters of this creative exist to build it from.
+     * That is exactly the condition the "2×?" badge is drawn from, so the badge
+     * and this button can never disagree about which rows they mean.
+     *
+     * The `multiples` half matters. Without it this also caught rows where
+     * NOTHING matched — a size the campaign has no master for at any length,
+     * which is not a Multiple Art deliverable but a row with a problem, and
+     * sending it to Bespoke would only move the problem.
+     *
+     * Rows still being looked up are left out: "not back yet" is not the same
+     * answer as "no master".
      */
     const bespokeCandidates = buildComplete.filter((r) => {
         const res = buildMasters[r.id];
-        return !!res && !res.master;
+        return !!res && !res.master && !!(res.multiples && res.multiples.length);
     });
 
     /**
@@ -2871,6 +2885,18 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                         <div className="specs-build-actions">
                             <button className="specs-build-add" onClick={addBuildRow}><Plus size={13} /> Add row</button>
                             <span className="specs-build-count">{buildComplete.length} ready</span>
+                            {/* WHERE THE WORK ENDS, not only at the top of the screen.
+                                By the time a batch is edited the routes are scrolled
+                                away, and these rows are the ones Localise cannot
+                                build -- offering the way out beside the button that
+                                would skip them is the point. */}
+                            {bespokeCandidates.length > 0 && (
+                                <Tooltip text={`${bespokeCandidates.length} row${bespokeCandidates.length === 1 ? " has" : "s have"} no single master at that length, but shorter ones of the same creative exist. Multiple Art composes them.`}>
+                                    <button className="specs-build-multi" onClick={sendToBespoke}>
+                                        <Layers size={13} /> Send {bespokeCandidates.length} to Multi Art
+                                    </button>
+                                </Tooltip>
+                            )}
                             <button className="specs-build-run" disabled={busy || !aepPath || !buildTerritory || buildComplete.length === 0} onClick={runBuilder}>
                                 <PlayCircle size={14} /> Localise {buildComplete.length || ""} row{buildComplete.length === 1 ? "" : "s"}
                             </button>

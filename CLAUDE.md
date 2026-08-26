@@ -281,6 +281,16 @@ confirm raised by a palette action still wins.
   delivery spec columns (`FileSize`/`BitRate`/`Fps`/`Sound`) do **not** need to
   travel: `deliverySpecMatch.ts` re-reads the PDFs itself at delivery time, and
   `csvLocaliserRun` reads columns 0–3 and Site positionally.
+- **A Multiple Art row is decided by the MASTERS, not by its name or length.**
+  `no single master at this duration` **AND** `shorter masters of this creative
+  exist` — the same condition the `2×?` badge is drawn from, so the badge and the
+  Send-to-Multi-Art button can never disagree. Both obvious alternatives fail on
+  real data: the creative's name does not decide it (one Norway batch of these is
+  called `PortalToParadise`, one Brazil batch `MultipleArt`), and neither does
+  duration (a 30s row WITH a 30s master is an ordinary localise, and a 30s row
+  that is 2× the same 15s creative is a duration multiple). The `multiples` half
+  is what separates a composition from a row nothing matches at any length —
+  that one is broken, not bespoke, and sending it on only moves the problem.
 - **Batch Multiple Art comes from the LOCALISER'S ROWS, never a folder.** At the
   point those rows exist the AE folders do not — that is why they are still
   sitting there. CSV Localiser's **"Bespoke It"** sends every complete row via
