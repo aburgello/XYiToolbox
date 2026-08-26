@@ -4199,9 +4199,13 @@ interface BespokePlan {
   duplicatePanels?: boolean;
   /**
    * Regions mode. True scales a per-region DUPLICATE of the master to the
-   * region's own size and lets the comp's bounds do the cropping; false (the
-   * default) covers the region with the shared master and trims it with an
-   * alpha matte. See the note at the crop in bespokeBuildRegions.
+   * region's own size and lets the comp's bounds do the cropping; false covers
+   * the region with the shared master and trims it with an alpha matte.
+   *
+   * THE PANEL SENDS TRUE BY DEFAULT -- its control is the negative one, "No
+   * Multicomp Scale", so false arrives only when somebody asked for the matte.
+   * Absent still means false, because a plan written before this existed
+   * described a matte build and has to keep describing one.
    */
   scalePanels?: boolean;
 }

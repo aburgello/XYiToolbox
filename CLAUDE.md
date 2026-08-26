@@ -283,15 +283,18 @@ confirm raised by a palette action still wins.
   a full-height line lying over every region it divides, so while it can be
   grabbed it will be — that is hit order, not a slip. Dimmed rather than hidden:
   they are what the board was laid out against.
-- **`scalePanels` is opt-in, and needs a duplicate per region.** Regions mode
+- **`scalePanels` is the DEFAULT, and needs a duplicate per region.** Regions mode
   imports each master ONCE into `compFor[path]` and adds it as a layer for every
   region using it (`duplicatePanels` is multi-mode only), so scaling that shared
   comp for one panel would resize every other panel drawn from it. With the
   option on, each region gets its own duplicate scaled by `scaleCompToFit` and
   the comp's bounds do the cropping — half the layers, every panel a component.
-  Off by default because the matte is what keeps the crop separable from the
-  content (move the solid, the window moves; move the master, the artwork
-  reframes) — the very thing it replaced masks to gain. **Size the panel comp
+  The panel's control is the negative one — **"No Multicomp Scale"** — so
+  `scalePanels: !noCompScale` is inverted once, at the boundary. Ticking it goes
+  back to the matte, which is the one arrangement where the crop stays separable
+  from the content (move the solid, the window moves; move the master, the
+  artwork reframes). An ABSENT `scalePanels` still means false: a plan written
+  before this existed described a matte build. **Size the panel comp
   UNROTATED**: a turned region's `w`/`h` is its footprint AFTER the turn, so the
   comp is built to the swap of that and rotated into place.
 - **A rotation is one of 0/90/180/270 — normalise it, never trust the source.**

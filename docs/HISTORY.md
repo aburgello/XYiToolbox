@@ -9160,3 +9160,45 @@ nothing.
 **Not done:** not typed into in the panel, only tested as arithmetic. And there
 is no way yet to refer to the canvas from inside an expression — `c/3` rather
 than `5000/3` — which is the obvious next ask if these get used.
+
+---
+
+## 2026-08-26 — Match master ratio out, and comp-scaling becomes the default
+
+Two changes asked for together, and the second is bigger than it reads.
+
+### The button that had already been designed out
+
+"Match master ratio" reshaped the selected region to its master's own aspect so
+nothing was cropped. It existed because regions used to arrive as a half-canvas
+rectangle at whatever shape that happened to be — its own comment said as much:
+*"which meant reaching for Match master ratio every single time"*. Once
+`addRegion` started sizing a new region at the master's ratio on arrival, the
+button was answering a question that no longer got asked, and the studio
+confirmed it never gets pressed.
+
+Gone, along with the four comments that pointed at it as the way out of a
+mis-shaped region — a drag or a typed size is the answer now, and the number
+fields take sums since this morning.
+
+### The default flipped
+
+"Scale panels to fit" is now **"No Multicomp Scale"**, which is not a rename:
+the control changed sign, so comp-scaling each panel is what happens unless
+somebody opts out. That is the right way round on the evidence — it is half the
+layers, and every panel comes out a component in its own right — but it means
+the matte, which was the only behaviour a week ago, is now the exception.
+
+The panel holds the negative because that is what the control says, and it is
+inverted exactly once, where the plan is assembled: `scalePanels: !noCompScale`.
+Everything below that line still reads the positive.
+
+**An absent `scalePanels` still means false**, and that is deliberate rather
+than leftover: a plan saved before any of this described a matte build, and it
+has to keep describing one. Only the panel's default moved.
+
+**Not done:** the flipped default has not been built in AE. It is the same code
+path that shipped this morning as an opt-in, but it is now what every regions
+build does, so the first real board through it is worth watching — particularly
+`replaceSource` on a layer whose position and rotation are already set, which
+has still never been seen land.

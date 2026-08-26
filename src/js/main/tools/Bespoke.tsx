@@ -639,7 +639,7 @@ const NumField: React.FC<{
  *
  * A PLACEHOLDER IS A MASTER WITH NO PATH, deliberately, rather than a second
  * kind of region. Twenty places in this file read `r.master` — the hue, the
- * preview, the turned footprint, the overrun check, Match master ratio — and a
+ * preview, the turned footprint, the overrun check, the cover scale — and a
  * region that had no master would have to be guarded at every one of them,
  * which is twenty chances to miss one. Given a master whose width and height
  * ARE the region's, every one of those reads is already correct, and the single
@@ -824,11 +824,18 @@ export const BespokeTool = () => {
     /** How many even cells the Divide control lays out. Text, so it can be emptied. */
     const [divideN, setDivideN] = useState("");
     /**
-     * Regions mode: crop each panel by its own comp's bounds instead of a matte.
-     * OFF by default — the matte is what keeps the crop and the content separate,
-     * so the artwork can still be dragged under a fixed window.
+     * Regions mode, stated as the exception it now is.
+     *
+     * Comp-scaling each panel is the default: the region gets its own duplicate
+     * scaled to its size and the comp's bounds do the cropping, which is half
+     * the layers and leaves every panel a component in its own right. Ticking
+     * this opts back OUT, to the shared master under an alpha matte — the one
+     * arrangement where the artwork can still be dragged under a fixed window.
+     *
+     * Held as the negative because that is what the control says. Inverted once,
+     * at the boundary, where the plan is assembled.
      */
-    const [scalePanels, setScalePanels] = useState(false);
+    const [noCompScale, setNoCompScale] = useState(false);
     /**
      * Guides stop taking the mouse.
      *
@@ -1827,7 +1834,8 @@ export const BespokeTool = () => {
 
     // AT THE MASTER'S OWN RATIO, so it starts uncropped. Regions used to arrive
     // as a half-canvas rectangle at whatever shape that happened to be, which
-    // meant reaching for "Match master ratio" every single time.
+    // meant reshaping every single one by hand. Doing it on arrival is what
+    // retired the "Match master ratio" button that used to sit in the toolbar.
     const addRegion = (m: BespokeMaster) => {
         const cw = Number(canvasW) || 1920;
         const ch = Number(canvasH) || 1080;
@@ -2435,9 +2443,9 @@ export const BespokeTool = () => {
      * The master's dimensions AS THE CANVAS SEES THEM.
      *
      * A quarter turn swaps them, and everything downstream -- the aspect a new
-     * region takes, Match master ratio, the cover scale and the crop
-     * percentage -- has to reason about the turned footprint, not the file's
-     * own. Getting this wrong does not error; it silently crops the wrong axis.
+     * region takes, the cover scale and the crop percentage -- has to reason
+     * about the turned footprint, not the file's own. Getting this wrong does
+     * not error; it silently crops the wrong axis.
      */
     const facing = (r: { master: BespokeMaster; rotation: number }) => {
         const turned = r.rotation === 90 || r.rotation === 270;
@@ -2545,8 +2553,7 @@ export const BespokeTool = () => {
     /**
      * The only way a region ever changes, so it is the only place the board
      * edge has to be enforced: dragging, the corner handles, the x/y/w/h
-     * fields, Fit to guides, Match master ratio, align and rotate all come
-     * through here. Clamping at the choke point means no path can put a
+     * fields, Fit to guides, align and rotate all come through here. Clamping at the choke point means no path can put a
      * region somewhere the build cannot honour.
      *
      * A region outside the board is not a layout, it is a mistake -- the
@@ -2872,19 +2879,6 @@ export const BespokeTool = () => {
         }, true);
     };
 
-    /** Reshapes the region to its master's native ratio, so nothing is cropped. */
-    const matchMasterRatio = () => {
-        const r = regions[selRegion];
-        if (!r || !r.master.width || !r.master.height) return;
-        const face = facing(r);
-        const aspect = face.w / face.h;
-        // Keeps the region's area roughly as it was rather than jumping to the
-        // master's pixel size, which on a 13536px master would fill the screen.
-        const area = r.w * r.h;
-        const w = Math.round(Math.sqrt(area * aspect));
-        patchRegion(selRegion, { w, h: Math.round(w / aspect) });
-    };
-
     /** Assembles the region layout and, when a country is set, files it. */
     const runBuildRegions = async () => {
         setBuilding(true);
@@ -2903,7 +2897,8 @@ export const BespokeTool = () => {
                     rotation: quarterTurn(r.rotation),
                     label: isPlaceholder(r) ? r.master.name : undefined,
                 })),
-                scalePanels,
+                // The panel holds the exception; the build takes the positive.
+                scalePanels: !noCompScale,
                 // The reference and the rulers travel with the plan so the
                 // built comp opens looking like the panel it was traced in.
                 // Arrays of scalars survive the bridge; the whole plan is
@@ -3368,9 +3363,9 @@ export const BespokeTool = () => {
     // this silently, but it enforced it by destroying the box a rotation had
     // just swapped — so rotation keeps its size now and the condition becomes a
     // note instead. Anything past the board renders as nothing, which is worth
-    // one line and not worth refusing a layout over: Match master ratio or a
-    // drag fixes it, and on a short board a turned panel legitimately passes
-    // through this state on its way somewhere.
+    // one line and not worth refusing a layout over: a drag or a typed size
+    // fixes it, and on a short board a turned panel legitimately passes through
+    // this state on its way somewhere.
     if (mode === "regions" && canvasWidth > 0 && canvasHeight > 0) {
         const past = regions
             .map((r, i) => ({ i, over: r.x + r.w > canvasWidth || r.y + r.h > canvasHeight }))
@@ -4539,11 +4534,6 @@ export const BespokeTool = () => {
                                     Rotate 90° {regions[selRegion].rotation ? `(${regions[selRegion].rotation}°)` : ""}
                                 </button>
                             </Tooltip>
-                            <Tooltip text="Reshape this region to its master's own ratio, so nothing is cropped">
-                                <button className="bsp-btn bsp-btn--ghost" onClick={matchMasterRatio}>
-                                    Match master ratio
-                                </button>
-                            </Tooltip>
                             {/* Pushed to the far end, away from the shaping
                                 controls: one of these deletes the region and it
                                 should not sit under a cursor aiming for Rotate. */}
@@ -4552,14 +4542,14 @@ export const BespokeTool = () => {
                                 second row for one checkbox would cost more than
                                 it explains. Off by default: the matte is what
                                 keeps the crop and the artwork separable. */}
-                            <Tooltip text={scalePanels
-                                ? "Each panel is its own comp at the region's size, cropped by its own bounds. Half the layers, and every panel is a component in its own right — but reframing means re-scaling instead of dragging the artwork under its window."
-                                : "The shared master covers each region and an invisible matte trims it. Drag the master to reframe the artwork inside a window that stays put."}>
+                            <Tooltip text={noCompScale
+                                ? "Off: the shared master covers each region and an invisible matte trims it. Drag the master to reframe the artwork inside a window that stays put."
+                                : "On by default: each panel is its own comp at the region's size, cropped by its own bounds. Half the layers, and every panel is a component in its own right. Tick this to go back to the matte."}>
                                 <span className="bsp-toggle">
                                     <CheckboxToggle
-                                        checked={scalePanels}
-                                        onChange={setScalePanels}
-                                        label="Scale panels to fit"
+                                        checked={noCompScale}
+                                        onChange={setNoCompScale}
+                                        label="No Multicomp Scale"
                                     />
                                 </span>
                             </Tooltip>
