@@ -261,6 +261,18 @@ confirm raised by a palette action still wins.
   a photograph has no board size, no guides and no running order, and threading
   a third value through forty `mode === "multi"` branches would put a third
   meaning on every one of them.
+- **A Bespoke placeholder is a master with NO PATH**, not a second kind of
+  region. Twenty places read `r.master` — hue, preview, turned footprint,
+  overrun, Match master ratio — and a master-less region would need guarding at
+  every one. `placeholderMaster()` hands back a stand-in whose width/height ARE
+  the region's, `patchRegion` keeps it in step (the one choke point every edit
+  passes through), and the only code that knows the difference is the build: an
+  empty path means make an empty comp at the region's size instead of importing.
+  Exclude them from the import list.
+- **Guides can be locked, and locked means `pointer-events: none`.** A guide is
+  a full-height line lying over every region it divides, so while it can be
+  grabbed it will be — that is hit order, not a slip. Dimmed rather than hidden:
+  they are what the board was laid out against.
 - **`scalePanels` is opt-in, and needs a duplicate per region.** Regions mode
   imports each master ONCE into `compFor[path]` and adds it as a layer for every
   region using it (`duplicatePanels` is multi-mode only), so scaling that shared

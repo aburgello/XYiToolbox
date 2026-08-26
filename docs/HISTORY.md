@@ -9037,3 +9037,65 @@ a layer that already has its position and rotation set is the step to watch —
 the arithmetic says the rectangle is right, but that call has not been seen
 land. The per-region duplicates go in a "<name> panels" folder, created only
 when the option is on.
+
+---
+
+## 2026-08-26 — Locked guides, and holes kept for what is not built yet
+
+Two asks off a working archway board: "can we have a way to lock the guides?
+Sometimes I try to reposition a region and end up moving the guide instead" and
+"we often have those bumpers/surround elements that we build up afterwards, can
+we have a way to make placeholder precomps for now for those? They'd be regions
+of their own".
+
+### The guide always wins, because it is on top
+
+A guide is a full-height line lying across every region it divides. While it can
+be grabbed it will be — reaching for a region near one and getting the guide is
+the hit order, not a misclick. Shrinking the grab band would have traded one
+problem for another, since the band is what makes a guide draggable at all, and
+on a board with fifteen of them the bands are most of the board.
+
+Locking is the honest fix, and it costs nothing to reverse: `pointer-events:
+none` and the mouse goes straight past to the region underneath. Locked guides
+are dimmed rather than hidden — they are what the board was laid out against,
+and hiding them would make locking feel like deleting. The double-click-to-
+remove goes with the drag.
+
+### A placeholder is a master with no path
+
+The tempting model is a second kind of region, one with no master. That would
+have been wrong: **twenty places in Bespoke.tsx read `r.master`** — the hue, the
+preview, the turned footprint, the overrun check, Match master ratio, the
+signature — and a master-less region needs guarding at every one, which is
+twenty chances to miss one and one silent crash for whoever finds it.
+
+So a placeholder carries a stand-in master whose width and height ARE the
+region's. Every one of those reads is then already correct, and the single piece
+of code that has to know the difference is the build: an empty path means make
+an empty comp rather than import something.
+
+Keeping the stand-in in step is done inside `patchRegion` rather than at the
+call sites, because that is the choke point every edit already passes through —
+dragging, the corner handles, the x/y/w/h fields, Fit to guides, align and
+rotate:
+
+```
+created         box 1120x320   master 1120x320
+resized to 420  box  420x320   master  420x320   <- stand-in followed
+turned 90       box  320x420   master  420x320   <- master stays unrotated
+
+build -> empty comp 420x320, placed turned 90, occupies 320x420 on the board
+```
+
+The comp is sized unrotated for the same reason the scaled panels are, and it
+gets the region's own size so the shape is right the moment somebody opens it —
+the artist animates into the deliverable instead of guessing at its dimensions
+later. Placeholders are excluded from the import pass, and share the
+"<board> panels" folder with the scaled panels.
+
+**Not done:** neither has been driven in the panel, and no board with a
+placeholder has been built in AE. The placeholder's name is generated
+(`PLACEHOLDER 1`, `2`…) and cannot be edited yet — if these end up needing real
+names like BUMPER_L or SURROUND_TOP, that is a field on the region and a small
+follow-up.

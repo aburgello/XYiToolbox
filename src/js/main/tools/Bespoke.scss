@@ -412,6 +412,36 @@
 // elements either way -- only the axis they are laid on changes, so nothing
 // about a tile has to know which mode it is in.
 // Divide: a number and its button, reading as one control in the bar.
+// A LOCKED GUIDE STILL SHOWS, it just stops taking the mouse. Dimmed rather
+// than hidden: the lines are what the board was laid out against, and hiding
+// them would make locking feel like deleting.
+.bsp-guide.is-locked {
+    opacity: 0.4;
+    cursor: default;
+    pointer-events: none;
+}
+
+// A PLACEHOLDER READS AS AN ABSENCE. Hatched rather than filled, because the
+// one thing it must not look like is a panel that already has artwork in it —
+// the whole point is that somebody still has to build this.
+.bsp-region.is-holder {
+    background-image: repeating-linear-gradient(
+        45deg,
+        rgba(255, 255, 255, 0.10) 0,
+        rgba(255, 255, 255, 0.10) 6px,
+        rgba(255, 255, 255, 0.02) 6px,
+        rgba(255, 255, 255, 0.02) 12px
+    );
+    border-style: dashed;
+}
+
+// Sits with the shelf's own controls rather than in the board toolbar: adding
+// one is picking what goes in a region, which is what this row is for.
+.bsp-holder-add {
+    flex: none;
+    white-space: nowrap;
+}
+
 .bsp-divide {
     display: flex;
     align-items: center;

@@ -525,6 +525,36 @@ function quarterTurn(v: unknown): number {
     return (((Math.round(n / 90) * 90) % 360) + 360) % 360;
 }
 
+/**
+ * The stand-in master a placeholder region carries.
+ *
+ * A PLACEHOLDER IS A MASTER WITH NO PATH, deliberately, rather than a second
+ * kind of region. Twenty places in this file read `r.master` — the hue, the
+ * preview, the turned footprint, the overrun check, Match master ratio — and a
+ * region that had no master would have to be guarded at every one of them,
+ * which is twenty chances to miss one. Given a master whose width and height
+ * ARE the region's, every one of those reads is already correct, and the single
+ * thing that has to know the difference is the build: an empty path means make
+ * an empty comp instead of importing something.
+ */
+const placeholderMaster = (label: string, w: number, h: number, secs: number): BespokeMaster => ({
+    path: "",
+    name: label,
+    creative: label,
+    artwork: "",
+    site: "",
+    size: `${w}x${h}`,
+    width: Math.max(1, Math.round(w)),
+    height: Math.max(1, Math.round(h)),
+    duration: String(secs || 10),
+    territory: "",
+    film: "",
+    region: "",
+    orientation: w >= h ? "LANDSCAPE" : "PORTRAIT",
+});
+
+const isPlaceholder = (r: { master: BespokeMaster }): boolean => r.master.path === "";
+
 function boardSignature(rs: { master: BespokeMaster; x: number; y: number; w: number; h: number; rotation: number }[]): string {
     const out: string[] = [];
     for (const r of rs) out.push(`${r.master.path}|${r.x},${r.y},${r.w},${r.h},${r.rotation || 0}`);
@@ -690,6 +720,16 @@ export const BespokeTool = () => {
      * so the artwork can still be dragged under a fixed window.
      */
     const [scalePanels, setScalePanels] = useState(false);
+    /**
+     * Guides stop taking the mouse.
+     *
+     * A guide is a full-height line lying across the board, so it sits on top of
+     * every region it divides — reaching for a region near one and getting the
+     * guide instead is not a misclick, it is the hit order. Locking is the fix
+     * rather than shrinking the grab band: the band is what makes a guide
+     * draggable at all, and guides stop moving once a board is laid out anyway.
+     */
+    const [guidesLocked, setGuidesLocked] = useState(false);
     // A bespoke is assembled from MASTERS, which are the OV files, so a board
     // built for Italy arrives full of English artwork. When the country's own
     // build of a master already exists -- and by this point in a job it nearly
@@ -1692,6 +1732,38 @@ export const BespokeTool = () => {
     };
 
     /**
+     * A HOLE KEPT FOR SOMETHING NOT BUILT YET.
+     *
+     * These boards carry bumpers and surround elements that get made after the
+     * board is laid out, and until then those panels are gaps nobody can see.
+     * A placeholder region reserves one: it takes part in the layout, the
+     * guides and the running order like any other, and the build gives it a
+     * real empty comp at its own size so the shape is right the moment somebody
+     * opens it.
+     *
+     * Sized like a region whose master it does not have: a sixth of the board's
+     * long axis, full depth on the short one — which on a strip is a panel and
+     * on a normal frame is a sensible box to drag from.
+     */
+    const addPlaceholder = () => {
+        const cw = Number(canvasW) || 1920;
+        const ch = Number(canvasH) || 1080;
+        const secs = Number(runtime) || 10;
+        const w = cw >= ch ? Math.max(MIN_REGION, Math.round(cw / 6)) : cw;
+        const h = cw >= ch ? ch : Math.max(MIN_REGION, Math.round(ch / 6));
+        const label = `PLACEHOLDER ${regions.filter(isPlaceholder).length + 1}`;
+        setRegions((prev) => [...prev, {
+            id: nextSegId++,
+            master: placeholderMaster(label, w, h, secs),
+            rotation: 0,
+            x: Math.round((cw - w) / 2),
+            y: Math.round((ch - h) / 2),
+            w, h,
+        }]);
+        setSelRegion(regions.length);
+    };
+
+    /**
      * FOUR CLICKS, ONE REGION.
      *
      * Detection answers a spec sheet full of separate panels. It cannot answer
@@ -2400,12 +2472,23 @@ export const BespokeTool = () => {
             const w = keepSize ? merged.w : Math.max(MIN_REGION, Math.min(merged.w, cw));
             const h = keepSize ? merged.h : Math.max(MIN_REGION, Math.min(merged.h, ch));
             // Then position, against the size that survived.
-            return {
+            const out = {
                 ...merged,
                 w, h,
                 x: Math.max(0, Math.min(merged.x, cw - w)),
                 y: Math.max(0, Math.min(merged.y, ch - h)),
             };
+            // A PLACEHOLDER'S BOX IS ITS MASTER. Done here rather than at the
+            // call sites because this is the choke point every edit already
+            // passes through — dragging, the handles, the fields, Fit to
+            // guides, align and rotate — so the stand-in cannot fall out of
+            // step with the region it stands for.
+            if (out.master.path !== "") return out;
+            const turnedNow = out.rotation === 90 || out.rotation === 270;
+            const mw = Math.round(turnedNow ? out.h : out.w);
+            const mh = Math.round(turnedNow ? out.w : out.h);
+            if (out.master.width === mw && out.master.height === mh) return out;
+            return { ...out, master: { ...out.master, width: mw, height: mh, size: `${mw}x${mh}` } };
         }));
 
     // Mouse events, not pointer: the macOS AE CEP host does not dispatch
@@ -2706,7 +2789,11 @@ export const BespokeTool = () => {
                 name: outName.trim(),
                 marketsRoot, territory, batch: batch.trim(),
                 useLocalised,
-                regions: regions.map((r) => ({ path: r.master.path, x: r.x, y: r.y, w: r.w, h: r.h, rotation: quarterTurn(r.rotation) })),
+                regions: regions.map((r) => ({
+                    path: r.master.path, x: r.x, y: r.y, w: r.w, h: r.h,
+                    rotation: quarterTurn(r.rotation),
+                    label: isPlaceholder(r) ? r.master.name : undefined,
+                })),
                 scalePanels,
                 // The reference and the rulers travel with the plan so the
                 // built comp opens looking like the panel it was traced in.
@@ -3076,7 +3163,7 @@ export const BespokeTool = () => {
 
     /** Every master on the board, in order, whichever mode built it. */
     const boardMasters = useMemo(() => {
-        if (mode === "regions") return regions.map((r) => r.master);
+        if (mode === "regions") return regions.filter((r) => !isPlaceholder(r)).map((r) => r.master);
         const out: BespokeMaster[] = [];
         for (const sg of segments) for (const t of sg.tiles) out.push(t);
         return out;
@@ -3624,6 +3711,16 @@ export const BespokeTool = () => {
                                     </button>
                                 </span>
                             </Tooltip>
+                            <Tooltip text={guidesLocked
+                                ? "Guides are locked — the mouse goes straight past them to the regions underneath"
+                                : "Lock the guides so they cannot be dragged or double-clicked away"}>
+                                <button
+                                    className={"bsp-btn bsp-btn--ghost bsp-btn--key" + (guidesLocked ? " is-on" : "")}
+                                    onClick={() => setGuidesLocked((v) => !v)}
+                                >
+                                    {guidesLocked ? "Locked" : "Lock"}
+                                </button>
+                            </Tooltip>
                             <span className="bsp-bar-sep" />
                             {/* ZOOM. The board grows inside a capped viewport
                                 rather than pushing the panel, so a 1:5 pillar
@@ -3953,7 +4050,9 @@ export const BespokeTool = () => {
                             return (
                                 <div
                                     key={r.id}
-                                    className={"bsp-region" + (i === selRegion ? " is-on" : "")
+                                    className={"bsp-region"
+                                        + (isPlaceholder(r) ? " is-holder" : "")
+                                        + (i === selRegion ? " is-on" : "")
                                         + ((masterDrag && masterDrag.onRegion === i) || (dropChoice && dropChoice.i === i) ? " is-drop" : "")}
                                     style={{
                                         left: `${(r.x / cw) * 100}%`, top: `${(r.y / ch) * 100}%`,
@@ -3974,7 +4073,7 @@ export const BespokeTool = () => {
                                         and click-through, so dragging the region
                                         still hits the region. */}
                                     <RegionShot
-                                        src={previewOf(r.master)}
+                                        src={isPlaceholder(r) ? "" : previewOf(r.master)}
                                         rotation={r.rotation || 0}
                                         w={r.w}
                                         h={r.h}
@@ -4042,33 +4141,43 @@ export const BespokeTool = () => {
                         {guidesY.map((g, i) => (
                             <span
                                 key={"gy" + i}
-                                className={"bsp-guide bsp-guide--h" + (selGuide?.axis === "y" && selGuide.i === i ? " is-on" : "")}
+                                className={"bsp-guide bsp-guide--h"
+                                    + (selGuide?.axis === "y" && selGuide.i === i ? " is-on" : "")
+                                    + (guidesLocked ? " is-locked" : "")}
                                 style={{ top: `${(g / (Number(canvasH) || 1080)) * 100}%` }}
                                 onMouseDown={(e) => {
+                                    // LOCKED MEANS THE MOUSE GOES PAST IT. A guide lies
+                                    // across every region it divides, so while it can be
+                                    // grabbed it will be — reaching for a region near one
+                                    // and getting the guide is the hit order, not a slip.
+                                    if (guidesLocked) return;
                                     const box = stageRef.current?.getBoundingClientRect();
                                     if (!box) return;
                                     setSelGuide({ axis: "y", i });
                                     dragRef.current = { handle: `guideY:${i}`, sx: e.clientX, sy: e.clientY, box, start: { id: 0, master: regions[0]?.master as BespokeMaster, rotation: 0, x: 0, y: g, w: 0, h: 0 } };
                                     e.preventDefault();
                                 }}
-                                onDoubleClick={() => setGuidesY((gs) => gs.filter((_, n) => n !== i))}
-                                title={`y ${g}. Drag to move, double-click to remove`}
+                                onDoubleClick={() => { if (!guidesLocked) setGuidesY((gs) => gs.filter((_, n) => n !== i)); }}
+                                title={guidesLocked ? `y ${g}. Guides are locked` : `y ${g}. Drag to move, double-click to remove`}
                             />
                         ))}
                         {guidesX.map((g, i) => (
                             <span
                                 key={"gx" + i}
-                                className={"bsp-guide bsp-guide--v" + (selGuide?.axis === "x" && selGuide.i === i ? " is-on" : "")}
+                                className={"bsp-guide bsp-guide--v"
+                                    + (selGuide?.axis === "x" && selGuide.i === i ? " is-on" : "")
+                                    + (guidesLocked ? " is-locked" : "")}
                                 style={{ left: `${(g / (Number(canvasW) || 1920)) * 100}%` }}
                                 onMouseDown={(e) => {
+                                    if (guidesLocked) return;
                                     const box = stageRef.current?.getBoundingClientRect();
                                     if (!box) return;
                                     setSelGuide({ axis: "x", i });
                                     dragRef.current = { handle: `guideX:${i}`, sx: e.clientX, sy: e.clientY, box, start: { id: 0, master: regions[0]?.master as BespokeMaster, rotation: 0, x: g, y: 0, w: 0, h: 0 } };
                                     e.preventDefault();
                                 }}
-                                onDoubleClick={() => setGuidesX((gs) => gs.filter((_, n) => n !== i))}
-                                title={`x ${g}. Drag to move, double-click to remove`}
+                                onDoubleClick={() => { if (!guidesLocked) setGuidesX((gs) => gs.filter((_, n) => n !== i)); }}
+                                title={guidesLocked ? `x ${g}. Guides are locked` : `x ${g}. Drag to move, double-click to remove`}
                             />
                         ))}
                         {/* THE EMPTY BOARD IS THE BIGGEST THING IN THE TOOL, and
@@ -4552,6 +4661,13 @@ export const BespokeTool = () => {
                         : `${searching ? `"${query.trim()}"` : creative || "no creative"} · ${matches.length === MAX_MATCHES ? `${MAX_MATCHES}+` : matches.length} master${matches.length === 1 ? "" : "s"}`}
                 </span>
             </button>
+            {mode === "regions" && (
+                <Tooltip text="A region with nothing in it yet — the build gives it a real empty comp at its own size, ready for the bumper or surround to be made in">
+                    <button className="bsp-btn bsp-btn--ghost bsp-holder-add" onClick={addPlaceholder}>
+                        ＋ Placeholder
+                    </button>
+                </Tooltip>
+            )}
             <div className={"bsp-search" + (searching ? " is-on" : "")}>
                 <Search size={11} className="bsp-search-icon" />
                 <input

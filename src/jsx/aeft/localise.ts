@@ -4269,6 +4269,9 @@ function bespokeDropVersionWrappers(folderName: string): number {
 // is the opposite of the tiled mode's fit-inside. Anchored centre.
 // =============================================================================
 interface BespokeRegion {
+  /** EMPTY MEANS A PLACEHOLDER -- a hole kept for a bumper or surround element
+   *  that gets built after the board does. Nothing is imported for it and an
+   *  empty comp the region's size is made instead. */
   path: string;
   x: number;
   y: number;
@@ -4276,6 +4279,23 @@ interface BespokeRegion {
   h: number;
   /** Quarter turns only: 0, 90, 180, 270. */
   rotation?: number;
+  /** A placeholder's name, so the empty comp is findable in the project. */
+  label?: string;
+}
+
+/**
+ * A rotation folded positive and snapped to a quarter turn.
+ *
+ * AE hands back -90 for a counter-clockwise turn and `-90 % 360` is -90, which
+ * fails every `=== 90 || === 270` test while still rendering at 270 -- see the
+ * note in bespokeBuildRegions.
+ */
+function quarterTurnJsx(v: unknown): number {
+  const n = Number(v);
+  if (!n) return 0;
+  let t = Math.round(n / 90) * 90;
+  t = ((t % 360) + 360) % 360;
+  return t;
 }
 
 /** Picks the reference JPG a region layout is traced over. */
@@ -4612,6 +4632,10 @@ export const bespokeBuildRegions = (
       const swapFor: { [path: string]: string } = {};
       for (let r = 0; r < plan.regions.length; r++) {
         const asked = String(plan.regions[r].path);
+        // A PLACEHOLDER HAS NOTHING TO IMPORT. It is a hole the artist is
+        // keeping for a bumper or a surround they will build later, so it
+        // carries an empty path and is skipped here and made below.
+        if (asked === "") continue;
         let path = asked;
         if (plan.useLocalised) {
           if (typeof swapFor[asked] === "undefined") {
@@ -4663,10 +4687,47 @@ export const bespokeBuildRegions = (
       // Only created when something is going into it, so a matte-cropped build
       // gains no empty folder.
       let panelFolder: FolderItem | null = null;
-      if (plan.scalePanels === true) panelFolder = app.project.items.addFolder(outName + " panels");
+      let needsFolder = plan.scalePanels === true;
+      for (let pf = 0; pf < plan.regions.length; pf++) {
+        if (String(plan.regions[pf].path) === "") needsFolder = true;
+      }
+      if (needsFolder) panelFolder = app.project.items.addFolder(outName + " panels");
 
       for (let i = plan.regions.length - 1; i >= 0; i--) {
         const reg = plan.regions[i];
+
+        // ── A placeholder: an empty comp the right size and shape ─────────
+        //
+        // The bumpers and surround elements on these boards are built after the
+        // board is, and until then the panel they sit in is a hole nobody can
+        // see. Giving it a real comp at the region's size means the shape is
+        // already right when somebody opens it, the board renders with the gap
+        // in the correct place, and the artist animates INTO the deliverable
+        // rather than guessing at its size later.
+        //
+        // No matte and no cover: the comp IS the region, so its own bounds are
+        // the crop. Sized unrotated for the same reason the scaled panels are —
+        // a turned region's w/h is the footprint after the turn.
+        if (String(reg.path) === "") {
+          const turnP = quarterTurnJsx(reg.rotation);
+          const turnedP = turnP === 90 || turnP === 270;
+          const pw = Math.max(1, Math.round(turnedP ? reg.h : reg.w));
+          const ph = Math.max(1, Math.round(turnedP ? reg.w : reg.h));
+          const label = String(reg.label || "PLACEHOLDER");
+          const holder = app.project.items.addComp(
+            outName + "_R" + (i + 1) + "_" + label, pw, ph, 1, seconds, fps);
+          if (panelFolder) holder.parentFolder = panelFolder;
+          const hl = out.layers.add(holder);
+          hl.name = "R" + (i + 1) + " " + label;
+          (hl.property("Position") as Property).setValue([reg.x + reg.w / 2, reg.y + reg.h / 2]);
+          if (turnP !== 0) (hl.transform.rotation as Property).setValue(turnP);
+          (hl as AVLayer).label = (i % 16) + 1;
+          lines.push("  R" + (i + 1) + " " + label + " at " + reg.x + "," + reg.y
+            + " " + reg.w + "x" + reg.h + " -- empty comp " + pw + "x" + ph
+            + (turnP !== 0 ? ", turned " + turnP + " deg" : "") + ", build it later");
+          continue;
+        }
+
         const src = compFor[String(reg.path)];
         const layer = out.layers.add(src);
         layer.name = "R" + (i + 1);
@@ -4682,8 +4743,7 @@ export const bespokeBuildRegions = (
         // failed the `=== 90 || === 270` test below while still being set on the
         // layer. The picture came out rotated and every number here was computed
         // as though it were not.
-        let turn = Math.round((Number(reg.rotation) || 0) / 90) * 90;
-        turn = ((turn % 360) + 360) % 360;
+        const turn = quarterTurnJsx(reg.rotation);
         const turned = turn === 90 || turn === 270;
         const faceW = turned ? src.height : src.width;
         const faceH = turned ? src.width : src.height;
