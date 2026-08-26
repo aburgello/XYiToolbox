@@ -1100,11 +1100,23 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
             .filter((x) => !isRowExcluded(key, x.i));
         setBuildRows(rows.map((x) => {
             const size = String(x.row.Size || "").split("x");
+            // THE DROPDOWN ONLY HOLDS CREATIVES IT SCANNED. A sheet's Campaign
+            // is free text and need not be one of them -- and setting a value
+            // the list does not contain leaves the control showing "Pick
+            // creative…", so a whole batch arrived with an empty column and no
+            // row complete enough to localise. The same trap the Wrike handoff
+            // has a comment about, twenty lines up.
+            //
+            // A name that IS in the list goes in as itself, so the dropdown
+            // reads normally; anything else goes in as custom text, which is
+            // what the custom slot exists for.
+            const campaign = String(x.row.Campaign || "");
+            const known = campaign !== "" && buildCreatives.indexOf(campaign) !== -1;
             return {
                 id: buildRowId.current++,
                 artwork: x.row.Artwork || "DOOH",
-                creative: x.row.Campaign || "",
-                custom: "",
+                creative: known ? campaign : CUSTOM_CREATIVE,
+                custom: known ? "" : campaign,
                 site: x.row.Site || "",
                 width: (size[0] || "").replace(/[^0-9]/g, ""),
                 height: (size[1] || "").replace(/[^0-9]/g, ""),
