@@ -271,6 +271,23 @@ confirm raised by a palette action still wins.
   `Number()` NaN and the field re-rendered as 0 mid-type. Canvas W/H keep their
   live string behaviour and only resolve on Enter/blur, so the board still
   reshapes as you type.
+- **Batch Multiple Art: the FOLDERS are the brief.** `bespokeBatchScan` reads a
+  batch's subfolders — each name gives the canvas, the duration and the exact
+  deliverable name — and `bespokeBatchBuild` repeats one recipe over them,
+  resolving each segment's **creative** (not a file) per target through
+  `pickBestMasterFromIndex`, the same scorer CSV Localiser and OV Library use.
+  Three rules: the scan takes **only the delimited three-digit size token**, not
+  `firstSizeToken`'s loose fallback (a `Hoyts3x3_reference` folder would
+  otherwise be built as a 3×3 canvas); a target whose folder duration differs
+  from the recipe total is **refused, not warned about**, since a 30s board in a
+  10s folder is wrong in the one way nobody checks; and each deliverable is its
+  own project, so it **refuses to start on a dirty project** — `app.newProject()`
+  mid-loop would otherwise raise a save prompt nobody expects.
+- **`yarn build` does NOT run `scripts/audit-unbound-globals.cjs`.** Neither
+  tsconfig checks `src/jsx`, so an undefined identifier ships silently. Run it
+  after touching ExtendScript — it just caught a `decodeName` that does not
+  exist in `localise.ts`, and `builtId`/`builtName` in `bespokeBuildRegions`
+  which were only ever working by leaking implicit globals.
 - **A saved screen stores what a slot IS, and every identifier is a HINT.**
   It used to store `masterW/masterH/masterDuration` only, so reloading a board
   matched each slot to the nearest aspect in the shelf and filled the whole

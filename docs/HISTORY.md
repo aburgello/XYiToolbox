@@ -9294,3 +9294,73 @@ after, elsewhere     placeholders kept, masters by shape   (no path, no name)
 **Entries saved before this have none of the new fields**, so they still load by
 shape alone — the board in the report has to be saved again to come back
 correctly. Nothing about them breaks; they behave exactly as they did.
+
+---
+
+## 2026-08-26 — Multiple Art, once per deliverable in a batch
+
+Asked for over a screenshot of nine folders in one Norway batch, with the two
+clarifications that made it tractable: *"At the moment Multiple Art allow you to
+do one"*, and *"All those PortalToParadise 30s are actually 15s + 15s Trio
+creative"*.
+
+So the recipe is constant and only the canvas changes — the nine differ by size
+and site, not by content.
+
+### The folders are the brief
+
+Each subfolder already carries the canvas, the duration and the exact name the
+deliverable has to be called. Reading them means nothing is typed and a build
+cannot end up named differently from the folder it belongs in.
+
+### The recipe is by creative, not by file
+
+The studio's instruction was to *"follow the same way we do Localisation with
+best match"*, so each segment stores a CREATIVE and a duration, and every target
+resolves it through `pickBestMasterFromIndex` — campaign token, then duration,
+then orientation, then nearest aspect. A 345×496 target gets the portrait
+master, a 1200×380 one gets the landscape, instead of a single file scaled to a
+sliver on eight of the nine.
+
+### Three things the probe changed
+
+**A loose size token would have been built.** `firstSizeToken` keeps a
+deliberate loose fallback so nothing that used to parse stops — and against the
+folder list that turned `Hoyts3x3_reference` into a `3x3` canvas. Here a match
+becomes a comp size, so the scan takes only the delimited three-digit form and
+reports anything else as skipped.
+
+**A real batch mixes durations.** Seven of those folders are 30s and two are
+10s. One recipe cannot be right for both, and a 30s board built into a 10s
+folder is wrong in the one way nobody checks it. A target whose folder duration
+differs from the recipe total is refused with the reason, not warned about:
+
+```
+build FID_INTL_PortalToParadise_DOOH_Lagunen_1160x800px_30s_NO
+build FID_INTL_PortalToParadise_DOOH_NFkino_345x496px_30s_NO
+SKIP  FID_INTL_PortalToParadise_DOOH_PlayAdshel_1080x1920px_10s_NO   folder asks 10s
+SKIP  FID_INTL_Trio_DOOH_PlayBillboard_1920x1080px_10s_NO            folder asks 10s
+```
+
+**Each deliverable is its own project.** Nine boards in one project would drag
+nine sets of masters with them, so the loop calls `app.newProject()` each pass —
+which is why it refuses to start on a dirty project. That is the Save Component
+rule again: `newProject` prompts about unsaved changes, and a prompt mid-loop is
+a prompt nobody is expecting.
+
+### The audit that is not in the build
+
+`scripts/audit-unbound-globals.cjs` caught a `decodeName()` that does not exist
+in `localise.ts` — `yarn build` and both tsconfigs passed it clean, because
+neither checks `src/jsx`. It would have thrown a ReferenceError on the first
+folder scanned.
+
+It also surfaced two that were already there: `builtId` and `builtName` in
+`bespokeBuildRegions`, assigned without a declaration and read at the return.
+They work only because a bare assignment in ExtendScript leaks a global, and
+throw on any path that reaches the return without having run the assignment.
+Both declared now.
+
+**Not done:** none of this has been run in After Effects. The loop calls
+`app.newProject()` between builds, which is the single most consequential thing
+written today, and it has been reasoned about rather than watched.

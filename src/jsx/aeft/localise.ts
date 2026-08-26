@@ -4627,6 +4627,15 @@ export const bespokeBuildRegions = (
     const lines: string[] = [];
     let saved = false;
     let savedTo = "";
+    // DECLARED, not assigned into thin air. These were written without a
+    // declaration further down and read at the return -- which works only
+    // because a bare assignment in ExtendScript leaks a global, and throws a
+    // ReferenceError on any path that reaches the return without having run
+    // the assignment. Same class as the compFor bug this function already
+    // carries a note about; caught by scripts/audit-unbound-globals.cjs, which
+    // `yarn build` does NOT run.
+    let builtId = 0;
+    let builtName = "";
     app.beginUndoGroup("Bespoke build (regions)");
     try {
       // WHAT WAS ALREADY HERE. A build runs in whatever project is open, so
@@ -5187,6 +5196,202 @@ export function bespokeSoloCompName(outName: string, masterName: string): string
   if (want === String(outName)) return "";
   return want;
 }
+
+// =============================================================================
+// Multiple Art, once per deliverable in a batch
+// -----------------------------------------------------------------------------
+// A batch of MultipleArt deliverables is the same recipe at a dozen sizes: the
+// nine folders in one real Norway batch are all "PortalToParadise 15s then Trio
+// 15s", differing only in the canvas they land on. Built one at a time that is
+// the same nine steps nine times, and the ninth is where somebody mistypes a
+// name.
+//
+// THE FOLDERS ARE THE BRIEF. Each subfolder of the batch already carries the
+// canvas, the duration and the exact name the deliverable has to be called, so
+// nothing is typed and the build cannot end up named differently from the
+// folder it belongs in. Read with firstSizeToken, which knows both naming
+// conventions and refuses a ratio token.
+//
+// THE RECIPE IS BY CREATIVE, NOT BY FILE. "PORTAL_TO_PARADISE 15s" resolves per
+// target through pickBestMasterFromIndex -- the SAME scorer CSV Localiser and
+// OV Library use, by studio instruction -- so a 345x496 target gets the
+// portrait master and a 1920x1080 one gets the landscape, rather than one file
+// scaled to a sliver on eight of the nine.
+// =============================================================================
+interface BespokeBatchTarget {
+  name: string;
+  width: number;
+  height: number;
+  seconds: number;
+}
+
+export const bespokeBatchScan = (folderPath: string): Result & {
+  targets?: BespokeBatchTarget[];
+  skipped?: string[];
+} => {
+  try {
+    const root = new Folder(String(folderPath));
+    // No mask, and never .exists on the entries -- the team-folder rules apply
+    // to any share, and a batch usually lives on one.
+    const items = root.getFiles();
+    if (!items) return { success: false, error: "Couldn't read that folder." };
+    const targets: BespokeBatchTarget[] = [];
+    const skipped: string[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const entry = items[i] as any;
+      // Duck-typed: a folder is the thing with getFiles on it.
+      if (!entry || typeof entry.getFiles !== "function") continue;
+      // Folder.name is the name portion of a URI, so anything outside ASCII
+      // arrives percent-escaped. Guarded, because a bare "%" in a real folder
+      // name ("50%_OFF") makes decodeURI THROW and would take the whole scan
+      // with it -- the raw name is a fine answer, a failed scan is not.
+      let name = String(entry.name);
+      try { name = decodeURI(name); } catch (eDec) { /* keep the raw name */ }
+      // The _-folder rule, same as every other scan in this codebase.
+      if (name.charAt(0) === "_" || name.charAt(0) === ".") continue;
+      // THE DELIMITED FORM ONLY, not firstSizeToken. That helper keeps a loose
+      // fallback on purpose, so nothing that used to parse stops -- but here a
+      // loose match is a comp size, and "Hoyts3x3_reference" sitting in a batch
+      // folder would come back as a 3x3 canvas and get BUILT. A folder with no
+      // proper size token is not a deliverable; it is reported and skipped.
+      const sized = name.match(/(?:^|_)(\d{3,}x\d{3,})(?:px)?(?=_|$)/i);
+      if (!sized) { skipped.push(name); continue; }
+      const size = sized[1];
+      const parts = size.split("x");
+      const w = Number(parts[0]);
+      const h = Number(parts[1]);
+      if (!w || !h) { skipped.push(name); continue; }
+      const dur = name.match(/_(\d+)s(?:ec)?(?:_|$)/);
+      targets.push({
+        name: name,
+        width: w,
+        height: h,
+        seconds: dur ? Number(dur[1]) : 0,
+      });
+    }
+    return { success: true, targets: targets, skipped: skipped };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+export const bespokeBatchBuild = (planJson: string): Result & { report?: string; built?: number } => {
+  try {
+    const plan = JSON.parse(planJson) as {
+      targets?: BespokeBatchTarget[];
+      segments?: { creative: string; seconds: number }[];
+      mastersRoot?: string;
+      marketsRoot?: string;
+      territory?: string;
+      batch?: string;
+      duplicatePanels?: boolean;
+    };
+    const targets = plan.targets || [];
+    const recipe = plan.segments || [];
+    if (targets.length === 0) return { success: false, error: "No deliverable folders to build." };
+    if (recipe.length === 0) return { success: false, error: "Add a segment first — the recipe is what gets repeated." };
+    if (!plan.mastersRoot) return { success: false, error: "No masters folder — there is nothing to pick from." };
+    if (!plan.marketsRoot || !plan.territory) {
+      return { success: false, error: "Set the campaign and country: a batch has to be filed as it is built." };
+    }
+
+    // EACH BUILD IS ITS OWN PROJECT, because each is its own .aep. Nine boards
+    // in one project would drag nine sets of masters along with them. So the
+    // loop starts a new project every time -- which is exactly why it refuses
+    // to start on unsaved work: app.newProject() would ask about it, mid-loop,
+    // with nobody expecting a dialog.
+    if (app.project.dirty) {
+      return {
+        success: false,
+        error: "Save or close your project first. Each deliverable is built in a project of its own, so this replaces what is open.",
+      };
+    }
+
+    const index = getMastersIndex(String(plan.mastersRoot));
+    if (!index || index.length === 0) {
+      return { success: false, error: "No masters found under " + String(plan.mastersRoot) + "." };
+    }
+
+    const lines: string[] = [];
+    let built = 0;
+    let failed = 0;
+
+    for (let t = 0; t < targets.length; t++) {
+      const target = targets[t];
+      const size = target.width + "x" + target.height;
+      lines.push("");
+      lines.push("=== " + target.name + "  " + size + " ===");
+
+      // THE FOLDER SAYS HOW LONG THE DELIVERABLE IS. A real batch mixes them --
+      // seven 30s and two 10s in the reported one -- and one recipe cannot be
+      // right for both. Building a 30s board into a 10s folder produces a
+      // deliverable that is wrong in the one way nobody checks, so it is
+      // refused rather than warned about: run the 10s ones as their own batch.
+      let recipeSecs = 0;
+      for (let rs = 0; rs < recipe.length; rs++) recipeSecs += Number(recipe[rs].seconds) || 0;
+      if (target.seconds > 0 && Math.abs(recipeSecs - target.seconds) > 0.001) {
+        lines.push("  SKIPPED: the folder asks for " + target.seconds + "s and this recipe is "
+          + recipeSecs + "s.");
+        failed++;
+        continue;
+      }
+
+      // Resolve the recipe against THIS canvas.
+      const tiles: { path: string }[][] = [];
+      let missing = "";
+      for (let sgi = 0; sgi < recipe.length; sgi++) {
+        const seg = recipe[sgi];
+        const secs = Number(seg.seconds) || 0;
+        const best = pickBestMasterFromIndex(index, String(seg.creative), size, String(secs));
+        if (!best) {
+          missing = String(seg.creative) + " at " + secs + "s";
+          break;
+        }
+        tiles.push([{ path: best.path }]);
+        lines.push("  " + seg.creative + " " + secs + "s  ->  " + best.name);
+      }
+      if (missing !== "") {
+        lines.push("  SKIPPED: no master for " + missing);
+        failed++;
+        continue;
+      }
+
+      // A CLEAN SHEET PER DELIVERABLE. Safe here and only here: the guard above
+      // established there is nothing unsaved, and every pass after the first is
+      // starting from a project bespokeBuild has just saved.
+      app.newProject();
+
+      const perTarget = {
+        canvasWidth: target.width,
+        canvasHeight: target.height,
+        name: target.name,
+        marketsRoot: plan.marketsRoot,
+        territory: plan.territory,
+        batch: plan.batch,
+        duplicatePanels: plan.duplicatePanels === true,
+        segments: recipe.map(function (seg, n) {
+          return { seconds: Number(seg.seconds) || 0, tiles: tiles[n] };
+        }),
+      };
+
+      const res = bespokeBuild(JSON.stringify(perTarget));
+      if (res && res.success) {
+        built++;
+        lines.push("  built" + (res.saved ? " and saved to " + res.savedTo : ", NOT saved"));
+      } else {
+        failed++;
+        lines.push("  FAILED: " + ((res && res.error) || "unknown"));
+      }
+    }
+
+    lines.push("");
+    lines.push(built + " of " + targets.length + " built"
+      + (failed > 0 ? ", " + failed + " skipped or failed" : ""));
+    return { success: true, built: built, report: lines.join("\n") };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
 
 export const bespokeBuild = (planJson: string): { success: boolean; error?: string; report?: string; saved?: boolean; savedTo?: string } => {
   try {

@@ -837,6 +837,15 @@ export const BespokeTool = () => {
      */
     const [noCompScale, setNoCompScale] = useState(false);
     /**
+     * The deliverable folders this recipe gets repeated over.
+     *
+     * A batch of MultipleArt is one recipe at a dozen sizes — the folders
+     * already carry the canvas, the duration and the exact name each build has
+     * to be called, so the batch is read rather than typed.
+     */
+    const [batchTargets, setBatchTargets] = useState<{ name: string; width: number; height: number; seconds: number }[]>([]);
+    const [batchSkipped, setBatchSkipped] = useState<string[]>([]);
+    /**
      * Guides stop taking the mouse.
      *
      * A guide is a full-height line lying across the board, so it sits on top of
@@ -2978,6 +2987,69 @@ export const BespokeTool = () => {
     };
 
     /** Assembles the whole composition and, when a country is set, files it. */
+    /** Point at the batch and read every deliverable folder in it. */
+    const pickBatchFolder = async () => {
+        try {
+            const picked = await evalTS("selectCsvLocaliserAepFolder");
+            if (typeof picked !== "string" || !picked) return;
+            const res = (await evalTS("bespokeBatchScan", picked)) as unknown as
+                { success: boolean; error?: string; targets?: typeof batchTargets; skipped?: string[] } | undefined;
+            if (!res || !res.success) {
+                setStatus({ text: (res && res.error) || "Couldn't read that folder.", type: "error" });
+                return;
+            }
+            setBatchTargets(res.targets || []);
+            setBatchSkipped(res.skipped || []);
+            setStatus({
+                text: `${(res.targets || []).length} deliverable${(res.targets || []).length === 1 ? "" : "s"} read`
+                    + ((res.skipped || []).length ? `, ${(res.skipped || []).length} skipped with no size in the name` : ""),
+                type: "success",
+            });
+        } catch {
+            setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects to run it.", type: "error" });
+        }
+    };
+
+    /**
+     * The same recipe, once per deliverable.
+     *
+     * Only the CREATIVE and the seconds travel — each target picks its own
+     * master through the localisation scorer, so a 345×496 gets the portrait
+     * and a 1920×1080 the landscape rather than one file scaled to a sliver.
+     */
+    const runBatchBuild = async () => {
+        setBuilding(true);
+        setReport(null);
+        setStatus(null);
+        try {
+            const plan = {
+                targets: batchTargets,
+                mastersRoot: mastersPath,
+                marketsRoot,
+                territory,
+                batch: batch.trim(),
+                duplicatePanels,
+                segments: segments.map((sg) => ({
+                    creative: sg.tiles[0] ? (sg.tiles[0].creative || sg.tiles[0].name) : "",
+                    seconds: sg.seconds,
+                })),
+            };
+            const res = (await evalTS("bespokeBatchBuild", JSON.stringify(plan))) as unknown as
+                { success: boolean; error?: string; report?: string; built?: number } | undefined;
+            if (res === undefined) throw new Error("no bridge");
+            if (!res.success) {
+                setStatus({ text: res.error || "The batch failed.", type: "error" });
+                return;
+            }
+            setReport(res.report || "(built)");
+            setStatus({ text: `${res.built || 0} of ${batchTargets.length} built.`, type: "success" });
+        } catch {
+            setStatus({ text: "No CEP bridge detected. Open this panel inside After Effects to run it.", type: "error" });
+        } finally {
+            setBuilding(false);
+        }
+    };
+
     const runBuild = async () => {
         setBuilding(true);
         setReport(null);
@@ -5170,6 +5242,24 @@ export const BespokeTool = () => {
                                 label={`Use ${territory}'s localised builds`}
                             />
                         </span>
+                    </Tooltip>
+                )}
+                {mode === "multi" && (
+                    <Tooltip text="Read a batch folder. Every deliverable folder in it becomes one build of this same recipe, at its own size">
+                        <button className="bsp-btn bsp-btn--ghost" onClick={pickBatchFolder}>
+                            {batchTargets.length ? `Batch · ${batchTargets.length}` : "Batch…"}
+                        </button>
+                    </Tooltip>
+                )}
+                {mode === "multi" && batchTargets.length > 0 && (
+                    <Tooltip text={`Build this recipe once for each of the ${batchTargets.length} deliverables. Each one is its own project and its own .aep, so your open project is replaced — save it first`}>
+                        <button
+                            className="bsp-btn"
+                            onClick={runBatchBuild}
+                            disabled={building || blockers.length > 0}
+                        >
+                            {building ? "Building…" : `Build all ${batchTargets.length}`}
+                        </button>
                     </Tooltip>
                 )}
                 <Tooltip text={mode === "regions"
