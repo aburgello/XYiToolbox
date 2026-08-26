@@ -271,6 +271,14 @@ confirm raised by a palette action still wins.
   `Number()` NaN and the field re-rendered as 0 mid-type. Canvas W/H keep their
   live string behaviour and only resolve on Enter/blur, so the board still
   reshapes as you type.
+- **`organiseFolders` files a comp by its LABEL and nothing else** —
+  `item.label === 1 ? Main : PreComp`. So red is not a colour, it is the word
+  "deliverable". A Bespoke build paints exactly two red — the edit and its
+  `_V01` wrapper — and everything it brought in purple. `frontcardWrap` leaves
+  the new comp unlabelled, so the `_V01` (the comp that actually renders) has to
+  be labelled explicitly or it lands in PreComp. Only relabel comps the build
+  itself created: snapshot the project's comp **ids** first (never `===` on AE
+  objects), or you repaint the artist's own work.
 - **A Bespoke placeholder is a master with NO PATH**, not a second kind of
   region. Twenty places read `r.master` — hue, preview, turned footprint,
   overrun, Match master ratio — and a master-less region would need guarding at

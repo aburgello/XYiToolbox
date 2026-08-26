@@ -4629,6 +4629,16 @@ export const bespokeBuildRegions = (
     let savedTo = "";
     app.beginUndoGroup("Bespoke build (regions)");
     try {
+      // WHAT WAS ALREADY HERE. A build runs in whatever project is open, so
+      // the labelling at the end has to be able to tell the comps it brought in
+      // from the artist's own. Ids, because two reads of one AE item are two
+      // different wrappers.
+      const compsBefore: { [id: number]: boolean } = {};
+      for (let cb = 1; cb <= app.project.numItems; cb++) {
+        const it0 = app.project.item(cb) as any;
+        if (typeof it0.numLayers === "number") compsBefore[(it0 as CompItem).id] = true;
+      }
+
       // One import per master, however many regions use it -- same rule as the
       // tiled mode, for the same reason: a master drags in ~70 project items.
       const compFor: { [path: string]: CompItem } = {};
@@ -4919,7 +4929,7 @@ export const bespokeBuildRegions = (
         lines.push("  ruler guides skipped -- this After Effects has no addGuide (needs 17.1+)");
       }
 
-      const finish = bespokeFinishAndFile(out, outName, canvasW, canvasH, plan, lines, compFor);
+      const finish = bespokeFinishAndFile(out, outName, canvasW, canvasH, plan, lines, compFor, compsBefore);
       saved = finish.saved;
       savedTo = finish.savedTo;
     } finally {
@@ -4960,7 +4970,12 @@ function bespokeFinishAndFile(
   // It failed closed (the throw aborted the save), but a guard that throws
   // rather than checks is one swallowed catch away from not guarding at all,
   // and CLAUDE.md section 1 requires this check to run at WRITE time.
-  compFor: { [path: string]: CompItem }
+  compFor: { [path: string]: CompItem },
+  // COMP IDS THAT WERE ALREADY IN THE PROJECT when the build started, so the
+  // labelling below can tell what this build is responsible for from what the
+  // artist already had open. Ids, never the objects: two reads of one AE item
+  // come back as different wrappers and `===` on them is meaningless.
+  compsBefore: { [id: number]: boolean }
 ): { saved: boolean; savedTo: string } {
   let saved = false;
   let savedTo = "";
@@ -4998,6 +5013,46 @@ function bespokeFinishAndFile(
     } catch (e) {
       lines.push("");
       lines.push("Frontcard step failed: " + e.toString());
+    }
+
+    // --- red is the deliverable, purple is everything that feeds it --------
+    //
+    // organiseFolders files a comp by its LABEL and nothing else:
+    // `item.parentFolder = item.label === 1 ? main : preComp`. So red is not a
+    // colour here, it is the instruction "this one is the deliverable".
+    //
+    // Two comps earn it -- the edit and its _V01 render wrapper -- and the
+    // wrapper was not getting it at all: frontcardWrap leaves the new comp
+    // unlabelled, so the one comp that actually renders was being filed into
+    // PreComp. Everything else this build brought in gets purple, which is what
+    // moves the ~70 items a master drags in, the per-region panel comps and the
+    // placeholders out of Main in one press.
+    //
+    // ONLY WHAT THIS BUILD MADE. A build runs in whatever project is open, so
+    // repainting every comp in it would relabel the artist's own work. The
+    // snapshot is the line between the two.
+    try {
+      let painted = 0;
+      for (let ci = 1; ci <= app.project.numItems; ci++) {
+        const item = app.project.item(ci) as any;
+        if (typeof item.numLayers !== "number") continue;
+        const comp = item as CompItem;
+        // .id, not ===: two reads of one AE item are two different wrappers.
+        if (comp.id === out.id || comp.id === finished.id) {
+          comp.label = 1;
+          continue;
+        }
+        if (compsBefore[comp.id]) continue;
+        comp.label = 10;
+        painted++;
+      }
+      lines.push("");
+      lines.push("labels: " + finished.name + " and " + out.name
+        + " red, " + painted + " supporting comp" + (painted === 1 ? "" : "s") + " purple"
+        + " -- Organise Folders puts the red pair in Main and the rest in PreComp");
+    } catch (eLabel) {
+      lines.push("");
+      lines.push("Couldn't set the comp labels: " + eLabel.toString());
     }
 
     // --- where it lands ---------------------------------------------------
@@ -5163,6 +5218,15 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
     app.beginUndoGroup("Bespoke build");
     try {
       // --- import each distinct master once -------------------------------
+      // WHAT WAS ALREADY HERE. A build runs in whatever project is open, so
+      // the labelling at the end has to be able to tell the comps it brought in
+      // from the artist's own. Ids, because two reads of one AE item are two
+      // different wrappers.
+      const compsBefore: { [id: number]: boolean } = {};
+      for (let cb = 1; cb <= app.project.numItems; cb++) {
+        const it0 = app.project.item(cb) as any;
+        if (typeof it0.numLayers === "number") compsBefore[(it0 as CompItem).id] = true;
+      }
       const compFor: { [path: string]: CompItem } = {};
       for (let s = 0; s < plan.segments.length; s++) {
         const tiles = plan.segments[s].tiles;
@@ -5430,7 +5494,7 @@ export const bespokeBuild = (planJson: string): { success: boolean; error?: stri
         ? "Each panel is its own duplicate in \"" + outName + " panels\" -- retime one without touching the rest."
         : "Panels share one comp per master -- edit it once and every panel follows.");
       lines.push("No frontcard added: it goes over the finished canvas at " + canvasW + "x" + canvasH + ".");
-      const finish = bespokeFinishAndFile(out, outName, canvasW, canvasH, plan, lines, compFor);
+      const finish = bespokeFinishAndFile(out, outName, canvasW, canvasH, plan, lines, compFor, compsBefore);
       saved = finish.saved;
       savedTo = finish.savedTo;
     } finally {

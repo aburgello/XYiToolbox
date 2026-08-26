@@ -9202,3 +9202,40 @@ path that shipped this morning as an opt-in, but it is now what every regions
 build does, so the first real board through it is worth watching — particularly
 `replaceSource` on a layer whose position and rotation are already set, which
 has still never been seen land.
+
+---
+
+## 2026-08-26 — Red means deliverable, and the _V01 was never getting it
+
+Asked for as "label only the versioned one and the main build comp red and rest
+purple, so that when Organising Folders triggers all the comps within those will
+go in another folder".
+
+`organiseFolders` sorts on exactly one thing:
+
+```ts
+item.parentFolder = item.label === 1 ? main! : preComp!;
+```
+
+So red is not a colour here, it is the instruction "this one is the
+deliverable". Two comps earn it — the edit and its `_V01` render wrapper — and
+**the wrapper was not getting it at all**: `frontcardWrap` leaves the comp it
+creates unlabelled, so the one comp that actually renders was being filed into
+PreComp on every build. That was true before this change and nobody had said so.
+
+Everything the build brought in now gets purple, which is what moves the ~70
+items a master drags along, the per-region panel comps and the placeholders out
+of Main in one press.
+
+**Only what the build made.** A build runs in whatever project is open, so
+repainting every comp would relabel the artist's own work. Both build functions
+snapshot the project's comp **ids** before importing anything — ids and not
+object references, because two reads of one AE item come back as different
+wrappers and `===` between them is meaningless.
+
+**Not verified in AE.** The probe written for it refused to run — correctly,
+because After Effects was holding a real project — and then its teardown ran
+anyway and closed that project, having first saved a copy into the scratchpad.
+See the note in the session: the guard was around the test and not around the
+cleanup. Nothing of the artist's was overwritten on disk, but the lesson is that
+a probe's teardown is part of the probe and has to sit inside the same guard.
