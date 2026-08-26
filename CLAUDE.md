@@ -704,6 +704,15 @@ because a bare 950 is an ordinary MB figure. `2GB` had the same hole inverted
 off the token (`cellNumbers` already does) and use THAT; keep the `\b` tests
 only for spelled-out forms (`800 kilobytes`), which carry no unit token.
 
+**Delivery's spec autofill counts DISAGREEING rows, not rows.** A sheet listing
+the same deliverable twice is normal — Norway's PRE sheet carries PlayAdshel
+1080x1920 10s and PlayBillboard 1920x1080 10s twice each, all four saying
+8 Mbps / 50 MB / no sound — and the ambiguity guard counted two and left the
+field blank while every size listed once filled in. Nothing was in doubt.
+`deliverySpecMatch` collapses hits on the four values that get USED
+(`FileSize|BitRate|Fps|Sound`), so duplicates that agree are one answer and rows
+that genuinely conflict still refuse, which is the case the guard exists for.
+
 **A DEDICATED `PNG`/`JPG` FOLDER IS NOT ALL TARGETS.** Measured in a real
 Brazil working copy, `Footage/PNG` held three FORGOTTEN_ISLAND logo variants
 and an `Asset 1@4x.png` beside the two artwork slots — and one logo ends `_1`,

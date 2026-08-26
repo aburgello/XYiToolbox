@@ -9602,3 +9602,47 @@ not this deliverable's own.
 **Not done:** verified as the folder-picking rule against a real creative list,
 not by running Artwork Check on the reported deliverable. That needs the NAS
 walk and the artist's project open.
+
+---
+
+## 2026-08-26 — Duplicate spec rows read as a question
+
+Reported as Delivery filling MB and bitrate on seven rows and leaving two blank,
+with the sheet plainly listing all of them.
+
+It was listing two of them TWICE. Norway's PRE sheet carries:
+
+```
+1080x1920  10  8 Mbps  50 MB  no  PlayAdshel
+1920x1080  10  8 Mbps  50 MB  no  PlayBillboard
+1080x1920  10  8 Mbps  50 MB  no  PlayAdshel       <- again
+1920x1080  10  8 Mbps  50 MB  no  PlayBillboard    <- again
+```
+
+`deliverySpecMatch` requires `hits.length === 1` before it fills anything —
+"exactly one, or nothing. An ambiguous match stays blank: a wrong target size
+means a file delivered over its limit". Right rule, wrong count: two identical
+rows are not two answers.
+
+Hits are now collapsed on the four values that actually get used —
+`FileSize | BitRate | Fps | Sound` — so rows differing only in a note or a site
+spelling still count as one:
+
+```
+comp                        rows  distinct  before             after
+PlayAdshel  1080x1920 10s    2       1      blank (ambiguous)  50 MB / 8 Mbps
+PlayBillbrd 1920x1080 10s    2       1      blank (ambiguous)  50 MB / 8 Mbps
+NFkino      480x275   30s    1       1      50 MB / 8 Mbps     unchanged
+```
+
+A sheet that genuinely disagrees still refuses — two rows for one size saying
+8 Mbps / 50 MB and 4 Mbps / 20 MB stay two distinct hits and the field stays
+blank, which is the case the guard was written for and the one where filling it
+in would put a file over its limit.
+
+The message changed with it: "4 rows match" described a sheet nobody was looking
+at, when two pairs of those rows were identical. It now says how many
+*disagree*.
+
+**Not done:** verified against the sheet as transcribed from the panel, not by
+re-parsing the PDF through `parsePdfDeliverySpecs`.

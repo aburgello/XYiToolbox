@@ -243,7 +243,29 @@ export async function suggestForComp(compName: string, sourcePath: string): Prom
         } catch {
             continue;
         }
-        const hits = specRowsForComp(rows, parts);
+        const matched = specRowsForComp(rows, parts);
+
+        // DUPLICATE ROWS THAT AGREE ARE NOT AMBIGUOUS.
+        //
+        // Real sheets list the same deliverable twice — a PRE sheet for Norway
+        // carries PlayAdshel 1080x1920 10s and PlayBillboard 1920x1080 10s
+        // twice each, all four saying 8 Mbps / 50 MB / no sound. The guard
+        // below counts rows, so two identical rows read as a question and the
+        // field stayed blank, while every size listed once filled in. Nothing
+        // was actually in doubt: both rows give the same answer.
+        //
+        // Collapsed on the four values that get USED, so rows differing only in
+        // a note or a site spelling still count as one. Rows that genuinely
+        // disagree stay more than one, and the ambiguity guard still refuses —
+        // which is the case it was written for.
+        const hits: SpecRow[] = [];
+        for (const row of matched) {
+            const sig = [row.FileSize || "", row.BitRate || "", row.Fps || "", row.Sound || ""].join("|");
+            const seen = hits.some(
+                (h) => [h.FileSize || "", h.BitRate || "", h.Fps || "", h.Sound || ""].join("|") === sig,
+            );
+            if (!seen) hits.push(row);
+        }
 
         // Exactly one, or nothing. An ambiguous match stays blank: a wrong
         // target size means a file delivered over its limit, and a blank field
@@ -288,7 +310,10 @@ export async function suggestForComp(compName: string, sourcePath: string): Prom
             ambiguous = {
                 ...EMPTY,
                 searched: true,
-                source: `${hits.length} rows in ${file} match ${parts.size} · ${parts.duration}s — pick one yourself`,
+                // The count of DISAGREEING rows, not of rows: saying "4 rows
+                // match" when two pairs of them are identical describes a
+                // sheet nobody is looking at.
+                source: `${hits.length} rows in ${file} disagree about ${parts.size} · ${parts.duration}s — pick one yourself`,
                 openPath: path.join(specsDir, file),
             };
         }
