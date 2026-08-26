@@ -8858,3 +8858,61 @@ exists to try a better photo of the same screen, and the board is already drawn.
 The one path that cannot be reasoned about from here is what a real seeded
 template carries in `canvasW` — if those come through as 0, they now fall to the
 image's shape, which is the intended answer but has not been seen happen.
+
+---
+
+## 2026-08-26 — Two board tools that only worked on a normal frame
+
+Raised as "we have this, with a bunch of rotated stuff too, how would you
+approach it" over a `FID_INTL_MultiArt_DINTH_IconLedArchway_6720x320px_15s_TH`
+board: sixteen-odd panels repeating across a 21:1 strip, several of them turned.
+
+Rotation turned out not to be the problem. `rotateRegion` already swaps the
+region's window w/h about its centre so a quarter turn is physical rather than
+spinning artwork inside a landscape hole, and `facing()` feeds the turned
+footprint into ratio-matching, cover scale and crop percentage. What the tool had
+no notion of was **repetition**, and two of its board tools were written against
+a 1920×1080 frame.
+
+### A copy landing under its original
+
+`duplicateRegion` offset by 3% of the SMALLER canvas side. On 6720×320 that is
+`min(6720,320) × 0.03` = **10px**, so every copy appeared essentially underneath
+the region it came from and had to be dragged 400px into place — sixteen times.
+
+It now steps a full region-width along the board's long axis with a hairline
+gutter, so pressing it repeatedly chains the panels across the strip:
+
+```
+before   copy 1 at x=10, copy 2 at x=20      10px apart
+after    0, 403, 806, 1209, 1612, 2015       a panel-width apart
+```
+
+A region with no room left to chain falls back to the old nudge rather than
+stacking two at the far edge — a copy you cannot see is worse than one slightly
+overlapping. A tall board chains down instead: a 320×6720 pillar duplicates to
+`y=403`.
+
+### Fifteen guides on one coordinate
+
+`addGuide` drops every guide at the centre of the board. That is right for one
+and hopeless for a rhythm: sixteen panels is fifteen lines all landing on 3360,
+dragged apart one at a time.
+
+`divideGuides` lays n−1 even cuts in a press. On the archway, Divide 16 gives 15
+guides at exactly 420px intervals, first cut 420, last 6300. Three properties
+that make it safe to reach for:
+
+- **it merges rather than replaces**, so a hand-placed line for the one panel
+  that breaks the pattern survives being asked for sixteen even ones;
+- **it is idempotent** — pressing it twice changes nothing;
+- **the board's own edges are already guides** (`neighbourBounds`), so the ends
+  are not drawn.
+
+It splits the long axis, because that is the one a repeating strip repeats
+along; a square board gets the vertical cuts, which is the commoner ask.
+
+**Not done:** arithmetic and typecheck only, not driven in the panel. And the
+third idea from that conversation — "repeat N times across", seating copies
+directly in the guide cells — was deliberately left until these two have been
+used, since together they may already make it unnecessary.

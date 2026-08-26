@@ -661,6 +661,8 @@ export const BespokeTool = () => {
     // creative, so editing it once should show up everywhere. Duplicating is
     // the opt-in, for when panels genuinely need to differ.
     const [duplicatePanels, setDuplicatePanels] = useState(false);
+    /** How many even cells the Divide control lays out. Text, so it can be emptied. */
+    const [divideN, setDivideN] = useState("");
     // A bespoke is assembled from MASTERS, which are the OV files, so a board
     // built for Italy arrives full of English artwork. When the country's own
     // build of a master already exists -- and by this point in a job it nearly
@@ -2279,6 +2281,35 @@ export const BespokeTool = () => {
         else setGuidesX((g) => [...g, Math.round((Number(canvasW) || 1920) / 2)]);
     };
 
+    /**
+     * N EVEN CELLS IN ONE PRESS.
+     *
+     * Every guide from the button above lands at the centre of the board, which
+     * is right for one and hopeless for a repeating strip: sixteen panels meant
+     * fifteen lines stacked on 3360, dragged apart one at a time. A board with a
+     * rhythm is the common case on the shapes this tool is for — an archway, a
+     * bank of icons, a row of pillars — and its rhythm is nearly always even.
+     *
+     * n cells is n-1 cuts; the board's own edges are already guides (see
+     * neighbourBounds), so the ends are not drawn. Merged with what is already
+     * there rather than replacing it, because a hand-placed line for the one
+     * panel that breaks the pattern must survive being asked for sixteen even
+     * ones — and duplicates are dropped so pressing it twice changes nothing.
+     */
+    const divideGuides = (axis: "x" | "y", n: number) => {
+        if (!(n > 1)) return;
+        const span = axis === "x" ? (Number(canvasW) || 1920) : (Number(canvasH) || 1080);
+        if (span <= 0) return;
+        const cuts: number[] = [];
+        for (let i = 1; i < n; i++) cuts.push(Math.round((span * i) / n));
+        const merge = (g: number[]) => {
+            const out = g.slice();
+            for (const c of cuts) if (c > 0 && c < span && out.indexOf(c) === -1) out.push(c);
+            return out.sort((a, b) => a - b);
+        };
+        if (axis === "x") setGuidesX(merge); else setGuidesY(merge);
+    };
+
     /** Moves the selected region, clamped to the board. */
     const nudgeRegion = (dx: number, dy: number) => {
         const cw = Number(canvasW) || 1920;
@@ -2440,17 +2471,37 @@ export const BespokeTool = () => {
     };
 
     /** Same master, same size, nudged clear so it can be grabbed. */
+    /**
+     * A COPY LANDS NEXT TO ITS ORIGINAL, not on top of it.
+     *
+     * This offset by 3% of the SMALLER canvas side, which is fine on a 1920x1080
+     * board and useless on the shapes this tool exists for: on a 6720x320
+     * archway that is `min(6720,320) * 0.03` = 10px, so every copy appeared
+     * essentially underneath the region it came from and had to be dragged 400px
+     * into place. On a board of sixteen repeating panels that is the whole job.
+     *
+     * So it steps a full region-width along the board's LONG axis, leaving a
+     * hairline gutter: press it repeatedly and the panels chain across the
+     * strip in the rhythm they actually have. When there is no room left to
+     * chain, it falls back to the old nudge rather than stacking two regions at
+     * the far edge — a copy you cannot see is worse than one slightly overlapping.
+     */
     const duplicateRegion = () => {
         const r = regions[selRegion];
         if (!r) return;
         const cw = Number(canvasW) || 1920;
         const ch = Number(canvasH) || 1080;
-        const step = Math.round(Math.min(cw, ch) * 0.03);
-        setRegions((prev) => [...prev, {
-            ...r, id: nextSegId++,
-            x: Math.min(r.x + step, Math.max(0, cw - r.w)),
-            y: Math.min(r.y + step, Math.max(0, ch - r.h)),
-        }]);
+        const horizontal = cw >= ch;
+        const gutter = Math.round(Math.max(2, Math.min(cw, ch) * 0.01));
+        let nx = horizontal ? r.x + r.w + gutter : r.x;
+        let ny = horizontal ? r.y : r.y + r.h + gutter;
+        const fits = horizontal ? nx + r.w <= cw : ny + r.h <= ch;
+        if (!fits) {
+            const step = Math.round(Math.max(6, Math.min(cw, ch) * 0.03));
+            nx = Math.min(r.x + step, Math.max(0, cw - r.w));
+            ny = Math.min(r.y + step, Math.max(0, ch - r.h));
+        }
+        setRegions((prev) => [...prev, { ...r, id: nextSegId++, x: nx, y: ny }]);
         setSelRegion(regions.length);
     };
 
@@ -3485,6 +3536,37 @@ export const BespokeTool = () => {
                                 <button className="bsp-btn bsp-btn--ghost bsp-btn--key" onClick={() => addGuide("x")}>
                                     ＋V
                                 </button>
+                            </Tooltip>
+                            {/* DIVIDE. One press for a board with a rhythm —
+                                sixteen panels across an archway is fifteen
+                                guides, and placing those by hand is fifteen
+                                lines dragged off the centre of the board.
+                                Splits the LONG axis, because that is the one a
+                                repeating strip repeats along; a square board
+                                gets the vertical cuts, which is the commoner
+                                ask. */}
+                            <Tooltip text={`Divide the board into evenly spaced cells, across its ${(Number(canvasW) || 0) >= (Number(canvasH) || 0) ? "width" : "height"}`}>
+                                <span className="bsp-divide">
+                                    <input
+                                        className="bsp-input bsp-input--n bsp-divide-n"
+                                        value={divideN}
+                                        placeholder="16"
+                                        inputMode="numeric"
+                                        onChange={(e) => setDivideN(e.target.value.replace(/[^0-9]/g, ""))}
+                                        onKeyDown={(e) => {
+                                            if (e.key !== "Enter") return;
+                                            e.preventDefault();
+                                            divideGuides((Number(canvasW) || 0) >= (Number(canvasH) || 0) ? "x" : "y", Number(divideN) || 0);
+                                        }}
+                                    />
+                                    <button
+                                        className="bsp-btn bsp-btn--ghost bsp-btn--key"
+                                        disabled={!(Number(divideN) > 1)}
+                                        onClick={() => divideGuides((Number(canvasW) || 0) >= (Number(canvasH) || 0) ? "x" : "y", Number(divideN) || 0)}
+                                    >
+                                        Divide
+                                    </button>
+                                </span>
                             </Tooltip>
                             <span className="bsp-bar-sep" />
                             {/* ZOOM. The board grows inside a capped viewport

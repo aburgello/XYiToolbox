@@ -261,6 +261,15 @@ confirm raised by a palette action still wins.
   a photograph has no board size, no guides and no running order, and threading
   a third value through forty `mode === "multi"` branches would put a third
   meaning on every one of them.
+- **Board tools must scale to the SHAPES this tool exists for, not to 1920×1080.**
+  Two were written for a normal frame and fell apart on a 6720×320 archway:
+  `duplicateRegion` offset by 3% of the *smaller* side, which is 10px there, so
+  every copy landed under its original — it now steps a region-width along the
+  board's long axis, falling back to a nudge only when there is no room left to
+  chain. And every guide lands at the board's centre, so a sixteen-panel rhythm
+  meant fifteen lines stacked on one coordinate; `divideGuides` lays n−1 even
+  cuts in one press, merging with hand-placed guides rather than replacing them
+  and doing nothing on a second press.
 - **A reference gives the canvas its SHAPE, never its pixels.** Bespoke's
   reference JPGs come out of the PDF at whatever the export felt like —
   8000×5867 for a 3840×2816 board is normal — so adopting their dimensions would

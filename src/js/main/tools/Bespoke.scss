@@ -411,6 +411,18 @@
 // STACKED, when the segment runs down the frame. The tiles are the same
 // elements either way -- only the axis they are laid on changes, so nothing
 // about a tile has to know which mode it is in.
+// Divide: a number and its button, reading as one control in the bar.
+.bsp-divide {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.bsp-divide-n {
+    width: 34px;
+    text-align: center;
+}
+
 .bsp-tiles.is-column {
     flex-direction: column;
 }
