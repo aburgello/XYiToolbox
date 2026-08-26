@@ -261,6 +261,17 @@ confirm raised by a palette action still wins.
   a photograph has no board size, no guides and no running order, and threading
   a third value through forty `mode === "multi"` branches would put a third
   meaning on every one of them.
+- **`scalePanels` is opt-in, and needs a duplicate per region.** Regions mode
+  imports each master ONCE into `compFor[path]` and adds it as a layer for every
+  region using it (`duplicatePanels` is multi-mode only), so scaling that shared
+  comp for one panel would resize every other panel drawn from it. With the
+  option on, each region gets its own duplicate scaled by `scaleCompToFit` and
+  the comp's bounds do the cropping — half the layers, every panel a component.
+  Off by default because the matte is what keeps the crop separable from the
+  content (move the solid, the window moves; move the master, the artwork
+  reframes) — the very thing it replaced masks to gain. **Size the panel comp
+  UNROTATED**: a turned region's `w`/`h` is its footprint AFTER the turn, so the
+  comp is built to the swap of that and rotated into place.
 - **A rotation is one of 0/90/180/270 — normalise it, never trust the source.**
   Every `turned` test in Bespoke and in `bespokeBuildRegions` is
   `=== 90 || === 270`, and AE hands back **−90** for a counter-clockwise quarter

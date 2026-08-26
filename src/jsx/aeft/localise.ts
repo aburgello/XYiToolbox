@@ -4197,6 +4197,13 @@ interface BespokePlan {
    *  default) points them all at the one imported comp, so editing it once
    *  shows up in every panel. */
   duplicatePanels?: boolean;
+  /**
+   * Regions mode. True scales a per-region DUPLICATE of the master to the
+   * region's own size and lets the comp's bounds do the cropping; false (the
+   * default) covers the region with the shared master and trims it with an
+   * alpha matte. See the note at the crop in bespokeBuildRegions.
+   */
+  scalePanels?: boolean;
 }
 
 /** The comp a tile should place: Composition/Main, minus the _V<n> wrapper. */
@@ -4653,6 +4660,11 @@ export const bespokeBuildRegions = (
 
       // Added in reverse so region 1 ends on top of the layer stack, matching
       // the order they are listed in the panel.
+      // Only created when something is going into it, so a matte-cropped build
+      // gains no empty folder.
+      let panelFolder: FolderItem | null = null;
+      if (plan.scalePanels === true) panelFolder = app.project.items.addFolder(outName + " panels");
+
       for (let i = plan.regions.length - 1; i >= 0; i--) {
         const reg = plan.regions[i];
         const src = compFor[String(reg.path)];
@@ -4685,6 +4697,45 @@ export const bespokeBuildRegions = (
         // transform.rotation, never property("Rotation") -- display-name
         // lookups collide across layer types.
         if (turn !== 0) (layer.transform.rotation as Property).setValue(turn);
+
+        // ── The crop, by the panel comp's own bounds ──────────────────────
+        //
+        // OPT-IN, because it trades away the thing the matte was introduced for.
+        // On: the region gets its OWN duplicate of the master, scaled so the
+        // comp IS the panel, and the comp's bounds crop it -- half the layers,
+        // and every panel is a real comp at its delivered size, which is what
+        // Save Component wants to take out later. Off: the shared master covers
+        // the region and a matte trims it, and the artwork can still be dragged
+        // under a fixed window.
+        //
+        // A DUPLICATE PER REGION IS NOT OPTIONAL HERE. Regions mode imports each
+        // distinct master ONCE into compFor and adds it as a layer for every
+        // region that uses it, so scaling that shared comp for one panel would
+        // resize every other panel drawn from the same master -- which on a
+        // repeating archway is most of them.
+        //
+        // THE COMP IS SIZED UNROTATED. A turned region's w/h is its footprint
+        // AFTER the turn, so the comp has to be built to the swap of that and
+        // then rotated into place; sizing it to the region directly would put a
+        // panel's long side across the board's short one.
+        if (plan.scalePanels === true) {
+          const panel = src.duplicate();
+          panel.name = "R" + (i + 1) + " " + src.name;
+          if (panelFolder) panel.parentFolder = panelFolder;
+          const compW = Math.max(1, Math.round(turned ? reg.h : reg.w));
+          const compH = Math.max(1, Math.round(turned ? reg.w : reg.h));
+          scaleCompToFit(panel, compW, compH);
+          layer.replaceSource(panel, false);
+          (layer.property("Scale") as Property).setValue([100, 100]);
+          (layer.property("Position") as Property).setValue([reg.x + reg.w / 2, reg.y + reg.h / 2]);
+          (layer as AVLayer).label = (i % 16) + 1;
+          const over0 = Math.round((src.duration - seconds) * 10) / 10;
+          lines.push("  R" + (i + 1) + " " + src.name + " at " + reg.x + "," + reg.y
+            + " " + reg.w + "x" + reg.h + " -- panel comp " + compW + "x" + compH
+            + (turn !== 0 ? ", turned " + turn + " deg" : "")
+            + (over0 > 0 ? "  [" + Math.round(src.duration * 10) / 10 + "s from the start; last " + over0 + "s not rendered]" : ""));
+          continue;
+        }
 
         // ── The crop, as a track matte ────────────────────────────────────
         // This used to be a rectangular mask in the master's own layer space,

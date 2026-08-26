@@ -684,6 +684,12 @@ export const BespokeTool = () => {
     const [duplicatePanels, setDuplicatePanels] = useState(false);
     /** How many even cells the Divide control lays out. Text, so it can be emptied. */
     const [divideN, setDivideN] = useState("");
+    /**
+     * Regions mode: crop each panel by its own comp's bounds instead of a matte.
+     * OFF by default — the matte is what keeps the crop and the content separate,
+     * so the artwork can still be dragged under a fixed window.
+     */
+    const [scalePanels, setScalePanels] = useState(false);
     // A bespoke is assembled from MASTERS, which are the OV files, so a board
     // built for Italy arrives full of English artwork. When the country's own
     // build of a master already exists -- and by this point in a job it nearly
@@ -2701,6 +2707,7 @@ export const BespokeTool = () => {
                 marketsRoot, territory, batch: batch.trim(),
                 useLocalised,
                 regions: regions.map((r) => ({ path: r.master.path, x: r.x, y: r.y, w: r.w, h: r.h, rotation: quarterTurn(r.rotation) })),
+                scalePanels,
                 // The reference and the rulers travel with the plan so the
                 // built comp opens looking like the panel it was traced in.
                 // Arrays of scalars survive the bridge; the whole plan is
@@ -4295,6 +4302,22 @@ export const BespokeTool = () => {
                             {/* Pushed to the far end, away from the shaping
                                 controls: one of these deletes the region and it
                                 should not sit under a cursor aiming for Rotate. */}
+                            {/* THE BOARD'S OPTION, not the region's — but this
+                                is the row the board's controls live in, and a
+                                second row for one checkbox would cost more than
+                                it explains. Off by default: the matte is what
+                                keeps the crop and the artwork separable. */}
+                            <Tooltip text={scalePanels
+                                ? "Each panel is its own comp at the region's size, cropped by its own bounds. Half the layers, and every panel is a component in its own right — but reframing means re-scaling instead of dragging the artwork under its window."
+                                : "The shared master covers each region and an invisible matte trims it. Drag the master to reframe the artwork inside a window that stays put."}>
+                                <span className="bsp-toggle">
+                                    <CheckboxToggle
+                                        checked={scalePanels}
+                                        onChange={setScalePanels}
+                                        label="Scale panels to fit"
+                                    />
+                                </span>
+                            </Tooltip>
                             <span className="bsp-rtools-end">
                                 <Tooltip text="Duplicate this region">
                                     <button className="bsp-btn bsp-btn--ghost bsp-btn--icon" onClick={duplicateRegion}>

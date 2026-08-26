@@ -8985,3 +8985,55 @@ board legitimately passes through that state on its way somewhere.
 **Not done:** arithmetic and typecheck, not driven in the panel or built in AE.
 The matte's own position was never wrong — it is the region box it is built
 from that was — so the fix is upstream of the line that looked guilty.
+
+---
+
+## 2026-08-26 — Panels can crop by their own bounds instead of a matte
+
+Asked alongside the rotation bug: "can we multicomp scale the comp to fit within
+whatever boundary we gave it? At the moment we're using a matte layer to
+constrain them."
+
+Yes, and it is worth having — a sixteen-panel archway drops from 32 layers to
+16, and every panel becomes a real comp at its delivered size, which is exactly
+what Save Component takes out later. But it is an OPTION rather than a
+replacement, for two reasons that only showed up on reading the build.
+
+### Regions mode shares one comp per master
+
+`bespokeBuildRegions` imports each distinct master once into `compFor[path]` and
+adds it as a layer for every region that uses it. `duplicatePanels` — the flag
+that gives each panel its own copy — exists only in `bespokeBuild`, the multi
+mode. So scaling the shared comp to fit panel 3 would resize what panels 7 and
+11 show, which on a repeating archway is most of them. Comp-cropping therefore
+duplicates per region; there is no version of it that does not.
+
+### The matte is not overhead, it is a property
+
+The matte replaced a mask precisely to separate the crop from the content:
+"move the SOLID and the window moves; move the MASTER and the artwork reframes
+inside it". Comp-cropping welds them back together — reframing a panel becomes
+re-running a scale rather than dragging the artwork under a fixed window. That
+is a real loss on a board still being composed and no loss at all on a finished
+one, which is what makes it a per-board choice rather than a better default.
+
+### Sized unrotated
+
+A turned region's `w`/`h` is its footprint AFTER the turn, so the panel comp is
+built to the swap of that and rotated into place. Sizing it to the region
+directly would lay a panel's long side across the board's short one. Both paths
+land the picture in the same rectangle:
+
+```
+master 1080x1920
+upright 420x320   matte: master at 38.9%, 57% cropped, matte 420x320
+                  panel: comp 420x320 at 38.9%, occupies 420x320
+turned 90/270     matte: master at 38.9%, 57% cropped, matte 320x420
+                  panel: comp 420x320 at 38.9%, occupies 320x420
+```
+
+**Not done:** no build has been run in AE with the option on. `replaceSource` on
+a layer that already has its position and rotation set is the step to watch —
+the arithmetic says the rectangle is right, but that call has not been seen
+land. The per-region duplicates go in a "<name> panels" folder, created only
+when the option is on.
