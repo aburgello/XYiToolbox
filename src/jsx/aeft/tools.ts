@@ -1107,14 +1107,36 @@ function fitFrontcardText(layer: Layer, time: number): string {
     //
     // Converting the cap into the layer's own space is the whole fix. At 100%
     // it changes nothing.
+    // THE WHOLE PARENT CHAIN, not the layer's own scale.
+    //
+    // The brand template is rigged: Film Title is parented to MainScale (25%),
+    // which is parented to MaintainScale. scaleCompToFit works by parenting
+    // every UNPARENTED layer to a temporary null -- so on this card the null
+    // took MaintainScale, the resize baked into that, and the title's own Scale
+    // never moved off 100%. Measured on a real 1920x1080 -> 480x275 card:
+    //
+    //     Film Title    100%   <-  MainScale 25%  <-  MaintainScale 25.46%
+    //     effective                                              6.37%
+    //
+    // Reading the layer's own scale therefore answers 100% on exactly the cards
+    // that are scaled hardest, which is how the first cut of this fix changed
+    // nothing at all.
     let layerScale = 1;
     try {
-      const sc = (layer as AVLayer).transform.scale.value as number[];
-      const sx = Math.abs(Number(sc[0])) / 100;
-      if (sx > 0.001) layerScale = sx;
+      let node: Layer | null = layer;
+      let guard = 0;
+      while (node && guard < 16) {
+        const sc = (node as AVLayer).transform.scale.value as number[];
+        const sx = Math.abs(Number(sc[0])) / 100;
+        if (sx > 0.0001) layerScale = layerScale * sx;
+        node = (node as any).parent || null;
+        guard++;
+      }
+      if (!(layerScale > 0.0001)) layerScale = 1;
     } catch (e) {
-      // No scale to read: treat the layer as unscaled, which is what this
-      // assumed before it knew to ask.
+      // No scale or no parent to read: treat the layer as unscaled, which is
+      // what this assumed before it knew to ask.
+      layerScale = 1;
     }
     const maxWidth = (comp.width * FRONTCARD_BOX_MAX) / layerScale;
 

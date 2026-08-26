@@ -9480,3 +9480,83 @@ come back identical on every row.
 **Not done:** this is step one of two. The modal is now unreachable but still in
 the file — it comes out once a real sheet has been opened into the grid and run
 from there. And nothing here has been tried in After Effects.
+
+---
+
+## 2026-08-26 — The frontcard title, and two wrong theories on the way
+
+Reported as "what happened with the film title being that small now": on small
+bespoke deliverables FORGOTTEN ISLAND came out tiny while 1728×768 was fine.
+
+The cause is one line, but it took two wrong diagnoses to reach, and both are
+worth writing down because both were plausible.
+
+### What was actually wrong
+
+`fitFrontcardText` caps how wide the title box may grow at a share of the FRAME
+(`comp.width * 0.9`) and compares that to a measurement taken in the LAYER's
+space. Those agree only while the layer is drawn at 100%. A bespoke build scales
+the frontcard comp down to the deliverable's canvas, so on a 480×275 card the
+title measured 979px against a cap of 432, concluded it could not fit, and
+dropped 88pt to 38pt.
+
+### Wrong theory one: the measurement change caused it
+
+It did not. The small-canvas shrink predates today — with the old synthetic
+probe the same comparison gave 51pt. This morning's `measureUnwrapped` rewrite
+only made the measurement more accurate, so the same bad comparison bit harder:
+51pt → 38pt. A full-size card never hits it, which is why nobody had seen it.
+
+### Wrong theory two: scaleCompToFit never scales content
+
+The built card read `Film Title scale=100%` in a comp that had been resized from
+1920×1080 to 480×275. That looked conclusive: `scaleCompToFit` parents everything
+to a temporary null, scales the null and removes it in a `finally`, and if AE
+does not bake a deleted parent's transform the scale would evaporate. That would
+have been a much larger bug — Multi Comp Scale, Scale Composition, DRQR and the
+solo-tile reshape all call it.
+
+The studio asked for it to be proved before a function five tools depend on got
+rewritten. It was wrong:
+
+```
+1920x1080 -> 480x275   expected 25.5%   solid 100% -> 25.46%   text 100% -> 25.46%
+1000x1000 -> 500x500   expected 50%     solid 100% -> 50%      text 100% -> 50%
+```
+
+The null bakes. And the reason both of today's earlier probes missed it is that
+each happened to use a resize whose factor was exactly 1.0 — 100% before and
+100% after proves nothing.
+
+### What it really is
+
+The brand template is RIGGED:
+
+```
+Film Title     scale=100%    parent=MainScale
+MainScale      scale=25%     parent=MaintainScale
+MaintainScale  scale=25.46%  parent=—        <- the only one the null touched
+
+Film Title effective scale = 6.37%
+```
+
+`makeParentLayerOfAllUnparented` takes only layers with **no** parent, so the
+null grabbed `MaintainScale` and the bake landed there. The title's own Scale
+never moves off 100% — which is why the first version of this fix, reading
+`layer.transform.scale`, changed nothing at all on exactly the cards that are
+scaled hardest.
+
+Walking the whole parent chain is the fix. Driven end to end against the real
+template, wrapping and stamping through `cheekyDTCheck`:
+
+```
+480x275    effective 6.37%    font 88
+345x496    effective 7.38%    font 88
+1728x768   effective 17.78%   font 88
+1920x1080  effective 25%      font 88
+```
+
+**Not done:** the rest of the card is still laid out for a full-size frame — the
+campaign line wraps onto two lines at 480px wide. That is the template's own
+proportions surviving a 6% scale, not a bug in the fit, but it is why a small
+card still does not look like the big one.

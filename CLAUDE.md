@@ -111,6 +111,16 @@ so this whole class of bug is structurally invisible in browser preview.
   `artwork.ts`'s `decodeName()`/`foldAccents()` do both; `team.ts` and
   `tools.ts` decode but do not fold. Czechia, Poland and Serbia are all one
   accented site name away from this.
+- **`scaleCompToFit` scales content through the PARENT CHAIN, and the brand
+  frontcard is rigged.** It parents every *unparented* layer to a temporary null
+  and scales that — so on a template where `Film Title` → `MainScale` (25%) →
+  `MaintainScale`, the bake lands on `MaintainScale` and the title's own Scale
+  never leaves 100%. Measured on a real 1920×1080 → 480×275 card the effective
+  scale is **6.37%**. Anything reasoning about how big a layer is drawn must
+  multiply the whole chain; reading `layer.transform.scale` answers 100% on
+  exactly the cards that are scaled hardest. (And the null DOES bake on delete —
+  a plain comp goes 100% → 25.46%. Two of today's probes measured cases where
+  the factor happened to be exactly 1.0, which proved nothing.)
 - **`TextDocument.allCaps` and `.boxText` are READ-ONLY** (`boxTextSize` and
   `boxTextPos` are not). So a text layer's rendered width cannot be reproduced
   on a synthetic probe: copying font/size/tracking across misses All Caps, which
