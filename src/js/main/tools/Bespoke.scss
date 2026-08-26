@@ -454,6 +454,7 @@
 
 .bsp-target {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 7px;
     padding: 4px 8px;
@@ -474,6 +475,30 @@
         background: rgba(255, 255, 255, 0.05);
         opacity: 1;
     }
+}
+
+// What a target would actually build with, under its own name. Wraps onto its
+// own line: it is longer than the row and it is the answer to the question the
+// row poses.
+.bsp-target-masters {
+    flex-basis: 100%;
+    padding-left: 18px;
+    font-size: 9.5px;
+    opacity: 0.55;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    &.is-missing { color: #fbbf24; opacity: 0.95; }
+}
+
+.bsp-hint--recipe {
+    margin: 0 0 4px;
+    font-size: 10.5px;
+    line-height: 1.5;
+    opacity: 0.6;
+
+    b { font-weight: 600; opacity: 0.9; }
 }
 
 .bsp-target-tick {

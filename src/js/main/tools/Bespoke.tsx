@@ -2990,6 +2990,62 @@ export const BespokeTool = () => {
 
     /** Assembles the whole composition and, when a country is set, files it. */
     /**
+     * WHICH MASTER EACH TARGET WOULD ACTUALLY GET.
+     *
+     * The question this answers is the one the panel was not answering: pick a
+     * master into a segment and it looks like THAT file is what gets built,
+     * when only its CREATIVE and the segment's seconds travel — every
+     * deliverable then picks its own master at its own size. Same scorer as CSV
+     * Localiser (csvLocaliserResolveMasters, which is what the builder grid's
+     * per-row status uses), so the two cannot disagree about what a row
+     * resolves to.
+     *
+     * Read-only and debounced. A miss is shown, never fixed: a target with no
+     * master for one of its segments is a real answer.
+     */
+    const [targetMasters, setTargetMasters] = useState<Record<string, (string | null)[]>>({});
+    const recipeKey = segments
+        .map((sg) => `${sg.tiles[0] ? (sg.tiles[0].creative || sg.tiles[0].name) : ""}@${sg.seconds}`)
+        .join("|");
+    const targetsKey = batchTargets.filter((t) => t.on).map((t) => `${t.creative}/${t.width}x${t.height}`).join("|");
+    useEffect(() => {
+        if (!mastersPath || !batchTargets.length || !segments.length) { setTargetMasters({}); return; }
+        let cancelled = false;
+        const timer = window.setTimeout(async () => {
+            const on = batchTargets.filter((t) => t.on);
+            const payload: { campaign: string; size: string; duration: string }[] = [];
+            for (const t of on) {
+                for (const sg of segments) {
+                    payload.push({
+                        campaign: sg.tiles[0] ? (sg.tiles[0].creative || sg.tiles[0].name) : t.creative,
+                        size: `${t.width}x${t.height}`,
+                        duration: `${sg.seconds}sec`,
+                    });
+                }
+            }
+            if (!payload.length) return;
+            try {
+                const res = (await evalTS("csvLocaliserResolveMasters", mastersPath, JSON.stringify(payload))) as unknown as
+                    { success?: boolean; rows?: { master: string | null }[] } | undefined;
+                if (cancelled || !res || !res.success) return;
+                const rows = res.rows || [];
+                const next: Record<string, (string | null)[]> = {};
+                on.forEach((t, ti) => {
+                    next[`${t.creative}/${t.width}x${t.height}`] = segments.map((_, si) => {
+                        const hit = rows[ti * segments.length + si];
+                        return hit ? hit.master : null;
+                    });
+                });
+                setTargetMasters(next);
+            } catch {
+                /* preview only — never block the build on a lookup */
+            }
+        }, 400);
+        return () => { cancelled = true; window.clearTimeout(timer); };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [mastersPath, recipeKey, targetsKey]);
+
+    /**
      * The same recipe, once per deliverable.
      *
      * Only the CREATIVE and the seconds travel — each target picks its own
@@ -4812,6 +4868,14 @@ export const BespokeTool = () => {
                     <p className="bsp-lbl bsp-lbl--section">
                         Sent from the localiser · {batchTargets.filter((t) => t.on).length} of {batchTargets.length} ticked
                     </p>
+                    {/* THE ONE THING THE PANEL WAS NOT SAYING. Picking a master into
+                        a segment looks like pinning that file; it pins the CREATIVE.
+                        The canvas above belongs to the single build, not to these. */}
+                    <p className="bsp-hint bsp-hint--recipe">
+                        The segments above are a recipe: only each one's <b>creative</b> and its
+                        seconds are used. Every deliverable below picks its own master at its own
+                        size, by the same match CSV Localiser uses — shown on each row.
+                    </p>
                     <div className="bsp-targets">
                         {batchTargets.map((t, i) => (
                             <button
@@ -4824,6 +4888,21 @@ export const BespokeTool = () => {
                                     {t.creative}{t.site ? ` · ${t.site}` : ""}
                                 </span>
                                 <span className="bsp-target-spec">{t.width}×{t.height} · {t.seconds}s</span>
+                                {/* WHAT THIS ONE WOULD ACTUALLY BUILD WITH. Without
+                                    it the recipe looks like it pins the master you
+                                    picked, when it only pins the creative. */}
+                                {(() => {
+                                    const got = targetMasters[`${t.creative}/${t.width}x${t.height}`];
+                                    if (!t.on || !got) return null;
+                                    const missing = got.filter((m) => !m).length;
+                                    return (
+                                        <span className={"bsp-target-masters" + (missing ? " is-missing" : "")}>
+                                            {missing
+                                                ? `${missing} segment${missing === 1 ? "" : "s"} with no master`
+                                                : got.map((m) => String(m).replace(/\.aep$/i, "")).join("  ›  ")}
+                                        </span>
+                                    );
+                                })()}
                             </button>
                         ))}
                     </div>
