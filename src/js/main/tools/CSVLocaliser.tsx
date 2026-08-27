@@ -1860,6 +1860,35 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
         }
     };
 
+    /**
+     * Support Swap over whatever this grid just built.
+     *
+     * Same folder MC It! is pointed at, and the same dry-run-then-Apply round
+     * trip through the shared report modal — the two do different halves of
+     * the same job: MC It! swaps the PNG/JPG artwork, this swaps the .ai/.psd
+     * component sources those files are built from.
+     */
+    const runBuilderSupportSwap = async () => {
+        if (!buildTerritory) { setNotice("Pick a territory first."); return; }
+        setNotice(null);
+        setBusy(true);
+        try {
+            const sourceFolder = buildOrigin && buildOrigin.territory === buildTerritory
+                ? buildOrigin.sourceFolder
+                : path.join(marketsRoot, buildTerritory);
+            const batch = buildBatch.trim() || "Batch_1";
+            const aepDir = resolveBatchFolder(sourceFolder, batch) || path.join(sourceFolder, "AE", padBatch(batch));
+            const res = await evalTS("supportSwap", aepDir, "", true);
+            if (res === undefined) throw new Error("no bridge");
+            if (res.success) showMcItReport(res as unknown as McReport);
+            else setNotice(res.error || "Support Swap couldn't run on this batch.");
+        } catch (e: any) {
+            setNotice(e?.message || "No CEP bridge. Open this panel inside After Effects to run it.");
+        } finally {
+            setBusy(false);
+        }
+    };
+
     // Open the territory's Specs folder (where the found batch PDFs live) in
     // Finder/Explorer so the parse can be sanity-checked against the real PDFs.
     // Falls back to the territory root if there's no Specs subfolder.
@@ -2979,6 +3008,18 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                 <Tooltip text={`Re-open every .aep in ${buildTerritory || "this territory"} · ${buildBatch.trim() || "Batch_1"} and preview the artwork swap before anything is written. Unlike the inline pass this shows its matches first, and lets you hand-pick an image for anything it couldn't place.`}>
                                     <button className="specs-build-multi" onClick={runBuilderMcIt} disabled={busy}>
                                         <ImageIcon size={13} /> {builtMcIt ? "Re-run MC It!" : "MC It!"}
+                                    </button>
+                                </Tooltip>
+                            )}
+                            {/* The other half of the same job: MC It! swaps the
+                                PNG/JPG artwork, this swaps the .ai/.psd component
+                                sources those are built from. Same gate — over a
+                                folder with nothing in it there is nothing to
+                                report. */}
+                            {builderBuilt && (
+                                <Tooltip text={`Swap every .aep's .ai/.psd component sources in ${buildTerritory || "this territory"} · ${buildBatch.trim() || "Batch_1"} for this market's own, from its Masters/Support. Previews first.`}>
+                                    <button className="specs-build-multi" onClick={runBuilderSupportSwap} disabled={busy}>
+                                        <Layers size={13} /> Support Swap
                                     </button>
                                 </Tooltip>
                             )}

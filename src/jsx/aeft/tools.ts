@@ -3844,6 +3844,29 @@ export function ssOneTokenDiff(a: string, b: string): number {
   return at;
 }
 
+/**
+ * Is this token SHAPED LIKE A MARKET CODE -- two or three letters, no digits?
+ *
+ * "Exactly one token differs" is necessary and NOT sufficient, which a probe
+ * over a real Italy caught: Portal_2L_DATE_IT sitting beside Portal_1L_DATE_IT
+ * differs by exactly one token, so the rule on its own swapped a two-line date
+ * for a one-line one. The same hole covers Cyan/Mono and PRE/POST.
+ *
+ * Deliberately a SHAPE test and not a list of codes: the code on disk is not
+ * always the ISO one (Paw Patrol's Chile is _CH_), so nothing here can be
+ * enumerated ahead of time. Length plus letters-only is enough to reject every
+ * near-miss seen on the share -- 1L/2L carry a digit, Cyan/CMYK/POST are four.
+ */
+function ssIsMarketToken(tok: string): boolean {
+  const t = String(tok);
+  if (t.length < 2 || t.length > 3) return false;
+  for (let i = 0; i < t.length; i++) {
+    const c = t.charAt(i).toUpperCase();
+    if (c < "A" || c > "Z") return false;
+  }
+  return true;
+}
+
 /** Does this filename carry an OV token of its own? */
 function ssHasOvToken(name: string): boolean {
   const t = ssTokens(name);
@@ -3942,26 +3965,48 @@ interface SsMatch {
   toToken: string;
 }
 
+interface SsMatches {
+  /** OV -> this market. The only kind ever applied automatically. */
+  live: SsMatch[];
+  /** -> OV. This market hasn't localised that component yet. */
+  ov: SsMatch[];
+  /** Market -> market, e.g. an IT file sitting in a DE project. Offered as a
+   *  candidate for the user to Fix by hand, never applied: it is either a
+   *  mistake worth seeing or a deliberate borrow worth keeping, and this has
+   *  no way to tell which. */
+  foreign: SsMatch[];
+  /** A candidate with the IDENTICAL name -- already this market's version. */
+  same: boolean;
+}
+
 /**
- * Every candidate that differs from `name` by exactly one token, split into
- * the ones worth offering and the OV ones that mean "not localised yet".
+ * Every candidate that differs from `name` by exactly one MARKET-SHAPED token,
+ * sorted by what that difference means.
  */
-function ssMatchesFor(name: string, cands: SupportSwapCandidate[]): { live: SsMatch[]; ov: SsMatch[] } {
+function ssMatchesFor(name: string, cands: SupportSwapCandidate[]): SsMatches {
   const live: SsMatch[] = [];
   const ov: SsMatch[] = [];
+  const foreign: SsMatch[] = [];
+  let same = false;
+  const nameTokens = ssTokens(name);
   for (let i = 0; i < cands.length; i++) {
     const candName = decode(cands[i].file.name);
+    if (candName.toLowerCase() === name.toLowerCase()) { same = true; continue; }
     const at = ssOneTokenDiff(name, candName);
     if (at === -1) continue;
-    const from = ssTokens(name)[at];
+    const from = nameTokens[at];
     const to = ssTokens(candName)[at];
+    // Both ends must look like a market code, or "one token differs" catches
+    // 2L/1L, Cyan/Mono and PRE/POST as though they were localisations.
+    if (!ssIsMarketToken(from) || !ssIsMarketToken(to)) continue;
     const m: SsMatch = { cand: cands[i], fromToken: from, toToken: to };
     // Never swap TOWARDS the master. A territory part-way through
     // localisation holds both, and offering the OV would undo work.
     if (ssIsOvToken(to)) ov.push(m);
-    else live.push(m);
+    else if (ssIsOvToken(from)) live.push(m);
+    else foreign.push(m);
   }
-  return { live: live, ov: ov };
+  return { live: live, ov: ov, foreign: foreign, same: same };
 }
 
 /**
@@ -4014,164 +4059,313 @@ function ssProjectItems(proj: Project): { item: FootageItem; folder: string }[] 
  * dryRun replaces NOTHING and saves nothing; the report comes back flagged so
  * the modal offers Apply.
  */
+/**
+ * One project's worth of swapping, against an already-collected candidate list.
+ *
+ * Split out of supportSwap() so the open-project mode and the batch-folder mode
+ * cannot drift apart -- the same split, and for the same reason, as
+ * mcItApplyToOpenProject() above.
+ */
+function ssApplyToOpenProject(
+  proj: Project,
+  aepName: string,
+  cands: SupportSwapCandidate[],
+  creatives: string[],
+  dryRun?: boolean,
+  overrides?: Record<string, string>
+): McItProjectReport {
+  // The creative this project is for, used ONLY to break a tie between two
+  // creatives holding the same filename. Never to filter: a deliverable can
+  // legitimately carry another creative's component (a shared bug, an
+  // endcard), and filtering on it would hide exactly those.
+  const projCreative = matchCreativeInName(aepName, creatives);
+  const projReport: McItProjectReport = { aep: aepName, resolution: projCreative || "", items: [] };
+
+  const found = ssProjectItems(proj);
+  if (found.length === 0) {
+    projReport.skipped = "No .ai/.psd footage in this project.";
+    return projReport;
+  }
+
+  for (let i = 0; i < found.length; i++) {
+    const fi = found[i].item;
+    const folderName = found[i].folder;
+    const name = decode((fi.file as File).name);
+    const key = folderName + "|" + name;
+
+    // A manual pick beats every rule below it -- the user has looked at this
+    // exact item and named the exact file. The one thing it cannot bypass is
+    // the file not being there.
+    if (overrides && overrides[key]) {
+      const chosen = new File(overrides[key]);
+      if (!chosen.exists) {
+        projReport.items.push({ folder: folderName, name: name, action: "no-match", key: key, reason: "The file you picked no longer exists: " + overrides[key] });
+        continue;
+      }
+      if (!dryRun) { fi.replace(chosen); $.sleep(200); }
+      projReport.items.push({ folder: folderName, name: name, action: "replaced", newName: decode(chosen.name), manual: true, key: key });
+      continue;
+    }
+
+    const m = ssMatchesFor(name, cands);
+
+    if (m.live.length === 0) {
+      if (m.same && !ssHasOvToken(name)) {
+        // The identical file is sitting in this market's own tree, so there is
+        // nothing to do. Worded to cover BOTH reasons that happens -- already
+        // localised, or shared across every market -- because one market's
+        // tree cannot tell them apart: neither has a one-token variant in it,
+        // and the sibling markets that would settle it are not scanned.
+        // Checked before the OV branch, since a project part-way through a
+        // swap holds both kinds of item.
+        projReport.items.push({ folder: folderName, name: name, action: "skipped", key: key, reason: "Already the version in this market's Masters/Support." });
+        continue;
+      }
+      if (m.foreign.length > 0) {
+        // ANOTHER MARKET'S FILE, which is either a mistake worth seeing or a
+        // deliberate borrow worth keeping. Offered as a fixable no-match
+        // rather than swapped: nothing here can tell those two apart, and
+        // guessing wrong writes another market's artwork into a deliverable.
+        const opts: { name: string; path: string }[] = [];
+        for (let k = 0; k < m.foreign.length; k++) {
+          opts.push({ name: m.foreign[k].cand.creative + " / " + m.foreign[k].cand.category + " / " + decode(m.foreign[k].cand.file.name), path: m.foreign[k].cand.file.fsName });
+        }
+        projReport.items.push({
+          folder: folderName, name: name, action: "no-match", key: key, candidates: opts,
+          reason: "This is the " + m.foreign[0].fromToken + " version, not this market's — swap it only if that's wrong.",
+        });
+        continue;
+      }
+      // ASK THE ORIGINAL, NOT THE CANDIDATES. The OV case has two shapes and
+      // only one of them is a near-miss: a market part-way through
+      // localisation holds the OV file under the SAME name the project is
+      // already using, so nothing differs by one token and the ov list is
+      // empty too. Reading the OV token off the item itself catches both,
+      // and keeps "shared across markets" meaning only what it says.
+      if (ssHasOvToken(name)) {
+        let where = "";
+        if (m.ov.length > 0 && m.ov[0].cand.creative !== "") where = " under " + m.ov[0].cand.creative;
+        projReport.items.push({
+          folder: folderName, name: name, action: "skipped", key: key,
+          reason: "Still the OV version" + where + " — this market hasn't localised this component yet.",
+        });
+      } else {
+        // No market token at all: the same file in every market (a studio
+        // logo, a copyright line). A normal answer, not a failure.
+        projReport.items.push({
+          folder: folderName, name: name, action: "skipped", key: key,
+          reason: "No market-specific version under Masters/Support — it looks shared across markets.",
+        });
+      }
+      continue;
+    }
+
+    let pick = m.live[0];
+    if (m.live.length > 1) {
+      // Prefer this project's own creative; anything left over is a genuine
+      // ambiguity and is handed to the user rather than guessed at.
+      const narrowed: SsMatch[] = [];
+      if (projCreative) {
+        for (let k = 0; k < m.live.length; k++) {
+          if (m.live[k].cand.creative === projCreative) narrowed.push(m.live[k]);
+        }
+      }
+      if (narrowed.length === 1) {
+        pick = narrowed[0];
+      } else {
+        const options: { name: string; path: string }[] = [];
+        for (let k = 0; k < m.live.length; k++) {
+          options.push({ name: m.live[k].cand.creative + " / " + m.live[k].cand.category + " / " + decode(m.live[k].cand.file.name), path: m.live[k].cand.file.fsName });
+        }
+        projReport.items.push({
+          folder: folderName, name: name, action: "no-match", key: key, candidates: options,
+          reason: m.live.length + " creatives hold a file matching this — pick the right one.",
+        });
+        continue;
+      }
+    }
+
+    if (!dryRun) { fi.replace(pick.cand.file); $.sleep(200); }
+    projReport.items.push({
+      folder: folderName, name: name, action: "replaced", key: key,
+      newName: decode(pick.cand.file.name),
+    });
+  }
+
+  return projReport;
+}
+
+function ssCountReplaced(rep: McItProjectReport): number {
+  let n = 0;
+  for (let i = 0; i < rep.items.length; i++) {
+    if (rep.items[i].action === "replaced") n++;
+  }
+  return n;
+}
+
+/**
+ * Localise component sources against a territory's own Masters/Support tree.
+ *
+ * TWO MODES, same as MC It!: with no `aepFolderPath` it works on the OPEN
+ * project (a one-off while you have it in front of you); with one, it walks
+ * every .aep in that folder, exactly the way a batch gets localised.
+ *
+ * Signature mirrors mcIt() on purpose -- the panel renders both through the
+ * same report modal, and the modal's dry-run -> Apply round trip passes these
+ * five arguments straight back. `supportRootPath` is remembered from the
+ * preview so Apply never re-derives (or re-asks for) the folder.
+ *
+ * dryRun replaces NOTHING and saves nothing; the report comes back flagged so
+ * the modal offers Apply.
+ *
+ * The batch mode opens and saves the .aep files in the folder it is given,
+ * which is the same, already-agreed exception MC It! runs under: a user-picked
+ * (or batch-derived) OUTPUT folder, never a masters root. It deliberately does
+ * NOT close each project -- app.open() on the next one supersedes it, and a
+ * defensive close would bin an artist's unsaved work if they had something of
+ * their own open.
+ */
 export const supportSwap = (
-  unusedFolderPath?: string,
+  aepFolderPath?: string,
   supportRootPath?: string,
   dryRun?: boolean,
   onlyJson?: string,
   overridesJson?: string
 ): McItResult => {
   try {
-    const proj = app.project;
-    if (!proj) return { success: false, error: "No project is open." };
-    const projFile = proj.file;
-    if (!projFile) {
-      return { success: false, error: "Save the project first — its territory is read from where it sits on disk." };
+    let overridesAll: Record<string, Record<string, string>> = {};
+    if (overridesJson) {
+      try {
+        const parsed = JSON.parse(overridesJson);
+        if (parsed) overridesAll = parsed;
+      } catch (parseErr) { overridesAll = {}; }
     }
-    const aepName = decode(projFile.name);
 
+    // --- which projects, and which territory they belong to -----------------
+    let batchFolder: Folder | null = null;
+    let aepFiles: File[] = [];
+    let openProjectMode = true;
+
+    if (aepFolderPath) {
+      const f = new Folder(aepFolderPath);
+      if (!f.exists) return { success: false, error: "Folder not found: " + aepFolderPath };
+      batchFolder = f;
+      openProjectMode = false;
+    }
+
+    if (!openProjectMode && batchFolder) {
+      const kids = batchFolder.getFiles();
+      for (let i = 0; i < kids.length; i++) {
+        const k = kids[i];
+        if (!(k instanceof File)) continue;
+        if (ssExt(decode(k.name)) !== "aep") continue;
+        aepFiles.push(k as File);
+      }
+      if (aepFiles.length === 0) return { success: false, error: "No .aep files in " + batchFolder.fsName };
+
+      // Restrict to the projects still ticked in the preview. Filtering HERE
+      // rather than running everything and discarding results is what makes
+      // unticking a project mean "don't open it at all".
+      if (onlyJson) {
+        let only: string[] = [];
+        try { only = JSON.parse(onlyJson) as string[]; } catch (parseErr) { only = []; }
+        if (only.length > 0) {
+          const keep: File[] = [];
+          for (let i = 0; i < aepFiles.length; i++) {
+            for (let j = 0; j < only.length; j++) {
+              if (String(only[j]) === decode(aepFiles[i].name)) { keep.push(aepFiles[i]); break; }
+            }
+          }
+          aepFiles = keep;
+          if (aepFiles.length === 0) return { success: false, error: "None of the selected projects were found in that folder." };
+        }
+      }
+    }
+
+    // --- the candidate corpus ----------------------------------------------
     let root: Folder | null = null;
     if (supportRootPath) {
       const given = new Folder(supportRootPath);
       if (given.exists) root = given;
     }
-    if (!root) root = ssFindSupportRoot(projFile.parent);
     if (!root) {
-      return {
-        success: false,
-        error: "No Masters/Support folder found above this project — expected <Territory>/Masters/Support.",
-      };
+      // Walked up from the BATCH FOLDER in folder mode and from the project's
+      // own location otherwise -- both land on the same <Territory>.
+      let from: Folder | null = batchFolder;
+      if (openProjectMode) {
+        if (!app.project || !app.project.file) {
+          return { success: false, error: "Save the project first — its territory is read from where it sits on disk." };
+        }
+        from = app.project.file.parent;
+      }
+      root = ssFindSupportRoot(from);
+    }
+    if (!root) {
+      return { success: false, error: "No Masters/Support folder found above this — expected <Territory>/Masters/Support." };
     }
 
     const cands = ssCollectSupport(root);
-    if (cands.length === 0) {
-      return { success: false, error: "No .ai/.psd files under " + root.fsName };
-    }
-
-    // The creative this project is for, used ONLY to break a tie between two
-    // creatives holding the same filename. Never to filter: a deliverable can
-    // legitimately carry another creative's component (a shared bug, an
-    // endcard), and filtering on it would hide exactly those.
+    if (cands.length === 0) return { success: false, error: "No .ai/.psd files under " + root.fsName };
     const creatives = ssCreativesOf(cands);
-    const projCreative = matchCreativeInName(aepName, creatives);
 
-    let overrides: Record<string, string> = {};
-    if (overridesJson) {
-      try {
-        const parsed = JSON.parse(overridesJson);
-        if (parsed && parsed[aepName]) overrides = parsed[aepName];
-      } catch (parseErr) { overrides = {}; }
-    }
-
-    const projReport: McItProjectReport = { aep: aepName, resolution: projCreative || "", items: [] };
-    const found = ssProjectItems(proj);
-    if (found.length === 0) {
-      projReport.skipped = "No .ai/.psd footage in this project.";
-    }
-
+    // --- run ----------------------------------------------------------------
+    const projects: McItProjectReport[] = [];
     let replaced = 0;
-    for (let i = 0; i < found.length; i++) {
-      const fi = found[i].item;
-      const folderName = found[i].folder;
-      const name = decode((fi.file as File).name);
-      const key = folderName + "|" + name;
+    let processed = 0;
 
-      // A manual pick beats every rule below it -- the user has looked at this
-      // exact item and named the exact file. The one thing it cannot bypass is
-      // the file not being there.
-      if (overrides[key]) {
-        const chosen = new File(overrides[key]);
-        if (!chosen.exists) {
-          projReport.items.push({ folder: folderName, name: name, action: "no-match", key: key, reason: "The file you picked no longer exists: " + overrides[key] });
+    if (openProjectMode) {
+      const projFile = (app.project as Project).file as File;
+      const aepName = decode(projFile.name);
+      const rep = ssApplyToOpenProject(app.project, aepName, cands, creatives, dryRun, overridesAll[aepName]);
+      projects.push(rep);
+      const n = ssCountReplaced(rep);
+      replaced += n;
+      processed = 1;
+      if (!dryRun && n > 0) app.project.save();
+    } else {
+      for (let p = 0; p < aepFiles.length; p++) {
+        const aepFile = aepFiles[p];
+        const aepName = decode(aepFile.name);
+        const proj = app.open(aepFile);
+        if (!proj) {
+          projects.push({ aep: aepName, resolution: "", items: [], skipped: "Could not open this project." });
           continue;
         }
-        if (!dryRun) { fi.replace(chosen); $.sleep(200); }
-        projReport.items.push({ folder: folderName, name: name, action: "replaced", newName: decode(chosen.name), manual: true, key: key });
-        replaced++;
-        continue;
-      }
-
-      const m = ssMatchesFor(name, cands);
-
-      if (m.live.length === 0) {
-        // ASK THE ORIGINAL, NOT THE CANDIDATES. The OV case has two shapes and
-        // only one of them is a near-miss: a market part-way through
-        // localisation holds the OV file under the SAME name the project is
-        // already using, so nothing differs by one token and the ov list is
-        // empty too. Reading the OV token off the item itself catches both,
-        // and keeps "shared across markets" meaning only what it says.
-        if (ssHasOvToken(name)) {
-          let where = "";
-          if (m.ov.length > 0 && m.ov[0].cand.creative !== "") where = " under " + m.ov[0].cand.creative;
-          projReport.items.push({
-            folder: folderName, name: name, action: "skipped", key: key,
-            reason: "Still the OV version" + where + " — this market hasn't localised this component yet.",
-          });
-        } else {
-          // No market token at all: the same file in every market (a studio
-          // logo, a copyright line). A normal answer, not a failure.
-          projReport.items.push({
-            folder: folderName, name: name, action: "skipped", key: key,
-            reason: "No market-specific version under Masters/Support — it looks shared across markets.",
-          });
+        const rep = ssApplyToOpenProject(proj, aepName, cands, creatives, dryRun, overridesAll[aepName]);
+        projects.push(rep);
+        const n = ssCountReplaced(rep);
+        replaced += n;
+        if (rep.skipped) continue;
+        // Saved only when something actually changed: a project that matched
+        // nothing has not been edited, and rewriting it would churn its
+        // modified date across a whole batch for no reason.
+        if (!dryRun && n > 0) {
+          proj.save();
+          $.sleep(1000);
         }
-        continue;
+        processed++;
       }
-
-      let pick = m.live[0];
-      if (m.live.length > 1) {
-        // Prefer this project's own creative; anything left over is a genuine
-        // ambiguity and is handed to the user rather than guessed at.
-        let narrowed: SsMatch[] = [];
-        if (projCreative) {
-          for (let k = 0; k < m.live.length; k++) {
-            if (m.live[k].cand.creative === projCreative) narrowed.push(m.live[k]);
-          }
-        }
-        if (narrowed.length === 1) {
-          pick = narrowed[0];
-        } else {
-          const options: { name: string; path: string }[] = [];
-          for (let k = 0; k < m.live.length; k++) {
-            options.push({ name: m.live[k].cand.creative + " / " + m.live[k].cand.category + " / " + decode(m.live[k].cand.file.name), path: m.live[k].cand.file.fsName });
-          }
-          projReport.items.push({
-            folder: folderName, name: name, action: "no-match", key: key, candidates: options,
-            reason: m.live.length + " creatives hold a file matching this — pick the right one.",
-          });
-          continue;
-        }
-      }
-
-      if (decode(pick.cand.file.name) === name) {
-        projReport.items.push({ folder: folderName, name: name, action: "skipped", key: key, reason: "Already this market's version." });
-        continue;
-      }
-
-      if (!dryRun) { fi.replace(pick.cand.file); $.sleep(200); }
-      projReport.items.push({
-        folder: folderName, name: name, action: "replaced", key: key,
-        newName: decode(pick.cand.file.name),
-      });
-      replaced++;
     }
-
-    if (!dryRun && replaced > 0) proj.save();
 
     const runId = "" + new Date().getTime();
+    const scope = openProjectMode ? "" : " across " + projects.length + " project" + (projects.length === 1 ? "" : "s");
     const message = dryRun
-      ? replaced + " of " + found.length + " component(s) would be swapped."
-      : replaced + " of " + found.length + " component(s) swapped.";
+      ? replaced + " component(s) would be swapped" + scope + "."
+      : replaced + " component(s) swapped" + scope + ".";
+
+    let aepFolderOut = "";
+    if (batchFolder) aepFolderOut = batchFolder.fsName;
+    else if (app.project && app.project.file && app.project.file.parent) aepFolderOut = app.project.file.parent.fsName;
 
     return {
       success: true,
       message: message,
-      aepFolder: projFile.parent ? projFile.parent.fsName : "",
+      aepFolder: aepFolderOut,
       imageFolder: root.fsName,
       imageCount: cands.length,
-      processed: 1,
+      processed: openProjectMode ? processed : projects.length,
       replaced: replaced,
-      projects: [projReport],
+      projects: projects,
       finishedAt: new Date().toString(),
       runId: runId,
       dryRun: dryRun === true,

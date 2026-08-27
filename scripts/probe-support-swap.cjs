@@ -16,6 +16,7 @@ const vm = require('vm');
 const src = fs.readFileSync('dist/cep/jsx/index.js', 'utf8');
 
 let tree = {};   // fsName -> child names (a folder); absent means a file
+let projectsOnDisk = {};   // .aep fsName -> the stub project app.open() hands back
 const parentOf = (p) => { const i = String(p).lastIndexOf('/'); return i > 0 ? String(p).slice(0, i) : null; };
 function File(p) { if (!(this instanceof File)) return new File(p); this.fsName = p; this.name = encodeURI(String(p).split('/').pop()); }
 Object.defineProperty(File.prototype, 'exists', { get() { return true; } });
@@ -40,7 +41,13 @@ function FootageItem(file, parentFolder) {
 const sandbox = {
     Folder, File,
     FolderItem, FootageItem,
-    app: { settings: { haveSetting: () => false, getSetting: () => '', saveSetting: () => {} }, project: null },
+    app: {
+        settings: { haveSetting: () => false, getSetting: () => '', saveSetting: () => {} },
+        project: null,
+        // Stands in for app.open(): swaps the "current project" for the one
+        // that file names, the way AE does.
+        open(file) { const p = projectsOnDisk[file.fsName]; if (!p) return null; sandbox.app.project = p; return p; },
+    },
     $: { writeln() {}, sleep() {}, global: null },
     BridgeTalk: { appName: 'aftereffects' }, alert() {},
     decodeURI, encodeURI, parseInt, parseFloat, isNaN, Math, Date, JSON, String, Number, Array, Object, RegExp, Error,
@@ -169,6 +176,82 @@ else {
     say(real.success && real.replaced === 2, 'the real run swaps the 2 it said it would (' + real.replaced + ')');
     say(sandbox.app.project.saved === true, 'and saves the project afterwards');
     say(items[1].replacedWith === null, 'the shared logo is still untouched after the real run');
+}
+
+// ---------------------------------------------------------------------------
+// 6. batch-folder mode -- every .aep in AE/Batch_1, the way a batch is run.
+// ---------------------------------------------------------------------------
+console.log('\n6. supportSwap() over a batch folder');
+{
+    const BATCH = T + '/AE/Batch_1';
+    const mkProj = (name, files) => {
+        const its = files.map((f) => new FootageItem(new File('/x/' + f), new FolderItem('Support')));
+        return {
+            name, file: new File(BATCH + '/' + name), numItems: its.length,
+            item: (i) => its[i - 1], items: its, saveCount: 0,
+            save() { this.saveCount++; },
+        };
+    };
+    const a = mkProj('FID_INTL_PortalToParadise_DOOH_1920x1080px_10s_IT_V01.aep',
+        ['FID_INTL_Portal_2L_DATE_OV_RGB.ai', 'FID_UNI_Logo_RGB.ai']);
+    const b = mkProj('FID_INTL_TRIO_DOOH_1080x1920px_10s_IT_V01.aep',
+        ['FID_Teaser_PIB_Pedigree_OV_RGB_SIMP.psd']);
+    // Nothing to do here: every component is already this market's.
+    const c = mkProj('FID_INTL_PortalToParadise_DOOH_512x96px_15s_IT_V01.aep',
+        ['FID_INTL_Portal_2L_DATE_IT_RGB.ai']);
+    dir(BATCH, [a.name, b.name, c.name, 'notes.txt']);
+    projectsOnDisk = {};
+    for (const p of [a, b, c]) projectsOnDisk[p.file.fsName] = p;
+    sandbox.app.project = null;
+
+    const say = (ok, msg) => { if (!ok) fails++; console.log((ok ? '  ok    ' : '  FAIL  ') + msg); };
+
+    const dryB = aeft.supportSwap(BATCH, '', true);
+    if (!dryB.success) { say(false, dryB.error); }
+    else {
+        say(dryB.projects.length === 3, 'three projects previewed, the .txt ignored (' + dryB.projects.length + ')');
+        say(dryB.replaced === 2, 'two swaps found across the batch (' + dryB.replaced + ')');
+        say([a, b, c].every((p) => p.saveCount === 0) && [a, b, c].every((p) => p.items.every((i) => i.replacedWith === null)),
+            'the preview opened them all and wrote to none');
+        // b sits under TRIO in the deliverable name, and TRIO holds that same
+        // tagline filename — the tie-break has to follow the PROJECT, not the
+        // first candidate found.
+        const bRow = dryB.projects.filter((r) => r.aep === b.name)[0];
+        say(bRow && bRow.resolution === 'TRIO', 'the TRIO deliverable is read as TRIO, not PortalToParadise (' + (bRow && bRow.resolution) + ')');
+    }
+
+    // The guard the batch probe exists for: Italy holds BOTH 1L and 2L dates,
+    // so a 2L file already in IT is one token from the 1L one. "Exactly one
+    // token differs" alone swapped a two-line date for a one-line date.
+    {
+        const cRow = dryB.projects.filter((r) => r.aep === c.name)[0];
+        const row = cRow && cRow.items[0];
+        say(row && row.action === 'skipped', 'a 2L date already in IT is left alone, not swapped for the 1L beside it (' + (row && row.action) + ')');
+    }
+
+    // Another market's file: neither swapped nor silent — offered to fix.
+    {
+        const d = mkProj('FID_INTL_PortalToParadise_DOOH_300x250px_10s_IT_V01.aep', ['FID_INTL_Portal_2L_DATE_FR_RGB.ai']);
+        projectsOnDisk[d.file.fsName] = d;
+        dir(BATCH, [a.name, b.name, c.name, d.name, 'notes.txt']);
+        const r = aeft.supportSwap(BATCH, dryB.imageFolder, true);
+        const row = r.projects.filter((x) => x.aep === d.name)[0].items[0];
+        say(row.action === 'no-match' && /the FR version/.test(row.reason || '') && (row.candidates || []).length === 1,
+            'a FR file in an IT project is offered as a fix, never swapped automatically');
+        dir(BATCH, [a.name, b.name, c.name, 'notes.txt']);
+        delete projectsOnDisk[d.file.fsName];
+    }
+
+    const realB = aeft.supportSwap(BATCH, dryB.imageFolder, false);
+    say(realB.replaced === 2, 'the real batch run swaps the 2 it promised (' + realB.replaced + ')');
+    say(a.saveCount === 1 && b.saveCount === 1, 'the two projects that changed were saved');
+    say(c.saveCount === 0, 'the project that changed nothing was NOT saved — no pointless churn on its modified date');
+
+    // Unticking in the preview must mean "never opened", not "opened and discarded".
+    for (const p of [a, b, c]) { p.saveCount = 0; p.items.forEach((i) => { i.replacedWith = null; }); }
+    const only = aeft.supportSwap(BATCH, dryB.imageFolder, false, JSON.stringify([b.name]));
+    say(only.projects.length === 1 && only.projects[0].aep === b.name, 'unticking leaves exactly one project in the run');
+    say(a.saveCount === 0 && a.items.every((i) => i.replacedWith === null), 'and the unticked project was never touched');
 }
 
 console.log(fails === 0 ? '\nCLEAN — the rule holds on every real family surveyed.' : '\n' + fails + ' FAILED');

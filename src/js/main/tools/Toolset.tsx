@@ -498,7 +498,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "support-swap",
         label: "Support Swap",
-        description: "Swaps the OPEN project's .ai/.psd component sources for this territory's own, from <Territory>/Masters/Support. Matches on the filename — the same name with one market token swapped — so it works whatever the creative folders are called. Previews first; nothing is saved until you Apply.",
+        description: "Swaps the OPEN project's .ai/.psd component sources for this territory's own, from <Territory>/Masters/Support. Matches on the filename — the same name with one market token swapped — so it works whatever the creative folders are called. Previews first; nothing is saved until you Apply. Build a Batch has the same button for a whole batch folder.",
         icon: Layers,
         group: "naming",
         safety: "destructive",

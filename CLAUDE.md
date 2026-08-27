@@ -768,6 +768,18 @@ tokens and is correctly not a candidate.
   the OV file under the same name the project already uses, so nothing differs
   by one token and the OV-candidate list is empty too. `ssHasOvToken(name)`
   catches both, and keeps "shared across markets" meaning only what it says.
+- **"Exactly one token differs" is necessary and NOT sufficient** — both ends
+  must be **market-SHAPED** (2–3 letters, no digits). Italy holds both
+  `Portal_1L_DATE_IT` and `Portal_2L_DATE_IT`, one token apart, and without the
+  shape test the tool swapped a two-line date for a one-line one. A shape test
+  rather than a list of codes, because the code on disk is not always the ISO
+  one. `from` must be OV: a market→market pair (an `_FR_` file in an IT
+  project) is **offered as a fixable no-match**, never applied — it is either a
+  mistake or a deliberate borrow and nothing here can tell which.
+- A file already present under the identical name is reported as
+  "already the version in this market's Masters/Support" — worded to cover
+  BOTH already-localised and shared-across-markets, because one market's tree
+  genuinely cannot separate them.
 - The creative folder is a **tie-break only** (via `matchCreativeInName`, shared
   with the Localised Library's highlight so the two cannot disagree), never a
   filter: a deliverable can legitimately carry another creative's component.
