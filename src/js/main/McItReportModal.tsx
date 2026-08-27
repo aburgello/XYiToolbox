@@ -55,6 +55,20 @@ export interface McReport {
     finishedAt?: string;
     runId?: string;
     dryRun?: boolean;
+    // WHICH HOST EXPORT THIS REPORT CAME FROM, so the same modal can drive a
+    // second tool. Support Swap produces the identical report shape over
+    // .ai/.psd component sources, and every affordance here — the preview,
+    // the per-item Fix, Apply — is the same affordance for it. Absent means
+    // MC It!, which is every existing caller.
+    // A CLOSED SET, not a free string: this names a host export the modal is
+    // about to call, so it stays something the compiler can check against the
+    // bridge's own export list.
+    applyExport?: "mcIt" | "supportSwap";
+    pickExport?: "mcItPickImage" | "supportSwapPickFile";
+    /** Tool name in the modal's own title. Absent = "MC It!". */
+    toolName?: string;
+    // Verb shown on the cards ("replaced" / "swapped"). Absent = "replaced".
+    verb?: string;
 }
 
 let pushMcItReport: ((report: McReport) => void) | null = null;
@@ -139,7 +153,9 @@ export const McItReportHost: React.FC = () => {
                 Object.keys(overrides[aep]).forEach((k) => { forAep[k] = overrides[aep][k].path; });
                 if (Object.keys(forAep).length) paths[aep] = forAep;
             });
-            const res = await evalTS("mcIt", report.aepFolder || "", report.imageFolder || "", false, JSON.stringify(selected), JSON.stringify(paths));
+            // The five arguments are positional and shared: both exports take
+            // (aepFolder, sourceFolder, dryRun, only, overrides).
+            const res = await evalTS(report.applyExport || "mcIt", report.aepFolder || "", report.imageFolder || "", false, JSON.stringify(selected), JSON.stringify(paths));
             if (res?.success) {
                 const r = res as McReport;
                 shownRunIdRef.current = r.runId || r.finishedAt || "";
@@ -187,7 +203,7 @@ const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply
     const browseFor = async (aep: string, key: string) => {
         setPickError(null);
         try {
-            const res = await evalTS("mcItPickImage", report.imageFolder || "");
+            const res = await evalTS(report.pickExport || "mcItPickImage", report.imageFolder || "");
             if (!res?.success) { setPickError(res?.error || "Couldn't open the file picker."); return; }
             if (!res.path) return; // cancelled
             setOverride(aep, key, { name: res.name || res.path, path: res.path });
@@ -224,11 +240,13 @@ const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply
                 <div className="mcit-head-icon"><ImageIcon size={16} /></div>
                 <div className="mcit-head-text">
                     <div className="mcit-title">
-                        {report.dryRun ? "MC It! — preview (nothing saved)" : "MC It! — run complete"}
+                        {report.dryRun
+                            ? `${report.toolName || "MC It!"} — preview (nothing saved)`
+                            : `${report.toolName || "MC It!"} — run complete`}
                     </div>
                     <div className="mcit-subtitle">
                         {report.processed ?? 0} project{(report.processed ?? 0) === 1 ? "" : "s"} ·{" "}
-                        <span className="mcit-replaced-count">{report.replaced ?? 0} {report.dryRun ? "would be replaced" : "replaced"}</span> ·{" "}
+                        <span className="mcit-replaced-count">{report.replaced ?? 0} {report.dryRun ? `would be ${report.verb || "replaced"}` : (report.verb || "replaced")}</span> ·{" "}
                         {report.imageCount ?? 0} candidate images
                         {report.finishedAt ? <span className="mcit-finished"> · {report.finishedAt}</span> : null}
                     </div>

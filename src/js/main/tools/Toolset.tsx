@@ -54,6 +54,7 @@ import {
     Type,
     Move,
     Image as ImageIcon,
+    Layers,
     FileEdit,
     Globe,
     ToggleLeft,
@@ -492,6 +493,19 @@ export const ACTIONS: ActionEntry[] = [
         // routinely exceeds that while the script is still running fine.
         // Dry-run first ("", "", true): the results modal offers Apply.
         run: () => evalTS("mcIt", "", "", true),
+        successText: (result) => result.message || "Done.",
+    },
+    {
+        id: "support-swap",
+        label: "Support Swap",
+        description: "Swaps the OPEN project's .ai/.psd component sources for this territory's own, from <Territory>/Masters/Support. Matches on the filename — the same name with one market token swapped — so it works whatever the creative folders are called. Previews first; nothing is saved until you Apply.",
+        icon: Layers,
+        group: "naming",
+        safety: "destructive",
+        // Same reasoning as MC It! above: plain evalTS, and a dry run first so
+        // the results modal offers Apply. Arg 1 is unused (this reads the open
+        // project), arg 2 lets Apply reuse the folder the preview scanned.
+        run: () => evalTS("supportSwap", "", "", true),
         successText: (result) => result.message || "Done.",
     },
     {
@@ -1215,7 +1229,9 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
                 return;
             }
         }
-        if (action.id === "mc-it" && result && result.success) {
+        // Both produce the identical report shape — the modal drives whichever
+        // host export the report names (see McReport.applyExport).
+        if ((action.id === "mc-it" || action.id === "support-swap") && result && result.success) {
             showMcItReport(result as unknown as McReport);
             sfx.success();
             return;

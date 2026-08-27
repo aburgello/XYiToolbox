@@ -745,6 +745,40 @@ field blank while every size listed once filled in. Nothing was in doubt.
 (`FileSize|BitRate|Fps|Sound`), so duplicates that agree are one answer and rows
 that genuinely conflict still refuse, which is the case the guard exists for.
 
+**`<Territory>/Masters/Support/<Creative>/<Category>/` IS A PARALLEL CORPUS,
+and Support Swap matches on the FILENAME, never the folder.** Every market
+holds the same relative path and the same filename with **one token** swapped
+for its own (`Date/FID_INTL_Portal_2L_DATE_{IT,DE,FR,NO}_RGB.ai`). So the rule
+is *exactly one token differs*, found by **diffing, not by index** — the market
+token sits at a different position in every family (`…_IT_RGB.ai`,
+`FID_RGB_TT_IT_ON_75BLACK…`, `…_Pedigree_IT_RGB_SIMP.psd`). Diffing buys a
+discriminator free: Germany holds both `Portal_1L_DATE_DE` and
+`Portal_2L_DATE_DE`, and against a `_2L_` original the 1L file differs by TWO
+tokens and is correctly not a candidate.
+
+- **Never derive the market code from the territory name.** Paw Patrol's Chile
+  components are `_CH_`, not the ISO `_CL_`. Only the target territory's own
+  `Masters/Support` is scanned, so whatever is in there IS that market's — the
+  same discipline as never trusting `.exists` on the share.
+- **A file with no market token is SHARED** (`FID_UNI_Logo_RGB.ai` is identical
+  everywhere). It differs by zero tokens and never becomes a candidate; that
+  falls out of the rule rather than needing a list.
+- **`_OV_` is never a target**, and the OV case has TWO shapes — ask the
+  ORIGINAL, not the candidates. A market part-way through localisation holds
+  the OV file under the same name the project already uses, so nothing differs
+  by one token and the OV-candidate list is empty too. `ssHasOvToken(name)`
+  catches both, and keeps "shared across markets" meaning only what it says.
+- The creative folder is a **tie-break only** (via `matchCreativeInName`, shared
+  with the Localised Library's highlight so the two cannot disagree), never a
+  filter: a deliverable can legitimately carry another creative's component.
+  Two creatives holding one filename with no winner is **handed to the user**,
+  never guessed.
+- `Support_Motion`'s own folders are NOT usable as a key — one creative is
+  spelled `Jungle_Tunnel`, `JUNGLE_TUNNEL`, `JungleTunnel` and `Jungle Tunnel`
+  across four markets, the creative level is absent in nine more, and three keep
+  the files loose. `Masters/Support` is the consistent tree; the filename rule
+  above means neither has to be understood.
+
 **A DEDICATED `PNG`/`JPG` FOLDER IS NOT ALL TARGETS.** Measured in a real
 Brazil working copy, `Footage/PNG` held three FORGOTTEN_ISLAND logo variants
 and an `Asset 1@4x.png` beside the two artwork slots — and one logo ends `_1`,
@@ -874,6 +908,11 @@ territory with a folder per creative inside `Support_Motion`, one with
 everything loose — and `suggestLocLibCreative` over the name traps. Run it
 after touching either: it is the only gate on a function whose failure mode is
 writing a wrong library into `app.settings`.
+
+`node scripts/probe-support-swap.cjs` (after `yarn build`) drives
+`ssOneTokenDiff` over the filename families actually on the share, then
+`supportSwap` end to end against a stubbed Italy. Run it after touching either
+— this matcher decides which artwork goes into a finished deliverable.
 
 `node scripts/probe-campaign-rename.cjs` (after `yarn build`) drives
 `campaignRename` over a stubbed folder pair on BOTH naming conventions. Run it

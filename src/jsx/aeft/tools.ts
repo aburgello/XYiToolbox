@@ -3103,6 +3103,14 @@ interface McItResult {
   finishedAt?: string;
   runId?: string; // unique per run -- lets the panel suppress re-shows
   dryRun?: boolean; // preview pass: nothing replaced, nothing saved
+  // WHICH TOOL PRODUCED THIS, so one modal can serve two. Support Swap
+  // returns the same shape over .ai/.psd component sources, and every
+  // affordance in that modal -- preview, per-item Fix, Apply -- means the
+  // same thing for it. Absent is MC It!, which is every existing caller.
+  applyExport?: string;
+  pickExport?: string;
+  toolName?: string;
+  verb?: string;
 }
 
 // <Territory>/AE/Batch_01 -> the matching <Territory>/JPG_PNG batch folder.
@@ -3693,6 +3701,504 @@ export const mcItPickImage = (startFolder?: string): { success: boolean; path?: 
     if (!file) return { success: true };
     if (!/\.(png|jpe?g)$/i.test(file.name)) return { success: false, error: "Pick a PNG or JPG — got " + file.name };
     return { success: true, path: file.fsName, name: file.name };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// WHICH CREATIVE A FILENAME IS FOR, matched against a list of creative folder
+// names. Shared by the Localised Library's highlight and by Support Swap's
+// tie-break, so the two can never disagree about what a name means.
+//
+// WHOLE TOKENS, not substrings -- "Trio" sits inside "Triology", and a
+// candidate here is a bare word where a partial hit is just a different
+// creative. Consecutive tokens are JOINED before comparing, so a folder spelt
+// `Jungle_Tunnel` still answers to a deliverable's `JUNGLE_TUNNEL` and a
+// `Portal_To_Paradise` folder to a `PortalToParadise` deliverable; a join can
+// only start and end on a token boundary, so it never matches half a word.
+// Longest match wins, so `TrioReveal` beats `Trio` for its own file.
+export function matchCreativeInName(fileName: string, candidateNames: string[]): string | null {
+  const norm = (s: string) =>
+    String(s || "")
+      .toLowerCase()
+      .replace(/\.[a-z0-9]{1,5}$/i, "")
+      .replace(/[^a-z0-9]+/g, " ")
+      .replace(/\s+/g, " ")
+      .replace(/^\s+|\s+$/g, "");
+
+  const stem = norm(fileName);
+  if (!stem) return null;
+  const stemTokens = stem.split(" ");
+
+  const joins: string[] = [];
+  for (let i = 0; i < stemTokens.length; i++) {
+    let run = "";
+    for (let j = i; j < stemTokens.length; j++) {
+      run = run + stemTokens[j];
+      joins.push(run);
+    }
+  }
+
+  let best: string | null = null;
+  let bestLen = 0;
+  for (let c = 0; c < candidateNames.length; c++) {
+    const cand = norm(candidateNames[c]).replace(/\s+/g, "");
+    // Two characters match too much to be evidence of anything.
+    if (cand.length < 3) continue;
+    if (joins.indexOf(cand) === -1) continue;
+    if (cand.length > bestLen) {
+      bestLen = cand.length;
+      best = candidateNames[c];
+    }
+  }
+  return best;
+}
+
+// =============================================================================
+// Support Swap -- localise a project's .ai/.psd COMPONENT SOURCES the way
+// MC It! localises its PNG/JPG artwork.
+// -----------------------------------------------------------------------------
+// WHY THIS IS A FILENAME MATCHER AND NOT A FOLDER MATCHER. A territory's
+// <Territory>/Masters/Support/<Creative>/<Category>/ tree is a parallel corpus:
+// the same relative path and the same filename in every market, with ONE token
+// swapped for the market's own.
+//
+//   Italy    Date/FID_INTL_Portal_2L_DATE_IT_RGB.ai
+//   Germany  Date/FID_INTL_Portal_2L_DATE_DE_RGB.ai
+//   France   Date/FID_INTL_Portal_2L_DATE_FR_RGB.ai
+//   Norway   Date/FID_INTL_Portal_2L_DATE_NO_RGB.ai
+//
+// So the match is EXACTLY ONE TOKEN DIFFERENT, found by diffing rather than by
+// position: the market token sits at a different index in every family
+// (..._IT_RGB.ai, FID_RGB_TT_IT_ON_75BLACK..., ..._Pedigree_IT_RGB_SIMP.psd),
+// and any rule that indexes into the name would have to be rewritten per
+// family. Diffing also gets a discriminator for free -- Germany holds both
+// Portal_1L_DATE_DE and Portal_2L_DATE_DE, and against a _2L_ original the 1L
+// file differs by TWO tokens and is correctly not a candidate.
+//
+// THE TARGET MARKET IS NEVER DERIVED, IT IS READ. Nothing here maps a
+// territory name to a country code, because the code on disk is not always the
+// ISO one (Paw Patrol's Chile components are _CH_, not _CL_). Only the target
+// territory's OWN Masters/Support is scanned, so whatever file is in there IS
+// that market's -- the same discipline as never trusting .exists on the share:
+// attempt the real thing rather than predicting it.
+//
+// A FILE WITH NO MARKET TOKEN IS SHARED, and must not be touched.
+// FID_UNI_Logo_RGB.ai is byte-identical in every market, so it differs by zero
+// tokens and never becomes a candidate. That falls out of the rule rather than
+// needing a list.
+//
+// _OV_ IS NOT A TARGET. Territories are localised piecemeal -- Germany's
+// PortalToParadise still holds an _OV_ bugs logo and an _OV_ TT next to a
+// localised _DE_ date. Swapping something to OV would be a step backwards, so
+// an OV candidate is reported as "not localised yet", never offered.
+// =============================================================================
+
+export interface SupportSwapCandidate {
+  file: File;
+  /** Folder directly under Masters/Support -- "" for a file sitting loose. */
+  creative: string;
+  /** Folder the file actually sits in (Bugs / Date / MCs_Taglines / TT). */
+  category: string;
+}
+
+/** Name minus its extension, split on underscores AND spaces. */
+function ssTokens(name: string): string[] {
+  let stem = String(name);
+  const dot = stem.lastIndexOf(".");
+  if (dot > 0) stem = stem.substring(0, dot);
+  const rough = stem.split("_");
+  const out: string[] = [];
+  for (let i = 0; i < rough.length; i++) {
+    const bySpace = rough[i].split(" ");
+    for (let j = 0; j < bySpace.length; j++) {
+      if (bySpace[j] !== "") out.push(bySpace[j]);
+    }
+  }
+  return out;
+}
+
+function ssExt(name: string): string {
+  const dot = String(name).lastIndexOf(".");
+  return dot > 0 ? String(name).substring(dot + 1).toLowerCase() : "";
+}
+
+/**
+ * The index of the single token that differs, or -1 when the two names differ
+ * by nothing, by more than one token, by token count, or by extension.
+ *
+ * Case-insensitive on the comparison but the ORIGINAL casing is what gets
+ * reported, since that is what is on disk.
+ */
+export function ssOneTokenDiff(a: string, b: string): number {
+  if (ssExt(a) !== ssExt(b)) return -1;
+  const ta = ssTokens(a);
+  const tb = ssTokens(b);
+  if (ta.length !== tb.length) return -1;
+  let at = -1;
+  for (let i = 0; i < ta.length; i++) {
+    if (ta[i].toLowerCase() === tb[i].toLowerCase()) continue;
+    if (at !== -1) return -1; // a second difference disqualifies the pair
+    at = i;
+  }
+  return at;
+}
+
+/** Does this filename carry an OV token of its own? */
+function ssHasOvToken(name: string): boolean {
+  const t = ssTokens(name);
+  for (let i = 0; i < t.length; i++) {
+    if (ssIsOvToken(t[i])) return true;
+  }
+  return false;
+}
+
+function ssIsOvToken(tok: string): boolean {
+  const t = String(tok).toUpperCase();
+  if (t === "OV") return true;
+  // OV2, OV3 -- a numbered slot is still the OV slot.
+  if (t.length > 2 && t.substring(0, 2) === "OV") {
+    let digits = true;
+    for (let i = 2; i < t.length; i++) {
+      if ("0123456789".indexOf(t.charAt(i)) === -1) { digits = false; break; }
+    }
+    return digits;
+  }
+  return false;
+}
+
+/**
+ * The territory folder a saved project sits under -- the nearest ancestor
+ * holding a Masters/Support tree.
+ *
+ * Walked UP from the file rather than assumed to be AE/Batch_N's grandparent,
+ * because a project can legitimately sit deeper (a batch's own subfolder) or
+ * shallower, and the thing being looked for is unambiguous when it is found.
+ */
+export function ssFindSupportRoot(start: Folder | null): Folder | null {
+  let node: Folder | null = start;
+  let guard = 0;
+  while (node && guard < 8) {
+    const masters = new Folder(node.fsName + "/Masters/Support");
+    if (masters.exists) return masters;
+    // Some markets keep it one level flatter.
+    const direct = new Folder(node.fsName + "/Support");
+    if (direct.exists && String(node.name).toUpperCase() !== "MASTERS") return direct;
+    node = node.parent;
+    guard++;
+  }
+  return null;
+}
+
+function ssSkipFolder(name: string): boolean {
+  const n = decode(String(name));
+  if (n.charAt(0) === "_") return true;                       // _Old, _Archive
+  if (n.toLowerCase().indexOf("auto-save") !== -1) return true; // AE's own litter
+  return false;
+}
+
+/**
+ * Every .ai/.psd under Masters/Support, each tagged with the creative folder it
+ * sits under. `creative` is the folder DIRECTLY under the root, whatever depth
+ * the file is at below it -- the same rule the Localised Library uses, and for
+ * the same reason: Bugs/Date/MCs_Taglines/TT repeat inside every creative, so
+ * the level below the root is the only one that identifies anything.
+ */
+export function ssCollectSupport(root: Folder): SupportSwapCandidate[] {
+  const out: SupportSwapCandidate[] = [];
+  const walk = (folder: Folder, creative: string, depth: number) => {
+    if (depth > 6) return;
+    const items = folder.getFiles();
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it instanceof Folder) {
+        if (ssSkipFolder(it.name)) continue;
+        walk(it as Folder, creative === "" ? decode(it.name) : creative, depth + 1);
+      } else if (it instanceof File) {
+        const ext = ssExt(decode(it.name));
+        if (ext !== "ai" && ext !== "psd" && ext !== "eps") continue;
+        out.push({ file: it as File, creative: creative, category: decode(folder.name) });
+      }
+    }
+  };
+  walk(root, "", 0);
+  return out;
+}
+
+/** Distinct creative folder names in a candidate list, in first-seen order. */
+export function ssCreativesOf(cands: SupportSwapCandidate[]): string[] {
+  const seen: string[] = [];
+  for (let i = 0; i < cands.length; i++) {
+    const c = cands[i].creative;
+    if (c === "") continue;
+    if (seen.indexOf(c) === -1) seen.push(c);
+  }
+  return seen;
+}
+
+interface SsMatch {
+  cand: SupportSwapCandidate;
+  fromToken: string;
+  toToken: string;
+}
+
+/**
+ * Every candidate that differs from `name` by exactly one token, split into
+ * the ones worth offering and the OV ones that mean "not localised yet".
+ */
+function ssMatchesFor(name: string, cands: SupportSwapCandidate[]): { live: SsMatch[]; ov: SsMatch[] } {
+  const live: SsMatch[] = [];
+  const ov: SsMatch[] = [];
+  for (let i = 0; i < cands.length; i++) {
+    const candName = decode(cands[i].file.name);
+    const at = ssOneTokenDiff(name, candName);
+    if (at === -1) continue;
+    const from = ssTokens(name)[at];
+    const to = ssTokens(candName)[at];
+    const m: SsMatch = { cand: cands[i], fromToken: from, toToken: to };
+    // Never swap TOWARDS the master. A territory part-way through
+    // localisation holds both, and offering the OV would undo work.
+    if (ssIsOvToken(to)) ov.push(m);
+    else live.push(m);
+  }
+  return { live: live, ov: ov };
+}
+
+/**
+ * Every .ai/.psd footage item in the open project, with the project folder it
+ * sits in (for the report's `folder` column and its override key).
+ *
+ * Walks the whole project rather than a named subfolder, because component
+ * sources are not filed anywhere consistent -- unlike MC It!'s PNG/JPG, which
+ * live in Footage/PNG by convention. An imported sibling PROJECT brings its own
+ * items along though (app.project.item(i) is flat -- see ownProjectFolder), so
+ * anything under a folder named like a .aep is left alone: it belongs to that
+ * project, not this one.
+ */
+function ssProjectItems(proj: Project): { item: FootageItem; folder: string }[] {
+  const out: { item: FootageItem; folder: string }[] = [];
+  for (let i = 1; i <= proj.numItems; i++) {
+    const it = proj.item(i);
+    if (!(it instanceof FootageItem)) continue;
+    const f = (it as FootageItem).file;
+    if (!f) continue;
+    const ext = ssExt(decode(f.name));
+    if (ext !== "ai" && ext !== "psd" && ext !== "eps") continue;
+
+    let folderName = "";
+    let inImported = false;
+    let parent: FolderItem | null = it.parentFolder;
+    let guard = 0;
+    while (parent && guard < 12) {
+      const pn = String(parent.name);
+      if (folderName === "") folderName = pn;
+      if (pn.length > 4 && pn.substring(pn.length - 4).toLowerCase() === ".aep") { inImported = true; break; }
+      parent = parent.parentFolder;
+      guard++;
+    }
+    if (inImported) continue;
+    out.push({ item: it as FootageItem, folder: folderName });
+  }
+  return out;
+}
+
+/**
+ * Localise the open project's component sources against its own territory's
+ * Masters/Support tree.
+ *
+ * Signature mirrors mcIt() on purpose -- the panel renders both through the
+ * same report modal, and the modal's dry-run -> Apply round trip passes these
+ * five arguments straight back. `supportRootPath` is remembered from the
+ * preview so Apply never re-derives (or re-asks for) the folder.
+ *
+ * dryRun replaces NOTHING and saves nothing; the report comes back flagged so
+ * the modal offers Apply.
+ */
+export const supportSwap = (
+  unusedFolderPath?: string,
+  supportRootPath?: string,
+  dryRun?: boolean,
+  onlyJson?: string,
+  overridesJson?: string
+): McItResult => {
+  try {
+    const proj = app.project;
+    if (!proj) return { success: false, error: "No project is open." };
+    const projFile = proj.file;
+    if (!projFile) {
+      return { success: false, error: "Save the project first — its territory is read from where it sits on disk." };
+    }
+    const aepName = decode(projFile.name);
+
+    let root: Folder | null = null;
+    if (supportRootPath) {
+      const given = new Folder(supportRootPath);
+      if (given.exists) root = given;
+    }
+    if (!root) root = ssFindSupportRoot(projFile.parent);
+    if (!root) {
+      return {
+        success: false,
+        error: "No Masters/Support folder found above this project — expected <Territory>/Masters/Support.",
+      };
+    }
+
+    const cands = ssCollectSupport(root);
+    if (cands.length === 0) {
+      return { success: false, error: "No .ai/.psd files under " + root.fsName };
+    }
+
+    // The creative this project is for, used ONLY to break a tie between two
+    // creatives holding the same filename. Never to filter: a deliverable can
+    // legitimately carry another creative's component (a shared bug, an
+    // endcard), and filtering on it would hide exactly those.
+    const creatives = ssCreativesOf(cands);
+    const projCreative = matchCreativeInName(aepName, creatives);
+
+    let overrides: Record<string, string> = {};
+    if (overridesJson) {
+      try {
+        const parsed = JSON.parse(overridesJson);
+        if (parsed && parsed[aepName]) overrides = parsed[aepName];
+      } catch (parseErr) { overrides = {}; }
+    }
+
+    const projReport: McItProjectReport = { aep: aepName, resolution: projCreative || "", items: [] };
+    const found = ssProjectItems(proj);
+    if (found.length === 0) {
+      projReport.skipped = "No .ai/.psd footage in this project.";
+    }
+
+    let replaced = 0;
+    for (let i = 0; i < found.length; i++) {
+      const fi = found[i].item;
+      const folderName = found[i].folder;
+      const name = decode((fi.file as File).name);
+      const key = folderName + "|" + name;
+
+      // A manual pick beats every rule below it -- the user has looked at this
+      // exact item and named the exact file. The one thing it cannot bypass is
+      // the file not being there.
+      if (overrides[key]) {
+        const chosen = new File(overrides[key]);
+        if (!chosen.exists) {
+          projReport.items.push({ folder: folderName, name: name, action: "no-match", key: key, reason: "The file you picked no longer exists: " + overrides[key] });
+          continue;
+        }
+        if (!dryRun) { fi.replace(chosen); $.sleep(200); }
+        projReport.items.push({ folder: folderName, name: name, action: "replaced", newName: decode(chosen.name), manual: true, key: key });
+        replaced++;
+        continue;
+      }
+
+      const m = ssMatchesFor(name, cands);
+
+      if (m.live.length === 0) {
+        // ASK THE ORIGINAL, NOT THE CANDIDATES. The OV case has two shapes and
+        // only one of them is a near-miss: a market part-way through
+        // localisation holds the OV file under the SAME name the project is
+        // already using, so nothing differs by one token and the ov list is
+        // empty too. Reading the OV token off the item itself catches both,
+        // and keeps "shared across markets" meaning only what it says.
+        if (ssHasOvToken(name)) {
+          let where = "";
+          if (m.ov.length > 0 && m.ov[0].cand.creative !== "") where = " under " + m.ov[0].cand.creative;
+          projReport.items.push({
+            folder: folderName, name: name, action: "skipped", key: key,
+            reason: "Still the OV version" + where + " — this market hasn't localised this component yet.",
+          });
+        } else {
+          // No market token at all: the same file in every market (a studio
+          // logo, a copyright line). A normal answer, not a failure.
+          projReport.items.push({
+            folder: folderName, name: name, action: "skipped", key: key,
+            reason: "No market-specific version under Masters/Support — it looks shared across markets.",
+          });
+        }
+        continue;
+      }
+
+      let pick = m.live[0];
+      if (m.live.length > 1) {
+        // Prefer this project's own creative; anything left over is a genuine
+        // ambiguity and is handed to the user rather than guessed at.
+        let narrowed: SsMatch[] = [];
+        if (projCreative) {
+          for (let k = 0; k < m.live.length; k++) {
+            if (m.live[k].cand.creative === projCreative) narrowed.push(m.live[k]);
+          }
+        }
+        if (narrowed.length === 1) {
+          pick = narrowed[0];
+        } else {
+          const options: { name: string; path: string }[] = [];
+          for (let k = 0; k < m.live.length; k++) {
+            options.push({ name: m.live[k].cand.creative + " / " + m.live[k].cand.category + " / " + decode(m.live[k].cand.file.name), path: m.live[k].cand.file.fsName });
+          }
+          projReport.items.push({
+            folder: folderName, name: name, action: "no-match", key: key, candidates: options,
+            reason: m.live.length + " creatives hold a file matching this — pick the right one.",
+          });
+          continue;
+        }
+      }
+
+      if (decode(pick.cand.file.name) === name) {
+        projReport.items.push({ folder: folderName, name: name, action: "skipped", key: key, reason: "Already this market's version." });
+        continue;
+      }
+
+      if (!dryRun) { fi.replace(pick.cand.file); $.sleep(200); }
+      projReport.items.push({
+        folder: folderName, name: name, action: "replaced", key: key,
+        newName: decode(pick.cand.file.name),
+      });
+      replaced++;
+    }
+
+    if (!dryRun && replaced > 0) proj.save();
+
+    const runId = "" + new Date().getTime();
+    const message = dryRun
+      ? replaced + " of " + found.length + " component(s) would be swapped."
+      : replaced + " of " + found.length + " component(s) swapped.";
+
+    return {
+      success: true,
+      message: message,
+      aepFolder: projFile.parent ? projFile.parent.fsName : "",
+      imageFolder: root.fsName,
+      imageCount: cands.length,
+      processed: 1,
+      replaced: replaced,
+      projects: [projReport],
+      finishedAt: new Date().toString(),
+      runId: runId,
+      dryRun: dryRun === true,
+      applyExport: "supportSwap",
+      pickExport: "supportSwapPickFile",
+      toolName: "Support Swap",
+      verb: "swapped",
+    };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/** File picker for the modal's manual fix, scoped to component source types. */
+export const supportSwapPickFile = (startPath?: string): { success: boolean; error?: string; path?: string; name?: string } => {
+  try {
+    const start = startPath ? new Folder(startPath) : null;
+    const picked = start && start.exists
+      ? start.openDlg("Pick the component source to use", undefined, false)
+      : File.openDialog("Pick the component source to use");
+    const file = picked instanceof Array ? picked[0] : picked;
+    if (!file) return { success: true };
+    const ext = ssExt(decode(file.name));
+    if (ext !== "ai" && ext !== "psd" && ext !== "eps") {
+      return { success: false, error: "Pick an .ai, .psd or .eps — got " + decode(file.name) };
+    }
+    return { success: true, path: file.fsName, name: decode(file.name) };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
