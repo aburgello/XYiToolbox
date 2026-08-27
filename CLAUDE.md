@@ -64,11 +64,13 @@ original. Items referenced ONLY by expressions do not survive a reduce — say s
 don't try to detect it.
 
 **Reduce** (`reduceToSelection`, `tools.ts`) is the same operation as a
-standalone button, in **two calls**: the first only looks (which comps are
-selected, how many items), the panel names both, and only then does it run.
-Removing 178 of 181 items is worth a glance first even when it is what you
-asked for. It refuses with no comp selected rather than reducing to nothing,
-and a selected *footage* item is not a comp.
+standalone button, and runs **with no confirmation** — Ctrl+Z is the way back,
+and a modal charging for a risk that isn't there is friction on a button people
+press all day. It refuses with no comp selected rather than reducing to
+nothing, and a selected *footage* item is not a comp. AE's expressions caveat
+lives in the tool's description, where it's read once, not in a dialog
+dismissed every time. `apply: false` still reports what would be kept without
+touching anything; nothing calls it today.
 
 **"Not undoable" is about `executeCommand`, NOT about Ctrl+Z** — and the button
 shipped saying the wrong one for a day. HISTORY.md measured reduce surviving a

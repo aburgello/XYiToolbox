@@ -242,17 +242,18 @@ interface ReduceResult {
  * stops a script dead until somebody clicks OK. app.project.reduceProject()
  * is the same operation and returns silently.
  *
- * TWO PASSES: the first only looks, reporting which comps are selected and how
- * big the project is, so the panel can name both before anything goes. Removing
- * 178 of 181 items is worth a glance first even when it is exactly what you
- * asked for.
- *
  * A SCRIPT CANNOT UNDO THIS; A PERSON CAN. HISTORY.md measured reduce
  * surviving a script's own undo three ways, including inside beginUndoGroup
  * (5 items -> 3 -> 3), which is why saveComponent reopens from disk rather
  * than trusting it. That is a fact about executeCommand, not about Ctrl+Z --
- * AE's own dialog says "You can undo if desired" -- so this does NOT warn that
- * the operation is permanent. Nothing here calls undo either way.
+ * AE's own dialog says "You can undo if desired". So the panel does NOT put a
+ * modal in front of this: Ctrl+Z is the way back, and a confirmation charging
+ * for a risk that is not there is friction on a button somebody presses all
+ * day. Nothing here calls undo either way.
+ *
+ * `apply` false still reports what WOULD be kept without touching anything --
+ * no caller needs it today, and it is what any future preview would be built
+ * on. It costs one branch and the probe covers both.
  *
  * Expressions: AE's own warning on the menu command is that items referenced
  * ONLY by expressions are not preserved, and the API is the same operation.

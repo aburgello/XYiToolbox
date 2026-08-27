@@ -79,7 +79,7 @@ import { sfx } from "../../lib/utils/sfx";
 import Tooltip from "../Tooltip";
 import StatusIcon from "../StatusIcon";
 import Droplet from "../Droplet";
-import { alertDialog, confirmDialog, promptDialog, selectDialog } from "../Dialog";
+import { alertDialog, promptDialog, selectDialog } from "../Dialog";
 import { openPreFlight, type PreflightReport } from "../PreFlightModal";
 import { iconWiggle, buttonLift } from "../animations";
 import { TOOLS } from "../toolRegistry";
@@ -499,44 +499,27 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "reduce-project",
         label: "Reduce",
-        description: "File > Dependencies > Reduce Project, as a button. Keeps the comps selected in the Project panel and removes everything nothing else uses. Asks first — this cannot be undone.",
+        description: "File > Dependencies > Reduce Project, as a button. Keeps the comps selected in the Project panel and removes everything they don't use. Ctrl+Z undoes it. Anything referenced only by an expression is not preserved — that is AE's own caveat and it applies here too.",
         icon: Scissors,
         group: "qc",
         safety: "destructive",
         /**
-         * TWO CALLS: the first only looks, so the count and the comps being
-         * kept can be named before anything goes.
+         * NO CONFIRMATION, because Ctrl+Z is the confirmation.
          *
-         * IT SAYS Ctrl+Z WORKS, and that is a correction. This first shipped
-         * warning it could not be undone, which came from HISTORY.md's
-         * measurement that reduce survives a SCRIPT calling undo (three ways,
-         * including inside beginUndoGroup: 5 items -> 3 -> 3). AE's own dialog
-         * says "You can undo if desired", and that is about a person pressing
-         * the key, which is not what was measured. Telling somebody their work
-         * is unrecoverable when it is recoverable is the worse error of the
-         * two, and it was most of the dialog's length.
+         * It shipped with one, on the belief that reduce could not be undone.
+         * That belief came from HISTORY.md's measurement, which is about a
+         * SCRIPT calling undo (three ways, including inside beginUndoGroup:
+         * 5 items -> 3 -> 3) and is why saveComponent reopens from disk. AE's
+         * own dialog says "You can undo if desired" -- a person pressing the
+         * key, which is not what was measured. With a real undo behind it, a
+         * modal in front of a button somebody presses all day is friction
+         * charging for a risk that is not there.
          *
-         * What is left is the part they cannot find out any other way: how
-         * many items, what is being kept, and AE's expressions caveat.
+         * The expressions caveat moved to the description rather than being
+         * dropped: it is a standing property of the operation, so it belongs
+         * where you read it once and not in a dialog you dismiss every time.
          */
-        run: async () => {
-            const peek = await evalTSSafe("reduceToSelection", false);
-            if (!peek || !peek.success) return peek;
-            // Deliverable names run past 50 characters, and three lines of
-            // filename pushes everything that matters below the fold.
-            const names = ((peek.comps as string[]) || []).map((n) =>
-                n.length > 38 ? n.slice(0, 36) + "…" : n);
-            const keeping = names.length > 2
-                ? `${names.length} comps`
-                : names.map((n) => `“${n}”`).join(" and ");
-            const ok = await confirmDialog(
-                `Reduce to ${keeping}?\n\n` +
-                `Removes whatever they don't use, from ${peek.total} items. Ctrl+Z undoes it — ` +
-                `but anything referenced only by an expression won't be kept.`
-            );
-            if (!ok) return null;
-            return evalTSSafe("reduceToSelection", true);
-        },
+        run: () => evalTSSafe("reduceToSelection", true),
         successText: (result) => result.message || "Reduced.",
     },
     {

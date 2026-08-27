@@ -4,12 +4,13 @@
 // Drives the BUILT bundle's reduceToSelection() against a stubbed AE project.
 //
 // STUBBED ON PURPOSE, unlike the geometry probes that drive real AE. Reduce
-// DELETES items and is not undoable from a script, so a probe run against
-// whatever the artist has open would be the bug it is meant to prevent. What is
-// checked here is the part that can be checked without deleting anybody's work:
-// that the look-first pass touches nothing, that a missing selection refuses
-// rather than reducing to nothing, and that comps are found by duck-typing
-// rather than `instanceof CompItem`.
+// DELETES items, and a probe run against whatever the artist has open would be
+// the bug it is meant to prevent -- Ctrl+Z is a person's way back, not a
+// script's. What is checked here is everything that can be checked without
+// deleting anybody's work: that a missing selection refuses rather than
+// reducing to nothing, that a selected footage item is not mistaken for a comp,
+// that the look-only pass touches nothing, and that the count is measured
+// rather than assumed.
 //
 //   yarn build && node scripts/probe-reduce-project.cjs
 // =============================================================================
@@ -119,5 +120,5 @@ say(r.success && r.removed === 0 && /Nothing to remove/.test(r.message || ''),
 console.log('\n6. the menu command is never used');
 say(!/executeCommand\(\s*2735/.test(src), 'command id 2735 (modal Reduce Project) appears nowhere in the bundle');
 
-console.log(fails === 0 ? '\nCLEAN — it looks before it deletes, and refuses when it cannot tell what to keep.' : '\n' + fails + ' FAILED');
+console.log(fails === 0 ? '\nCLEAN — it refuses when it cannot tell what to keep, and counts what it actually did.' : '\n' + fails + ' FAILED');
 process.exit(fails ? 1 : 0);
