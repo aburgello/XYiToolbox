@@ -17,7 +17,10 @@
 //   3. a territory with no creative folders is unchanged, byte for byte;
 //   4. re-running BACKFILLS a library saved before the field existed, and is
 //      otherwise a no-op;
-//   5. an accented creative folder is stored DECODED, not percent-escaped.
+//   5. an accented creative folder is stored DECODED, not percent-escaped;
+//   6. suggestLocLibCreative picks the right creative for an open project,
+//      and — the reason it is not a call to suggestJpgPngMatch — does NOT
+//      fire on Trio inside Triology.
 //
 //   yarn build && node scripts/probe-loclib-creatives.cjs
 // =============================================================================
@@ -28,6 +31,7 @@ const src = fs.readFileSync('dist/cep/jsx/index.js', 'utf8');
 // fsName -> array of child names (a folder), or absent (a file).
 let tree = {};
 let settings = {};
+let openProject = '';
 
 // Real constructors, because the code under test duck-types with
 // `instanceof Folder` / `instanceof File` on ExtendScript's own core classes.
@@ -65,7 +69,8 @@ const sandbox = {
             getSetting: (s, k) => settings[s + '|' + k],
             saveSetting: (s, k, v) => { settings[s + '|' + k] = v; },
         },
-        project: null,
+        // Set `openProject` below to stand in for the open AE project.
+        get project() { return { file: openProject ? new File('/x/' + openProject) : null }; },
     },
     $: { writeln() {}, global: null },
     BridgeTalk: { appName: 'aftereffects' },
@@ -160,6 +165,29 @@ console.log('\n5. an accented creative folder is stored decoded');
 const acc = byLabel('Seinäjoki_DE');
 check('creative reads back as Seinajoki-with-accent, not %-escaped',
     !!acc && acc.creative === 'Seinäjoki', acc ? JSON.stringify(acc.creative) : 'row missing');
+
+console.log('\n6. the open project is matched to a creative folder');
+const match = (proj, creatives, expected, why) => {
+    openProject = proj;
+    const got = aeft.suggestLocLibCreative(creatives);
+    check(String(got === null ? '—' : got).padEnd(20) + why, got === expected, got === expected ? '' : '(wanted ' + expected + ')');
+};
+const GERMANY = ['Bracelet', 'Trio', 'Date'];
+match('FID_INTL_Bracelet_DOOH_1920x1080px_10s_DE_V01.aep', GERMANY, 'Bracelet', 'current convention');
+match('ODY_INTL_DGTL_DOOH_Bracelet_1920x858_10sec_DE.aep', GERMANY, 'Bracelet', 'legacy convention');
+match('FID_INTL_Trio_DOOH_DufryEZ_512x96px_15s_DE.aep', GERMANY, 'Trio', 'creative with a site token after it');
+match('FID_INTL_Pedigree_DOOH_1920x1080px_10s_DE.aep', GERMANY, null, 'no folder for it — no mark, not a guess');
+match('', GERMANY, null, 'unsaved project');
+// The traps. These are why this is its own function and not a call to
+// suggestJpgPngMatch, whose substring branch fires on every one of them.
+match('FID_INTL_Triology_DOOH_1920x1080px_10s_DE.aep', GERMANY, null, 'Trio sits INSIDE Triology');
+match('FID_INTL_MyBracelets_DOOH_1920x1080px_10s_DE.aep', GERMANY, null, 'Bracelet inside Bracelets');
+match('FID_INTL_PortalToParadise_DOOH_1920x640px_30s_NO.aep', ['Portal_To_Paradise', 'Trio'], 'Portal_To_Paradise', 'folder underscored, deliverable not');
+match('FID_INTL_Portal_To_Paradise_DOOH_1920x640px_30s_NO.aep', ['PortalToParadise'], 'PortalToParadise', '…and the other way round');
+match('FID_INTL_Bracelet_DOOH_1920x1080px_10s_DE.aep', ['Bracelet', 'BraceletReveal'], 'Bracelet', 'exact beats the longer sibling');
+match('FID_INTL_BraceletReveal_DOOH_1920x1080px_10s_DE.aep', ['Bracelet', 'BraceletReveal'], 'BraceletReveal', 'longest match wins');
+match('FID_INTL_TT_DOOH_1920x1080px_10s_DE.aep', ['TT', 'Trio'], null, 'two letters match too much to be evidence');
+openProject = '';
 
 console.log(fails === 0 ? '\nCLEAN — the scan mirrors the folder structure.' : '\n' + fails + ' FAILED');
 process.exit(fails === 0 ? 0 : 1);

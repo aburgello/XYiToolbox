@@ -153,6 +153,10 @@ const MOCK_DETECTED_TERRITORY: Record<string, string | null> = { ODY_INTL_DGTL_D
 // Poster_Creative_FR/Poster_1Sheet_FR.jpg so the suggestion has something
 // real to point at once you're a level deep.
 const MOCK_OPEN_PROJECT_HINT = "poster";
+// …and which creative the open project looks like, for the highlight on the
+// creative rows. Bracelet, so Germany (the territory filed the new way) has
+// something to mark in preview.
+const MOCK_DETECTED_CREATIVE = "Bracelet";
 // Demonstrates the lazy, one-level-at-a-time JPG_PNG browse in preview --
 // keyed by territory for the root level, and by "territory/breadcrumb
 // path" for anything drilled into, matching how the real handlers below
@@ -206,18 +210,24 @@ const LocalisedLibraryTool = () => {
     const [components, setComponents] = useState<Component[]>([]);
     const [customFolders, setCustomFolders] = useState<CustomFolder[]>([]);
     const [selectedTerritory, setSelectedTerritory] = useState<string | null>(null);
-    // Third nav level, within a territory: null shows the folder list
-    // (auto extension buckets + any custom folders), set shows that
-    // folder's own component list -- see the "mini directories" split in
-    // this file's header comment.
-    const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
-    // A level ABOVE the folder list, and only where the disk has one: null
-    // is the territory's own landing (creative rows, plus the file-type
-    // buckets of anything loose), set narrows everything below to that one
-    // creative. A territory whose Support_Motion has no creative folders
-    // never sees this level at all -- the whole point is to mirror what is
-    // there, not to impose a level on trees that don't have one.
-    const [selectedCreative, setSelectedCreative] = useState<string | null>(null);
+    // EXPANSION, NOT NAVIGATION. Below a territory this used to be two
+    // more pages -- pick a creative, then pick a folder, each swapping the
+    // whole view. A library is a thing you rummage in: the answer is often
+    // "which of these two folders has it", and a page swap makes that a
+    // there-and-back each time, losing the list you were comparing against.
+    // Everything under a territory now opens in place, so several folders
+    // (and several creatives) can be open at once and the batch selection
+    // spans all of them.
+    //
+    // Folder keys carry their creative -- every creative has an `AI`.
+    const [expandedCreatives, setExpandedCreatives] = useState<Set<string>>(new Set());
+    const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+
+    // Which creative the OPEN PROJECT looks like, highlighted in the list.
+    // Same spirit as detectedTerritory above -- a pointer, never a filter:
+    // null (unsaved project, another campaign, a territory filed the old
+    // way) just means no row is marked.
+    const [detectedCreative, setDetectedCreative] = useState<string | null>(null);
     const [territorySearch, setTerritorySearch] = useState("");
     const [countryCodes, setCountryCodes] = useState<Record<string, string>>({});
 
@@ -405,15 +415,10 @@ const LocalisedLibraryTool = () => {
     // asked to stay out of AEP -- the folder list is the neutral landing so
     // whichever folder they actually want is one deliberate click away.
     useEffect(() => {
-        setSelectedFolder(null);
-        setSelectedCreative(null);
+        setExpandedCreatives(new Set());
+        setExpandedFolders(new Set());
     }, [selectedTerritory]);
 
-    // Leaving a creative leaves its folders behind with it -- an AI bucket
-    // that belonged to Bracelet must not survive the walk back out.
-    useEffect(() => {
-        setSelectedFolder(null);
-    }, [selectedCreative]);
 
     // Fresh territory, fresh JPG_PNG browse -- a listing scanned for
     // France shouldn't linger when switching to Germany.
@@ -433,7 +438,7 @@ const LocalisedLibraryTool = () => {
 
     useEffect(() => {
         setSelectedPaths(new Set());
-    }, [selectedTerritory, selectedCreative, selectedFolder, jpgPngStack]);
+    }, [selectedTerritory, jpgPngStack]);
 
     const refreshTerritories = async (camp: Campaign) => {
         setLoadingTerritories(true);
@@ -517,7 +522,7 @@ const LocalisedLibraryTool = () => {
         await refreshCampaigns();
     };
 
-    const handleAddComponent = async () => {
+    const handleAddComponent = async (creative: string, folder: string) => {
         if (!selectedCampaign || !selectedTerritory) return;
         const path = await safeEvalTS("selectComponentFile", selectedTerritory);
         if (!path) return;
@@ -526,17 +531,18 @@ const LocalisedLibraryTool = () => {
         const label = await promptDialog("Label this component:", defaultLabel);
         if (label === null) return;
 
-        // Filed straight into whichever folder we're currently viewing --
-        // Add Component only ever shows from inside a folder now, so
-        // selectedFolder is always set here in practice.
+        // Filed into the branch whose own "Add to …" button was pressed.
+        // With several folders open at once there is no "the folder you
+        // are in" left to infer, so the target is passed in rather than
+        // read off a selection.
         const result = await safeEvalTS(
             "addLocLibComponent",
             selectedCampaign.name,
             selectedTerritory,
             label || defaultLabel,
             path,
-            selectedFolder || undefined,
-            selectedCreative || undefined
+            folder || undefined,
+            creative || undefined
         );
         if (result && result.success) {
             const all: Component[] = (await safeEvalTS("loadLocLibComponents")) || [];
@@ -581,7 +587,13 @@ const LocalisedLibraryTool = () => {
         setCustomFolders(allFolders);
         // The folder we were just looking at no longer exists -- drop back
         // to the folder list rather than showing an empty, gone folder.
-        if (selectedFolder === folderName) setSelectedFolder(null);
+        // The branch it was is gone; drop it from the open set so a folder
+        // recreated under the same name doesn't come back already open.
+        setExpandedFolders((prev) => {
+            const next = new Set(prev);
+            next.delete(folderKey("", folderName));
+            return next;
+        });
     };
 
     // Reassigns one component to a different folder, offering every folder
@@ -819,8 +831,22 @@ const LocalisedLibraryTool = () => {
     // Generic over whichever path list is currently on screen -- shared by
     // the folder-components view and the JPG_PNG batch-files view, which
     // are two different data sources feeding the same selectedPaths set.
+    // ADDS or REMOVES this group's paths rather than replacing the whole
+    // selection. It used to replace it, which was right while exactly one
+    // folder could be on screen at a time -- now that branches open in
+    // place and the selection spans them, "Select all" in Bracelet's AI
+    // would have silently thrown away everything ticked under Trio.
     const toggleSelectAllPaths = (paths: string[]) => {
-        setSelectedPaths((prev) => (prev.size === paths.length ? new Set() : new Set(paths)));
+        setSelectedPaths((prev) => {
+            const next = new Set(prev);
+            let allHere = paths.length > 0;
+            for (const p of paths) if (!next.has(p)) { allHere = false; break; }
+            for (const p of paths) {
+                if (allHere) next.delete(p);
+                else next.add(p);
+            }
+            return next;
+        });
     };
 
     // Reports a summary toast rather than one per file -- a batch of 5+
@@ -918,33 +944,177 @@ const LocalisedLibraryTool = () => {
     ).sort();
     const hasCreatives = creativesForTerritory.length > 0;
 
-    // What the folder buckets below are computed from. Inside a creative,
-    // that creative's files; at the territory landing of a tree that HAS
-    // creatives, only the loose ones -- their buckets sit under the
-    // creative rows exactly as they sit beside those folders on disk.
-    // Without creatives at all, everything, which is the original view.
-    const componentsInScope = !hasCreatives
-        ? componentsForTerritory
-        : selectedCreative
-            ? componentsForTerritory.filter((c) => (c.creative || "") === selectedCreative)
-            : componentsForTerritory.filter((c) => !c.creative);
+    // Everything filed under one creative ("" for the files loose in
+    // Support_Motion, which is the whole territory on a tree that has no
+    // creative folders at all).
+    const componentsOfCreative = (creative: string) =>
+        componentsForTerritory.filter((c) => (c.creative || "") === creative);
 
-    // Folder list for the current scope -- every distinct folder name in
-    // actual use (auto extension bucket or explicit) UNION any custom
-    // folder that's been created but has nothing filed in it yet, so a
-    // just-created empty folder doesn't disappear. Custom folders are
-    // recorded per territory, so they belong to the territory landing;
-    // repeating them inside every creative would offer the same folder
+    // Custom folders are recorded per TERRITORY, so they belong to the loose
+    // level; repeating them inside every creative would offer one folder
     // several times over and file into one shared bucket regardless.
     const customFoldersForTerritory = customFolders.filter((f) => f.campaign === selectedCampaign?.name && f.territory === selectedTerritory);
-    const folderNamesInUse = new Set(componentsInScope.map(folderForComponent));
-    const customNamesHere = selectedCreative ? [] : customFoldersForTerritory.map((f) => f.name);
-    const allFolderNames = Array.from(new Set([...folderNamesInUse, ...customNamesHere])).sort();
     const customFolderNameSet = new Set(customFoldersForTerritory.map((f) => f.name));
 
-    const componentsForFolder = componentsInScope.filter((c) => folderForComponent(c) === selectedFolder);
+    // Folder names in one creative -- every distinct bucket in actual use
+    // (auto extension or explicit) UNION, at the loose level only, any
+    // custom folder created but still empty, so a just-made folder doesn't
+    // vanish until something is filed in it.
+    const folderNamesOf = (creative: string) => {
+        const inUse = new Set(componentsOfCreative(creative).map(folderForComponent));
+        const customs = creative === "" ? customFoldersForTerritory.map((f) => f.name) : [];
+        return Array.from(new Set([...inUse, ...customs])).sort();
+    };
 
-    const allSelected = componentsForFolder.length > 0 && selectedPaths.size === componentsForFolder.length;
+    const componentsOfFolder = (creative: string, folder: string) =>
+        componentsOfCreative(creative).filter((c) => folderForComponent(c) === folder);
+
+    // The folder key has to carry its creative: every creative has an `AI`.
+    const folderKey = (creative: string, folder: string) => `${creative}\u0000${folder}`;
+    const toggleFolderOpen = (creative: string, folder: string) => {
+        const key = folderKey(creative, folder);
+        setExpandedFolders((prev) => {
+            const next = new Set(prev);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+        });
+    };
+    const toggleCreativeOpen = (creative: string) => {
+        setExpandedCreatives((prev) => {
+            const next = new Set(prev);
+            if (next.has(creative)) next.delete(creative);
+            else next.add(creative);
+            return next;
+        });
+    };
+
+    const looseFolderNames = folderNamesOf("");
+
+    // Which creative the open project looks like, asked once per territory
+    // against THAT territory's own creative folder names. quiet, not safe:
+    // no match is the ordinary answer (unsaved project, another campaign, a
+    // territory filed the old way) and must never raise a toast.
+    useEffect(() => {
+        let cancelled = false;
+        const names = creativesForTerritory;
+        if (!selectedTerritory || names.length === 0) {
+            setDetectedCreative(null);
+            return;
+        }
+        if (mockMode) {
+            setDetectedCreative(names.indexOf(MOCK_DETECTED_CREATIVE) !== -1 ? MOCK_DETECTED_CREATIVE : null);
+            return;
+        }
+        (async () => {
+            const hit = await quietEvalTS("suggestLocLibCreative", names);
+            if (!cancelled) setDetectedCreative(hit || null);
+        })();
+        return () => {
+            cancelled = true;
+        };
+        // Keyed on the joined names, not the array: it is rebuilt every
+        // render, and a raw dependency would re-ask the bridge on each one.
+    }, [selectedTerritory, mockMode, creativesForTerritory.join("\u0000")]);
+
+    // One component, wherever it is drawn. Extracted when the folder page
+    // became an expanded branch -- the row is identical in both, and two
+    // copies of five tooltipped buttons is exactly the kind of pair that
+    // drifts apart.
+    const renderComponentRow = (c: Component) => (
+        <div key={c.label + c.path} className={`ll-comp-row ${selectedPaths.has(c.path) ? "selected" : ""}`}>
+            <Tooltip text="Select for batch import">
+                <button className="ll-check" onClick={() => toggleSelected(c.path)}>
+                    {selectedPaths.has(c.path) ? <CheckSquare size={14} /> : <Square size={14} />}
+                </button>
+            </Tooltip>
+            <Tooltip text={c.path}>
+                <span className="ll-comp-name">{c.label}</span>
+            </Tooltip>
+            <Tooltip text="Import (read-only)">
+                <button className="ll-row-btn" onClick={() => handleImport(c.path)}>
+                    <Download size={14} />
+                </button>
+            </Tooltip>
+            <Tooltip text="Reveal in Finder/Explorer">
+                <button className="ll-row-btn" onClick={() => handleReveal(c.path)}>
+                    <Search size={14} />
+                </button>
+            </Tooltip>
+            <Tooltip text="Remove from library">
+                <button className="ll-row-btn" onClick={() => handleRemoveComponent(c)}>
+                    <X size={14} />
+                </button>
+            </Tooltip>
+            {/* Deliberately at the far end, set apart from Import/Reveal/
+                Remove -- it used to sit right next to Import, easy to
+                fat-finger by mistake. */}
+            <Tooltip text="Move to another folder">
+                <button className="ll-row-btn ll-row-btn-move" onClick={() => handleMoveComponent(c)}>
+                    <FolderSymlink size={14} />
+                </button>
+            </Tooltip>
+        </div>
+    );
+
+    // One bucket and, when open, its components. `creative` is "" for the
+    // buckets of files loose in Support_Motion.
+    //
+    // Select-all and Add Component live INSIDE the open branch rather than
+    // at the foot of the view: with several folders open at once there is
+    // no longer a single "the folder you are in" for either to mean.
+    const renderFolderBranch = (creative: string, name: string) => {
+        const key = folderKey(creative, name);
+        const open = expandedFolders.has(key);
+        const rows = componentsOfFolder(creative, name);
+        const isCustom = creative === "" && customFolderNameSet.has(name);
+        const allHereSelected = rows.length > 0 && rows.every((c) => selectedPaths.has(c.path));
+        return (
+            <div key={key} className="ll-tree-branch">
+                <div className="ll-folder-row-wrap">
+                    <button className="ll-folder-row" onClick={() => toggleFolderOpen(creative, name)}>
+                        {open ? <ChevronDown size={14} className="ll-chevron ll-chevron-lead" /> : <ChevronRight size={14} className="ll-chevron ll-chevron-lead" />}
+                        <Folder size={14} className="ll-folder-icon" />
+                        <span className="ll-folder-name">{name}</span>
+                        <span className={rows.length > 0 ? "ll-count has" : "ll-count"}>{rows.length}</span>
+                    </button>
+                    {isCustom && (
+                        <Tooltip text="Remove this folder (components move back to their file-type folder)">
+                            <button className="ll-row-btn ll-folder-delete" onClick={() => handleRemoveFolder(name)}>
+                                <Trash2 size={13} />
+                            </button>
+                        </Tooltip>
+                    )}
+                </div>
+                <AnimatePresence initial={false}>
+                    {open && (
+                        <motion.div
+                            className="ll-tree-children"
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.18 }}
+                            style={{ overflow: "hidden" }}
+                        >
+                            {rows.length > 0 && (
+                                <div className="ll-select-all" onClick={() => toggleSelectAllPaths(rows.map((c) => c.path))}>
+                                    {allHereSelected ? <CheckSquare size={13} /> : <Square size={13} />}
+                                    <span>{allHereSelected ? "Deselect all" : "Select all"}</span>
+                                </div>
+                            )}
+                            <div className="ll-comp-list">
+                                {rows.length === 0 && <p className="ll-empty">No components in this folder yet.</p>}
+                                {rows.map(renderComponentRow)}
+                            </div>
+                            <button className="ll-add ll-add-inline" onClick={() => handleAddComponent(creative, name)}>
+                                <Plus size={14} /> Add to {name}…
+                            </button>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </div>
+        );
+    };
     const allJpgPngSelected = jpgPngLevelFiles.length > 0 && selectedPaths.size === jpgPngLevelFiles.length;
 
     return (
@@ -1019,7 +1189,7 @@ const LocalisedLibraryTool = () => {
 
                     <div className="ll-view-wrap">
                         <motion.div
-                            key={selectedFolder ? "components" : jpgPngStack.length > 0 ? "jpgpng-batch" : selectedTerritory ? "folders" : "territories"}
+                            key={jpgPngStack.length > 0 ? "jpgpng-batch" : selectedTerritory ? "folders" : "territories"}
                             className="ll-view"
                             initial={{ opacity: 0, x: selectedTerritory ? 16 : -16 }}
                             animate={{ opacity: 1, x: 0 }}
@@ -1088,101 +1258,7 @@ const LocalisedLibraryTool = () => {
                                                 );
                                             })}
                                     </div>
-                                </>
-                            ) : selectedFolder ? (
-                                /* ── Components-in-a-folder view ──────────────── */
-                                <>
-                                    <button className="ll-back" onClick={() => setSelectedFolder(null)}>
-                                        <ArrowLeft size={13} /> {selectedCreative || selectedTerritory}
-                                    </button>
 
-                                    <div className="ll-comp-head">
-                                        <div className="ll-comp-title">
-                                            <Folder size={13} className="ll-folder-icon" /> {selectedFolder}
-                                            {/* Which creative's AI folder this is -- the
-                                                bucket name alone is the same word in every
-                                                one of them. */}
-                                            {selectedCreative ? <em> {selectedCreative}</em> : null}
-                                        </div>
-                                        <span className={componentsForFolder.length > 0 ? "ll-count has" : "ll-count"}>
-                                            {componentsForFolder.length}
-                                        </span>
-                                    </div>
-
-                                    {componentsForFolder.length > 0 && (
-                                        <div className="ll-select-all" onClick={() => toggleSelectAllPaths(componentsForFolder.map((c) => c.path))}>
-                                            {allSelected ? <CheckSquare size={13} /> : <Square size={13} />}
-                                            <span>{allSelected ? "Deselect all" : "Select all"}</span>
-                                        </div>
-                                    )}
-
-                                    <div className="ll-comp-list">
-                                        {componentsForFolder.length === 0 && (
-                                            <p className="ll-empty">No components in this folder yet. Add one below.</p>
-                                        )}
-                                        {componentsForFolder.map((c) => (
-                                            <div key={c.label + c.path} className={`ll-comp-row ${selectedPaths.has(c.path) ? "selected" : ""}`}>
-                                                <Tooltip text="Select for batch import">
-                                                    <button className="ll-check" onClick={() => toggleSelected(c.path)}>
-                                                        {selectedPaths.has(c.path) ? <CheckSquare size={14} /> : <Square size={14} />}
-                                                    </button>
-                                                </Tooltip>
-                                                <Tooltip text={c.path}>
-                                                    <span className="ll-comp-name">{c.label}</span>
-                                                </Tooltip>
-                                                <Tooltip text="Import (read-only)">
-                                                    <button className="ll-row-btn" onClick={() => handleImport(c.path)}>
-                                                        <Download size={14} />
-                                                    </button>
-                                                </Tooltip>
-                                                <Tooltip text="Reveal in Finder/Explorer">
-                                                    <button className="ll-row-btn" onClick={() => handleReveal(c.path)}>
-                                                        <Search size={14} />
-                                                    </button>
-                                                </Tooltip>
-                                                <Tooltip text="Remove from library">
-                                                    <button className="ll-row-btn" onClick={() => handleRemoveComponent(c)}>
-                                                        <X size={14} />
-                                                    </button>
-                                                </Tooltip>
-                                                {/* Deliberately at the far end, set apart from
-                                                    Import/Reveal/Remove -- it used to sit right next
-                                                    to Import, easy to fat-finger by mistake. */}
-                                                <Tooltip text="Move to another folder">
-                                                    <button className="ll-row-btn ll-row-btn-move" onClick={() => handleMoveComponent(c)}>
-                                                        <FolderSymlink size={14} />
-                                                    </button>
-                                                </Tooltip>
-                                            </div>
-                                        ))}
-                                    </div>
-
-                                    <AnimatePresence>
-                                        {selectedPaths.size > 0 && (
-                                            <motion.div
-                                                className="ll-batch"
-                                                initial={{ opacity: 0, height: 0 }}
-                                                animate={{ opacity: 1, height: "auto" }}
-                                                exit={{ opacity: 0, height: 0 }}
-                                                transition={{ duration: 0.18 }}
-                                            >
-                                                <Tooltip text="Import just the selected components into the current project, read-only">
-                                                    <button disabled={batchBusy} onClick={handleImportSelected}>
-                                                        <Download size={14} /> Import Selected ({selectedPaths.size})
-                                                    </button>
-                                                </Tooltip>
-                                                <Tooltip text="Pick a localised batch folder -- opens, updates, and SAVES every .aep found inside it with the selected components. Modifies those files on disk. Never use on a Masters folder.">
-                                                    <button className="danger" disabled={batchBusy} onClick={handleSaveIntoBatchFolder}>
-                                                        <FolderInput size={14} /> Save Into Batch…
-                                                    </button>
-                                                </Tooltip>
-                                            </motion.div>
-                                        )}
-                                    </AnimatePresence>
-
-                                    <button className="ll-add" onClick={handleAddComponent}>
-                                        <Plus size={14} /> Add Component…
-                                    </button>
                                 </>
                             ) : jpgPngStack.length > 0 ? (
                                 /* ── JPG_PNG level view (a batch, or any folder drilled
@@ -1313,62 +1389,83 @@ const LocalisedLibraryTool = () => {
                             ) : (
                                 /* ── Folders view (the "mini directories" split) ── */
                                 <>
-                                    <button
-                                        className="ll-back"
-                                        onClick={() => (selectedCreative ? setSelectedCreative(null) : setSelectedTerritory(null))}
-                                    >
-                                        <ArrowLeft size={13} /> {selectedCreative ? selectedTerritory : "All territories"}
+                                    <button className="ll-back" onClick={() => setSelectedTerritory(null)}>
+                                        <ArrowLeft size={13} /> All territories
                                     </button>
 
                                     <div className="ll-comp-head">
                                         <div className="ll-comp-title">
-                                            {selectedCreative ? <Layers size={13} className="ll-folder-icon" /> : null}
-                                            {selectedCreative || selectedTerritory}
-                                            {!selectedCreative && countryCodes[selectedTerritory] ? <em> {countryCodes[selectedTerritory]}</em> : null}
-                                            {selectedCreative ? <em> {selectedTerritory}</em> : null}
+                                            {selectedTerritory}
+                                            {countryCodes[selectedTerritory] ? <em> {countryCodes[selectedTerritory]}</em> : null}
                                         </div>
-                                        <span className={componentsInScope.length > 0 ? "ll-count has" : "ll-count"}>
-                                            {selectedCreative ? componentsInScope.length : componentsForTerritory.length}
+                                        <span className={componentsForTerritory.length > 0 ? "ll-count has" : "ll-count"}>
+                                            {componentsForTerritory.length}
                                         </span>
                                     </div>
 
-                                    {/* Only from the territory landing: a custom folder
-                                        is recorded per territory, so offering it inside a
-                                        creative would promise a filing this library does
-                                        not keep. */}
-                                    {!selectedCreative && (
-                                        <button className="ll-new-folder" onClick={handleNewFolder}>
-                                            <FolderPlus size={14} /> New Folder…
-                                        </button>
-                                    )}
+                                    <button className="ll-new-folder" onClick={handleNewFolder}>
+                                        <FolderPlus size={14} /> New Folder…
+                                    </button>
 
-                                    {/* Shared scroll region for both the regular folder list
-                                        AND the JPG_PNG section below it -- .ll-folder-list
-                                        used to carry flex:1/overflow-y:auto itself, which
-                                        would have made it greedily fill all available height
-                                        and push JPG_PNG out of view entirely. Only THIS
-                                        wrapper scrolls now; both children are plain block
-                                        content inside it. */}
+                                    {/* Shared scroll region for the whole tree AND the
+                                        JPG_PNG section below it -- .ll-folder-list used to
+                                        carry flex:1/overflow-y:auto itself, which would have
+                                        made it greedily fill all available height and push
+                                        JPG_PNG out of view entirely. Only THIS wrapper
+                                        scrolls; everything inside is plain block content. */}
                                     <div className="ll-folders-scroll">
                                         {/* THE CREATIVE FOLDERS AS THEY REALLY SIT, above
                                             the file-type buckets rather than dissolved into
-                                            them. Shown only at the territory landing of a
-                                            tree that has them: inside a creative these ARE
-                                            the level you are standing on, and a territory
-                                            filed the old way never grows the level at all. */}
-                                        {!selectedCreative && hasCreatives && (
+                                            them -- and only on a tree that has them, so a
+                                            territory filed the old way never grows a level
+                                            it hasn't got. */}
+                                        {hasCreatives && (
                                             <div className="ll-folder-list ll-creative-list">
                                                 <div className="ll-creative-caption">Creatives</div>
                                                 {creativesForTerritory.map((name) => {
-                                                    const count = componentsForTerritory.filter((c) => (c.creative || "") === name).length;
+                                                    const open = expandedCreatives.has(name);
+                                                    const isCurrent = detectedCreative === name;
                                                     return (
-                                                        <div key={`creative:${name}`} className="ll-folder-row-wrap">
-                                                            <button className="ll-folder-row ll-creative-row" onClick={() => setSelectedCreative(name)}>
-                                                                <Layers size={14} className="ll-folder-icon" />
-                                                                <span className="ll-folder-name">{name}</span>
-                                                                <span className={count > 0 ? "ll-count has" : "ll-count"}>{count}</span>
-                                                                <ChevronRight size={14} className="ll-chevron" />
-                                                            </button>
+                                                        <div key={`creative:${name}`} className="ll-tree-branch">
+                                                            <div className="ll-folder-row-wrap">
+                                                                <button
+                                                                    className={`ll-folder-row ll-creative-row ${isCurrent ? "current" : ""}`}
+                                                                    onClick={() => toggleCreativeOpen(name)}
+                                                                >
+                                                                    {open ? <ChevronDown size={14} className="ll-chevron ll-chevron-lead" /> : <ChevronRight size={14} className="ll-chevron ll-chevron-lead" />}
+                                                                    <Layers size={14} className="ll-folder-icon" />
+                                                                    <span className="ll-folder-name">{name}</span>
+                                                                    {/* Which creative the open project looks
+                                                                        like. A mark on the row, not a filter
+                                                                        -- the other creatives stay exactly
+                                                                        where they were. */}
+                                                                    {isCurrent && (
+                                                                        <Tooltip text="The creative your open project looks like">
+                                                                            <span className="ll-current-pill"><MapPin size={10} /> open</span>
+                                                                        </Tooltip>
+                                                                    )}
+                                                                    <span className={componentsOfCreative(name).length > 0 ? "ll-count has" : "ll-count"}>
+                                                                        {componentsOfCreative(name).length}
+                                                                    </span>
+                                                                </button>
+                                                            </div>
+                                                            <AnimatePresence initial={false}>
+                                                                {open && (
+                                                                    <motion.div
+                                                                        className="ll-tree-children"
+                                                                        initial={{ opacity: 0, height: 0 }}
+                                                                        animate={{ opacity: 1, height: "auto" }}
+                                                                        exit={{ opacity: 0, height: 0 }}
+                                                                        transition={{ duration: 0.18 }}
+                                                                        style={{ overflow: "hidden" }}
+                                                                    >
+                                                                        {folderNamesOf(name).length === 0 && (
+                                                                            <p className="ll-empty">Nothing filed under {name} yet.</p>
+                                                                        )}
+                                                                        {folderNamesOf(name).map((f) => renderFolderBranch(name, f))}
+                                                                    </motion.div>
+                                                                )}
+                                                            </AnimatePresence>
                                                         </div>
                                                     );
                                                 })}
@@ -1380,42 +1477,16 @@ const LocalisedLibraryTool = () => {
                                                 to tell these apart from -- these are the files
                                                 loose in Support_Motion, sitting beside the
                                                 creative folders exactly as they do on disk. */}
-                                            {!selectedCreative && hasCreatives && allFolderNames.length > 0 && (
+                                            {hasCreatives && looseFolderNames.length > 0 && (
                                                 <div className="ll-creative-caption">Loose in Support_Motion</div>
                                             )}
-                                            {allFolderNames.length === 0 && !hasCreatives && (
+                                            {looseFolderNames.length === 0 && !hasCreatives && (
                                                 <p className="ll-empty">
                                                     No folders yet. Create one, then Add Component once inside it -- or run Auto-Populate to pull files
                                                     from this territory's Motion Components folder (each lands in a folder named after its file type).
                                                 </p>
                                             )}
-                                            {allFolderNames.length === 0 && hasCreatives && selectedCreative && (
-                                                <p className="ll-empty">Nothing filed under {selectedCreative} yet.</p>
-                                            )}
-                                            {allFolderNames.map((name) => {
-                                                const count = componentsForTerritory.filter((c) => folderForComponent(c) === name).length;
-                                                const isCustom = customFolderNameSet.has(name);
-                                                return (
-                                                    <div key={name} className="ll-folder-row-wrap">
-                                                        <button className="ll-folder-row" onClick={() => setSelectedFolder(name)}>
-                                                            <Folder size={14} className="ll-folder-icon" />
-                                                            <span className="ll-folder-name">{name}</span>
-                                                            <span className={count > 0 ? "ll-count has" : "ll-count"}>{count}</span>
-                                                            <ChevronRight size={14} className="ll-chevron" />
-                                                        </button>
-                                                        {isCustom && (
-                                                            <Tooltip text="Remove this folder (components move back to their file-type folder)">
-                                                                <button
-                                                                    className="ll-row-btn ll-folder-delete"
-                                                                    onClick={() => handleRemoveFolder(name)}
-                                                                >
-                                                                    <Trash2 size={13} />
-                                                                </button>
-                                                            </Tooltip>
-                                                        )}
-                                                    </div>
-                                                );
-                                            })}
+                                            {looseFolderNames.map((f) => renderFolderBranch("", f))}
                                         </div>
 
                                         {/* JPG_PNG: deliberately a separate, collapsed-by-default
@@ -1425,10 +1496,7 @@ const LocalisedLibraryTool = () => {
                                             not persisted library data like everything above it.
                                             See localise.ts's scanJpgPngBatches() header comment
                                             for why this was split out of Auto-Populate. */}
-                                        {/* Territory-level, like the folder it browses:
-                                            JPG_PNG is a sibling of Support_Motion, not
-                                            something inside a creative. */}
-                                        <div className="ll-jpgpng-section" style={selectedCreative ? { display: "none" } : undefined}>
+                                        <div className="ll-jpgpng-section">
                                             <div className="ll-jpgpng-caption">Live folder browse</div>
                                             <button className="ll-jpgpng-toggle" onClick={handleToggleJpgPngSection}>
                                                 <span className="ll-jpgpng-icon-badge"><Image size={13} /></span>
@@ -1500,6 +1568,34 @@ const LocalisedLibraryTool = () => {
                                             </AnimatePresence>
                                         </div>
                                     </div>
+
+                                    {/* OUTSIDE the scroll region and outside every branch:
+                                        a selection now spans folders and creatives, so the
+                                        bar that acts on it cannot belong to any one of
+                                        them. It used to sit at the foot of the single
+                                        folder page, which no longer exists. */}
+                                    <AnimatePresence>
+                                        {selectedPaths.size > 0 && (
+                                            <motion.div
+                                                className="ll-batch"
+                                                initial={{ opacity: 0, height: 0 }}
+                                                animate={{ opacity: 1, height: "auto" }}
+                                                exit={{ opacity: 0, height: 0 }}
+                                                transition={{ duration: 0.18 }}
+                                            >
+                                                <Tooltip text="Import just the selected components into the current project, read-only">
+                                                    <button disabled={batchBusy} onClick={handleImportSelected}>
+                                                        <Download size={14} /> Import Selected ({selectedPaths.size})
+                                                    </button>
+                                                </Tooltip>
+                                                <Tooltip text="Pick a localised batch folder -- opens, updates, and SAVES every .aep found inside it with the selected components. Modifies those files on disk. Never use on a Masters folder.">
+                                                    <button className="danger" disabled={batchBusy} onClick={handleSaveIntoBatchFolder}>
+                                                        <FolderInput size={14} /> Save Into Batch…
+                                                    </button>
+                                                </Tooltip>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
                                 </>
                             )}
                         </motion.div>

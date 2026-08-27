@@ -1580,6 +1580,56 @@ function llNormalizeForMatch(s: string): string {
     .replace(/^\s+|\s+$/g, "");
 }
 
+// WHICH CREATIVE THE OPEN PROJECT IS, matched against the creative folder
+// names a territory's Support_Motion actually has (see
+// LocLibComponent.creative). Purely a highlight -- null is the ordinary
+// answer for an unsaved project, a project outside this campaign, or a
+// territory filed the old way, and never an error.
+//
+// WHOLE TOKENS, not substrings, which is why this is its own function and
+// not a call to suggestJpgPngMatch above: that one matches on containment
+// ("trio" sits inside "triology") because it is scoring FILENAMES against
+// each other, where a partial hit is still evidence. Here the candidate is
+// a bare word and a partial hit is just a different creative.
+//
+// Consecutive tokens are joined before comparing, so a folder spelled
+// `Portal_To_Paradise` still answers to a deliverable's `PortalToParadise`
+// and vice versa -- the join can only start and end on a token boundary, so
+// it never matches half a word. Longest match wins: given `Trio` and
+// `TrioReveal` in one territory, the specific one is the answer.
+export const suggestLocLibCreative = (candidateNames: string[]): string | null => {
+  const projFile = app.project.file;
+  if (!projFile) return null;
+  const stem = llNormalizeForMatch(decode(projFile.name));
+  if (!stem) return null;
+  const stemTokens = stem.split(" ");
+
+  // Every run of consecutive tokens, squashed -- "fid intl portal to
+  // paradise" yields "portaltoparadise" among many others.
+  const joins: string[] = [];
+  for (let i = 0; i < stemTokens.length; i++) {
+    let run = "";
+    for (let j = i; j < stemTokens.length; j++) {
+      run = run + stemTokens[j];
+      joins.push(run);
+    }
+  }
+
+  let best: string | null = null;
+  let bestLen = 0;
+  for (let c = 0; c < candidateNames.length; c++) {
+    const norm = llNormalizeForMatch(candidateNames[c]).replace(/\s+/g, "");
+    // Two characters match too much to be evidence of anything.
+    if (norm.length < 3) continue;
+    if (joins.indexOf(norm) === -1) continue;
+    if (norm.length > bestLen) {
+      bestLen = norm.length;
+      best = candidateNames[c];
+    }
+  }
+  return best;
+};
+
 export const suggestJpgPngMatch = (candidateNames: string[]): string | null => {
   const projFile = app.project.file;
   if (!projFile) return null;

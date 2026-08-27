@@ -580,6 +580,22 @@ Auto-Populate is the migration path: an already-present row is **backfilled**
 rather than skipped, and the count is reported separately, or a run that sorted
 a whole territory reads as a no-op.
 
+**Below a territory, the library EXPANDS — it does not navigate.** Creatives
+and their file-type buckets open in place, several at once, because the real
+question is usually "which of these two has it" and a page swap makes that a
+there-and-back that loses the list you were comparing against. Three things
+follow and are easy to undo by accident: **Select all ADDS or REMOVES its own
+group's paths** rather than replacing the selection (it replaced it while only
+one folder could be on screen, which would now silently drop everything ticked
+under another creative); the **batch bar sits outside every branch**, since a
+selection spans them; and **Add Component takes its target as an argument**,
+because with several branches open there is no "the folder you are in" left to
+infer. `suggestLocLibCreative` marks the creative the open project looks like —
+a mark on the row, never a filter, and matched on WHOLE TOKENS (joined across
+runs, so `Portal_To_Paradise` answers to `PortalToParadise`). It is deliberately
+not `suggestJpgPngMatch`, whose substring branch fires on `Trio` inside
+`Triology`; names under three characters are refused as evidence.
+
 **Folders starting with `_` are excluded from every scan.** The one exception is
 Naming Audit, which skips only `Auto-Save`/`_Archive`/`_Old`/`_DEV`.
 
@@ -855,8 +871,9 @@ the probe instead of failing silently on the NAS.
 `node scripts/probe-loclib-creatives.cjs` (after `yarn build`) drives
 `autoPopulateLocLib` over a stubbed Markets tree carrying BOTH shapes — one
 territory with a folder per creative inside `Support_Motion`, one with
-everything loose. Run it after touching that scan: it is the only gate on a
-function whose failure mode is writing a wrong library into `app.settings`.
+everything loose — and `suggestLocLibCreative` over the name traps. Run it
+after touching either: it is the only gate on a function whose failure mode is
+writing a wrong library into `app.settings`.
 
 `node scripts/probe-campaign-rename.cjs` (after `yarn build`) drives
 `campaignRename` over a stubbed folder pair on BOTH naming conventions. Run it

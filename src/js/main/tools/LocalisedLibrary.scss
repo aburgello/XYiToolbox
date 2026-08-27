@@ -412,6 +412,78 @@
         color: #e6e6e6;
     }
 
+    // THE ONE THE OPEN PROJECT LOOKS LIKE. A mark, not a filter -- every
+    // other creative stays exactly where it was, so this has to read at a
+    // glance without moving anything: a brighter left bar and a wash, both
+    // precomputed rather than color-mix()'d (Chrome 111, target is 74).
+    .ll-creative-row.current {
+        border-left-color: var(--cat-icon, #5eead4);
+        background: rgba(45, 212, 191, 0.08);
+
+        &:hover { background: rgba(45, 212, 191, 0.13); }
+    }
+
+    .ll-current-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        flex-shrink: 0;
+        padding: 1px 6px 1px 4px;
+        border-radius: 999px;
+        background: rgba(45, 212, 191, 0.16);
+        color: var(--cat-icon, #5eead4);
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+    }
+
+    // OPENS IN PLACE, so the branch needs its own indent and a rail back to
+    // the row that owns it -- with several open at once, depth is the only
+    // thing saying which children belong to which folder.
+    .ll-tree-branch {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .ll-tree-children {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        margin: 2px 0 6px 9px;
+        padding-left: 10px;
+        border-left: 1px solid var(--surface-divider, #2c2c2c);
+
+        // .ll-folder-row's own `flex: 1` was written for a flex ROW (it sits
+        // beside a delete button in .ll-folder-row-wrap) where it means
+        // "fill available WIDTH". Nested in this COLUMN the same rule means
+        // "fill available HEIGHT" and stretches one row over the rest --
+        // the same trap already documented for the JPG_PNG level list.
+        > .ll-tree-branch { flex: 0 0 auto; }
+        .ll-comp-list { margin-top: 0; }
+    }
+
+    // The chevron leads the row here instead of trailing it: it now says
+    // open/closed rather than "this goes somewhere", so it belongs beside
+    // the disclosure it controls, not at the far end pointing off-screen.
+    .ll-chevron-lead {
+        flex-shrink: 0;
+        margin-right: -3px;
+        color: #777;
+        transition: color 0.15s ease;
+    }
+
+    .ll-folder-row:hover .ll-chevron-lead { color: var(--cat-icon, #5eead4); }
+
+    // Scoped to a branch, so it reads as "add to THIS folder" rather than
+    // the full-width call to action the single folder page ended on.
+    .ll-add-inline {
+        margin-top: 4px;
+        font-size: 11px;
+        padding: 5px 10px;
+    }
+
     .ll-folder-row {
         display: flex;
         align-items: center;
