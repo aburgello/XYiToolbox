@@ -816,6 +816,12 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
      * and clear the very state it had just set.
      */
     const [builtDest, setBuiltDest] = useState<string | null>(null);
+    // Whether the run that produced `builtDest` swapped footage on its way
+    // through, which decides whether the standalone button beside it is a
+    // first pass or a re-run. Straight off the run's own `mcItRan`, not off
+    // the toggle -- the toggle can be on while the pass finds no JPG_PNG
+    // folder and swaps nothing, and calling that a re-run would be a lie.
+    const [builtMcIt, setBuiltMcIt] = useState(false);
     const buildDest = `${buildTerritory}|${buildBatch.trim() || "Batch_1"}`;
     const builderBuilt = builtDest !== null && builtDest === buildDest;
     const [buildTerritories, setBuildTerritories] = useState<string[]>([]);
@@ -1154,6 +1160,9 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
         setBuildTerritory(t.territory);
         setBuildBatch(b.batch);
         setBuiltDest(b.done === true ? `${t.territory}|${b.batch.trim() || "Batch_1"}` : null);
+        // A batch built before this grid opened tells us nothing about how it
+        // was built, so the button offers a plain first pass.
+        setBuiltMcIt(false);
         setBuildOpen(true);
         setNotice(`${t.territory} · ${b.batch}: ${rows.length} row${rows.length === 1 ? "" : "s"} from ${b.pdfName}. Every cell is editable.`);
     };
@@ -1233,6 +1242,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                 const rrows = (res as { rows?: CsvLocRow[] }).rows || [];
                 const problems = rrows.filter((r) => r.status === "no-master" || r.status === "error").length;
                 setBuiltDest(`${buildTerritory}|${batch}`);
+                setBuiltMcIt((res as { mcItRan?: boolean }).mcItRan === true);
                 setNotice(`${buildTerritory} · ${batch}: ${res.message || "run finished."}` + (problems ? ` ${problems} row(s) had no master match.` : ""));
                 if (rrows.length) showLocGenReport(csvResultToLocGenReport(res as any, `CSV Localiser (built) · ${buildTerritory} · ${batch}`));
             } else {
@@ -2966,12 +2976,24 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                 over an empty output folder MC It! reports nothing
                                 and reads as a failure. */}
                             {builderBuilt && (
-                                <Tooltip text={`Swap the artwork in every .aep in ${buildTerritory || "this territory"} · ${buildBatch.trim() || "Batch_1"} for its localised twin`}>
+                                <Tooltip text={`Re-open every .aep in ${buildTerritory || "this territory"} · ${buildBatch.trim() || "Batch_1"} and preview the artwork swap before anything is written. Unlike the inline pass this shows its matches first, and lets you hand-pick an image for anything it couldn't place.`}>
                                     <button className="specs-build-multi" onClick={runBuilderMcIt} disabled={busy}>
-                                        <ImageIcon size={13} /> MC It!
+                                        <ImageIcon size={13} /> {builtMcIt ? "Re-run MC It!" : "MC It!"}
                                     </button>
                                 </Tooltip>
                             )}
+                            {/* THE SETTING THAT GOVERNS THE BUTTON NEXT TO IT.
+                                It lives in Setup beside "Skip existing files",
+                                which is collapsed by the time anybody is editing
+                                rows -- so a run fired from here swapped footage
+                                or didn't, and nothing on screen said which. Same
+                                `runMcIt` state as Setup's copy, so the two can
+                                never disagree. */}
+                            <Tooltip text="Swap each generated file's PNG/JPG footage for the localised versions in the territory's JPG_PNG batch folder, while the file is still open, instead of re-opening every file afterwards with MC It!">
+                                <span className="specs-build-inline-opt">
+                                    <CheckboxToggle checked={runMcIt} onChange={setRunMcIt} label="MC It! inline" />
+                                </span>
+                            </Tooltip>
                             <button className="specs-build-run" disabled={busy || !aepPath || !buildTerritory || buildComplete.length === 0} onClick={runBuilder}>
                                 <PlayCircle size={14} /> Localise {buildComplete.length || ""} row{buildComplete.length === 1 ? "" : "s"}
                             </button>

@@ -2026,6 +2026,20 @@
         margin-top: 2px;
     }
 
+    // The inline-swap setting, sitting with the action it changes rather
+    // than only in the collapsed Setup panel. Quieter than the buttons
+    // either side: it is a setting, not a verb.
+    .specs-build-inline-opt {
+        display: inline-flex;
+        align-items: center;
+        flex-shrink: 0;
+        font-size: 11px;
+        opacity: 0.85;
+        transition: opacity 0.15s ease;
+
+        &:hover { opacity: 1; }
+    }
+
     .specs-build-add {
         display: inline-flex;
         align-items: center;
