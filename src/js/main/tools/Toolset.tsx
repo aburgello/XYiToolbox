@@ -499,7 +499,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "reduce-project",
         label: "Reduce",
-        description: "File > Dependencies > Reduce Project, as a button. Keeps the comps selected in the Project panel and removes everything they don't use. Ctrl+Z undoes it. Anything referenced only by an expression is not preserved — that is AE's own caveat and it applies here too.",
+        description: "File > Dependencies > Reduce Project, as a button. Keeps the comps selected in the Project panel and drops everything they don't use. Ctrl+Z undoes it. As AE warns on the menu itself, anything referenced only by an expression is not preserved.",
         icon: Scissors,
         group: "qc",
         safety: "destructive",
@@ -525,7 +525,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "support-swap",
         label: "Support Swap",
-        description: "Swaps the OPEN project's .ai/.psd component sources for this territory's own, from <Territory>/Masters/Support. Matches on the filename — the same name with one market token swapped — so it works whatever the creative folders are called. Previews first; nothing is saved until you Apply. Build a Batch has the same button for a whole batch folder.",
+        description: "Swaps the open project's .ai/.psd component sources for this territory's own, from Masters/Support. Matches on the filename, so it works whatever the creative folders are called. Previews first; nothing is saved until you Apply. Build a Batch has the same button for a whole batch.",
         icon: Layers,
         group: "naming",
         safety: "destructive",

@@ -80,11 +80,13 @@ const MyTools: React.FC<ToolProps> = ({ onSelectTool }) => {
 
     return (
         <div className="form-tool sp">
+            {/* Four lines of standing explanation above a list you visit to
+                press one button. What the badges and icons already say does not
+                need saying again; what is left is the one thing you cannot see
+                from here, which is that sharing needs a Team Folder. */}
             <p className="hint">
-                Every script you've saved as a tool. Toolset-button ones also run from the home screen's
-                "Custom Tools" group. Use <strong>Share to team</strong> on a tool to add it to the shared
-                team library — a colleague's panel picks it up automatically on open. (Set a Team Folder from
-                the home-screen Team menu first.)
+                <strong>Share to team</strong> puts a tool in the shared library, where colleagues' panels
+                pick it up on open. Needs a Team Folder, set from the home screen's Team menu.
             </p>
 
             {status && (
@@ -95,7 +97,7 @@ const MyTools: React.FC<ToolProps> = ({ onSelectTool }) => {
             )}
 
             {customTools.length === 0 ? (
-                <p className="hint">{loaded ? "No saved tools yet -- save one from Script Playground." : "Loading…"}</p>
+                <p className="hint">{loaded ? "No saved tools yet. Save one from Script Playground." : "Loading…"}</p>
             ) : (
                 <div className="sp-tool-list">
                     {customTools.map((t) => (
@@ -108,27 +110,33 @@ const MyTools: React.FC<ToolProps> = ({ onSelectTool }) => {
                             <span className={"sp-tool-kind sp-tool-kind-" + t.kind}>
                                 {t.kind === "button" ? "Toolset button" : "My Tools"}
                             </span>
-                            <button className="sp-tool-icon-btn" title="Run" onClick={() => run(t)}>
-                                <Play size={12} />
+                            {/* RUN IS THE VERB; the other three are management.
+                                Four identical grey glyphs made the row a menu you
+                                had to read, when nine times in ten you came here
+                                to press one of them. */}
+                            <button className="sp-tool-run" title="Run" onClick={() => run(t)}>
+                                <Play size={12} /><span>Run</span>
                             </button>
-                            <button
-                                className="sp-tool-icon-btn"
-                                title="Share to team library"
-                                onClick={() => shareTool(t)}
-                                disabled={sharingId === t.id}
-                            >
-                                <Users size={12} />
-                            </button>
-                            <button
-                                className="sp-tool-icon-btn"
-                                title="Edit in Script Playground"
-                                onClick={() => onSelectTool?.("script-playground")}
-                            >
-                                <Pencil size={12} />
-                            </button>
-                            <button className="sp-tool-icon-btn" title="Delete" onClick={() => remove(t)}>
-                                <X size={12} />
-                            </button>
+                            <span className="sp-tool-manage">
+                                <button
+                                    className="sp-tool-icon-btn"
+                                    title="Share to team library"
+                                    onClick={() => shareTool(t)}
+                                    disabled={sharingId === t.id}
+                                >
+                                    <Users size={12} />
+                                </button>
+                                <button
+                                    className="sp-tool-icon-btn"
+                                    title="Edit in Script Playground"
+                                    onClick={() => onSelectTool?.("script-playground")}
+                                >
+                                    <Pencil size={12} />
+                                </button>
+                                <button className="sp-tool-icon-btn" title="Delete" onClick={() => remove(t)}>
+                                    <X size={12} />
+                                </button>
+                            </span>
                         </div>
                     ))}
                 </div>

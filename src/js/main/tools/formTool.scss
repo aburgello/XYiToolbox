@@ -591,6 +591,53 @@
         &.sp-tool-kind-button { color: var(--cat-icon, #5eead4); }
     }
 
+    // THE VERB, and the reason this row has any hierarchy at all: four
+    // identical grey glyphs made it a menu you had to read, when nine times in
+    // ten you came to press one of them. Labelled as well as tinted, since an
+    // icon alone is what made the other three ambiguous.
+    //
+    // index.scss's global button:hover/:active paints over any custom
+    // background, so both states are re-declared here.
+    .sp-tool-run {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        flex-shrink: 0;
+        padding: 4px 10px;
+        border: 1px solid var(--cat-border, rgba(236, 72, 153, 0.45));
+        border-radius: 4px;
+        background: var(--cat-glow, rgba(236, 72, 153, 0.16));
+        color: var(--cat-icon, #f472b6);
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease;
+
+        &:hover {
+            background: var(--cat-glow, rgba(236, 72, 153, 0.16));
+            border-color: var(--cat-icon, #f472b6);
+        }
+        &:active { background: var(--cat-glow, rgba(236, 72, 153, 0.16)); }
+
+        svg { flex: none; }
+    }
+
+    // Set apart from Run, and dimmer at rest. They are how you look after a
+    // tool, not how you use it.
+    .sp-tool-manage {
+        display: flex;
+        align-items: center;
+        gap: 1px;
+        flex-shrink: 0;
+        margin-left: 6px;
+        padding-left: 7px;
+        border-left: 1px solid var(--surface-divider, #2c2c2c);
+        opacity: 0.65;
+        transition: opacity 0.15s ease;
+    }
+
+    .sp-tool-row:hover .sp-tool-manage { opacity: 1; }
+
     .sp-tool-icon-btn {
         display: flex;
         align-items: center;

@@ -484,7 +484,7 @@ export const TOOLS: ToolEntry[] = [
         icon: ListChecks,
         Component: WorkflowBoardTool,
         actions: ["Change", "Start one", "Edit steps", "Reset", "Add", "Save for the team"],
-        description: "The team's checklist for localising a creative — which Components to use, what to watch for — plus shared notes. Reads the creative off the open project; pick any creative on the campaign if it can't.",
+        description: "The team's checklist for localising a creative: which Components to use, what to watch for, plus shared notes. Reads the creative off the open project, or pick one from the campaign.",
     },
     {
         id: "delivery-hub",
@@ -699,7 +699,7 @@ export const TOOLS: ToolEntry[] = [
         categories: ["tools"],
         icon: LayoutList,
         Component: MyToolsTool,
-        description: "Scripts you've saved from Script Playground as named tools -- run, edit, or delete them here.",
+        description: "Run, edit or share the scripts you've saved from Script Playground.",
     },
     {
         id: "expressions-bank",
