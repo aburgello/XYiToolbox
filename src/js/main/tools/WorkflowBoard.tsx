@@ -40,7 +40,7 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Code2 } from "lucide-react";
+import { Code2, PencilLine } from "lucide-react";
 import { TOOLS } from "../toolRegistry";
 import { ACTIONS as TOOLSET_ACTIONS } from "./Toolset";
 import { useCustomTools } from "../hooks/useCustomTools";
@@ -904,6 +904,33 @@ const WorkflowBoardTool: React.FC<{
     );
 
     /**
+     * THE CREATIVE'S NOTES, not this workflow's.
+     *
+     * Steps are what differs between a creative's workflows — that is the
+     * whole point of having more than one. Standing knowledge does not:
+     * "Brazil's gutters run two-line" is true whichever checklist you are
+     * working through. So notes are read across every entry sharing the base
+     * key, and nothing is copied between them — a copy on a file with no
+     * version history is a copy that drifts, unrecoverably. See team.ts's
+     * workflowBaseKeyOf, which addresses writes the same way.
+     */
+    const creativeNotes = useMemo(() => {
+        if (!creative) return [] as WorkflowNote[];
+        const base = keyFor(campaign, creative);
+        const out: WorkflowNote[] = [];
+        const seen: Record<string, boolean> = {};
+        entries.forEach((e) => {
+            if (e.key !== base && e.key.indexOf(base + "|") !== 0) return;
+            (e.notes || []).forEach((n) => {
+                if (!n || !n.id || seen[n.id]) return;
+                seen[n.id] = true;
+                out.push(n);
+            });
+        });
+        return out;
+    }, [entries, campaign, creative]);
+
+    /**
      * This creative's workflows, unnamed one first.
      *
      * Only rendered when there is more than one, or when the one on screen is
@@ -1110,7 +1137,11 @@ const WorkflowBoardTool: React.FC<{
             name: wfName || undefined,
             key: activeKey,
             steps,
-            notes: entry ? entry.notes : [],
+            // EMPTY, DELIBERATELY. The host keeps whatever notes are already on
+            // this entry (mergeWorkflowNotes), and the panel is holding the
+            // union across the creative's workflows — sending that back would
+            // copy every sibling's notes into this one.
+            notes: [],
             author: entry ? entry.author : me,
             updatedAt: "",
         };
@@ -1130,9 +1161,14 @@ const WorkflowBoardTool: React.FC<{
     const deleteEntry = async () => {
         if (!entry) return;
         const ok = await confirmDialog(
-            `Delete the whole ${prettyCreative(entry.creative)} workflow for everyone?\n\n` +
-            `${entry.steps.length} step${entry.steps.length === 1 ? "" : "s"} and ` +
-            `${entry.notes.length} note${entry.notes.length === 1 ? "" : "s"} go with it.`
+            `Delete ${prettyCreative(entry.creative)}${entry.name ? ` · ${entry.name}` : ""} for everyone?\n\n` +
+            `${entry.steps.length} step${entry.steps.length === 1 ? "" : "s"} go with it.` +
+            // Counted off the ENTRY, not the creative's union: only the notes
+            // physically on this one are lost. Saying otherwise would talk
+            // somebody out of a delete that costs them nothing.
+            (entry.notes.length > 0
+                ? ` So do ${entry.notes.length} note${entry.notes.length === 1 ? "" : "s"} written here — the creative's other notes stay.`
+                : "")
         );
         if (!ok) return;
         setBusy(true);
@@ -1286,7 +1322,7 @@ const WorkflowBoardTool: React.FC<{
 
     const removeNote = async (noteId: string) => {
         if (!entry) return;
-        const note = entry.notes.filter((n) => n.id === noteId)[0];
+        const note = creativeNotes.filter((n) => n.id === noteId)[0];
         // CONFIRMED, AND THE NOTE IS QUOTED. This is a shared file with no undo
         // and no version history: a mis-click here loses somebody's writing
         // permanently, and "are you sure?" without saying WHICH note is a
@@ -1393,6 +1429,39 @@ const WorkflowBoardTool: React.FC<{
      * new board, and silently editing somebody else's workflow is the worst
      * available outcome.
      */
+    /**
+     * Rename the workflow on screen, including back to being the creative's
+     * main one (an empty name).
+     *
+     * Its own host call rather than a save: workflowSaveEntry merges BY KEY, so
+     * saving under a name a sibling already holds would fold the two together
+     * and replace somebody's steps with yours. The host refuses the collision;
+     * this only has to carry the answer back.
+     */
+    const renameWorkflow = async () => {
+        if (!entry) { toast("error", "Save this workflow first, then it can be renamed."); return; }
+        const next = await promptDialog(
+            `Rename this workflow for ${prettyCreative(creative)} — leave it empty to make it the main one:`,
+            wfName,
+        );
+        if (next === null) return;
+        const clean = next.trim().toUpperCase();
+        if (clean === wfName) return;
+        setBusy(true);
+        const r = (await evalTSSafe("workflowRenameEntry", entry.id, clean)) as {
+            success: boolean; error?: string; entries?: WorkflowEntry[];
+        };
+        setBusy(false);
+        if (!r) return;
+        if (!r.success) { toast("error", r.error || "Couldn't rename it."); return; }
+        if (r.entries) { setEntries(r.entries); setBoardRead(true); setStale(false); }
+        // Follow the rename, or the board would be standing on a key that no
+        // longer exists and would read as an empty workflow.
+        setWfName(clean);
+        sfx.click();
+        toast("success", clean ? `Renamed to ${clean}.` : `Now ${prettyCreative(creative)}'s main workflow.`);
+    };
+
     const startNamedWorkflow = async () => {
         if (!creative) return;
         const name = await promptDialog(`Name this workflow for ${prettyCreative(creative)}:`, "");
@@ -1464,14 +1533,31 @@ const WorkflowBoardTool: React.FC<{
                     {(siblingWorkflows.length > 1 || wfName !== "") && (
                         <div className="wfb-variants">
                             {siblingWorkflows.map((n) => (
-                                <button
-                                    key={n || "__default"}
-                                    type="button"
-                                    className={"wfb-variant" + (n === wfName ? " is-on" : "")}
-                                    onClick={() => { setWfName(n); setPinned(true); setEditing(false); }}
-                                >
-                                    {n || "Main"}
-                                </button>
+                                <span key={n || "__default"} className="wfb-variant-wrap">
+                                    <button
+                                        type="button"
+                                        className={"wfb-variant" + (n === wfName ? " is-on" : "")}
+                                        onClick={() => { setWfName(n); setPinned(true); setEditing(false); }}
+                                    >
+                                        {n || "Main"}
+                                    </button>
+                                    {/* On the one you are standing on only, and a
+                                        SIBLING rather than nested — a button inside a
+                                        button is invalid, and it would inherit the
+                                        chip's own click. */}
+                                    {n === wfName && (
+                                        <Tooltip text={n ? "Rename this workflow" : "Give this workflow a name"}>
+                                            <button
+                                                type="button"
+                                                className="wfb-variant-edit"
+                                                onClick={renameWorkflow}
+                                                aria-label="Rename this workflow"
+                                            >
+                                                <PencilLine size={9} />
+                                            </button>
+                                        </Tooltip>
+                                    )}
+                                </span>
                             ))}
                         </div>
                     )}
@@ -1972,7 +2058,7 @@ const WorkflowBoardTool: React.FC<{
                                     // fifteen ways to find an empty list.
                                     const used: string[] = [];
                                     const usedTags: string[] = [];
-                                    entry.notes.forEach((n) => {
+                                    creativeNotes.forEach((n) => {
                                         if (n.territory && used.indexOf(n.territory) === -1) used.push(n.territory);
                                         (n.tags || []).forEach((t) => {
                                             if (usedTags.indexOf(t) === -1) usedTags.push(t);
@@ -1992,7 +2078,7 @@ const WorkflowBoardTool: React.FC<{
                                     // oldest still reads first — this only
                                     // lifts the universal ones above the rest,
                                     // it does not shuffle them.
-                                    const shown = entry.notes
+                                    const shown = creativeNotes
                                         .filter((n) =>
                                             (!terrFilter || n.territory === terrFilter) &&
                                             (!tagFilter || (n.tags || []).indexOf(tagFilter) !== -1))
@@ -2013,7 +2099,7 @@ const WorkflowBoardTool: React.FC<{
                                             <div className="wfb-notes-head">
                                                 <StickyNote size={11} />
                                                 <span>Notes</span>
-                                                <em>{shown.length}{(terrFilter || tagFilter) ? ` of ${entry.notes.length}` : ""}</em>
+                                                <em>{shown.length}{(terrFilter || tagFilter) ? ` of ${creativeNotes.length}` : ""}</em>
 
                                                 {/* THE FILTER COSTS NOTHING UNTIL IT
                                                     EXISTS. One flag per territory that
@@ -2135,7 +2221,7 @@ const WorkflowBoardTool: React.FC<{
                                                     </motion.div>
                                                 ))}
                                             </AnimatePresence>
-                                            {shown.length === 0 && entry.notes.length > 0 && (
+                                            {shown.length === 0 && creativeNotes.length > 0 && (
                                                 <p className="wfb-empty-line">
                                                     No notes for {[terrFilter ? territoryName(terrFilter) : "", tagFilter]
                                                         .filter(Boolean).join(" · ")}.

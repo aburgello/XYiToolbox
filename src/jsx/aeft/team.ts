@@ -2917,6 +2917,25 @@ export function workflowKeyFor(campaign: string, creative: string, name?: string
   return n === "" ? base : base + "|" + n;
 }
 
+/**
+ * NOTES BELONG TO THE CREATIVE, NOT TO ONE OF ITS WORKFLOWS.
+ *
+ * Steps are the thing that differs between a creative's workflows -- that is
+ * the entire reason for having more than one. Standing knowledge does not:
+ * "Brazil's gutters run two-line" is true whichever checklist you are working
+ * through, and duplicating it into each, or worse leaving it on only one, is
+ * how a shared board stops being worth reading.
+ *
+ * So notes are addressed by BASE key (campaign + creative), while steps stay
+ * addressed by the full one. Nothing is copied between entries: the notes stay
+ * on whichever entry they were written to, and every sibling reads the union.
+ * Copying would let the copies drift, which on a file with no version history
+ * is unrecoverable.
+ */
+function workflowBaseKeyOf(entry: WorkflowEntry): string {
+  return workflowKeyFor(entry.campaign, entry.creative);
+}
+
 /** Everything a shared entry must have before it is worth writing. Entries
  *  written by an older/newer panel that fail this are DROPPED on read rather
  *  than crashing the board -- one bad row must not cost the other twenty. */
@@ -3072,6 +3091,59 @@ export const workflowDeleteEntry = (id: string): WorkflowBoardResult => {
 };
 
 /**
+ * Rename one of a creative's workflows.
+ *
+ * Its own call rather than a whole-entry save, for the reason the merge in
+ * workflowSaveEntry exists: that merges BY KEY, so saving an entry under a name
+ * a sibling already holds would silently fold the two together -- somebody
+ * else's steps replaced by yours, with nothing to undo it. Here the collision
+ * is refused instead.
+ *
+ * An empty name is allowed and means "make this the creative's main workflow",
+ * which is the only way back once something has been named. It collides like
+ * any other name: a creative that already has an unnamed board refuses it.
+ */
+export const workflowRenameEntry = (id: string, name: string): WorkflowBoardResult => {
+  try {
+    if (!teamFolder()) return { success: false, error: "Team folder not set." };
+    const me = loadLocalSetting(MACHINE_OWNER_KEY);
+    if (!me) return { success: false, error: "This machine isn't tagged with your name yet -- set it in the Team menu." };
+
+    const shared = readWorkflowEntries();
+    if (shared === null) return { success: false, error: "Couldn't read the team board -- is the NAS mounted?" };
+
+    let at = -1;
+    for (let i = 0; i < shared.length; i++) {
+      if (shared[i].id === id) { at = i; break; }
+    }
+    if (at === -1) return { success: false, error: "That workflow is no longer on the board -- reload and try again." };
+
+    const cleaned = String(name || "").toUpperCase().replace(/^\s+|\s+$/g, "");
+    const nextKey = workflowKeyFor(shared[at].campaign, shared[at].creative, cleaned);
+    if (nextKey === shared[at].key) return { success: true, read: true, entries: shared, me: me };
+
+    for (let i = 0; i < shared.length; i++) {
+      if (i === at) continue;
+      if (shared[i].key !== nextKey) continue;
+      const taken = shared[i].name ? shared[i].name : "the main workflow";
+      return { success: false, error: shared[at].creative + " already has " + taken + ". Pick another name." };
+    }
+
+    if (cleaned) shared[at].name = cleaned;
+    else delete shared[at].name;
+    shared[at].key = nextKey;
+    shared[at].updatedAt = new Date().toString();
+
+    if (!writeSharedFile(SHARED_WORKFLOWS_FILE, SHARED_WORKFLOWS_TYPE, shared)) {
+      return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
+    }
+    return { success: true, read: true, entries: shared, me: me };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/**
  * Append one note. Its own call rather than part of a whole-entry save, so a
  * note posted while somebody else is editing the steps cannot be lost between
  * their read and their write.
@@ -3095,9 +3167,23 @@ export const workflowAddNote = (
 
     const shared = readWorkflowEntries();
     if (shared === null) return { success: false, error: "Couldn't read the team board -- is the NAS mounted?" };
+    // THE CREATIVE'S OWN BOARD, not whichever of its workflows happened to be
+    // on screen. The unnamed entry is that board when it exists; otherwise the
+    // note lands on the entry it was written from, and every sibling still
+    // reads it, since reads union across the base key.
+    let target = -1;
+    for (let i = 0; i < shared.length; i++) {
+      if (shared[i].id === entryId) target = i;
+    }
+    if (target !== -1) {
+      const base = workflowBaseKeyOf(shared[target]);
+      for (let i = 0; i < shared.length; i++) {
+        if (shared[i].key === base) { target = i; break; }
+      }
+    }
     let found = false;
     for (let i = 0; i < shared.length; i++) {
-      if (shared[i].id !== entryId) continue;
+      if (i !== target) continue;
       const terr = normaliseTerritoryCode(territory);
       const links = parseNoteLinks(linksJson);
       const tags = parseNoteTags(tagsJson);
@@ -3217,9 +3303,16 @@ export const workflowUpdateNote = (
     const shared = readWorkflowEntries();
     if (shared === null) return { success: false, error: "Couldn't read the team board -- is the NAS mounted?" };
 
+    // Across every workflow of this creative, because a note shown on one may
+    // physically live on another -- see workflowBaseKeyOf.
+    let base = "";
+    for (let i = 0; i < shared.length; i++) {
+      if (shared[i].id === entryId) { base = workflowBaseKeyOf(shared[i]); break; }
+    }
     let found = false;
     for (let i = 0; i < shared.length; i++) {
-      if (shared[i].id !== entryId) continue;
+      if (base !== "" && workflowBaseKeyOf(shared[i]) !== base) continue;
+      if (base === "" && shared[i].id !== entryId) continue;
       for (let j = 0; j < shared[i].notes.length; j++) {
         const note = shared[i].notes[j];
         if (note.id !== noteId) continue;
@@ -3234,7 +3327,11 @@ export const workflowUpdateNote = (
         found = true;
         break;
       }
-      break;
+      // Only stop once it has actually been found. Breaking unconditionally
+      // was right while one entry could hold the note and is wrong now that
+      // siblings are searched -- it would give up at the first workflow of the
+      // creative and report a note that is plainly on screen as gone.
+      if (found) break;
     }
     if (!found) return { success: false, error: "That note is no longer on the board -- reload and try again." };
 
@@ -3252,13 +3349,22 @@ export const workflowDeleteNote = (entryId: string, noteId: string): WorkflowBoa
     if (!teamFolder()) return { success: false, error: "Team folder not set." };
     const shared = readWorkflowEntries();
     if (shared === null) return { success: false, error: "Couldn't read the team board -- is the NAS mounted?" };
+    // Every workflow of this creative, since a note shown on one may live on
+    // another -- see workflowBaseKeyOf.
+    let baseDel = "";
     for (let i = 0; i < shared.length; i++) {
-      if (shared[i].id !== entryId) continue;
+      if (shared[i].id === entryId) { baseDel = workflowBaseKeyOf(shared[i]); break; }
+    }
+    for (let i = 0; i < shared.length; i++) {
+      if (baseDel !== "" && workflowBaseKeyOf(shared[i]) !== baseDel) continue;
+      if (baseDel === "" && shared[i].id !== entryId) continue;
       const kept: WorkflowNote[] = [];
+      let hit = false;
       for (let j = 0; j < shared[i].notes.length; j++) {
-        if (shared[i].notes[j].id === noteId) continue;
+        if (shared[i].notes[j].id === noteId) { hit = true; continue; }
         kept.push(shared[i].notes[j]);
       }
+      if (!hit) continue;   // not on this sibling — keep looking
       shared[i].notes = kept;
       break;
     }

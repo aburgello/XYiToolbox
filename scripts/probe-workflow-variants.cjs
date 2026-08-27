@@ -111,8 +111,80 @@ r = save('Forgotten Island', 'Bracelet', 'Delivery', ['Other creative']);
 all = (r.entries || []).filter((e) => e.name === 'DELIVERY');
 say(all.length === 2, 'the same NAME under two creatives is two boards, not one (' + all.length + ')');
 
+console.log('\n3b. notes belong to the CREATIVE, not to one of its workflows');
+{
+    // Fresh: one creative, two workflows, a note written from each.
+    disk = {}; settings['XYiToolbox|TeamFolderPath'] = TEAM; settings['XYiToolbox|TeamMachineOwner'] = 'Antonio';
+    save('FI', 'Trio', undefined, ['main step']);
+    let res = save('FI', 'Trio', 'Delivery', ['delivery step']);
+    const mainId = res.entries.filter((e) => e.creative === 'Trio' && !e.name)[0].id;
+    const delId = res.entries.filter((e) => e.name === 'DELIVERY')[0].id;
+
+    // Written while standing on DELIVERY — it must land on the creative's board.
+    res = aeft.workflowAddNote(delId, 'Gutters run two-line in BR', 'BR');
+    const rows = res.entries.filter((e) => e.creative === 'Trio');
+    const onMain = rows.filter((e) => !e.name)[0].notes.length;
+    const onDel = rows.filter((e) => e.name === 'DELIVERY')[0].notes.length;
+    say(onMain === 1 && onDel === 0,
+        'a note written from a named workflow lands on the creative, not the variant',
+        `main=${onMain} delivery=${onDel}`);
+
+    // Editing it from the OTHER workflow has to find it.
+    const noteId = rows.filter((e) => !e.name)[0].notes[0].id;
+    res = aeft.workflowUpdateNote(delId, noteId, 'Gutters run two-line in BR and AR', 'BR');
+    const edited = res.entries.filter((e) => e.creative === 'Trio' && !e.name)[0].notes[0];
+    say(res.success && /and AR/.test(edited.text), 'and can be edited from either workflow', res.error || '');
+
+    // Saving STEPS on the variant must not copy the creative's notes into it —
+    // the panel holds the union, so it sends notes: [] and the host keeps its own.
+    res = aeft.workflowSaveEntry(JSON.stringify({
+        id: delId, campaign: 'FI', creative: 'Trio', name: 'DELIVERY', key: '',
+        steps: [{ id: 's', text: 'changed' }], notes: [], author: 'Antonio', updatedAt: '',
+    }));
+    const after = res.entries.filter((e) => e.creative === 'Trio');
+    say(after.filter((e) => e.name === 'DELIVERY')[0].notes.length === 0,
+        'saving the variant\'s steps does not copy the creative\'s notes into it');
+    say(after.filter((e) => !e.name)[0].notes.length === 1, 'and leaves them where they are');
+
+    res = aeft.workflowDeleteNote(delId, noteId);
+    say((res.entries.filter((e) => e.creative === 'Trio' && !e.name)[0].notes || []).length === 0,
+        'deleting from the other workflow finds it too');
+}
+
+console.log('\n3c. renaming a workflow');
+{
+    disk = {};
+    save('FI', 'Trio', undefined, ['main']);
+    let res = save('FI', 'Trio', 'Delivery', ['deliver']);
+    const delId = res.entries.filter((e) => e.name === 'DELIVERY')[0].id;
+    aeft.workflowAddNote(delId, 'a standing note');
+
+    res = aeft.workflowRenameEntry(delId, 'Retouch');
+    let row = (res.entries || []).filter((e) => e.id === delId)[0];
+    say(res.success && row.name === 'RETOUCH' && row.key === 'FI|TRIO|RETOUCH',
+        'renames, upper-cases and re-keys in one go', row && row.key);
+    say(res.entries.filter((e) => e.creative === 'Trio').length === 2, 'without making a third board');
+    say(res.entries.filter((e) => !e.name && e.creative === 'Trio')[0].notes.length === 1,
+        'and the creative\'s notes are untouched by it');
+
+    // The collision the rename exists to refuse.
+    const bad = aeft.workflowRenameEntry(delId, '');
+    say(!bad.success && /already has/.test(bad.error || ''),
+        'refuses a name a sibling already holds, rather than merging into it', bad.error);
+
+    // …and the way back, once nothing is in the way.
+    const mainId = res.entries.filter((e) => !e.name && e.creative === 'Trio')[0].id;
+    aeft.workflowRenameEntry(mainId, 'Build');
+    const back = aeft.workflowRenameEntry(delId, '');
+    row = (back.entries || []).filter((e) => e.id === delId)[0];
+    say(back.success && !row.name && row.key === 'FI|TRIO',
+        'an empty name makes it the creative\'s main workflow again', row && row.key);
+}
+
 console.log('\n4. an entry written before names existed');
 // Exactly what is on the share today: no `name` field at all.
+// Overwrite the shared file in place, rather than clearing the disk first —
+// the path has to still be discoverable.
 const legacy = [{ id: 'wf-old', campaign: 'Forgotten Island', creative: 'Portal', key: 'FORGOTTENISLAND|PORTAL', steps: [{ id: 's', text: 'old' }], notes: [], author: 'Sam', updatedAt: 'then' }];
 const wfFile = Object.keys(disk).filter((k) => k.indexOf('workflow') !== -1)[0];
 disk[wfFile] = JSON.stringify({ type: 'xyi-shared-workflows', entries: legacy });

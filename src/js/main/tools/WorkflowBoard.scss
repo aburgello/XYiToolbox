@@ -153,6 +153,36 @@
     overflow-x: auto;
 }
 
+.workflow-board .wfb-variant-wrap {
+    display: flex;
+    align-items: center;
+    flex: none;
+}
+
+// Sits OUTSIDE the chip as a sibling (a button inside a button is invalid, and
+// it would inherit the chip's own click), so it needs the active chip's fill
+// to run under it or the pill would end in a hard edge.
+.workflow-board .wfb-variant-edit {
+    display: flex;
+    align-items: center;
+    flex: none;
+    padding: 4px 6px 4px 2px;
+    margin-left: -3px;
+    border: none;
+    border-radius: 0 3px 3px 0;
+    background: var(--ov-accent, #2dd4bf);
+    color: #10201e;
+    cursor: pointer;
+    opacity: 0.75;
+
+    &:hover { background: var(--ov-accent, #2dd4bf); opacity: 1; }
+    &:active { background: var(--ov-accent, #2dd4bf); }
+}
+
+.workflow-board .wfb-variant-wrap .wfb-variant.is-on {
+    border-radius: 3px 0 0 3px;
+}
+
 .workflow-board .wfb-variant {
     flex: none;
     padding: 3px 8px;

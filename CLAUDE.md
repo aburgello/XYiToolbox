@@ -1086,6 +1086,28 @@ them, so bars, tag pills, note links, territory chips and focus rings all follow
 and anything added later inherits it. Portaled pickers are outside that subtree
 and keep the category tint.
 
+**NOTES BELONG TO THE CREATIVE, STEPS TO ONE OF ITS WORKFLOWS.** Steps are
+what differs between a creative's workflows — that is the whole point of having
+more than one. Standing knowledge does not: "Brazil's gutters run two-line" is
+true whichever checklist you are working through. So notes are addressed by the
+**base key** (`workflowBaseKeyOf` = campaign + creative), while steps keep the
+full one. **Nothing is copied between entries** — a note stays on whichever
+entry it was written to and every sibling reads the union, because a copy on a
+file with no version history is a copy that drifts, unrecoverably. Three things
+this costs: `workflowAddNote` targets the creative's **unnamed** entry when one
+exists, so notes gravitate to one board; update/delete search **every** sibling
+(and must not `break` before finding it — breaking at the first sibling reports
+a note that is plainly on screen as gone); and the panel sends **`notes: []`**
+when saving steps, since it is holding the union and the host already keeps
+each entry's own.
+
+**Renaming a workflow is its own host call** (`workflowRenameEntry`), never a
+save: `workflowSaveEntry` merges BY KEY, so saving under a name a sibling
+already holds would silently fold the two together and replace somebody's steps.
+The rename refuses the collision instead. An empty name means "make this the
+creative's main workflow", which is the only way back once something has been
+named — and it collides like any other name.
+
 **A note carries more than text.** `territory` (ISO-2, upper-cased host-side),
 `tags` (free-form, upper-cased so the vocabulary converges instead of splitting
 into CTA/cta/Cta), and `links` — words in the body that open a folder or a tool.
