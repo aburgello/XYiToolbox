@@ -904,6 +904,11 @@ mode chooser, so it has no registry entry of its own), and
 `tools/GsapDemo.tsx`, `gsap/index.ts` (so `gsap.defaults()` never runs and
 ScrollTrigger is never registered), `jsx/aeft/aeft-utils.ts` (not in the
 barrel), `exportCustomToolsToFile` / `importCustomToolsFromFile` (no UI),
+`createLocLibFolder` / `setLocLibComponentFolder` (Localised Library's New
+Folder and Move-to-folder were removed on 2026-08-27 — the tree mirrors the
+studio's own creative folders, so there is nothing to invent or refile;
+`removeLocLibFolder` stays wired as the way out for anyone holding a custom
+folder from before),
 `lib/utils/ppro.ts`.
 
 **Known small defects, unfixed:** `PREFETCH_MAP` key `"find-replace"` vs the

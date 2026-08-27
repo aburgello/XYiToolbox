@@ -333,35 +333,10 @@
     }
 
     // ── Folder list (the "mini directories" split within a territory) ───────
-    // Same visual language as .ll-add ("New Folder…" here reads as the same
-    // kind of add-affordance) and .ll-terr-row/.ll-terr-list (a folder row
-    // is the same shape as a territory row, one level deeper).
-    .ll-new-folder {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
-        flex-shrink: 0;
-        width: 100%;
-        box-sizing: border-box;
-        background: var(--surface-0, #232323);
-        border: 1px dashed var(--surface-edge, #3f3f3f);
-        color: #cfcfcf;
-        border-radius: 6px;
-        padding: 8px 10px;
-        cursor: pointer;
-        font-size: 12px;
-        margin-bottom: 8px;
-        transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-
-        &:hover {
-            background: var(--surface-1, #2a2a2a);
-            border-color: var(--cat-border, #2dd4bf);
-            color: #fff;
-            svg { color: var(--cat-icon, #5eead4); }
-        }
-    }
-
+    // A folder row is the same shape as a territory row, one level deeper.
+    // Folders are no longer CREATED here -- the studio's own creative folders
+    // are what the tree mirrors, so there is nothing to invent.
+    //
     // The scrolling region -- carries flex:1/overflow-y:auto so BOTH
     // .ll-folder-list and .ll-jpgpng-section below it share one scroll
     // area instead of the folder list alone greedily filling all height
@@ -810,15 +785,6 @@
             }
         }
 
-        // Set apart from the Import/Reveal/Remove cluster with extra gap --
-        // it used to sit right next to Import, easy to fat-finger by
-        // mistake. Plain margin, not a divider/padding tweak, so the icon
-        // stays centered in its own fixed-size box like every other row
-        // button.
-        .ll-row-btn-move {
-            margin-left: 8px;
-        }
-
         .ll-check {
             display: flex;
             align-items: center;
@@ -835,54 +801,99 @@
     }
 
     // ── Batch actions ───────────────────────────────────────────────────────
+    // ── Batch bar ───────────────────────────────────────────────────────────
+    // A footer that acts on a selection spanning the whole tree, so it is
+    // pinned below the scroll region and set off from it by a rule.
+    //
+    // The two buttons take their NATURAL width. They used to be flex:1 and
+    // neither of them stretched: Tooltip's inner span carries
+    // flex: 0 0 auto !important (see Tooltip.scss), so each button shrank to
+    // its content inside a half-width wrapper and floated at the wrapper's
+    // leading edge -- Import adrift from the left, Save Into Batch stranded
+    // mid-row. Wrapping a stretch-sized element in Tooltip is the trap
+    // CLAUDE.md already names; the fix is to stop asking for the stretch.
     .ll-batch {
         display: flex;
-        gap: 6px;
+        align-items: center;
+        gap: 10px;
         flex-shrink: 0;
         overflow: hidden;
+        margin-top: 8px;
+        padding-top: 10px;
+        border-top: 1px solid var(--surface-divider, #2c2c2c);
+    }
 
-        // Both buttons are Tooltip-wrapped -- the wrapper span is the flex
-        // item, so it (not just the button) has to share the row.
-        > .ov-tooltip-wrapper { flex: 1; }
+    // Pushes the two apart and says what the bar is acting on -- the count
+    // lives out here rather than only inside Import's label, since the
+    // destructive button on the right acts on the same set.
+    .ll-batch-count {
+        flex: 1;
+        min-width: 0;
+        text-align: center;
+        font-size: 10px;
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+        color: #6f6f6f;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
 
-        button {
-            flex: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-            width: 100%;
-            box-sizing: border-box;
-            background: var(--surface-1, #262626);
-            border: 1px solid var(--surface-edge, #3a3a3a);
-            color: #ddd;
-            border-radius: 6px;
-            padding: 7px 8px;
-            cursor: pointer;
-            font-size: 11px;
-            white-space: nowrap;
-            transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+    // The JPG_PNG bar carries Import Selected alone (no Save Into Batch --
+    // those are images, not .aep projects). One natural-width button would
+    // sit lonely against the left edge, so with nothing to push against it
+    // takes the full width instead.
+    .ll-batch > .ov-tooltip-wrapper:only-child,
+    .ll-batch > .ov-tooltip-wrapper:only-child > .ov-tooltip-content,
+    .ll-batch > .ov-tooltip-wrapper:only-child > .ov-tooltip-content > button {
+        width: 100%;
+    }
+
+    .ll-batch button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        box-sizing: border-box;
+        background: var(--surface-1, #262626);
+        border: 1px solid var(--surface-edge, #3a3a3a);
+        color: #ddd;
+        border-radius: 6px;
+        padding: 8px 14px;
+        cursor: pointer;
+        font-size: 11px;
+        white-space: nowrap;
+        transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+
+        &:hover:not(:disabled) {
+            background: var(--cat-grad, #2dd4bf);
+            border-color: var(--cat-border, transparent);
+            box-shadow: 0 3px 10px var(--cat-glow, rgba(0, 0, 0, 0.35));
+            transform: translateY(-1px);
+        }
+        &:active:not(:disabled) { transform: translateY(0); }
+        &:disabled { opacity: 0.5; cursor: default; }
+
+        // THE ONE THAT WRITES TO DISK -- it opens, updates and SAVES every
+        // .aep in the folder you pick. Filled rather than outlined, because
+        // it has to be the thing you notice in this bar and be unmistakably
+        // a different KIND of action from the read-only import beside it.
+        // index.scss's global button:hover/:active paint over any custom
+        // background, so both states are re-declared here.
+        &.danger {
+            background: #7c3a29;
+            border-color: #a04a35;
+            color: #ffe9e0;
+            font-weight: 600;
+            box-shadow: 0 2px 8px rgba(124, 58, 41, 0.35);
 
             &:hover:not(:disabled) {
-                background: var(--cat-grad, #2dd4bf);
-                border-color: var(--cat-border, transparent);
-                box-shadow: 0 3px 10px var(--cat-glow, rgba(0, 0, 0, 0.35));
-                transform: translateY(-1px);
+                background: #94452f;
+                border-color: #c25a41;
+                box-shadow: 0 4px 14px rgba(160, 74, 53, 0.45);
             }
-            &:active:not(:disabled) { transform: translateY(0); }
-            &:disabled { opacity: 0.5; cursor: default; }
-
-            // Marks the one action that writes to disk (opens/updates/saves
-            // every .aep in the picked folder) as distinct from the safe
-            // read-only import beside it.
-            &.danger {
-                border-color: #7a3e2e;
-                &:hover:not(:disabled) {
-                    background: #6b3226;
-                    border-color: #a04a35;
-                    box-shadow: 0 3px 10px rgba(160, 74, 53, 0.35);
-                }
-            }
+            &:active:not(:disabled) { background: #6b3226; }
+            &:disabled { background: #4a2a21; border-color: #6b3226; color: #b89a90; }
         }
     }
 

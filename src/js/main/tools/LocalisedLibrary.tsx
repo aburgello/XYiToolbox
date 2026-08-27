@@ -27,7 +27,6 @@ import {
     Library,
     MapPin,
     Folder,
-    FolderSymlink,
     Image,
     Layers,
 } from "lucide-react";
@@ -35,7 +34,7 @@ import { evalTS } from "../../lib/utils/bolt";
 import Tooltip from "../Tooltip";
 import StatusIcon from "../StatusIcon";
 import Dropdown from "../Dropdown";
-import { alertDialog, confirmDialog, promptDialog, selectDialog } from "../Dialog";
+import { alertDialog, confirmDialog, promptDialog } from "../Dialog";
 import "../shared.scss";
 import "./LocalisedLibrary.scss";
 
@@ -557,19 +556,6 @@ const LocalisedLibraryTool = () => {
         setComponents(all);
     };
 
-    const handleNewFolder = async () => {
-        if (!selectedCampaign || !selectedTerritory) return;
-        const name = await promptDialog("New folder name:", "");
-        if (!name) return;
-        const result = await safeEvalTS("createLocLibFolder", selectedCampaign.name, selectedTerritory, name);
-        if (result && result.success) {
-            const all: CustomFolder[] = (await safeEvalTS("loadLocLibFolders")) || [];
-            setCustomFolders(all);
-        } else if (result) {
-            pushToast(result.error || "Could not create folder.", "error");
-        }
-    };
-
     const handleRemoveFolder = async (folderName: string) => {
         if (!selectedCampaign || !selectedTerritory) return;
         if (
@@ -594,47 +580,6 @@ const LocalisedLibraryTool = () => {
             next.delete(folderKey("", folderName));
             return next;
         });
-    };
-
-    // Reassigns one component to a different folder, offering every folder
-    // name currently in use in this territory (auto buckets + custom) plus
-    // the option to create a brand new one on the spot.
-    const handleMoveComponent = async (component: Component) => {
-        if (!selectedCampaign || !selectedTerritory) return;
-        const inThisTerritory = components.filter((c) => c.campaign === selectedCampaign.name && c.territory === selectedTerritory);
-        const autoNames = inThisTerritory.map(folderForComponent);
-        const customNames = customFolders
-            .filter((f) => f.campaign === selectedCampaign.name && f.territory === selectedTerritory)
-            .map((f) => f.name);
-        const allNames = Array.from(new Set([...autoNames, ...customNames])).sort();
-        const options = [...allNames, "New folder…"];
-        const currentName = folderForComponent(component);
-        const defaultIndex = Math.max(0, options.indexOf(currentName));
-
-        const choice = await selectDialog(`Move "${component.label}" to:`, options, defaultIndex);
-        if (choice === null) return;
-
-        let targetFolder = options[choice];
-        if (targetFolder === "New folder…") {
-            const name = await promptDialog("New folder name:", "");
-            if (!name) return;
-            const createResult = await safeEvalTS("createLocLibFolder", selectedCampaign.name, selectedTerritory, name);
-            if (!createResult || !createResult.success) {
-                if (createResult) pushToast(createResult.error || "Could not create folder.", "error");
-                return;
-            }
-            targetFolder = name;
-        } else if (targetFolder === currentName) {
-            return; // no-op, already there
-        }
-
-        await safeEvalTS("setLocLibComponentFolder", component.campaign, component.territory, component.label, component.path, targetFolder);
-        const [all, allFolders] = await Promise.all([
-            (safeEvalTS("loadLocLibComponents") as Promise<Component[]>).then((v) => v || []),
-            (safeEvalTS("loadLocLibFolders") as Promise<CustomFolder[]>).then((v) => v || []),
-        ]);
-        setComponents(all);
-        setCustomFolders(allFolders);
     };
 
     const handleAutoPopulate = async () => {
@@ -1046,14 +991,6 @@ const LocalisedLibraryTool = () => {
                     <X size={14} />
                 </button>
             </Tooltip>
-            {/* Deliberately at the far end, set apart from Import/Reveal/
-                Remove -- it used to sit right next to Import, easy to
-                fat-finger by mistake. */}
-            <Tooltip text="Move to another folder">
-                <button className="ll-row-btn ll-row-btn-move" onClick={() => handleMoveComponent(c)}>
-                    <FolderSymlink size={14} />
-                </button>
-            </Tooltip>
         </div>
     );
 
@@ -1403,10 +1340,6 @@ const LocalisedLibraryTool = () => {
                                         </span>
                                     </div>
 
-                                    <button className="ll-new-folder" onClick={handleNewFolder}>
-                                        <FolderPlus size={14} /> New Folder…
-                                    </button>
-
                                     {/* Shared scroll region for the whole tree AND the
                                         JPG_PNG section below it -- .ll-folder-list used to
                                         carry flex:1/overflow-y:auto itself, which would have
@@ -1583,11 +1516,21 @@ const LocalisedLibraryTool = () => {
                                                 exit={{ opacity: 0, height: 0 }}
                                                 transition={{ duration: 0.18 }}
                                             >
+                                                {/* Both were flex:1 and neither stretched:
+                                                    Tooltip's inner span is flex:0 0 auto
+                                                    !important, so each button sat at its
+                                                    natural width inside a half-width
+                                                    wrapper, adrift from both edges. They
+                                                    take their natural width deliberately
+                                                    now and the bar places them. */}
                                                 <Tooltip text="Import just the selected components into the current project, read-only">
                                                     <button disabled={batchBusy} onClick={handleImportSelected}>
                                                         <Download size={14} /> Import Selected ({selectedPaths.size})
                                                     </button>
                                                 </Tooltip>
+                                                <span className="ll-batch-count">
+                                                    {selectedPaths.size} selected
+                                                </span>
                                                 <Tooltip text="Pick a localised batch folder -- opens, updates, and SAVES every .aep found inside it with the selected components. Modifies those files on disk. Never use on a Masters folder.">
                                                     <button className="danger" disabled={batchBusy} onClick={handleSaveIntoBatchFolder}>
                                                         <FolderInput size={14} /> Save Into Batch…
