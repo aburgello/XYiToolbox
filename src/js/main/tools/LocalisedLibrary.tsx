@@ -29,6 +29,7 @@ import {
     Folder,
     FolderSymlink,
     Image,
+    Layers,
 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import Tooltip from "../Tooltip";
@@ -53,6 +54,15 @@ interface Component {
     // auto-buckets it by extension instead. This is a library-only
     // grouping, not a mirror of how the files actually sit on disk.
     folder?: string;
+    // The creative folder this file really sits in inside Support_Motion,
+    // and the one field here that IS the disk. Territories now carry a
+    // folder per creative (Support_Motion/Bracelet/MCs_Taglines/…) and
+    // bucketing purely by file type threw Bracelet's and Trio's artwork
+    // into one AI folder with only the filename to tell them apart --
+    // and not every filename carries its creative. Absent means the file
+    // sits loose in Support_Motion, which is every older campaign; those
+    // keep exactly the view they had. See localise.ts's LocLibComponent.
+    creative?: string;
 }
 
 interface CustomFolder {
@@ -112,6 +122,18 @@ const MOCK_COMPONENTS: Component[] = [
     // Filed under a custom folder ("Legal Approved") rather than
     // auto-bucketed by extension -- demonstrates a manually-moved entry.
     { campaign: "ODY_INTL_DGTL_DOOH_HORSE", territory: "France", label: "Legal_Signoff_FR", path: "/mock/HORSE/Markets/France/Support_Motion/Legal_Signoff_FR.pdf", folder: "Legal Approved" },
+    // Germany is filed the NEW way -- a folder per creative inside
+    // Support_Motion, each with its own sub-structure below it. France
+    // above is the old flat shape, deliberately left alone so browser
+    // preview shows both: a territory that grows the creative level and
+    // one that never does.
+    { campaign: "ODY_INTL_DGTL_DOOH_HORSE", territory: "Germany", label: "FID_INTL_Bracelet_1L_TAGLINE_DE_RGB", path: "/mock/HORSE/Markets/Germany/Support_Motion/Bracelet/MCs_Taglines/FID_INTL_Bracelet_1L_TAGLINE_DE_RGB.ai", creative: "Bracelet" },
+    { campaign: "ODY_INTL_DGTL_DOOH_HORSE", territory: "Germany", label: "FID_Teaser_PIB_Pedigree_DE_RGB_SIMP", path: "/mock/HORSE/Markets/Germany/Support_Motion/Bracelet/MCs_Taglines/FID_Teaser_PIB_Pedigree_DE_RGB_SIMP.psd", creative: "Bracelet" },
+    { campaign: "ODY_INTL_DGTL_DOOH_HORSE", territory: "Germany", label: "Bracelet_Date_DE", path: "/mock/HORSE/Markets/Germany/Support_Motion/Bracelet/Date/Bracelet_Date_DE.aep", creative: "Bracelet" },
+    { campaign: "ODY_INTL_DGTL_DOOH_HORSE", territory: "Germany", label: "Trio_TT_DE", path: "/mock/HORSE/Markets/Germany/Support_Motion/Trio/TT/Trio_TT_DE.ai", creative: "Trio" },
+    { campaign: "ODY_INTL_DGTL_DOOH_HORSE", territory: "Germany", label: "Trio_Endcard_DE", path: "/mock/HORSE/Markets/Germany/Support_Motion/Trio/Trio_Endcard_DE.aep", creative: "Trio" },
+    // Loose in Support_Motion alongside those two folders -- the mixed
+    // case, which is what the second caption on that screen is for.
     { campaign: "ODY_INTL_DGTL_DOOH_HORSE", territory: "Germany", label: "Logo_Endcard_DE", path: "/mock/HORSE/Markets/Germany/Support_Motion/Logo_Endcard_DE.aep" },
     { campaign: "ODY_INTL_DGTL_DOOH_HORSE", territory: "Japan", label: "Logo_Endcard_JP", path: "/mock/HORSE/Markets/Japan/Support_Motion/Logo_Endcard_JP.aep" },
 ];
@@ -189,6 +211,13 @@ const LocalisedLibraryTool = () => {
     // folder's own component list -- see the "mini directories" split in
     // this file's header comment.
     const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+    // A level ABOVE the folder list, and only where the disk has one: null
+    // is the territory's own landing (creative rows, plus the file-type
+    // buckets of anything loose), set narrows everything below to that one
+    // creative. A territory whose Support_Motion has no creative folders
+    // never sees this level at all -- the whole point is to mirror what is
+    // there, not to impose a level on trees that don't have one.
+    const [selectedCreative, setSelectedCreative] = useState<string | null>(null);
     const [territorySearch, setTerritorySearch] = useState("");
     const [countryCodes, setCountryCodes] = useState<Record<string, string>>({});
 
@@ -377,7 +406,14 @@ const LocalisedLibraryTool = () => {
     // whichever folder they actually want is one deliberate click away.
     useEffect(() => {
         setSelectedFolder(null);
+        setSelectedCreative(null);
     }, [selectedTerritory]);
+
+    // Leaving a creative leaves its folders behind with it -- an AI bucket
+    // that belonged to Bracelet must not survive the walk back out.
+    useEffect(() => {
+        setSelectedFolder(null);
+    }, [selectedCreative]);
 
     // Fresh territory, fresh JPG_PNG browse -- a listing scanned for
     // France shouldn't linger when switching to Germany.
@@ -397,7 +433,7 @@ const LocalisedLibraryTool = () => {
 
     useEffect(() => {
         setSelectedPaths(new Set());
-    }, [selectedTerritory, selectedFolder, jpgPngStack]);
+    }, [selectedTerritory, selectedCreative, selectedFolder, jpgPngStack]);
 
     const refreshTerritories = async (camp: Campaign) => {
         setLoadingTerritories(true);
@@ -499,7 +535,8 @@ const LocalisedLibraryTool = () => {
             selectedTerritory,
             label || defaultLabel,
             path,
-            selectedFolder || undefined
+            selectedFolder || undefined,
+            selectedCreative || undefined
         );
         if (result && result.success) {
             const all: Component[] = (await safeEvalTS("loadLocLibComponents")) || [];
@@ -597,6 +634,7 @@ const LocalisedLibraryTool = () => {
         if (
             !(await confirmDialog(
                 `Scan ${scopeLabel} for a "Support_Motion" or "Motion_Components" folder, and auto-add every file found inside as a component?\n\n` +
+                    "Where that folder holds a folder per creative, each file is filed under its creative.\n\n" +
                     "Files already in the library are skipped, so this is safe to re-run later as new territories come online."
             ))
         )
@@ -614,7 +652,16 @@ const LocalisedLibraryTool = () => {
                 const all: Component[] = (await safeEvalTS("loadLocLibComponents")) || [];
                 setComponents(all);
                 const noMatchCount = (result.territoriesWithNoMatch || []).length;
-                pushToast(`Added ${result.added}, skipped ${result.skippedExisting} already in library, ${noMatchCount} territories with no match.`);
+                // `refiled` is what a re-run does for a library saved before
+                // creative folders existed: the rows were already there, so
+                // "skipped" alone would report a no-op run that in fact just
+                // sorted the whole territory.
+                const refiled = result.refiled || 0;
+                pushToast(
+                    `Added ${result.added}, skipped ${result.skippedExisting} already in library` +
+                        (refiled > 0 ? `, filed ${refiled} under their creative` : "") +
+                        `, ${noMatchCount} territories with no match.`
+                );
             } else if (result) {
                 pushToast(result.error || "Auto-populate failed.", "error");
             }
@@ -862,16 +909,40 @@ const LocalisedLibraryTool = () => {
 
     const countFor = (territory: string) => components.filter((c) => c.campaign === selectedCampaign?.name && c.territory === territory).length;
 
-    // Folder list for the currently selected territory -- every distinct
-    // folder name in actual use (auto extension bucket or explicit) UNION
-    // any custom folder that's been created but has nothing filed in it
-    // yet, so a just-created empty folder doesn't disappear.
+    // The creatives this territory's Support_Motion actually has a folder
+    // for. Empty is the ordinary answer for every campaign filed the old
+    // way, and it switches this whole level off rather than showing an
+    // empty rail.
+    const creativesForTerritory = Array.from(
+        new Set(componentsForTerritory.map((c) => c.creative || "").filter((n) => n !== ""))
+    ).sort();
+    const hasCreatives = creativesForTerritory.length > 0;
+
+    // What the folder buckets below are computed from. Inside a creative,
+    // that creative's files; at the territory landing of a tree that HAS
+    // creatives, only the loose ones -- their buckets sit under the
+    // creative rows exactly as they sit beside those folders on disk.
+    // Without creatives at all, everything, which is the original view.
+    const componentsInScope = !hasCreatives
+        ? componentsForTerritory
+        : selectedCreative
+            ? componentsForTerritory.filter((c) => (c.creative || "") === selectedCreative)
+            : componentsForTerritory.filter((c) => !c.creative);
+
+    // Folder list for the current scope -- every distinct folder name in
+    // actual use (auto extension bucket or explicit) UNION any custom
+    // folder that's been created but has nothing filed in it yet, so a
+    // just-created empty folder doesn't disappear. Custom folders are
+    // recorded per territory, so they belong to the territory landing;
+    // repeating them inside every creative would offer the same folder
+    // several times over and file into one shared bucket regardless.
     const customFoldersForTerritory = customFolders.filter((f) => f.campaign === selectedCampaign?.name && f.territory === selectedTerritory);
-    const folderNamesInUse = new Set(componentsForTerritory.map(folderForComponent));
-    const allFolderNames = Array.from(new Set([...folderNamesInUse, ...customFoldersForTerritory.map((f) => f.name)])).sort();
+    const folderNamesInUse = new Set(componentsInScope.map(folderForComponent));
+    const customNamesHere = selectedCreative ? [] : customFoldersForTerritory.map((f) => f.name);
+    const allFolderNames = Array.from(new Set([...folderNamesInUse, ...customNamesHere])).sort();
     const customFolderNameSet = new Set(customFoldersForTerritory.map((f) => f.name));
 
-    const componentsForFolder = componentsForTerritory.filter((c) => folderForComponent(c) === selectedFolder);
+    const componentsForFolder = componentsInScope.filter((c) => folderForComponent(c) === selectedFolder);
 
     const allSelected = componentsForFolder.length > 0 && selectedPaths.size === componentsForFolder.length;
     const allJpgPngSelected = jpgPngLevelFiles.length > 0 && selectedPaths.size === jpgPngLevelFiles.length;
@@ -1022,12 +1093,16 @@ const LocalisedLibraryTool = () => {
                                 /* ── Components-in-a-folder view ──────────────── */
                                 <>
                                     <button className="ll-back" onClick={() => setSelectedFolder(null)}>
-                                        <ArrowLeft size={13} /> {selectedTerritory}
+                                        <ArrowLeft size={13} /> {selectedCreative || selectedTerritory}
                                     </button>
 
                                     <div className="ll-comp-head">
                                         <div className="ll-comp-title">
                                             <Folder size={13} className="ll-folder-icon" /> {selectedFolder}
+                                            {/* Which creative's AI folder this is -- the
+                                                bucket name alone is the same word in every
+                                                one of them. */}
+                                            {selectedCreative ? <em> {selectedCreative}</em> : null}
                                         </div>
                                         <span className={componentsForFolder.length > 0 ? "ll-count has" : "ll-count"}>
                                             {componentsForFolder.length}
@@ -1238,23 +1313,34 @@ const LocalisedLibraryTool = () => {
                             ) : (
                                 /* ── Folders view (the "mini directories" split) ── */
                                 <>
-                                    <button className="ll-back" onClick={() => setSelectedTerritory(null)}>
-                                        <ArrowLeft size={13} /> All territories
+                                    <button
+                                        className="ll-back"
+                                        onClick={() => (selectedCreative ? setSelectedCreative(null) : setSelectedTerritory(null))}
+                                    >
+                                        <ArrowLeft size={13} /> {selectedCreative ? selectedTerritory : "All territories"}
                                     </button>
 
                                     <div className="ll-comp-head">
                                         <div className="ll-comp-title">
-                                            {selectedTerritory}
-                                            {countryCodes[selectedTerritory] ? <em> {countryCodes[selectedTerritory]}</em> : null}
+                                            {selectedCreative ? <Layers size={13} className="ll-folder-icon" /> : null}
+                                            {selectedCreative || selectedTerritory}
+                                            {!selectedCreative && countryCodes[selectedTerritory] ? <em> {countryCodes[selectedTerritory]}</em> : null}
+                                            {selectedCreative ? <em> {selectedTerritory}</em> : null}
                                         </div>
-                                        <span className={componentsForTerritory.length > 0 ? "ll-count has" : "ll-count"}>
-                                            {componentsForTerritory.length}
+                                        <span className={componentsInScope.length > 0 ? "ll-count has" : "ll-count"}>
+                                            {selectedCreative ? componentsInScope.length : componentsForTerritory.length}
                                         </span>
                                     </div>
 
-                                    <button className="ll-new-folder" onClick={handleNewFolder}>
-                                        <FolderPlus size={14} /> New Folder…
-                                    </button>
+                                    {/* Only from the territory landing: a custom folder
+                                        is recorded per territory, so offering it inside a
+                                        creative would promise a filing this library does
+                                        not keep. */}
+                                    {!selectedCreative && (
+                                        <button className="ll-new-folder" onClick={handleNewFolder}>
+                                            <FolderPlus size={14} /> New Folder…
+                                        </button>
+                                    )}
 
                                     {/* Shared scroll region for both the regular folder list
                                         AND the JPG_PNG section below it -- .ll-folder-list
@@ -1264,12 +1350,47 @@ const LocalisedLibraryTool = () => {
                                         wrapper scrolls now; both children are plain block
                                         content inside it. */}
                                     <div className="ll-folders-scroll">
+                                        {/* THE CREATIVE FOLDERS AS THEY REALLY SIT, above
+                                            the file-type buckets rather than dissolved into
+                                            them. Shown only at the territory landing of a
+                                            tree that has them: inside a creative these ARE
+                                            the level you are standing on, and a territory
+                                            filed the old way never grows the level at all. */}
+                                        {!selectedCreative && hasCreatives && (
+                                            <div className="ll-folder-list ll-creative-list">
+                                                <div className="ll-creative-caption">Creatives</div>
+                                                {creativesForTerritory.map((name) => {
+                                                    const count = componentsForTerritory.filter((c) => (c.creative || "") === name).length;
+                                                    return (
+                                                        <div key={`creative:${name}`} className="ll-folder-row-wrap">
+                                                            <button className="ll-folder-row ll-creative-row" onClick={() => setSelectedCreative(name)}>
+                                                                <Layers size={14} className="ll-folder-icon" />
+                                                                <span className="ll-folder-name">{name}</span>
+                                                                <span className={count > 0 ? "ll-count has" : "ll-count"}>{count}</span>
+                                                                <ChevronRight size={14} className="ll-chevron" />
+                                                            </button>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+
                                         <div className="ll-folder-list">
-                                            {allFolderNames.length === 0 && (
+                                            {/* A caption only where there is something above
+                                                to tell these apart from -- these are the files
+                                                loose in Support_Motion, sitting beside the
+                                                creative folders exactly as they do on disk. */}
+                                            {!selectedCreative && hasCreatives && allFolderNames.length > 0 && (
+                                                <div className="ll-creative-caption">Loose in Support_Motion</div>
+                                            )}
+                                            {allFolderNames.length === 0 && !hasCreatives && (
                                                 <p className="ll-empty">
                                                     No folders yet. Create one, then Add Component once inside it -- or run Auto-Populate to pull files
                                                     from this territory's Motion Components folder (each lands in a folder named after its file type).
                                                 </p>
+                                            )}
+                                            {allFolderNames.length === 0 && hasCreatives && selectedCreative && (
+                                                <p className="ll-empty">Nothing filed under {selectedCreative} yet.</p>
                                             )}
                                             {allFolderNames.map((name) => {
                                                 const count = componentsForTerritory.filter((c) => folderForComponent(c) === name).length;
@@ -1304,7 +1425,10 @@ const LocalisedLibraryTool = () => {
                                             not persisted library data like everything above it.
                                             See localise.ts's scanJpgPngBatches() header comment
                                             for why this was split out of Auto-Populate. */}
-                                        <div className="ll-jpgpng-section">
+                                        {/* Territory-level, like the folder it browses:
+                                            JPG_PNG is a sibling of Support_Motion, not
+                                            something inside a creative. */}
+                                        <div className="ll-jpgpng-section" style={selectedCreative ? { display: "none" } : undefined}>
                                             <div className="ll-jpgpng-caption">Live folder browse</div>
                                             <button className="ll-jpgpng-toggle" onClick={handleToggleJpgPngSection}>
                                                 <span className="ll-jpgpng-icon-badge"><Image size={13} /></span>

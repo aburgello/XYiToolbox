@@ -772,6 +772,17 @@ interface LocLibComponent {
   // grouping, same spirit as everything else in this file being a virtual
   // catalogue over real files rather than a mirror of their real layout.
   folder?: string;
+  // WHICH CREATIVE'S FOLDER this file actually sits in, and the one field
+  // here that IS a mirror of the disk. Territories started carrying a folder
+  // per creative inside Support_Motion (Support_Motion/Bracelet/MCs_Taglines/
+  // ...), and the flat scan below threw two creatives' files into one bucket
+  // keyed on file type -- the same failure already written up for JPG_PNG,
+  // where flattening nested creative folders made unrelated files read as
+  // indistinguishable duplicates. Set from the folder DIRECTLY under the
+  // container, whatever depth the file is at below that; "" or absent means
+  // the file sits loose in Support_Motion, which is every older campaign and
+  // stays exactly as it was.
+  creative?: string;
 }
 
 interface LocLibFolder {
@@ -816,12 +827,15 @@ function loadLocLibComponentsRaw(): LocLibComponent[] {
     for (let i = 0; i < lines.length; i++) {
       if (lines[i] === "") continue;
       const parts = lines[i].split("\t");
-      // parts.length >= 4 (not 5) on purpose -- a component saved before
-      // the folder field existed still loads fine, just with folder
-      // undefined (auto-bucket by extension on the frontend).
+      // parts.length >= 4 (not 5, not 6) on purpose -- a component saved
+      // before the folder field existed still loads fine, just with folder
+      // undefined (auto-bucket by extension on the frontend), and one saved
+      // before `creative` existed loads as a loose Support_Motion file, which
+      // is what it was. Re-running Auto-Populate is what fills that in.
       if (parts.length >= 4) {
         const entry: LocLibComponent = { campaign: parts[0], territory: decode(parts[1]), label: parts[2], path: parts[3] };
         if (parts.length >= 5 && parts[4]) entry.folder = decode(parts[4]);
+        if (parts.length >= 6 && parts[5]) entry.creative = decode(parts[5]);
         out.push(entry);
       }
     }
@@ -837,7 +851,8 @@ function saveLocLibComponentsRaw(arr: LocLibComponent[]): void {
     const l = String(arr[i].label).replace(/[\t\n\r]/g, " ");
     const p = String(arr[i].path).replace(/[\t\n\r]/g, " ");
     const f = String(arr[i].folder || "").replace(/[\t\n\r]/g, " ");
-    lines.push(c + "\t" + t + "\t" + l + "\t" + p + "\t" + f);
+    const cr = String(arr[i].creative || "").replace(/[\t\n\r]/g, " ");
+    lines.push(c + "\t" + t + "\t" + l + "\t" + p + "\t" + f + "\t" + cr);
   }
   app.settings.saveSetting(SETTINGS_SECTION, LL_COMPONENTS_KEY, lines.join("\n"));
 }
@@ -1207,11 +1222,15 @@ export const detectCurrentLocLibCampaign = (): string | null => {
 
 export const loadLocLibComponents = (): LocLibComponent[] => loadLocLibComponentsRaw();
 
-export const addLocLibComponent = (campaign: string, territory: string, label: string, path: string, folder?: string): Result => {
+export const addLocLibComponent = (campaign: string, territory: string, label: string, path: string, folder?: string, creative?: string): Result => {
   try {
     const all = loadLocLibComponentsRaw();
     const entry: LocLibComponent = { campaign, territory, label, path };
     if (folder) entry.folder = folder;
+    // Whichever creative the artist was standing in when they added it, so a
+    // hand-picked file lands beside the scanned ones instead of dropping to
+    // the loose pile.
+    if (creative) entry.creative = creative;
     all.push(entry);
     saveLocLibComponentsRaw(all);
     return { success: true };
@@ -1262,26 +1281,54 @@ function llIsComponentsContainerName(name: string): boolean {
   return norm === "supportmotion" || norm === "motioncomponents";
 }
 
-function llCollectAllFiles(folder: Folder, results: File[]) {
+// A file plus the creative folder it was found under -- see
+// LocLibComponent.creative. `creative` is "" for a file sitting loose in the
+// container itself.
+interface LlFoundFile {
+  file: File;
+  creative: string;
+}
+
+// `creative` is passed DOWN rather than derived on the way back up, because
+// it is set once at the container's first level and then just carried: a file
+// at Support_Motion/Bracelet/MCs_Taglines/x.ai belongs to Bracelet, not to
+// MCs_Taglines, and nothing below that first level changes the answer.
+function llCollectAllFiles(folder: Folder, results: LlFoundFile[], creative: string) {
   const items = folder.getFiles();
   for (let i = 0; i < items.length; i++) {
     if (items[i] instanceof Folder) {
-      llCollectAllFiles(items[i] as Folder, results);
+      llCollectAllFiles(items[i] as Folder, results, creative);
     } else if (items[i] instanceof File) {
-      results.push(items[i] as File);
+      results.push({ file: items[i] as File, creative: creative });
     }
   }
 }
 
-function llFindComponentFiles(territoryFolder: Folder, maxSearchDepth: number): File[] {
-  const results: File[] = [];
+// The container's own first level is walked here rather than in
+// llCollectAllFiles so each subfolder can name itself as the creative. Its
+// name is DECODED -- File/Folder.name is the name portion of a URI, so an
+// accented creative would otherwise be stored percent-escaped here and
+// compared against a decoded one on screen.
+function llCollectContainer(container: Folder, results: LlFoundFile[]) {
+  const items = container.getFiles();
+  for (let i = 0; i < items.length; i++) {
+    if (items[i] instanceof Folder) {
+      llCollectAllFiles(items[i] as Folder, results, decode(items[i].name));
+    } else if (items[i] instanceof File) {
+      results.push({ file: items[i] as File, creative: "" });
+    }
+  }
+}
+
+function llFindComponentFiles(territoryFolder: Folder, maxSearchDepth: number): LlFoundFile[] {
+  const results: LlFoundFile[] = [];
   const search = (folder: Folder, depth: number) => {
     if (depth > maxSearchDepth) return;
     const items = folder.getFiles();
     for (let i = 0; i < items.length; i++) {
       if (items[i] instanceof Folder) {
         if (llIsComponentsContainerName(items[i].name)) {
-          llCollectAllFiles(items[i] as Folder, results);
+          llCollectContainer(items[i] as Folder, results);
         } else {
           search(items[i] as Folder, depth + 1);
         }
@@ -1297,6 +1344,8 @@ interface AutoPopulateResult {
   error?: string;
   added?: number;
   skippedExisting?: number;
+  /** Existing rows that gained (or corrected) a creative on this run. */
+  refiled?: number;
   territoriesWithNoMatch?: string[];
 }
 
@@ -1306,6 +1355,7 @@ export const autoPopulateLocLib = (campaignName: string, marketsRoot: string, on
     const existing = loadLocLibComponentsRaw();
     let added = 0;
     let skippedExisting = 0;
+    let refiled = 0;
     const territoriesWithNoMatch: string[] = [];
 
     for (let i = 0; i < territories.length; i++) {
@@ -1319,10 +1369,22 @@ export const autoPopulateLocLib = (campaignName: string, marketsRoot: string, on
       }
 
       for (let j = 0; j < files.length; j++) {
-        const fPath = files[j].fsName;
+        const fPath = files[j].file.fsName;
+        const creative = files[j].creative;
         let alreadyThere = false;
         for (let k = 0; k < existing.length; k++) {
           if (existing[k].campaign === campaignName && existing[k].territory === terrName && existing[k].path === fPath) {
+            // BACKFILL, which is what makes re-running Auto-Populate the
+            // migration path for a library saved before creative folders
+            // existed. Disk is the authority on where a file lives, so a
+            // disagreement is corrected rather than left -- unlike `folder`
+            // just above it, which is the artist's own filing and is never
+            // touched here.
+            if (String(existing[k].creative || "") !== creative) {
+              if (creative) existing[k].creative = creative;
+              else delete existing[k].creative;
+              refiled++;
+            }
             alreadyThere = true;
             break;
           }
@@ -1332,14 +1394,16 @@ export const autoPopulateLocLib = (campaignName: string, marketsRoot: string, on
           continue;
         }
 
-        const label = decode(files[j].name).replace(/\.[^.]+$/, "");
-        existing.push({ campaign: campaignName, territory: terrName, label: label, path: fPath });
+        const label = decode(files[j].file.name).replace(/\.[^.]+$/, "");
+        const entry: LocLibComponent = { campaign: campaignName, territory: terrName, label: label, path: fPath };
+        if (creative) entry.creative = creative;
+        existing.push(entry);
         added++;
       }
     }
 
     saveLocLibComponentsRaw(existing);
-    return { success: true, added, skippedExisting, territoriesWithNoMatch };
+    return { success: true, added, skippedExisting, refiled, territoriesWithNoMatch };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

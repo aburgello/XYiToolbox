@@ -386,6 +386,32 @@
         gap: 4px;
     }
 
+    // The creative rows and the "loose in Support_Motion" buckets are two
+    // different KINDS of thing sharing one screen, so each list says what
+    // it is. Matches .ll-jpgpng-caption, which already labels the third
+    // kind (the live browse) a few rules down.
+    .ll-creative-caption {
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.6px;
+        text-transform: uppercase;
+        color: var(--cat-icon, #5eead4);
+        opacity: 0.8;
+        margin-bottom: 5px;
+    }
+
+    .ll-creative-list {
+        margin-bottom: 12px;
+    }
+
+    // A creative is where the file really lives; a bucket below is how the
+    // library chose to group it. One notch brighter and a left bar, so the
+    // two lists don't read as one continuous rail.
+    .ll-creative-row {
+        border-left: 2px solid var(--cat-border, #2dd4bf);
+        color: #e6e6e6;
+    }
+
     .ll-folder-row {
         display: flex;
         align-items: center;

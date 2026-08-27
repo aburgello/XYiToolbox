@@ -564,6 +564,22 @@ nobody records one.
   team folder. `_tuts` is a team-folder path opened by name, unrelated to the
   `_`-folder scan rule below.
 
+**Localised Library mirrors `Support_Motion`'s creative folders, when it has
+them.** Territories started carrying a folder per creative
+(`Support_Motion/Bracelet/MCs_Taglines/…`), and the scan flattened everything
+into buckets keyed on file type — so two creatives' artwork landed in one `AI`
+folder with only the filename to tell them apart, and not every filename
+carries its creative. `LocLibComponent.creative` is set from the folder
+**directly under the container**, whatever depth the file sits at below that,
+and is the one field in that record that mirrors the disk (`folder` is the
+artist's own filing and the scan never touches it). Absent means loose in
+`Support_Motion`, which is every older campaign — **the panel grows the extra
+level only where the disk has one**, never imposes it. Decode the folder name
+(`.name` is URI-encoded) or an accented creative keys twice. Re-running
+Auto-Populate is the migration path: an already-present row is **backfilled**
+rather than skipped, and the count is reported separately, or a run that sorted
+a whole territory reads as a no-op.
+
 **Folders starting with `_` are excluded from every scan.** The one exception is
 Naming Audit, which skips only `Auto-Save`/`_Archive`/`_Old`/`_DEV`.
 
@@ -835,6 +851,12 @@ tree for exercising real scan/reveal paths inside AE.
 bundle's `tutorialsList` against a stubbed filesystem whose `File.exists` and
 `getFiles(mask)` THROW — so an edit that reaches for either on the share fails
 the probe instead of failing silently on the NAS.
+
+`node scripts/probe-loclib-creatives.cjs` (after `yarn build`) drives
+`autoPopulateLocLib` over a stubbed Markets tree carrying BOTH shapes — one
+territory with a folder per creative inside `Support_Motion`, one with
+everything loose. Run it after touching that scan: it is the only gate on a
+function whose failure mode is writing a wrong library into `app.settings`.
 
 `node scripts/probe-campaign-rename.cjs` (after `yarn build`) drives
 `campaignRename` over a stubbed folder pair on BOTH naming conventions. Run it
