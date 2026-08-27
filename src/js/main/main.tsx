@@ -39,14 +39,18 @@ import CommandPalette from "./CommandPalette";
 import { GsapScreenTransition } from "./gsap/components/GsapScreenTransition";
 import { useTheme } from "./hooks/useTheme";
 import { registerSoftReload } from "./softReload";
-import { setNavigator } from "./lib/navigation";
+import { setNavigator, setHomeNavigator } from "./lib/navigation";
 import WorkflowBubble from "./WorkflowBubble";
 // ---------------------------------------------------------------------------
 // Screen type -- exported so screen components can reference it without a
 // circular import (they import Screen, Main imports them).
 // ---------------------------------------------------------------------------
 export type Screen =
-    | { type: "home" }
+    // `focusAction` singles out one Toolset card once home mounts. Those
+    // actions have no registry entry to navigate to (see CLAUDE.md: an
+    // input-less action goes in Toolset's ACTIONS), so a workflow step that
+    // points at MC It! or Support Swap has to arrive here instead.
+    | { type: "home"; focusAction?: string }
     // autoAction here as well as on `tool`: a tool whose real home is a
     // category's bespoke screen (Big Guy Localiser IS the Localise screen's
     // default pane) is opened as a CATEGORY, so a category screen has to be
@@ -119,6 +123,15 @@ const Main = () => {
         });
         return () => setNavigator(null);
     }, [screen]);
+
+    // The Toolset grid's own actions, which live on THIS screen rather than on
+    // a tool page. Not folded into setNavigator above because the argument is a
+    // different kind of thing -- an action id, not a registry tool id -- and one
+    // function taking either would have to guess which it had been handed.
+    useEffect(() => {
+        setHomeNavigator((focusAction: string) => setScreen({ type: "home", focusAction }));
+        return () => setHomeNavigator(null);
+    }, []);
     // Auto-fires a named button inside a tool's component after it mounts.
     // Used when a search hit matches an inner action (e.g. "Trott 2.0") --
     // navigating to the tool's page AND clicking that button in one step.
@@ -189,7 +202,7 @@ const Main = () => {
             body = <CategoryScreen categoryId={categoryScreen.categoryId} {...screenProps} />;
         }
     } else {
-        body = <HomeScreen onNavigate={setScreen} />;
+        body = <HomeScreen onNavigate={setScreen} focusAction={screen.focusAction} />;
     }
 
     return (

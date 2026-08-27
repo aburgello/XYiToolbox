@@ -1176,6 +1176,22 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     overflow-y: auto;
 }
 
+// THREE KINDS OF DESTINATION IN ONE LIST, so each says which it is. Without
+// a separator "Support Swap" and "MC It!" read as tools, which is exactly the
+// confusion that made them look unlinkable in the first place.
+.workflow-board .wfb-linkpick-sep {
+    margin: 8px 0 3px;
+    padding: 0 2px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: var(--ov-accent, #2dd4bf);
+    opacity: 0.75;
+
+    &:first-child { margin-top: 2px; }
+}
+
 .workflow-board .wfb-linkpick-row {
     display: flex;
     align-items: center;

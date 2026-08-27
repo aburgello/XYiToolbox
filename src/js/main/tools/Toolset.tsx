@@ -1183,7 +1183,33 @@ interface Toast {
     type: "success" | "error";
 }
 
-const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNavigate }) => {
+const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void; focusAction?: string }> = ({ onNavigate, focusAction }) => {
+    /**
+     * One card singled out, because a workflow step pointed at it.
+     *
+     * MARKED, NEVER PRESSED — see lib/navigation.ts. Everything worth linking
+     * from a checklist writes files, and a step that fired one on arrival is
+     * the version people turn the feature off over.
+     *
+     * The mark clears itself, so returning to home later doesn't show a
+     * highlight nobody asked for. It is held in state rather than read from
+     * the prop directly for exactly that reason.
+     */
+    const [marked, setMarked] = useState<string | null>(null);
+    useEffect(() => {
+        if (!focusAction) return;
+        setMarked(focusAction);
+        // The grid animates in, so the card is not in the DOM on this tick.
+        const raf = requestAnimationFrame(() => {
+            const el = document.querySelector(`[data-action-id="${focusAction}"]`);
+            if (el && typeof el.scrollIntoView === "function") {
+                el.scrollIntoView({ block: "center", behavior: "smooth" });
+            }
+        });
+        const clear = setTimeout(() => setMarked(null), 4000);
+        return () => { cancelAnimationFrame(raf); clearTimeout(clear); };
+    }, [focusAction]);
+
     const [toasts, setToasts] = useState<Toast[]>([]);
     const toastId = useRef(0);
     const [showTurkGif, setShowTurkGif] = useState(false);
@@ -1718,8 +1744,9 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void }> = ({ onNa
                                     const starredClass = starredSet.has(action.id) ? "starred" : "";
                                     const renderButton = (onClick: () => void, active?: boolean) => (
                                         <motion.button
+                                            data-action-id={action.id}
                                             style={btnStyle}
-                                            className={[active ? "active" : "", starredClass].filter(Boolean).join(" ") || undefined}
+                                            className={[active ? "active" : "", starredClass, marked === action.id ? "is-marked" : ""].filter(Boolean).join(" ") || undefined}
                                             variants={buttonLift}
                                             initial={{ opacity: 0, y: 10 }}
                                             animate={{ opacity: 1, y: 0 }}

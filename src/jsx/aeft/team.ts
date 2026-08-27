@@ -2791,6 +2791,17 @@ const WORKFLOW_TICKS_KEY = "WorkflowTicks";
 export interface WorkflowStep {
   id: string;
   text: string;
+  /**
+   * Where this step sends you. Declared here because it is written to the
+   * SHARED file and this is the only place that writes it -- it round-trips
+   * today only because JSON keeps properties nobody has declared, which is
+   * true but is not documentation.
+   *
+   * Panel-side vocabulary (see WorkflowBoard.tsx's WorkflowLink), validated
+   * there on every render: this file has never heard of the tool registry, the
+   * Toolset grid or somebody's saved scripts, and should not learn them.
+   */
+  link?: WorkflowNoteLink;
 }
 
 export interface WorkflowNote {
@@ -2845,6 +2856,16 @@ export interface WorkflowNoteLink {
   tool?: string;
   /** A button inside that tool, named on arrival rather than pressed. */
   action?: string;
+  /** A card in the Toolset grid (MC It!, Support Swap). Those have no registry
+   *  entry by design, so they cannot be reached through `tool`. */
+  toolsetAction?: string;
+  /** A saved Script Playground tool. */
+  script?: string;
+  /** Its name when the link was made. Scripts are stored per machine with
+   *  random ids, so the id only matches a colleague's copy if they imported
+   *  the profile it came with -- the NAME is the half that travels, and is
+   *  what resolves the link when the id misses. */
+  scriptName?: string;
 }
 
 export interface WorkflowEntry {

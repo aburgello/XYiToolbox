@@ -40,7 +40,11 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { Code2 } from "lucide-react";
 import { TOOLS } from "../toolRegistry";
+import { ACTIONS as TOOLSET_ACTIONS } from "./Toolset";
+import { useCustomTools } from "../hooks/useCustomTools";
+import { navigateToToolsetAction } from "../lib/navigation";
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import { sfx } from "../../lib/utils/sfx";
@@ -67,7 +71,31 @@ import "./WorkflowBoard.scss";
  * link opens the page and names the button; you press it, with the tool's own
  * chrome around you.
  */
-interface WorkflowLink { tool: string; action?: string }
+/**
+ * THREE KINDS OF DESTINATION, because the panel has three kinds of thing worth
+ * pointing at and only one of them is a registry tool.
+ *
+ *   tool           a registry entry, optionally naming a button inside it
+ *   toolsetAction  a card in the Toolset grid — MC It!, Support Swap, Turk It.
+ *                  Those have no registry entry by design (CLAUDE.md: an
+ *                  input-less action goes in Toolset's ACTIONS), so before this
+ *                  they were the one obvious thing a step could not link to.
+ *   script         a saved Script Playground tool.
+ *
+ * A SCRIPT LINK CARRIES ITS NAME AS WELL AS ITS ID, and the name is the half
+ * that usually survives. Saved scripts live in app.settings per machine with
+ * random ids, so an id only matches on a colleague's machine if they imported
+ * your profile — while the name is what people actually say to each other.
+ * Same discipline as a saved Bespoke slot: every identifier is a hint, resolve
+ * down the list, and never let one miss fail the whole thing.
+ */
+interface WorkflowLink {
+    tool?: string;
+    action?: string;
+    toolsetAction?: string;
+    script?: string;
+    scriptName?: string;
+}
 
 interface WorkflowStep { id: string; text: string; link?: WorkflowLink }
 interface WorkflowNote {
@@ -95,7 +123,7 @@ interface WorkflowNote {
  * because a note is a sentence and the thing worth clicking is inside it.
  *
  * A SIDE TABLE rather than markup in the text -- see the host-side comment.
- * Exactly one of `path` / `tool` is set; a link with neither is dropped on the
+ * Exactly one destination is set; a link with none is dropped on the
  * way in, since a word that looks clickable and is not is worse than no link.
  */
 interface WorkflowNoteLink {
@@ -103,6 +131,10 @@ interface WorkflowNoteLink {
     path?: string;
     tool?: string;
     action?: string;
+    /** Same three destinations a step link has — see WorkflowLink. */
+    toolsetAction?: string;
+    script?: string;
+    scriptName?: string;
 }
 interface Territory { name: string; code: string }
 interface WorkflowEntry {
@@ -359,8 +391,72 @@ function toolFor(link: WorkflowLink | undefined) {
 const StepLinkChip: React.FC<{
     link: WorkflowLink;
     onGo: (toolId: string) => void;
+    onGoAction: (actionId: string) => void;
+    onGoScript: (link: WorkflowLink) => void;
+    /** Saved scripts on THIS machine, for resolving a script link's name. */
+    scripts: { id: string; name: string }[];
     disabled?: boolean;
-}> = ({ link, onGo, disabled }) => {
+}> = ({ link, onGo, onGoAction, onGoScript, scripts, disabled }) => {
+    // --- a Toolset card ---------------------------------------------------
+    if (link.toolsetAction) {
+        const act = TOOLSET_ACTIONS.filter((a) => a.id === link.toolsetAction)[0];
+        if (!act) {
+            return (
+                <span className="wfb-link wfb-link--dead" title={`This step points at the "${link.toolsetAction}" action, which isn't in the Toolset any more.`}>
+                    <Link2Off size={10} /> missing
+                </span>
+            );
+        }
+        return (
+            <Tooltip text={`Goes to the home screen and marks ${act.label} — you press it`}>
+                <button
+                    type="button"
+                    className="wfb-link"
+                    disabled={disabled}
+                    onClick={(e) => { e.stopPropagation(); onGoAction(act.id); }}
+                >
+                    <ArrowRight size={10} />
+                    <span>{act.label}</span>
+                </button>
+            </Tooltip>
+        );
+    }
+
+    // --- a saved script ---------------------------------------------------
+    if (link.script || link.scriptName) {
+        // ID FIRST, THEN NAME. Ids are generated per machine, so one only
+        // matches a colleague's copy if they imported the profile it came
+        // with; the name is what actually travels between people.
+        let hit = link.script ? scripts.filter((t) => t.id === link.script)[0] : undefined;
+        if (!hit && link.scriptName) {
+            const want = link.scriptName.trim().toLowerCase();
+            hit = scripts.filter((t) => t.name.trim().toLowerCase() === want)[0];
+        }
+        const shown = hit ? hit.name : (link.scriptName || "script");
+        if (!hit) {
+            return (
+                <span className="wfb-link wfb-link--dead" title={`“${shown}” isn't saved on this machine. Scripts live per-machine — ask whoever wrote this workflow to share it.`}>
+                    <Link2Off size={10} /> {shown}
+                </span>
+            );
+        }
+        return (
+            <Tooltip text={`Opens My Tools and marks “${shown}” — you run it`}>
+                <button
+                    type="button"
+                    className="wfb-link"
+                    disabled={disabled}
+                    onClick={(e) => { e.stopPropagation(); onGoScript(link); }}
+                >
+                    <ArrowRight size={10} />
+                    <span>{shown}</span>
+                    <em>script</em>
+                </button>
+            </Tooltip>
+        );
+    }
+
+    // --- a registry tool --------------------------------------------------
     const entry = toolFor(link);
     if (!entry) {
         return (
@@ -408,9 +504,11 @@ const LinkPicker: React.FC<{
     stepText: string;
     onPick: (link: WorkflowLink | undefined) => void;
     onClose: () => void;
-}> = ({ value, stepText, onPick, onClose }) => {
+    /** Saved scripts on this machine — the third kind of destination. */
+    scripts: { id: string; name: string; description: string }[];
+}> = ({ value, stepText, onPick, onClose, scripts }) => {
     const [query, setQuery] = useState("");
-    const [tool, setTool] = useState(value ? value.tool : "");
+    const [tool, setTool] = useState(value ? value.tool || "" : "");
     const q = query.trim().toLowerCase();
     const matches = useMemo(() => {
         const all = TOOLS.slice().sort((a, b) => a.label.localeCompare(b.label));
@@ -420,6 +518,20 @@ const LinkPicker: React.FC<{
             t.id.toLowerCase().indexOf(q) !== -1 ||
             (t.categories || []).join(" ").toLowerCase().indexOf(q) !== -1);
     }, [q]);
+    // The Toolset grid's one-click actions. Not registry tools by design, and
+    // before this the one obvious thing a step could not point at.
+    const actionMatches = useMemo(() => {
+        const all = TOOLSET_ACTIONS.slice().sort((a, b) => a.label.localeCompare(b.label));
+        if (!q) return all;
+        return all.filter((a) =>
+            a.label.toLowerCase().indexOf(q) !== -1 ||
+            a.id.toLowerCase().indexOf(q) !== -1);
+    }, [q]);
+    const scriptMatches = useMemo(() => {
+        const all = scripts.slice().sort((a, b) => a.name.localeCompare(b.name));
+        if (!q) return all;
+        return all.filter((t) => t.name.toLowerCase().indexOf(q) !== -1);
+    }, [q, scripts]);
     const chosen = TOOLS.filter((t) => t.id === tool)[0];
 
     return (
@@ -442,6 +554,7 @@ const LinkPicker: React.FC<{
 
             {!chosen && (
                 <div className="wfb-linkpick-list">
+                    {matches.length > 0 && <p className="wfb-linkpick-sep">Tools</p>}
                     {matches.map((t) => (
                         <button key={t.id} type="button" className="wfb-linkpick-row" onClick={() => setTool(t.id)}>
                             <t.icon size={12} />
@@ -449,7 +562,43 @@ const LinkPicker: React.FC<{
                             <em>{(t.categories || []).join(" · ")}</em>
                         </button>
                     ))}
-                    {matches.length === 0 && <p className="wfb-empty-line">No tool matches that.</p>}
+
+                    {/* One click, no page of their own — picked here directly
+                        rather than drilling into buttons, because the card IS
+                        the button. */}
+                    {actionMatches.length > 0 && <p className="wfb-linkpick-sep">Toolset actions</p>}
+                    {actionMatches.map((a) => (
+                        <button
+                            key={"act:" + a.id}
+                            type="button"
+                            className="wfb-linkpick-row"
+                            onClick={() => { onPick({ toolsetAction: a.id }); onClose(); }}
+                        >
+                            <a.icon size={12} />
+                            <span className="wfb-linkpick-name">{a.label}</span>
+                            <em>home grid</em>
+                        </button>
+                    ))}
+
+                    {/* Saved per machine, so the NAME travels with the link and
+                        is what resolves it on somebody else's copy. */}
+                    {scriptMatches.length > 0 && <p className="wfb-linkpick-sep">My scripts</p>}
+                    {scriptMatches.map((t) => (
+                        <button
+                            key={"scr:" + t.id}
+                            type="button"
+                            className="wfb-linkpick-row"
+                            onClick={() => { onPick({ script: t.id, scriptName: t.name }); onClose(); }}
+                        >
+                            <Code2 size={12} />
+                            <span className="wfb-linkpick-name">{t.name}</span>
+                            <em>script</em>
+                        </button>
+                    ))}
+
+                    {matches.length === 0 && actionMatches.length === 0 && scriptMatches.length === 0 && (
+                        <p className="wfb-empty-line">Nothing matches that.</p>
+                    )}
                 </div>
             )}
 
@@ -547,6 +696,10 @@ const WorkflowBoardTool: React.FC<{
     });
     // What the board is SHOWING, which starts as what was detected and then
     // follows the picker.
+    // Saved scripts on THIS machine, for resolving a step's script link. They
+    // are per-machine (app.settings), so a link written elsewhere may not
+    // resolve here — the chip says so rather than pretending.
+    const { customTools } = useCustomTools();
     const [campaign, setCampaign] = useState("");
     const [creative, setCreative] = useState("");
     // WHICH of this creative's workflows is on screen. "" is the creative's
@@ -872,6 +1025,27 @@ const WorkflowBoardTool: React.FC<{
         onSelectTool(toolId);
     }, [onSelectTool, toast]);
 
+    /**
+     * A Toolset card. Goes home and marks it — see lib/navigation.ts for why
+     * it is never pressed for you.
+     */
+    const goToAction = useCallback((actionId: string) => {
+        const r = navigateToToolsetAction(actionId);
+        if (!r.ok) { toast("error", r.reason || "Couldn't open that."); return; }
+        sfx.click();
+    }, [toast]);
+
+    /** A saved script: My Tools is a real registry entry, so this is ordinary
+     *  navigation. The script itself is named on the chip rather than run. */
+    const goToScript = useCallback((link: WorkflowLink) => {
+        if (!onSelectTool) {
+            toast("error", "This screen can't navigate — open Workflows from the Localise screen.");
+            return;
+        }
+        sfx.click();
+        onSelectTool("my-tools");
+    }, [onSelectTool, toast]);
+
     const toggleStep = (stepId: string) => {
         const forKey = { ...(ticks[activeKey] || {}) };
         if (forKey[stepId]) delete forKey[stepId];
@@ -1104,8 +1278,11 @@ const WorkflowBoardTool: React.FC<{
             if (r && !r.success) toast("error", r.error || "Couldn't open that folder.");
             return;
         }
+        // Same three destinations a step link has, dispatched the same way.
+        if (link.toolsetAction) { goToAction(link.toolsetAction); return; }
+        if (link.script || link.scriptName) { goToScript(link); return; }
         if (link.tool) goTo(link.tool);
-    }, [goTo, toast]);
+    }, [goTo, goToAction, goToScript, toast]);
 
     const removeNote = async (noteId: string) => {
         if (!entry) return;
@@ -1564,6 +1741,7 @@ const WorkflowBoardTool: React.FC<{
                             onSave={saveSteps}
                             ease={ease}
                             rowDelay={rowDelay}
+                            scripts={customTools}
                         />
                     )}
 
@@ -1701,7 +1879,15 @@ const WorkflowBoardTool: React.FC<{
                                                         {richText(s.text)}
                                                     </motion.span>
                                                 </button>
-                                                {s.link && <StepLinkChip link={s.link} onGo={goTo} />}
+                                                {s.link && (
+                                                    <StepLinkChip
+                                                        link={s.link}
+                                                        onGo={goTo}
+                                                        onGoAction={goToAction}
+                                                        onGoScript={goToScript}
+                                                        scripts={customTools}
+                                                    />
+                                                )}
                                             </motion.div>
                                         </motion.li>
                                     );
@@ -2202,9 +2388,21 @@ const WorkflowBoardTool: React.FC<{
                                                 {linkWord && toolPicking && (
                                                     <LinkPicker
                                                         stepText={linkWord}
+                                                        scripts={customTools}
                                                         onPick={(link) => {
-                                                            if (link) attachLink({ label: linkWord, tool: link.tool, action: link.action });
-                                                            else { setToolPicking(false); }
+                                                            // Notes take the same three destinations a
+                                                            // step does — one picker, so the two can
+                                                            // never offer different things.
+                                                            if (link) {
+                                                                attachLink({
+                                                                    label: linkWord,
+                                                                    tool: link.tool,
+                                                                    action: link.action,
+                                                                    toolsetAction: link.toolsetAction,
+                                                                    script: link.script,
+                                                                    scriptName: link.scriptName,
+                                                                });
+                                                            } else { setToolPicking(false); }
                                                         }}
                                                         onClose={() => setToolPicking(false)}
                                                     />
@@ -2656,7 +2854,10 @@ const StepEditor: React.FC<{
     onSave: () => void;
     ease: any;
     rowDelay: (i: number) => number;
-}> = ({ steps, setSteps, busy, onCancel, onSave, ease, rowDelay }) => {
+    /** Saved scripts on this machine — passed in rather than read here, so the
+     *  editor and the board resolve a script link from one list. */
+    scripts: { id: string; name: string; description: string }[];
+}> = ({ steps, setSteps, busy, onCancel, onSave, ease, rowDelay, scripts }) => {
     // Which row has its link picker open, by index. One at a time: the picker
     // is a list of every tool in the panel and two of them open at once is a
     // page you have to scroll to find the step you were editing.
@@ -2777,6 +2978,7 @@ const StepEditor: React.FC<{
                         <LinkPicker
                             stepText={steps[linking].text}
                             value={steps[linking].link}
+                            scripts={scripts}
                             onPick={(link) => setLink(linking, link)}
                             onClose={() => setLinking(null)}
                         />

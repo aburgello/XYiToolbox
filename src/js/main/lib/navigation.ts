@@ -29,6 +29,7 @@
 // =============================================================================
 
 import { TOOLS as PANEL_TOOLS } from "../toolRegistry";
+import { ACTIONS as TOOLSET_ACTIONS } from "../tools/Toolset";
 
 /**
  * `livesIn` is passed through rather than resolved here: this module knows
@@ -42,6 +43,46 @@ let navigator: Navigator | null = null;
 /** Called once by main.tsx on mount. */
 export function setNavigator(fn: Navigator | null): void {
     navigator = fn;
+}
+
+/**
+ * The Toolset grid's one-click actions live on the HOME screen, not on a tool
+ * page, so they cannot be reached through the navigator above -- it takes a
+ * registry tool id and there is no registry entry for MC It! or Support Swap
+ * (CLAUDE.md sends an input-less action to Toolset's ACTIONS instead). Hence a
+ * second hook rather than an overload: the two really do go to different
+ * places.
+ */
+type HomeNavigator = (focusAction: string) => void;
+let homeNavigator: HomeNavigator | null = null;
+
+export function setHomeNavigator(fn: HomeNavigator | null): void {
+    homeNavigator = fn;
+}
+
+/**
+ * Opens the home screen with one Toolset card singled out.
+ *
+ * It is FOCUSED, never pressed. The click gate below refuses to auto-press
+ * anything the registry has not graded "read", and every action worth linking
+ * from a checklist is the other kind -- Support Swap opens and saves .aep
+ * files, MC It! swaps artwork. A step that silently fired one of those is the
+ * version people turn the feature off over. So this scrolls to the card and
+ * marks it, and the artist presses it.
+ */
+export function navigateToToolsetAction(actionId: string): NavResult {
+    if (!homeNavigator) {
+        return { ok: false, reason: "Navigation isn't available right now." };
+    }
+    const entry = TOOLSET_ACTIONS.filter((a) => a.id === actionId)[0];
+    if (!entry) {
+        return {
+            ok: false,
+            reason: `No Toolset action with id "${actionId}" — it may have been renamed or removed.`,
+        };
+    }
+    homeNavigator(actionId);
+    return { ok: true, label: entry.label };
 }
 
 export interface NavResult {

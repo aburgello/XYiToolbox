@@ -949,6 +949,11 @@ everything loose — and `suggestLocLibCreative` over the name traps. Run it
 after touching either: it is the only gate on a function whose failure mode is
 writing a wrong library into `app.settings`.
 
+`node scripts/probe-workflow-links.cjs` (no build needed) checks that every id
+a workflow link can carry resolves against the real registry / Toolset / script
+lists, that a script link degrades by NAME on another machine, and that nothing
+destructive can be auto-pressed on arrival.
+
 `node scripts/probe-support-swap.cjs` (after `yarn build`) drives
 `ssOneTokenDiff` over the filename families actually on the share, then
 `supportSwap` end to end against a stubbed Italy. Run it after touching either
@@ -1084,6 +1089,33 @@ and keep the category tint.
 **A note carries more than text.** `territory` (ISO-2, upper-cased host-side),
 `tags` (free-form, upper-cased so the vocabulary converges instead of splitting
 into CTA/cta/Cta), and `links` — words in the body that open a folder or a tool.
+
+**A STEP OR NOTE POINTS AT ONE OF THREE THINGS, and only one is a registry
+tool.** `tool` (optionally naming a button inside it), `toolsetAction` (a card
+in the Toolset grid) and `script` (a saved Script Playground tool). The middle
+one exists because an input-less action goes in `Toolset.tsx`'s `ACTIONS` by
+the rule above — so MC It!, Support Swap and Turk It have no registry entry,
+and were the one obvious thing a step could not link to. They live on the HOME
+screen, not a tool page, hence `setHomeNavigator`/`navigateToToolsetAction`
+beside the tool navigator and `Screen`'s `home.focusAction`: the argument is a
+different kind of thing, and one function taking either would have to guess
+which it was handed.
+
+- **The card is MARKED, never pressed.** Everything worth linking from a
+  checklist writes files, the click gate refuses anything not graded
+  `actionSafety: "read"`, and several of these actions carry follow-up UI that
+  only exists where they live (MC It!'s report, Cheeky T's review modal) —
+  firing them from here would run the ExtendScript and drop the half that asks
+  you questions. The mark clears itself after a few seconds; nothing on the
+  home screen animates perpetually.
+- **A script link stores its NAME as well as its id**, and resolves id → name →
+  a dead chip that still shows the name. Saved scripts live in `app.settings`
+  per machine with random ids, so an id only matches a colleague's copy if they
+  imported the profile it came with (`OVCustomTools` is in `PROFILE_KEYS`) —
+  the name is the half that travels. Same discipline as a saved Bespoke slot:
+  every identifier is a hint, resolve down the list, no step may fail the load.
+- One `LinkPicker` serves steps and notes, so the two can never offer different
+  destinations.
 
 **`links` is a SIDE TABLE, never markup in the text.** A link syntax
 (`[masters](/Volumes/…)`) fails twice: nobody types a NAS path into a one-line

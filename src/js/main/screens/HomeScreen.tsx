@@ -46,9 +46,12 @@ const EASTER_EGG_CLICKS = 7;
 
 interface Props {
     onNavigate: (screen: Screen) => void;
+    /** One Toolset action to scroll to and mark — a workflow step pointing at
+     *  MC It! or Support Swap arrives here, since those have no tool page. */
+    focusAction?: string;
 }
 
-export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
+export const HomeScreen: React.FC<Props> = ({ onNavigate, focusAction }) => {
     // The star badge on result cards, plus the show/hide switch for the
     // Favourites group Toolset renders further down this same screen.
     const { favoriteIds, toggleFavorite, boxOpen, toggleFavoritesBox } = useFavorites(TOOLS);
@@ -460,7 +463,7 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate }) => {
                         </AnimatePresence>
                     </div>
 
-                    <ToolsetTool onNavigate={onNavigate} />
+                    <ToolsetTool onNavigate={onNavigate} focusAction={focusAction} />
 
                     <div className="category-row">
                         {CATEGORIES.map((category, index) => {
