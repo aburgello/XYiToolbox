@@ -120,6 +120,65 @@
 // index.scss's global button:hover/:active paints $active over anything with
 // its own background, so both states are re-declared on every button here.
 
+// WHICH OF A CREATIVE'S WORKFLOWS IS ON SCREEN. Segmented, not chips: these
+// are one choice among a small closed set, and only appear at all once there
+// is more than one to choose between.
+//
+// index.scss's global button:hover/:active paints over any custom background,
+// so both are re-declared here as on every button in this panel.
+.workflow-board .wfb-creative-variant {
+    font-style: normal;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    padding: 1px 5px;
+    margin-left: 6px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--ov-accent, #2dd4bf);
+    vertical-align: middle;
+}
+
+.workflow-board .wfb-variants {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: none;
+    padding: 2px;
+    margin-right: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 5px;
+    background: rgba(0, 0, 0, 0.22);
+    max-width: 190px;
+    overflow-x: auto;
+}
+
+.workflow-board .wfb-variant {
+    flex: none;
+    padding: 3px 8px;
+    border: none;
+    border-radius: 3px;
+    background: transparent;
+    color: inherit;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    opacity: 0.55;
+    cursor: pointer;
+    white-space: nowrap;
+
+    &:hover { background: rgba(255, 255, 255, 0.07); opacity: 0.85; }
+    &:active { background: rgba(255, 255, 255, 0.07); }
+
+    &.is-on {
+        background: var(--ov-accent, #2dd4bf);
+        color: #10201e;
+        opacity: 1;
+        &:hover, &:active { background: var(--ov-accent, #2dd4bf); }
+    }
+}
+
 .workflow-board .wfb-btn {
     display: flex;
     align-items: center;

@@ -2852,7 +2852,16 @@ export interface WorkflowEntry {
   /** As typed, for display. */
   campaign: string;
   creative: string;
-  /** What matching actually uses: canon(campaign) + "|" + canon(creative). */
+  /**
+   * WHICH of a creative's workflows this is. Free text, upper-cased on save so
+   * the vocabulary converges instead of splitting into Retouch/retouch/RT --
+   * the same rule note tags already follow.
+   *
+   * Blank is the creative's ONE workflow, and is what every entry written
+   * before this existed has. That is deliberate: see workflowKeyFor.
+   */
+  name?: string;
+  /** What matching actually uses -- see workflowKeyFor. */
   key: string;
   steps: WorkflowStep[];
   notes: WorkflowNote[];
@@ -2866,8 +2875,25 @@ function workflowCanon(s: string): string {
   return String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
-export function workflowKeyFor(campaign: string, creative: string): string {
-  return workflowCanon(campaign) + "|" + workflowCanon(creative);
+/**
+ * A BLANK NAME KEEPS THE OLD TWO-SEGMENT KEY, byte for byte.
+ *
+ * The merge in workflowSaveEntry is by key, not by id, so that two people who
+ * each make a "Trio" for the same campaign before either has seen the other's
+ * end up with one Trio rather than two that shadow each other forever. Naming
+ * is what separates a deliberate second workflow from that accident: an
+ * unnamed one still converges exactly as it always did, and a named one is an
+ * explicit act, so two of them are two boards on purpose.
+ *
+ * Keeping the unnamed key identical rather than appending an empty third
+ * segment is what makes this a non-migration: every entry already on the share
+ * matches as before, and so does every artist's local tick state, which is
+ * stored per key.
+ */
+export function workflowKeyFor(campaign: string, creative: string, name?: string): string {
+  const base = workflowCanon(campaign) + "|" + workflowCanon(creative);
+  const n = workflowCanon(name || "");
+  return n === "" ? base : base + "|" + n;
 }
 
 /** Everything a shared entry must have before it is worth writing. Entries
@@ -2891,7 +2917,7 @@ function readWorkflowEntries(): WorkflowEntry[] | null {
     if (!(e.notes instanceof Array)) e.notes = [];
     // Rebuilt rather than trusted: an entry saved before the key existed, or
     // one hand-edited in the JSON, still has to match.
-    e.key = workflowKeyFor(e.campaign, e.creative);
+    e.key = workflowKeyFor(e.campaign, e.creative, e.name);
     out.push(e);
   }
   return out;
@@ -2947,7 +2973,9 @@ export const workflowSaveEntry = (entryJson: string): WorkflowBoardResult => {
     if (!(entry.steps instanceof Array)) entry.steps = [];
 
     const shared = readWorkflowEntries() || [];
-    entry.key = workflowKeyFor(entry.campaign, entry.creative);
+    // Upper-cased here, host-side, so it cannot depend on which panel wrote it.
+    if (entry.name) entry.name = String(entry.name).toUpperCase();
+    entry.key = workflowKeyFor(entry.campaign, entry.creative, entry.name);
     entry.updatedAt = new Date().toString();
     if (!entry.author) entry.author = me;
     if (!entry.id) entry.id = "wf-" + new Date().getTime() + "-" + Math.floor(Math.random() * 100000);

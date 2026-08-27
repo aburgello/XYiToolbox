@@ -44,7 +44,7 @@ import { TOOLS } from "../toolRegistry";
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import { sfx } from "../../lib/utils/sfx";
-import { confirmDialog } from "../Dialog";
+import { confirmDialog, promptDialog } from "../Dialog";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
 import Droplet from "../Droplet";
@@ -109,6 +109,9 @@ interface WorkflowEntry {
     id: string;
     campaign: string;
     creative: string;
+    /** Which of the creative's workflows — blank is its original single one.
+     *  Upper-cased host-side. Mirrors team.ts's WorkflowEntry. */
+    name?: string;
     key: string;
     steps: WorkflowStep[];
     notes: WorkflowNote[];
@@ -131,8 +134,17 @@ type Toast = { id: number; type: "success" | "error"; text: string };
 function canon(s: string): string {
     return String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
-function keyFor(campaign: string, creative: string): string {
-    return canon(campaign) + "|" + canon(creative);
+/**
+ * Mirrors team.ts's workflowKeyFor, INCLUDING the part that looks like an
+ * omission: a blank name keeps the old two-segment key rather than appending
+ * an empty third segment. That is what makes multiple workflows a non-
+ * migration — every entry already on the share still matches, and so does
+ * every artist's local tick state, which is stored per key.
+ */
+function keyFor(campaign: string, creative: string, name?: string): string {
+    const base = canon(campaign) + "|" + canon(creative);
+    const n = canon(name || "");
+    return n === "" ? base : base + "|" + n;
 }
 
 /**
@@ -537,6 +549,10 @@ const WorkflowBoardTool: React.FC<{
     // follows the picker.
     const [campaign, setCampaign] = useState("");
     const [creative, setCreative] = useState("");
+    // WHICH of this creative's workflows is on screen. "" is the creative's
+    // original single workflow, which is what every board written before this
+    // existed is — so the default state is the old behaviour exactly.
+    const [wfName, setWfName] = useState("");
     /**
      * The artist chose this creative by hand, so stop following the open
      * project.
@@ -663,6 +679,10 @@ const WorkflowBoardTool: React.FC<{
             if (!applyToView) return;
             setCampaign(ctx.campaign || "");
             setCreative(label);
+            // A named workflow belongs to the creative it was picked under, so
+            // following a different project drops back to that creative's
+            // default board rather than looking for a same-named variant.
+            setWfName("");
             setPickCampaign(ctx.campaign || "");
         } catch {
             /* AE busy, or nothing open. The picker covers it. */
@@ -677,6 +697,7 @@ const WorkflowBoardTool: React.FC<{
         setPinned(false);
         setCampaign(detected.campaign);
         setCreative(detected.creative);
+        setWfName("");
         setPickCampaign(detected.campaign);
         setPicking(false);
         sfx.click();
@@ -723,11 +744,32 @@ const WorkflowBoardTool: React.FC<{
 
     // --- the entry on screen -------------------------------------------------
 
-    const activeKey = keyFor(campaign, creative);
+    const activeKey = keyFor(campaign, creative, wfName);
     const entry = useMemo(
         () => entries.filter((e) => e.key === activeKey)[0] || null,
         [entries, activeKey]
     );
+
+    /**
+     * This creative's workflows, unnamed one first.
+     *
+     * Only rendered when there is more than one, or when the one on screen is
+     * named — a creative with a single unnamed board looks exactly as it did
+     * before, which is most of them and should stay that way.
+     */
+    const siblingWorkflows = useMemo(() => {
+        if (!creative) return [] as string[];
+        const base = keyFor(campaign, creative);
+        const names: string[] = [];
+        entries.forEach((e) => {
+            if (e.key !== base && e.key.indexOf(base + "|") !== 0) return;
+            const n = e.name || "";
+            if (names.indexOf(n) === -1) names.push(n);
+        });
+        // The unnamed board is this creative's original, so it leads.
+        names.sort((a, b) => (a === "" ? -1 : b === "" ? 1 : a.localeCompare(b)));
+        return names;
+    }, [entries, campaign, creative]);
 
     /**
      * Every workflow the team has, grouped by campaign, minus the retired ones.
@@ -891,6 +933,7 @@ const WorkflowBoardTool: React.FC<{
             id: entry ? entry.id : "",
             campaign,
             creative,
+            name: wfName || undefined,
             key: activeKey,
             steps,
             notes: entry ? entry.notes : [],
@@ -1164,9 +1207,34 @@ const WorkflowBoardTool: React.FC<{
             prettyCreative(c.name).toLowerCase().indexOf(q) !== -1);
     }, [pickable, creativeQuery]);
 
-    const choose = (campName: string, creativeName: string) => {
+    /**
+     * A second (or third) workflow for the creative on screen.
+     *
+     * The name is what makes it deliberate rather than a duplicate — see
+     * team.ts's workflowKeyFor. Refused if that name is already taken here,
+     * because saving it would MERGE into the existing one rather than making a
+     * new board, and silently editing somebody else's workflow is the worst
+     * available outcome.
+     */
+    const startNamedWorkflow = async () => {
+        if (!creative) return;
+        const name = await promptDialog(`Name this workflow for ${prettyCreative(creative)}:`, "");
+        if (!name || !name.trim()) return;
+        const clean = name.trim().toUpperCase();
+        if (siblingWorkflows.indexOf(clean) !== -1) {
+            toast("error", `${prettyCreative(creative)} already has a workflow called ${clean}.`);
+            return;
+        }
+        setWfName(clean);
+        setPinned(true);
+        setPicking(false);
+        startNew();
+    };
+
+    const choose = (campName: string, creativeName: string, name?: string) => {
         setCampaign(campName);
         setCreative(creativeName);
+        setWfName(name || "");
         // Picking by hand stops the poll moving the board underneath you.
         setPinned(true);
         setPicking(false);
@@ -1190,6 +1258,7 @@ const WorkflowBoardTool: React.FC<{
                         </span>
                         <span className="wfb-id-sub">
                             {campaign || "no campaign"}
+                            {wfName ? <em> · {wfName}</em> : null}
                             {detected.project && detected.creative === creative
                                 ? <em> · open in AE</em>
                                 : null}
@@ -1211,6 +1280,29 @@ const WorkflowBoardTool: React.FC<{
                 )}
 
                 <div className="wfb-head-actions">
+                    {/* A creative can carry several workflows, and this is the
+                        only thing that says so. Hidden for the ordinary case —
+                        one unnamed board — so nothing changes for the boards
+                        that already exist. */}
+                    {(siblingWorkflows.length > 1 || wfName !== "") && (
+                        <div className="wfb-variants">
+                            {siblingWorkflows.map((n) => (
+                                <button
+                                    key={n || "__default"}
+                                    type="button"
+                                    className={"wfb-variant" + (n === wfName ? " is-on" : "")}
+                                    onClick={() => { setWfName(n); setPinned(true); setEditing(false); }}
+                                >
+                                    {n || "Main"}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                    <Tooltip text="Add another workflow for this creative — a name separates it from the one you're on">
+                        <button type="button" className="wfb-btn wfb-btn--icon" onClick={startNamedWorkflow} disabled={!creative}>
+                            <Plus size={12} />
+                        </button>
+                    </Tooltip>
                     <Tooltip text="Pick a different creative">
                         <button type="button" className="wfb-btn" onClick={openPicker}>
                             <FolderSearch size={12} /><span>Change</span>
@@ -1407,12 +1499,18 @@ const WorkflowBoardTool: React.FC<{
                                                     key={e.id}
                                                     type="button"
                                                     className="wfb-creative has-wf"
-                                                    onClick={() => choose(e.campaign, e.creative)}
+                                                    onClick={() => choose(e.campaign, e.creative, e.name)}
                                                     initial={{ opacity: 0, y: 4 }}
                                                     animate={{ opacity: 1, y: 0 }}
                                                     transition={reduced ? { duration: 0 } : { ...SPRING.snappy, delay: rowDelay(gi * 3 + i) }}
                                                 >
-                                                    <span className="wfb-creative-name">{prettyCreative(e.creative)}</span>
+                                                    {/* Two rows for one creative are two workflows,
+                                                        and the name is the only thing telling them
+                                                        apart in this list. */}
+                                                    <span className="wfb-creative-name">
+                                                        {prettyCreative(e.creative)}
+                                                        {e.name ? <em className="wfb-creative-variant"> {e.name}</em> : null}
+                                                    </span>
                                                     <span className="wfb-creative-meta">
                                                         <span className="wfb-creative-count">
                                                             <ListChecks size={9} />{e.steps.length}
@@ -1435,7 +1533,11 @@ const WorkflowBoardTool: React.FC<{
                     {creative && !entry && !editing && (
                         <div className="wfb-empty">
                             <ListChecks size={26} />
-                            <p>No workflow saved for {prettyCreative(creative)}{campaign ? ` on ${campaign}` : ""}.</p>
+                            <p>
+                                No workflow saved for {prettyCreative(creative)}
+                                {wfName ? ` · ${wfName}` : ""}
+                                {campaign ? ` on ${campaign}` : ""}.
+                            </p>
                             <span>Write down what this one needs and the whole team gets it.</span>
                             <button type="button" className="wfb-btn wfb-btn--primary" onClick={startNew}>
                                 <Plus size={12} /><span>Start one</span>
@@ -1444,7 +1546,7 @@ const WorkflowBoardTool: React.FC<{
                                 <div className="wfb-others">
                                     <span className="wfb-others-label">This campaign already has:</span>
                                     {creativesWithWorkflow.map((name) => (
-                                        <button key={name} type="button" className="wfb-chip" onClick={() => { setCreative(name); setPinned(true); }}>
+                                        <button key={name} type="button" className="wfb-chip" onClick={() => { setCreative(name); setWfName(""); setPinned(true); }}>
                                             {prettyCreative(name)}
                                         </button>
                                     ))}

@@ -1046,6 +1046,24 @@ the bubble, `"page"` for the registry entry ⌘K finds. It is deliberately NOT i
   agree. If CSS caps lower, the box stops while the drag carries on and the
   corner comes away from the cursor.
 
+**A creative can carry SEVERAL workflows, and a NAME is what makes the second
+one deliberate.** `workflowSaveEntry` merges by **key, not id**, so that two
+people each creating "Trio" for one campaign before either has seen the other's
+converge on one board instead of shadowing each other forever — that guarantee
+is why duplicates were impossible, and it has to survive naming. So the name
+joins the key, and **a blank name keeps the old two-segment key byte for byte**
+(`workflowKeyFor`): every entry already on the share still matches, and so does
+every artist's local tick state, which is stored per key. There is no
+migration. An unnamed board still converges exactly as it did; a named one is
+an explicit act, so two of them are two boards on purpose. Names are
+**upper-cased host-side** (like note tags, and for the same reason — so the
+vocabulary converges rather than splitting into Retouch/retouch/RT), and the
+panel refuses a name the creative already has, because saving it would silently
+edit somebody else's board rather than make a new one. The variant row is
+hidden while a creative has one unnamed board, which is most of them.
+`node scripts/probe-workflow-variants.cjs` guards the key rule and the
+convergence guarantee.
+
 **Notes carry their own hue, and it is DERIVED, never a literal.** Steps and
 notes were reading as one list — same fill, same radius, half a pixel between
 their type sizes, and the note's left bar was `--cat-border` at full strength
