@@ -21,6 +21,16 @@
     gap: 8px;
     padding: 2px;
     font-size: 12px;
+    // No global border-box reset in this app, so min-height: 100% plus the
+    // padding above would overrun its scroller by 4px and put a scrollbar back
+    // on a board that fits.
+    box-sizing: border-box;
+    // FILLS ITS SCROLLER, so anything inside that wants to grow has a height
+    // to grow into. Without it the board is content-tall inside .wfbub-body,
+    // and the creative picker had nothing to fill even with the panel dragged
+    // to full screen. Children still size to their content unless they ask to
+    // grow, so a short board just leaves space below it, as before.
+    min-height: 100%;
 }
 
 // ── header ──────────────────────────────────────────────────────────────────
@@ -309,12 +319,23 @@
 
 // ── picker ──────────────────────────────────────────────────────────────────
 
+// TAKES THE ROOM THERE IS. It is the only thing on screen while it is open,
+// so capping it left the list scrolling inside 210px with the rest of a
+// dragged-out panel empty underneath.
 .workflow-board .wfb-picker {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
     overflow: hidden;
     border: 1px solid var(--tile-border, rgba(255, 255, 255, 0.09));
     border-radius: 6px;
     background: var(--tile-bg, rgba(255, 255, 255, 0.02));
 }
+
+// Everything in the picker except the creative list holds its own height, or
+// they would share the growth and leave the list no bigger than before.
+.workflow-board .wfb-picker > *:not(.wfb-creatives) { flex: none; }
 
 .workflow-board .wfb-picker-head {
     display: flex;
@@ -358,11 +379,13 @@
 .workflow-board .wfb-creatives {
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 6px;
     padding: 8px 9px;
-    // A campaign can carry twenty creatives; the list scrolls rather than
-    // pushing the checklist off the page.
-    max-height: 210px;
+    // Grows with the picker rather than to a fixed cap, and scrolls only once
+    // there are more creatives than the panel is tall. min-height: 0 is what
+    // lets a flex item shrink below its content and actually scroll.
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
 }
 
@@ -1380,9 +1403,9 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
 
     .wfb-id-creative { font-size: 13.5px; }
 
-    // The picker and the notes both scroll inside the panel's own scroller;
-    // a second nested scroll region gives two scrollbars a few pixels apart.
-    .wfb-creatives { max-height: 150px; }
+    // The picker fills the panel now, so the board's own height matches the
+    // scroller exactly while it is open and only the creative list scrolls —
+    // which is what the old fixed cap was trying to avoid, by capping.
     .wfb-linkpick-list { max-height: 140px; }
 
     .wfb-empty { padding: 18px 12px; }

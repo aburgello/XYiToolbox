@@ -1595,9 +1595,13 @@ const WorkflowBoardTool: React.FC<{
                 {picking && (
                     <motion.div
                         className="wfb-picker"
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        exit={{ opacity: 0, height: 0 }}
+                        // OPACITY, NOT HEIGHT. The picker fills whatever height
+                        // the panel has been dragged to, and an animated height
+                        // is an inline pixel value that fights flex-grow for the
+                        // length of the animation, then snaps.
+                        initial={{ opacity: 0, y: -4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0 }}
                         transition={ease}
                     >
                         <div className="wfb-picker-head">
