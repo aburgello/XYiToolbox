@@ -823,7 +823,31 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
     // folder and swaps nothing, and calling that a re-run would be a lie.
     const [builtMcIt, setBuiltMcIt] = useState(false);
     const buildDest = `${buildTerritory}|${buildBatch.trim() || "Batch_1"}`;
-    const builderBuilt = builtDest !== null && builtDest === buildDest;
+
+    /**
+     * ASK THE FOLDER, not only this grid's memory of its own runs.
+     *
+     * `builtDest` alone answered "did I build this?", which hid MC It! and
+     * Support Swap from a batch built in any earlier session — panel reopened,
+     * rows retyped, someone else's run. The files are plainly there and the
+     * tools that act on them were not offered. The useful question is whether
+     * the output folder holds anything, so that is what is asked.
+     *
+     * Memoised on the destination: this is a synchronous readdir and the
+     * folder is usually on the NAS, so it must not run once per render.
+     */
+    const buildDestHasFiles = useMemo(() => {
+        if (!buildTerritory) return false;
+        const sourceFolder = buildOrigin && buildOrigin.territory === buildTerritory
+            ? buildOrigin.sourceFolder
+            : path.join(marketsRoot, buildTerritory);
+        if (!sourceFolder) return false;
+        return readExistingAeps(sourceFolder, buildBatch.trim() || "Batch_1").length > 0;
+        // `builtDest` is in here so a run that has just written files re-asks
+        // the folder instead of waiting for some other state to change.
+    }, [buildTerritory, buildBatch, marketsRoot, buildOrigin, builtDest]);
+
+    const builderBuilt = buildDestHasFiles || (builtDest !== null && builtDest === buildDest);
     const [buildTerritories, setBuildTerritories] = useState<string[]>([]);
     const [buildCreatives, setBuildCreatives] = useState<string[]>([]);
     const [buildRows, setBuildRows] = useState<BuildRow[]>([
@@ -1861,6 +1885,25 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
     };
 
     /**
+     * Support Swap over one scanned batch — the counterpart to runBatchMcIt
+     * above, and the entry point for a batch that was built in some earlier
+     * session. Same folder, same dry-run-then-Apply modal.
+     */
+    const runBatchSupportSwap = async (t: TerritoryScan, b: Batch) => {
+        setNotice(null);
+        setBusy(true);
+        try {
+            const aepDir = resolveBatchFolder(t.sourceFolder, b.batch) || path.join(t.sourceFolder, "AE", padBatch(b.batch));
+            const res = await evalTS("supportSwap", aepDir, "", true);
+            if (res === undefined) throw new Error("no bridge");
+            if (res.success) showMcItReport(res as unknown as McReport);
+            else setNotice(res.error || "Support Swap couldn't run on this batch.");
+        } catch (e: any) {
+            setNotice(e?.message || "No CEP bridge. Open this panel inside After Effects to run it.");
+        } finally { setBusy(false); }
+    };
+
+    /**
      * Support Swap over whatever this grid just built.
      *
      * Same folder MC It! is pointed at, and the same dry-run-then-Apply round
@@ -2294,6 +2337,19 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                                                             <ImageIcon size={13} /> {mcItInlineDone[key] ? "Re-run MC It!" : "MC It!"}
                                                                         </button>
                                                                     </Tooltip>
+                                                                    {/* The other half of the same job, and the only
+                                                                        way to reach it for a batch built in an
+                                                                        earlier session — the builder's own copy
+                                                                        only knows about runs it made itself. */}
+                                                                    <Tooltip text="Swap this batch's AEPs' .ai/.psd component sources for this market's own, from its Masters/Support (previews first)">
+                                                                        <button
+                                                                            className="specs-batch-run specs-batch-mcit"
+                                                                            disabled={busy || (!b.done && st !== "done")}
+                                                                            onClick={() => runBatchSupportSwap(t, b)}
+                                                                        >
+                                                                            <Layers size={13} /> Support Swap
+                                                                        </button>
+                                                                    </Tooltip>
                                                                 </>
                                                             )}
                                                         </div>
@@ -2667,6 +2723,15 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                                                             >
                                                                                 <ImageIcon size={13} /> {mcItInlineDone[key] ? "Re-run MC It!" : "MC It!"}
                                                                             </button>
+                                                                            <Tooltip text="Swap this batch's AEPs' .ai/.psd component sources for this market's own, from its Masters/Support (previews first)">
+                                                                                <button
+                                                                                    className="specs-batch-run specs-batch-mcit"
+                                                                                    disabled={busy || (!b.done && st !== "done")}
+                                                                                    onClick={() => runBatchSupportSwap(t, b)}
+                                                                                >
+                                                                                    <Layers size={13} /> Support Swap
+                                                                                </button>
+                                                                            </Tooltip>
                                                                             <button
                                                                                 className={"specs-batch-run" + (st === "done" ? " is-done" : st === "failed" ? " is-failed" : "")}
                                                                                 disabled={busy || !aepPath || incl === 0}
