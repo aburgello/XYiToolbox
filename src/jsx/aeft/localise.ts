@@ -1304,6 +1304,35 @@ function llCollectAllFiles(folder: Folder, results: LlFoundFile[], creative: str
   }
 }
 
+/**
+ * A CREATIVE FOLDER HAS CATEGORY FOLDERS IN IT; A CATEGORY FOLDER HAS FILES.
+ *
+ * The first level under Support_Motion is a creative in some markets and a
+ * category in others, and taking it as a creative unconditionally invented
+ * ones that do not exist: Forgotten Island's Italy is flat -- Tagline/, Date/,
+ * TT/ -- so every component there was filed under a creative called "Date".
+ * Paw Patrol has the same shape as MC_Taglines/, AEP/, PNGs/.
+ *
+ * Structure answers it and nothing else has to: `Bracelet` holds Date/,
+ * MCs_Taglines/, TT/, while `Date` holds .ai files. Checked rather than
+ * name-matched against a list of known categories, because the list is not
+ * closed (Tagline, MCs_Taglines, MC_Taglines and MC are all the same idea) and
+ * a market can invent a creative the source tree has never heard of -- France
+ * keeps an InternationalPayoff in Support_Motion that Masters/Support does not
+ * have, and any test built on "is it a known creative" would demote it.
+ *
+ * A market that really does file `Bracelet/file.ai` with no category level
+ * loses nothing: the folder reads as a category, the file goes in blank, and
+ * the stem index built from Masters/Support puts `Bracelet` back.
+ */
+function llHasSubfolder(folder: Folder): boolean {
+  const items = folder.getFiles();
+  for (let i = 0; i < items.length; i++) {
+    if (items[i] instanceof Folder) return true;
+  }
+  return false;
+}
+
 // The container's own first level is walked here rather than in
 // llCollectAllFiles so each subfolder can name itself as the creative. Its
 // name is DECODED -- File/Folder.name is the name portion of a URI, so an
@@ -1313,11 +1342,80 @@ function llCollectContainer(container: Folder, results: LlFoundFile[]) {
   const items = container.getFiles();
   for (let i = 0; i < items.length; i++) {
     if (items[i] instanceof Folder) {
-      llCollectAllFiles(items[i] as Folder, results, decode(items[i].name));
+      const sub = items[i] as Folder;
+      const creative = llHasSubfolder(sub) ? decode(sub.name) : "";
+      llCollectAllFiles(sub, results, creative);
     } else if (items[i] instanceof File) {
       results.push({ file: items[i] as File, creative: "" });
     }
   }
+}
+
+// =============================================================================
+// THE SOURCE TREE TELLS THE COMPONENT TREE WHICH CREATIVE IT IS.
+// -----------------------------------------------------------------------------
+// <Territory>/Masters/Support/<Creative>/<Category>/ holds the .ai/.psd
+// artwork that Support_Motion's components are built FROM, and it is filed by
+// creative in every market. Support_Motion is not: measured on real campaigns,
+// one creative is spelled `Jungle_Tunnel`, `JUNGLE_TUNNEL`, `JungleTunnel` and
+// `Jungle Tunnel` across four markets, and several territories have no creative
+// level at all -- Forgotten Island's Italy goes straight to Tagline/, Date/,
+// TT/, so every component there was filed as loose.
+//
+// The two pair by STEM (filename minus extension), because a component is
+// named after the artwork it was built from:
+//
+//   Support_Motion/Date/FID_INTL_Portal_2L_DATE_IT_RGB.aep      (no creative)
+//   Masters/Support/PortalToParadise/Date/…_IT_RGB.ai           (PortalToParadise)
+//
+// EXACT stem, never fuzzy -- the same rule as everywhere else here. A miss
+// costs nothing (the file stays loose, exactly as it is today); a wrong hit
+// would file somebody's artwork under another creative.
+// =============================================================================
+function llStemOf(name: string): string {
+  const n = decode(String(name));
+  const dot = n.lastIndexOf(".");
+  const stem = dot > 0 ? n.substring(0, dot) : n;
+  return stem.toLowerCase();
+}
+
+/**
+ * A territory's Masters/Support tree, as both an index and a file list.
+ *
+ * The index answers "which creative is this stem?" for Support_Motion's own
+ * files; the list is what gets ADDED to the library, since the artwork a
+ * component is built from is worth having beside the component. Files loose at
+ * the root name no creative and are skipped for the index but still listed.
+ */
+function llSourceTree(territoryFolder: Folder): { index: { [stem: string]: string }; files: LlFoundFile[] } {
+  const out: { [stem: string]: string } = {};
+  const files: LlFoundFile[] = [];
+  const root = new Folder(territoryFolder.fsName + "/Masters/Support");
+  if (!root.exists) return { index: out, files: files };
+
+  const walk = (folder: Folder, creative: string, depth: number) => {
+    if (depth > 6) return;
+    const items = folder.getFiles();
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it instanceof Folder) {
+        const nm = decode(it.name);
+        if (nm.charAt(0) === "_") continue;
+        if (nm.toLowerCase().indexOf("auto-save") !== -1) continue;
+        walk(it as Folder, creative === "" ? nm : creative, depth + 1);
+      } else if (it instanceof File) {
+        files.push({ file: it as File, creative: creative });
+        if (creative === "") continue; // loose at the root names no creative
+        const stem = llStemOf(it.name);
+        // FIRST ONE WINS. A stem under two creatives cannot be resolved from
+        // here, and overwriting would make the answer depend on walk order --
+        // which is exactly the tie the Support Swap matcher refuses to guess.
+        if (!out.hasOwnProperty(stem)) out[stem] = creative;
+      }
+    }
+  };
+  walk(root, "", 0);
+  return { index: out, files: files };
 }
 
 function llFindComponentFiles(territoryFolder: Folder, maxSearchDepth: number): LlFoundFile[] {
@@ -1361,7 +1459,27 @@ export const autoPopulateLocLib = (campaignName: string, marketsRoot: string, on
     for (let i = 0; i < territories.length; i++) {
       const terrName = territories[i];
       const terrFolder = new Folder(marketsRoot + "/" + terrName);
-      const files = llFindComponentFiles(terrFolder, 4);
+      const motionFiles = llFindComponentFiles(terrFolder, 4);
+      const source = llSourceTree(terrFolder);
+      // Consulted only where Support_Motion's own folders don't answer.
+      const sourceCreatives = source.index;
+
+      // THE SOURCE ARTWORK JOINS THE LIBRARY, minus anything Support_Motion
+      // already holds under the same stem AND extension -- those are the same
+      // file kept in two places, and two rows for it would read as the
+      // duplicate this library has been bitten by before. Support_Motion's
+      // copy is the one kept: it is where motion actually works.
+      const files: LlFoundFile[] = [];
+      for (let m = 0; m < motionFiles.length; m++) files.push(motionFiles[m]);
+      for (let sfi = 0; sfi < source.files.length; sfi++) {
+        const sf = source.files[sfi];
+        const sName = decode(sf.file.name).toLowerCase();
+        let dupe = false;
+        for (let m = 0; m < motionFiles.length; m++) {
+          if (decode(motionFiles[m].file.name).toLowerCase() === sName) { dupe = true; break; }
+        }
+        if (!dupe) files.push(sf);
+      }
 
       if (files.length === 0) {
         territoriesWithNoMatch.push(terrName);
@@ -1370,7 +1488,15 @@ export const autoPopulateLocLib = (campaignName: string, marketsRoot: string, on
 
       for (let j = 0; j < files.length; j++) {
         const fPath = files[j].file.fsName;
-        const creative = files[j].creative;
+        // The file's OWN folder wins; the source tree only fills a blank. A
+        // territory that files by creative already knows better than an
+        // index keyed on names, and this way the pairing can never override
+        // something an artist deliberately put somewhere.
+        let creative = files[j].creative;
+        if (creative === "") {
+          const fromSource = sourceCreatives[llStemOf(files[j].file.name)];
+          if (fromSource) creative = fromSource;
+        }
         let alreadyThere = false;
         for (let k = 0; k < existing.length; k++) {
           if (existing[k].campaign === campaignName && existing[k].territory === terrName && existing[k].path === fPath) {

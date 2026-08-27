@@ -20,7 +20,10 @@
 //   5. an accented creative folder is stored DECODED, not percent-escaped;
 //   6. suggestLocLibCreative picks the right creative for an open project,
 //      and — the reason it is not a call to suggestJpgPngMatch — does NOT
-//      fire on Trio inside Triology.
+//      fire on Trio inside Triology;
+//   7. a FLAT Support_Motion (Forgotten Island's real Italy) gets its
+//      creatives from <Territory>/Masters/Support, and that tree's own
+//      artwork joins the library without duplicating what is already there.
 //
 //   yarn build && node scripts/probe-loclib-creatives.cjs
 // =============================================================================
@@ -105,7 +108,7 @@ dir(ROOT + '/Germany', ['AE', 'JPG_PNG', 'Support_Motion']);
 dir(ROOT + '/Germany/AE', []);
 dir(ROOT + '/Germany/JPG_PNG', ['Batch_1']);
 dir(ROOT + '/Germany/JPG_PNG/Batch_1', ['irrelevant.png']);
-dir(ROOT + '/Germany/Support_Motion', ['Bracelet', 'Trio', 'Seinäjoki', 'Logo_Endcard_DE.aep']);
+dir(ROOT + '/Germany/Support_Motion', ['Bracelet', 'Trio', 'Seinäjoki', 'MC_Taglines', 'Logo_Endcard_DE.aep']);
 dir(ROOT + '/Germany/Support_Motion/Bracelet', ['Date', 'MCs_Taglines', 'TT']);
 dir(ROOT + '/Germany/Support_Motion/Bracelet/Date', ['Bracelet_Date_DE.aep']);
 dir(ROOT + '/Germany/Support_Motion/Bracelet/MCs_Taglines', ['FID_INTL_Bracelet_1L_TAGLINE_DE_RGB.ai', 'FID_Teaser_PIB_Pedigree_DE_RGB_SIMP.psd']);
@@ -113,7 +116,15 @@ dir(ROOT + '/Germany/Support_Motion/Bracelet/TT', ['deeper']);
 dir(ROOT + '/Germany/Support_Motion/Bracelet/TT/deeper', ['Bracelet_TT_DE.ai']);
 dir(ROOT + '/Germany/Support_Motion/Trio', ['TT']);
 dir(ROOT + '/Germany/Support_Motion/Trio/TT', ['Trio_TT_DE.ai']);
-dir(ROOT + '/Germany/Support_Motion/Seinäjoki', ['Seinäjoki_DE.ai']);
+// A category level, because that is what every real creative folder has --
+// see llCollectContainer: a first-level folder with no subfolder in it is
+// read as a CATEGORY, not a creative.
+dir(ROOT + '/Germany/Support_Motion/Seinäjoki', ['MCs_Taglines']);
+dir(ROOT + '/Germany/Support_Motion/Seinäjoki/MCs_Taglines', ['Seinäjoki_DE.ai']);
+// The shape that rule exists for: a flat category folder sitting where a
+// creative would, with no Masters/Support to resolve it. Paw Patrol has nine
+// territories like this (MC_Taglines, AEP, PNGs).
+dir(ROOT + '/Germany/Support_Motion/MC_Taglines', ['PP3_INTL_MC_9_DE_RGB.ai']);
 
 // OLD shape — everything loose, no creative folders at all.
 dir(ROOT + '/France', ['Support_Motion']);
@@ -159,12 +170,71 @@ const preCount = rows().length;
 const r3 = aeft.autoPopulateLocLib(CAMP, ROOT);
 const restored = rows().filter((c) => c.creative).length;
 // Six: four under Bracelet (one of them two levels down), one Trio, one accented.
+// MC_Taglines' file has no creative either way, so it is not among them.
 check('6 rows regain a creative, none added', r3.added === 0 && r3.refiled === 6 && restored === 6 && rows().length === preCount, JSON.stringify(r3));
+
+console.log('\n4b. a flat category folder is not mistaken for a creative');
+check('MC_Taglines/ names no creative, with no source tree to ask',
+    !!byLabel('PP3_INTL_MC_9_DE_RGB') && !byLabel('PP3_INTL_MC_9_DE_RGB').creative,
+    byLabel('PP3_INTL_MC_9_DE_RGB') ? JSON.stringify(byLabel('PP3_INTL_MC_9_DE_RGB').creative) : 'row missing');
 
 console.log('\n5. an accented creative folder is stored decoded');
 const acc = byLabel('Seinäjoki_DE');
 check('creative reads back as Seinajoki-with-accent, not %-escaped',
     !!acc && acc.creative === 'Seinäjoki', acc ? JSON.stringify(acc.creative) : 'row missing');
+
+console.log('\n7. a flat Support_Motion is filed from Masters/Support');
+{
+    // Forgotten Island's real Italy: Support_Motion has NO creative level, and
+    // Masters/Support has one per creative. Stems pair across the two.
+    const IT = ROOT + '/Italy';
+    dir(ROOT, tree[ROOT].concat(['Italy']));
+    dir(IT, ['Support_Motion', 'Masters']);
+    dir(IT + '/Support_Motion', ['Tagline', 'Date', 'TT']);
+    dir(IT + '/Support_Motion/Tagline', ['FID_INTL_Trio_Pedigree_IT_RGB.aep', 'FID_INTL_Trio_Pedigree_IT_RGB.psd']);
+    dir(IT + '/Support_Motion/Date', ['FID_INTL_Portal_2L_DATE_IT_RGB.aep', 'FID_INTL_Trio_2L_DATE_IT_RGB Precomp.aep']);
+    dir(IT + '/Support_Motion/TT', ['FID_RGB_TT_IT_ON_BLACK_Simp_OOH.aep']);
+    dir(IT + '/Masters', ['Support']);
+    dir(IT + '/Masters/Support', ['PortalToParadise', 'TRIO', 'FID_DreamWorks_Logo_Bugs_Cyan_IT_RGB.ai']);
+    dir(IT + '/Masters/Support/PortalToParadise', ['Date']);
+    dir(IT + '/Masters/Support/PortalToParadise/Date', ['FID_INTL_Portal_2L_DATE_IT_RGB.ai']);
+    dir(IT + '/Masters/Support/TRIO', ['MCs_Taglines', 'TT', '_Old']);
+    dir(IT + '/Masters/Support/TRIO/MCs_Taglines', ['FID_INTL_Trio_Pedigree_IT_RGB.psd', 'FID_INTL_Trio_Tagline_IT_RGB.ai']);
+    dir(IT + '/Masters/Support/TRIO/TT', ['FID_RGB_TT_IT_ON_BLACK_Simp_OOH.psd']);
+    dir(IT + '/Masters/Support/TRIO/_Old', ['FID_INTL_Trio_Tagline_XX_RGB.ai']);
+
+    settings['XYiToolbox|LocLibComponents'] = '';
+    const r = aeft.autoPopulateLocLib(CAMP, ROOT, 'Italy');
+    const rows = aeft.loadLocLibComponents().filter((c) => c.territory === 'Italy');
+    for (const c of rows) console.log('        ' + (c.creative || '—').padEnd(18) + c.label + '   ' + c.path.replace(IT + '/', ''));
+
+    const by = (l) => rows.filter((c) => c.label === l)[0];
+    const say = (ok, msg) => { if (!ok) fails++; console.log((ok ? '  ok    ' : '  FAIL  ') + msg); };
+
+    say(by('FID_INTL_Portal_2L_DATE_IT_RGB') && by('FID_INTL_Portal_2L_DATE_IT_RGB').creative === 'PortalToParadise',
+        'a loose Date/.aep is filed under PortalToParadise, from the source tree');
+    say(by('FID_RGB_TT_IT_ON_BLACK_Simp_OOH') && by('FID_RGB_TT_IT_ON_BLACK_Simp_OOH').creative === 'TRIO',
+        'a loose TT/.aep is filed under TRIO');
+    // Two files share this stem in Support_Motion (.aep and .psd) and BOTH
+    // pair to TRIO — the index is keyed on the stem, not the extension.
+    const ped = rows.filter((c) => c.label === 'FID_INTL_Trio_Pedigree_IT_RGB');
+    say(ped.length === 2 && ped.every((c) => c.creative === 'TRIO'),
+        'the .aep and its .psd both land under TRIO (' + ped.length + ' rows)');
+    say(ped.every((c) => c.path.indexOf('/Support_Motion/') !== -1),
+        'and the Masters/Support copy of that .psd is NOT added twice');
+    say(by('FID_INTL_Trio_Tagline_IT_RGB') && by('FID_INTL_Trio_Tagline_IT_RGB').creative === 'TRIO'
+        && by('FID_INTL_Trio_Tagline_IT_RGB').path.indexOf('/Masters/Support/') !== -1,
+        'source artwork with no Support_Motion twin IS added, tagged TRIO');
+    say(!by('FID_INTL_Trio_Tagline_XX_RGB'), 'the source tree\'s _Old folder is skipped');
+    say(by('FID_INTL_Trio_2L_DATE_IT_RGB Precomp') && !by('FID_INTL_Trio_2L_DATE_IT_RGB Precomp').creative,
+        'a stem with no exact twin stays loose rather than being guessed at');
+    say(by('FID_DreamWorks_Logo_Bugs_Cyan_IT_RGB') && !by('FID_DreamWorks_Logo_Bugs_Cyan_IT_RGB').creative,
+        'a file loose at the source root names no creative, and claims none');
+
+    // Idempotent, like every other run.
+    const again = aeft.autoPopulateLocLib(CAMP, ROOT, 'Italy');
+    say(again.added === 0 && again.refiled === 0, 'a second run adds and refiles nothing (' + JSON.stringify({ a: again.added, r: again.refiled }) + ')');
+}
 
 console.log('\n6. the open project is matched to a creative folder');
 const match = (proj, creatives, expected, why) => {

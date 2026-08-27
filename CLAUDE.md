@@ -564,6 +564,34 @@ nobody records one.
   team folder. `_tuts` is a team-folder path opened by name, unrelated to the
   `_`-folder scan rule below.
 
+**A CREATIVE FOLDER HAS CATEGORY FOLDERS IN IT; A CATEGORY FOLDER HAS FILES.**
+The first level under `Support_Motion` is a creative in some markets and a
+category in others, and taking it as a creative unconditionally invented ones
+that don't exist — Forgotten Island's Italy is flat (`Tagline/`, `Date/`,
+`TT/`), so every component there was filed under a creative called "Date"; Paw
+Patrol has nine territories shaped as `MC_Taglines/`, `AEP/`, `PNGs/`.
+`llHasSubfolder` decides it structurally. **Not** by name-matching a list of
+known categories: the list isn't closed (`Tagline`/`MCs_Taglines`/`MC_Taglines`/
+`MC` are one idea) and a market can invent a creative the source tree has never
+heard of — France keeps an `InternationalPayoff` in `Support_Motion` that
+`Masters/Support` does not have, and any "is it a known creative" test demotes
+it. A market that files `Bracelet/file.ai` with no category level loses nothing:
+the folder reads as a category and the stem index below puts `Bracelet` back.
+
+**`Masters/Support` PREFILLS the library, and tells `Support_Motion` which
+creative it is.** The two trees pair by **stem** (filename minus extension),
+because a component is named after the artwork it was built from
+(`Support_Motion/Date/…_IT_RGB.aep` ↔
+`Masters/Support/PortalToParadise/Date/…_IT_RGB.ai`). The source tree is filed
+by creative in every market, so it answers what a flat `Support_Motion` cannot.
+Three rules: the file's **own folder wins** and the index only fills a blank, so
+the pairing can never override where an artist deliberately put something; a
+stem under two creatives is **left to the first walked** rather than resolved,
+the same tie Support Swap refuses to guess; and the source tree's own `.ai`/
+`.psd` **join the library**, minus anything `Support_Motion` already holds under
+the same filename — those are one file kept in two places, and two rows for it
+is the duplicate this library has been bitten by before.
+
 **Localised Library mirrors `Support_Motion`'s creative folders, when it has
 them.** Territories started carrying a folder per creative
 (`Support_Motion/Bracelet/MCs_Taglines/…`), and the scan flattened everything
