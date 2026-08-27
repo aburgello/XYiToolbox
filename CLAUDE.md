@@ -63,6 +63,17 @@ project is the REDUCED one, so an artist clicking Save would write it over their
 original. Items referenced ONLY by expressions do not survive a reduce — say so,
 don't try to detect it.
 
+**Reduce** (`reduceToSelection`, `tools.ts`) is the same operation as a
+standalone button, and takes **two calls**: the first only looks (which comps
+are selected, how many items the project holds, whether it is dirty), the panel
+asks, and only then does it run. That is not ceremony — reduce is not undoable
+from a script, so a one-press version would be a one-press version of a
+decision with no way back. `dirty` is **reported, not refused**: on a saved
+project `File > Revert` is a real way out and with unsaved changes it is not,
+which is worth saying at the moment of asking rather than becoming a rule that
+blocks the thing somebody came to do. It refuses with no comp selected rather
+than reducing to nothing, and a selected *footage* item is not a comp.
+
 **Known soft spots** — not bugs, but here the constraint rests on user
 discipline rather than code: `mcIt()` takes any folder and has no
 `hasIsolatedOvToken` guard on the `.aep` filename; `runScript` is a bare `eval`
@@ -948,6 +959,11 @@ territory with a folder per creative inside `Support_Motion`, one with
 everything loose — and `suggestLocLibCreative` over the name traps. Run it
 after touching either: it is the only gate on a function whose failure mode is
 writing a wrong library into `app.settings`.
+
+`node scripts/probe-reduce-project.cjs` (after `yarn build`) drives
+`reduceToSelection` against a STUBBED project, deliberately — reduce deletes
+items and is not undoable from a script, so a live probe would be the bug it
+exists to prevent.
 
 `node scripts/probe-workflow-links.cjs` (no build needed) checks that every id
 a workflow link can carry resolves against the real registry / Toolset / script

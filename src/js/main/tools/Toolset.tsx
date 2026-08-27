@@ -55,6 +55,7 @@ import {
     Move,
     Image as ImageIcon,
     Layers,
+    Scissors,
     FileEdit,
     Globe,
     ToggleLeft,
@@ -78,7 +79,7 @@ import { sfx } from "../../lib/utils/sfx";
 import Tooltip from "../Tooltip";
 import StatusIcon from "../StatusIcon";
 import Droplet from "../Droplet";
-import { alertDialog, promptDialog, selectDialog } from "../Dialog";
+import { alertDialog, confirmDialog, promptDialog, selectDialog } from "../Dialog";
 import { openPreFlight, type PreflightReport } from "../PreFlightModal";
 import { iconWiggle, buttonLift } from "../animations";
 import { TOOLS } from "../toolRegistry";
@@ -494,6 +495,41 @@ export const ACTIONS: ActionEntry[] = [
         // Dry-run first ("", "", true): the results modal offers Apply.
         run: () => evalTS("mcIt", "", "", true),
         successText: (result) => result.message || "Done.",
+    },
+    {
+        id: "reduce-project",
+        label: "Reduce",
+        description: "File > Dependencies > Reduce Project, as a button. Keeps the comps selected in the Project panel and removes everything nothing else uses. Asks first — this cannot be undone.",
+        icon: Scissors,
+        group: "qc",
+        safety: "destructive",
+        /**
+         * TWO CALLS: the first only looks. Reduce is not undoable from a
+         * script (measured, including inside beginUndoGroup), so the count and
+         * the comps being kept are read first and put in front of somebody
+         * before anything goes.
+         *
+         * The dirty-project line is the part worth reading twice: on a saved
+         * project File > Revert is a real way back from this, and with unsaved
+         * changes it is not.
+         */
+        run: async () => {
+            const peek = await evalTSSafe("reduceToSelection", false);
+            if (!peek || !peek.success) return peek;
+            const keeping = ((peek.comps as string[]) || []).join(", ");
+            const ok = await confirmDialog(
+                `Reduce this project down to ${keeping}?\n\n` +
+                `Everything in the project's ${peek.total} items that those comps don't use will be removed. ` +
+                `This can't be undone from a script.\n\n` +
+                (peek.dirty
+                    ? "You have unsaved changes, so File > Revert won't get you back either — save first if you want a way out.\n\n"
+                    : "File > Revert will get you back, since the project is saved.\n\n") +
+                "Anything referenced only by an expression is not preserved."
+            );
+            if (!ok) return null;
+            return evalTSSafe("reduceToSelection", true);
+        },
+        successText: (result) => result.message || "Reduced.",
     },
     {
         id: "support-swap",

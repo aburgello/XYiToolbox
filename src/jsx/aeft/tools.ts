@@ -222,6 +222,89 @@ function componentTargetFile(folder: Folder, compName: string): File {
   return new File(base + "_V99.aep");
 }
 
+interface ReduceResult {
+  success: boolean;
+  error?: string;
+  /** Names of the comps the reduce would keep / did keep. */
+  comps?: string[];
+  /** Items in the project before, and how many went. */
+  total?: number;
+  removed?: number;
+  /** Unsaved changes, so File > Revert is NOT a way back from this. */
+  dirty?: boolean;
+  message?: string;
+}
+
+/**
+ * File > Dependencies > Reduce Project, as a button.
+ *
+ * THE API, NOT THE MENU COMMAND, for the reason already written up above
+ * saveComponent: `Reduce Project` (id 2735) is modal -- it always raises
+ * "N items that were not used by the selected items have been deleted" and
+ * stops a script dead until somebody clicks OK. app.project.reduceProject()
+ * is the same operation and returns silently.
+ *
+ * TWO PASSES, because THIS CANNOT BE UNDONE. Reduce is not undoable from a
+ * script -- measured three ways, including inside beginUndoGroup: 5 items to 3
+ * to 3. So the first call only looks: it reports which comps are selected, how
+ * big the project is, and whether there are unsaved changes. The panel asks,
+ * and only then calls again to do it. A one-press version of this button would
+ * be a one-press version of a decision with no way back.
+ *
+ * `dirty` is reported rather than refused. On a saved project File > Revert is
+ * a real way back; with unsaved changes it is not, and that is worth saying at
+ * the moment of asking rather than turning into a rule that stops somebody
+ * doing the thing they came to do.
+ *
+ * Expressions: AE's own warning on the menu command is that items referenced
+ * ONLY by expressions are not preserved, and the API is the same operation.
+ * Said in the message rather than detected -- the panel cannot know whether a
+ * given project leans on one.
+ */
+export const reduceToSelection = (apply?: boolean): ReduceResult => {
+  try {
+    const proj = app.project;
+    if (!proj) return { success: false, error: "No project is open." };
+
+    // Duck-typed on numLayers -- `instanceof CompItem` is exactly what
+    // CLAUDE.md section 2 says not to trust across the bridge.
+    const comps: CompItem[] = [];
+    const names: string[] = [];
+    for (let i = 0; i < proj.selection.length; i++) {
+      const it = proj.selection[i] as any;
+      if (it && typeof it.numLayers === "number") {
+        comps.push(it as CompItem);
+        names.push(decode(String(it.name)));
+      }
+    }
+    if (comps.length === 0) {
+      return {
+        success: false,
+        error: "Select the comp (or comps) to keep, in the Project panel — everything not used by them is what gets removed.",
+      };
+    }
+
+    const total = proj.numItems;
+    if (!apply) {
+      return { success: true, comps: names, total: total, dirty: proj.dirty === true };
+    }
+
+    proj.reduceProject(comps);
+    const removed = total - app.project.numItems;
+    let message = removed + " item" + (removed === 1 ? "" : "s") + " removed, " + app.project.numItems + " left.";
+    if (removed === 0) message = "Nothing to remove — everything in the project is used by " + (names.length === 1 ? names[0] : "the selected comps") + ".";
+    return {
+      success: true,
+      comps: names,
+      total: total,
+      removed: removed,
+      message: message,
+    };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
 export const saveComponent = (): SaveComponentResult => {
   let originalFile: File | null = null;
   try {
