@@ -798,6 +798,26 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
     >(null);
     const [buildTerritory, setBuildTerritory] = useState("");
     const [buildBatch, setBuildBatch] = useState("Batch_1");
+    /**
+     * WHICH DESTINATION this grid has written files to, not merely whether it
+     * has written any.
+     *
+     * The modal gated its own MC It! on the batch being done, for the good
+     * reason that running it over an empty output folder reports nothing and
+     * reads as a failure. The builder has no batch row to ask, so it remembers
+     * its own run — and a batch loaded from a sheet that was ALREADY built
+     * counts, which is the re-run case.
+     *
+     * A territory|batch pair rather than a boolean, because the two fields stay
+     * editable after a run: a flag would leave MC It! offered against a folder
+     * this grid never touched the moment somebody typed a different batch. It
+     * also sidesteps an ordering hazard — an effect clearing a flag on those
+     * fields changing would fire straight after loadBatchIntoBuilder set both,
+     * and clear the very state it had just set.
+     */
+    const [builtDest, setBuiltDest] = useState<string | null>(null);
+    const buildDest = `${buildTerritory}|${buildBatch.trim() || "Batch_1"}`;
+    const builderBuilt = builtDest !== null && builtDest === buildDest;
     const [buildTerritories, setBuildTerritories] = useState<string[]>([]);
     const [buildCreatives, setBuildCreatives] = useState<string[]>([]);
     const [buildRows, setBuildRows] = useState<BuildRow[]>([
@@ -1133,6 +1153,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
         });
         setBuildTerritory(t.territory);
         setBuildBatch(b.batch);
+        setBuiltDest(b.done === true ? `${t.territory}|${b.batch.trim() || "Batch_1"}` : null);
         setBuildOpen(true);
         setNotice(`${t.territory} · ${b.batch}: ${rows.length} row${rows.length === 1 ? "" : "s"} from ${b.pdfName}. Every cell is editable.`);
     };
@@ -1211,6 +1232,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
             if (res.success) {
                 const rrows = (res as { rows?: CsvLocRow[] }).rows || [];
                 const problems = rrows.filter((r) => r.status === "no-master" || r.status === "error").length;
+                setBuiltDest(`${buildTerritory}|${batch}`);
                 setNotice(`${buildTerritory} · ${batch}: ${res.message || "run finished."}` + (problems ? ` ${problems} row(s) had no master match.` : ""));
                 if (rrows.length) showLocGenReport(csvResultToLocGenReport(res as any, `CSV Localiser (built) · ${buildTerritory} · ${batch}`));
             } else {
@@ -1787,6 +1809,36 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
         setBusy(true);
         try {
             const aepDir = resolveBatchFolder(t.sourceFolder, b.batch) || path.join(t.sourceFolder, "AE", padBatch(b.batch));
+            const res = await evalTS("mcIt", aepDir, "", true);
+            if (res === undefined) throw new Error("no bridge");
+            if (res.success) showMcItReport(res as unknown as McReport);
+            else setNotice(res.error || "MC It! couldn't run on this batch.");
+        } catch (e: any) {
+            setNotice(e?.message || "No CEP bridge. Open this panel inside After Effects to run it.");
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    /**
+     * MC It! over whatever this grid just wrote.
+     *
+     * Same call the batch modal made — mcIt(aepDir, "", true) — pointed at the
+     * same folder csvLocaliserRun writes into. The folder is resolved the way
+     * runBuilder resolves it: the sheet's own sourceFolder when the rows came
+     * from one, since a scanned folder need not be named exactly as the
+     * territory is, and the derived path otherwise.
+     */
+    const runBuilderMcIt = async () => {
+        if (!buildTerritory) { setNotice("Pick a territory first."); return; }
+        setNotice(null);
+        setBusy(true);
+        try {
+            const sourceFolder = buildOrigin && buildOrigin.territory === buildTerritory
+                ? buildOrigin.sourceFolder
+                : path.join(marketsRoot, buildTerritory);
+            const batch = buildBatch.trim() || "Batch_1";
+            const aepDir = resolveBatchFolder(sourceFolder, batch) || path.join(sourceFolder, "AE", padBatch(batch));
             const res = await evalTS("mcIt", aepDir, "", true);
             if (res === undefined) throw new Error("no bridge");
             if (res.success) showMcItReport(res as unknown as McReport);
@@ -2906,6 +2958,17 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                 <Tooltip text={`${bespokeCandidates.length} row${bespokeCandidates.length === 1 ? " has" : "s have"} no single master at that length, but shorter ones of the same creative exist. Multiple Art composes them.`}>
                                     <button className="specs-build-multi" onClick={sendToBespoke}>
                                         <Layers size={13} /> Send {bespokeCandidates.length} to Multi Art
+                                    </button>
+                                </Tooltip>
+                            )}
+                            {/* THE STEP AFTER LOCALISING, where the modal put it
+                                too. Only once this grid has written something:
+                                over an empty output folder MC It! reports nothing
+                                and reads as a failure. */}
+                            {builderBuilt && (
+                                <Tooltip text={`Swap the artwork in every .aep in ${buildTerritory || "this territory"} · ${buildBatch.trim() || "Batch_1"} for its localised twin`}>
+                                    <button className="specs-build-multi" onClick={runBuilderMcIt} disabled={busy}>
+                                        <ImageIcon size={13} /> MC It!
                                     </button>
                                 </Tooltip>
                             )}

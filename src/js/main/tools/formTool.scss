@@ -2011,6 +2011,11 @@
 
     &:hover { background: rgba(255, 255, 255, 0.09); border-color: rgba(255, 255, 255, 0.22); }
     &:active { background: rgba(255, 255, 255, 0.09); }
+    // index.scss's global button:hover/:active paint over any custom button, so
+    // both are re-declared above — and a disabled one needs to stop looking
+    // pressable while MC It! is mid-run.
+    &:disabled { opacity: 0.4; cursor: default; }
+    &:disabled:hover { background: rgba(255, 255, 255, 0.03); border-color: rgba(255, 255, 255, 0.14); }
 }
 
 .specs-build-actions {
