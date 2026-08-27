@@ -126,17 +126,19 @@
 //
 // index.scss's global button:hover/:active paints over any custom background,
 // so both are re-declared here as on every button in this panel.
+// THE ONLY THING SEPARATING TWO ROWS OF THE SAME CREATIVE, so it sits on its
+// own at the card's trailing edge rather than trailing the name as a footnote.
 .workflow-board .wfb-creative-variant {
+    flex: none;
     font-style: normal;
     font-size: 9px;
     font-weight: 700;
-    letter-spacing: 0.4px;
-    padding: 1px 5px;
-    margin-left: 6px;
-    border-radius: 3px;
-    background: rgba(255, 255, 255, 0.08);
+    letter-spacing: 0.5px;
+    padding: 3px 7px;
+    border-radius: 999px;
+    border: 1px solid rgba(45, 212, 191, 0.3);
+    background: rgba(45, 212, 191, 0.1);
     color: var(--ov-accent, #2dd4bf);
-    vertical-align: middle;
 }
 
 .workflow-board .wfb-variants {
@@ -389,45 +391,64 @@
     }
 }
 
+// Raised a little now the cards below it carry more weight: at 0.3 opacity it
+// was losing the fight and the groups stopped reading as groups.
 .workflow-board .wfb-creative-sep {
-    margin: 7px 0 3px;
+    margin: 2px 0 5px;
     padding: 0 2px;
-    font-size: 8.5px;
-    letter-spacing: 0.06em;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
-    opacity: 0.3;
+    color: var(--ov-accent, #2dd4bf);
+    opacity: 0.55;
 }
 
+// A CARD, borrowing OV Library's creative cards: it lifts on hover, takes the
+// accent on its border and throws a soft glow of the same colour. The list is
+// a set of things you pick between, not a menu you read down, and it was
+// reading as the second.
+//
+// index.scss's global button:hover/:active paints over any custom background,
+// so both are re-declared here.
 .workflow-board .wfb-creative {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
+    gap: 10px;
     width: 100%;
-    padding: 8px 9px;
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 5px;
-    background: rgba(255, 255, 255, 0.02);
+    padding: 9px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 7px;
+    background: var(--surface-0, #1c1c1c);
     color: inherit;
     font-size: 12px;
     text-align: left;
     cursor: pointer;
     transition:
         background-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
-        border-color 160ms cubic-bezier(0.22, 1, 0.36, 1);
+        border-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
+        transform 120ms cubic-bezier(0.22, 1, 0.36, 1),
+        box-shadow 160ms cubic-bezier(0.22, 1, 0.36, 1);
 
     &:hover {
-        background: rgba(255, 255, 255, 0.07);
-        border-color: rgba(45, 212, 191, 0.35);
+        background: var(--surface-1, #242424);
+        border-color: var(--ov-accent, #2dd4bf);
+        transform: translateY(-2px);
+        // Pre-blended, not color-mix(): Chromium 111, and the target is 74.
+        box-shadow: 0 4px 14px rgba(45, 212, 191, 0.22);
+
+        .wfb-card-go { opacity: 1; transform: translateX(0); }
     }
-    &:active { background: rgba(255, 255, 255, 0.07); }
+    &:active {
+        background: var(--surface-1, #242424);
+        transform: translateY(0);
+    }
 
     // Documented. A left rail rather than a badge on the right: it lines the
     // written-up ones into a visible column you can run your eye down, which a
     // trailing tag cannot do.
     &.has-wf {
         border-left: 2px solid var(--cat-border, #fb923c);
-        background: rgba(255, 255, 255, 0.035);
     }
 
     // NOTHING WRITTEN DOWN gets no marker at all. It used to carry a "none yet"
@@ -438,28 +459,53 @@
     &:not(.has-wf):hover { opacity: 1; }
 }
 
+// Name over contents, so the name is the thing you read and the counts are
+// available rather than competing with it.
+.workflow-board .wfb-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    flex: 1;
+    min-width: 0;
+}
+
+// Arrives on hover. At rest the card is quiet; the chevron is the bit that
+// says it goes somewhere, and it only needs to say so when you are on it.
+.workflow-board .wfb-card-go {
+    flex: none;
+    color: var(--ov-accent, #2dd4bf);
+    opacity: 0;
+    transform: translateX(-3px);
+    transition: opacity 140ms ease, transform 140ms ease;
+}
+
 .workflow-board .wfb-creative-name {
     min-width: 0;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.25;
+    color: #e8e8e8;
     overflow-wrap: break-word;
 }
 
+// Under the name, spelled out. "3" beside a 9px glyph was a number you had to
+// decode; "3 steps" is the same width and reads at a glance.
 .workflow-board .wfb-creative-meta {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 10px;
     flex: none;
+    font-size: 10.5px;
+    color: #7a7a7a;
 }
 
 .workflow-board .wfb-creative-count {
     display: flex;
     align-items: center;
-    gap: 3px;
-    font-size: 9px;
+    gap: 4px;
     font-variant-numeric: tabular-nums;
-    color: var(--cat-icon, #fdba74);
-    opacity: 0.85;
 
-    svg { flex: none; }
+    svg { flex: none; color: var(--cat-icon, #fdba74); opacity: 0.8; }
 }
 
 .workflow-board .wfb-typein {
@@ -2033,10 +2079,15 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     opacity: 0.55;
 }
 
+// Cards lift and cast a shadow now, so 3px between them clipped it. The gap
+// between GROUPS is bigger than the gap inside one, which is what makes the
+// campaign headings read as headings without needing a rule.
 .workflow-board .wfb-nodetect-group {
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 6px;
+
+    & + & { margin-top: 12px; }
 }
 
 // Your own note: edit beside delete. Both quiet — they are yours to use, not

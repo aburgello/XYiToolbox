@@ -25,7 +25,7 @@ import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useR
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import {
     ListChecks, Plus, X, Trash2, Pencil, Check, RotateCcw, StickyNote,
-    RefreshCw, AlertCircle, FolderSearch, ChevronLeft, GripVertical, Users,
+    RefreshCw, AlertCircle, FolderSearch, ChevronLeft, ChevronRight, GripVertical, Users,
     ArrowRight, Link2, Link2Off, Search, Globe, FolderOpen, Wand2, MoreHorizontal, Crosshair,
 } from "lucide-react";
 import {
@@ -1767,23 +1767,30 @@ const WorkflowBoardTool: React.FC<{
                                                     animate={{ opacity: 1, y: 0 }}
                                                     transition={reduced ? { duration: 0 } : { ...SPRING.snappy, delay: rowDelay(gi * 3 + i) }}
                                                 >
-                                                    {/* Two rows for one creative are two workflows,
-                                                        and the name is the only thing telling them
-                                                        apart in this list. */}
-                                                    <span className="wfb-creative-name">
-                                                        {prettyCreative(e.creative)}
-                                                        {e.name ? <em className="wfb-creative-variant"> {e.name}</em> : null}
-                                                    </span>
-                                                    <span className="wfb-creative-meta">
-                                                        <span className="wfb-creative-count">
-                                                            <ListChecks size={9} />{e.steps.length}
+                                                    {/* A CARD, not a row: name on its own line with the
+                                                        contents spelled out under it. Two rows for one
+                                                        creative are two workflows, so the variant name
+                                                        carries real weight rather than sitting inline as
+                                                        a footnote. */}
+                                                    <span className="wfb-card-body">
+                                                        <span className="wfb-creative-name">
+                                                            {prettyCreative(e.creative)}
                                                         </span>
-                                                        {(e.notes || []).length > 0 && (
+                                                        <span className="wfb-creative-meta">
                                                             <span className="wfb-creative-count">
-                                                                <StickyNote size={9} />{(e.notes || []).length}
+                                                                <ListChecks size={10} />
+                                                                {e.steps.length} step{e.steps.length === 1 ? "" : "s"}
                                                             </span>
-                                                        )}
+                                                            {(e.notes || []).length > 0 && (
+                                                                <span className="wfb-creative-count">
+                                                                    <StickyNote size={10} />
+                                                                    {(e.notes || []).length} note{(e.notes || []).length === 1 ? "" : "s"}
+                                                                </span>
+                                                            )}
+                                                        </span>
                                                     </span>
+                                                    {e.name ? <em className="wfb-creative-variant">{e.name}</em> : null}
+                                                    <ChevronRight size={13} className="wfb-card-go" />
                                                 </motion.button>
                                             ))}
                                         </div>
