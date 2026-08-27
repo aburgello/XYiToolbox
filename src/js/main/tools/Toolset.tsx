@@ -504,27 +504,35 @@ export const ACTIONS: ActionEntry[] = [
         group: "qc",
         safety: "destructive",
         /**
-         * TWO CALLS: the first only looks. Reduce is not undoable from a
-         * script (measured, including inside beginUndoGroup), so the count and
-         * the comps being kept are read first and put in front of somebody
-         * before anything goes.
+         * TWO CALLS: the first only looks, so the count and the comps being
+         * kept can be named before anything goes.
          *
-         * The dirty-project line is the part worth reading twice: on a saved
-         * project File > Revert is a real way back from this, and with unsaved
-         * changes it is not.
+         * IT SAYS Ctrl+Z WORKS, and that is a correction. This first shipped
+         * warning it could not be undone, which came from HISTORY.md's
+         * measurement that reduce survives a SCRIPT calling undo (three ways,
+         * including inside beginUndoGroup: 5 items -> 3 -> 3). AE's own dialog
+         * says "You can undo if desired", and that is about a person pressing
+         * the key, which is not what was measured. Telling somebody their work
+         * is unrecoverable when it is recoverable is the worse error of the
+         * two, and it was most of the dialog's length.
+         *
+         * What is left is the part they cannot find out any other way: how
+         * many items, what is being kept, and AE's expressions caveat.
          */
         run: async () => {
             const peek = await evalTSSafe("reduceToSelection", false);
             if (!peek || !peek.success) return peek;
-            const keeping = ((peek.comps as string[]) || []).join(", ");
+            // Deliverable names run past 50 characters, and three lines of
+            // filename pushes everything that matters below the fold.
+            const names = ((peek.comps as string[]) || []).map((n) =>
+                n.length > 38 ? n.slice(0, 36) + "…" : n);
+            const keeping = names.length > 2
+                ? `${names.length} comps`
+                : names.map((n) => `“${n}”`).join(" and ");
             const ok = await confirmDialog(
-                `Reduce this project down to ${keeping}?\n\n` +
-                `Everything in the project's ${peek.total} items that those comps don't use will be removed. ` +
-                `This can't be undone from a script.\n\n` +
-                (peek.dirty
-                    ? "You have unsaved changes, so File > Revert won't get you back either — save first if you want a way out.\n\n"
-                    : "File > Revert will get you back, since the project is saved.\n\n") +
-                "Anything referenced only by an expression is not preserved."
+                `Reduce to ${keeping}?\n\n` +
+                `Removes whatever they don't use, from ${peek.total} items. Ctrl+Z undoes it — ` +
+                `but anything referenced only by an expression won't be kept.`
             );
             if (!ok) return null;
             return evalTSSafe("reduceToSelection", true);

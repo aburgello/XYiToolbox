@@ -230,8 +230,6 @@ interface ReduceResult {
   /** Items in the project before, and how many went. */
   total?: number;
   removed?: number;
-  /** Unsaved changes, so File > Revert is NOT a way back from this. */
-  dirty?: boolean;
   message?: string;
 }
 
@@ -244,17 +242,17 @@ interface ReduceResult {
  * stops a script dead until somebody clicks OK. app.project.reduceProject()
  * is the same operation and returns silently.
  *
- * TWO PASSES, because THIS CANNOT BE UNDONE. Reduce is not undoable from a
- * script -- measured three ways, including inside beginUndoGroup: 5 items to 3
- * to 3. So the first call only looks: it reports which comps are selected, how
- * big the project is, and whether there are unsaved changes. The panel asks,
- * and only then calls again to do it. A one-press version of this button would
- * be a one-press version of a decision with no way back.
+ * TWO PASSES: the first only looks, reporting which comps are selected and how
+ * big the project is, so the panel can name both before anything goes. Removing
+ * 178 of 181 items is worth a glance first even when it is exactly what you
+ * asked for.
  *
- * `dirty` is reported rather than refused. On a saved project File > Revert is
- * a real way back; with unsaved changes it is not, and that is worth saying at
- * the moment of asking rather than turning into a rule that stops somebody
- * doing the thing they came to do.
+ * A SCRIPT CANNOT UNDO THIS; A PERSON CAN. HISTORY.md measured reduce
+ * surviving a script's own undo three ways, including inside beginUndoGroup
+ * (5 items -> 3 -> 3), which is why saveComponent reopens from disk rather
+ * than trusting it. That is a fact about executeCommand, not about Ctrl+Z --
+ * AE's own dialog says "You can undo if desired" -- so this does NOT warn that
+ * the operation is permanent. Nothing here calls undo either way.
  *
  * Expressions: AE's own warning on the menu command is that items referenced
  * ONLY by expressions are not preserved, and the API is the same operation.
@@ -286,7 +284,7 @@ export const reduceToSelection = (apply?: boolean): ReduceResult => {
 
     const total = proj.numItems;
     if (!apply) {
-      return { success: true, comps: names, total: total, dirty: proj.dirty === true };
+      return { success: true, comps: names, total: total };
     }
 
     proj.reduceProject(comps);

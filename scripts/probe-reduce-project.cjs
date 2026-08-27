@@ -90,7 +90,7 @@ r = aeft.reduceToSelection(false);
 say(r.success && reduceCalls.length === 0, 'reduceProject is never called on the look pass');
 say(r.total === 5, 'it reports the project size', String(r.total));
 say(JSON.stringify(r.comps) === '["Main"]', 'and which comps would be kept', JSON.stringify(r.comps));
-say(r.dirty === true, 'and that there are unsaved changes, so Revert is not a way back');
+say(r.dirty === undefined, 'it says nothing about unsaved changes — Ctrl+Z is the way back, not Revert');
 say(r.removed === undefined, 'it does not claim a removal count it has not earned');
 
 console.log('\n3. the apply pass');
