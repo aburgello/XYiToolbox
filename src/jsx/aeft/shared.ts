@@ -81,6 +81,13 @@ export interface LocGenRowReport {
   master?: string; // matched master filename
   output?: string; // written .aep filename
   error?: string;
+  // CSV Localiser's two inline passes. Optional: every other tool feeding this
+  // report omits them, and the row renders exactly as it did before. Carried
+  // on the ROW rather than only in the summary string so a report recovered
+  // after a lost page can still add the totals up.
+  imagesReplaced?: number;
+  imagesNote?: string;
+  componentsSwapped?: number;
 }
 
 export interface LocGenResult {

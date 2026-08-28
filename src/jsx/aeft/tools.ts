@@ -7021,6 +7021,33 @@ function losSafeOpenMasterCopy(masterFile: File): Project {
   return app.open(candidate);
 }
 
+/**
+ * Open one of a run's outputs, from its row in the results modal.
+ *
+ * losOpenForEdit rather than app.open directly, so the copy-first rule holds
+ * without being restated: a name still carrying an OV token is a master that
+ * has not been localised into this batch yet, and gets copied before opening;
+ * a localised output has no OV token and opens in place, which is what makes
+ * it the artist's own working copy.
+ *
+ * NO .exists CHECK. A markets root lives on the studio NAS, where .exists
+ * returns false for files that are plainly there -- the operation IS the test,
+ * and its failure is the answer. No defensive close() either: AE prompts about
+ * unsaved changes on its own from the panel, and force-closing would bin
+ * somebody's work.
+ */
+export const openLocalisedProject = (filePath: string): Result & { name?: string } => {
+  try {
+    if (!filePath) return { success: false, error: "No file to open." };
+    const f = new File(filePath);
+    const proj = losOpenForEdit(f);
+    if (!proj) return { success: false, error: "Couldn't open " + decode(f.name) + ". It may have been moved or renamed." };
+    return { success: true, name: decode(f.name) };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
 // True if `name` carries "OV" as its own isolated token -- matching the
 // established Masters naming suffix documented in CLAUDE.md (e.g.
 // "ODY_INTL_DGTL_DOOH_HORSE_LOS_1920x858_10sec_OV.aep"), not a substring

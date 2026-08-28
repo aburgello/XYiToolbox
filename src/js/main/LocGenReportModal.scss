@@ -43,3 +43,70 @@
     .locgen-row-muted { color: #888; }
     .locgen-row-bad { color: #d0a0a0; }
 }
+
+// ── footer summary ──────────────────────────────────────────────────────────
+//
+// Three inline passes turned the old one-line message into a run-on sentence
+// that ellipsised away the numbers somebody opened the report to read. The
+// counts get their own row, the output path sits under them where its own
+// ellipsis costs nothing, and neither competes with the other.
+.lgr-foot-main {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+    flex: 1;
+}
+
+.lgr-stats {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+    min-width: 0;
+}
+
+.lgr-stat {
+    font-size: 11px;
+    color: #8f8f8f;
+    white-space: nowrap;
+
+    strong {
+        font-size: 13px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        color: #e6e6e6;
+    }
+}
+
+// ── the output filename, as a door ──────────────────────────────────────────
+//
+// A finished run is a list of things to start work on, so the file it wrote
+// opens from here. Styled as the text it replaces plus an underline on hover,
+// not as a button: it sits mid-sentence inside the row's meta line, and a
+// bordered control there would break the line up for something you press once.
+//
+// index.scss's global button:hover/:active paints over any custom background,
+// so both are re-declared.
+.locgen-row-open {
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    color: #7fca8f;
+    cursor: pointer;
+    text-align: left;
+
+    &:hover {
+        background: none;
+        text-decoration: underline;
+        color: #a5e2b3;
+    }
+    &:active { background: none; }
+    &:disabled { cursor: default; opacity: 0.5; }
+}
+
+.locgen-open-error {
+    font-size: 10.5px;
+    color: #d98c8c;
+}

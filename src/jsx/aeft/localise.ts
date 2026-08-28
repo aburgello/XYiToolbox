@@ -4018,6 +4018,12 @@ export const csvLocaliserRun = (
       master: rr.master,
       output: rr.output,
       error: rr.error,
+      // Both inline passes travel with the row, so a report RECOVERED after a
+      // lost page carries the same numbers a live one does. The summary is
+      // counted off the rows for exactly that reason.
+      imagesReplaced: rr.imagesReplaced,
+      imagesNote: rr.imagesNote,
+      componentsSwapped: rr.componentsSwapped,
     });
   }
   saveLocGenReport({
