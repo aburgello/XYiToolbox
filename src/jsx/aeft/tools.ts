@@ -3170,6 +3170,9 @@ export interface McItProjectReport {
   resolution: string; // parsed from the AEP filename
   skipped?: string; // project-level skip reason (couldn't open / no Footage...)
   items: McItItemReport[];
+  /** Images brought into the project's own <Territory>_JPG_PNG folder, whether
+   *  or not anything was swapped for them. */
+  imported?: number;
 }
 
 interface McItResult {
@@ -3341,10 +3344,23 @@ export function mcItApplyToOpenProject(
   aepFileName: string,
   imageFiles: File[],
   dryRun?: boolean,
-  overrides?: Record<string, string>
+  overrides?: Record<string, string>,
+  importFolderName?: string
 ): McItProjectReport {
   const parsedAEP = mcItParseFilename(aepFileName);
   const projReport: McItProjectReport = { aep: aepFileName, resolution: parsedAEP.thirdOne || "", items: [] };
+
+  // BEFORE the swap, and regardless of how the swap goes. A territory supplies
+  // more images than the master had slots for, and those extras used to be
+  // left on disk for somebody to fetch by hand. They come in either way now --
+  // including when the project has no Footage folder at all and the swap
+  // returns early below.
+  if (!dryRun && importFolderName) {
+    const mine = mcItImagesForAep(aepFileName, imageFiles);
+    projReport.imported = mcItImportImages(proj, mine, importFolderName);
+  } else if (importFolderName) {
+    projReport.imported = mcItImagesForAep(aepFileName, imageFiles).length;
+  }
 
   // THE PROJECT'S OWN Footage, not an imported sibling's -- see
   // ownProjectFolder, which is the whole reason this tool reported
@@ -3593,6 +3609,93 @@ export function mcItApplyToOpenProject(
   return projReport;
 }
 
+/**
+ * THE IMAGES THAT BELONG TO THIS DELIVERABLE, out of the whole batch's pile.
+ *
+ * A JPG_PNG batch is filed one subfolder per deliverable, named exactly as the
+ * .aep is (measured: Brazil's Batch_2 has eleven subfolders and eleven .aep
+ * files, name for name, minus the _V01). So "which of these 66 images are
+ * mine" is answered by which subfolder they sit under, not by re-matching
+ * their filenames -- and it keeps the import to the six that are actually this
+ * deliverable's rather than the whole batch.
+ *
+ * Walks UP from each file so an ARTWORK_ONLY subfolder still resolves to the
+ * deliverable above it.
+ */
+function mcItImagesForAep(aepFileName: string, imageFiles: File[]): File[] {
+  let stem = decode(String(aepFileName));
+  const dot = stem.lastIndexOf(".");
+  if (dot > 0) stem = stem.substring(0, dot);
+  stem = stem.replace(/_V\d+$/i, "");
+  const want = stem.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!want) return [];
+
+  const out: File[] = [];
+  for (let i = 0; i < imageFiles.length; i++) {
+    let node: Folder | null = imageFiles[i].parent;
+    let hops = 0;
+    while (node && hops < 4) {
+      if (decode(node.name).toUpperCase().replace(/[^A-Z0-9]/g, "") === want) { out.push(imageFiles[i]); break; }
+      node = node.parent;
+      hops++;
+    }
+  }
+  return out;
+}
+
+/**
+ * Import this deliverable's whole image set into a folder of its own.
+ *
+ * The SWAP only ever places an image the project already had a slot for, and a
+ * territory routinely supplies more than the master had -- the _ARTWORK_1/_2
+ * pair in every folder is exactly that. Those were left on disk for somebody
+ * to go and find in Finder. They are imported alongside now, so the extras are
+ * in the project whether or not anything was swapped for them.
+ *
+ * EVERY image for the deliverable, not only the unused ones: a folder that
+ * mirrors what the territory supplied is a thing you can check against, and
+ * one holding "whatever was left over" is not.
+ *
+ * Idempotent by PATH -- re-running MC It! must not stack a second copy of
+ * every image on top of the first.
+ */
+function mcItImportImages(proj: Project, files: File[], folderName: string): number {
+  if (files.length === 0 || !folderName) return 0;
+
+  // The project's own folder of that name, or a new one. Root-level only:
+  // app.project.item(i) is flat, so a same-named folder inside an imported
+  // sibling project would otherwise be picked up (see ownProjectFolder).
+  let dest: FolderItem | null = null;
+  for (let i = 1; i <= proj.numItems; i++) {
+    const it = proj.item(i);
+    if (!(it instanceof FolderItem)) continue;
+    if (decode(it.name) !== folderName) continue;
+    if (it.parentFolder && it.parentFolder.parentFolder != null) continue;
+    dest = it as FolderItem;
+    break;
+  }
+  if (!dest) dest = proj.items.addFolder(folderName);
+
+  const already: { [path: string]: boolean } = {};
+  for (let i = 1; i <= dest.numItems; i++) {
+    const it = dest.item(i) as FootageItem;
+    if (it && it.file) already[String(it.file.fsName)] = true;
+  }
+
+  let n = 0;
+  for (let i = 0; i < files.length; i++) {
+    if (already[String(files[i].fsName)]) continue;
+    try {
+      const imported = proj.importFile(new ImportOptions(files[i]));
+      imported.parentFolder = dest;
+      n++;
+    } catch (e) {
+      /* one unreadable image must not lose the rest */
+    }
+  }
+  return n;
+}
+
 // Count "replaced" entries in a project report -- both callers tally the
 // same way, so the counting rule lives in one place.
 export function mcItCountReplaced(report: McItProjectReport): number {
@@ -3636,6 +3739,28 @@ function persistLastReport(result: McItResult): void {
   } catch (e) {
     /* persistence must never break the run */
   }
+}
+
+/**
+ * The territory a JPG_PNG batch folder sits under, for naming the project
+ * folder its images land in.
+ *
+ * Derived, and "" when the shape does not hold -- MC It! can be pointed at any
+ * folder through its dialog, and a folder named after somebody's Desktop would
+ * be worse than no folder name at all (which switches the import off).
+ */
+export function mcItTerritoryOfImageFolder(imageFolder: Folder | null): string {
+  if (!imageFolder) return "";
+  const batchParent = imageFolder.parent;              // .../<Territory>/JPG_PNG
+  if (!batchParent) return "";
+  if (!llLikeJpgPngName(decode(batchParent.name))) return "";
+  const terr = batchParent.parent;                     // .../<Territory>
+  return terr ? decode(terr.name) : "";
+}
+
+function llLikeJpgPngName(name: string): boolean {
+  const norm = String(name).toLowerCase().replace(/[_\s]+/g, "");
+  return norm === "jpgpng" || norm === "pngjpg";
 }
 
 export function mcItDeriveImageFolderFor(aepFolder: Folder): string {
@@ -3708,6 +3833,14 @@ export const mcIt = (aepFolderPath?: string, imageFolderPath?: string, dryRun?: 
     if (imageFiles.length === 0) return { success: false, error: "No Image files found in " + imageRootFolder.fsName };
 
     let processedCount = 0;
+    // Named after the territory the images came from, so a project carrying
+    // two markets' worth cannot end up with them in one folder. Empty when the
+    // folder was picked by hand and its shape says nothing about a territory,
+    // which switches the import off rather than inventing a name.
+    const importTerritory = mcItTerritoryOfImageFolder(imageRootFolder);
+    const importFolderName = importTerritory ? importTerritory + "_JPG_PNG" : "";
+
+    let importedCount = 0;  // images brought in alongside the swaps
     let changedCount = 0;   // projects with at least one replacement
     let replacedCount = 0;
 
@@ -3730,10 +3863,11 @@ export const mcIt = (aepFolderPath?: string, imageFolderPath?: string, dryRun?: 
 
       // Identical matching/replacement logic the CSV Localiser's inline pass
       // uses -- shared, not duplicated (see mcItApplyToOpenProject above).
-      const projReport = mcItApplyToOpenProject(proj, aepFile.name, imageFiles, dryRun, overrides[aepFile.name]);
+      const projReport = mcItApplyToOpenProject(proj, aepFile.name, imageFiles, dryRun, overrides[aepFile.name], importFolderName);
       projects.push(projReport);
       const thisProject = mcItCountReplaced(projReport);
       replacedCount += thisProject;
+      importedCount += projReport.imported || 0;
       // Counted separately from processedCount, which is every project that
       // OPENED. A project can process cleanly and change nothing, so reporting
       // "N images across <processed> projects" reads as though the work were
@@ -3755,7 +3889,8 @@ export const mcIt = (aepFolderPath?: string, imageFolderPath?: string, dryRun?: 
       success: true,
       message: dryRun
         ? "Dry run — would replace " + replacedCount + " image(s) in " + changedCount + " of " + processedCount + " project(s). Nothing was saved."
-        : "Replaced " + replacedCount + " image(s) in " + changedCount + " of " + processedCount + " project(s).",
+        : "Replaced " + replacedCount + " image(s) in " + changedCount + " of " + processedCount + " project(s)."
+          + (importedCount > 0 ? " Imported " + importedCount + " into " + importFolderName + "." : ""),
       aepFolder: projectFolder.fsName,
       imageFolder: imageRootFolder.fsName,
       imageCount: imageFiles.length,

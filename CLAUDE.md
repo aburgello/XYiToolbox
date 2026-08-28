@@ -912,6 +912,23 @@ tokens and is correctly not a candidate.
   the files loose. `Masters/Support` is the consistent tree; the filename rule
   above means neither has to be understood.
 
+**A JPG_PNG BATCH IS FILED ONE SUBFOLDER PER DELIVERABLE, named exactly as the
+`.aep` is** (measured on Brazil's Batch_2: eleven subfolders against eleven
+`.aep` files, name for name, minus the `_V01`). MC It! imports each project's
+own set into a `<Territory>_JPG_PNG` folder alongside the swap, because a
+territory routinely supplies more than the master had slots for — the
+`ARTWORK_ONLY` pair in every real folder is exactly that, and it used to be
+left on disk for somebody to fetch from Finder. Rules: filter by **which
+subfolder they sit under**, walking UP so `ARTWORK_ONLY` resolves to the
+deliverable above it, never by re-matching filenames; import **every** image
+for that deliverable, since a folder mirroring what the territory supplied is
+checkable and one holding "the leftovers" is not; it is **idempotent by path**,
+so a re-run cannot stack a second copy; it happens **before** the swap and
+regardless of its outcome, so a project with no `Footage` folder still gets its
+images; and the folder name is **derived, never invented** — MC It! can be
+pointed anywhere by dialog, and no derivable territory switches the import off
+rather than naming a folder after somebody's Desktop.
+
 **A DEDICATED `PNG`/`JPG` FOLDER IS NOT ALL TARGETS.** Measured in a real
 Brazil working copy, `Footage/PNG` held three FORGOTTEN_ISLAND logo variants
 and an `Asset 1@4x.png` beside the two artwork slots — and one logo ends `_1`,
@@ -1034,6 +1051,9 @@ tree for exercising real scan/reveal paths inside AE.
 bundle's `tutorialsList` against a stubbed filesystem whose `File.exists` and
 `getFiles(mask)` THROW — so an edit that reaches for either on the share fails
 the probe instead of failing silently on the NAS.
+
+`node scripts/probe-mcit-import.cjs` (after `yarn build`) guards which images a
+project gets: its own subfolder's, once, and never the whole batch's.
 
 `node scripts/probe-make-motion.cjs` (after `yarn build`) drives
 `makeMotionScan`/`makeMotionRun` over a stubbed campaign pair. Stubbed and not

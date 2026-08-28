@@ -6,7 +6,7 @@
 // see its header comment for context.
 // =============================================================================
 import { scaleCompToFit } from "./deliver";
-import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, territoryCheck, parseFilenameMeta, frontcardWrap, cheekyTCheck, organiseFolders, FRONTCARD_LEAD_IN_SECONDS, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, MasterIndexEntry, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, matchCreativeInName, ssFindSupportRoot, ssCollectSupport, ssCreativesOf, ssApplyToOpenProject, ssCountReplaced, ssOneTokenDiff, ssTokensOf, SupportSwapCandidate, scanMastersForBestMatch, firstSizeToken, ownProjectFolder } from "./tools";
+import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, territoryCheck, parseFilenameMeta, frontcardWrap, cheekyTCheck, organiseFolders, FRONTCARD_LEAD_IN_SECONDS, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, MasterIndexEntry, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, mcItTerritoryOfImageFolder, matchCreativeInName, ssFindSupportRoot, ssCollectSupport, ssCreativesOf, ssApplyToOpenProject, ssCountReplaced, ssOneTokenDiff, ssTokensOf, SupportSwapCandidate, scanMastersForBestMatch, firstSizeToken, ownProjectFolder } from "./tools";
 import { findMotionComponents } from "./artwork";
 import { makeParentLayerOfAllUnparented, scaleAllCameraZooms } from "./deliver";
 import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, saveLocGenReport, buildDeliverableName, durationForMasterLookup, durationDigits, sanitiseSiteToken, camelCaseToken, camelCaseName } from "./shared";
@@ -3812,6 +3812,7 @@ function csvLocNameGen(
   mcItImages?: File[],
   mcItAepName?: string,
   mcItOut?: McItProjectReport[],
+  mcItImportFolder?: string,
   repeatFactor?: number,
   ssCands?: SupportSwapCandidate[],
   ssCreatives?: string[],
@@ -3961,7 +3962,7 @@ function csvLocNameGen(
   // localisation work that has already succeeded on this file.
   if (mcItImages && mcItImages.length > 0 && mcItAepName) {
     try {
-      const rep = mcItApplyToOpenProject(app.project, mcItAepName, mcItImages, false);
+      const rep = mcItApplyToOpenProject(app.project, mcItAepName, mcItImages, false, undefined, mcItImportFolder);
       if (mcItOut) mcItOut.push(rep);
     } catch (mcErr) {
       if (mcItOut) {
@@ -4287,6 +4288,13 @@ export const csvLocaliserRun = (
       mcItImages = [];
     }
   }
+  // Named after the territory the images came from -- see
+  // mcItTerritoryOfImageFolder. Empty switches the import off.
+  let mcItImportFolder = "";
+  if (mcItImageFolder !== "") {
+    const terr = mcItTerritoryOfImageFolder(new Folder(mcItImageFolder));
+    if (terr) mcItImportFolder = terr + "_JPG_PNG";
+  }
   const mcItReports: McItProjectReport[] = [];
 
   // --- Inline Support Swap setup -------------------------------------------
@@ -4513,7 +4521,7 @@ export const csvLocaliserRun = (
       // own size, not the master's.
       const rowMcItReports: McItProjectReport[] = [];
       const rowSsReports: McItProjectReport[] = [];
-      csvLocNameGen(myComp, width, height, newCompName, plm, mcItImages, newCompName + "_V01.aep", rowMcItReports, repeatFactor, ssCands, ssCreatives, rowSsReports);
+      csvLocNameGen(myComp, width, height, newCompName, plm, mcItImages, newCompName + "_V01.aep", rowMcItReports, mcItImportFolder, repeatFactor, ssCands, ssCreatives, rowSsReports);
       if (rowSsReports.length > 0) {
         ssReports.push(rowSsReports[0]);
         rep.componentsSwapped = ssCountReplaced(rowSsReports[0]);
@@ -4570,7 +4578,10 @@ export const csvLocaliserRun = (
   let message = generated + " of " + rowsAttempted + " row(s) generated.";
   if (runMcIt) {
     if (mcItImages.length > 0) {
-      message += " MC It! replaced " + mcItReplacedTotal + " image(s) inline.";
+      let importedTotal = 0;
+      for (let r = 0; r < mcItReports.length; r++) importedTotal += mcItReports[r].imported || 0;
+      message += " MC It! replaced " + mcItReplacedTotal + " image(s) inline"
+        + (importedTotal > 0 ? " and imported " + importedTotal + " into " + mcItImportFolder : "") + ".";
     } else if (mcItSetupNote !== "") {
       message += " " + mcItSetupNote;
     }
