@@ -1199,13 +1199,16 @@ const LocalisedLibraryTool = () => {
                 </div>
             ) : (
                 <>
-                    <Tooltip
-                        text={
-                            selectedTerritory
-                                ? `Scans only the "${selectedTerritory}" territory for a Support_Motion or Motion_Components folder and auto-adds every file found inside. Read-only. JPG_PNG has its own section below, scanned separately on demand.`
-                                : "Scans every territory for a Support_Motion or Motion_Components folder and auto-adds every file found inside. Read-only. JPG_PNG has its own section below, scanned separately on demand."
-                        }
-                    >
+                    {/* The two halves of the same job, grouped: Find catalogues
+                        what a territory already has, Make builds it from the
+                        master templates. Their spacing lives on the wrapper, or
+                        Find's own bottom margin sets the gap between them and
+                        Make sets the gap to whatever follows. */}
+                    <div className="ll-motion-actions">
+                        {/* No tooltip. The label already says what it does and
+                            which territory it does it to, and two lines of
+                            explanation on hover is a thing you read once and
+                            then have in the way forever. */}
                         <button className="ll-auto-populate" disabled={busy} onClick={handleAutoPopulate}>
                             <Wand2 size={14} className={busy ? "spin" : ""} />{" "}
                             {selectedTerritory ? (
@@ -1216,24 +1219,19 @@ const LocalisedLibraryTool = () => {
                                 "Find the Motion"
                             )}
                         </button>
-                    </Tooltip>
 
-                    {/* THE OTHER HALF OF "Find the Motion". That one catalogues
-                        what a territory already has; this one stands it up from
-                        the campaign's master templates — copy, relink to this
-                        market's own artwork, rename for its market.
-
-                        Only inside a territory. Pairing a creative is a
-                        judgement (Colombia files PortalToParadise as "P2P"), and
-                        one screen cannot ask it of 28 markets at once. */}
-                    {selectedTerritory && (
-                        <Tooltip text={`Build ${selectedTerritory}'s motion components from the campaign's master templates, relinked to its own artwork. Previews first.`}>
-                            <button className="ll-make-motion" disabled={busy || makeBusy} onClick={openMakeMotion}>
-                                <Hammer size={14} className={makeBusy ? "spin" : ""} />{" "}
-                                Make the <span className="ll-auto-populate-territory">{selectedTerritory}</span> Motion
-                            </button>
-                        </Tooltip>
-                    )}
+                        {/* Only inside a territory. Pairing a creative is a
+                            judgement (Colombia files PortalToParadise as "P2P"),
+                            and one screen cannot ask it of 28 markets at once. */}
+                        {selectedTerritory && (
+                            <Tooltip text="Builds this territory's components from the master templates. Previews first.">
+                                <button className="ll-make-motion" disabled={busy || makeBusy} onClick={openMakeMotion}>
+                                    <Hammer size={14} className={makeBusy ? "spin" : ""} />{" "}
+                                    Make the <span className="ll-auto-populate-territory">{selectedTerritory}</span> Motion
+                                </button>
+                            </Tooltip>
+                        )}
+                    </div>
 
                     <div className="ll-view-wrap">
                         <motion.div
