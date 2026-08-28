@@ -575,8 +575,15 @@ nobody records one.
   forty tools and answers on three trains everyone to stop pressing it.
 - The badge takes `--cat-icon`, not `--ov-accent` — it is stuck to a
   category-tinted glyph.
-- **The two hubs carry it in their own top bar**, since `ToolScreen` suppresses
-  `tool-content-header` for them (`HUB_TOOL_IDS`). Review's goes in the
+- **A surface with no registry entry carries its own icon.** The two hubs do,
+  since `ToolScreen` suppresses `tool-content-header` for them
+  (`HUB_TOOL_IDS`); so does the home screen's **Active Jobs** card, which has no
+  tool page at all — without it `ActiveJobs.mp4` sits in `_tuts` with nowhere to
+  play from. Its icon lives inside the card's expand button, so the wrapper
+  stops that click **only** when `TutorialIcon` has marked itself
+  `has-tutorial`: with no clip the press must still open the card, which is what
+  "the affordance only exists when the clip does" means for an icon inside a
+  button. Review's goes in the
   `.rh-tab-row` wrapper BESIDE `.rh-tab-bar`, never inside it — that bar's
   highlight is `width: 50%` sliding between exactly two children. Delivery's
   leads `.dh-action-bar` with a `Package`, not the registry's `Truck`, which

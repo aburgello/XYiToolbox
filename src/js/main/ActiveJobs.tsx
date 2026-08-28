@@ -19,6 +19,7 @@
 // rest of the always-visible home screen (CLAUDE.md §3).
 // =============================================================================
 import React, { useCallback, useEffect, useState } from "react";
+import { TutorialIcon } from "./TutorialIcon";
 import { AnimatePresence, motion } from "motion/react";
 import { Briefcase, ChevronDown, ChevronRight, MapPin, RefreshCw, Users, Check } from "lucide-react";
 import Droplet from "./Droplet";
@@ -319,8 +320,27 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
                 onClick={() => setOpen((v) => !v)}
                 aria-expanded={open}
             >
-                <span className="active-jobs-icon">
-                    <Briefcase size={16} />
+                {/* THE CARD'S OWN HEADER ICON, because this surface has no
+                    registry entry and so no tool page to carry one -- the same
+                    reason the two hubs carry theirs in their own top bar.
+                    Without it a clip named ActiveJobs.mp4 sits in _tuts with
+                    nowhere to be played from.
+
+                    Stops the toggle ONLY when there is a clip. TutorialIcon
+                    marks itself `has-tutorial` exactly then, so with no clip
+                    the click falls through and opens the card as it always
+                    did -- which is what "the affordance only exists when the
+                    clip does" has to mean for an icon inside a button. */}
+                <span
+                    role="presentation"
+                    onClick={(e) => {
+                        const el = e.target as HTMLElement;
+                        if (el && el.closest && el.closest(".has-tutorial")) e.stopPropagation();
+                    }}
+                >
+                    <TutorialIcon toolId="active-jobs" toolLabel="Active Jobs" className="active-jobs-icon" hover="pop">
+                        <Briefcase size={16} />
+                    </TutorialIcon>
                 </span>
                 <span className="active-jobs-title">Active Jobs</span>
                 <span className="active-jobs-count">

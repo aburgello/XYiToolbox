@@ -524,10 +524,9 @@ $ls-shift: cubic-bezier(0.22, 1, 0.36, 1);    // colour, border, shadow
     color: #eee;
     cursor: pointer;
     box-shadow: none;
-    // A single teal edge keeps it unmistakably the Localise section's tool
-    // without lighting the whole card. Cheaper than a glow and reads at a
-    // glance, which is what "my team need to know it's there" actually needs.
-    border-left: 2px solid var(--cat-icon, #2dd4bf);
+    // No accent edge. A 2px left border against a 12px radius reads as a
+    // sliver hanging off the corner rather than as a rule, and the icon, the
+    // eyebrow and the hover glow already say which section this belongs to.
     transition: border-color 0.3s $ls-shift, box-shadow 0.3s $ls-shift,
         background 0.3s $ls-shift, transform 0.3s $ls-lift;
 
