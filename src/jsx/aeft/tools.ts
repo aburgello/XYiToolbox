@@ -3610,6 +3610,34 @@ export function mcItCollectImages(folder: Folder): File[] {
   return mcItGetAllImageFiles(folder);
 }
 
+/**
+ * Persist a run's report before returning it.
+ *
+ * A long batch OUTLIVES THE PANEL PAGE. The ExtendScript keeps running inside
+ * AE, but the evalTS callback lands in a destroyed page and the result is
+ * lost -- and the panel comes back on the home screen with nothing to show for
+ * the run. The panel's poller reads this on next mount instead.
+ *
+ * Dry runs persist too: their callback dies the same way, the modal labels
+ * them clearly, and Apply still works because the report carries both folder
+ * paths. Every long-running tool that returns an McItResult must call this, or
+ * its results are only as reliable as the page surviving the run.
+ */
+function persistLastReport(result: McItResult): void {
+  try {
+    const dir = new Folder(Folder.userData.fsName + "/XYiToolbox");
+    if (!dir.exists) dir.create();
+    const f = new File(dir.fsName + "/mcit_last_report.json");
+    f.encoding = "UTF-8";
+    if (f.open("w")) {
+      f.write(JSON.stringify(result));
+      f.close();
+    }
+  } catch (e) {
+    /* persistence must never break the run */
+  }
+}
+
 export function mcItDeriveImageFolderFor(aepFolder: Folder): string {
   return mcItDeriveImageFolder(aepFolder);
 }
@@ -3739,25 +3767,7 @@ export const mcIt = (aepFolderPath?: string, imageFolderPath?: string, dryRun?: 
       dryRun: !!dryRun,
     };
 
-    // Persist the report before returning: a long batch outlives a closed
-    // panel (the ExtendScript keeps running inside AE, but the evalTS callback
-    // lands in a destroyed page and the result is lost). The panel's poller
-    // recovers it. Dry runs persist too -- their callback can be lost the
-    // same way, the modal clearly labels them, and Apply still works because
-    // the report carries both folder paths.
-    try {
-      const dir = new Folder(Folder.userData.fsName + "/XYiToolbox");
-      if (!dir.exists) dir.create();
-      const f = new File(dir.fsName + "/mcit_last_report.json");
-      f.encoding = "UTF-8";
-      if (f.open("w")) {
-        f.write(JSON.stringify(result));
-        f.close();
-      }
-    } catch (e) {
-      /* persistence must never break the run */
-    }
-
+    persistLastReport(result);
     return result;
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -4148,7 +4158,7 @@ function ssProjectItems(proj: Project): { item: FootageItem; folder: string }[] 
  * cannot drift apart -- the same split, and for the same reason, as
  * mcItApplyToOpenProject() above.
  */
-function ssApplyToOpenProject(
+export function ssApplyToOpenProject(
   proj: Project,
   aepName: string,
   cands: SupportSwapCandidate[],
@@ -4277,7 +4287,7 @@ function ssApplyToOpenProject(
   return projReport;
 }
 
-function ssCountReplaced(rep: McItProjectReport): number {
+export function ssCountReplaced(rep: McItProjectReport): number {
   let n = 0;
   for (let i = 0; i < rep.items.length; i++) {
     if (rep.items[i].action === "replaced") n++;
@@ -4439,7 +4449,7 @@ export const supportSwap = (
     if (batchFolder) aepFolderOut = batchFolder.fsName;
     else if (app.project && app.project.file && app.project.file.parent) aepFolderOut = app.project.file.parent.fsName;
 
-    return {
+    const out: McItResult = {
       success: true,
       message: message,
       aepFolder: aepFolderOut,
@@ -4456,6 +4466,11 @@ export const supportSwap = (
       toolName: "Support Swap",
       verb: "swapped",
     };
+    // A batch run opens and saves every project in the folder, which is long
+    // enough to outlive the page that asked for it -- see persistLastReport.
+    // Without this the panel came back on the home screen showing nothing.
+    persistLastReport(out);
+    return out;
   } catch (e) {
     return { success: false, error: e.toString() };
   }

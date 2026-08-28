@@ -554,6 +554,10 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
     // derived (<Territory>/JPG_PNG/<Batch>, sibling of the AE folder), never
     // asked for -- see csvLocaliserRun's mcIt setup block.
     const [runMcIt, setRunMcIt] = useState(true);
+    // The .ai/.psd half of the same job. Defaults OFF, unlike MC It!: it needs
+    // a Masters/Support tree, which not every campaign has, and a swap nobody
+    // asked for is worse than one they have to tick.
+    const [runSupportSwap, setRunSupportSwap] = useState(false);
     // Batches whose footage was already swapped by the inline pass this
     // session (keyed by batchKey). Only used to relabel the standalone MC It!
     // button as a deliberate RE-run, so it doesn't read as the expected next
@@ -1260,7 +1264,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                 const f = buildMultiples[r.id];
                 if (f > 1) multiplesForRun[n] = f;
             });
-            const res = await evalTS("csvLocaliserRun", aepPath, csv, skipExisting, runMcIt, JSON.stringify(multiplesForRun));
+            const res = await evalTS("csvLocaliserRun", aepPath, csv, skipExisting, runMcIt, JSON.stringify(multiplesForRun), runSupportSwap);
             if (res === undefined) throw new Error("no bridge");
             if (res.success) {
                 const rrows = (res as { rows?: CsvLocRow[] }).rows || [];
@@ -1810,7 +1814,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
         try {
             const { buildLocaliserCsv } = await import("../lib/pdfSpecs");
             const csv = buildLocaliserCsv({ territory: t.territory, batch: b.batch, sourceFolder: t.sourceFolder, rows: rowsToRun });
-            const res = await evalTS("csvLocaliserRun", aepPath, csv, skipExisting, runMcIt, JSON.stringify(multiplesForRun));
+            const res = await evalTS("csvLocaliserRun", aepPath, csv, skipExisting, runMcIt, JSON.stringify(multiplesForRun), runSupportSwap);
             if (res === undefined) throw new Error("no bridge");
             const rows = (res.success ? (res as { rows?: CsvLocRow[] }).rows : undefined) || [];
             const problems = rows.filter((r) => r.status === "no-master" || r.status === "error").length;
@@ -2141,6 +2145,11 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                         <Tooltip text="Swap each generated file's PNG/JPG footage for the localised versions in the territory's JPG_PNG batch folder, while the file is still open, instead of re-opening every file afterwards with MC It!">
                             <span>
                                 <CheckboxToggle checked={runMcIt} onChange={setRunMcIt} label="Run MC It! inline" />
+                            </span>
+                        </Tooltip>
+                        <Tooltip text="Swap each generated file's .ai/.psd component sources for this market's own, from the territory's Masters/Support, while the file is still open. Needs that folder to exist.">
+                            <span>
+                                <CheckboxToggle checked={runSupportSwap} onChange={setRunSupportSwap} label="Support Swap inline" />
                             </span>
                         </Tooltip>
                     </div>
@@ -3098,6 +3107,11 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                             <Tooltip text="Swap each generated file's PNG/JPG footage for the localised versions in the territory's JPG_PNG batch folder, while the file is still open, instead of re-opening every file afterwards with MC It!">
                                 <span className="specs-build-inline-opt">
                                     <CheckboxToggle checked={runMcIt} onChange={setRunMcIt} label="MC It! inline" />
+                                </span>
+                            </Tooltip>
+                            <Tooltip text="Swap each generated file's .ai/.psd component sources for this market's own, from the territory's Masters/Support, while the file is still open. Needs that folder to exist.">
+                                <span className="specs-build-inline-opt">
+                                    <CheckboxToggle checked={runSupportSwap} onChange={setRunSupportSwap} label="Support Swap inline" />
                                 </span>
                             </Tooltip>
                             <button className="specs-build-run" disabled={busy || !aepPath || !buildTerritory || buildComplete.length === 0} onClick={runBuilder}>

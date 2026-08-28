@@ -6,7 +6,7 @@
 // see its header comment for context.
 // =============================================================================
 import { scaleCompToFit } from "./deliver";
-import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, territoryCheck, parseFilenameMeta, frontcardWrap, cheekyTCheck, organiseFolders, FRONTCARD_LEAD_IN_SECONDS, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, MasterIndexEntry, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, matchCreativeInName, scanMastersForBestMatch, firstSizeToken, ownProjectFolder } from "./tools";
+import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, territoryCheck, parseFilenameMeta, frontcardWrap, cheekyTCheck, organiseFolders, FRONTCARD_LEAD_IN_SECONDS, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, MasterIndexEntry, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, matchCreativeInName, ssFindSupportRoot, ssCollectSupport, ssCreativesOf, ssApplyToOpenProject, ssCountReplaced, SupportSwapCandidate, scanMastersForBestMatch, firstSizeToken, ownProjectFolder } from "./tools";
 import { makeParentLayerOfAllUnparented, scaleAllCameraZooms } from "./deliver";
 import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, saveLocGenReport, buildDeliverableName, durationForMasterLookup, durationDigits, sanitiseSiteToken, camelCaseToken, camelCaseName } from "./shared";
 import { loadCampaignsRaw, loadLastCampaign as loadOVLastCampaign } from "./review";
@@ -3224,7 +3224,10 @@ function csvLocNameGen(
   mcItImages?: File[],
   mcItAepName?: string,
   mcItOut?: McItProjectReport[],
-  repeatFactor?: number
+  repeatFactor?: number,
+  ssCands?: SupportSwapCandidate[],
+  ssCreatives?: string[],
+  ssOut?: McItProjectReport[]
 ): void {
   const scanRegV = /V\d\d/;
   const myName = myComp.name;
@@ -3384,6 +3387,19 @@ function csvLocNameGen(
     }
   }
 
+  // Inline Support Swap -- the .ai/.psd half of the same job, in the same
+  // already-open project and before the same save. Its own try/catch for the
+  // same reason as the images pass above: a component that cannot be matched
+  // must never lose the localisation work that has already succeeded here.
+  if (ssCands && ssCands.length > 0 && mcItAepName) {
+    try {
+      const ssRep = ssApplyToOpenProject(app.project, mcItAepName, ssCands, ssCreatives || [], false);
+      if (ssOut) ssOut.push(ssRep);
+    } catch (ssErr) {
+      /* reported as zero swapped for this row, never fatal */
+    }
+  }
+
   // The project was opened from a working copy already sitting at the
   // correct destination filename (copied from the master before opening),
   // so just save in place -- matches original exactly.
@@ -3414,6 +3430,8 @@ export interface CsvLocRowReport {
   // toggle is off or the row never got as far as generating a file.
   imagesReplaced?: number;
   imagesNote?: string; // why nothing was swapped for this row, if applicable
+  /** Inline Support Swap pass: .ai/.psd component sources swapped on this row. */
+  componentsSwapped?: number;
   // Set when the row was built from a shorter master repeated to length
   // (opted in per row). Worth surfacing: the output is NOT a straight
   // localise of a same-duration master, and someone reading the report later
@@ -3436,6 +3454,12 @@ export interface CsvLocResult {
   mcItReplaced?: number;
   mcItNote?: string; // set when the pass could not run at all (see setup)
   mcItProjects?: McItProjectReport[]; // per-file detail, same shape MC It! returns
+  // Inline Support Swap pass -- all absent/zero when the toggle is off.
+  supportSwapRan?: boolean;
+  supportSwapRoot?: string;
+  supportSwapReplaced?: number;
+  supportSwapNote?: string;
+  supportSwapProjects?: McItProjectReport[];
 }
 
 // `multiplesJson` is a JSON STRING (never a nested object -- evalTS splices
@@ -3559,7 +3583,8 @@ export const csvLocaliserRun = (
   rawCsvText: string,
   skipExisting: boolean,
   runMcIt?: boolean,
-  multiplesJson?: string
+  multiplesJson?: string,
+  runSupportSwap?: boolean
 ): CsvLocResult => {
   csvLocSaveLastPath(mastersPath);
   const multipleRows: { [index: string]: number } = {};
@@ -3675,6 +3700,39 @@ export const csvLocaliserRun = (
     }
   }
   const mcItReports: McItProjectReport[] = [];
+
+  // --- Inline Support Swap setup -------------------------------------------
+  // Same argument as the MC It! pass above, and the same one that made this
+  // worth doing inline at all: the project is already open and about to be
+  // saved, so the .ai/.psd swap costs no extra open/save cycle. Run afterwards
+  // instead and it is a second pass over the whole batch -- which on a real
+  // batch is long enough to outlive the panel page, so the artist lands back
+  // on the home screen with nothing to show for it.
+  //
+  // Gathered ONCE, like the images: the corpus is the same for every row.
+  let ssCands: SupportSwapCandidate[] = [];
+  let ssCreatives: string[] = [];
+  let ssRoot = "";
+  let ssSetupNote = "";
+  if (runSupportSwap) {
+    try {
+      const root = ssFindSupportRoot(outputFolder);
+      if (!root) {
+        ssSetupNote = "No Masters/Support folder found above the batch — component sources were not swapped.";
+      } else {
+        ssRoot = root.fsName;
+        ssCands = ssCollectSupport(root);
+        ssCreatives = ssCreativesOf(ssCands);
+        if (ssCands.length === 0) {
+          ssSetupNote = "Masters/Support holds no .ai/.psd files — component sources were not swapped.";
+        }
+      }
+    } catch (ssErr) {
+      ssSetupNote = "Could not read Masters/Support: " + ssErr.toString();
+      ssCands = [];
+    }
+  }
+  const ssReports: McItProjectReport[] = [];
 
   // Convert the territory name into its country code prefix (e.g. "Spain"
   // -> "ES") -- reuses the already-ported getTerritoryCountryCode() rather
@@ -3866,7 +3924,12 @@ export const csvLocaliserRun = (
       // candidates at the right resolution -- so the swap targets this row's
       // own size, not the master's.
       const rowMcItReports: McItProjectReport[] = [];
-      csvLocNameGen(myComp, width, height, newCompName, plm, mcItImages, newCompName + "_V01.aep", rowMcItReports, repeatFactor);
+      const rowSsReports: McItProjectReport[] = [];
+      csvLocNameGen(myComp, width, height, newCompName, plm, mcItImages, newCompName + "_V01.aep", rowMcItReports, repeatFactor, ssCands, ssCreatives, rowSsReports);
+      if (rowSsReports.length > 0) {
+        ssReports.push(rowSsReports[0]);
+        rep.componentsSwapped = ssCountReplaced(rowSsReports[0]);
+      }
       rep.status = "generated";
       rep.output = newCompName + "_V01.aep";
 
@@ -3911,6 +3974,11 @@ export const csvLocaliserRun = (
     mcItReplacedTotal += mcItCountReplaced(mcItReports[r]);
   }
 
+  let ssReplacedTotal = 0;
+  for (let r = 0; r < ssReports.length; r++) {
+    ssReplacedTotal += ssCountReplaced(ssReports[r]);
+  }
+
   let message = generated + " of " + rowsAttempted + " row(s) generated.";
   if (runMcIt) {
     if (mcItImages.length > 0) {
@@ -3919,6 +3987,14 @@ export const csvLocaliserRun = (
       message += " " + mcItSetupNote;
     }
   }
+  if (runSupportSwap) {
+    if (ssCands.length > 0) {
+      message += " Support Swap replaced " + ssReplacedTotal + " component source(s) inline.";
+    } else if (ssSetupNote !== "") {
+      message += " " + ssSetupNote;
+    }
+  }
+
   const runId = "" + new Date().getTime();
   const finishedAt = new Date().toString();
 
@@ -3967,6 +4043,11 @@ export const csvLocaliserRun = (
     mcItReplaced: mcItReplacedTotal,
     mcItNote: mcItSetupNote,
     mcItProjects: mcItReports,
+    supportSwapRan: runSupportSwap === true && ssCands.length > 0,
+    supportSwapRoot: ssRoot,
+    supportSwapReplaced: ssReplacedTotal,
+    supportSwapNote: ssSetupNote,
+    supportSwapProjects: ssReports,
   };
 };
 // =============================================================================

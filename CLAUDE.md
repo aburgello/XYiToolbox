@@ -298,7 +298,20 @@ confirm raised by a palette action still wins.
   `Number()` NaN and the field re-rendered as 0 mid-type. Canvas W/H keep their
   live string behaviour and only resolve on Enter/blur, so the board still
   reshapes as you type.
-- **A spec sheet's batch opens into Build a Batch, not a modal.** One editor for
+- **A LONG RUN OUTLIVES THE PANEL PAGE, so anything that opens and saves a whole
+batch must run INLINE or persist its report.** The ExtendScript keeps going
+inside AE, but the `evalTS` callback lands in a destroyed page: the panel comes
+back on the **home screen** with the grid gone and nothing to show. That is why
+`mcIt` writes to `userData` before returning and the modal host polls for it on
+mount (`persistLastReport`, shared). It is also why a *second pass* over a
+batch is the wrong shape: Support Swap as a post-Localise button meant a second
+long run, a second lost page, and the artist back at home twice. Both swaps run
+**inline** during `csvLocaliserRun` instead, in the project that is already
+open and before the same save, so one run does both. Every new tool returning
+an `McItResult` from a batch must call `persistLastReport` or its results are
+only as reliable as the page surviving the run.
+
+**A spec sheet's batch opens into Build a Batch, not a modal.** One editor for
   a sheet's rows and a hand-typed batch alike. Two things must travel with the
   rows or they are lost: **`sourceFolder` off the territory scan** (the builder
   otherwise derives `marketsRoot/territory`, and a scanned folder need not be

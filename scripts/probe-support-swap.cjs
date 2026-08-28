@@ -18,12 +18,21 @@ const src = fs.readFileSync('dist/cep/jsx/index.js', 'utf8');
 let tree = {};   // fsName -> child names (a folder); absent means a file
 let projectsOnDisk = {};   // .aep fsName -> the stub project app.open() hands back
 const parentOf = (p) => { const i = String(p).lastIndexOf('/'); return i > 0 ? String(p).slice(0, i) : null; };
-function File(p) { if (!(this instanceof File)) return new File(p); this.fsName = p; this.name = encodeURI(String(p).split('/').pop()); }
+let written = {};   // fsName -> contents, so persistLastReport is observable
+function File(p) {
+    if (!(this instanceof File)) return new File(p);
+    this.fsName = p; this.name = encodeURI(String(p).split('/').pop()); this.encoding = '';
+    this._buf = '';
+    this.open = () => { this._buf = ''; return true; };
+    this.write = (t) => { this._buf += t; return true; };
+    this.close = () => { written[p] = this._buf; return true; };
+}
 Object.defineProperty(File.prototype, 'exists', { get() { return true; } });
 Object.defineProperty(File.prototype, 'parent', { get() { const q = parentOf(this.fsName); return q ? new Folder(q) : null; } });
 function Folder(p) { if (!(this instanceof Folder)) return new Folder(p); this.fsName = p; this.name = encodeURI(String(p).split('/').pop()); }
 Object.defineProperty(Folder.prototype, 'exists', { get() { return Object.prototype.hasOwnProperty.call(tree, this.fsName); } });
 Object.defineProperty(Folder.prototype, 'parent', { get() { const q = parentOf(this.fsName); return q ? new Folder(q) : null; } });
+Folder.prototype.create = function () { tree[this.fsName] = tree[this.fsName] || []; return true; };
 Folder.prototype.getFiles = function () {
     return (tree[this.fsName] || []).map((k) => {
         const p = this.fsName + '/' + k;
@@ -53,6 +62,7 @@ const sandbox = {
     decodeURI, encodeURI, parseInt, parseFloat, isNaN, Math, Date, JSON, String, Number, Array, Object, RegExp, Error,
 };
 sandbox.Folder.selectDialog = () => null;
+sandbox.Folder.userData = new Folder('/userdata');
 sandbox.File.decode = decodeURI;
 const ctx = vm.createContext(sandbox);
 vm.runInContext(src, ctx);
@@ -252,6 +262,29 @@ console.log('\n6. supportSwap() over a batch folder');
     const only = aeft.supportSwap(BATCH, dryB.imageFolder, false, JSON.stringify([b.name]));
     say(only.projects.length === 1 && only.projects[0].aep === b.name, 'unticking leaves exactly one project in the run');
     say(a.saveCount === 0 && a.items.every((i) => i.replacedWith === null), 'and the unticked project was never touched');
+}
+
+// ---------------------------------------------------------------------------
+// 7. the report survives the page that asked for it.
+// ---------------------------------------------------------------------------
+console.log('\n7. a batch run persists its report');
+{
+    const say = (ok, msg, extra) => { if (!ok) fails++; console.log((ok ? '  ok    ' : '  FAIL  ') + msg + (extra ? '   ' + extra : '')); };
+    written = {};
+    sandbox.app.project = null;
+    const r = aeft.supportSwap(T + '/AE/Batch_1', '', true);
+    const path = Object.keys(written).filter((k) => /mcit_last_report\.json$/.test(k))[0];
+    say(!!path, 'it writes the report to userData before returning', path || '(nothing written)');
+    if (path) {
+        const saved = JSON.parse(written[path]);
+        // A batch opens and saves every project in the folder, which outlives
+        // the panel page — the callback lands nowhere and the panel comes back
+        // on the home screen. The poller reads this instead.
+        say(saved.runId === r.runId, 'and it is this run, not a stale one');
+        say(saved.applyExport === 'supportSwap' && saved.dryRun === true,
+            'carrying what the modal needs to offer Apply after a reload');
+        say((saved.projects || []).length === r.projects.length, 'with every project it looked at');
+    }
 }
 
 console.log(fails === 0 ? '\nCLEAN — the rule holds on every real family surveyed.' : '\n' + fails + ' FAILED');
