@@ -100,7 +100,7 @@ const build = () => {
     dir(MASTERS + '/Support/Motion_Components/PORTAL_TO_PARADISE/Edit', ['FID_PORTALTOPARADISE_EDIT_15sec.aep']);
     dir(MASTERS + '/Support/Motion_Components/PORTAL_TO_PARADISE/Tiffs', ['FID_INTL_Portal_48_Sheet_RGB_OV.aep']);
     dir(MASTERS + '/Support/Motion_Components/TRIO', ['Date']);
-    dir(MASTERS + '/Support/Motion_Components/TRIO/Date', ['FID_INTL_Trio_2L_DATE_OV_RGB.aep']);
+    dir(MASTERS + '/Support/Motion_Components/TRIO/Date', ['FID_INTL_Trio_2L_DATE_OV_RGB.aep', 'FID_INTL_Trio_2L_DATE_OV_RGB Precomp.aep']);
     dir(MASTERS + '/Support/Motion_Components/Gutters', ['Date']);
     dir(MASTERS + '/Support/Motion_Components/Gutters/Date', ['FID_INTL_Gutter_DATE_OV_RGB.aep']);
 
@@ -123,7 +123,9 @@ const build = () => {
 // for the market token also matches _TT_, which is how this stub first lied).
 openProject = (aepPath) => {
     const src = (copies.filter((c) => c[1] === aepPath)[0] || [])[0] || aepPath;
-    const stem = String(src).split('/').pop().replace(/\.aep$/, '');
+    // A "X Precomp.aep" is built FROM "X.ai" -- the suffix is the component's,
+    // not the artwork's. That is the whole case section 7 exists for.
+    const stem = String(src).split('/').pop().replace(/\.aep$/, '').replace(/ Precomp$/, '');
     // TT's artwork really is a .psd in the masters tree, and the swap rule
     // requires the extension to match -- an .ai must never stand in for a
     // .psd. A stub that made everything .ai hid that.
@@ -156,19 +158,19 @@ console.log('\n2. a dry run writes nothing');
 const pairs = JSON.stringify([{ component: 'PORTAL_TO_PARADISE', territoryFolder: 'P2P' }, { component: 'TRIO', territoryFolder: 'TRIO' }]);
 const dry = aeft.makeMotionRun(MARKETS, 'Colombia', pairs, true);
 say(dry.success && copies.length === 0 && opened.length === 0, 'nothing copied, nothing opened', `copies=${copies.length} opens=${opened.length}`);
-say(dry.made === 4, 'and it says what it would make (4: 2 dates, 1 TT, 1 trio)', String(dry.made));
+say(dry.made === 5, 'and it says what it would make (2 dates, 1 TT, 1 trio, 1 trio precomp)', String(dry.made));
 
 console.log('\n3. the run copies, relinks and renames');
 build();
 const real = aeft.makeMotionRun(MARKETS, 'Colombia', pairs, false);
 for (const f of real.files) console.log('        ' + f.status.padEnd(8) + (f.to || f.from) + (f.reason ? '   (' + f.reason.slice(0, 46) + ')' : ''));
-say(real.success && real.made === 4, '4 made', String(real.made));
+say(real.success && real.made === 5, '5 made', String(real.made));
 const names = copies.map((c) => c[1].split('/').pop());
 say(names.indexOf('FID_INTL_Portal_2L_DATE_CO_RGB.aep') !== -1,
     'the component is renamed with the market token read off the artwork (CO)', names.join(', ').slice(0, 60));
 say(copies.every((c) => c[1].indexOf('/Colombia/Test_Support/') !== -1), 'everything lands in Test_Support');
 say(copies.every((c) => c[0].indexOf('/Motion_Components/') !== -1), 'and everything is copied FROM the templates, never written to them');
-say(real.relinked === 4 && saved === 4, 'each copy was relinked and saved', `relinked=${real.relinked} saved=${saved}`);
+say(real.relinked === 5 && saved === 5, 'each copy was relinked and saved', `relinked=${real.relinked} saved=${saved}`);
 say(!copies.some((c) => /EDIT_15sec|48_Sheet/.test(c[1])), 'Edit and Tiffs were not copied');
 
 console.log('\n4. it never derives the market code from the country name');
@@ -194,6 +196,23 @@ const lone = aeft.makeMotionRun(MARKETS, 'Colombia', JSON.stringify([{ component
 say(lone.made === 0 && copies.length === 0, 'nothing copied when no artwork is one token away', String(lone.made));
 say((lone.files[0] || {}).status === 'skipped' && /nothing to localise/.test((lone.files[0] || {}).reason || ''),
     'and it says why', (lone.files[0] || {}).reason);
+
+console.log('\n7. a component whose name carries a trailing word its artwork does not');
+{
+    // Real: FID_INTL_Trio_2L_DATE_OV_RGB Precomp.aep is built from
+    // FID_INTL_Trio_2L_DATE_OV_RGB.ai. One token more than its artwork, so
+    // "exactly one token differs" found nothing and called the artwork missing
+    // while it sat in the same folder.
+    build();
+    const r = aeft.makeMotionRun(MARKETS, 'Colombia', pairs, false);
+    const names = copies.map((c) => c[1].split('/').pop());
+    say(names.indexOf('FID_INTL_Trio_2L_DATE_CO_RGB Precomp.aep') !== -1,
+        'it is made, and KEEPS its trailing word while the market token moves', names.filter((n) => /Precomp/.test(n)).join(', ') || '(not made)');
+    say(names.indexOf('FID_INTL_Trio_2L_DATE_CO_RGB.aep') !== -1,
+        'and the plain one beside it is still made from the same artwork');
+    const row = r.files.filter((f) => /Precomp/.test(f.from))[0];
+    say(row && row.status === 'made' && row.relinked === 1, 'with its artwork relinked, not reported missing', row ? `${row.status}/${row.relinked}` : 'no row');
+}
 
 console.log(fails === 0 ? '\nCLEAN — it pairs nothing on its own, and writes only what the preview promised.' : '\n' + fails + ' FAILED');
 process.exit(fails ? 1 : 0);

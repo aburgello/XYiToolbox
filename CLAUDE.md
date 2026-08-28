@@ -647,6 +647,14 @@ and the relink is **Support Swap's rule unchanged**. Rules:
 - **Comparing a `.aep` to its `.ai`/`.psd` crosses file types on purpose**, so
   the extensions come off before `ssOneTokenDiff` rather than the rule being
   loosened — an `.ai` must still never stand in for a `.psd` inside Support Swap.
+- **A component may carry a trailing word its artwork does not.**
+  `…_OV_RGB Precomp.aep` is built from `…_OV_RGB.ai`, one token more, so the
+  count check failed and it reported the artwork missing while it sat in the
+  same folder. One trailing space-separated word is dropped from the TEMPLATE
+  only, and only after the direct comparison has already failed: it can only
+  shorten the component's name towards its artwork's, so it can never reach
+  different artwork than the full name would. The suffix survives the rename
+  (`…_HR_RGB Precomp.aep`).
 - Writes only into a NEW `<Territory>/Test_Support`, **never overwrites** an
   existing destination file (a second run must not discard somebody's work),
   and never writes to `Motion_Components`. `Edit/` and `Tiffs/` are skipped by

@@ -1755,6 +1755,25 @@ function mmStem(name: string): string {
   return dot > 0 ? n.substring(0, dot) : n;
 }
 
+/**
+ * A component may carry a trailing word its artwork does not.
+ *
+ * `FID_INTL_Trio_2L_DATE_OV_RGB Precomp.aep` is built FROM
+ * `FID_INTL_Trio_2L_DATE_OV_RGB.ai` -- confirmed by reading the template --
+ * but it has one token more, and "exactly one token differs" needs the counts
+ * to match, so it found nothing and reported the artwork as missing when the
+ * artwork was sitting right there.
+ *
+ * Stripped from the TEMPLATE only, one word only, and only after the direct
+ * comparison has already failed. It can only ever make the component's name
+ * shorter towards its artwork's, so it cannot reach a different piece of
+ * artwork than the full name would have.
+ */
+function mmDropTrailingWord(stem: string): string {
+  const at = stem.lastIndexOf(" ");
+  return at > 0 ? stem.substring(0, at) : stem;
+}
+
 function mmMarketTokenFor(templateName: string, cands: SupportSwapCandidate[]): string {
   // STEMS, because this comparison crosses file types on purpose: the template
   // is the .aep and its artwork is the .ai/.psd it was built from, and they
@@ -1763,9 +1782,11 @@ function mmMarketTokenFor(templateName: string, cands: SupportSwapCandidate[]): 
   // (an .ai must not stand in for a .psd) and wrong here, so the extensions
   // come off before the comparison rather than the rule being loosened.
   const want = mmStem(templateName);
+  const shorter = mmDropTrailingWord(want);
   for (let i = 0; i < cands.length; i++) {
     const candStem = mmStem(decode(cands[i].file.name));
-    const at = ssOneTokenDiff(want, candStem);
+    let at = ssOneTokenDiff(want, candStem);
+    if (at === -1 && shorter !== want) at = ssOneTokenDiff(shorter, candStem);
     if (at === -1) continue;
     return ssTokensOf(candStem)[at];
   }
