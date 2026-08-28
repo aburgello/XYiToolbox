@@ -663,10 +663,26 @@ and the relink is **Support Swap's rule unchanged**. Rules:
   what it is a precomp OF, so it carries the token too. The swap runs on a bare
   name with no extension handling: stripping one would eat the tail of any comp
   with a dot in it.
-- Writes only into a NEW `<Territory>/Test_Support`, **never overwrites** an
-  existing destination file (a second run must not discard somebody's work),
-  and never writes to `Motion_Components`. `Edit/` and `Tiffs/` are skipped by
-  studio decision: neither is a component and neither carries a market token.
+- **A component with no artwork yet is COPIED, not skipped** — under its own
+  OV name, which cannot read as localised. Skipping left nothing on disk to
+  come back to and no way to tell "this market never needed it" from "the
+  artwork hasn't arrived". A later run finds that copy, **renames it in place
+  and relinks it**, so the answer to "the artwork landed, now what" is to press
+  the same button again. The rename happens BEFORE the open: renaming a file AE
+  is holding is asking for trouble.
+- **The destination is an argument** (`Test_Support` by default,
+  `Support_Motion` once this is trusted) so the two can never become different
+  operations. It is **sanitised**, because it becomes a path segment and a
+  caller sending `../AE` would write outside the territory. Not remembered
+  between territories: pointing this at the real folder should be a decision
+  made on the day, not a setting somebody forgets is on.
+- The scan reports every `.aep` already under `Support_Motion` **by filename**,
+  never by path — that tree's shape differs market to market, so a path
+  comparison answers nothing.
+- **Never overwrites a LOCALISED destination file** (a second run must not
+  discard somebody's work), and never writes to `Motion_Components`. `Edit/`
+  and `Tiffs/` are skipped by studio decision: neither is a component and
+  neither carries a market token.
 - `node scripts/probe-make-motion.cjs` guards all of it.
 
 **Localised Library mirrors `Support_Motion`'s creative folders, when it has

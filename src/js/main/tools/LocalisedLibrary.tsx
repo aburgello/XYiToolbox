@@ -79,6 +79,7 @@ interface MakeMotionScan {
     pairs?: { component: string; territoryFolder: string; auto?: boolean }[];
     unmatchedTerritory?: string[];
     unmatchedComponents?: string[];
+    supportMotionAeps?: string[];
 }
 
 interface MakeMotionResult {
@@ -87,13 +88,14 @@ interface MakeMotionResult {
     destRoot?: string;
     dryRun?: boolean;
     made?: number;
+    waiting?: number;
     relinked?: number;
     compsRenamed?: number;
     message?: string;
     files?: {
         component: string; category: string; from: string; to?: string;
         relinked?: number; compsRenamed?: number;
-        status: "made" | "exists" | "skipped" | "error"; reason?: string;
+        status: "made" | "waiting" | "exists" | "skipped" | "error"; reason?: string;
     }[];
 }
 
@@ -316,6 +318,11 @@ const LocalisedLibraryTool = () => {
     const [makeScan, setMakeScan] = useState<MakeMotionScan | null>(null);
     const [makePairs, setMakePairs] = useState<Record<string, string>>({});
     const [makePreview, setMakePreview] = useState<MakeMotionResult | null>(null);
+    // WHERE IT BUILDS. Test_Support while this is being proven; Support_Motion
+    // once it is, which is the whole switch. Deliberately not remembered
+    // between territories -- writing into the real folder should be a decision
+    // somebody makes each time, not a setting they forget is on.
+    const [makeDest, setMakeDest] = useState("Test_Support");
 
     // Batch-import selection -- component paths (unique enough as a key
     // since a real library never has two components sharing a source
@@ -632,6 +639,7 @@ const LocalisedLibraryTool = () => {
         if (!selectedCampaign || !selectedTerritory) return;
         setMakeBusy(true);
         setMakePreview(null);
+        setMakeDest("Test_Support");
         try {
             const res = (await safeEvalTS("makeMotionScan", selectedCampaign.marketsRoot, selectedTerritory)) as MakeMotionScan | undefined;
             if (!res) return;
@@ -661,7 +669,7 @@ const LocalisedLibraryTool = () => {
             // saves a project per component, which passes 15s on any territory
             // with more than a handful.
             const call = dryRun ? safeEvalTS : evalTS;
-            const res = (await call("makeMotionRun", selectedCampaign.marketsRoot, selectedTerritory, JSON.stringify(pairs), dryRun)) as MakeMotionResult | undefined;
+            const res = (await call("makeMotionRun", selectedCampaign.marketsRoot, selectedTerritory, JSON.stringify(pairs), dryRun, makeDest)) as MakeMotionResult | undefined;
             if (!res) return;
             if (!res.success) { pushToast(res.error || "Make the Motion failed.", "error"); return; }
             setMakePreview(res);
@@ -1692,7 +1700,7 @@ const LocalisedLibraryTool = () => {
                                 <div className="mm-title">Make {selectedTerritory}&apos;s Motion</div>
                                 <div className="mm-subtitle">
                                     {(makeScan.components || []).length} creative{(makeScan.components || []).length === 1 ? "" : "s"} in the
-                                    master templates · writes to <strong>{selectedTerritory}/Test_Support</strong>
+                                    master templates · writes to <strong>{selectedTerritory}/{makeDest}</strong>
                                 </div>
                             </div>
                             <button className="mm-close" onClick={() => { setMakeScan(null); setMakePreview(null); }}>
@@ -1703,9 +1711,36 @@ const LocalisedLibraryTool = () => {
                         <div className="mm-body">
                             {!makePreview && (
                                 <>
+                                    {/* WHERE IT BUILDS, with the count of what is
+                                        already in Support_Motion beside it — the
+                                        thing you want to know before pointing this
+                                        at the real folder. Matched on FILENAME:
+                                        Support_Motion's own shape differs market to
+                                        market, so a path comparison answers
+                                        nothing. */}
+                                    <div className="mm-dest">
+                                        <span className="mm-dest-label">Build into</span>
+                                        {["Test_Support", "Support_Motion"].map((d) => (
+                                            <button
+                                                key={d}
+                                                type="button"
+                                                className={"mm-dest-pick" + (makeDest === d ? " is-on" : "")}
+                                                onClick={() => setMakeDest(d)}
+                                            >
+                                                {d}
+                                            </button>
+                                        ))}
+                                        <span className="mm-dest-note">
+                                            {(makeScan.supportMotionAeps || []).length > 0
+                                                ? `Support_Motion already holds ${(makeScan.supportMotionAeps || []).length} .aep`
+                                                : "Support_Motion holds no .aep yet"}
+                                        </span>
+                                    </div>
+
                                     <p className="mm-lead">
                                         Each creative takes its artwork from one folder in {selectedTerritory}&apos;s
-                                        Masters/Support. Leave one blank to skip it.
+                                        Masters/Support. Leave one blank to skip it. A creative with no artwork yet is
+                                        copied under its own name, ready for a re-run once it arrives.
                                     </p>
                                     {(makeScan.components || []).map((c) => (
                                         <div key={c.name} className="mm-pair">
@@ -1758,7 +1793,7 @@ const LocalisedLibraryTool = () => {
                             <span className="mm-foot-count">
                                 {makePreview
                                     ? makePreview.message
-                                    : `${pairsForRun().length} of ${(makeScan.components || []).length} paired`}
+                                    : `${pairsForRun().length} of ${(makeScan.components || []).length} paired · into ${makeDest}`}
                             </span>
                             {makePreview && makePreview.dryRun && (
                                 <button className="mm-back" onClick={() => setMakePreview(null)}>Back to pairing</button>

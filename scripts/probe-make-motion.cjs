@@ -18,6 +18,7 @@ const src = fs.readFileSync('dist/cep/jsx/index.js', 'utf8');
 
 let tree = {};        // fsName -> child names (a folder); absent means a file
 let copies = [];      // [from, to]
+let renames = [];     // [oldName, newName]
 let opened = [];      // .aep paths app.open() was called on
 let saved = 0;
 const parentOf = (p) => { const i = String(p).lastIndexOf('/'); return i > 0 ? String(p).slice(0, i) : null; };
@@ -26,6 +27,13 @@ function File(p) {
     if (!(this instanceof File)) return new File(p);
     this.fsName = p; this.name = encodeURI(String(p).split('/').pop()); this.encoding = '';
     this.copy = (dest) => { copies.push([p, dest]); tree[parentOf(dest)] = (tree[parentOf(dest)] || []).concat(String(dest).split('/').pop()); return true; };
+    this.rename = (newName) => {
+        const dir = parentOf(p); const leaf = String(p).split('/').pop();
+        if (!tree[dir]) return false;
+        tree[dir] = tree[dir].map((n) => (n === leaf ? newName : n));
+        renames.push([leaf, newName]);
+        return true;
+    };
     this.open = () => true; this.write = () => true; this.close = () => true;
 }
 Object.defineProperty(File.prototype, 'exists', {
@@ -88,7 +96,7 @@ const MARKETS = JOB + '/XY026040_Markets';
 const dir = (p, kids) => { tree[p] = kids; };
 
 const build = () => {
-    tree = {}; copies = []; opened = []; saved = 0;
+    tree = {}; copies = []; renames = []; opened = []; saved = 0;
     dir(JOB, ['XY026039_Masters', 'XY026040_Markets']);
     dir(MASTERS, ['Support']);
     dir(MASTERS + '/Support', ['Motion_Components']);
@@ -122,7 +130,14 @@ const build = () => {
 // through the copy that made it, not guessed from the new filename (a regex
 // for the market token also matches _TT_, which is how this stub first lied).
 openProject = (aepPath) => {
-    const src = (copies.filter((c) => c[1] === aepPath)[0] || [])[0] || aepPath;
+    let src = (copies.filter((c) => c[1] === aepPath)[0] || [])[0];
+    if (!src) {
+        // Resumed: the copy was made under the template's own name and renamed
+        // in place, so walk the rename back to find which template it was.
+        const leaf = String(aepPath).split('/').pop();
+        const was = (renames.filter((r) => r[1] === leaf)[0] || [])[0] || leaf;
+        src = (copies.filter((c) => String(c[1]).split('/').pop() === was)[0] || [])[0] || aepPath;
+    }
     // A "X Precomp.aep" is built FROM "X.ai" -- the suffix is the component's,
     // not the artwork's. That is the whole case section 7 exists for.
     const stem = String(src).split('/').pop().replace(/\.aep$/, '').replace(/ Precomp$/, '');
@@ -200,13 +215,6 @@ const again = aeft.makeMotionRun(MARKETS, 'Colombia', pairs, false);
 say(again.files.every((f) => f.status === 'exists' || f.status === 'skipped'), 'every file reports "exists" rather than being overwritten');
 say(again.made === 0, 'and nothing is remade', String(again.made));
 
-console.log('\n6. a creative with no matching artwork is skipped, not half-made');
-build();
-const lone = aeft.makeMotionRun(MARKETS, 'Colombia', JSON.stringify([{ component: 'Gutters', territoryFolder: 'BOOMBOX' }]), false);
-say(lone.made === 0 && copies.length === 0, 'nothing copied when no artwork is one token away', String(lone.made));
-say((lone.files[0] || {}).status === 'skipped' && /nothing to localise/.test((lone.files[0] || {}).reason || ''),
-    'and it says why', (lone.files[0] || {}).reason);
-
 console.log('\n7. a component whose name carries a trailing word its artwork does not');
 {
     // Real: FID_INTL_Trio_2L_DATE_OV_RGB Precomp.aep is built from
@@ -240,6 +248,50 @@ console.log('\n8. the comps inside are renamed too');
     say(all.filter((n) => n === 'Frontcard').length === seen.length,
         'a comp with no market token is left exactly as it was');
     say(r.compsRenamed === 5, 'and it counts what it renamed', String(r.compsRenamed));
+}
+
+console.log('\n9. a component with no artwork yet is copied and waits');
+{
+    build();
+    // Gutters has a component; Colombia's BOOMBOX has nothing one token from it.
+    const only = JSON.stringify([{ component: 'Gutters', territoryFolder: 'BOOMBOX' }]);
+    const r = aeft.makeMotionRun(MARKETS, 'Colombia', only, false);
+    const row = r.files[0];
+    say(row && row.status === 'waiting', 'it is copied rather than skipped', row && row.status);
+    say(copies.length === 1 && /FID_INTL_Gutter_DATE_OV_RGB\.aep$/.test(copies[0][1]),
+        'and lands under its OWN name, so it cannot read as localised', copies.map((c) => c[1].split('/').pop()).join(', '));
+    say(r.waiting === 1 && r.made === 0, 'counted as waiting, not as made', `waiting=${r.waiting} made=${r.made}`);
+    say(opened.length === 0, 'nothing was opened for it — there was nothing to relink');
+
+    // A second run with still no artwork must not copy it again.
+    const again = aeft.makeMotionRun(MARKETS, 'Colombia', only, false);
+    say(again.files[0].status === 'exists' && copies.length === 1, 'a re-run with no artwork leaves it alone', String(copies.length));
+}
+
+console.log('\n10. the artwork arrives, and a re-run finishes it');
+{
+    // Same run, then give BOOMBOX the artwork Gutters needs.
+    tree[MARKETS + '/Colombia/Masters/Support/BOOMBOX/Date'] = ['FID_INTL_Gutter_DATE_CO_RGB.ai'];
+    const before = copies.length;
+    const r = aeft.makeMotionRun(MARKETS, 'Colombia', JSON.stringify([{ component: 'Gutters', territoryFolder: 'BOOMBOX' }]), false);
+    const row = r.files[0];
+    say(row && row.status === 'made', 'the waiting copy is finished', row && row.status);
+    say(copies.length === before, 'without copying it a second time', `copies=${copies.length}`);
+    say(renames.some((x) => x[1] === 'FID_INTL_Gutter_DATE_CO_RGB.aep'), 'it is renamed in place', renames.map((x) => x[1]).join(', '));
+    say(row.relinked === 1, 'and relinked to the artwork that arrived', String(row.relinked));
+    say(/Was waiting on artwork/.test(row.reason || ''), 'and says that is what happened', row.reason);
+}
+
+console.log('\n11. it can build into Support_Motion instead');
+{
+    build();
+    const r = aeft.makeMotionRun(MARKETS, 'Colombia', pairs, false, 'Support_Motion');
+    say(copies.every((c) => c[1].indexOf('/Colombia/Support_Motion/') !== -1), 'everything lands there instead', copies[0] ? copies[0][1] : '');
+    // A destination is a path segment, so it cannot be allowed to climb out.
+    build();
+    const escaped = aeft.makeMotionRun(MARKETS, 'Colombia', pairs, false, '../../AE');
+    say(copies.every((c) => c[1].indexOf('/Colombia/AE/') !== -1 && c[1].indexOf('..') === -1),
+        'and a destination that tries to climb out is sanitised, not obeyed', copies[0] ? copies[0][1] : '');
 }
 
 console.log(fails === 0 ? '\nCLEAN — it pairs nothing on its own, and writes only what the preview promised.' : '\n' + fails + ' FAILED');

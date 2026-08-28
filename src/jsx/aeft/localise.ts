@@ -1629,6 +1629,34 @@ export interface MakeMotionScan {
   unmatchedTerritory?: string[];
   /** Components this territory has no artwork folder for. */
   unmatchedComponents?: string[];
+  /**
+   * Every .aep filename already somewhere under this territory's
+   * Support_Motion, so the panel can say which components are a duplicate of
+   * work that exists and which would be new.
+   *
+   * BY FILENAME, not by path. Support_Motion's own shape is inconsistent
+   * across markets -- a creative level in some, category folders straight in
+   * others, files loose in a third -- so a path comparison answers nothing.
+   * The name is the part that is stable.
+   */
+  supportMotionAeps?: string[];
+}
+
+/** Every .aep filename under a folder, at any depth, "_" folders excluded. */
+function mmCollectAeps(folder: Folder, out: string[], depth: number): void {
+  if (depth > 6 || !folder.exists) return;
+  const items = folder.getFiles();
+  for (let i = 0; i < items.length; i++) {
+    if (items[i] instanceof Folder) {
+      const n = decode(items[i].name);
+      if (n.charAt(0) === "_") continue;
+      if (n.toLowerCase().indexOf("auto-save") !== -1) continue;
+      mmCollectAeps(items[i] as Folder, out, depth + 1);
+    } else if (items[i] instanceof File) {
+      const n = decode(items[i].name);
+      if (n.toLowerCase().slice(-4) === ".aep") out.push(n);
+    }
+  }
 }
 
 /**
@@ -1698,9 +1726,13 @@ export const makeMotionScan = (marketsRoot: string, territory: string): MakeMoti
       if (!usedComp[components[i].name]) unmatchedComponents.push(components[i].name);
     }
 
+    const smAeps: string[] = [];
+    mmCollectAeps(new Folder(terrFolder.fsName + "/Support_Motion"), smAeps, 0);
+
     return {
       success: true,
       territory: territory,
+      supportMotionAeps: smAeps,
       componentsRoot: mc.fsName,
       supportRoot: support.exists ? support.fsName : "",
       components: components,
@@ -1725,7 +1757,9 @@ export interface MakeMotionFile {
   relinked?: number;
   /** Comps inside it whose own name carried the OV token. */
   compsRenamed?: number;
-  status: "made" | "exists" | "skipped" | "error";
+  /** `waiting` = copied under its own name, no artwork for it in this market
+   *  yet. A later run finds it and finishes it. */
+  status: "made" | "waiting" | "exists" | "skipped" | "error";
   reason?: string;
 }
 
@@ -1737,6 +1771,8 @@ export interface MakeMotionResult {
   destRoot?: string;
   dryRun?: boolean;
   made?: number;
+  /** Copied but not localised: this market has no artwork for them yet. */
+  waiting?: number;
   relinked?: number;
   compsRenamed?: number;
   files?: MakeMotionFile[];
@@ -1873,16 +1909,22 @@ function mmRenameComps(proj: Project, token: string): number {
  * dryRun copies NOTHING and opens nothing. It reports the same file list, so
  * the preview and the run cannot describe different work.
  *
- * Writes into <Territory>/Test_Support, a NEW folder alongside Support_Motion.
- * Nothing here writes to Motion_Components, and an existing destination file is
- * left alone rather than overwritten -- a second run must not quietly discard
- * work somebody has already done in one of these.
+ * Writes into <Territory>/<destFolderName>, default Test_Support and alongside
+ * Support_Motion. Nothing here writes to Motion_Components, and a LOCALISED
+ * destination file is left alone rather than overwritten -- a second run must
+ * not quietly discard work somebody has already done in one of these.
+ *
+ * RE-RUNNABLE ON PURPOSE. A component this market has no artwork for yet is
+ * copied under its own OV name rather than skipped, and a later run finds that
+ * copy, renames it and relinks it once the artwork arrives. So the answer to
+ * "the artwork landed, now what" is to press the same button again.
  */
 export const makeMotionRun = (
   marketsRoot: string,
   territory: string,
   pairsJson: string,
-  dryRun?: boolean
+  dryRun?: boolean,
+  destFolderName?: string
 ): MakeMotionResult => {
   try {
     const terrFolder = new Folder(marketsRoot + "/" + territory);
@@ -1898,7 +1940,14 @@ export const makeMotionRun = (
     }
     if (pairs.length === 0) return { success: false, error: "Nothing paired -- pair at least one creative first." };
 
-    const destRoot = new Folder(terrFolder.fsName + "/Test_Support");
+    // Test_Support while this is being proven, Support_Motion once it is --
+    // the switch is this argument and nothing else, so the two cannot end up
+    // being different operations. Sanitised rather than trusted: it becomes a
+    // path segment, and a caller sending "../AE" would write outside the
+    // territory entirely.
+    let destName = String(destFolderName || "Test_Support").replace(/[^A-Za-z0-9_\- ]/g, "");
+    if (!destName) destName = "Test_Support";
+    const destRoot = new Folder(terrFolder.fsName + "/" + destName);
     if (!dryRun && !destRoot.exists && !destRoot.create()) {
       return { success: false, error: "Could not create " + destRoot.fsName };
     }
@@ -1907,6 +1956,7 @@ export const makeMotionRun = (
     let made = 0;
     let relinkedTotal = 0;
     let compsTotal = 0;
+    let waiting = 0;
 
     for (let p = 0; p < pairs.length; p++) {
       const comp = String(pairs[p].component || "");
@@ -1942,24 +1992,21 @@ export const makeMotionRun = (
           const outName = mmRenameWithToken(srcName, token);
           const rec: MakeMotionFile = { component: comp, category: catName, from: srcName, to: outName };
 
-          if (!token) {
-            // Nothing in this market's artwork is one token from it, so there
-            // is nothing to relink and nothing to rename it to. Copied anyway
-            // would be a file that looks localised and is not.
-            rec.status = "skipped";
-            rec.reason = "No artwork in " + terrName + " matches this component, so there is nothing to localise it to.";
-            rec.to = undefined;
-            files.push(rec);
-            continue;
-          }
-
           const destCat = new Folder(destRoot.fsName + "/" + comp + "/" + catName);
           const destFile = new File(destCat.fsName + "/" + outName);
+          // Where an UNLOCALISED copy of this component would be: its template
+          // name, untouched. A run with no artwork to work from leaves one of
+          // these, and a later run finds it and finishes the job.
+          const restFile = new File(destCat.fsName + "/" + srcName);
 
           if (dryRun) {
-            rec.status = "made";
+            if (destFile.exists) { rec.status = "exists"; rec.reason = "Already localised."; }
+            else if (!token && restFile.exists) { rec.status = "exists"; rec.reason = "Copied, still waiting on " + terrName + "'s artwork."; }
+            else if (!token) { rec.status = "waiting"; rec.reason = "No artwork in " + terrName + " matches it yet — copied as-is, ready for a re-run."; rec.to = srcName; }
+            else if (restFile.exists) { rec.status = "made"; rec.reason = "Already copied — this run would localise it."; }
+            else rec.status = "made";
+            if (rec.status === "made") made++;
             files.push(rec);
-            made++;
             continue;
           }
 
@@ -1968,16 +2015,54 @@ export const makeMotionRun = (
           if (!compDir.exists) compDir.create();
           if (!destCat.exists) destCat.create();
 
-          // NEVER OVERWRITE. A second run over a territory somebody has
-          // already worked in must not discard what they did.
+          // NEVER OVERWRITE A LOCALISED ONE. A second run over a territory
+          // somebody has already worked in must not discard what they did.
           if (destFile.exists) {
             rec.status = "exists";
-            rec.reason = "Already there -- left alone.";
+            rec.reason = "Already localised — left alone.";
             files.push(rec);
             continue;
           }
 
-          if (!srcFile.copy(destFile.fsName)) {
+          // NO ARTWORK YET: copy it anyway, under its own name.
+          //
+          // It used to be skipped entirely, which left nothing on disk to
+          // come back to and no way to tell "this market never needed it"
+          // from "the artwork has not arrived". A copy keeping its OV name
+          // cannot be mistaken for a localised file -- the name is the honest
+          // part -- and it is what a later run picks up and finishes.
+          if (!token) {
+            rec.to = srcName;
+            if (restFile.exists) {
+              rec.status = "exists";
+              rec.reason = "Copied already, still waiting on " + terrName + "'s artwork.";
+            } else if (!srcFile.copy(restFile.fsName)) {
+              rec.status = "error";
+              rec.reason = "Could not copy to " + restFile.fsName;
+            } else {
+              rec.status = "waiting";
+              rec.reason = "No artwork in " + terrName + " matches it yet. Copied as-is — run this again once it arrives.";
+              waiting++;
+            }
+            files.push(rec);
+            continue;
+          }
+
+          // FINISH ONE LEFT WAITING, rather than copying a second time. The
+          // rename happens BEFORE the open: renaming a file AE is holding is
+          // asking for trouble, and this way the project is opened at the name
+          // it will keep.
+          let toOpen = destFile;
+          let resumed = false;
+          if (restFile.exists) {
+            if (!restFile.rename(outName)) {
+              rec.status = "error";
+              rec.reason = "Could not rename the waiting copy to " + outName;
+              files.push(rec);
+              continue;
+            }
+            resumed = true;
+          } else if (!srcFile.copy(destFile.fsName)) {
             rec.status = "error";
             rec.reason = "Could not copy to " + destFile.fsName;
             files.push(rec);
@@ -1988,7 +2073,7 @@ export const makeMotionRun = (
             // The copy, never the template. losOpenForEdit would copy-first on
             // an OV name, which is exactly wrong here: this IS the copy, and
             // it is about to stop being an OV name.
-            const proj = app.open(destFile);
+            const proj = app.open(toOpen);
             if (!proj) {
               rec.status = "error";
               rec.reason = "Copied, but the project would not open.";
@@ -2005,6 +2090,7 @@ export const makeMotionRun = (
             proj.save();
             $.sleep(400);
             rec.status = "made";
+            if (resumed) rec.reason = "Was waiting on artwork — finished now.";
             made++;
           } catch (openErr) {
             rec.status = "error";
@@ -2017,7 +2103,8 @@ export const makeMotionRun = (
 
     const message = dryRun
       ? made + " component(s) would be made in " + territory + "'s Test_Support."
-      : made + " component(s) made, " + relinkedTotal + " artwork link(s) pointed at " + territory + "'s own, " + compsTotal + " comp(s) renamed.";
+      : made + " component(s) made, " + relinkedTotal + " artwork link(s) pointed at " + territory + "'s own, " + compsTotal + " comp(s) renamed."
+        + (waiting > 0 ? " " + waiting + " copied and waiting on artwork." : "");
 
     return {
       success: true,
@@ -2025,6 +2112,7 @@ export const makeMotionRun = (
       destRoot: destRoot.fsName,
       dryRun: dryRun === true,
       made: made,
+      waiting: waiting,
       relinked: relinkedTotal,
       compsRenamed: compsTotal,
       files: files,
