@@ -629,6 +629,30 @@ the same tie Support Swap refuses to guess; and the source tree's own `.ai`/
 the same filename — those are one file kept in two places, and two rows for it
 is the duplicate this library has been bitten by before.
 
+**Make the Motion stands a territory up from the master templates, and PAIRS
+NOTHING ON ITS OWN.** `Motion_Components/<CREATIVE>/<Category>/*.aep`
+references its artwork out of `Masters/AE/<CREATIVE>/Footage/Artwork`, and the
+territory holds the same filename with one market token swapped under
+`<Territory>/Masters/Support/<Creative>/`. So the job is copy → relink → rename,
+and the relink is **Support Swap's rule unchanged**. Rules:
+
+- **The pairing is an argument, never a guess.** Squashing resolves most
+  creative folders across the two trees, but real markets carry `P2P`,
+  `PORTAL`, `PAYOFF_Fist` and `BOOMBOX`, which match nothing by rule and the
+  WRONG creative by guess. Unmatched folders come back for a person to pair or
+  skip, and `makeMotionRun` takes the corrected pairing rather than recomputing.
+- **The market token is read off the artwork, not derived from the country** —
+  the same reason as Support Swap (Chile's components are `_CH_`, not `_CL_`).
+  Whatever token the artwork differs by is what the component is renamed to.
+- **Comparing a `.aep` to its `.ai`/`.psd` crosses file types on purpose**, so
+  the extensions come off before `ssOneTokenDiff` rather than the rule being
+  loosened — an `.ai` must still never stand in for a `.psd` inside Support Swap.
+- Writes only into a NEW `<Territory>/Test_Support`, **never overwrites** an
+  existing destination file (a second run must not discard somebody's work),
+  and never writes to `Motion_Components`. `Edit/` and `Tiffs/` are skipped by
+  studio decision: neither is a component and neither carries a market token.
+- `node scripts/probe-make-motion.cjs` guards all of it.
+
 **Localised Library mirrors `Support_Motion`'s creative folders, when it has
 them.** Territories started carrying a folder per creative
 (`Support_Motion/Bracelet/MCs_Taglines/…`), and the scan flattened everything
@@ -978,6 +1002,10 @@ tree for exercising real scan/reveal paths inside AE.
 bundle's `tutorialsList` against a stubbed filesystem whose `File.exists` and
 `getFiles(mask)` THROW — so an edit that reaches for either on the share fails
 the probe instead of failing silently on the NAS.
+
+`node scripts/probe-make-motion.cjs` (after `yarn build`) drives
+`makeMotionScan`/`makeMotionRun` over a stubbed campaign pair. Stubbed and not
+negotiable: the real thing writes into 28 live territory folders.
 
 `node scripts/probe-loclib-creatives.cjs` (after `yarn build`) drives
 `autoPopulateLocLib` over a stubbed Markets tree carrying BOTH shapes — one

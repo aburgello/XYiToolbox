@@ -3895,6 +3895,8 @@ export interface SupportSwapCandidate {
 }
 
 /** Name minus its extension, split on underscores AND spaces. */
+export function ssTokensOf(name: string): string[] { return ssTokens(name); }
+
 function ssTokens(name: string): string[] {
   let stem = String(name);
   const dot = stem.lastIndexOf(".");

@@ -468,7 +468,7 @@ function collectEdits(creativeFolder: Folder): { edits: ArtworkEdit[]; folders: 
  * pattern-matching a campaign name -- job numbers and the "_Masters" suffix are
  * both conventions this has already seen broken.
  */
-function findMotionComponents(territoryRoot: Folder, mastersHint: string): Folder | null {
+export function findMotionComponents(territoryRoot: Folder, mastersHint: string): Folder | null {
   // The CSV's own ART path, when it carries a _Masters/ segment. Kept because
   // campaigns laid out that way are still live.
   if (mastersHint) {

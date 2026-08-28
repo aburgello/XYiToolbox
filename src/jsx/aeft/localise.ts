@@ -6,7 +6,8 @@
 // see its header comment for context.
 // =============================================================================
 import { scaleCompToFit } from "./deliver";
-import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, territoryCheck, parseFilenameMeta, frontcardWrap, cheekyTCheck, organiseFolders, FRONTCARD_LEAD_IN_SECONDS, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, MasterIndexEntry, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, matchCreativeInName, ssFindSupportRoot, ssCollectSupport, ssCreativesOf, ssApplyToOpenProject, ssCountReplaced, SupportSwapCandidate, scanMastersForBestMatch, firstSizeToken, ownProjectFolder } from "./tools";
+import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, territoryCheck, parseFilenameMeta, frontcardWrap, cheekyTCheck, organiseFolders, FRONTCARD_LEAD_IN_SECONDS, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, MasterIndexEntry, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, matchCreativeInName, ssFindSupportRoot, ssCollectSupport, ssCreativesOf, ssApplyToOpenProject, ssCountReplaced, ssOneTokenDiff, ssTokensOf, SupportSwapCandidate, scanMastersForBestMatch, firstSizeToken, ownProjectFolder } from "./tools";
+import { findMotionComponents } from "./artwork";
 import { makeParentLayerOfAllUnparented, scaleAllCameraZooms } from "./deliver";
 import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, saveLocGenReport, buildDeliverableName, durationForMasterLookup, durationDigits, sanitiseSiteToken, camelCaseToken, camelCaseName } from "./shared";
 import { loadCampaignsRaw, loadLastCampaign as loadOVLastCampaign } from "./review";
@@ -1530,6 +1531,437 @@ export const autoPopulateLocLib = (campaignName: string, marketsRoot: string, on
 
     saveLocLibComponentsRaw(existing);
     return { success: true, added, skippedExisting, refiled, territoriesWithNoMatch };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// =============================================================================
+// Make the Motion -- stand up a territory's motion components from the
+// campaign's master templates.
+// -----------------------------------------------------------------------------
+// The masters campaign keeps one editable component per creative
+// (Support/Motion_Components/<CREATIVE>/<Category>/*.aep), each referencing its
+// artwork out of that creative's own Masters/AE/<CREATIVE>/Footage/Artwork. A
+// territory keeps its OWN localised artwork, under
+// <Territory>/Masters/Support/<Creative>/<Category>/*.ai|psd, with one market
+// token swapped:
+//
+//   master     …/Motion_Components/PORTAL_TO_PARADISE/Date/…_OV_RGB.aep
+//              -> …/Masters/AE/PORTAL_TO_PARADISE/Footage/Artwork/…_OV_RGB.ai
+//   Brazil     …/Brazil/Masters/Support/PortalToParadise/Date/…_BR_RGB.ai
+//
+// So standing a territory up is: COPY the component, RELINK it to that
+// territory's artwork, RENAME it with the market's own token. The relink is
+// Support Swap's rule unchanged -- one market-shaped token different -- which
+// is why nothing here re-derives it.
+//
+// THE PAIRING IS NOT GUESSED. Squashing resolves most creative folders across
+// the two trees (PORTAL_TO_PARADISE <-> PortalToParadise, InternationalPayoff
+// <-> INTERNATIONAL_PAYOFF), but real territories carry P2P, PORTAL,
+// PAYOFF_Fist and BOOMBOX, which resolve to nothing by rule and would resolve
+// to the WRONG creative by guess. Those come back as unmatched for a person to
+// pair or skip, and the run takes the pairing as an argument rather than
+// working it out again.
+//
+// Edit/ and Tiffs/ are skipped by studio decision: an edit of the whole spot
+// carries no market token and pairs to nothing, and neither is a component.
+// =============================================================================
+
+/** Folders inside a creative that are never components. */
+function mmSkipCategory(name: string): boolean {
+  const n = decode(String(name));
+  if (n.charAt(0) === "_") return true;
+  const low = n.toLowerCase();
+  return low === "edit" || low === "tiffs" || low.indexOf("auto-save") !== -1;
+}
+
+function mmSquash(s: string): string {
+  return String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+/** Immediate subfolders, decoded, minus the "_"-prefixed ones. */
+function mmSubfolders(folder: Folder): string[] {
+  const out: string[] = [];
+  if (!folder.exists) return out;
+  const items = folder.getFiles();
+  for (let i = 0; i < items.length; i++) {
+    if (!(items[i] instanceof Folder)) continue;
+    const n = decode(items[i].name);
+    if (n.charAt(0) === "_") continue;
+    out.push(n);
+  }
+  return out;
+}
+
+export interface MakeMotionComponentFolder {
+  /** Folder name under Motion_Components, as it is on disk. */
+  name: string;
+  /** Component categories inside it, Edit/Tiffs already removed. */
+  categories: string[];
+  /** How many .aep files would be copied. */
+  aeps: number;
+}
+
+export interface MakeMotionPair {
+  /** The Motion_Components folder. */
+  component: string;
+  /** The territory's own Masters/Support folder holding its artwork. */
+  territoryFolder: string;
+  /** true when squashing matched them, false when a person paired them. */
+  auto?: boolean;
+}
+
+export interface MakeMotionScan {
+  success: boolean;
+  error?: string;
+  territory?: string;
+  /** Where the templates were found, so the panel can say. */
+  componentsRoot?: string;
+  /** Where this territory's artwork lives. */
+  supportRoot?: string;
+  components?: MakeMotionComponentFolder[];
+  /** The territory's own Masters/Support subfolders. */
+  territoryFolders?: string[];
+  /** What squashing already resolved. */
+  pairs?: MakeMotionPair[];
+  /** Territory folders nothing matched -- a person pairs or ignores these. */
+  unmatchedTerritory?: string[];
+  /** Components this territory has no artwork folder for. */
+  unmatchedComponents?: string[];
+}
+
+/**
+ * What a territory would receive, and what could not be paired automatically.
+ *
+ * Read-only. Nothing is copied, and nothing decides anything on the artist's
+ * behalf beyond the pairing that squashing makes unambiguous.
+ */
+export const makeMotionScan = (marketsRoot: string, territory: string): MakeMotionScan => {
+  try {
+    const terrFolder = new Folder(marketsRoot + "/" + territory);
+    const mc = findMotionComponents(terrFolder, "");
+    if (!mc) {
+      return { success: false, error: "No Support/Motion_Components found in this campaign or its sibling masters job." };
+    }
+
+    const support = new Folder(terrFolder.fsName + "/Masters/Support");
+    const terrFolders = mmSubfolders(support);
+
+    const components: MakeMotionComponentFolder[] = [];
+    const compNames = mmSubfolders(mc);
+    for (let i = 0; i < compNames.length; i++) {
+      const cf = new Folder(mc.fsName + "/" + compNames[i]);
+      const cats: string[] = [];
+      let aeps = 0;
+      const kids = cf.getFiles();
+      for (let k = 0; k < kids.length; k++) {
+        if (!(kids[k] instanceof Folder)) continue;
+        if (mmSkipCategory(kids[k].name)) continue;
+        const catName = decode(kids[k].name);
+        let has = 0;
+        const files = (kids[k] as Folder).getFiles();
+        for (let f = 0; f < files.length; f++) {
+          if (!(files[f] instanceof File)) continue;
+          if (decode(files[f].name).toLowerCase().slice(-4) !== ".aep") continue;
+          has++;
+        }
+        if (has === 0) continue;
+        cats.push(catName);
+        aeps += has;
+      }
+      if (cats.length === 0) continue;
+      components.push({ name: compNames[i], categories: cats, aeps: aeps });
+    }
+
+    // Squash-matching only. Anything left over is a question, not a guess.
+    const pairs: MakeMotionPair[] = [];
+    const usedTerr: { [k: string]: boolean } = {};
+    const usedComp: { [k: string]: boolean } = {};
+    for (let i = 0; i < components.length; i++) {
+      const want = mmSquash(components[i].name);
+      for (let t = 0; t < terrFolders.length; t++) {
+        if (mmSquash(terrFolders[t]) !== want) continue;
+        pairs.push({ component: components[i].name, territoryFolder: terrFolders[t], auto: true });
+        usedTerr[terrFolders[t]] = true;
+        usedComp[components[i].name] = true;
+        break;
+      }
+    }
+
+    const unmatchedTerritory: string[] = [];
+    for (let t = 0; t < terrFolders.length; t++) {
+      if (!usedTerr[terrFolders[t]]) unmatchedTerritory.push(terrFolders[t]);
+    }
+    const unmatchedComponents: string[] = [];
+    for (let i = 0; i < components.length; i++) {
+      if (!usedComp[components[i].name]) unmatchedComponents.push(components[i].name);
+    }
+
+    return {
+      success: true,
+      territory: territory,
+      componentsRoot: mc.fsName,
+      supportRoot: support.exists ? support.fsName : "",
+      components: components,
+      territoryFolders: terrFolders,
+      pairs: pairs,
+      unmatchedTerritory: unmatchedTerritory,
+      unmatchedComponents: unmatchedComponents,
+    };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+export interface MakeMotionFile {
+  component: string;
+  category: string;
+  /** The template's filename. */
+  from: string;
+  /** What it was written as, once renamed. Absent when nothing was written. */
+  to?: string;
+  /** Component sources relinked to this market's own. */
+  relinked?: number;
+  status: "made" | "exists" | "skipped" | "error";
+  reason?: string;
+}
+
+export interface MakeMotionResult {
+  success: boolean;
+  error?: string;
+  territory?: string;
+  /** Where it wrote, so the panel can say and so a person can go and look. */
+  destRoot?: string;
+  dryRun?: boolean;
+  made?: number;
+  relinked?: number;
+  files?: MakeMotionFile[];
+  message?: string;
+}
+
+/**
+ * The market token this territory's own artwork carries, learned from the
+ * files rather than derived from the territory name.
+ *
+ * Paw Patrol's Chile components are `_CH_`, not the ISO `_CL_`, which is why
+ * nothing here maps a country to a code. Every candidate under the paired
+ * folder is compared against the template's own name; the token that comes
+ * back on a one-token difference IS this market's, whatever it is called.
+ */
+function mmStem(name: string): string {
+  const n = String(name);
+  const dot = n.lastIndexOf(".");
+  return dot > 0 ? n.substring(0, dot) : n;
+}
+
+function mmMarketTokenFor(templateName: string, cands: SupportSwapCandidate[]): string {
+  // STEMS, because this comparison crosses file types on purpose: the template
+  // is the .aep and its artwork is the .ai/.psd it was built from, and they
+  // share everything but the extension and the market token. ssOneTokenDiff
+  // gates on extension equality, which is right where Support Swap uses it
+  // (an .ai must not stand in for a .psd) and wrong here, so the extensions
+  // come off before the comparison rather than the rule being loosened.
+  const want = mmStem(templateName);
+  for (let i = 0; i < cands.length; i++) {
+    const candStem = mmStem(decode(cands[i].file.name));
+    const at = ssOneTokenDiff(want, candStem);
+    if (at === -1) continue;
+    return ssTokensOf(candStem)[at];
+  }
+  return "";
+}
+
+/** Rename a template's own filename the way its artwork was renamed. */
+function mmRenameWithToken(templateName: string, token: string): string {
+  if (!token) return templateName;
+  let stem = templateName;
+  let ext = "";
+  const dot = stem.lastIndexOf(".");
+  if (dot > 0) { ext = stem.substring(dot); stem = stem.substring(0, dot); }
+  const parts = stem.split("_");
+  let touched = false;
+  for (let i = 0; i < parts.length; i++) {
+    // Only the OV slot moves. A numbered one (OV2) keeps its number, the same
+    // way MC It!'s artwork slots do.
+    const up = parts[i].toUpperCase();
+    if (up === "OV") { parts[i] = token; touched = true; continue; }
+    if (up.length > 2 && up.substring(0, 2) === "OV") {
+      let digits = true;
+      for (let c = 2; c < up.length; c++) {
+        if ("0123456789".indexOf(up.charAt(c)) === -1) { digits = false; break; }
+      }
+      if (digits) { parts[i] = token + up.substring(2); touched = true; }
+    }
+  }
+  if (!touched) return templateName;
+  return parts.join("_") + ext;
+}
+
+/**
+ * Copy a territory's components in, relink them to its own artwork and rename
+ * them for its market.
+ *
+ * `pairsJson` is the pairing from makeMotionScan, corrected by a person: a
+ * JSON array of {component, territoryFolder}. Passed in rather than recomputed
+ * so a hand-made pairing (Colombia's P2P to PORTAL_TO_PARADISE) is honoured,
+ * and so the run does exactly what the preview said it would.
+ *
+ * dryRun copies NOTHING and opens nothing. It reports the same file list, so
+ * the preview and the run cannot describe different work.
+ *
+ * Writes into <Territory>/Test_Support, a NEW folder alongside Support_Motion.
+ * Nothing here writes to Motion_Components, and an existing destination file is
+ * left alone rather than overwritten -- a second run must not quietly discard
+ * work somebody has already done in one of these.
+ */
+export const makeMotionRun = (
+  marketsRoot: string,
+  territory: string,
+  pairsJson: string,
+  dryRun?: boolean
+): MakeMotionResult => {
+  try {
+    const terrFolder = new Folder(marketsRoot + "/" + territory);
+    const mc = findMotionComponents(terrFolder, "");
+    if (!mc) return { success: false, error: "No Support/Motion_Components found for this campaign." };
+
+    let pairs: MakeMotionPair[] = [];
+    try {
+      const parsed = JSON.parse(pairsJson || "[]");
+      if (parsed instanceof Array) pairs = parsed as MakeMotionPair[];
+    } catch (e2) {
+      return { success: false, error: "Could not read the pairing." };
+    }
+    if (pairs.length === 0) return { success: false, error: "Nothing paired -- pair at least one creative first." };
+
+    const destRoot = new Folder(terrFolder.fsName + "/Test_Support");
+    if (!dryRun && !destRoot.exists && !destRoot.create()) {
+      return { success: false, error: "Could not create " + destRoot.fsName };
+    }
+
+    const files: MakeMotionFile[] = [];
+    let made = 0;
+    let relinkedTotal = 0;
+
+    for (let p = 0; p < pairs.length; p++) {
+      const comp = String(pairs[p].component || "");
+      const terrName = String(pairs[p].territoryFolder || "");
+      if (!comp || !terrName) continue;
+
+      const srcComp = new Folder(mc.fsName + "/" + comp);
+      if (!srcComp.exists) {
+        files.push({ component: comp, category: "", from: "", status: "error", reason: "That component folder is no longer in Motion_Components." });
+        continue;
+      }
+
+      // THE ARTWORK FOR THIS PAIR ONLY. Scoped to the folder a person paired
+      // rather than the whole tree, which is the entire point of pairing:
+      // Colombia's P2P is this creative's artwork and nothing else's.
+      const artFolder = new Folder(terrFolder.fsName + "/Masters/Support/" + terrName);
+      const cands = ssCollectSupport(artFolder);
+
+      const cats = srcComp.getFiles();
+      for (let c = 0; c < cats.length; c++) {
+        if (!(cats[c] instanceof Folder)) continue;
+        if (mmSkipCategory(cats[c].name)) continue;
+        const catName = decode(cats[c].name);
+        const srcFiles = (cats[c] as Folder).getFiles();
+
+        for (let f = 0; f < srcFiles.length; f++) {
+          if (!(srcFiles[f] instanceof File)) continue;
+          const srcFile = srcFiles[f] as File;
+          const srcName = decode(srcFile.name);
+          if (srcName.toLowerCase().slice(-4) !== ".aep") continue;
+
+          const token = mmMarketTokenFor(srcName, cands);
+          const outName = mmRenameWithToken(srcName, token);
+          const rec: MakeMotionFile = { component: comp, category: catName, from: srcName, to: outName };
+
+          if (!token) {
+            // Nothing in this market's artwork is one token from it, so there
+            // is nothing to relink and nothing to rename it to. Copied anyway
+            // would be a file that looks localised and is not.
+            rec.status = "skipped";
+            rec.reason = "No artwork in " + terrName + " matches this component, so there is nothing to localise it to.";
+            rec.to = undefined;
+            files.push(rec);
+            continue;
+          }
+
+          const destCat = new Folder(destRoot.fsName + "/" + comp + "/" + catName);
+          const destFile = new File(destCat.fsName + "/" + outName);
+
+          if (dryRun) {
+            rec.status = "made";
+            files.push(rec);
+            made++;
+            continue;
+          }
+
+          // Folder.create() does not make intermediate levels.
+          const compDir = new Folder(destRoot.fsName + "/" + comp);
+          if (!compDir.exists) compDir.create();
+          if (!destCat.exists) destCat.create();
+
+          // NEVER OVERWRITE. A second run over a territory somebody has
+          // already worked in must not discard what they did.
+          if (destFile.exists) {
+            rec.status = "exists";
+            rec.reason = "Already there -- left alone.";
+            files.push(rec);
+            continue;
+          }
+
+          if (!srcFile.copy(destFile.fsName)) {
+            rec.status = "error";
+            rec.reason = "Could not copy to " + destFile.fsName;
+            files.push(rec);
+            continue;
+          }
+
+          try {
+            // The copy, never the template. losOpenForEdit would copy-first on
+            // an OV name, which is exactly wrong here: this IS the copy, and
+            // it is about to stop being an OV name.
+            const proj = app.open(destFile);
+            if (!proj) {
+              rec.status = "error";
+              rec.reason = "Copied, but the project would not open.";
+              files.push(rec);
+              continue;
+            }
+            const swapRep = ssApplyToOpenProject(proj, outName, cands, [], false);
+            const n = ssCountReplaced(swapRep);
+            rec.relinked = n;
+            relinkedTotal += n;
+            proj.save();
+            $.sleep(400);
+            rec.status = "made";
+            made++;
+          } catch (openErr) {
+            rec.status = "error";
+            rec.reason = "Copied, but relinking failed: " + openErr.toString();
+          }
+          files.push(rec);
+        }
+      }
+    }
+
+    const message = dryRun
+      ? made + " component(s) would be made in " + territory + "'s Test_Support."
+      : made + " component(s) made, " + relinkedTotal + " artwork link(s) pointed at " + territory + "'s own.";
+
+    return {
+      success: true,
+      territory: territory,
+      destRoot: destRoot.fsName,
+      dryRun: dryRun === true,
+      made: made,
+      relinked: relinkedTotal,
+      files: files,
+      message: message,
+    };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

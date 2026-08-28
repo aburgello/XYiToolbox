@@ -975,3 +975,196 @@
 
     &:hover { opacity: 1; }
 }
+
+// ── Make the Motion ─────────────────────────────────────────────────────────
+//
+// Its own modal rather than a page: pairing is a decision you make once per
+// territory and then leave, and it should not cost you the place you were in
+// the library.
+//
+// index.scss's global button:hover/:active paints over any custom background,
+// so every button here re-declares both.
+.localised-library {
+    .ll-make-motion {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        width: 100%;
+        box-sizing: border-box;
+        margin-top: 6px;
+        padding: 8px 10px;
+        border: 1px dashed var(--cat-border, #2dd4bf);
+        border-radius: 6px;
+        background: var(--surface-0, #1c1c1c);
+        color: #d8d8d8;
+        font-size: 12px;
+        cursor: pointer;
+        transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+
+        &:hover { background: var(--surface-1, #262626); border-style: solid; color: #fff; }
+        &:active { background: var(--surface-1, #262626); }
+        &:disabled { opacity: 0.45; cursor: default; }
+        &:disabled:hover { background: var(--surface-0, #1c1c1c); border-style: dashed; color: #d8d8d8; }
+    }
+}
+
+.mm-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(0, 0, 0, 0.62);
+}
+
+.mm-modal {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 560px;
+    max-height: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--surface-edge, #3a3a3a);
+    border-radius: 10px;
+    background: var(--surface-0, #1a1a1a);
+    overflow: hidden;
+}
+
+.mm-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: none;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--surface-divider, #2c2c2c);
+}
+
+.mm-head-icon {
+    display: flex;
+    flex: none;
+    padding: 7px;
+    border-radius: 7px;
+    background: var(--cat-glow, rgba(45, 212, 191, 0.16));
+    color: var(--cat-icon, #5eead4);
+}
+
+.mm-head-text { flex: 1; min-width: 0; }
+.mm-title { font-size: 13px; font-weight: 600; color: #eee; }
+.mm-subtitle { font-size: 10.5px; color: #8a8a8a; margin-top: 2px; }
+
+.mm-close {
+    flex: none;
+    padding: 5px;
+    border: none;
+    border-radius: 5px;
+    background: none;
+    color: #888;
+    cursor: pointer;
+
+    &:hover { background: rgba(255, 255, 255, 0.08); color: #ddd; }
+    &:active { background: rgba(255, 255, 255, 0.08); }
+}
+
+.mm-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 12px 14px;
+}
+
+.mm-lead { font-size: 11px; color: #8a8a8a; margin: 0 0 10px; }
+
+.mm-pair {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--surface-divider, #262626);
+
+    &:last-child { border-bottom: none; }
+}
+
+.mm-pair-comp { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mm-pair-name { font-size: 12px; font-weight: 600; color: #e6e6e6; }
+.mm-pair-comp em { font-style: normal; font-size: 10px; color: #777; }
+.mm-pair-arrow { flex: none; color: #555; }
+
+.mm-pair-pick {
+    flex: none;
+    width: 168px;
+    padding: 5px 7px;
+    border: 1px solid var(--surface-edge, #3a3a3a);
+    border-radius: 5px;
+    background: var(--surface-1, #232323);
+    color: #ddd;
+    font-size: 11px;
+}
+
+.mm-file {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 3px 8px;
+    padding: 5px 0;
+    font-size: 11px;
+    border-bottom: 1px solid var(--surface-divider, #232323);
+
+    &:last-child { border-bottom: none; }
+}
+
+.mm-file-where { flex: none; color: #6f6f6f; font-size: 10px; }
+.mm-file-name { flex: 1; min-width: 0; color: #cfcfcf; overflow-wrap: break-word; }
+.mm-file-why { flex-basis: 100%; font-style: normal; font-size: 10px; color: #8a7a5a; }
+
+.mm-file--made .mm-file-name { color: #7fca8f; }
+.mm-file--exists .mm-file-name { color: #888; }
+.mm-file--skipped .mm-file-name { color: #8a8a8a; }
+.mm-file--error .mm-file-name { color: #d0a0a0; }
+
+.mm-empty {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: #8a8a8a;
+}
+
+.mm-foot {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: none;
+    padding: 11px 14px;
+    border-top: 1px solid var(--surface-divider, #2c2c2c);
+}
+
+.mm-foot-count { flex: 1; min-width: 0; font-size: 10.5px; color: #8a8a8a; }
+
+.mm-back,
+.mm-go {
+    flex: none;
+    padding: 7px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--surface-edge, #3a3a3a);
+    background: var(--surface-1, #262626);
+    color: #ddd;
+    font-size: 11px;
+    cursor: pointer;
+
+    &:hover { background: var(--surface-2, #303030); }
+    &:active { background: var(--surface-2, #303030); }
+    &:disabled { opacity: 0.5; cursor: default; }
+}
+
+.mm-go {
+    border-color: var(--cat-border, #2dd4bf);
+    background: var(--cat-glow, rgba(45, 212, 191, 0.16));
+    color: var(--cat-icon, #5eead4);
+    font-weight: 600;
+
+    &:hover { background: var(--cat-glow, rgba(45, 212, 191, 0.16)); border-color: var(--cat-icon, #5eead4); }
+    &:active { background: var(--cat-glow, rgba(45, 212, 191, 0.16)); }
+}

@@ -17,6 +17,9 @@ import {
     Trash2,
     Plus,
     Wand2,
+    Hammer,
+    ArrowRight,
+    Link2Off,
     X,
     CheckSquare,
     Square,
@@ -62,6 +65,34 @@ interface Component {
     // sits loose in Support_Motion, which is every older campaign; those
     // keep exactly the view they had. See localise.ts's LocLibComponent.
     creative?: string;
+}
+
+/** Mirrors localise.ts's MakeMotionScan. */
+interface MakeMotionScan {
+    success: boolean;
+    error?: string;
+    territory?: string;
+    componentsRoot?: string;
+    supportRoot?: string;
+    components?: { name: string; categories: string[]; aeps: number }[];
+    territoryFolders?: string[];
+    pairs?: { component: string; territoryFolder: string; auto?: boolean }[];
+    unmatchedTerritory?: string[];
+    unmatchedComponents?: string[];
+}
+
+interface MakeMotionResult {
+    success: boolean;
+    error?: string;
+    destRoot?: string;
+    dryRun?: boolean;
+    made?: number;
+    relinked?: number;
+    message?: string;
+    files?: {
+        component: string; category: string; from: string; to?: string;
+        relinked?: number; status: "made" | "exists" | "skipped" | "error"; reason?: string;
+    }[];
 }
 
 interface CustomFolder {
@@ -274,6 +305,15 @@ const LocalisedLibraryTool = () => {
     // True only in browser preview (no CEP bridge) -- drives the mock data
     // path so the layout is viewable without AE. Never true inside real AE.
     const [mockMode, setMockMode] = useState(false);
+
+    // --- Make the Motion -----------------------------------------------------
+    // The scan, the pairing a person is editing, and the preview. Held here
+    // rather than inside the modal so a pairing survives flipping between the
+    // preview and the pairing screen.
+    const [makeBusy, setMakeBusy] = useState(false);
+    const [makeScan, setMakeScan] = useState<MakeMotionScan | null>(null);
+    const [makePairs, setMakePairs] = useState<Record<string, string>>({});
+    const [makePreview, setMakePreview] = useState<MakeMotionResult | null>(null);
 
     // Batch-import selection -- component paths (unique enough as a key
     // since a real library never has two components sharing a source
@@ -580,6 +620,58 @@ const LocalisedLibraryTool = () => {
             next.delete(folderKey("", folderName));
             return next;
         });
+    };
+
+    /**
+     * Open the Make the Motion flow: scan, seed the pairing with whatever
+     * squashing already resolved, and let a person fix the rest.
+     */
+    const openMakeMotion = async () => {
+        if (!selectedCampaign || !selectedTerritory) return;
+        setMakeBusy(true);
+        setMakePreview(null);
+        try {
+            const res = (await safeEvalTS("makeMotionScan", selectedCampaign.marketsRoot, selectedTerritory)) as MakeMotionScan | undefined;
+            if (!res) return;
+            if (!res.success) { pushToast(res.error || "Couldn't read the master components.", "error"); return; }
+            const seeded: Record<string, string> = {};
+            (res.pairs || []).forEach((p) => { seeded[p.component] = p.territoryFolder; });
+            setMakePairs(seeded);
+            setMakeScan(res);
+        } finally {
+            setMakeBusy(false);
+        }
+    };
+
+    /** The pairing as the host wants it: only components a folder is chosen for. */
+    const pairsForRun = () =>
+        Object.keys(makePairs)
+            .filter((c) => makePairs[c])
+            .map((c) => ({ component: c, territoryFolder: makePairs[c] }));
+
+    const runMakeMotion = async (dryRun: boolean) => {
+        if (!selectedCampaign || !selectedTerritory) return;
+        const pairs = pairsForRun();
+        if (pairs.length === 0) { pushToast("Pair at least one creative first.", "error"); return; }
+        setMakeBusy(true);
+        try {
+            // Plain evalTS on the real run, not the safe wrapper: it opens and
+            // saves a project per component, which passes 15s on any territory
+            // with more than a handful.
+            const call = dryRun ? safeEvalTS : evalTS;
+            const res = (await call("makeMotionRun", selectedCampaign.marketsRoot, selectedTerritory, JSON.stringify(pairs), dryRun)) as MakeMotionResult | undefined;
+            if (!res) return;
+            if (!res.success) { pushToast(res.error || "Make the Motion failed.", "error"); return; }
+            setMakePreview(res);
+            if (!dryRun) {
+                pushToast(res.message || "Done.");
+                // What it just wrote is a folder of components worth cataloguing.
+                const all: Component[] = (await safeEvalTS("loadLocLibComponents")) || [];
+                setComponents(all);
+            }
+        } finally {
+            setMakeBusy(false);
+        }
     };
 
     const handleAutoPopulate = async () => {
@@ -1124,6 +1216,23 @@ const LocalisedLibraryTool = () => {
                         </button>
                     </Tooltip>
 
+                    {/* THE OTHER HALF OF "Find the Motion". That one catalogues
+                        what a territory already has; this one stands it up from
+                        the campaign's master templates — copy, relink to this
+                        market's own artwork, rename for its market.
+
+                        Only inside a territory. Pairing a creative is a
+                        judgement (Colombia files PortalToParadise as "P2P"), and
+                        one screen cannot ask it of 28 markets at once. */}
+                    {selectedTerritory && (
+                        <Tooltip text={`Build ${selectedTerritory}'s motion components from the campaign's master templates, relinked to its own artwork. Previews first.`}>
+                            <button className="ll-make-motion" disabled={busy || makeBusy} onClick={openMakeMotion}>
+                                <Hammer size={14} className={makeBusy ? "spin" : ""} />{" "}
+                                Make the <span className="ll-auto-populate-territory">{selectedTerritory}</span> Motion
+                            </button>
+                        </Tooltip>
+                    )}
+
                     <div className="ll-view-wrap">
                         <motion.div
                             key={jpgPngStack.length > 0 ? "jpgpng-batch" : selectedTerritory ? "folders" : "territories"}
@@ -1566,6 +1675,115 @@ const LocalisedLibraryTool = () => {
                     ))}
                 </AnimatePresence>
             </div>
+
+            {/* ── Make the Motion ────────────────────────────────────────────
+                PAIRING IS THE WHOLE SCREEN. Squashing resolves most creative
+                folders across the two trees, but real markets carry P2P,
+                PORTAL and PAYOFF_Fist, which resolve to nothing by rule and to
+                the WRONG creative by guess. So each component names the folder
+                its artwork should come from, seeded where that was obvious and
+                blank where it was not, and blank means skip. */}
+            {makeScan && (
+                <div className="mm-overlay" onClick={() => { setMakeScan(null); setMakePreview(null); }}>
+                    <div className="mm-modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="mm-head">
+                            <div className="mm-head-icon"><Hammer size={16} /></div>
+                            <div className="mm-head-text">
+                                <div className="mm-title">Make {selectedTerritory}&apos;s Motion</div>
+                                <div className="mm-subtitle">
+                                    {(makeScan.components || []).length} creative{(makeScan.components || []).length === 1 ? "" : "s"} in the
+                                    master templates · writes to <strong>{selectedTerritory}/Test_Support</strong>
+                                </div>
+                            </div>
+                            <button className="mm-close" onClick={() => { setMakeScan(null); setMakePreview(null); }}>
+                                <X size={15} />
+                            </button>
+                        </div>
+
+                        <div className="mm-body">
+                            {!makePreview && (
+                                <>
+                                    <p className="mm-lead">
+                                        Each creative takes its artwork from one folder in {selectedTerritory}&apos;s
+                                        Masters/Support. Leave one blank to skip it.
+                                    </p>
+                                    {(makeScan.components || []).map((c) => (
+                                        <div key={c.name} className="mm-pair">
+                                            <span className="mm-pair-comp">
+                                                <span className="mm-pair-name">{c.name}</span>
+                                                <em>{c.aeps} component{c.aeps === 1 ? "" : "s"} · {c.categories.join(", ")}</em>
+                                            </span>
+                                            <ArrowRight size={13} className="mm-pair-arrow" />
+                                            <select
+                                                className="mm-pair-pick"
+                                                value={makePairs[c.name] || ""}
+                                                onChange={(e) => setMakePairs((prev) => ({ ...prev, [c.name]: e.target.value }))}
+                                            >
+                                                <option value="">Skip this creative</option>
+                                                {(makeScan.territoryFolders || []).map((f) => (
+                                                    <option key={f} value={f}>{f}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    ))}
+                                    {(makeScan.territoryFolders || []).length === 0 && (
+                                        <p className="mm-empty">
+                                            <Link2Off size={13} /> {selectedTerritory} has no Masters/Support folders, so there is
+                                            nothing to relink to yet.
+                                        </p>
+                                    )}
+                                </>
+                            )}
+
+                            {makePreview && (
+                                <>
+                                    <p className="mm-lead">
+                                        {makePreview.dryRun ? "Nothing written yet." : "Written to " + (makePreview.destRoot || "")}
+                                    </p>
+                                    {(makePreview.files || []).map((f, i) => (
+                                        <div key={i} className={"mm-file mm-file--" + f.status}>
+                                            <span className="mm-file-where">{f.component} / {f.category}</span>
+                                            <span className="mm-file-name">{f.to || f.from}</span>
+                                            {f.reason && <em className="mm-file-why">{f.reason}</em>}
+                                        </div>
+                                    ))}
+                                    {(makePreview.files || []).length === 0 && (
+                                        <p className="mm-empty">Nothing to make with that pairing.</p>
+                                    )}
+                                </>
+                            )}
+                        </div>
+
+                        <div className="mm-foot">
+                            <span className="mm-foot-count">
+                                {makePreview
+                                    ? makePreview.message
+                                    : `${pairsForRun().length} of ${(makeScan.components || []).length} paired`}
+                            </span>
+                            {makePreview && makePreview.dryRun && (
+                                <button className="mm-back" onClick={() => setMakePreview(null)}>Back to pairing</button>
+                            )}
+                            {/* Preview first, always. This copies into a live
+                                territory and opens a project per component;
+                                seeing the filenames it would write is the
+                                cheapest check there is. */}
+                            {!makePreview && (
+                                <button className="mm-go" disabled={makeBusy} onClick={() => runMakeMotion(true)}>
+                                    {makeBusy ? "Checking…" : "Preview"}
+                                </button>
+                            )}
+                            {makePreview && makePreview.dryRun && (
+                                <button className="mm-go" disabled={makeBusy} onClick={() => runMakeMotion(false)}>
+                                    {makeBusy ? "Making…" : `Make ${makePreview.made || 0}`}
+                                </button>
+                            )}
+                            {makePreview && !makePreview.dryRun && (
+                                <button className="mm-go" onClick={() => { setMakeScan(null); setMakePreview(null); }}>Done</button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
