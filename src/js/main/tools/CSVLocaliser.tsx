@@ -554,10 +554,15 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
     // derived (<Territory>/JPG_PNG/<Batch>, sibling of the AE folder), never
     // asked for -- see csvLocaliserRun's mcIt setup block.
     const [runMcIt, setRunMcIt] = useState(true);
-    // The .ai/.psd half of the same job. Defaults OFF, unlike MC It!: it needs
-    // a Masters/Support tree, which not every campaign has, and a swap nobody
-    // asked for is worse than one they have to tick.
-    const [runSupportSwap, setRunSupportSwap] = useState(false);
+    // The .ai/.psd half of the same job, on by default alongside MC It!.
+    //
+    // It shipped OFF, on the reasoning that it needs a Masters/Support tree not
+    // every campaign has. That turned out to be the wrong way round: a campaign
+    // without one gets a note saying so and nothing else happens, while a
+    // campaign WITH one and the toggle forgotten gets a batch of files still
+    // pointing at OV artwork, which is the failure nobody notices until
+    // delivery. The cheap outcome should be the default.
+    const [runSupportSwap, setRunSupportSwap] = useState(true);
     // Batches whose footage was already swapped by the inline pass this
     // session (keyed by batchKey). Only used to relabel the standalone MC It!
     // button as a deliberate RE-run, so it doesn't read as the expected next
