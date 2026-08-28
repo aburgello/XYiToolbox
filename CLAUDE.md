@@ -655,6 +655,14 @@ and the relink is **Support Swap's rule unchanged**. Rules:
   shorten the component's name towards its artwork's, so it can never reach
   different artwork than the full name would. The suffix survives the rename
   (`…_HR_RGB Precomp.aep`).
+- **The COMPS inside are renamed too, not just the file around them.** A
+  `…_HR_RGB.aep` whose comp still says `…_OV_RGB` is localised on the outside
+  only, and the convention is that a comp carries its file's stem (which is
+  what `renameMainComp` restores elsewhere). Every comp carrying an OV token is
+  renamed, not only the one matching the filename — a precomp is named after
+  what it is a precomp OF, so it carries the token too. The swap runs on a bare
+  name with no extension handling: stripping one would eat the tail of any comp
+  with a dot in it.
 - Writes only into a NEW `<Territory>/Test_Support`, **never overwrites** an
   existing destination file (a second run must not discard somebody's work),
   and never writes to `Motion_Components`. `Edit/` and `Tiffs/` are skipped by

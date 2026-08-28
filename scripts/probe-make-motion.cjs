@@ -131,7 +131,17 @@ openProject = (aepPath) => {
     // .psd. A stub that made everything .ai hid that.
     const ext = /_TT_/.test(stem) ? '.psd' : '.ai';
     const item = new FootageItem(new File('/x/' + stem + ext), new FolderItem('Artwork'));
-    return { file: new File(aepPath), numItems: 1, item: () => item, _item: item, save() { saved++; } };
+    // The comps inside carry the template's own name -- the studio convention
+    // is that a comp is named after its file's stem -- so they still say _OV_
+    // until something renames them.
+    const tmplStem = String(src).split('/').pop().replace(/\.aep$/, '');
+    const comps = [{ name: tmplStem, numLayers: 3 }, { name: 'Frontcard', numLayers: 1 }];
+    const items = [item].concat(comps);
+    return {
+        file: new File(aepPath), numItems: items.length,
+        item: (i) => items[i - 1], _item: item, _comps: comps,
+        save() { saved++; },
+    };
 };
 
 let fails = 0;
@@ -212,6 +222,24 @@ console.log('\n7. a component whose name carries a trailing word its artwork doe
         'and the plain one beside it is still made from the same artwork');
     const row = r.files.filter((f) => /Precomp/.test(f.from))[0];
     say(row && row.status === 'made' && row.relinked === 1, 'with its artwork relinked, not reported missing', row ? `${row.status}/${row.relinked}` : 'no row');
+}
+
+console.log('\n8. the comps inside are renamed too');
+{
+    build();
+    const seen = [];
+    const realOpen = openProject;
+    openProject = (p) => { const proj = realOpen(p); seen.push(proj); return proj; };
+    const r = aeft.makeMotionRun(MARKETS, 'Colombia', pairs, false);
+    openProject = realOpen;
+    const all = seen.reduce((a, p) => a.concat(p._comps.map((c) => c.name)), []);
+    say(all.indexOf('FID_INTL_Trio_2L_DATE_CO_RGB Precomp') !== -1,
+        'a precomp\'s comp takes the market token, keeping its trailing word',
+        all.filter((n) => /Precomp/.test(n)).join(', ') || '(none)');
+    say(!all.some((n) => /_OV_/.test(n)), 'no comp is left saying _OV_', all.filter((n) => /_OV_/.test(n)).join(', '));
+    say(all.filter((n) => n === 'Frontcard').length === seen.length,
+        'a comp with no market token is left exactly as it was');
+    say(r.compsRenamed === 5, 'and it counts what it renamed', String(r.compsRenamed));
 }
 
 console.log(fails === 0 ? '\nCLEAN — it pairs nothing on its own, and writes only what the preview promised.' : '\n' + fails + ' FAILED');

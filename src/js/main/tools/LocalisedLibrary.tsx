@@ -88,10 +88,12 @@ interface MakeMotionResult {
     dryRun?: boolean;
     made?: number;
     relinked?: number;
+    compsRenamed?: number;
     message?: string;
     files?: {
         component: string; category: string; from: string; to?: string;
-        relinked?: number; status: "made" | "exists" | "skipped" | "error"; reason?: string;
+        relinked?: number; compsRenamed?: number;
+        status: "made" | "exists" | "skipped" | "error"; reason?: string;
     }[];
 }
 

@@ -1723,6 +1723,8 @@ export interface MakeMotionFile {
   to?: string;
   /** Component sources relinked to this market's own. */
   relinked?: number;
+  /** Comps inside it whose own name carried the OV token. */
+  compsRenamed?: number;
   status: "made" | "exists" | "skipped" | "error";
   reason?: string;
 }
@@ -1736,6 +1738,7 @@ export interface MakeMotionResult {
   dryRun?: boolean;
   made?: number;
   relinked?: number;
+  compsRenamed?: number;
   files?: MakeMotionFile[];
   message?: string;
 }
@@ -1793,13 +1796,15 @@ function mmMarketTokenFor(templateName: string, cands: SupportSwapCandidate[]): 
   return "";
 }
 
-/** Rename a template's own filename the way its artwork was renamed. */
-function mmRenameWithToken(templateName: string, token: string): string {
-  if (!token) return templateName;
-  let stem = templateName;
-  let ext = "";
-  const dot = stem.lastIndexOf(".");
-  if (dot > 0) { ext = stem.substring(dot); stem = stem.substring(0, dot); }
+/**
+ * Swap the OV slot in a bare name (no extension handling).
+ *
+ * Split out so COMP names can go through the identical rule as filenames. A
+ * comp name has no extension to strip, and stripping one anyway would eat the
+ * tail of anything with a dot in it.
+ */
+function mmSwapTokenInStem(stem: string, token: string): string {
+  if (!token) return stem;
   const parts = stem.split("_");
   let touched = false;
   for (let i = 0; i < parts.length; i++) {
@@ -1815,8 +1820,45 @@ function mmRenameWithToken(templateName: string, token: string): string {
       if (digits) { parts[i] = token + up.substring(2); touched = true; }
     }
   }
-  if (!touched) return templateName;
-  return parts.join("_") + ext;
+  if (!touched) return stem;
+  return parts.join("_");
+}
+
+/** Rename a template's own filename the way its artwork was renamed. */
+function mmRenameWithToken(templateName: string, token: string): string {
+  if (!token) return templateName;
+  let stem = templateName;
+  let ext = "";
+  const dot = stem.lastIndexOf(".");
+  if (dot > 0) { ext = stem.substring(dot); stem = stem.substring(0, dot); }
+  return mmSwapTokenInStem(stem, token) + ext;
+}
+
+/**
+ * Rename the COMPS inside a made component, not just the file around them.
+ *
+ * A .aep called ..._HR_RGB whose comp is still called ..._OV_RGB is a file
+ * that has been localised on the outside only -- and the studio convention is
+ * that a comp carries the same name as its file's stem, which is what
+ * renameMainComp exists to restore elsewhere. Every comp carrying an OV token
+ * is renamed, not only the one matching the filename: a precomp is named after
+ * the thing it is a precomp OF, so it carries the token too.
+ *
+ * Duck-typed on numLayers rather than `instanceof CompItem`, per CLAUDE.md.
+ */
+function mmRenameComps(proj: Project, token: string): number {
+  if (!token) return 0;
+  let n = 0;
+  for (let i = 1; i <= proj.numItems; i++) {
+    const it = proj.item(i) as any;
+    if (!it || typeof it.numLayers !== "number") continue;
+    const was = decode(String(it.name));
+    const now = mmSwapTokenInStem(was, token);
+    if (now === was) continue;
+    it.name = now;
+    n++;
+  }
+  return n;
 }
 
 /**
@@ -1864,6 +1906,7 @@ export const makeMotionRun = (
     const files: MakeMotionFile[] = [];
     let made = 0;
     let relinkedTotal = 0;
+    let compsTotal = 0;
 
     for (let p = 0; p < pairs.length; p++) {
       const comp = String(pairs[p].component || "");
@@ -1956,6 +1999,9 @@ export const makeMotionRun = (
             const n = ssCountReplaced(swapRep);
             rec.relinked = n;
             relinkedTotal += n;
+            // The comps too, or the file is localised only on the outside.
+            rec.compsRenamed = mmRenameComps(proj, token);
+            compsTotal += rec.compsRenamed;
             proj.save();
             $.sleep(400);
             rec.status = "made";
@@ -1971,7 +2017,7 @@ export const makeMotionRun = (
 
     const message = dryRun
       ? made + " component(s) would be made in " + territory + "'s Test_Support."
-      : made + " component(s) made, " + relinkedTotal + " artwork link(s) pointed at " + territory + "'s own.";
+      : made + " component(s) made, " + relinkedTotal + " artwork link(s) pointed at " + territory + "'s own, " + compsTotal + " comp(s) renamed.";
 
     return {
       success: true,
@@ -1980,6 +2026,7 @@ export const makeMotionRun = (
       dryRun: dryRun === true,
       made: made,
       relinked: relinkedTotal,
+      compsRenamed: compsTotal,
       files: files,
       message: message,
     };
