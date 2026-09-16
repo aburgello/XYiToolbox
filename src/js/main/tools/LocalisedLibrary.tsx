@@ -38,6 +38,7 @@ import Tooltip from "../Tooltip";
 import StatusIcon from "../StatusIcon";
 import Dropdown from "../Dropdown";
 import { alertDialog, confirmDialog, promptDialog } from "../Dialog";
+import { pairCampaignToOVLibrary } from "../lib/mastersRoot";
 import "../shared.scss";
 import "./LocalisedLibrary.scss";
 
@@ -555,6 +556,10 @@ const LocalisedLibraryTool = () => {
         const newCamp = { name, marketsRoot };
         await refreshCampaigns();
         setSelectedCampaign(newCamp);
+        // One job, two lists: register the Masters half with OV Library /
+        // Review too, so the campaign does not have to be added twice. Silent
+        // when the sibling isn't on disk -- see pairCampaignToOVLibrary.
+        void pairCampaignToOVLibrary(name, marketsRoot);
     };
 
     const handleRemoveCampaign = async () => {

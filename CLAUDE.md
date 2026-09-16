@@ -771,6 +771,26 @@ Naming Audit, which skips only `Auto-Save`/`_Archive`/`_Old`/`_DEV`.
 - Ease **influence** is portable; ease **speed** is absolute and tied to one
   keyframe. Presets store influence only.
 
+**A CAMPAIGN IS ONE JOB WITH TWO ROOTS, and every action on it does both.**
+`OVLibCampaigns` (name + masters root, behind OV Library and Review) and
+`LocLibCampaigns` (name + markets root, behind Localised Library and CSV
+Localiser) are two lists of the same thing — the shared `shared-campaigns.json`
+has always been one row carrying both. Adding one **registers the other half
+too** (`mastersRoot.ts`'s `pairCampaign*`), and either Share button **pushes
+both halves**, so one press means the team has what this machine has. Three
+rules hold it up: the other root is **derived, never stored twice** — a second
+stored path is a second thing to go stale, so the sibling folder is found on
+disk (`deriveMastersFromMarkets`/`deriveMarketsFromMasters`, one file, because
+two copies of a path convention drift silently); a missing sibling means **no
+pairing, silently** — an unmounted share is a normal state and nothing here
+invents a folder; and **filling a blank is not repointing** — a root the team
+already agreed on is never overwritten, and a name the local list already holds
+is left alone. The half-filled row is the case to keep in mind: `teamSyncShared`
+**skips** a row whose masters half is empty, so a campaign shared from CSV
+Localiser reached colleagues working in Localise and absent from Review, and
+pressing Share in OV Library afterwards did nothing but answer "already in the
+team library".
+
 **`parseFilenameMeta`'s `campaign` is the CREATIVE, `siteName` is the SITE.**
 Campaign is what sits LEFT of the artwork type, site is everything right of it.
 Anything wanting the whole descriptive part wants `siteName` — the four-token
@@ -1080,6 +1100,14 @@ destructive can be auto-pressed on arrival.
 `ssOneTokenDiff` over the filename families actually on the share, then
 `supportSwap` end to end against a stubbed Italy. Run it after touching either
 — this matcher decides which artwork goes into a finished deliverable.
+
+`node scripts/probe-campaign-share.cjs` (after `yarn build`) drives
+`teamShareCampaign`/`teamShareLocCampaign` and the `teamSyncShared` pull that
+reads them, over a stubbed team folder: both press orders, repeat presses, a
+differently-cased name, the never-repoint rule, and what a fresh machine
+actually gets. Run it after touching either — the failure it exists for is
+silent, a row reaching colleagues with one half missing while the toast says
+"already in the team library".
 
 `node scripts/probe-campaign-rename.cjs` (after `yarn build`) drives
 `campaignRename` over a stubbed folder pair on BOTH naming conventions. Run it

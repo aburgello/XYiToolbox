@@ -39,6 +39,7 @@ import { toFileUrl } from "../lib/fileUrl";
 import StatusIcon from "../StatusIcon";
 import Droplet from "../Droplet";
 import { alertDialog, confirmDialog, promptDialog } from "../Dialog";
+import { marketsHalfFor, pairCampaignToLocalise } from "../lib/mastersRoot";
 import { hasUserTheme } from "../themes";
 import { runMasterCheck, openReport } from "../lib/masterCheck";
 // Preview plumbing shared with Bespoke's master cards -- extension preference,
@@ -867,6 +868,11 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
         const newCamp = { name, mastersRoot };
         await refreshCampaigns();
         setSelectedCampaign(newCamp);
+        // One job, two lists: register the Markets half with Localised
+        // Library / CSV Localiser too, so the campaign does not have to be
+        // added twice. Silent when the sibling isn't on disk -- see
+        // pairCampaignToLocalise.
+        void pairCampaignToLocalise(name, mastersRoot);
     };
 
     const handleRemoveCampaign = async () => {
@@ -889,9 +895,17 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
         // deliberately do not — those are personal). Re-sharing an
         // already-shared campaign is the supported way to push a banner
         // pinned after the first share; teamShareCampaign updates that field.
+        //
+        // The Markets half goes too, so one press gives the team the campaign
+        // in Localised Library / CSV Localiser as well as here — sharing half
+        // a campaign from whichever tool you were standing in was the whole
+        // problem. "" when this machine only knows the Masters half, which the
+        // host treats as "nothing to fill in yet".
+        const marketsRoot = await marketsHalfFor(selectedCampaign.name, selectedCampaign.mastersRoot);
         const payload = JSON.stringify({
             name: selectedCampaign.name,
             mastersRoot: selectedCampaign.mastersRoot,
+            marketsRoot,
             banner: campaignBanner || "",
         });
         const result = await safeEvalTS("teamShareCampaign", payload);

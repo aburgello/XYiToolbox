@@ -57,7 +57,7 @@ import { alertDialog, confirmDialog, promptDialog, selectDialog } from "../Dialo
 import { showMcItReport, type McReport } from "../McItReportModal";
 import { showLocGenReport, type LocGenReport, type LocGenRow } from "../LocGenReportModal";
 import { specRowWarnings, type SpecRow } from "../lib/pdfSpecs";
-import { deriveMastersFromMarkets } from "../lib/mastersRoot";
+import { deriveMastersFromMarkets, mastersHalfFor, pairCampaignToOVLibrary } from "../lib/mastersRoot";
 
 // One row of the team's shared campaign board (team.ts's TeamCampaignRow).
 // Only what this picker needs: the name, and who retired it if anyone.
@@ -1371,6 +1371,12 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
             }
             await refreshCampaigns();
             selectCampaign(name);
+            // One job, two lists: register the Masters half with OV Library /
+            // Review too, so the campaign does not have to be added twice.
+            // Silent when the sibling isn't there -- see pairCampaignToOVLibrary.
+            if (await pairCampaignToOVLibrary(name, mr)) {
+                setNotice("Campaign added here and in OV Library / Review.");
+            }
         } catch (e) {
             setNotice("No CEP bridge. Open this panel inside After Effects.");
         }
@@ -1460,14 +1466,19 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
         }
     };
 
-    // Push this campaign's Markets path to the team library, so the next
-    // person doesn't have to browse for it. Merges; never repoints a path the
-    // team already holds.
+    // Push this campaign to the team library, so the next person doesn't have
+    // to browse for it. Merges; never repoints a path the team already holds.
+    //
+    // BOTH halves go, not just the Markets path this tool runs on: one press
+    // has to mean the team gets the campaign everywhere this machine has it,
+    // OV Library and Review included. "" when this machine only knows the
+    // Markets half, which the host treats as "nothing to fill in yet".
     const shareCampaign = async () => {
         const camp = campaigns.find((c) => c.name === campaignName);
         if (!camp) return;
         try {
-            const res = await evalTS("teamShareLocCampaign", JSON.stringify({ name: camp.name, marketsRoot: camp.marketsRoot }));
+            const mastersRoot = await mastersHalfFor(camp.name, camp.marketsRoot);
+            const res = await evalTS("teamShareLocCampaign", JSON.stringify({ name: camp.name, marketsRoot: camp.marketsRoot, mastersRoot }));
             if (res === undefined) throw new Error("no bridge");
             setNotice((res as { message?: string; error?: string }).message || (res as { error?: string }).error || "");
             await refreshCampaignStatus();

@@ -1822,6 +1822,17 @@ export const teamShareCustomTool = (entryJson: string): Result => {
 // Share ONE OV Library campaign (name + masters-root path) to the team, so
 // everyone points at the same masters folder instead of each adding it by
 // hand. Takes the full entry as a JSON payload, same pattern as the others.
+// What a re-share actually did, in the words of the half it filled in. Shared
+// by both share exports so the two can never describe the same act
+// differently. A row always carries at least the half that created it, so
+// "both" only comes up if a hand-edited file lost one.
+function shareFillMessage(name: string, addedMasters: boolean, addedMarkets: boolean): string {
+  if (addedMasters && addedMarkets) return 'Added the Masters and Markets paths for "' + name + '".';
+  if (addedMasters) return 'Added the Masters path for "' + name + '".';
+  if (addedMarkets) return 'Added the Markets path for "' + name + '".';
+  return 'Updated the banner for "' + name + '".';
+}
+
 export const teamShareCampaign = (campaignJson: string): Result => {
   try {
     if (!teamFolder()) return { success: false, error: "Team folder not set -- set it in the Team menu on the home screen first." };
@@ -1835,25 +1846,59 @@ export const teamShareCampaign = (campaignJson: string): Result => {
 
     const shared = readSharedFile<SharedCampaign>(SHARED_CAMPAIGNS_FILE, SHARED_CAMPAIGNS_TYPE) || [];
     const banner = entry.banner ? String(entry.banner) : "";
+    // The OTHER half, when this machine knows it. One press means "the team
+    // has what I have" -- a campaign is one job, and a Share that pushed only
+    // the half belonging to the tool you happened to be standing in left
+    // colleagues with a campaign that worked in Review and was missing from
+    // Localise. Optional, because a machine may genuinely only hold one half.
+    const otherHalf = entry.marketsRoot ? String(entry.marketsRoot) : "";
     for (let i = 0; i < shared.length; i++) {
       if (shared[i].name.toLowerCase() === entry.name.toLowerCase()) {
-        // Already shared. Re-sharing is how you push a banner you pinned
-        // AFTER the first share, so update that field rather than treating
-        // the whole call as a no-op -- otherwise the banner could never
-        // reach anyone. The masters root is left alone: someone re-sharing
-        // should not silently repoint a campaign the team already has.
+        // Already shared -- by name, so this is never a second row. But two
+        // things can still be MISSING from it, and re-sharing is the only way
+        // either one ever reaches the team:
+        //
+        //   - the MASTERS half, when the row was first shared from CSV
+        //     Localiser / Localised Library. teamShareLocCampaign pushes
+        //     mastersRoot: "", and teamSyncShared's OV loop skips any row
+        //     without one -- so colleagues got the Markets half and NOTHING
+        //     for OV Library or Review, while this call answered "already in
+        //     the team library", which reads like it worked. The other half
+        //     has always filled its blank in ("Added the Markets path for
+        //     X"); this is the same rule, in the direction that was missing.
+        //   - the banner, when it was pinned AFTER the first share.
+        //
+        // FILLING A BLANK IS NOT REPOINTING. A root the team has already
+        // agreed on is still never overwritten -- someone whose local path
+        // genuinely differs should say so out loud.
         const existingBanner = shared[i].banner ? String(shared[i].banner) : "";
+        const existingMasters = shared[i].mastersRoot ? String(shared[i].mastersRoot) : "";
+        const existingMarkets = shared[i].marketsRoot ? String(shared[i].marketsRoot) : "";
+        let addedMasters = false;
+        let addedMarkets = false;
+        let changedBanner = false;
+        if (!existingMasters) {
+          shared[i].mastersRoot = entry.mastersRoot;
+          addedMasters = true;
+        }
+        if (!existingMarkets && otherHalf) {
+          shared[i].marketsRoot = otherHalf;
+          addedMarkets = true;
+        }
         if (banner && banner !== existingBanner) {
           shared[i].banner = banner;
-          if (!writeSharedFile(SHARED_CAMPAIGNS_FILE, SHARED_CAMPAIGNS_TYPE, shared)) {
-            return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
-          }
-          return { success: true, message: 'Updated the banner for "' + entry.name + '".' };
+          changedBanner = true;
         }
-        return { success: true, message: '"' + entry.name + '" is already in the team library.' };
+        if (!addedMasters && !addedMarkets && !changedBanner) {
+          return { success: true, message: '"' + entry.name + '" is already in the team library.' };
+        }
+        if (!writeSharedFile(SHARED_CAMPAIGNS_FILE, SHARED_CAMPAIGNS_TYPE, shared)) {
+          return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
+        }
+        return { success: true, message: shareFillMessage(entry.name, addedMasters, addedMarkets) };
       }
     }
-    shared.push({ name: entry.name, mastersRoot: entry.mastersRoot, banner: banner });
+    shared.push({ name: entry.name, mastersRoot: entry.mastersRoot, marketsRoot: otherHalf, banner: banner });
     if (!writeSharedFile(SHARED_CAMPAIGNS_FILE, SHARED_CAMPAIGNS_TYPE, shared)) {
       return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
     }
@@ -1869,9 +1914,9 @@ export const teamShareCampaign = (campaignJson: string): Result => {
 //
 // Writes into the SAME shared-campaigns file rather than a second one: it is
 // one campaign with two roots, and two files would immediately raise "which
-// one is authoritative when the names disagree?". A row shared from OV Library
-// gains a marketsRoot here; a row shared from CSV Localiser first may have an
-// empty mastersRoot until someone shares that half.
+// one is authoritative when the names disagree?". Both halves go in one press
+// when the panel holds both; a row keeps an empty half only while the machine
+// that shared it genuinely knew just the one, and the next press fills it.
 //
 // NEVER REPOINTS an existing root, exactly as teamShareCampaign doesn't:
 // re-sharing is how you fill in a missing half, not how you overwrite the
@@ -1880,7 +1925,7 @@ export const teamShareCampaign = (campaignJson: string): Result => {
 export const teamShareLocCampaign = (campaignJson: string): Result => {
   try {
     if (!teamFolder()) return { success: false, error: "Team folder not set -- set it in the Team menu on the home screen first." };
-    let entry: { name?: string; marketsRoot?: string } | null = null;
+    let entry: { name?: string; marketsRoot?: string; mastersRoot?: string } | null = null;
     try {
       entry = JSON.parse(campaignJson);
     } catch (e2) {
@@ -1888,21 +1933,34 @@ export const teamShareLocCampaign = (campaignJson: string): Result => {
     }
     if (!entry || !entry.name || !entry.marketsRoot) return { success: false, error: "Campaign has no name/path to share." };
 
+    // The OTHER half, when this machine knows it -- see teamShareCampaign.
+    const otherHalf = entry.mastersRoot ? String(entry.mastersRoot) : "";
+
     const shared = readSharedFile<SharedCampaign>(SHARED_CAMPAIGNS_FILE, SHARED_CAMPAIGNS_TYPE) || [];
     for (let i = 0; i < shared.length; i++) {
       if (shared[i].name.toLowerCase() === entry.name.toLowerCase()) {
-        const existing = shared[i].marketsRoot ? String(shared[i].marketsRoot) : "";
-        if (existing) {
+        const existingMarkets = shared[i].marketsRoot ? String(shared[i].marketsRoot) : "";
+        const existingMasters = shared[i].mastersRoot ? String(shared[i].mastersRoot) : "";
+        let addedMarkets = false;
+        let addedMasters = false;
+        if (!existingMarkets) {
+          shared[i].marketsRoot = entry.marketsRoot;
+          addedMarkets = true;
+        }
+        if (!existingMasters && otherHalf) {
+          shared[i].mastersRoot = otherHalf;
+          addedMasters = true;
+        }
+        if (!addedMarkets && !addedMasters) {
           return { success: true, message: '"' + entry.name + '" is already in the team library.' };
         }
-        shared[i].marketsRoot = entry.marketsRoot;
         if (!writeSharedFile(SHARED_CAMPAIGNS_FILE, SHARED_CAMPAIGNS_TYPE, shared)) {
           return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
         }
-        return { success: true, message: 'Added the Markets path for "' + entry.name + '".' };
+        return { success: true, message: shareFillMessage(entry.name, addedMasters, addedMarkets) };
       }
     }
-    shared.push({ name: entry.name, mastersRoot: "", marketsRoot: entry.marketsRoot, banner: "" });
+    shared.push({ name: entry.name, mastersRoot: otherHalf, marketsRoot: entry.marketsRoot, banner: "" });
     if (!writeSharedFile(SHARED_CAMPAIGNS_FILE, SHARED_CAMPAIGNS_TYPE, shared)) {
       return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
     }
