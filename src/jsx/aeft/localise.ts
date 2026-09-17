@@ -6,7 +6,7 @@
 // see its header comment for context.
 // =============================================================================
 import { scaleCompToFit } from "./deliver";
-import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, territoryCheck, parseFilenameMeta, frontcardWrap, cheekyTCheck, organiseFolders, FRONTCARD_LEAD_IN_SECONDS, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, MasterIndexEntry, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, mcItTerritoryOfImageFolder, matchCreativeInName, ssFindSupportRoot, ssCollectSupport, ssCreativesOf, ssApplyToOpenProject, ssCountReplaced, ssOneTokenDiff, ssTokensOf, SupportSwapCandidate, scanMastersForBestMatch, firstSizeToken, ownProjectFolder } from "./tools";
+import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, territoryCheck, parseFilenameMeta, frontcardWrap, cheekyTCheck, organiseFolders, FRONTCARD_LEAD_IN_SECONDS, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, rankMastersFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, MasterIndexEntry, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, mcItTerritoryOfImageFolder, matchCreativeInName, ssFindSupportRoot, ssCollectSupport, ssCreativesOf, ssApplyToOpenProject, ssCountReplaced, ssOneTokenDiff, ssTokensOf, SupportSwapCandidate, scanMastersForBestMatch, firstSizeToken, ownProjectFolder } from "./tools";
 import { findMotionComponents } from "./artwork";
 import { makeParentLayerOfAllUnparented, scaleAllCameraZooms } from "./deliver";
 import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, saveLocGenReport, buildDeliverableName, durationForMasterLookup, durationDigits, sanitiseSiteToken, camelCaseToken, camelCaseName } from "./shared";
@@ -4026,6 +4026,9 @@ export interface CsvLocRowReport {
   // localise of a same-duration master, and someone reading the report later
   // needs to know which rows were assembled this way.
   multipleNote?: string;
+  // Set when the master was PICKED in the panel rather than scored. Same
+  // reason: the report should say which rows a person overrode.
+  masterNote?: string;
 }
 
 export interface CsvLocResult {
@@ -4173,9 +4176,28 @@ export const csvLocaliserRun = (
   skipExisting: boolean,
   runMcIt?: boolean,
   multiplesJson?: string,
-  runSupportSwap?: boolean
+  runSupportSwap?: boolean,
+  pinnedJson?: string
 ): CsvLocResult => {
   csvLocSaveLastPath(mastersPath);
+  // Masters a person PICKED for a row, CSV row index -> master path. A flat
+  // object of scalars, sent as a JSON string per the bridge rule. A pin
+  // outranks the scorer and the duration multiple alike: it is the answer to
+  // "the scorer picked the wrong one".
+  const pinnedRows: { [index: string]: string } = {};
+  if (pinnedJson) {
+    try {
+      const parsedPins = JSON.parse(pinnedJson);
+      if (parsedPins) {
+        for (const pk in parsedPins) {
+          if (!parsedPins.hasOwnProperty(pk)) continue;
+          if (parsedPins[pk]) pinnedRows[String(pk)] = String(parsedPins[pk]);
+        }
+      }
+    } catch (e) {
+      // Malformed pins fall back to the scorer for every row, as before pins.
+    }
+  }
   const multipleRows: { [index: string]: number } = {};
   if (multiplesJson) {
     try {
@@ -4405,12 +4427,32 @@ export const csvLocaliserRun = (
       rep.duration = duration;
       if (siteToken !== "") rep.site = siteToken;
 
-      let bestMatch = pickBestMasterFromIndex(mastersIndex, campaign, size, duration);
+      const pinnedPath = pinnedRows[String(rowsAttempted - 1)];
+      let bestMatch: MasterIndexEntry | null = null;
+      if (pinnedPath) {
+        for (let pi = 0; pi < mastersIndex.length; pi++) {
+          if (mastersIndex[pi].path === pinnedPath) {
+            bestMatch = mastersIndex[pi];
+            break;
+          }
+        }
+        if (!bestMatch) {
+          // REFUSED, never re-guessed. The pin exists because the scorer's
+          // answer was wrong for this row, so quietly falling back to it
+          // would build exactly the deliverable somebody stepped in to stop.
+          rep.status = "no-master";
+          rep.error = "The master picked for this row is no longer in " + mastersPath + " (" + pinnedPath + "). Pick it again.";
+          continue;
+        }
+        rep.masterNote = "Master picked by hand: " + bestMatch.name;
+      } else {
+        bestMatch = pickBestMasterFromIndex(mastersIndex, campaign, size, duration);
+      }
       // How many times the creative layer is laid end to end in the delivery
       // comp. 1 = the normal path, untouched.
       let repeatFactor = 1;
       const chosenFactor = multipleRows[String(rowsAttempted - 1)];
-      if (!bestMatch && chosenFactor) {
+      if (!bestMatch && !pinnedPath && chosenFactor) {
         // No same-duration master, and the user explicitly chose to build this
         // row from a shorter one at THIS factor. Re-validated, never guessed.
         const mult = multipleMasterForFactor(mastersIndex, campaign, size, duration, chosenFactor);
@@ -4999,6 +5041,47 @@ interface CsvLocResolveResult extends Result {
   indexed?: number;
   rows?: ResolvedMasterRow[];
 }
+
+export interface MasterCandidate {
+  name: string;
+  path: string;
+  // The folder the master sits in under AE/ -- what tells 3DIllusion's
+  // "…_Trio_…" apart from TRIO's own. The parent of an AE/ subfolder when the
+  // file sits in one (3DIllusion/AE/x.aep), else the immediate parent.
+  creative: string;
+  // 3 folder, 2 filename token, 1 anywhere in the path, 0 another creative.
+  tier: number;
+}
+
+/**
+ * The master picker's list for ONE row: every master at this duration and
+ * orientation, best first, with the creative's own ahead of everything else.
+ * Read-only and cached, like the resolve preview. Capped, because a row with
+ * no creative match would otherwise list every master of that shape.
+ */
+export const csvLocaliserListMasters = (
+  mastersPath: string,
+  campaign: string,
+  size: string,
+  duration: string
+): { success: boolean; error?: string; candidates?: MasterCandidate[] } => {
+  try {
+    if (!mastersPath) return { success: false, error: "No masters folder set." };
+    if (!/^\d+x\d+$/.test(String(size))) return { success: false, error: "This row has no size yet." };
+    const ranked = rankMastersFromIndex(getMastersIndex(mastersPath), campaign || "", size, duration || "");
+    const out: MasterCandidate[] = [];
+    for (let i = 0; i < ranked.length && out.length < 60; i++) {
+      const e = ranked[i].entry;
+      const parts = String(e.path).split(/[\/\\]/);
+      let creative = parts.length >= 2 ? parts[parts.length - 2] : "";
+      if (String(creative).toUpperCase() === "AE" && parts.length >= 3) creative = parts[parts.length - 3];
+      out.push({ name: e.name, path: e.path, creative: creative, tier: ranked[i].tier });
+    }
+    return { success: true, candidates: out };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
 
 // =============================================================================
 // BESPOKE -- masters as a browsable list.

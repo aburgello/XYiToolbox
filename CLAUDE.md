@@ -726,6 +726,18 @@ Naming Audit, which skips only `Auto-Save`/`_Archive`/`_Old`/`_DEV`.
 
 - `buildMastersIndex` must recurse depth-first at the point a folder is met —
   the scorer keeps `diff <= min`, so walk order decides tie-breaks.
+- **A master belongs to a creative in TIERS, and the tier outranks the aspect.**
+  `pickBestMasterFromIndex` used to accept the creative as a substring anywhere
+  in the path, so `3DIllusion/AE/…_DOOH_Trio_1920x1080px_15s_OV.aep` answered a
+  Trio row. `masterMatchTier`: 3 a folder IS the creative, 2 a whole filename
+  token (or joined run) is, 1 substring anywhere (kept as the floor, so nothing
+  that matched stops matching). Aspect and walk order break ties only within a
+  tier — a wrong shape shows in the build, a wrong creative does not.
+  `rankMastersFromIndex` is the same order as a list for Build a Batch's master
+  picker, and its first entry must equal the scorer's answer. A picked master
+  travels to `csvLocaliserRun` as `pinnedJson` (CSV index → path), beats the
+  scorer and any multiple, and a pin whose file has gone is **refused, never
+  re-scored**. `node scripts/probe-master-tiers.cjs` guards all of it.
 - Never loosen the CSV "already built" matcher into a fuzzy match. A false
   "already built" silently loses a deliverable; a false "new" costs one re-run.
 - Same for OV Swap's `scanOvSwap`: exact normalised name only, never
@@ -1108,6 +1120,10 @@ differently-cased name, the never-repoint rule, and what a fresh machine
 actually gets. Run it after touching either — the failure it exists for is
 silent, a row reaching colleagues with one half missing while the toast says
 "already in the team library".
+
+`node scripts/probe-master-tiers.cjs` (after `yarn build`) drives the master
+scorer and the picker's ranking over a tree where one creative's masters carry
+another's name. Run it after touching either.
 
 `node scripts/probe-campaign-rename.cjs` (after `yarn build`) drives
 `campaignRename` over a stubbed folder pair on BOTH naming conventions. Run it

@@ -5069,8 +5069,70 @@ export function buildMastersIndex(mastersRoot: string): MasterIndexEntry[] {
   return out;
 }
 
+/**
+ * HOW STRONGLY a master belongs to a creative. Higher wins outright; the
+ * aspect-ratio tie-break only ever runs WITHIN a tier.
+ *
+ *   3  a FOLDER on its path is the creative        (AE/TRIO/…)
+ *   2  its FILENAME carries the creative as a whole token, or a run of tokens
+ *      joined (`Portal_To_Paradise` answers to PortalToParadise)
+ *   1  the creative appears somewhere in the path  (the original test)
+ *   0  no match at all
+ *
+ * The original test was tier 1 alone, and a substring anywhere in the path
+ * cannot tell a creative from a creative that MENTIONS it:
+ * `3DIllusion/AE/FID_INTL_3DIllusion_DOOH_Trio_1920x1080px_15s_OV.aep` passed
+ * for TRIO exactly as well as TRIO's own masters did, and aspect ratio plus walk
+ * order handed a Trio row the 3DIllusion cut. Names only ever get more combined,
+ * so this was going to recur on every crossover creative.
+ *
+ * Tier 1 is KEPT as the floor, not removed: whatever matched before still
+ * matches, it just loses to a master that is unambiguously the creative's own.
+ */
+export function masterMatchTier(e: MasterIndexEntry, campaignCanon: string): number {
+  if (!campaignCanon) return 1; // an empty creative matched everything before; still does
+  if (e.canonPath.indexOf(campaignCanon) === -1) return 0;
+  const parts = String(e.path).split(/[\/\\]/);
+  // Every DIRECTORY segment (the last part is the file itself). Segments above
+  // the masters root are compared too, and are harmless: a job folder like
+  // XY026039_FID_Masters canonicalises to something no creative equals.
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (parts[i] !== "" && mastersCanon(parts[i]) === campaignCanon) return 3;
+  }
+  // Filename tokens, extension off. indexOf-free token compare -- never
+  // .match() a filename.
+  const stem = String(parts[parts.length - 1]).replace(/\.[A-Za-z0-9]{1,5}$/, "");
+  const tokens = stem.toUpperCase().split(/[^A-Z0-9]+/);
+  for (let a = 0; a < tokens.length; a++) {
+    let run = "";
+    for (let b = a; b < tokens.length; b++) {
+      run = run + tokens[b];
+      if (run.length > campaignCanon.length) break;
+      if (run === campaignCanon) return 2;
+    }
+  }
+  return 1;
+}
+
+export interface RankedMaster {
+  entry: MasterIndexEntry;
+  tier: number;
+  diff: number;
+  order: number; // position in the index walk; later wins a full tie
+}
+
+function masterRankBetter(a: RankedMaster, b: RankedMaster): boolean {
+  if (a.tier !== b.tier) return a.tier > b.tier;
+  if (a.diff !== b.diff) return a.diff < b.diff;
+  // `diff <= min` in the original single pass: among equals the LAST walked
+  // wins, which is why buildMastersIndex's walk order is load-bearing.
+  return a.order > b.order;
+}
+
 // The scoring half, extracted verbatim from scanMastersForBestMatch so both the
 // real run and the read-only preview can never disagree about which master wins.
+// Tiered since 2026-09-17 (see masterMatchTier); must return exactly
+// rankMastersFromIndex(...)[0] among tier >= 1.
 export function pickBestMasterFromIndex(
   index: MasterIndexEntry[],
   campaign: string,
@@ -5083,19 +5145,68 @@ export function pickBestMasterFromIndex(
   const campaignCanon = mastersCanon(campaign);
 
   let best: MasterIndexEntry | null = null;
+  let bestTier = 0;
   let min = 1000;
   for (let i = 0; i < index.length; i++) {
     const e = index[i];
     if (e.canonPath.indexOf(campaignCanon) === -1) continue;
     if (!durationMatchesPath(e.path, duration)) continue;
     if (e.orientation !== plRef) continue;
+    const tier = masterMatchTier(e, campaignCanon);
     const diff = Math.abs(aspectRatioRef - e.ratio);
-    if (diff <= min) {
+    // Two statements, not `a || (b && c)`: parentheses do not survive the
+    // ES3 emit (audit-jsx-precedence.cjs).
+    let wins = false;
+    if (tier > bestTier) wins = true;
+    else if (tier === bestTier) wins = diff <= min;
+    if (wins) {
       best = e;
+      bestTier = tier;
       min = diff;
     }
   }
   return best;
+}
+
+/**
+ * Every master a row COULD use, best first -- the list behind the panel's
+ * master picker. Same duration and orientation filter as the scorer; unlike
+ * it, this also returns masters of OTHER creatives (tier 0) after the matching
+ * ones, because the picker exists for the case the scorer gets wrong, and that
+ * includes a creative whose masters are filed under a name the row does not use.
+ *
+ * `rank[0]` (when its tier is >= 1) is by construction what
+ * pickBestMasterFromIndex returns; probe-master-tiers.cjs holds the two to that.
+ */
+export function rankMastersFromIndex(
+  index: MasterIndexEntry[],
+  campaign: string,
+  size: string,
+  duration: string
+): RankedMaster[] {
+  const sizeParts = String(size).split("x");
+  const aspectRatioRef = Number(sizeParts[0]) / Number(sizeParts[1]);
+  const plRef = aspectRatioRef >= 1 ? "Landscape" : "Portrait";
+  const campaignCanon = mastersCanon(campaign);
+  const out: RankedMaster[] = [];
+  for (let i = 0; i < index.length; i++) {
+    const e = index[i];
+    if (!durationMatchesPath(e.path, duration)) continue;
+    if (e.orientation !== plRef) continue;
+    out.push({ entry: e, tier: masterMatchTier(e, campaignCanon), diff: Math.abs(aspectRatioRef - e.ratio), order: i });
+  }
+  // Insertion sort: ES3 Array.prototype.sort is present, but a comparator
+  // returning booleans is easy to get wrong -- and these lists are short.
+  for (let a = 1; a < out.length; a++) {
+    const cur = out[a];
+    let b = a - 1;
+    while (b >= 0 && masterRankBetter(cur, out[b])) {
+      out[b + 1] = out[b];
+      b--;
+    }
+    out[b + 1] = cur;
+  }
+  return out;
 }
 
 // A deliverable whose duration has no master of its own, but IS an exact
