@@ -45,9 +45,11 @@ import {
     FileCheck,
     FileX,
     Circle,
+    Pin,
 
 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
+import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import type { ToolProps } from "../toolRegistry";
 import { fs, path } from "../../lib/cep/node";
 import CheckboxToggle from "../CheckboxToggle";
@@ -963,6 +965,27 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
     const [buildMasters, setBuildMasters] = useState<Record<number, ResolvedMaster>>({});
     // Chosen multiple per builder row, row id -> factor. Absent = off.
     const [buildMultiples, setBuildMultiples] = useState<Record<number, number>>({});
+    // A master PICKED for a row, row id -> the master. Wins over the scorer
+    // and over any multiple, at preview and at run time alike. It pins the
+    // answer to one creative/size/duration, so editing any of those drops it
+    // (updateBuildRow, revertBuildRow): a pin for a 15s landscape Trio has no
+    // business surviving the row being changed to 10s portrait.
+    const [buildPins, setBuildPins] = useState<Record<number, { name: string; path: string }>>({});
+    const dropBuildPin = (id: number) =>
+        setBuildPins((prev) => {
+            if (!prev[id]) return prev;
+            const next = { ...prev };
+            delete next[id];
+            return next;
+        });
+    // What a row will ACTUALLY use: the pin when there is one, else the
+    // scorer's preview. Every reader of buildMasters goes through this, so the
+    // status icon, the × offer, the Bespoke hand-off and the run cannot
+    // disagree about a pinned row.
+    const buildRes = (id: number): ResolvedMaster | undefined => {
+        const pin = buildPins[id];
+        return pin ? { master: pin.name, path: pin.path } : buildMasters[id];
+    };
 
     const cycleBuildMultiple = (id: number, available: number[]) =>
         setBuildMultiples((prev) => {
@@ -1008,8 +1031,12 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
         return () => { cancelled = true; };
     }, [buildOpen, marketsRoot, aepPath]);
 
-    const updateBuildRow = (id: number, patch: Partial<BuildRow>) =>
+    const updateBuildRow = (id: number, patch: Partial<BuildRow>) => {
+        if ("creative" in patch || "custom" in patch || "width" in patch || "height" in patch || "duration" in patch) {
+            dropBuildPin(id);
+        }
         setBuildRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+    };
     const addBuildRow = () =>
         setBuildRows((rs) => [...rs, { id: buildRowId.current++, artwork: "DOOH", creative: "", custom: "", site: "", width: "", height: "", duration: "" }]);
     const removeBuildRow = (id: number) =>
@@ -1043,7 +1070,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
      * answer as "no master".
      */
     const bespokeCandidates = buildComplete.filter((r) => {
-        const res = buildMasters[r.id];
+        const res = buildRes(r.id);
         return !!res && !res.master && !!(res.multiples && res.multiples.length);
     });
 
@@ -1071,7 +1098,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
             return;
         }
         const needs = (id: number) => {
-            const res = buildMasters[id];
+            const res = buildRes(id);
             return !!res && !res.master;
         };
         setPendingBespoke({
@@ -1200,6 +1227,55 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
         setNotice(`${t.territory} · ${b.batch}: ${rows.length} row${rows.length === 1 ? "" : "s"} from ${b.pdfName}. Every cell is editable.`);
     };
 
+    /**
+     * Choose a row's master by hand.
+     *
+     * FOR WHEN THE SCORER IS WRONG, not instead of it. It lists every master at
+     * the row's duration and orientation, the creative's own first (the host
+     * ranks them with the same tiers the scorer uses), then other creatives --
+     * a creative filed under a name the row does not use is exactly the case a
+     * ranking rule cannot rescue. The first option is always "Automatic", which
+     * is how a pin is taken back off.
+     */
+    const pickBuildMaster = async (r: BuildRow) => {
+        if (!aepPath) return;
+        const creative = buildRowCreative(r);
+        const size = `${parseInt(r.width, 10)}x${parseInt(r.height, 10)}`;
+        const duration = `${parseInt(r.duration, 10)}sec`;
+        const res = await evalTSSafe("csvLocaliserListMasters", aepPath, creative, size, duration);
+        if (!res.success) return; // evalTSSafe has already said why
+        const list = ((res as { candidates?: { name: string; path: string; creative: string; tier: number }[] }).candidates) || [];
+        if (!list.length) {
+            await alertDialog(`No masters at ${size} / ${r.duration}s in any creative. Check the size and duration first.`);
+            return;
+        }
+        const auto = buildMasters[r.id];
+        const autoLabel = auto?.master ? `Automatic (${auto.master})` : "Automatic (no master matched)";
+        const options = [autoLabel].concat(list.map((c) =>
+            `${c.tier > 0 ? "" : "Other creative · "}${c.creative} · ${c.name}`
+        ));
+        const pinned = buildPins[r.id];
+        const at = pinned ? list.findIndex((c) => c.path === pinned.path) : -1;
+        const choice = await selectDialog(
+            `Which master should ${creative} ${size} ${r.duration}s build from?`,
+            options,
+            at === -1 ? 0 : at + 1
+        );
+        if (choice === null) return;
+        if (choice === 0) {
+            dropBuildPin(r.id);
+            return;
+        }
+        const c = list[choice - 1];
+        // Picking what the scorer already chose is not an override; storing it
+        // would only make the row stop following the masters folder.
+        if (auto?.path && auto.path === c.path) {
+            dropBuildPin(r.id);
+            return;
+        }
+        setBuildPins((prev) => ({ ...prev, [r.id]: { name: c.name, path: c.path } }));
+    };
+
     /** Put one row back to what the sheet said. */
     const revertBuildRow = (id: number) => {
         const row = buildRows.find((r) => r.id === id);
@@ -1207,6 +1283,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
         const src = buildOrigin.rows[row.srcIndex];
         if (!src) return;
         const size = String(src.Size || "").split("x");
+        dropBuildPin(id);
         setBuildRows((prev) => prev.map((r) => (r.id !== id ? r : {
             ...r,
             artwork: src.Artwork || "DOOH",
@@ -1265,11 +1342,18 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
             // builder row's own position is NOT the CSV index, exactly the trap
             // the specs table's excluded rows create.
             const multiplesForRun: Record<number, number> = {};
+            // Same indexing as the multiples, for the same reason.
+            const pinsForRun: Record<number, string> = {};
             buildComplete.forEach((r, n) => {
+                const pin = buildPins[r.id];
+                if (pin) {
+                    pinsForRun[n] = pin.path;
+                    return;
+                }
                 const f = buildMultiples[r.id];
                 if (f > 1) multiplesForRun[n] = f;
             });
-            const res = await evalTS("csvLocaliserRun", aepPath, csv, skipExisting, runMcIt, JSON.stringify(multiplesForRun), runSupportSwap);
+            const res = await evalTS("csvLocaliserRun", aepPath, csv, skipExisting, runMcIt, JSON.stringify(multiplesForRun), runSupportSwap, JSON.stringify(pinsForRun));
             if (res === undefined) throw new Error("no bridge");
             if (res.success) {
                 const rrows = (res as { rows?: CsvLocRow[] }).rows || [];
@@ -2863,6 +2947,10 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                             </label>
                         </div>
 
+                        {/* ONE CONTAINER for header, rows and the run bar. Loose,
+                            each row floated on the page with nothing tying it to
+                            the header above or the actions below it. */}
+                        <div className="specs-build-table">
                         <div className="specs-build-rows">
                             <div className="specs-build-row specs-build-row--head">
                                 {/* Master status column, blank header exactly like the
@@ -2903,7 +2991,8 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                                 </Tooltip>
                                             );
                                         }
-                                        const res = buildMasters[r.id];
+                                        const pin = buildPins[r.id];
+                                        const res = buildRes(r.id);
                                         if (!res) {
                                             // The lookup is debounced 500ms and walks the
                                             // NAS, so "not back yet" is a normal, visible
@@ -2914,10 +3003,24 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                                 </Tooltip>
                                             );
                                         }
+                                        // Clickable from here on: found, pinned and
+                                        // missing all open the picker, because "wrong
+                                        // master" and "no master" are both answered there.
+                                        if (pin) {
+                                            return (
+                                                <Tooltip text={`Master picked by hand: ${pin.name}. Click to change or go back to automatic.`}>
+                                                    <button type="button" className="specs-master specs-master--pick specs-master--pinned" onClick={() => pickBuildMaster(r)} aria-label="Change master">
+                                                        <Pin size={11} />
+                                                    </button>
+                                                </Tooltip>
+                                            );
+                                        }
                                         if (res.master) {
                                             return (
-                                                <Tooltip text={`Master found: ${res.master}`}>
-                                                    <span className="specs-master specs-master--ok"><FileCheck size={12} /></span>
+                                                <Tooltip text={`Master found: ${res.master}. Click to pick a different one.`}>
+                                                    <button type="button" className="specs-master specs-master--pick specs-master--ok" onClick={() => pickBuildMaster(r)} aria-label="Change master">
+                                                        <FileCheck size={12} />
+                                                    </button>
                                                 </Tooltip>
                                             );
                                         }
@@ -2925,12 +3028,15 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                         return (
                                             <Tooltip
                                                 text={
-                                                    canMultiply
+                                                    (canMultiply
                                                         ? `No ${r.duration}s master for ${buildRowCreative(r)} at ${r.width}x${r.height}, but it can be built from a shorter one. See the × column.`
-                                                        : `No master matches ${buildRowCreative(r) || "this creative"} at ${r.width}x${r.height} / ${r.duration}s. This row would be skipped.`
+                                                        : `No master matches ${buildRowCreative(r) || "this creative"} at ${r.width}x${r.height} / ${r.duration}s. This row would be skipped.`) +
+                                                    " Click to pick one by hand."
                                                 }
                                             >
-                                                <span className="specs-master specs-master--none"><FileX size={12} /></span>
+                                                <button type="button" className="specs-master specs-master--pick specs-master--none" onClick={() => pickBuildMaster(r)} aria-label="Pick master">
+                                                    <FileX size={12} />
+                                                </button>
                                             </Tooltip>
                                         );
                                     })()}
@@ -3006,7 +3112,8 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                         // only appears when this row has no same-duration master AND
                                         // one exists whose duration divides it. Empty otherwise, so
                                         // it costs nothing on a normal row.
-                                        const res = buildMasters[r.id];
+                                        // A pinned row has its master; nothing to multiply.
+                                        const res = buildRes(r.id);
                                         const opts = res?.multiples || [];
                                         if (!opts.length) return <span />;
                                         const factors = opts.map((o) => o.factor);
@@ -3133,6 +3240,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                             <button className="specs-build-run" disabled={busy || !aepPath || !buildTerritory || buildComplete.length === 0} onClick={runBuilder}>
                                 <PlayCircle size={14} /> Localise {buildComplete.length || ""} row{buildComplete.length === 1 ? "" : "s"}
                             </button>
+                        </div>
                         </div>
                     </div>
                 )}

@@ -1869,7 +1869,17 @@
     }
 
     // ── Build a batch (visual CSV builder) ───────────────────────────────────
-    .specs-build-body { width: 100%; max-width: none; gap: 10px; }
+    .specs-build-body { width: 100%; max-width: none; gap: 12px; }
+
+    // Header, rows and run bar in ONE bordered box. No overflow:hidden --
+    // Dropdown's panel is not portaled and would be clipped by it, so the
+    // head and foot carry their own corner radii instead.
+    .specs-build-table {
+        width: 100%;
+        border: 1px solid var(--surface-edge, #3a3a3a);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.02);
+    }
 
     .specs-build-meta {
         display: flex;
@@ -1908,7 +1918,6 @@
     .specs-build-rows {
         display: flex;
         flex-direction: column;
-        gap: 5px;
         width: 100%;
     }
 
@@ -1929,9 +1938,33 @@
         // warning, Revert, and the remove button -- rather than one track each.
         // Per-row optional tracks meant a row without a warning had one fewer
         // child than the header had columns, and everything after it shifted.
-        grid-template-columns: 20px 90px minmax(110px, 2fr) minmax(80px, 1fr) 66px 66px 66px 40px 64px;
+        // Tracks SHRINK (minmax floors) rather than holding fixed widths: the
+        // fixed ones summed to ~670px, and a narrower panel scrolled the row
+        // and the run bar sideways out of reach. Below 640px the row stacks
+        // onto two lines instead -- see the media block after this rule.
+        grid-template-columns: 20px minmax(64px, 90px) minmax(80px, 2fr) minmax(56px, 1fr) minmax(46px, 66px) minmax(46px, 66px) minmax(46px, 66px) minmax(28px, 40px) auto;
+        min-width: 0;
         gap: 6px;
         align-items: center;
+        padding: 6px 10px;
+
+        // Hairline between rows rather than air: the rows read as one list.
+        // `& + &` would repeat the .specs-tool ancestor after the `+`.
+        & + .specs-build-row { border-top: 1px solid var(--surface-divider, #2a2a2a); }
+
+        // EVERY control one height. The Dropdown trigger and the plain inputs
+        // had different paddings and line boxes, so a row's cells stood at
+        // two heights side by side.
+        .dropdown-trigger,
+        > input[type="number"],
+        > .specs-build-site,
+        > .specs-build-custom-wrap > .specs-build-custom,
+        > .specs-build-custom {
+            height: 28px;
+            padding-top: 0;
+            padding-bottom: 0;
+            box-sizing: border-box;
+        }
 
         // The typed creative and its way back to the list, as one cell.
         > .specs-build-custom-wrap {
@@ -1944,23 +1977,36 @@
             > .specs-build-custom { flex: 1; min-width: 0; }
         }
 
-        .specs-build-pick {
+        // A clickable ICON, like the master status icon -- not a boxed button.
+        // `.form-tool button`'s 8px 12px padding was applying inside this 22px
+        // box, which crushed the chevron to nothing and left an empty square
+        // taking the creative's room. `button.` prefix so the reset outranks
+        // that rule, hover included (it lifts and fills on :hover:not(:disabled)).
+        button.specs-build-pick {
             flex: none;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 22px;
-            height: 28px;
-            border-radius: 6px;
+            width: auto;
+            height: auto;
+            padding: 0 2px;
+            border: 0;
+            border-radius: 3px;
+            background: none;
+            box-shadow: none;
+            transform: none;
             color: #999;
-            background: var(--ov-bg, #1e1e1e);
-            border: 1px solid var(--surface-edge, #3a3a3a);
             cursor: pointer;
 
-            // index.scss's global button:hover/:active would otherwise paint
-            // this blue.
-            &:hover { background: rgba(255, 255, 255, 0.07); color: #ddd; }
-            &:active { background: rgba(255, 255, 255, 0.1); color: #ddd; }
+            &:hover:not(:disabled),
+            &:active:not(:disabled) {
+                background: none;
+                border-color: transparent;
+                box-shadow: none;
+                transform: none;
+                color: #ddd;
+                svg { animation: none; }
+            }
         }
 
         > input[type="number"],
@@ -1978,6 +2024,13 @@
             &:focus { outline: none; border-color: var(--cat-border, #4a6a9a); }
         }
 
+        &--head {
+            padding-top: 7px;
+            padding-bottom: 7px;
+            background: rgba(0, 0, 0, 0.18);
+            border-radius: 7px 7px 0 0;
+        }
+
         &--head > span {
             font-size: var(--t-micro);
             font-weight: 700;
@@ -1986,6 +2039,37 @@
             color: #6f6f6f;
             padding-left: 2px;
         }
+    }
+
+    // NARROW PANEL: each row on two lines. Plain @media -- the panel IS the
+    // viewport, and @container is Chrome 105. The header is hidden because its
+    // single line of labels cannot describe a two-line row; every cell here
+    // still says what it is (placeholders Site/W/H/sec, the dropdowns' values).
+    //   icon | type  type | creative creative | end
+    //        | site | W   | H     | dur      | ×
+    // Children by position: icon, type, creative, site, W, H, dur, ×, end.
+    @media (max-width: 640px) {
+        .specs-build-row {
+            grid-template-columns: 20px repeat(4, minmax(0, 1fr)) auto;
+            grid-template-areas:
+                "icon type type creative creative end"
+                ".    site w    h        dur      mult";
+            row-gap: 6px;
+
+            > :nth-child(1) { grid-area: icon; }
+            > :nth-child(2) { grid-area: type; }
+            > :nth-child(3) { grid-area: creative; }
+            > :nth-child(4) { grid-area: site; }
+            > :nth-child(5) { grid-area: w; }
+            > :nth-child(6) { grid-area: h; }
+            > :nth-child(7) { grid-area: dur; }
+            > :nth-child(8) { grid-area: mult; justify-self: end; }
+            > :nth-child(9) { grid-area: end; }
+        }
+
+        .specs-build-row--head { display: none; }
+        // With the header gone the first row would lose its top divider.
+        .specs-build-row--head + .specs-build-row { border-top: 0; }
     }
 
     // Carried over from the batch modal with the rows themselves: the sheet's own
@@ -2027,8 +2111,8 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        width: 24px;
-        height: 26px;
+        width: 26px;
+        height: 28px;
         border-radius: 6px;
         border: 1px solid var(--surface-edge, #383838);
         background: var(--surface-0, #242424);
@@ -2067,10 +2151,16 @@
 
 .specs-build-actions {
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
-        gap: 10px;
+        gap: 8px 10px;
         width: 100%;
-        margin-top: 2px;
+        box-sizing: border-box;
+        padding: 8px 10px;
+        // The table's footer: same divider and tint family as its head.
+        border-top: 1px solid var(--surface-divider, #2a2a2a);
+        background: rgba(0, 0, 0, 0.12);
+        border-radius: 0 0 7px 7px;
     }
 
     // The inline-swap setting, sitting with the action it changes rather
@@ -2101,7 +2191,7 @@
         &:hover { border-color: var(--cat-border, #5a7aaa); color: #ddd; }
     }
 
-    .specs-build-count { font-size: 10.5px; color: #7a7a7a; margin-left: auto; }
+    .specs-build-count { font-size: 10.5px; color: #7a7a7a; margin-left: auto; white-space: nowrap; }
 
     .specs-build-run {
         display: inline-flex;
@@ -2291,6 +2381,40 @@
     &--ok      { color: #4ade80; }
     &--none    { color: #f87171; }
     &--unknown { color: #5a5a5a; }
+    // A master picked by hand: neither found nor missing, a decision.
+    &--pinned  { color: var(--ov-accent, #38bdf8); }
+}
+
+// Build a Batch's status icon doubles as the master picker -- a clickable
+// ICON, not a button. `.form-tool button` (padding, border, fill, lift on
+// hover) outranks a lone class, which is what made it a 28px box eating the
+// Type column, so this is scoped to beat it and strips all of it. The colour
+// modifiers are re-declared for the same reason: that rule sets `color` too.
+.form-tool button.specs-master.specs-master--pick {
+    width: auto;
+    height: auto;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 3px;
+    background: none;
+    box-shadow: none;
+    transform: none;
+    cursor: pointer;
+
+    &.specs-master--ok     { color: #4ade80; }
+    &.specs-master--none   { color: #f87171; }
+    &.specs-master--pinned { color: var(--ov-accent, #38bdf8); }
+
+    &:hover:not(:disabled),
+    &:active:not(:disabled) {
+        background: none;
+        border-color: transparent;
+        box-shadow: none;
+        transform: none;
+        filter: brightness(1.35);
+        svg { animation: none; }
+    }
 
 }
 
