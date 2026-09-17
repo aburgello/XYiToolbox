@@ -17,8 +17,19 @@ const fs = require('fs');
 const vm = require('vm');
 const src = fs.readFileSync('dist/cep/jsx/index.js', 'utf8');
 
+// A stub tree for csvLocaliserListMasters, which walks the disk itself.
+// fsName -> child names; absent means a file.
+let tree = {};
 function File(p) { this.fsName = p; this.name = String(p).split('/').pop(); }
-function Folder(p) { this.fsName = p; this.name = String(p).split('/').pop(); }
+// fsName drops a trailing slash, as ExtendScript's does.
+function Folder(p) { this.fsName = String(p).length > 1 ? String(p).replace(/\/+$/, '') : p; this.name = this.fsName.split('/').pop(); }
+Object.defineProperty(Folder.prototype, 'exists', { get() { return Object.prototype.hasOwnProperty.call(tree, this.fsName); } });
+Folder.prototype.getFiles = function () {
+    return (tree[this.fsName] || []).map((k) => {
+        const q = this.fsName + '/' + k;
+        return tree[q] ? new Folder(q) : new File(q);
+    });
+};
 const sandbox = {
     Folder, File,
     app: { settings: { haveSetting: () => false, getSetting: () => '', saveSetting: () => {} }, project: null },
@@ -102,6 +113,46 @@ for (const [c, s, d] of [['Trio', '1920x1080', '15'], ['Trio', '1080x1920', '15'
 const trioList = aeft.rankMastersFromIndex(index, 'Trio', '1920x1080', '15');
 check('picker lists other creatives too (tier 0)', trioList.some((r) => r.tier === 0), true);
 check('picker excludes other durations/orientations', trioList.every((r) => /15s/.test(r.entry.path) && r.entry.orientation === 'Landscape'), true);
+
+// The picker labels each master with its CREATIVE: the first folder under the
+// masters root, never the file's own parent -- nested masters
+// (PORTAL_TO_PARADISE/10secs/x.aep) were labelled "10secs".
+tree = {
+    '/M/AE': ['PORTAL_TO_PARADISE', '3DIllusion', 'TRIO'],
+    '/M/AE/PORTAL_TO_PARADISE': ['10secs'],
+    '/M/AE/PORTAL_TO_PARADISE/10secs': ['FID_INTL_PortalToParadise_DOOH_1080x1920px_10s_OV.aep'],
+    '/M/AE/3DIllusion': ['AE'],
+    '/M/AE/3DIllusion/AE': ['FID_INTL_3DIllusion_DOOH_Trio_1080x1920px_10s_OV.aep'],
+    '/M/AE/TRIO': ['FID_INTL_Trio_DOOH_1080x1920px_10s_OV.aep'],
+};
+for (const root of ['/M/AE', '/M/AE/', '/M']) {
+    if (root === '/M') tree['/M'] = ['AE'];
+    const res = aeft.csvLocaliserListMasters(root, 'Trio', '600x1600', '10');
+    const by = {};
+    (res.candidates || []).forEach((c) => { by[c.name] = c.creative; });
+    check(`root ${root}: nested master labelled by its creative folder`, by['FID_INTL_PortalToParadise_DOOH_1080x1920px_10s_OV.aep'], 'PORTAL_TO_PARADISE');
+    check(`root ${root}: <creative>/AE/ master labelled by the creative`, by['FID_INTL_3DIllusion_DOOH_Trio_1080x1920px_10s_OV.aep'], '3DIllusion');
+    check(`root ${root}: TRIO's own master listed first`, res.candidates && res.candidates[0].name, 'FID_INTL_Trio_DOOH_1080x1920px_10s_OV.aep');
+}
+
+// "Why isn't my creative in the list?" -- the row's creative at OTHER
+// durations comes back separately, never among the pickable candidates.
+tree = {
+    '/N/AE': ['3DIllusion', 'TRIO'],
+    '/N/AE/3DIllusion': ['AE'],
+    '/N/AE/3DIllusion/AE': ['FID_INTL_3DIllusion_DOOH_1080x1920px_15s_OV.aep', 'FID_INTL_3DIllusion_DOOH_1920x1080px_15s_OV.aep'],
+    '/N/AE/TRIO': ['FID_INTL_Trio_DOOH_1080x1920px_10s_OV.aep'],
+};
+{
+    const res = aeft.csvLocaliserListMasters('/N/AE', '3DIllusion', '600x1600', '10');
+    const names = (res.candidates || []).map((c) => c.name);
+    const od = res.otherDurations || [];
+    check('10s 3DIllusion row: no 3DIllusion candidate at 10s', names.some((n) => /3DIllusion/.test(n)), false);
+    check('...its 15s portrait master offered as another duration', od.length === 1 && od[0].name, 'FID_INTL_3DIllusion_DOOH_1080x1920px_15s_OV.aep');
+    check('...with its seconds and creative', od[0] && od[0].seconds + '|' + od[0].creative, '15|3DIllusion');
+    const same = aeft.csvLocaliserListMasters('/N/AE', '3DIllusion', '600x1600', '15');
+    check('15s row: nothing listed as another duration', (same.otherDurations || []).length, 0);
+}
 
 console.log(fails ? `\n${fails} FAILED` : '\nall passed');
 process.exit(fails ? 1 : 0);

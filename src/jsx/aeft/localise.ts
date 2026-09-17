@@ -5053,31 +5053,77 @@ export interface MasterCandidate {
   tier: number;
 }
 
+/** The seconds a master's filename declares (`_15s_` / `_15sec_`), or "". */
+function masterSecondsOf(name: string): string {
+  const tokens = String(name).replace(/\.[A-Za-z0-9]{1,5}$/, "").split("_");
+  for (let i = 0; i < tokens.length; i++) {
+    const m = /^(\d+)s(ec)?$/i.exec(tokens[i]);
+    if (m) return m[1];
+  }
+  return "";
+}
+
 /**
  * The master picker's list for ONE row: every master at this duration and
  * orientation, best first, with the creative's own ahead of everything else.
  * Read-only and cached, like the resolve preview. Capped, because a row with
  * no creative match would otherwise list every master of that shape.
+ *
+ * `otherDurations` answers "why isn't my creative in here?": the row's OWN
+ * creative's masters at the same orientation but a different length. They are
+ * shown and NOT pickable -- a 15s master in a 10s slot builds a deliverable of
+ * the wrong length that nothing downstream flags. The panel offers to change
+ * the row's duration instead, which makes it an ordinary match.
  */
 export const csvLocaliserListMasters = (
   mastersPath: string,
   campaign: string,
   size: string,
   duration: string
-): { success: boolean; error?: string; candidates?: MasterCandidate[] } => {
+): { success: boolean; error?: string; candidates?: MasterCandidate[]; otherDurations?: (MasterCandidate & { seconds: string })[] } => {
   try {
     if (!mastersPath) return { success: false, error: "No masters folder set." };
     if (!/^\d+x\d+$/.test(String(size))) return { success: false, error: "This row has no size yet." };
-    const ranked = rankMastersFromIndex(getMastersIndex(mastersPath), campaign || "", size, duration || "");
+    const index = getMastersIndex(mastersPath);
+    // The creative is the FIRST folder under the masters root, not the file's
+    // parent: masters are nested (PORTAL_TO_PARADISE/10secs/x.aep), and the
+    // parent labelled a creative "10secs". fsName on both sides, since that is
+    // what the index walk recorded. An AE/ level directly under the root (a
+    // root pointed at the campaign rather than at its AE folder) is skipped.
+    const rootFs = String(new Folder(mastersPath).fsName).replace(/[\/\\]+$/, "");
+    const creativeOf = (p: string): string => {
+      let rel: string[] = [];
+      if (p.indexOf(rootFs + "/") === 0 || p.indexOf(rootFs + "\\") === 0) {
+        rel = p.slice(rootFs.length + 1).split(/[\/\\]/);
+      }
+      if (rel.length >= 2 && String(rel[0]).toUpperCase() === "AE") rel = rel.slice(1);
+      if (rel.length >= 2) return rel[0];
+      const parts = p.split(/[\/\\]/);
+      return parts.length >= 2 ? parts[parts.length - 2] : "";
+    };
+
+    const ranked = rankMastersFromIndex(index, campaign || "", size, duration || "");
     const out: MasterCandidate[] = [];
     for (let i = 0; i < ranked.length && out.length < 60; i++) {
       const e = ranked[i].entry;
-      const parts = String(e.path).split(/[\/\\]/);
-      let creative = parts.length >= 2 ? parts[parts.length - 2] : "";
-      if (String(creative).toUpperCase() === "AE" && parts.length >= 3) creative = parts[parts.length - 3];
-      out.push({ name: e.name, path: e.path, creative: creative, tier: ranked[i].tier });
+      out.push({ name: e.name, path: e.path, creative: creativeOf(String(e.path)), tier: ranked[i].tier });
     }
-    return { success: true, candidates: out };
+
+    // Same ranking with the duration filter off ("" matches every length),
+    // kept to the row's creative and to lengths OTHER than the row's.
+    const wanted = String(duration == null ? "" : duration).replace(/[^0-9]/g, "");
+    const others: (MasterCandidate & { seconds: string })[] = [];
+    if (campaign && wanted) {
+      const any = rankMastersFromIndex(index, campaign, size, "");
+      for (let j = 0; j < any.length && others.length < 20; j++) {
+        if (any[j].tier < 1) continue;
+        const secs = masterSecondsOf(any[j].entry.name);
+        if (!secs || String(parseInt(secs, 10)) === String(parseInt(wanted, 10))) continue;
+        const oe = any[j].entry;
+        others.push({ name: oe.name, path: oe.path, creative: creativeOf(String(oe.path)), tier: any[j].tier, seconds: String(parseInt(secs, 10)) });
+      }
+    }
+    return { success: true, candidates: out, otherDurations: others };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

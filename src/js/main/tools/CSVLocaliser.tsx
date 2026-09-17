@@ -501,6 +501,14 @@ interface ResolvedMaster {
     multiples?: { factor: number; duration: string; master: string }[];
 }
 
+// One entry in the master picker, as csvLocaliserListMasters returns it.
+interface MasterPick {
+    name: string;
+    path: string;
+    creative: string;
+    tier: number; // > 0 matches the row's creative; 0 is another creative's
+}
+
 const isBridge = () => typeof (window as any).cep !== "undefined";
 const batchKey = (territory: string, pdfName: string) => `${territory}/${pdfName}`;
 
@@ -971,6 +979,9 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
     // (updateBuildRow, revertBuildRow): a pin for a 15s landscape Trio has no
     // business surviving the row being changed to 10s portrait.
     const [buildPins, setBuildPins] = useState<Record<number, { name: string; path: string }>>({});
+    // The master picker's open state: which row, and what the host offered.
+    const [masterPicker, setMasterPicker] = useState<{ rowId: number; creative: string; size: string; seconds: string; list: MasterPick[]; otherDurations: (MasterPick & { seconds: string })[] } | null>(null);
+    const [masterPickerQuery, setMasterPickerQuery] = useState("");
     const dropBuildPin = (id: number) =>
         setBuildPins((prev) => {
             if (!prev[id]) return prev;
@@ -1244,37 +1255,37 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
         const duration = `${parseInt(r.duration, 10)}sec`;
         const res = await evalTSSafe("csvLocaliserListMasters", aepPath, creative, size, duration);
         if (!res.success) return; // evalTSSafe has already said why
-        const list = ((res as { candidates?: { name: string; path: string; creative: string; tier: number }[] }).candidates) || [];
-        if (!list.length) {
+        const list = ((res as { candidates?: MasterPick[] }).candidates) || [];
+        const otherDurations = ((res as { otherDurations?: (MasterPick & { seconds: string })[] }).otherDurations) || [];
+        if (!list.length && !otherDurations.length) {
             await alertDialog(`No masters at ${size} / ${r.duration}s in any creative. Check the size and duration first.`);
             return;
         }
-        const auto = buildMasters[r.id];
-        const autoLabel = auto?.master ? `Automatic (${auto.master})` : "Automatic (no master matched)";
-        const options = [autoLabel].concat(list.map((c) =>
-            `${c.tier > 0 ? "" : "Other creative · "}${c.creative} · ${c.name}`
-        ));
-        const pinned = buildPins[r.id];
-        const at = pinned ? list.findIndex((c) => c.path === pinned.path) : -1;
-        const choice = await selectDialog(
-            `Which master should ${creative} ${size} ${r.duration}s build from?`,
-            options,
-            at === -1 ? 0 : at + 1
-        );
-        if (choice === null) return;
-        if (choice === 0) {
-            dropBuildPin(r.id);
-            return;
-        }
-        const c = list[choice - 1];
-        // Picking what the scorer already chose is not an override; storing it
-        // would only make the row stop following the masters folder.
-        if (auto?.path && auto.path === c.path) {
-            dropBuildPin(r.id);
-            return;
-        }
-        setBuildPins((prev) => ({ ...prev, [r.id]: { name: c.name, path: c.path } }));
+        setMasterPicker({ rowId: r.id, creative, size, seconds: r.duration, list, otherDurations });
+        setMasterPickerQuery("");
     };
+
+    const chooseBuildMaster = (rowId: number, c: MasterPick | null) => {
+        setMasterPicker(null);
+        const auto = buildMasters[rowId];
+        // Automatic, or picking what the scorer already chose: neither is an
+        // override, and storing the latter would only make the row stop
+        // following the masters folder.
+        if (!c || (auto?.path && auto.path === c.path)) {
+            dropBuildPin(rowId);
+            return;
+        }
+        setBuildPins((prev) => ({ ...prev, [rowId]: { name: c.name, path: c.path } }));
+    };
+
+    useEffect(() => {
+        if (!masterPicker) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") setMasterPicker(null);
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [masterPicker]);
 
     /** Put one row back to what the sheet said. */
     const revertBuildRow = (id: number) => {
@@ -3247,6 +3258,107 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
             </div>
 
             {notice && <p className="hint">{notice}</p>}
+
+            {/* MASTER PICKER. Portalled for the same reason as the batch modal
+                (no overflow ancestor may clip it) and re-tinted by hand, since
+                --cat-* does not reach <body>. Not selectDialog: a native
+                <select> of sixty full filenames ran off the side of the panel
+                with no grouping and no way to tell a creative's own masters
+                from everyone else's. */}
+            {masterPicker && createPortal(
+                (() => {
+                    const mp = masterPicker;
+                    const q = masterPickerQuery.trim().toLowerCase();
+                    const hit = (c: MasterPick) => !q || (c.name + " " + c.creative).toLowerCase().indexOf(q) !== -1;
+                    const own = mp.list.filter((c) => c.tier > 0 && hit(c));
+                    const other = mp.list.filter((c) => c.tier === 0 && hit(c));
+                    const elsewhere = mp.otherDurations.filter(hit);
+                    const auto = buildMasters[mp.rowId];
+                    const pinnedPath = buildPins[mp.rowId]?.path || "";
+                    const option = (c: MasterPick) => {
+                        const on = pinnedPath ? pinnedPath === c.path : auto?.path === c.path;
+                        return (
+                            <button
+                                key={c.path}
+                                type="button"
+                                className={"mpick-option" + (on ? " is-on" : "")}
+                                onClick={() => chooseBuildMaster(mp.rowId, c)}
+                                title={c.path}
+                            >
+                                <span className="mpick-creative">{c.creative}</span>
+                                <span className="mpick-name">{c.name.replace(/\.aep$/i, "")}</span>
+                                {on && <Check size={12} className="mpick-check" />}
+                            </button>
+                        );
+                    };
+                    return (
+                        <div className="mpick-overlay" style={portalCatVars()} onClick={() => setMasterPicker(null)} role="presentation">
+                            <div className="mpick" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Pick a master">
+                                <div className="mpick-head">
+                                    <div className="mpick-title">Pick a master</div>
+                                    <div className="mpick-sub">{mp.creative} · {mp.size} · {mp.seconds}s</div>
+                                    <button type="button" className="mpick-close" onClick={() => setMasterPicker(null)} aria-label="Close">
+                                        <X size={14} />
+                                    </button>
+                                </div>
+                                <div className="mpick-search">
+                                    <Search size={12} />
+                                    <input
+                                        type="text"
+                                        autoFocus
+                                        value={masterPickerQuery}
+                                        onChange={(e) => setMasterPickerQuery(e.target.value)}
+                                        placeholder="Filter by name or creative…"
+                                    />
+                                </div>
+                                <div className="mpick-list">
+                                    <button
+                                        type="button"
+                                        className={"mpick-option mpick-option--auto" + (!pinnedPath ? " is-on" : "")}
+                                        onClick={() => chooseBuildMaster(mp.rowId, null)}
+                                    >
+                                        <span className="mpick-creative">Automatic</span>
+                                        <span className="mpick-name">{auto?.master ? auto.master.replace(/\.aep$/i, "") : "No master matched"}</span>
+                                        {!pinnedPath && <Check size={12} className="mpick-check" />}
+                                    </button>
+                                    {own.length > 0 && <div className="mpick-group">Matches {mp.creative}</div>}
+                                    {own.map(option)}
+                                    {other.length > 0 && <div className="mpick-group">Other creatives</div>}
+                                    {other.map(option)}
+                                    {/* WHY THE CREATIVE ISN'T ABOVE. Shown, never pickable:
+                                        a master of another length builds a deliverable of
+                                        the wrong length. Changing the row's duration is
+                                        the honest way to use one, and makes it an
+                                        ordinary match (it also drops any pin). */}
+                                    {elsewhere.length > 0 && (
+                                        <div className="mpick-group">{mp.creative} at other durations</div>
+                                    )}
+                                    {elsewhere.map((c) => (
+                                        <div key={c.path} className="mpick-option mpick-option--elsewhere" title={c.path}>
+                                            <span className="mpick-creative">{c.creative}</span>
+                                            <span className="mpick-name">{c.name.replace(/\.aep$/i, "")}</span>
+                                            <Tooltip text={`This row asks for ${mp.seconds}s. Set it to ${c.seconds}s to use this master. Only if the sheet is wrong: it changes the deliverable's length.`}>
+                                                <button
+                                                    type="button"
+                                                    className="mpick-use"
+                                                    onClick={() => {
+                                                        setMasterPicker(null);
+                                                        updateBuildRow(mp.rowId, { duration: c.seconds });
+                                                    }}
+                                                >
+                                                    Set row to {c.seconds}s
+                                                </button>
+                                            </Tooltip>
+                                        </div>
+                                    ))}
+                                    {!own.length && !other.length && !elsewhere.length && <div className="mpick-empty">Nothing matches “{masterPickerQuery}”.</div>}
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })(),
+                document.body
+            )}
         </div>
     );
 };
