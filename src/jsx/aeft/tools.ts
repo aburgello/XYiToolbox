@@ -5558,6 +5558,45 @@ export const scaleCompositionExplicit = (newWidth: number, newHeight: number): R
 //   - two+ vertical guides    -> width  = X2 - X1  (region starts at X1)
 //   - one horizontal guide   -> height = guide Y   (region starts at 0)
 //   - two+ horizontal guides  -> height = Y2 - Y1  (region starts at Y1)
+/**
+ * Comps elsewhere in the project that DO carry guides, for the error message.
+ *
+ * "No ruler guides" reads as "you didn't add any", and the guides are usually
+ * right there -- on another comp. `app.project.activeItem` is the front-most
+ * VIEWER's item, so a Layer panel in front, or a second comp viewer, hands
+ * this function a comp the person is not looking at. Naming both ends answers
+ * that in one line instead of a puzzled afternoon.
+ *
+ * Comps from an imported sibling project are excluded: app.project.item(i) is
+ * FLAT and walks them too (CLAUDE.md), and pointing somebody at a comp inside
+ * somebody else's .aep would be worse than saying nothing.
+ */
+function compsCarryingGuides(exclude: CompItem | null): string[] {
+  const out: string[] = [];
+  try {
+    for (let i = 1; i <= app.project.numItems; i++) {
+      const it = app.project.item(i);
+      if (!(it instanceof CompItem)) continue;
+      if (exclude && it.id === exclude.id) continue; // id, never === on an AE object
+      const g = (it as any).guides;
+      if (!g || g.length === 0) continue;
+      let imported = false;
+      let f = it.parentFolder;
+      while (f) {
+        const nm = String(f.name).toLowerCase();
+        if (nm.slice(-4) === ".aep") { imported = true; break; }
+        f = f.parentFolder;
+      }
+      if (imported) continue;
+      out.push(it.name + " (" + g.length + ")");
+      if (out.length >= 3) break;
+    }
+  } catch (e) {
+    // A diagnostic must never be the reason a tool fails.
+  }
+  return out;
+}
+
 export const guideScale = (): Result => {
   try {
     const activeComp = app.project.activeItem;
@@ -5587,7 +5626,18 @@ export const guideScale = (): Result => {
     }
 
     if (vGuidePositions.length === 0 && hGuidePositions.length === 0) {
-      return { success: false, error: "No ruler guides on the active comp — drag guides from the rulers first." };
+      // NAME THE COMP IT READ. This is the front-most viewer's item, which is
+      // not always the comp somebody is working in -- an open Layer panel or a
+      // second viewer changes it, and the report is always "it says there are
+      // none" about a comp that plainly has guides.
+      const elsewhere = compsCarryingGuides(activeComp);
+      let msg = "No ruler guides on \"" + activeComp.name + "\" — the comp After Effects reports as active.";
+      if (elsewhere.length > 0) {
+        msg = msg + " Guides are on: " + elsewhere.join(", ") + ". Open that comp's viewer and run it there.";
+      } else {
+        msg = msg + " Drag guides from the rulers first.";
+      }
+      return { success: false, error: msg };
     }
 
     vGuidePositions.sort((a, b) => a - b);
@@ -5623,13 +5673,33 @@ export const guideScale = (): Result => {
       return { success: false, error: "Guides produced a zero/negative size — check the guide positions." };
     }
 
+    // SAY WHICH GUIDES WERE USED. Only the lowest two per axis count, and a
+    // comp carrying five horizontals gave no sign which pair built the region
+    // -- nor that a guide sitting outside the comp (dragged off-canvas, or
+    // left behind by a resize) had been taken as an edge.
+    const notes: string[] = [];
+    if (vGuidePositions.length === 1) notes.push("width 0–" + Math.round(widthStore) + " (one vertical guide)");
+    else if (vGuidePositions.length >= 2) notes.push("width " + Math.round(vGuidePositions[0]) + "–" + Math.round(vGuidePositions[1]));
+    if (hGuidePositions.length === 1) notes.push("height 0–" + Math.round(heightStore) + " (one horizontal guide)");
+    else if (hGuidePositions.length >= 2) notes.push("height " + Math.round(hGuidePositions[0]) + "–" + Math.round(hGuidePositions[1]));
+    if (vGuidePositions.length > 2) notes.push(String(vGuidePositions.length - 2) + " further vertical guide(s) ignored");
+    if (hGuidePositions.length > 2) notes.push(String(hGuidePositions.length - 2) + " further horizontal guide(s) ignored");
+    let outside = 0;
+    for (let vi = 0; vi < vGuidePositions.length; vi++) {
+      if (vGuidePositions[vi] < 0 || vGuidePositions[vi] > activeComp.width) outside++;
+    }
+    for (let hi = 0; hi < hGuidePositions.length; hi++) {
+      if (hGuidePositions[hi] < 0 || hGuidePositions[hi] > activeComp.height) outside++;
+    }
+    if (outside > 0) notes.push(outside + " guide(s) sit outside the comp");
+
     app.beginUndoGroup("XYi Guide Scale");
     targetLayer.property("Anchor Point").setValue(anchor);
     targetLayer.property("Position").setValue(position);
     scaleCompToFit(targetLayer.source, widthStore, heightStore);
     app.endUndoGroup();
 
-    return { success: true };
+    return { success: true, message: "Guide Scale: " + notes.join(" · ") } as Result;
   } catch (e) {
     return { success: false, error: e.toString() };
   }
