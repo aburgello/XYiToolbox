@@ -46,6 +46,7 @@ import {
     FileX,
     Circle,
     Pin,
+    Languages,
 
 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
@@ -851,6 +852,27 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
     const [buildTerritory, setBuildTerritory] = useState("");
     const [buildBatch, setBuildBatch] = useState("Batch_1");
     /**
+     * THE LANGUAGES THIS BATCH DELIVERS IN, declared once beside the territory.
+     *
+     * Belgium ships Flemish and French of the same deliverable, and the name is
+     * the only thing that tells them apart -- but that is one market in twenty,
+     * so a Lang column on every batch is a column nobody needs. Blank (the
+     * default, and the case for nearly every batch) means the rows show no
+     * language control at all; naming "FL FR" here turns it on and limits what
+     * a row can be set to.
+     */
+    const [buildLanguages, setBuildLanguages] = useState("");
+    // The FIELD is off too, not just the column: a batch that delivers in one
+    // language should show no trace of any of this. The toggle lives beside
+    // Batch; anything already declared (a Wrike handoff, or a field somebody
+    // filled) opens it, so nothing can be set and invisible at the same time.
+    const [langFieldOpen, setLangFieldOpen] = useState(false);
+    const langFieldShown = langFieldOpen || buildLanguages.trim() !== "";
+    const buildLangList = buildLanguages
+        .toUpperCase()
+        .split(/[^A-Z]+/)
+        .filter((t) => t.length >= 2 && t.length <= 3);
+    /**
      * WHICH DESTINATION this grid has written files to, not merely whether it
      * has written any.
      *
@@ -922,6 +944,14 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
         if (!pending || !pending.rows.length) return;
         handoffRef.current = pending;
         setHandoff(pending);
+        // The rows know their own languages, so the batch's field fills itself
+        // -- nobody should have to re-declare what Wrike already said.
+        const langs: string[] = [];
+        pending.rows.forEach((r) => {
+            const l = (r.language || "").toUpperCase();
+            if (l && langs.indexOf(l) === -1) langs.push(l);
+        });
+        setBuildLanguages(langs.join(" "));
         setBuildRows(
             pending.rows.map((r, i) => ({
                 id: i + 1,
@@ -1360,7 +1390,11 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
             Site: r.site.trim(),
             // Upper-cased here as well as host-side, so what the grid shows and
             // what lands in the filename are the same string.
-            Language: (r.language || "").trim().toUpperCase(),
+            // Only what the batch declared: clearing the Languages field must
+            // not leave a token nobody can see written into a filename.
+            Language: buildLangList.indexOf((r.language || "").toUpperCase()) === -1
+                ? ""
+                : (r.language || "").toUpperCase(),
             // Build-a-batch is hand-typed, so there is no PDF to read a target
             // size, bitrate or frame rate off. Left blank rather than defaulted:
             // an invented delivery spec is worse than an absent one.
@@ -3030,19 +3064,49 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                 <span>Batch</span>
                                 <input type="text" value={buildBatch} onChange={(e) => setBuildBatch(e.target.value)} placeholder="Batch_1" />
                             </label>
+                            {/* OFF UNLESS THIS BATCH NEEDS IT. Belgium delivers
+                                Flemish and French of one size and length, so the
+                                name is all that separates them -- but that is one
+                                market in twenty. Closed it is one glyph; opened it
+                                names the languages, and only then does each row
+                                get a Lang cell. */}
+                            {langFieldShown ? (
+                                <label className="specs-build-field specs-build-field--lang">
+                                    <span>Languages</span>
+                                    <input
+                                        type="text"
+                                        autoFocus={langFieldOpen && buildLanguages === ""}
+                                        value={buildLanguages}
+                                        onChange={(e) => setBuildLanguages(e.target.value.replace(/[^A-Za-z ,]/g, "").toUpperCase())}
+                                        onBlur={() => { if (buildLanguages.trim() === "") setLangFieldOpen(false); }}
+                                        placeholder="FL FR"
+                                    />
+                                </label>
+                            ) : (
+                                <Tooltip text="This batch delivers the same size in more than one language (Belgium's FL/FR, Switzerland's DE/FR/IT). Name them and each row gets a language to pick.">
+                                    <button
+                                        type="button"
+                                        className="specs-build-langtoggle"
+                                        onClick={() => setLangFieldOpen(true)}
+                                        aria-label="Add languages to this batch"
+                                    >
+                                        <Languages size={14} />
+                                    </button>
+                                </Tooltip>
+                            )}
                         </div>
 
                         {/* ONE CONTAINER for header, rows and the run bar. Loose,
                             each row floated on the page with nothing tying it to
                             the header above or the actions below it. */}
                         <div className="specs-build-table">
-                        <div className="specs-build-rows">
+                        <div className={"specs-build-rows" + (buildLangList.length > 0 ? " specs-build-rows--lang" : "")}>
                             <div className="specs-build-row specs-build-row--head">
                                 {/* Master status column, blank header exactly like the
                                     specs table's own — the icon says what it is, and a
                                     label here would crowd a 20px column. */}
                                 <span />
-                                <span>Type</span><span>Creative</span><span>Site</span><span>Width</span><span>Height</span><span>Dur</span><span>Lang</span><span>×</span><span />
+                                <span>Type</span><span>Creative</span><span>Site</span><span>Width</span><span>Height</span><span>Dur</span>{buildLangList.length > 0 && <span>Lang</span>}<span>×</span><span />
                             </div>
                             {buildRows.map((r) => (
                                 <div className="specs-build-row" key={r.id}>
@@ -3192,22 +3256,25 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                     <input type="number" min="1" placeholder="W" value={r.width} onChange={(e) => updateBuildRow(r.id, { width: e.target.value })} />
                                     <input type="number" min="1" placeholder="H" value={r.height} onChange={(e) => updateBuildRow(r.id, { height: e.target.value })} />
                                     <input type="number" min="1" placeholder="sec" value={r.duration} onChange={(e) => updateBuildRow(r.id, { duration: e.target.value })} />
-                                    {/* OPTIONAL, and blank on nearly every row: only
-                                        the multi-language markets need it (Belgium
-                                        FL/FR, Switzerland DE/FR/IT, Canada EN/FR). It
-                                        is written after the territory, so two rows
-                                        differing only by this build two files. */}
-                                    <Tooltip text="Language token after the territory, for a market that delivers more than one — FL, FR, DE… Leave blank otherwise.">
-                                        <input
-                                            className="specs-build-lang"
-                                            type="text"
-                                            maxLength={3}
-                                            placeholder="—"
-                                            value={r.language || ""}
-                                            aria-label="Language (optional)"
-                                            onChange={(e) => updateBuildRow(r.id, { language: e.target.value.replace(/[^A-Za-z]/g, "").toUpperCase() })}
-                                        />
-                                    </Tooltip>
+                                    {/* ONLY WHEN THE BATCH DECLARED LANGUAGES. A plain
+                                        <select> rather than Dropdown: it sits in a 52px
+                                        grid cell holding three options, where a portalled
+                                        panel is more machinery than the choice deserves. */}
+                                    {buildLangList.length > 0 && (
+                                        <Tooltip text={`Written after the territory (…_${r.duration || "15"}s_${buildTerritory ? "" : ""}BE_FL). Blank means no language token at all, which is its own deliverable.`}>
+                                            <select
+                                                className="specs-build-lang"
+                                                value={r.language || ""}
+                                                aria-label="Language"
+                                                onChange={(e) => updateBuildRow(r.id, { language: e.target.value })}
+                                            >
+                                                <option value="">—</option>
+                                                {buildLangList.map((l) => (
+                                                    <option key={l} value={l}>{l}</option>
+                                                ))}
+                                            </select>
+                                        </Tooltip>
+                                    )}
                                     {(() => {
                                         // Same control, same meaning as the specs table's × column:
                                         // only appears when this row has no same-duration master AND
