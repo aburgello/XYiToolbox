@@ -65,17 +65,21 @@ interface Props {
     disabled?: boolean;
     /** Extra class on the trigger box, for per-use layout (matches the old wrapper's className slot). */
     className?: string;
+    /** Extra class on the PANEL. It is portalled to <body>, so a narrow use
+     *  (the Lang cell's two-letter list against a 200px default) cannot reach
+     *  it from its own subtree. */
+    panelClassName?: string;
     emptyMessage?: string;
 }
 
-const Dropdown: React.FC<Props> = ({ value, onChange, options, placeholder = "Select…", icon, disabled, className, emptyMessage = "Nothing to select yet." }) => {
+const Dropdown: React.FC<Props> = ({ value, onChange, options, placeholder = "Select…", icon, disabled, className, panelClassName, emptyMessage = "Nothing to select yet." }) => {
     const selected = options.find((o) => o.value === value) || null;
     const [focusedIndex, setFocusedIndex] = useState(-1);
     const listRef = useRef<HTMLDivElement>(null);
 
     return (
         <Droplet
-            panelClassName="dropdown-panel"
+            panelClassName={"dropdown-panel" + (panelClassName ? " " + panelClassName : "")}
             trigger={({ open, toggle }) => (
                 <button
                     type="button"

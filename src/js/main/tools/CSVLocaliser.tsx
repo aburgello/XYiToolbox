@@ -3256,24 +3256,20 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                     <input type="number" min="1" placeholder="W" value={r.width} onChange={(e) => updateBuildRow(r.id, { width: e.target.value })} />
                                     <input type="number" min="1" placeholder="H" value={r.height} onChange={(e) => updateBuildRow(r.id, { height: e.target.value })} />
                                     <input type="number" min="1" placeholder="sec" value={r.duration} onChange={(e) => updateBuildRow(r.id, { duration: e.target.value })} />
-                                    {/* ONLY WHEN THE BATCH DECLARED LANGUAGES. A plain
-                                        <select> rather than Dropdown: it sits in a 52px
-                                        grid cell holding three options, where a portalled
-                                        panel is more machinery than the choice deserves. */}
+                                    {/* ONLY WHEN THE BATCH DECLARED LANGUAGES. The
+                                        panel's own Dropdown, not a native <select>:
+                                        that one is drawn by the OS, so its blue
+                                        highlight ignores the panel's theme entirely. */}
                                     {buildLangList.length > 0 && (
-                                        <Tooltip text={`Written after the territory (…_${r.duration || "15"}s_${buildTerritory ? "" : ""}BE_FL). Blank means no language token at all, which is its own deliverable.`}>
-                                            <select
-                                                className="specs-build-lang"
-                                                value={r.language || ""}
-                                                aria-label="Language"
-                                                onChange={(e) => updateBuildRow(r.id, { language: e.target.value })}
-                                            >
-                                                <option value="">—</option>
-                                                {buildLangList.map((l) => (
-                                                    <option key={l} value={l}>{l}</option>
-                                                ))}
-                                            </select>
-                                        </Tooltip>
+                                        <Dropdown
+                                            className="specs-build-lang"
+                                            panelClassName="dropdown-panel--narrow"
+                                            value={r.language || ""}
+                                            onChange={(v) => updateBuildRow(r.id, { language: v })}
+                                            options={[{ value: "", label: "—" }].concat(
+                                                buildLangList.map((l) => ({ value: l, label: l }))
+                                            )}
+                                        />
                                     )}
                                     {(() => {
                                         // Same control, same meaning as the specs table's × column:

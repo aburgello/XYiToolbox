@@ -2906,19 +2906,20 @@ $rail-gap: 10px;   // exactly the flex gap between rows, so segments tile
 }
 
 // Language: three characters at most, so it reads as the small field it is.
-.specs-build-lang {
-    height: 28px;
-    box-sizing: border-box;
+// The Lang cell is the narrowest control in the row -- two characters and a
+// chevron -- so its trigger gives up the gap and padding the wider ones keep.
+// The class lands ON the trigger (Dropdown's own contract), not on a wrapper.
+.dropdown-trigger.specs-build-lang {
+    gap: 2px;
     padding: 0 4px;
-    border: 1px solid var(--surface-edge, #3a3a3a);
-    border-radius: 6px;
-    background: var(--ov-bg, #1e1e1e);
-    color: #ddd;
     font-size: 11.5px;
-    text-align: center;
     letter-spacing: 0.04em;
+}
 
-    &:focus { outline: none; border-color: var(--cat-border, #4a6a9a); }
+// Its panel is portalled, so it is reached by its own class rather than from
+// the row. A list of two-letter codes has no use for the 200px default.
+.dropdown-panel--narrow {
+    min-width: 72px;
 }
 
 // The batch row's document icon opens that batch's specs PDF. Inside the
