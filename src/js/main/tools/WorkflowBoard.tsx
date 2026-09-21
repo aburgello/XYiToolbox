@@ -27,6 +27,7 @@ import {
     ListChecks, Plus, X, Trash2, Pencil, Check, RotateCcw, StickyNote,
     RefreshCw, AlertCircle, FolderSearch, ChevronLeft, ChevronRight, GripVertical, Users,
     ArrowRight, Link2, Link2Off, Search, Globe, FolderOpen, Wand2, MoreHorizontal, Crosshair,
+    Play, Film,
 } from "lucide-react";
 import {
     DndContext,
@@ -52,6 +53,7 @@ import { confirmDialog, promptDialog } from "../Dialog";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
 import Droplet from "../Droplet";
+import VideoOverlay from "../VideoOverlay";
 import "../shared.scss";
 import "./WorkflowBoard.scss";
 
@@ -95,6 +97,9 @@ interface WorkflowLink {
     toolsetAction?: string;
     script?: string;
     scriptName?: string;
+    /** A video to PLAY: a screen recording of this step being done. Played in
+     *  the panel's own VideoOverlay, the same player the tool tutorials use. */
+    video?: string;
 }
 
 interface WorkflowStep { id: string; text: string; link?: WorkflowLink }
@@ -131,10 +136,11 @@ interface WorkflowNoteLink {
     path?: string;
     tool?: string;
     action?: string;
-    /** Same three destinations a step link has — see WorkflowLink. */
+    /** Same destinations a step link has — see WorkflowLink. */
     toolsetAction?: string;
     script?: string;
     scriptName?: string;
+    video?: string;
 }
 interface Territory { name: string; code: string }
 interface WorkflowEntry {
@@ -147,6 +153,10 @@ interface WorkflowEntry {
     key: string;
     steps: WorkflowStep[];
     notes: WorkflowNote[];
+    /** A screen recording for the CREATIVE, picked and stored as a path —
+     *  a creative is not a tool, so there is no filename convention to match
+     *  it by. Mirrors team.ts's WorkflowEntry. */
+    tutorial?: string;
     author: string;
     updatedAt: string;
 }
@@ -158,6 +168,15 @@ interface CampaignRef { name: string; mastersRoot: string }
 // failure and vanishes before it can be acted on, so that one is the inline
 // stale banner instead.
 type Toast = { id: number; type: "success" | "error"; text: string };
+
+/** A path's filename without its extension — what a clip is called, for a
+ *  chip that has a whole NAS path behind it and about twelve characters of
+ *  room. Both separators, because a Windows path arrives with backslashes. */
+function fileLabel(path: string): string {
+    const parts = String(path || "").split(/[\\/]/);
+    const last = parts[parts.length - 1] || "";
+    return last.replace(/\.[A-Za-z0-9]{1,5}$/, "") || "clip";
+}
 
 /** Upper-case alphanumerics. MUST match team.ts's workflowCanon exactly -- the
  *  panel builds the same key to find an entry that the host builds to store it,
@@ -328,11 +347,13 @@ function noteBody(
                     type="button"
                     className="wfb-inline-link"
                     onClick={() => onOpen(hit)}
-                    title={hit.path
-                        ? hit.path
-                        : `Opens ${hit.tool}${hit.action ? ` — then press “${hit.action}”` : ""}`}
+                    title={hit.video
+                        ? `Plays ${fileLabel(hit.video)}`
+                        : hit.path
+                            ? hit.path
+                            : `Opens ${hit.tool}${hit.action ? ` — then press “${hit.action}”` : ""}`}
                 >
-                    {hit.path ? <FolderOpen size={9} /> : <ArrowRight size={9} />}
+                    {hit.video ? <Play size={9} /> : hit.path ? <FolderOpen size={9} /> : <ArrowRight size={9} />}
                     {part}
                 </button>
             );
@@ -393,10 +414,31 @@ const StepLinkChip: React.FC<{
     onGo: (toolId: string) => void;
     onGoAction: (actionId: string) => void;
     onGoScript: (link: WorkflowLink) => void;
+    /** Plays a step's clip in the panel's own player. */
+    onPlay: (path: string) => void;
     /** Saved scripts on THIS machine, for resolving a script link's name. */
     scripts: { id: string; name: string }[];
     disabled?: boolean;
-}> = ({ link, onGo, onGoAction, onGoScript, scripts, disabled }) => {
+}> = ({ link, onGo, onGoAction, onGoScript, onPlay, scripts, disabled }) => {
+    // --- a screen recording -----------------------------------------------
+    // PLAYED, not navigated to: it is the one destination that answers the
+    // step where you stand rather than sending you somewhere to do it.
+    if (link.video) {
+        return (
+            <Tooltip text={`Plays the clip for this step — ${fileLabel(link.video)}`}>
+                <button
+                    type="button"
+                    className="wfb-link wfb-link--video"
+                    disabled={disabled}
+                    onClick={(e) => { e.stopPropagation(); onPlay(link.video as string); }}
+                >
+                    <Play size={10} />
+                    <span>{fileLabel(link.video)}</span>
+                </button>
+            </Tooltip>
+        );
+    }
+
     // --- a Toolset card ---------------------------------------------------
     if (link.toolsetAction) {
         const act = TOOLSET_ACTIONS.filter((a) => a.id === link.toolsetAction)[0];
@@ -506,7 +548,9 @@ const LinkPicker: React.FC<{
     onClose: () => void;
     /** Saved scripts on this machine — the third kind of destination. */
     scripts: { id: string; name: string; description: string }[];
-}> = ({ value, stepText, onPick, onClose, scripts }) => {
+    /** Opens the OS file dialog and resolves to a path, or "" if cancelled. */
+    onPickVideo: () => Promise<string>;
+}> = ({ value, stepText, onPick, onClose, scripts, onPickVideo }) => {
     const [query, setQuery] = useState("");
     const [tool, setTool] = useState(value ? value.tool || "" : "");
     const q = query.trim().toLowerCase();
@@ -554,6 +598,26 @@ const LinkPicker: React.FC<{
 
             {!chosen && (
                 <div className="wfb-linkpick-list">
+                    {/* FIRST, and not filtered by the search box: a clip is not
+                        a tool with a name to hunt for, it is a file you go and
+                        find. Hidden once a search is typed, where it would sit
+                        above results it does not belong to. */}
+                    {!q && (
+                        <>
+                            <p className="wfb-linkpick-sep">A recording</p>
+                            <button
+                                type="button"
+                                className="wfb-linkpick-row"
+                                onClick={async () => {
+                                    const path = await onPickVideo();
+                                    if (path) onPick({ video: path });
+                                }}
+                            >
+                                <Play size={12} />
+                                <span className="wfb-linkpick-label">Pick a video…</span>
+                            </button>
+                        </>
+                    )}
                     {matches.length > 0 && <p className="wfb-linkpick-sep">Tools</p>}
                     {matches.map((t) => (
                         <button key={t.id} type="button" className="wfb-linkpick-row" onClick={() => setTool(t.id)}>
@@ -679,6 +743,14 @@ const WorkflowBoardTool: React.FC<{
     const panel = variant === "panel";
 
     const [entries, setEntries] = useState<WorkflowEntry[]>([]);
+    /** The clip on screen: a step's, a note's, or the creative's own. One
+     *  player for all three, portalled by VideoOverlay itself. */
+    const [clip, setClip] = useState<{ path: string; title: string } | null>(null);
+    const playClip = useCallback((path: string, title?: string) => {
+        if (!path) return;
+        sfx.click();
+        setClip({ path, title: title || fileLabel(path) });
+    }, []);
     // "Couldn't read" is NOT "nothing there". A failed read must never blank a
     // board that was on screen a moment ago -- it goes stale, and says so.
     const [boardRead, setBoardRead] = useState(false);
@@ -1245,6 +1317,25 @@ const WorkflowBoardTool: React.FC<{
         }
     };
 
+    /** The OS file dialog, shared by the note composer and the step editor. */
+    const pickVideoPath = useCallback(async (): Promise<string> => {
+        try {
+            return ((await evalTS("workflowSelectVideo")) as string) || "";
+        } catch {
+            toast("error", "Couldn't open the file picker.");
+            return "";
+        }
+    }, [toast]);
+
+    /** Same as attachFolder, for a clip. evalTS rather than evalTSSafe for the
+     *  same reason: an OS file dialog can sit open for as long as somebody
+     *  browses, and a 15s timeout would call that a failure. */
+    const attachVideo = async (word: string) => {
+        const path = await pickVideoPath();
+        if (!path) { setLinkWord(""); setWordPicking(false); return; }
+        attachLink({ label: word, video: path });
+    };
+
     const addNote = async () => {
         const body = noteDraft.trim();
         if (!body || !entry) return;
@@ -1305,6 +1396,7 @@ const WorkflowBoardTool: React.FC<{
 
     /** Follow a note's inline link: a folder in Finder, or a tool in the panel. */
     const openNoteLink = useCallback(async (link: WorkflowNoteLink) => {
+        if (link.video) { playClip(link.video); return; }
         if (link.path) {
             sfx.click();
             // revealUsefulFolder gates on Folder.exists, which CLAUDE.md allows
@@ -1318,7 +1410,7 @@ const WorkflowBoardTool: React.FC<{
         if (link.toolsetAction) { goToAction(link.toolsetAction); return; }
         if (link.script || link.scriptName) { goToScript(link); return; }
         if (link.tool) goTo(link.tool);
-    }, [goTo, goToAction, goToScript, toast]);
+    }, [goTo, goToAction, goToScript, playClip, toast]);
 
     const removeNote = async (noteId: string) => {
         if (!entry) return;
@@ -1380,7 +1472,7 @@ const WorkflowBoardTool: React.FC<{
      *  anything the board already carries that the tree didn't show. */
     const pickable = useMemo(() => {
         const seen: Record<string, boolean> = {};
-        const out: { name: string; steps: number; notes: number; hasWorkflow: boolean }[] = [];
+        const out: { name: string; steps: number; notes: number; hasWorkflow: boolean; tutorial?: string }[] = [];
         const want = canon(pickCampaign);
         const mine = entries.filter((e) => canon(e.campaign) === want);
         const wf: Record<string, WorkflowEntry> = {};
@@ -1396,6 +1488,9 @@ const WorkflowBoardTool: React.FC<{
                 steps: hit ? hit.steps.length : 0,
                 notes: hit ? (hit.notes || []).length : 0,
                 hasWorkflow: !!hit,
+                // Playable straight from the list: "which of these has a clip"
+                // is most of why anybody opens this screen.
+                tutorial: hit ? hit.tutorial : undefined,
             });
         };
         (folderCreatives || []).forEach(push);
@@ -1411,6 +1506,27 @@ const WorkflowBoardTool: React.FC<{
             return a.name.localeCompare(b.name);
         });
     }, [folderCreatives, entries, pickCampaign]);
+
+    /**
+     * WHAT EACH CAMPAIGN HAS, for the cards at the top of the picker.
+     *
+     * Documented creatives and clips come from the board, which is already in
+     * hand for every campaign. The TOTAL cannot: creatives are read off the
+     * masters tree one campaign at a time (a NAS walk each), so a card shows
+     * "9 workflows" until its own campaign is open and the scan has answered,
+     * and "9 of 14" after. Scanning all of them up front would put a dozen
+     * network walks in front of a screen somebody opened to read one board.
+     */
+    const campaignStats = useMemo(() => {
+        const out: Record<string, { workflows: number; clips: number }> = {};
+        entries.forEach((e) => {
+            const k = canon(e.campaign);
+            if (!out[k]) out[k] = { workflows: 0, clips: 0 };
+            out[k].workflows++;
+            if (e.tutorial) out[k].clips++;
+        });
+        return out;
+    }, [entries]);
 
     const pickableShown = useMemo(() => {
         const q = creativeQuery.trim().toLowerCase();
@@ -1475,6 +1591,28 @@ const WorkflowBoardTool: React.FC<{
         setPinned(true);
         setPicking(false);
         startNew();
+    };
+
+    /**
+     * The CREATIVE's own recording: pick it, replace it, or take it off.
+     *
+     * Its own host call rather than part of a step save -- workflowSaveEntry
+     * merges by key and rewrites the whole entry, so doing this through a save
+     * could overwrite steps somebody else had just written.
+     */
+    const setTutorial = async (path: string) => {
+        if (!entry) return;
+        const r = (await evalTSSafe("workflowSetTutorial", entry.id, path)) as {
+            success: boolean; error?: string; entries?: WorkflowEntry[];
+        };
+        if (!r || !r.success) { toast("error", (r && r.error) || "Couldn't save the clip."); return; }
+        if (r.entries) setEntries(r.entries);
+        toast("success", path ? "Clip attached." : "Clip removed.");
+    };
+
+    const attachTutorial = async () => {
+        const path = await pickVideoPath();
+        if (path) await setTutorial(path);
     };
 
     const choose = (campName: string, creativeName: string, name?: string) => {
@@ -1561,6 +1699,45 @@ const WorkflowBoardTool: React.FC<{
                             ))}
                         </div>
                     )}
+                    {/* THE CREATIVE'S OWN CLIP. Present it plays; absent, and
+                        only while a board is open, it offers to attach one —
+                        the same rule the tool tutorials follow ("the
+                        affordance only exists when the clip does"), except a
+                        creative has no filename convention to be found by, so
+                        somebody has to point at the file once. */}
+                    {entry && entry.tutorial && (
+                        <Tooltip text={`Watch ${fileLabel(entry.tutorial)} — right-click to replace or remove`}>
+                            <button
+                                type="button"
+                                className="wfb-btn wfb-btn--icon wfb-btn--tut"
+                                onClick={() => playClip(entry.tutorial as string, `${prettyCreative(creative)} — tutorial`)}
+                                onContextMenu={async (e) => {
+                                    e.preventDefault();
+                                    const ok = await confirmDialog(
+                                        `Replace the clip for ${prettyCreative(creative)}?\n\n` +
+                                        `It is currently ${fileLabel(entry.tutorial as string)}.\n\n` +
+                                        "OK picks a new one; Cancel leaves it alone. To remove it, pick nothing in the dialog."
+                                    );
+                                    if (ok) await attachTutorial();
+                                }}
+                                aria-label="Play this creative's tutorial"
+                            >
+                                <Play size={12} />
+                            </button>
+                        </Tooltip>
+                    )}
+                    {entry && !entry.tutorial && (
+                        <Tooltip text={`Attach a screen recording for ${prettyCreative(creative)} — everyone on the team sees it`}>
+                            <button
+                                type="button"
+                                className="wfb-btn wfb-btn--icon"
+                                onClick={attachTutorial}
+                                aria-label="Attach a tutorial for this creative"
+                            >
+                                <Film size={12} />
+                            </button>
+                        </Tooltip>
+                    )}
                     <Tooltip text="Add another workflow for this creative — a name separates it from the one you're on">
                         <button type="button" className="wfb-btn wfb-btn--icon" onClick={startNamedWorkflow} disabled={!creative}>
                             <Plus size={12} />
@@ -1590,6 +1767,18 @@ const WorkflowBoardTool: React.FC<{
                 </div>
             )}
 
+            {/* ONE PLAYER for a step's clip, a note's, and the creative's own.
+                VideoOverlay portals itself to <body> and re-applies the
+                category tint, so it is mounted here rather than per chip. */}
+            {clip && (
+                <VideoOverlay
+                    path={clip.path}
+                    title={clip.title}
+                    errorHint="The clip is opened from the path it was picked at — if it lives on somebody's desktop, other machines can't reach it. Put it on the team share."
+                    onClose={() => setClip(null)}
+                />
+            )}
+
             {/* ── the picker ───────────────────────────────────────────── */}
             <AnimatePresence initial={false}>
                 {picking && (
@@ -1611,6 +1800,11 @@ const WorkflowBoardTool: React.FC<{
                             <span>Which creative?</span>
                         </div>
 
+                        {/* CARDS, NOT CHIPS. This is the screen somebody opens
+                            to find their way, so a campaign says what it holds
+                            — how many creatives are written up, and how many
+                            carry a recording — rather than being a name you
+                            have to click to learn anything about. */}
                         <div className="wfb-camps">
                             {campaigns.length === 0 && (
                                 <p className="wfb-empty-line">
@@ -1627,19 +1821,39 @@ const WorkflowBoardTool: React.FC<{
                                 // you had it open must not strand you with a
                                 // board you cannot get back to.
                                 const off = !!retired[c.name.toLowerCase()] && c.name !== pickCampaign;
+                                const st = campaignStats[canon(c.name)] || { workflows: 0, clips: 0 };
+                                const open = c.name === pickCampaign;
+                                // The TOTAL is only known for the campaign whose
+                                // tree has been walked — see campaignStats.
+                                const total = open && folderCreatives ? folderCreatives.length : 0;
                                 return (
                                     <button
                                         key={c.name}
                                         type="button"
                                         className={"wfb-camp"
-                                            + (c.name === pickCampaign ? " is-on" : "")
+                                            + (open ? " is-on" : "")
                                             + (off ? " is-retired" : "")}
                                         aria-disabled={off || undefined}
                                         title={off ? `Retired by ${retired[c.name.toLowerCase()]}` : undefined}
                                         onClick={() => { if (!off) setPickCampaign(c.name); }}
                                     >
-                                        {c.name}
-                                        {off && <em>retired</em>}
+                                        <span className="wfb-camp-name">{c.name}</span>
+                                        {off ? <em>retired</em> : (
+                                            <span className="wfb-camp-meta">
+                                                <span>
+                                                    {st.workflows === 0
+                                                        ? "nothing written yet"
+                                                        : total
+                                                            ? `${st.workflows} of ${total}`
+                                                            : `${st.workflows} workflow${st.workflows === 1 ? "" : "s"}`}
+                                                </span>
+                                                {st.clips > 0 && (
+                                                    <span className="wfb-camp-clips">
+                                                        <Play size={8} />{st.clips}
+                                                    </span>
+                                                )}
+                                            </span>
+                                        )}
                                     </button>
                                 );
                             })}
@@ -1687,6 +1901,13 @@ const WorkflowBoardTool: React.FC<{
                                 return (
                                     <React.Fragment key={c.name}>
                                         {first && <p className="wfb-creative-sep">Nothing written down yet</p>}
+                                        {/* A WRAPPER, because the clip's button is a
+                                            SIBLING of the row's: a button inside a
+                                            button is invalid markup and would inherit
+                                            the row's own click — so watching a clip
+                                            would also open the board. Same shape as
+                                            the workflow-variant chip's rename. */}
+                                        <span className={"wfb-creative-wrap" + (c.tutorial ? " has-clip" : "")}>
                                         <motion.button
                                             type="button"
                                             className={"wfb-creative" + (c.hasWorkflow ? " has-wf" : "")}
@@ -1709,6 +1930,19 @@ const WorkflowBoardTool: React.FC<{
                                                 </span>
                                             )}
                                         </motion.button>
+                                        {c.tutorial && (
+                                            <Tooltip text={`Watch ${fileLabel(c.tutorial)} — without opening the board`}>
+                                                <button
+                                                    type="button"
+                                                    className="wfb-creative-play"
+                                                    onClick={() => playClip(c.tutorial as string, `${prettyCreative(c.name)} — tutorial`)}
+                                                    aria-label={`Play ${prettyCreative(c.name)}'s tutorial`}
+                                                >
+                                                    <Play size={10} />
+                                                </button>
+                                            </Tooltip>
+                                        )}
+                                        </span>
                                     </React.Fragment>
                                 );
                             })}
@@ -1839,6 +2073,7 @@ const WorkflowBoardTool: React.FC<{
                             ease={ease}
                             rowDelay={rowDelay}
                             scripts={customTools}
+                            onPickVideo={pickVideoPath}
                         />
                     )}
 
@@ -1982,6 +2217,7 @@ const WorkflowBoardTool: React.FC<{
                                                         onGo={goTo}
                                                         onGoAction={goToAction}
                                                         onGoScript={goToScript}
+                                                        onPlay={playClip}
                                                         scripts={customTools}
                                                     />
                                                 )}
@@ -2418,7 +2654,7 @@ const WorkflowBoardTool: React.FC<{
                                     <div className="wfb-notelinks">
                                         {noteLinks.map((l) => (
                                             <span key={l.label} className="wfb-notelink">
-                                                {l.path ? <FolderOpen size={9} /> : <ArrowRight size={9} />}
+                                                {l.video ? <Play size={9} /> : l.path ? <FolderOpen size={9} /> : <ArrowRight size={9} />}
                                                 <em>{l.label}</em>
                                                 <span className="wfb-notelink-to">
                                                     {l.path
@@ -2474,6 +2710,9 @@ const WorkflowBoardTool: React.FC<{
                                                         <button type="button" className="wfb-btn" onClick={() => attachFolder(linkWord)}>
                                                             <FolderOpen size={12} /><span>A folder…</span>
                                                         </button>
+                                                        <button type="button" className="wfb-btn" onClick={() => attachVideo(linkWord)}>
+                                                            <Play size={12} /><span>A video…</span>
+                                                        </button>
                                                         <button type="button" className="wfb-btn" onClick={() => setToolPicking(true)}>
                                                             <ArrowRight size={12} /><span>A tool…</span>
                                                         </button>
@@ -2486,6 +2725,7 @@ const WorkflowBoardTool: React.FC<{
                                                     <LinkPicker
                                                         stepText={linkWord}
                                                         scripts={customTools}
+                                                        onPickVideo={pickVideoPath}
                                                         onPick={(link) => {
                                                             // Notes take the same three destinations a
                                                             // step does — one picker, so the two can
@@ -2954,7 +3194,10 @@ const StepEditor: React.FC<{
     /** Saved scripts on this machine — passed in rather than read here, so the
      *  editor and the board resolve a script link from one list. */
     scripts: { id: string; name: string; description: string }[];
-}> = ({ steps, setSteps, busy, onCancel, onSave, ease, rowDelay, scripts }) => {
+    /** Opens the OS file dialog for a step's clip. Passed in for the same
+     *  reason as `scripts`: the bridge call belongs to the board. */
+    onPickVideo: () => Promise<string>;
+}> = ({ steps, setSteps, busy, onCancel, onSave, ease, rowDelay, scripts, onPickVideo }) => {
     // Which row has its link picker open, by index. One at a time: the picker
     // is a list of every tool in the panel and two of them open at once is a
     // page you have to scroll to find the step you were editing.
@@ -3076,6 +3319,7 @@ const StepEditor: React.FC<{
                             stepText={steps[linking].text}
                             value={steps[linking].link}
                             scripts={scripts}
+                            onPickVideo={onPickVideo}
                             onPick={(link) => setLink(linking, link)}
                             onClose={() => setLinking(null)}
                         />

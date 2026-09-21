@@ -1299,10 +1299,27 @@ named — and it collides like any other name.
 `tags` (free-form, upper-cased so the vocabulary converges instead of splitting
 into CTA/cta/Cta), and `links` — words in the body that open a folder or a tool.
 
-**A STEP OR NOTE POINTS AT ONE OF THREE THINGS, and only one is a registry
+**A WORKFLOW CAN CARRY CLIPS, and they are PICKED, not matched.** A tool's
+tutorial is found by filename in `_tuts` because a tool has a stable id to
+match on; a creative does not, so `WorkflowEntry.tutorial` stores the path
+somebody chose (`workflowSelectVideo`, an OS file dialog — `""` means
+cancelled, never an error). A step or a note can carry one too, as a fourth
+link kind (`video`), and all three play in the panel's own `VideoOverlay`,
+never through the shell. Two rules hold it up: **setting a clip is its own
+host call** (`workflowSetTutorial`), because `workflowSaveEntry` merges by key
+and rewrites the entry, so doing it through a save could overwrite steps
+somebody else just wrote; and **an absent `tutorial` on a save means "didn't
+mention it", never "remove it"** — the same rule notes already follow. A path
+on somebody's desktop simply fails to open elsewhere, which the player reports
+rather than hides; put clips on the share. The picker screen leads with
+**campaign cards** carrying what each holds, and a creative with a clip plays
+it from the list without opening the board. `probe-workflow-links.cjs` guards
+the lot.
+
+**A STEP OR NOTE POINTS AT ONE OF FOUR THINGS, and only one is a registry
 tool.** `tool` (optionally naming a button inside it), `toolsetAction` (a card
-in the Toolset grid) and `script` (a saved Script Playground tool). The middle
-one exists because an input-less action goes in `Toolset.tsx`'s `ACTIONS` by
+in the Toolset grid), `script` (a saved Script Playground tool) and `video` (a
+clip to play where you stand). The middle one exists because an input-less action goes in `Toolset.tsx`'s `ACTIONS` by
 the rule above — so MC It!, Support Swap and Turk It have no registry entry,
 and were the one obvious thing a step could not link to. They live on the HOME
 screen, not a tool page, hence `setHomeNavigator`/`navigateToToolsetAction`

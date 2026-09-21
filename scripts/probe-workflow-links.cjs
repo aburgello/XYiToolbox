@@ -75,5 +75,19 @@ say(!/homeNavigator\([^)]*\)\s*;\s*[^}]*\.run\(/.test(nav), 'navigateToToolsetAc
 const wf = fs.readFileSync('src/js/main/tools/WorkflowBoard.tsx', 'utf8');
 say(!/onGoAction[^)]*\)\s*=>\s*[^;]*runAction/.test(wf), 'and the chip only navigates');
 
+console.log('\n5. a clip is PLAYED, never handed to the shell');
+// The fourth destination is a file path, so it has no id to resolve -- what
+// matters instead is that it cannot become an "open this with whatever owns
+// it" call. Playing happens in VideoOverlay, inside the panel.
+say(/link\.video/.test(wf), 'a link can carry a video');
+say(/<VideoOverlay/.test(wf), 'and the board plays it in the panel\'s own player');
+say(!/openExternalFile[^\n]*video|video[^\n]*openExternalFile/.test(wf), 'never through the OS file opener');
+const team = fs.readFileSync('src/jsx/aeft/team.ts', 'utf8');
+say(/workflowSelectVideo/.test(team), 'the picker is a host-side file dialog');
+say(!/system\.callSystem[^\n]*video/i.test(team), 'which only returns a path — it opens nothing');
+// A save must not be able to silently drop the creative's clip.
+say(/entry\.tutorial === undefined\) entry\.tutorial = shared\[i\]\.tutorial/.test(team),
+    'and saving steps keeps a clip the panel did not send');
+
 console.log(fails === 0 ? '\nCLEAN — every destination resolves, and none of them fire on arrival.' : '\n' + fails + ' FAILED');
 process.exit(fails ? 1 : 0);

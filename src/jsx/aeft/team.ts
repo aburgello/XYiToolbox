@@ -2909,6 +2909,11 @@ export interface WorkflowNoteLink {
   label: string;
   /** A folder to open. Set for a folder link, absent for a tool one. */
   path?: string;
+  /** A video file to PLAY, rather than reveal -- a screen recording of the
+   *  step being done. Stored as the path it was picked at, usually on the
+   *  team share so colleagues resolve it too; a local path simply fails to
+   *  open on another machine, which the panel reports rather than hides. */
+  video?: string;
   /** A registry tool id. Validated PANEL-SIDE against TOOLS on every render:
    *  this file has never heard of the registry and should not learn it. */
   tool?: string;
@@ -2944,6 +2949,11 @@ export interface WorkflowEntry {
   key: string;
   steps: WorkflowStep[];
   notes: WorkflowNote[];
+  /** A screen recording for the CREATIVE this board is for. Unlike a tool's
+   *  tutorial -- matched by filename out of _tuts -- this one is picked and
+   *  its path stored, because a creative is not a tool and its clip need not
+   *  live anywhere in particular. */
+  tutorial?: string;
   author: string;
   updatedAt: string;
 }
@@ -3090,6 +3100,10 @@ export const workflowSaveEntry = (entryJson: string): WorkflowBoardResult => {
       // note, and a note lost this way leaves no trace that it existed.
       const keptNotes = shared[i].notes;
       entry.notes = mergeWorkflowNotes(keptNotes, entry.notes);
+      // SAME RULE AS NOTES for the tutorial: a panel saving steps does not
+      // send one, and "didn't mention it" must never read as "remove it".
+      // Clearing is its own call (workflowSetTutorial with an empty path).
+      if (entry.tutorial === undefined) entry.tutorial = shared[i].tutorial;
       entry.id = shared[i].id;
       shared[i] = entry;
       replaced = true;
@@ -3633,6 +3647,58 @@ export const workflowTicksSave = (json: string): Result => {
  * failure, and a one-click action must return null-ish rather than a fake
  * error (CLAUDE.md's bridge rule).
  */
+/**
+ * Attach (or clear) the CREATIVE's screen recording.
+ *
+ * Its own call rather than part of workflowSaveEntry, for the reason the
+ * rename is too: a save merges by key and rewrites the entry wholesale, so
+ * doing this through a save would make "set a clip" able to overwrite steps
+ * somebody else had just written. An empty path clears it.
+ */
+export const workflowSetTutorial = (id: string, path: string): WorkflowBoardResult => {
+  try {
+    if (!teamFolder()) return { success: false, error: "Team folder not set." };
+    const shared = readWorkflowEntries();
+    if (shared === null) return { success: false, error: "Couldn't read the team board." };
+    let found = false;
+    for (let i = 0; i < shared.length; i++) {
+      if (shared[i].id !== id) continue;
+      const p = String(path == null ? "" : path);
+      if (p === "") delete shared[i].tutorial;
+      else shared[i].tutorial = p;
+      shared[i].updatedAt = new Date().toString();
+      found = true;
+      break;
+    }
+    if (!found) return { success: false, error: "That workflow is no longer on the team board." };
+    if (!writeSharedFile(SHARED_WORKFLOWS_FILE, SHARED_WORKFLOWS_TYPE, shared)) {
+      return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
+    }
+    return { success: true, read: true, entries: shared, me: loadLocalSetting(MACHINE_OWNER_KEY) || "" };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/**
+ * Pick a video file. Same contract as workflowSelectFolder -- "" means the
+ * person cancelled, which is not an error and must not toast.
+ *
+ * NO FILTER ARGUMENT on the Mac dialog: ExtendScript's File.openDialog takes a
+ * filter string that behaves differently per platform, and a filter that
+ * silently hides the file somebody is looking for is worse than showing them
+ * everything. The panel checks the extension on what comes back.
+ */
+export const workflowSelectVideo = (): string => {
+  try {
+    const f = File.openDialog("Pick the video this should play:");
+    if (!f) return "";
+    return f.fsName;
+  } catch (e) {
+    return "";
+  }
+};
+
 export const workflowSelectFolder = (): string => {
   try {
     const folder = Folder.selectDialog("Pick the folder this word should open:");
