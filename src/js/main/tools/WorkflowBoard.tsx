@@ -54,6 +54,7 @@ import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
 import Droplet from "../Droplet";
 import VideoOverlay from "../VideoOverlay";
+import { toFileUrl } from "../lib/fileUrl";
 import "../shared.scss";
 import "./WorkflowBoard.scss";
 
@@ -1439,6 +1440,27 @@ const WorkflowBoardTool: React.FC<{
 
     // --- the picker ----------------------------------------------------------
 
+    /**
+     * WITH NOTHING PICKED, THE PICKER IS THE SCREEN. Opening the panel with no
+     * project open is exactly when somebody needs to find their way, and a
+     * flat cross-campaign list of what happens to be written is not a way in
+     * for anyone who has not been here before. The campaign cards are.
+     *
+     * ONCE, and never again: a ref rather than state, so closing the picker to
+     * read the list underneath is respected instead of being undone on the
+     * next render.
+     */
+    const autoPicked = useRef(false);
+    useEffect(() => {
+        if (autoPicked.current) return;
+        if (!active || creative || campaigns.length === 0) return;
+        autoPicked.current = true;
+        const live = campaigns.filter((c) => !retired[c.name.toLowerCase()]);
+        const fallback = live[0] || campaigns[0];
+        setPickCampaign(fallback ? fallback.name : "");
+        setPicking(true);
+    }, [active, creative, campaigns, retired]);
+
     const openPicker = async () => {
         // NEVER LAND ON A RETIRED CAMPAIGN. This used to be `campaigns[0]`,
         // which is whichever was added to this machine first — and a machine
@@ -1450,6 +1472,33 @@ const WorkflowBoardTool: React.FC<{
         setPickCampaign(campaign || (fallback ? fallback.name : ""));
         setPicking(true);
     };
+
+    /**
+     * THE CAMPAIGN ARTWORK REVIEW ALREADY HAS. `OVLibCampaignBanners` is the
+     * hero image somebody pinned in OV Library, and it travels with the
+     * campaign when it is shared -- so the card that names a campaign here can
+     * look like the campaign rather than being a word in a box.
+     *
+     * app.settings only, no disk walk, so this is a handful of cheap calls
+     * when the picker opens. A campaign with no banner falls back to its
+     * initial; nothing is invented and nothing is scanned for.
+     */
+    const [banners, setBanners] = useState<Record<string, string>>({});
+    useEffect(() => {
+        if (!picking || campaigns.length === 0) return;
+        let cancelled = false;
+        (async () => {
+            const out: Record<string, string> = {};
+            for (const c of campaigns) {
+                try {
+                    const p = (await evalTS("loadCampaignBanner", c.name)) as string;
+                    if (p) out[c.name] = p;
+                } catch { /* no bridge, or nothing pinned — both are normal */ }
+            }
+            if (!cancelled) setBanners(out);
+        })();
+        return () => { cancelled = true; };
+    }, [picking, campaigns]);
 
     /** The campaign's creatives read off the masters tree, so a creative nobody
      *  has written a workflow for is still offerable. An unmounted share gives
@@ -1848,23 +1897,43 @@ const WorkflowBoardTool: React.FC<{
                                         title={off ? `Retired by ${retired[c.name.toLowerCase()]}` : undefined}
                                         onClick={() => { if (!off) setPickCampaign(c.name); }}
                                     >
-                                        <span className="wfb-camp-name">{c.name}</span>
-                                        {off ? <em>retired</em> : (
-                                            <span className="wfb-camp-meta">
-                                                <span>
-                                                    {st.workflows === 0
-                                                        ? "nothing written yet"
-                                                        : total
-                                                            ? `${st.workflows} of ${total}`
-                                                            : `${st.workflows} workflow${st.workflows === 1 ? "" : "s"}`}
-                                                </span>
-                                                {st.clips > 0 && (
-                                                    <span className="wfb-camp-clips">
-                                                        <Play size={8} />{st.clips}
-                                                    </span>
+                                        {/* THE CAMPAIGN'S OWN ARTWORK, borrowed from
+                                            Review. A padding-box ratio, never
+                                            aspect-ratio (Chrome 88, target 74).
+                                            No banner pinned falls back to the
+                                            initial rather than an empty frame. */}
+                                        <span className="wfb-camp-art">
+                                            <span className="wfb-camp-art-box">
+                                                {banners[c.name] ? (
+                                                    <img
+                                                        src={toFileUrl(banners[c.name])}
+                                                        alt=""
+                                                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                                                    />
+                                                ) : (
+                                                    <span className="wfb-camp-art-none">{c.name.charAt(0).toUpperCase()}</span>
                                                 )}
                                             </span>
-                                        )}
+                                        </span>
+                                        <span className="wfb-camp-text">
+                                            <span className="wfb-camp-name">{c.name}</span>
+                                            {off ? <em>retired</em> : (
+                                                <span className="wfb-camp-meta">
+                                                    <span>
+                                                        {st.workflows === 0
+                                                            ? "nothing written yet"
+                                                            : total
+                                                                ? `${st.workflows} of ${total}`
+                                                                : `${st.workflows} workflow${st.workflows === 1 ? "" : "s"}`}
+                                                    </span>
+                                                    {st.clips > 0 && (
+                                                        <span className="wfb-camp-clips">
+                                                            <Play size={8} />{st.clips}
+                                                        </span>
+                                                    )}
+                                                </span>
+                                            )}
+                                        </span>
                                     </button>
                                 );
                             })}

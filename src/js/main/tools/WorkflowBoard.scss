@@ -359,13 +359,16 @@
 }
 
 .workflow-board .wfb-camp {
-    flex: 1 1 128px;
+    // TWO UP at panel width, wider when the tool page gives it room. A basis
+    // of 46% rather than a pixel count, so the pair always fills the row.
+    flex: 1 1 46%;
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
-    gap: 3px;
+    align-items: stretch;
+    gap: 0;
     min-width: 0;
-    padding: 6px 8px;
+    overflow: hidden;
+    padding: 0;
     border: 1px solid rgba(255, 255, 255, 0.11);
     border-radius: 6px;
     background: rgba(255, 255, 255, 0.03);
@@ -385,6 +388,49 @@
         background: rgba(255, 255, 255, 0.07);
         &:hover, &:active { background: rgba(255, 255, 255, 0.07); }
     }
+}
+
+// 16:9 through the padding-box trick — aspect-ratio is Chrome 88 and the
+// declared target is chrome74.
+.workflow-board .wfb-camp-art {
+    display: block;
+    width: 100%;
+    height: 0;
+    padding-bottom: 52%;
+    position: relative;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.workflow-board .wfb-camp-art-box {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+
+    img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+}
+
+.workflow-board .wfb-camp-art-none {
+    font-size: 20px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.16);
+}
+
+.workflow-board .wfb-camp-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 8px 7px;
 }
 
 .workflow-board .wfb-camp-name {
