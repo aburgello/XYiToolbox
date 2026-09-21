@@ -1902,12 +1902,19 @@
             color: #7a7a7a;
         }
 
-        input[type="text"] {
+        // HEIGHT IS DECLARED, NOT INHERITED FROM PADDING. The Dropdown
+        // trigger, this input and the languages toggle each had their own
+        // padding, so the three boxes beside each other came out at three
+        // heights. One number, applied to all three.
+        input[type="text"],
+        .dropdown-trigger {
+            height: 30px;
+            box-sizing: border-box;
             background: var(--ov-bg, #1e1e1e);
             border: 1px solid var(--surface-edge, #3a3a3a);
             border-radius: 6px;
             color: #ddd;
-            padding: 6px 9px;
+            padding: 0 9px;
             font-size: 12px;
             &:focus { outline: none; border-color: var(--cat-border, #4a6a9a); }
         }
@@ -1926,6 +1933,7 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
+        box-sizing: border-box;
         width: 30px;
         height: 30px;
         padding: 0;
