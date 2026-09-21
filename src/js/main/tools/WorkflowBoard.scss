@@ -351,6 +351,10 @@
 // campaign carries what it holds. Two columns at panel width, more when the
 // tool page gives it room -- no @container (Chrome 105), so it is a flex wrap
 // with a min width rather than a grid that has to be told how many fit.
+// A button that will work once the board is saved: present, so the feature is
+// findable, and visibly not ready yet.
+.workflow-board .wfb-btn.is-waiting { opacity: 0.45; }
+
 .workflow-board .wfb-camps {
     display: flex;
     flex-wrap: wrap;

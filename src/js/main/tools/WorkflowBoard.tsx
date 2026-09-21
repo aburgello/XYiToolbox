@@ -1821,12 +1821,23 @@ const WorkflowBoardTool: React.FC<{
                             </button>
                         </Tooltip>
                     )}
-                    {entry && !entry.tutorial && (
-                        <Tooltip text={`Attach a screen recording for ${prettyCreative(creative)} — everyone on the team sees it`}>
+                    {/* SHOWN WHENEVER A CREATIVE IS, not only once the board
+                        exists. A clip hangs off a saved entry by id, so a
+                        workflow nobody has saved yet has nothing to hang it on
+                        — but hiding the button for that made it look like the
+                        feature was missing, on the one screen where somebody is
+                        most likely to be looking for it. It says why instead. */}
+                    {creative && !(entry && entry.tutorial) && (
+                        <Tooltip text={entry
+                            ? `Attach a screen recording for ${prettyCreative(creative)} — everyone on the team sees it`
+                            : "Save this workflow for the team first, then a clip can be attached to it"}>
                             <button
                                 type="button"
-                                className="wfb-btn wfb-btn--icon"
-                                onClick={attachTutorial}
+                                className={"wfb-btn wfb-btn--icon" + (entry ? "" : " is-waiting")}
+                                onClick={() => {
+                                    if (!entry) { toast("error", "Save this workflow for the team first — then attach a clip."); return; }
+                                    void attachTutorial();
+                                }}
                                 aria-label="Attach a tutorial for this creative"
                             >
                                 <Film size={12} />
