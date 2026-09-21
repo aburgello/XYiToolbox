@@ -365,9 +365,9 @@
     align-items: flex-start;
     gap: 3px;
     min-width: 0;
-    padding: 7px 9px;
+    padding: 6px 8px;
     border: 1px solid rgba(255, 255, 255, 0.11);
-    border-radius: 7px;
+    border-radius: 6px;
     background: rgba(255, 255, 255, 0.03);
     color: inherit;
     font-size: 10px;
@@ -389,7 +389,7 @@
 
 .workflow-board .wfb-camp-name {
     width: 100%;
-    font-size: 11.5px;
+    font-size: 11px;
     font-weight: 600;
     line-height: 1.25;
     color: #e8e8e8;
@@ -418,8 +418,8 @@
 .workflow-board .wfb-creatives {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 8px 9px;
+    gap: 3px;
+    padding: 6px 9px 9px;
     // Grows with the picker rather than to a fixed cap, and scrolls only once
     // there are more creatives than the panel is tall. min-height: 0 is what
     // lets a flex item shrink below its content and actually scroll.
@@ -455,6 +455,35 @@
 
 // Raised a little now the cards below it carry more weight: at 0.3 opacity it
 // was losing the fight and the groups stopped reading as groups.
+// The folded half, as one line you can open.
+.workflow-board .wfb-creative-more {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    width: 100%;
+    margin-top: 2px;
+    padding: 5px 8px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: #7a7a7a;
+    font-size: 10.5px;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover, &:active { background: rgba(255, 255, 255, 0.05); color: #c8c8c8; }
+}
+
+.workflow-board .wfb-creative-sep--btn {
+    width: 100%;
+    border: 0;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover, &:active { background: none; color: #c8c8c8; }
+}
+
 .workflow-board .wfb-creative-sep {
     margin: 2px 0 5px;
     padding: 0 2px;
@@ -478,9 +507,9 @@
     align-items: center;
     gap: 10px;
     width: 100%;
-    padding: 9px 10px;
+    padding: 6px 9px;
     border: 1px solid rgba(255, 255, 255, 0.07);
-    border-radius: 7px;
+    border-radius: 6px;
     background: var(--surface-0, #1c1c1c);
     color: inherit;
     font-size: 12px;
@@ -495,15 +524,15 @@
     &:hover {
         background: var(--surface-1, #242424);
         border-color: var(--ov-accent, #2dd4bf);
-        transform: translateY(-2px);
-        // Pre-blended, not color-mix(): Chromium 111, and the target is 74.
-        box-shadow: 0 4px 14px rgba(45, 212, 191, 0.22);
+        // NO LIFT AND NO GLOW. Twelve cards that each rise and throw coloured
+        // light is what made this list read as chaos; a row in a list is
+        // pointed at, not picked up.
+        box-shadow: none;
 
         .wfb-card-go { opacity: 1; transform: translateX(0); }
     }
     &:active {
         background: var(--surface-1, #242424);
-        transform: translateY(0);
     }
 
     // Documented. A left rail rather than a badge on the right: it lines the
@@ -517,7 +546,20 @@
     // tag on every row, which meant most of the list was labelled with the
     // absence of a thing — noise that made the ones that DO have a workflow
     // harder to pick out, not easier.
-    &:not(.has-wf) { opacity: 0.62; }
+    // And it stops being a card at all: no fill, no border. The written-up
+    // ones are then the only things with weight, which is the whole question
+    // this screen answers.
+    &:not(.has-wf) {
+        opacity: 0.75;
+        background: none;
+        border-color: transparent;
+        padding-top: 4px;
+        padding-bottom: 4px;
+
+        .wfb-creative-name { font-size: 12px; font-weight: 500; color: #b4b4b4; }
+
+        &:hover { background: rgba(255, 255, 255, 0.04); border-color: transparent; }
+    }
     &:not(.has-wf):hover { opacity: 1; }
 }
 
@@ -575,7 +617,7 @@
 
 .workflow-board .wfb-creative-name {
     min-width: 0;
-    font-size: 13px;
+    font-size: 12.5px;
     font-weight: 600;
     line-height: 1.25;
     color: #e8e8e8;
@@ -1687,6 +1729,7 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
 // A campaign the team has finished with. Listed, greyed, unclickable — the
 // picker is the live campaigns, and the finished ones are visibly out of play
 // rather than absent and unexplained.
+.workflow-board .wfb-camp.is-retired { flex: 0 1 auto; }
 .workflow-board .wfb-camp.is-retired {
     opacity: 0.34;
     cursor: default;

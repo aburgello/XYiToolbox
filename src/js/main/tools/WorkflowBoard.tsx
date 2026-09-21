@@ -254,7 +254,12 @@ function prettyCreative(s: string): string {
         // camelCase and PascalCase: "PortalToParadise" -> "Portal To Paradise".
         // The second pattern catches an acronym running into a word
         // ("DOOHMaster" -> "DOOH Master") rather than splitting the acronym.
-        .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+        .replace(/([a-z])([A-Z])/g, "$1 $2")
+        // A DIGIT RUNNING INTO A WORD, but not into an acronym: "1080Wall" is
+        // two things, while "3DIllusion" is "3D Illusion" and splitting on the
+        // digit alone made it "3 D Illusion". The acronym rule below then
+        // separates "3D" from "Illusion" on its own.
+        .replace(/([0-9])([A-Z][a-z])/g, "$1 $2")
         .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
         .split(/\s+/)
         .filter((w) => w !== "");
@@ -1528,6 +1533,12 @@ const WorkflowBoardTool: React.FC<{
         return out;
     }, [entries]);
 
+    /** Undocumented creatives are folded away until asked for: the list is
+     *  opened to find a workflow, and a dozen folders nobody has written up
+     *  yet buries the three that matter. A search opens it automatically —
+     *  hunting for a name means you want every name. */
+    const [showUndocumented, setShowUndocumented] = useState(false);
+
     const pickableShown = useMemo(() => {
         const q = creativeQuery.trim().toLowerCase();
         if (!q) return pickable;
@@ -1893,14 +1904,43 @@ const WorkflowBoardTool: React.FC<{
                                 <p className="wfb-empty-line">Nothing matches “{creativeQuery}”.</p>
                             )}
                             {pickableShown.map((c, i) => {
-                                // The divider between documented and not, drawn
-                                // once at the boundary rather than as two
-                                // separate lists — one list you can scan beats
-                                // two you have to notice.
+                                // The boundary between documented and not. The
+                                // undocumented half is FOLDED by default: this
+                                // list is opened to find a workflow, and a dozen
+                                // folders nobody has written up buries the three
+                                // that matter. A search opens it — hunting for a
+                                // name means you want every name.
                                 const first = i > 0 && pickableShown[i - 1].hasWorkflow && !c.hasWorkflow;
+                                const folded = !c.hasWorkflow && !showUndocumented && !creativeQuery.trim();
+                                const rest = folded ? pickableShown.filter((x) => !x.hasWorkflow).length : 0;
+                                if (folded) {
+                                    if (!first) return null;
+                                    return (
+                                        <button
+                                            key="__more"
+                                            type="button"
+                                            className="wfb-creative-more"
+                                            onClick={() => setShowUndocumented(true)}
+                                        >
+                                            <ChevronRight size={11} />
+                                            <span>{rest} with nothing written down yet</span>
+                                        </button>
+                                    );
+                                }
                                 return (
                                     <React.Fragment key={c.name}>
-                                        {first && <p className="wfb-creative-sep">Nothing written down yet</p>}
+                                        {first && showUndocumented && !creativeQuery.trim() && (
+                                            <button
+                                                type="button"
+                                                className="wfb-creative-sep wfb-creative-sep--btn"
+                                                onClick={() => setShowUndocumented(false)}
+                                            >
+                                                Nothing written down yet
+                                            </button>
+                                        )}
+                                        {first && (!showUndocumented || creativeQuery.trim() !== "") && (
+                                            <p className="wfb-creative-sep">Nothing written down yet</p>
+                                        )}
                                         {/* A WRAPPER, because the clip's button is a
                                             SIBLING of the row's: a button inside a
                                             button is invalid markup and would inherit
