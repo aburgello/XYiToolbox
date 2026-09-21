@@ -1455,9 +1455,10 @@ const WorkflowBoardTool: React.FC<{
         if (autoPicked.current) return;
         if (!active || creative || campaigns.length === 0) return;
         autoPicked.current = true;
-        const live = campaigns.filter((c) => !retired[c.name.toLowerCase()]);
-        const fallback = live[0] || campaigns[0];
-        setPickCampaign(fallback ? fallback.name : "");
+        // No campaign preselected: the wall of campaigns IS the landing screen,
+        // and dropping somebody inside whichever campaign sorts first is the
+        // guess this redesign exists to stop making.
+        setPickCampaign("");
         setPicking(true);
     }, [active, creative, campaigns, retired]);
 
@@ -1467,9 +1468,9 @@ const WorkflowBoardTool: React.FC<{
         // that has been going a while has a finished campaign there. Opening
         // the picker on one you cannot even select, every time, made the
         // greying look broken rather than deliberate.
-        const live = campaigns.filter((c) => !retired[c.name.toLowerCase()]);
-        const fallback = live[0] || campaigns[0];
-        setPickCampaign(campaign || (fallback ? fallback.name : ""));
+        // The campaign you are on, so its creatives are one press away; with
+        // none, the wall.
+        setPickCampaign(campaign || "");
         setPicking(true);
     };
 
@@ -1587,6 +1588,40 @@ const WorkflowBoardTool: React.FC<{
      *  yet buries the three that matter. A search opens it automatically —
      *  hunting for a name means you want every name. */
     const [showUndocumented, setShowUndocumented] = useState(false);
+
+    /**
+     * THE CAMPAIGNS WORTH OPENING, in the order somebody would look for them.
+     *
+     * RETIRED ONES ARE OUT. Elsewhere they are listed-but-greyed so "where did
+     * it go" never comes up, and that is right for a dropdown you are choosing
+     * a target in. This is a wall of artwork you navigate BY, and a finished
+     * campaign is not somewhere to write a workflow -- it was taking a card's
+     * worth of room to say so. The one exception is the campaign you are
+     * standing in: retired while you had it open must not strand you.
+     * (CSV Localiser's restore button is still the way back for any other.)
+     *
+     * Ordered by what was touched last rather than by whatever order this
+     * machine happened to add them in: the board you want is nearly always the
+     * one somebody wrote in most recently. Campaigns with nothing written fall
+     * to the end, alphabetically among themselves.
+     */
+    const campaignCards = useMemo(() => {
+        const lastTouched: Record<string, number> = {};
+        entries.forEach((e) => {
+            const k = canon(e.campaign);
+            const t = new Date(e.updatedAt).getTime();
+            if (!isNaN(t) && (!lastTouched[k] || t > lastTouched[k])) lastTouched[k] = t;
+        });
+        return campaigns
+            .filter((c) => !retired[c.name.toLowerCase()] || c.name === pickCampaign)
+            .slice()
+            .sort((a, b) => {
+                const ta = lastTouched[canon(a.name)] || 0;
+                const tb = lastTouched[canon(b.name)] || 0;
+                if (ta !== tb) return tb - ta;
+                return a.name.localeCompare(b.name);
+            });
+    }, [campaigns, entries, retired, pickCampaign]);
 
     const pickableShown = useMemo(() => {
         const q = creativeQuery.trim().toLowerCase();
@@ -1853,11 +1888,19 @@ const WorkflowBoardTool: React.FC<{
                         exit={{ opacity: 0 }}
                         transition={ease}
                     >
+                        {/* TWO STAGES, not one page. A card is a door: pressing
+                            it opens that campaign's creatives, and the back
+                            button returns to the wall of campaigns rather than
+                            closing the whole picker. */}
                         <div className="wfb-picker-head">
-                            <button type="button" className="wfb-btn wfb-btn--icon" onClick={() => setPicking(false)}>
+                            <button
+                                type="button"
+                                className="wfb-btn wfb-btn--icon"
+                                onClick={() => { if (pickCampaign) setPickCampaign(""); else setPicking(false); }}
+                            >
                                 <ChevronLeft size={12} />
                             </button>
-                            <span>Which creative?</span>
+                            <span>{pickCampaign ? prettyCreative(pickCampaign) : "Which campaign?"}</span>
                         </div>
 
                         {/* CARDS, NOT CHIPS. This is the screen somebody opens
@@ -1865,13 +1908,18 @@ const WorkflowBoardTool: React.FC<{
                             — how many creatives are written up, and how many
                             carry a recording — rather than being a name you
                             have to click to learn anything about. */}
-                        <div className="wfb-camps">
+                        <div className={"wfb-camps" + (pickCampaign ? " is-picked" : "")}>
                             {campaigns.length === 0 && (
                                 <p className="wfb-empty-line">
                                     No campaigns saved yet — add one in OV Library or Localised Library first.
                                 </p>
                             )}
-                            {campaigns.map((c) => {
+                            {campaignCards.length === 0 && campaigns.length > 0 && (
+                                <p className="wfb-empty-line">
+                                    Every campaign on this machine is retired. CSV Localiser's restore button brings one back.
+                                </p>
+                            )}
+                            {(pickCampaign ? campaignCards.filter((c) => c.name === pickCampaign) : campaignCards).map((c) => {
                                 // A FINISHED CAMPAIGN IS NOT A PLACE TO WRITE A
                                 // WORKFLOW. Greyed and unclickable here for the
                                 // same reason as in the other two pickers, and
@@ -1943,7 +1991,7 @@ const WorkflowBoardTool: React.FC<{
                             and the one you want is rarely near the top
                             alphabetically. Only when there is enough to hunt
                             through — under about eight it is faster to read. */}
-                        {pickable.length > 8 && (
+                        {pickCampaign !== "" && pickable.length > 8 && (
                             <div className="wfb-creative-search">
                                 <Search size={11} />
                                 <input
@@ -1961,18 +2009,21 @@ const WorkflowBoardTool: React.FC<{
                         )}
 
                         <div className="wfb-creatives">
-                            {scanning && <p className="wfb-empty-line">Reading the masters tree…</p>}
-                            {!scanning && pickable.length === 0 && (
+                            {pickCampaign === "" && (
+                                <p className="wfb-empty-line">Pick a campaign to see its creatives.</p>
+                            )}
+                            {pickCampaign !== "" && scanning && <p className="wfb-empty-line">Reading the masters tree…</p>}
+                            {pickCampaign !== "" && !scanning && pickable.length === 0 && (
                                 <p className="wfb-empty-line">
                                     {folderCreatives === null
                                         ? "Couldn't read that campaign's AE folder — the share may not be mounted. You can still type a creative below."
                                         : "No creatives found for that campaign."}
                                 </p>
                             )}
-                            {!scanning && pickable.length > 0 && pickableShown.length === 0 && (
+                            {pickCampaign !== "" && !scanning && pickable.length > 0 && pickableShown.length === 0 && (
                                 <p className="wfb-empty-line">Nothing matches “{creativeQuery}”.</p>
                             )}
-                            {pickableShown.map((c, i) => {
+                            {(pickCampaign === "" ? [] : pickableShown).map((c, i) => {
                                 // The boundary between documented and not. The
                                 // undocumented half is FOLDED by default: this
                                 // list is opened to find a workflow, and a dozen

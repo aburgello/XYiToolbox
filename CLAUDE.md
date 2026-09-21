@@ -1299,6 +1299,19 @@ named — and it collides like any other name.
 `tags` (free-form, upper-cased so the vocabulary converges instead of splitting
 into CTA/cta/Cta), and `links` — words in the body that open a folder or a tool.
 
+**Workflows' front door is a WALL OF CAMPAIGNS, and a card is a door.**
+Pressing one opens that campaign's creatives; the back button returns to the
+wall rather than closing the picker. Cards carry the hero image pinned in OV
+Library (`OVLibCampaignBanners`, already shared with the campaign), falling
+back to the campaign's initial — nothing is scanned for. Ordered by the most
+recently updated workflow, then alphabetically, because the board you want is
+nearly always the one somebody just wrote in. **Retired campaigns are HIDDEN
+here**, unlike every other picker, where they are listed-but-greyed so "where
+did it go" never comes up: this is a wall you navigate by, and a finished
+campaign was taking a card's worth of room to say it is not a place to write a
+workflow. The one you are standing in stays, retired or not, so retiring a
+campaign while you have it open cannot strand you.
+
 **A WORKFLOW CAN CARRY CLIPS, and they are PICKED, not matched.** A tool's
 tutorial is found by filename in `_tuts` because a tool has a stable id to
 match on; a creative does not, so `WorkflowEntry.tutorial` stores the path

@@ -356,6 +356,23 @@
     flex-wrap: wrap;
     gap: 6px;
     padding: 9px 9px 2px;
+
+    // The campaign that is OPEN is a header, not a card: its artwork stays as
+    // a strip so you know where you are, and the creatives get the height.
+    &.is-picked {
+        padding-bottom: 0;
+
+        .wfb-camp {
+            flex: 1 1 100%;
+            flex-direction: row;
+            align-items: center;
+            gap: 8px;
+            cursor: default;
+        }
+
+        .wfb-camp-art { width: 74px; flex: none; padding-bottom: 42px; }
+        .wfb-camp-text { padding: 0; }
+    }
 }
 
 .workflow-board .wfb-camp {
@@ -1775,7 +1792,6 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
 // A campaign the team has finished with. Listed, greyed, unclickable — the
 // picker is the live campaigns, and the finished ones are visibly out of play
 // rather than absent and unexplained.
-.workflow-board .wfb-camp.is-retired { flex: 0 1 auto; }
 .workflow-board .wfb-camp.is-retired {
     opacity: 0.34;
     cursor: default;
