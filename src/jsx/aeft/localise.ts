@@ -9,7 +9,7 @@ import { scaleCompToFit } from "./deliver";
 import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, territoryCheck, parseFilenameMeta, frontcardWrap, cheekyTCheck, organiseFolders, FRONTCARD_LEAD_IN_SECONDS, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, rankMastersFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, MasterIndexEntry, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, mcItTerritoryOfImageFolder, matchCreativeInName, ssFindSupportRoot, ssCollectSupport, ssCreativesOf, ssApplyToOpenProject, ssCountReplaced, ssOneTokenDiff, ssTokensOf, SupportSwapCandidate, scanMastersForBestMatch, firstSizeToken, ownProjectFolder } from "./tools";
 import { findMotionComponents } from "./artwork";
 import { makeParentLayerOfAllUnparented, scaleAllCameraZooms } from "./deliver";
-import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, saveLocGenReport, buildDeliverableName, durationForMasterLookup, durationDigits, sanitiseSiteToken, camelCaseToken, camelCaseName } from "./shared";
+import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, saveLocGenReport, buildDeliverableName, durationForMasterLookup, durationDigits, sanitiseSiteToken, camelCaseToken, camelCaseName, sanitiseLanguageToken } from "./shared";
 import { loadCampaignsRaw, loadLastCampaign as loadOVLastCampaign } from "./review";
 
 
@@ -3133,6 +3133,10 @@ interface NameDetectResult extends Result {
   // caller can treat empty as "this name predates sites" without having
   // to know which convention it is looking at.
   site?: string;
+  /** The language/variant token after the territory ("..._6s_BE_FL" -> "FL").
+   *  "" for a single-language market, and for a master, whose "_OV" sits in
+   *  the same position and is not a language. */
+  language?: string;
 }
 
 // Ported from TC_nameBox() in XYi_Cheeky_N_Check.jsx -- reverse-parses a
@@ -3243,6 +3247,7 @@ function nameGeneratorParse(name: string): NameDetectResult {
   let duration = "";
   let territory = "";
   let version = "";
+  let language = "";
   const regDur = /^(\d+)s(?:ec)?$/i;
   const regTer = /^[A-Z]{2}$/i;
   const regVer = /^[Vv](\d+)$/;
@@ -3259,6 +3264,21 @@ function nameGeneratorParse(name: string): NameDetectResult {
       territory = tMatch[0].toUpperCase();
       continue;
     }
+    // A SECOND letter token after the territory is the LANGUAGE. Belgium
+    // delivers Flemish and French of the same size and length
+    // ("..._6s_BE_FL"), and without this the three rows parse identically,
+    // build one filename between them, and read as duplicates of each other.
+    //
+    // Only after a territory is in hand, and never on a master: "_OV" is a
+    // two-letter token in exactly this position, and sanitiseLanguageToken
+    // refuses it. Three letters allowed for the markets that spell it out.
+    if (territory && !language && territory !== "OV") {
+      const lang = sanitiseLanguageToken(part);
+      if (lang !== "") {
+        language = lang;
+        continue;
+      }
+    }
     const vMatch = part.match(regVer);
     if (vMatch && !version) {
       const vNum = parseInt(vMatch[1], 10);
@@ -3267,7 +3287,7 @@ function nameGeneratorParse(name: string): NameDetectResult {
     }
   }
 
-  return { success: true, filmTitle, artworkType, campaign, territory, isInternational: indom === "INTL", duration, version, site };
+  return { success: true, filmTitle, artworkType, campaign, territory, isInternational: indom === "INTL", duration, version, site, language };
 }
 
 export const nameGeneratorDetect = (): NameDetectResult => {
@@ -4029,6 +4049,8 @@ export interface CsvLocRowReport {
   // Set when the master was PICKED in the panel rather than scored. Same
   // reason: the report should say which rows a person overrode.
   masterNote?: string;
+  /** The language token this row was built with ("FL"), when it had one. */
+  language?: string;
 }
 
 export interface CsvLocResult {
@@ -4421,6 +4443,11 @@ export const csvLocaliserRun = (
       // pasted from before this column existed, has fewer columns and simply
       // produces no site token, leaving the filename exactly as it was.
       const siteToken = texLoc.length > 5 ? sanitiseSiteToken(texLoc[5]) : "";
+      // Language is the LAST CSV column (appended, per the "add new columns at
+      // the END" rule), so a CSV written before it existed simply has no cell
+      // here and the name comes out exactly as it did before.
+      const languageToken = texLoc.length > 9 ? sanitiseLanguageToken(csvLocTrim(texLoc[9])) : "";
+      if (languageToken !== "") rep.language = languageToken;
       rep.artwork = csvLocTrim(texLoc[0]);
       rep.campaign = campaign;
       rep.size = size;
@@ -4521,6 +4548,7 @@ export const csvLocaliserRun = (
         height: height,
         duration: duration,
         territory: territoryCode,
+        language: languageToken,
       });
 
       rep.master = masterName;

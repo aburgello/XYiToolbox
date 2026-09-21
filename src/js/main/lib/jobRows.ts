@@ -42,6 +42,8 @@ export interface ParsedName {
     duration?: string;
     site?: string;
     version?: string;
+    /** Language token after the territory ("..._15s_BE_FL" -> "FL"). */
+    language?: string;
     error?: string;
     /** True when the name carries an isolated OV token -- i.e. it is the
      *  un-localised master, not a deliverable. */
@@ -181,6 +183,9 @@ export function stageBatchFromJob(job: WrikeJob, rows: Row[]): PendingBatch {
             // The builder's field is a bare number of seconds; the parser
             // gives "30sec".
             duration: (r.parsed?.duration || "").replace(/\D/g, ""),
+            // Verbatim too. Three Belgian subtasks differ only by this token,
+            // so dropping it here would send three identical rows.
+            language: r.parsed?.language || "",
         };
     });
 

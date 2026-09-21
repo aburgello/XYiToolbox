@@ -1942,7 +1942,7 @@
         // fixed ones summed to ~670px, and a narrower panel scrolled the row
         // and the run bar sideways out of reach. Below 640px the row stacks
         // onto two lines instead -- see the media block after this rule.
-        grid-template-columns: 20px minmax(64px, 90px) minmax(80px, 2fr) minmax(56px, 1fr) minmax(46px, 66px) minmax(46px, 66px) minmax(46px, 66px) minmax(28px, 40px) auto;
+        grid-template-columns: 20px minmax(64px, 90px) minmax(80px, 2fr) minmax(56px, 1fr) minmax(46px, 66px) minmax(46px, 66px) minmax(46px, 66px) minmax(38px, 52px) minmax(28px, 40px) auto;
         min-width: 0;
         gap: 6px;
         align-items: center;
@@ -1957,6 +1957,7 @@
         // two heights side by side.
         .dropdown-trigger,
         > input[type="number"],
+        > .specs-build-lang,
         > .specs-build-site,
         > .specs-build-custom-wrap > .specs-build-custom,
         > .specs-build-custom {
@@ -2010,6 +2011,7 @@
         }
 
         > input[type="number"],
+        > .specs-build-lang,
         > .specs-build-site,
         > .specs-build-custom-wrap > .specs-build-custom,
         > .specs-build-custom {
@@ -2053,7 +2055,8 @@
             grid-template-columns: 20px repeat(4, minmax(0, 1fr)) auto;
             grid-template-areas:
                 "icon type type creative creative end"
-                ".    site w    h        dur      mult";
+                ".    site w    h        dur      lang"
+                ".    .    .    .        .        mult";
             row-gap: 6px;
 
             > :nth-child(1) { grid-area: icon; }
@@ -2063,8 +2066,9 @@
             > :nth-child(5) { grid-area: w; }
             > :nth-child(6) { grid-area: h; }
             > :nth-child(7) { grid-area: dur; }
-            > :nth-child(8) { grid-area: mult; justify-self: end; }
-            > :nth-child(9) { grid-area: end; }
+            > :nth-child(8) { grid-area: lang; }
+            > :nth-child(9) { grid-area: mult; justify-self: end; }
+            > :nth-child(10) { grid-area: end; }
         }
 
         .specs-build-row--head { display: none; }
@@ -2841,6 +2845,32 @@ $rail-gap: 10px;   // exactly the flex gap between rows, so segments tile
 
     @media (max-width: 420px) {
         .specs-routes { grid-template-columns: 1fr; }
+    }
+}
+
+// Language: three characters at most, so it reads as the small field it is.
+.specs-build-lang {
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+// The batch row's document icon opens that batch's specs PDF. Inside the
+// row button, so it gets its own affordance rather than inheriting the
+// row's -- and stays a plain glyph until pointed at.
+.specs-batch-pdf {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px;
+    border-radius: 4px;
+    color: inherit;
+    cursor: pointer;
+
+    &:hover,
+    &:focus-visible {
+        background: rgba(255, 255, 255, 0.1);
+        color: var(--cat-icon, #5eead4);
     }
 }
 

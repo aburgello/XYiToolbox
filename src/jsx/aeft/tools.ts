@@ -3037,6 +3037,41 @@ function mcItParseFilename(filename: string): McItParsed {
   return { firstOne, secondOne, thirdOne, pngNumber };
 }
 
+/**
+ * The LANGUAGE token of a deliverable or artwork filename, or "".
+ *
+ * Belgium ships Flemish and French of one deliverable, and the mech exports
+ * carry the same suffix ("..._RGB_BE_FL.jpg"). Without this the three Belgian
+ * artworks are identical to the matcher -- same creative, same resolution, no
+ * trailing number -- so whichever it reached first went into all three files.
+ *
+ * Read from the END: the artwork's name has RGB where the deliverable has a
+ * duration, so nothing before the territory lines up between the two. The last
+ * token is the language when the one before it is a market-shaped token, which
+ * is the same "one token differs, both ends market-shaped" discipline Support
+ * Swap uses.
+ */
+function mcItLanguageOf(filename: string): string {
+  const stem = String(filename || "").replace(/\.[A-Za-z0-9]{1,5}$/, "");
+  const parts = stem.split("_");
+  // A DELIVERABLE CARRIES "_V01" AND ITS ARTWORK DOES NOT, so the version has
+  // to come off before the last token means anything. Without this the .aep's
+  // language read as "" and every Belgian project took the language-free
+  // artwork -- caught by probe-language-token.cjs, not by eye.
+  while (parts.length > 0 && /^V\d+$/i.test(String(parts[parts.length - 1]))) parts.pop();
+  if (parts.length < 2) return "";
+  const last = String(parts[parts.length - 1]).toUpperCase();
+  const prev = String(parts[parts.length - 2]).toUpperCase();
+  if (!/^[A-Z]{2,3}$/.test(last)) return "";
+  if (last === "OV") return "";
+  // The token before it must be the territory -- two letters, no digits --
+  // or this is an ordinary trailing word (RGB on a shared component, a
+  // deliverable ending "_OV") rather than a language.
+  if (!/^[A-Z]{2}$/.test(prev)) return "";
+  if (prev === "OV") return "";
+  return last;
+}
+
 /** The creative alone, i.e. the first token of the identity. The artwork being
  *  replaced carries the MASTER's identity -- no site token, the master's size
  *  and the master's duration ("..._PortalToParadise_DOOH_3840x586px_10s_OV1")
@@ -3507,6 +3542,9 @@ export function mcItApplyToOpenProject(
         let cSameType = 0;
         let cPlusRes = 0;
         let cPlusCreative = 0;
+        let cPlusLanguage = 0;
+        // The deliverable's own language, read off the .aep name once.
+        const aepLanguage = mcItLanguageOf(aepFileName);
         const creativesSeen: string[] = [];
         const resSeenSameType: string[] = [];
         const validCandidates: File[] = [];
@@ -3555,6 +3593,18 @@ export function mcItApplyToOpenProject(
           if (aepCreative !== "" && candCreative !== aepCreative) continue;
           cPlusCreative++;
 
+          // AND FOR THIS DELIVERABLE'S LANGUAGE.
+          //
+          // Belgium's three deliverables differ only by a trailing FL/FR, and
+          // so do their artworks. Exact BOTH WAYS: the Flemish deliverable
+          // takes only the Flemish artwork, and the plain "_BE" deliverable
+          // refuses both language files rather than treating one as near
+          // enough. A market with no language is unaffected -- both sides
+          // read "" and the test passes.
+          const candLanguage = mcItLanguageOf(candidate.name);
+          if (candLanguage !== aepLanguage) continue;
+          cPlusLanguage++;
+
           // THE ARTWORK SLOT, AND NO NUMBER IS ITSELF A SLOT.
           //
           // "..._OV2.png" is replaced by "..._BR2.png", and "..._OV.jpg" by
@@ -3589,6 +3639,8 @@ export function mcItApplyToOpenProject(
           else if (cPlusRes === 0) reason = "No candidate at the AEP's resolution " + (parsedAEP.thirdOne || "?") + " — sizes seen: " + resSeenSameType.join(", ") + ".";
           else if (cPlusCreative === 0) reason = "No candidate for " + (parsedAEP.firstOne || "this deliverable")
             + " at that resolution — found " + creativesSeen.join(", ") + ".";
+          else if (cPlusLanguage === 0) reason = "No " + (aepLanguage !== "" ? aepLanguage + " " : "language-free ")
+            + "artwork for " + (parsedAEP.firstOne || "this deliverable") + " at that resolution.";
           else if (validCandidates.length === 0) reason = "No candidate for artwork slot '" + (parsedOriginal.pngNumber || "<none>") + "' at that resolution.";
           projReport.items.push({
             folder: targetFolder.name,

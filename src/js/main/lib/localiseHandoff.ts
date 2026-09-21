@@ -26,6 +26,9 @@ export interface HandoffRow {
     width: string;
     height: string;
     duration: string;
+    /** Language token after the territory, from the subtask name
+     *  ("..._15s_BE_FL" -> "FL"). "" for a single-language market. */
+    language?: string;
 }
 
 export interface PendingBatch {

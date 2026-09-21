@@ -106,6 +106,14 @@ interface BuildRow {
     creative: string;
     custom: string;
     /**
+     * LANGUAGE/VARIANT, after the territory in the name ("..._15s_BE_FL").
+     * Belgium delivers Flemish and French of one size and length, so without
+     * this the two rows build one filename between them. Optional and blank
+     * for every single-language market, and it never gates a row from being
+     * complete.
+     */
+    language?: string;
+    /**
      * WHERE THIS ROW CAME FROM, when it came from a spec sheet rather than a
      * keyboard. The index into the sheet's own rows, so the sheet's warnings
      * still attach to it and Revert has something to revert TO. Absent on a
@@ -347,6 +355,27 @@ export function matchBuiltRows(rows: SpecRow[], existing: string[] | undefined):
 
     const files = existing.map((f) => ({ name: f, flat: canonName(f), tokens: tokenised(f), claimed: false }));
 
+    // A LANGUAGE MAKES TWO OTHERWISE IDENTICAL DELIVERABLES DIFFERENT FILES.
+    // Belgium's "..._15s_BE", "..._15s_BE_FL" and "..._15s_BE_FR" share every
+    // other field, so without this each would claim whichever of the three
+    // files came first and two would read as built when they do not exist.
+    // Exact both ways: a row WITH a language needs that token, and a row
+    // without one refuses a file that carries any language.
+    // Reads the FILENAME, not the tokenised form: `tokenised` keeps boundary
+    // flags rather than the tokens themselves, and this needs the last two.
+    // A version suffix is stepped over -- "..._BE_FL_V01.aep" is still Flemish.
+    const languageOfName = (fileName: string): string => {
+        const stem = String(fileName || "").replace(/\.aep$/i, "");
+        const parts = stem.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+        while (parts.length && /^V\d+$/.test(parts[parts.length - 1])) parts.pop();
+        if (parts.length < 2) return "";
+        const last = parts[parts.length - 1];
+        const prev = parts[parts.length - 2];
+        if (!/^[A-Z]{2,3}$/.test(last) || last === "OV") return "";
+        if (!/^[A-Z]{2}$/.test(prev) || prev === "OV") return "";
+        return last;
+    };
+
     const coreMatches = (row: SpecRow, f: typeof files[number]): boolean => {
         const size = canonName(row.Size);                  // 1080X1920
         const campaign = canonName(row.Campaign);          // JUNGLETUNNEL
@@ -354,6 +383,7 @@ export function matchBuiltRows(rows: SpecRow[], existing: string[] | undefined):
         if (f.flat.indexOf(size) === -1) return false;     // "…1080X1920PX…" still contains it
         if (!durationPresent(f.tokens, row.Duration)) return false;
         if (!containsAsTokens(f.tokens, campaign)) return false;
+        if (canonName(row.Language || "") !== languageOfName(f.name)) return false;
         return true;
     };
 
@@ -413,7 +443,10 @@ export function matchBuiltRows(rows: SpecRow[], existing: string[] | undefined):
 export function duplicateRowOf(rows: SpecRow[]): number[] {
     const firstSeen: Record<string, number> = {};
     return rows.map((r, i) => {
-        const key = [r.Artwork, r.Campaign, r.Site || "", r.Size, r.Duration].map(canonName).join("|");
+        // Language belongs in the key for the same reason Site does: two rows
+        // differing only by it build DIFFERENT filenames, so they are two
+        // deliverables, not one listed twice.
+        const key = [r.Artwork, r.Campaign, r.Site || "", r.Size, r.Duration, r.Language || ""].map(canonName).join("|");
         // A row too empty to identify (no size or no campaign) is never called a
         // duplicate -- it hasn't parsed enough to know what it is.
         if (!canonName(r.Size) || !canonName(r.Campaign)) return -1;
@@ -907,6 +940,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                 width: r.width,
                 height: r.height,
                 duration: r.duration,
+                language: r.language || "",
             }))
         );
         buildRowId.current = pending.rows.length + 1;
@@ -1049,7 +1083,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
         setBuildRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
     };
     const addBuildRow = () =>
-        setBuildRows((rs) => [...rs, { id: buildRowId.current++, artwork: "DOOH", creative: "", custom: "", site: "", width: "", height: "", duration: "" }]);
+        setBuildRows((rs) => [...rs, { id: buildRowId.current++, artwork: "DOOH", creative: "", custom: "", site: "", width: "", height: "", duration: "", language: "" }]);
     const removeBuildRow = (id: number) =>
         setBuildRows((rs) => (rs.length > 1 ? rs.filter((r) => r.id !== id) : rs));
 
@@ -1218,6 +1252,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                 width: (size[0] || "").replace(/[^0-9]/g, ""),
                 height: (size[1] || "").replace(/[^0-9]/g, ""),
                 duration: String(x.row.Duration || "").replace(/[^0-9]/g, ""),
+                language: x.row.Language || "",
                 srcIndex: x.i,
             };
         }));
@@ -1304,6 +1339,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
             width: (size[0] || "").replace(/[^0-9]/g, ""),
             height: (size[1] || "").replace(/[^0-9]/g, ""),
             duration: String(src.Duration || "").replace(/[^0-9]/g, ""),
+            language: src.Language || "",
         })));
     };
 
@@ -1322,6 +1358,9 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
             // an empty one produces a filename with no site token at all --
             // exactly the pre-Site behaviour.
             Site: r.site.trim(),
+            // Upper-cased here as well as host-side, so what the grid shows and
+            // what lands in the filename are the same string.
+            Language: (r.language || "").trim().toUpperCase(),
             // Build-a-batch is hand-typed, so there is no PDF to read a target
             // size, bitrate or frame rate off. Left blank rather than defaulted:
             // an invented delivery spec is worse than an absent one.
@@ -2050,6 +2089,25 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
     // Open the territory's Specs folder (where the found batch PDFs live) in
     // Finder/Explorer so the parse can be sanity-checked against the real PDFs.
     // Falls back to the territory root if there's no Specs subfolder.
+    /**
+     * Open a batch's own specs PDF in the system viewer.
+     *
+     * The icon sits INSIDE the row's button (which opens the builder), so the
+     * click is stopped there -- the same shape as the Active Jobs card's
+     * tutorial icon. A span, not a nested <button>, which is invalid markup.
+     */
+    const openSpecsPdf = async (t: TerritoryScan, b: Batch) => {
+        setNotice(null);
+        const target = path.join(t.sourceFolder, "Masters", "Specs", b.pdfName);
+        try {
+            const res = await evalTS("openExternalFile", target);
+            if (res === undefined) throw new Error("no bridge");
+            if (!res.success) setNotice(res.error || `Couldn't open ${b.pdfName}.`);
+        } catch (e: any) {
+            setNotice(e?.message || "No CEP bridge. Open this panel inside After Effects.");
+        }
+    };
+
     const revealTerritory = async (t: TerritoryScan) => {
         setNotice(null);
         const target = t.hasSpecs ? path.join(t.sourceFolder, "Masters", "Specs") : t.sourceFolder;
@@ -2383,7 +2441,23 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                                                 title={batchOpen ? "Collapse this batch" : "Expand this batch"}
                                                             >
                                                                 {batchOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                                                                <FileText size={13} />
+                                                                <Tooltip text={`Open ${b.pdfName}`}>
+                                                                    <span
+                                                                        className="specs-batch-pdf"
+                                                                        role="button"
+                                                                        tabIndex={0}
+                                                                        aria-label={`Open ${b.pdfName}`}
+                                                                        onClick={(e) => { e.stopPropagation(); void openSpecsPdf(t, b); }}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key !== "Enter" && e.key !== " ") return;
+                                                                            e.preventDefault();
+                                                                            e.stopPropagation();
+                                                                            void openSpecsPdf(t, b);
+                                                                        }}
+                                                                    >
+                                                                        <FileText size={13} />
+                                                                    </span>
+                                                                </Tooltip>
                                                                 <span className="specs-batch-name">{b.pdfName}</span>
                                                                 <span className="specs-batch-tag">{b.batch}</span>
                                                                 {b.error ? <span className="specs-batch-err">{b.error}</span> : (
@@ -2968,7 +3042,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                     specs table's own — the icon says what it is, and a
                                     label here would crowd a 20px column. */}
                                 <span />
-                                <span>Type</span><span>Creative</span><span>Site</span><span>Width</span><span>Height</span><span>Dur</span><span>×</span><span />
+                                <span>Type</span><span>Creative</span><span>Site</span><span>Width</span><span>Height</span><span>Dur</span><span>Lang</span><span>×</span><span />
                             </div>
                             {buildRows.map((r) => (
                                 <div className="specs-build-row" key={r.id}>
@@ -3118,6 +3192,22 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                     <input type="number" min="1" placeholder="W" value={r.width} onChange={(e) => updateBuildRow(r.id, { width: e.target.value })} />
                                     <input type="number" min="1" placeholder="H" value={r.height} onChange={(e) => updateBuildRow(r.id, { height: e.target.value })} />
                                     <input type="number" min="1" placeholder="sec" value={r.duration} onChange={(e) => updateBuildRow(r.id, { duration: e.target.value })} />
+                                    {/* OPTIONAL, and blank on nearly every row: only
+                                        the multi-language markets need it (Belgium
+                                        FL/FR, Switzerland DE/FR/IT, Canada EN/FR). It
+                                        is written after the territory, so two rows
+                                        differing only by this build two files. */}
+                                    <Tooltip text="Language token after the territory, for a market that delivers more than one — FL, FR, DE… Leave blank otherwise.">
+                                        <input
+                                            className="specs-build-lang"
+                                            type="text"
+                                            maxLength={3}
+                                            placeholder="—"
+                                            value={r.language || ""}
+                                            aria-label="Language (optional)"
+                                            onChange={(e) => updateBuildRow(r.id, { language: e.target.value.replace(/[^A-Za-z]/g, "").toUpperCase() })}
+                                        />
+                                    </Tooltip>
                                     {(() => {
                                         // Same control, same meaning as the specs table's × column:
                                         // only appears when this row has no same-duration master AND

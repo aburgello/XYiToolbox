@@ -408,6 +408,27 @@ export interface DeliverableNameParts {
   height: number | string;
   duration: string; // accepts "15", "15s" or "15sec" -- normalised below
   territory: string;
+  /** Language/variant token, AFTER the territory: Belgium ships Flemish and
+   *  French of the same deliverable, and the name is the only thing that
+   *  travels with the file. "" for the single-language markets, which is
+   *  almost all of them. */
+  language?: string;
+}
+
+/**
+ * A language token is 2-3 LETTERS, never digits, and never the OV marker.
+ *
+ * It sits exactly where a master's "_OV" and a version's "_V01" sit, so those
+ * two are refused here rather than being written back out as languages.
+ * Upper-cased so FL/fl/Fl converge, the same discipline as note tags and
+ * workflow names.
+ */
+export function sanitiseLanguageToken(raw: string | undefined | null): string {
+  const t = String(raw == null ? "" : raw).replace(/^\s+|\s+$/g, "").toUpperCase();
+  if (t === "") return "";
+  if (!/^[A-Z]{2,3}$/.test(t)) return "";
+  if (t === "OV") return "";
+  return t;
 }
 
 // Reduce whatever the CSV/parser handed us to bare digits. The spec sheets and
@@ -434,6 +455,8 @@ export function buildDeliverableName(parts: DeliverableNameParts): string {
   const rawSite = parts.site == null ? "" : String(parts.site).replace(/^\s+|\s+$/g, "");
   const sitePart = rawSite === "" ? "" : "_" + rawSite;
   const digits = durationDigits(parts.duration);
+  const lang = sanitiseLanguageToken(parts.language);
+  const langPart = lang === "" ? "" : "_" + lang;
   return (
     parts.filmTitle +
     "_" +
@@ -450,7 +473,8 @@ export function buildDeliverableName(parts: DeliverableNameParts): string {
     "px_" +
     digits +
     "s_" +
-    parts.territory
+    parts.territory +
+    langPart
   );
 }
 

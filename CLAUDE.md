@@ -817,6 +817,22 @@ token in. Neither tsconfig covers `src/jsx` and the tool returned
 `success: true` throughout — `node scripts/probe-campaign-rename.cjs` is the
 only gate, so run it after touching either function.
 
+**A LANGUAGE IS A TOKEN AFTER THE TERRITORY, and it makes two otherwise
+identical deliverables two files.** Belgium ships Flemish and French of one
+size and length (`…_15s_BE`, `…_15s_BE_FL`, `…_15s_BE_FR`), and the mech
+exports carry the same suffix (`…_RGB_BE_FL.jpg`), so the name is the only
+thing that tells them apart. Before it was modelled all three parsed
+identically, built ONE filename between them, and read as duplicates of each
+other. `sanitiseLanguageToken` (2–3 letters, never digits, never `OV`) is the
+one definition; `nameGeneratorParse` reads it only AFTER a territory is in
+hand, `buildDeliverableName` writes it last, it rides the CSV as a trailing
+`Language` column (older CSVs simply have no cell), and `matchBuiltRows`
+requires it EXACTLY both ways — a row with no language refuses a file that has
+one. **Strip `_V01` before reading the last token**: a deliverable carries a
+version and its artwork does not, so without that MC It!'s language read as
+empty and every Belgian project took the language-free artwork — caught by
+`node scripts/probe-language-token.cjs`, which is the gate on all of it.
+
 **Never gate a name-reading tool on an underscore COUNT.** Cheeky T skipped
 parsing whenever `name.split("_").length < 8`, a proxy for "does this name carry
 what a frontcard needs" that was calibrated on the legacy convention — which
@@ -1120,6 +1136,11 @@ differently-cased name, the never-repoint rule, and what a fresh machine
 actually gets. Run it after touching either — the failure it exists for is
 silent, a row reaching colleagues with one half missing while the toast says
 "already in the team library".
+
+`node scripts/probe-language-token.cjs` (after `yarn build`) drives the
+language token through the parser, the name builder and MC It!'s artwork
+filter, including a master's `_OV` and a legacy `_UK_V01` in the same position.
+Run it after touching any of them.
 
 `node scripts/probe-master-tiers.cjs` (after `yarn build`) drives the master
 scorer and the picker's ranking over a tree where one creative's masters carry

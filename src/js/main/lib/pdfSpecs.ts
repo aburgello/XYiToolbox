@@ -261,6 +261,13 @@ export interface SpecRow {
   // can be tied back to the screen it's for. Informational only: the host's
   // csvLocaliserRun() reads columns 0-3 positionally and never looks at this.
   Site: string;
+  /** Language/variant token after the territory ("BE_FL" -> "FL"). Belgium,
+   *  Switzerland and Canada deliver the same size and length in more than one
+   *  language, and the name is the only thing that travels with the file.
+   *  Blank for the single-language markets, which is nearly all of them. A
+   *  spec PDF has no such column -- this arrives from a Wrike subtask name or
+   *  is typed in Build a Batch. */
+  Language?: string;
   // --- delivery spec, normalised. "" when the PDF didn't say. ---------------
   // These were being parsed off the PDF and then dropped on the floor, which
   // is why Delivery's size field has always been typed by hand and why nothing
@@ -676,6 +683,10 @@ export function specRowWarnings(row: SpecRow): string[] {
 const CSV_HEADERS: (keyof SpecRow)[] = [
   "Artwork", "Campaign", "Size", "Duration", "Country", "Site",
   "FileSize", "BitRate", "Fps",
+  // AT THE END, per the rule above: csvLocaliserRun reads the earlier columns
+  // positionally, so a CSV written before this existed still parses and simply
+  // yields no language.
+  "Language",
 ];
 
 // csvLocaliserRun() strips quotes before splitting on commas, so a quoted

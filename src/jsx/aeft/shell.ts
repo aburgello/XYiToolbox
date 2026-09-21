@@ -103,6 +103,34 @@ export const revealUsefulFolder = (path: string): Result => {
   return { success: true };
 };
 
+/**
+ * Open a FILE in whatever application owns it (a specs PDF, from CSV
+ * Localiser's batch rows).
+ *
+ * NOT gated on File.exists, unlike review.ts's revealFile/playFile: these live
+ * on the studio NAS, where .exists answers false for files that are plainly
+ * there (CLAUDE.md). Attempt the open and let its failure be the answer --
+ * macOS `open` prints to stderr, so it is redirected into callSystem's return
+ * and reported rather than lost.
+ */
+export const openExternalFile = (filePath: string): Result => {
+  try {
+    if (!filePath) return { success: false, error: "No file to open." };
+    const p = String(filePath);
+    let out = "";
+    if ($.os.indexOf("Windows") !== -1) {
+      out = system.callSystem('cmd /c start "" "' + p + '"');
+    } else {
+      out = system.callSystem('open "' + p + '" 2>&1');
+    }
+    const trimmed = String(out == null ? "" : out).replace(/^\s+|\s+$/g, "");
+    if (trimmed !== "") return { success: false, error: trimmed };
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
 // =============================================================================
 // Custom tool order -- lets the user drag-and-drop reorder each category's
 // vertical tool list (main.tsx's Reorder.Group) instead of being stuck with
