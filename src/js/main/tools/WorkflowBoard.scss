@@ -2411,3 +2411,58 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     flex: none;
     margin-right: 2px;
 }
+
+// ── the tutorial, under the steps and docked above them ─────────────────────
+.workflow-board .wfb-watch {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    width: 100%;
+    margin: 8px 0 2px;
+    padding: 9px 12px;
+    border: 1px solid var(--cat-border, #fb923c);
+    border-radius: 7px;
+    // index.scss's global button:hover/:active paints any button blue.
+    background: rgba(251, 146, 60, 0.1);
+    color: var(--cat-icon, #fdba74);
+    font-size: 12px;
+    cursor: pointer;
+
+    &:hover,
+    &:active { background: rgba(251, 146, 60, 0.2); }
+}
+
+.workflow-board .wfb-inline-clip {
+    margin: 0 0 10px;
+    border: 1px solid var(--surface-edge, #3a3a3a);
+    border-radius: 8px;
+    background: #000;
+    overflow: hidden;
+
+    video {
+        display: block;
+        width: 100%;
+        // Tall enough to follow, short enough to leave the steps on screen.
+        max-height: 46vh;
+        background: #000;
+    }
+}
+
+.workflow-board .wfb-inline-clip-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 7px;
+    border-top: 1px solid var(--surface-divider, #2a2a2a);
+    font-size: 10.5px;
+    color: #8a8a8a;
+
+    > span {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+}

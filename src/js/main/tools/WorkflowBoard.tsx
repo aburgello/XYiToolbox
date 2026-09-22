@@ -26,7 +26,7 @@ import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import {
     ListChecks, Plus, X, Trash2, Pencil, Check, RotateCcw, StickyNote,
     RefreshCw, AlertCircle, FolderSearch, ChevronLeft, ChevronRight, GripVertical, Users,
-    ArrowRight, Link2, Link2Off, Search, Globe, FolderOpen, Wand2, MoreHorizontal,
+    ArrowRight, Link2, Link2Off, Search, Globe, FolderOpen, Wand2, MoreHorizontal, Maximize2,
     Play, Film,
 } from "lucide-react";
 import {
@@ -795,6 +795,11 @@ const WorkflowBoardTool: React.FC<{
     /** The clip on screen: a step's, a note's, or the creative's own. One
      *  player for all three, portalled by VideoOverlay itself. */
     const [clip, setClip] = useState<{ path: string; title: string } | null>(null);
+    /** The creative's own clip, played INLINE above the steps rather than in
+     *  the overlay: you follow a tutorial by doing the steps, and a full-screen
+     *  player hides the list you are following. Step and note clips still take
+     *  the overlay — those are watched, not worked along with. */
+    const [inlineClip, setInlineClip] = useState<string>("");
     const playClip = useCallback((path: string, title?: string) => {
         if (!path) return;
         sfx.click();
@@ -1819,6 +1824,7 @@ const WorkflowBoardTool: React.FC<{
         }
         setPicking(false);
         setEditing(false);
+        setInlineClip("");
     };
 
     // --- render --------------------------------------------------------------
@@ -1893,25 +1899,6 @@ const WorkflowBoardTool: React.FC<{
                                 </span>
                             ))}
                         </div>
-                    )}
-                    {/* THE CREATIVE'S OWN CLIP, and the only icon left that is
-                        not a word: a play triangle on a board means what it
-                        means everywhere. Everything else that used to sit here
-                        as a bare glyph — add a workflow, attach a clip, re-read
-                        the board — is in the menu beside it, named.
-
-                        The crosshair that offered to jump to whatever was open
-                        in AE is gone with the auto-detection it belonged to. */}
-                    {entry && entry.tutorial && (
-                        <Tooltip text={`Watch ${fileLabel(entry.tutorial)}`}>
-                            <button
-                                type="button"
-                                className="wfb-btn wfb-btn--tut"
-                                onClick={() => playClip(entry.tutorial as string, `${prettyCreative(creative)} — tutorial`)}
-                            >
-                                <Play size={12} /><span>Watch</span>
-                            </button>
-                        </Tooltip>
                     )}
                     <Droplet
                         panelClassName="wfb-menu"
@@ -2406,6 +2393,44 @@ const WorkflowBoardTool: React.FC<{
                                 a card you press rather than a line you click.
                                 The metaphor is the same one the launcher icon
                                 carries. */}
+                            {/* DOCKED, NOT FULL-SCREEN. The clip sits above the
+                                steps at the panel's width, so the list stays on
+                                screen and you can tick along with it. Native
+                                controls: this is a thing to scrub, and the
+                                panel has no better scrubber than the one
+                                Chromium already draws. */}
+                            {inlineClip && (
+                                <div className="wfb-inline-clip">
+                                    <video
+                                        src={toFileUrl(inlineClip)}
+                                        controls
+                                        autoPlay
+                                        onError={() => {
+                                            setInlineClip("");
+                                            toast("error", "Couldn't open that clip — if it lives on somebody's desktop, other machines can't reach it.");
+                                        }}
+                                    />
+                                    <div className="wfb-inline-clip-bar">
+                                        <span>{fileLabel(inlineClip)}</span>
+                                        <Tooltip text="Full screen">
+                                            <button
+                                                type="button"
+                                                className="wfb-mini"
+                                                onClick={() => { const p = inlineClip; setInlineClip(""); playClip(p, `${prettyCreative(creative)} — tutorial`); }}
+                                                aria-label="Full screen"
+                                            >
+                                                <Maximize2 size={11} />
+                                            </button>
+                                        </Tooltip>
+                                        <Tooltip text="Close the clip">
+                                            <button type="button" className="wfb-mini" onClick={() => setInlineClip("")} aria-label="Close">
+                                                <X size={11} />
+                                            </button>
+                                        </Tooltip>
+                                    </div>
+                                </div>
+                            )}
+
                             <ol className="wfb-steps">
                                 {entry.steps.map((s, i) => {
                                     const on = !!myTicks[s.id];
@@ -2546,6 +2571,23 @@ const WorkflowBoardTool: React.FC<{
                                     <li className="wfb-empty-line">This workflow has no steps yet.</li>
                                 )}
                             </ol>
+
+                            {/* UNDER THE STEPS, FULL WIDTH. It was an icon in
+                                the header, where it read as one of the tool
+                                buttons; it belongs at the end of the thing it
+                                explains, which is where somebody looks after
+                                reading three steps and wanting to see them
+                                done. */}
+                            {entry.tutorial && !inlineClip && (
+                                <button
+                                    type="button"
+                                    className="wfb-watch"
+                                    onClick={() => { sfx.click(); setInlineClip(entry.tutorial as string); }}
+                                >
+                                    <Play size={13} />
+                                    <span>Watch the tutorial</span>
+                                </button>
+                            )}
 
                             {/* THIS IS HOUSE RULES, NOT A FORM.
                                 Three buttons sat here — Reset, Edit steps and a
