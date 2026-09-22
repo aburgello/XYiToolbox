@@ -267,6 +267,12 @@ export const SixtySevenHost: React.FC = () => {
                                 <span className="s67-by">{!ctx?.campaign && n._campaign ? n._campaign + " · " : ""}{n.author}</span>
                             </button>
                         ))}
+                        {/* THE UNTIMED ONES ARE A DIFFERENT KIND OF THING --
+                            standing advice rather than a moment — and notes
+                            written before 67 existed are all of them. */}
+                        {timed.length > 0 && untimed.length > 0 && (
+                            <p className="s67-sep">Anywhere in the piece</p>
+                        )}
                         {untimed.map((n) => (
                             <div key={n.id} className="s67-note is-untimed">
                                 <span className="s67-at">—</span>
