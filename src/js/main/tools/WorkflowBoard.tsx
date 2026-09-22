@@ -2058,6 +2058,21 @@ const WorkflowBoardTool: React.FC<{
                                     somebody wants to undo, and hunting for the
                                     way out of a mistake is the worst time to be
                                     hunting. Same call, same confirmation. */}
+                                {/* TWO BOARDS FOR ONE CREATIVE happen when its
+                                    masters folder and its filenames disagree —
+                                    the picker lists folders, 67 reads the comp's
+                                    name. Only offered when there is something to
+                                    merge into. */}
+                                {entry && entries.filter((e) => e.id !== entry.id && canon(e.campaign) === canon(campaign)).length > 0 && (
+                                    <button
+                                        type="button"
+                                        className="wfb-menu-row"
+                                        onClick={() => { close(); void mergeInto(); }}
+                                    >
+                                        <Users size={12} />
+                                        <span>Merge this board into another creative…</span>
+                                    </button>
+                                )}
                                 {entry && (
                                     <button
                                         type="button"
