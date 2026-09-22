@@ -1958,6 +1958,21 @@ const WorkflowBoardTool: React.FC<{
                                     <RefreshCw size={12} />
                                     <span>Re-read the team board</span>
                                 </button>
+                                {/* ALSO HERE, not only in the steps menu. A board
+                                    created under the wrong name is exactly what
+                                    somebody wants to undo, and hunting for the
+                                    way out of a mistake is the worst time to be
+                                    hunting. Same call, same confirmation. */}
+                                {entry && (
+                                    <button
+                                        type="button"
+                                        className="wfb-menu-row wfb-menu-row--danger"
+                                        onClick={() => { close(); deleteEntry(); }}
+                                    >
+                                        <Trash2 size={12} />
+                                        <span>Delete this workflow for the team</span>
+                                    </button>
+                                )}
                             </div>
                         )}
                     </Droplet>
