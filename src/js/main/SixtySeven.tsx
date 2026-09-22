@@ -20,6 +20,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X, MapPin, Plus, Film, AlertCircle, Loader2 } from "lucide-react";
 import { toFileUrl } from "./lib/fileUrl";
+import { pickPreviewRender } from "./lib/renderPreview";
 import { evalTS } from "../lib/utils/bolt";
 import { evalTSSafe } from "../lib/utils/evalTSSafe";
 import Tooltip from "./Tooltip";
@@ -139,7 +140,12 @@ export const SixtySevenHost: React.FC = () => {
 
     if (!open) return null;
 
-    const render = ctx && ctx.renders && ctx.renders.length ? ctx.renders[0] : null;
+    // REVIEW'S OWN CHOOSER, not "the first one the scan found". A Renders
+    // folder mixes ProRes MOVs Chromium cannot decode with the H.264 MP4s in
+    // Support/Motion_Components/_MP4, and the exact-stem MOV sorts first --
+    // so taking the first match played nothing and reported "no render" for a
+    // master OV Library happily previews.
+    const render = (ctx && ctx.renders && pickPreviewRender(ctx.renders)) || null;
     const thisDuration = durKey(ctx?.duration || "");
 
     // A TIME ONLY COUNTS AGAINST THE CUT IT WAS MADE ON. 0:05 of the 15s master
@@ -199,7 +205,7 @@ export const SixtySevenHost: React.FC = () => {
                             {loading
                                 ? "Looking for the master…"
                                 : ctx && ctx.success
-                                    ? `No playable render for ${ctx.masterName || ctx.creative}. The notes are below.`
+                                    ? `No playable render for ${ctx.masterName || ctx.creative}${(ctx.renders || []).length ? " (only formats this panel can't decode)" : ""}. The notes are below.`
                                     : (ctx && ctx.error) || "Nothing to show."}
                         </p>
                     </div>

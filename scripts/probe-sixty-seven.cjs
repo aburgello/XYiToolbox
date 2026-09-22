@@ -19,14 +19,20 @@ const src = fs.readFileSync('dist/cep/jsx/index.js', 'utf8');
 // A campaign root holds AE/ and Renders/ as siblings, which is what the
 // studio's own convention says and what OV Library walks.
 const TREES = {
-    '/M/FID': ['AE', 'Renders'],
+    '/M/FID': ['AE', 'Renders', 'Support'],
     '/M/SF': ['AE', 'Renders'],
     '/M/FID/AE': ['TRIO'],
     '/M/FID/AE/TRIO': ['FID_INTL_Trio_DOOH_1920x1080px_15s_OV.aep'],
     // The render tree is a sibling of AE, filed under the creative FOLDER's
     // own spelling -- which is not how the filename spells it.
+    // The real shape, measured on Forgotten Island: the mirrored Renders tree
+    // holds ProRes MOVs, and the web-playable MP4s live flat under
+    // Support/Motion_Components/_MP4, named by master stem.
     '/M/FID/Renders': ['TRIO'],
-    '/M/FID/Renders/TRIO': ['FID_INTL_Trio_DOOH_1920x1080px_15s_OV.mp4'],
+    '/M/FID/Renders/TRIO': ['FID_INTL_Trio_DOOH_1920x1080px_15s_OV.mov'],
+    '/M/FID/Support': ['Motion_Components'],
+    '/M/FID/Support/Motion_Components': ['_MP4'],
+    '/M/FID/Support/Motion_Components/_MP4': ['FID_INTL_Trio_DOOH_1920x1080px_15s_OV.mp4'],
     '/M/SF/AE': ['TRIO'],
     '/M/SF/Renders': [],
     '/M/SF/AE/TRIO': ['SF_INTL_Trio_DOOH_1920x1080px_15s_OV.aep'],
@@ -93,7 +99,8 @@ say(r.campaign === 'Forgotten Island', 'and to Forgotten Island', r.campaign);
 console.log('\n2. the render behind that master');
 r = ask('FID_INTL_Trio_DOOH_1920x1080px_15s_IT_V01');
 say((r.renders || []).length > 0, 'a render is found', JSON.stringify(r.renders));
-say((r.renders || [])[0] && /15s_OV\.mp4$/.test(r.renders[0].path), 'and it is the master\'s own', (r.renders || [])[0] && r.renders[0].path);
+say((r.renders || []).some((x) => /\.mp4$/.test(x.path)), 'including the web-playable MP4 the panel can decode', JSON.stringify((r.renders || []).map((x) => x.path)));
+say((r.renders || []).some((x) => /\.mov$/.test(x.path)), 'and the mirrored ProRes, for Review to choose between');
 say(r.creativeFolder === 'TRIO', 'the creative folder is read off the master\'s path, not the filename', r.creativeFolder);
 
 console.log('\n3. what it reads off the name');

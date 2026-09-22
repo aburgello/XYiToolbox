@@ -1360,6 +1360,14 @@ of the same resolution; when the campaign cannot be placed at all, a note is
 labelled with the campaign it came from rather than being shown as if it
 belonged here. `node scripts/probe-sixty-seven.cjs` guards it.
 
+**A RENDER IS CHOSEN BY `pickPreviewRender`, NEVER BY "first found".** The
+mirrored `Renders/<Creative>` tree holds ProRes MOVs Chromium cannot decode;
+the web-playable MP4s sit flat in `Support/Motion_Components/_MP4`, named by
+master stem, and `scanRendersForCreative` merges both. Taking the first exact
+stem match therefore lands on the MOV and plays nothing — which 67 reported as
+"no playable render" for a master OV Library previews happily. One chooser,
+shared, so the two screens cannot disagree about what is playable.
+
 **A RENDER SCAN WANTS THE CREATIVE AS THE DISK SPELLS IT.**
 `scanRendersForCreative` opens `<root>/Renders/<creative>` literally, so the
 string has to be the FOLDER's name — OV Library passes one it read off disk,
