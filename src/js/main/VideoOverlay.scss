@@ -5,9 +5,15 @@
 // `.ov-library`. The component portals to <body> now, so nesting them under a
 // tool's own class would have styled nothing.
 //
-// z-index 1000 is the toasts/video tier from CLAUDE.md -- below the command
-// palette (1900) and Dialog (2000), so a confirm raised over a playing clip
-// still wins.
+// z-index 1600: ABOVE the floating panels and modals at 1500 (the Workflows
+// bubble, the specs modal), below the command palette (1900) and Dialog
+// (2000), so a confirm raised over a playing clip still wins.
+//
+// It was 1000, the toasts/video tier. That was right while every clip was
+// opened from a tool page, and wrong the moment the Workflows bubble could
+// play one: the video opened BEHIND the panel that started it, and the only
+// way to watch it was to close the panel. A player is always opened
+// deliberately, so it covers whatever opened it.
 // =============================================================================
 
 .video-player-overlay {
@@ -17,7 +23,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1000;
+    z-index: 1600;
     padding: 24px;
     box-sizing: border-box;
 }

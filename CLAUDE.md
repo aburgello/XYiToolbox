@@ -270,8 +270,12 @@ Known violations of the table above: `OVLibrary.scss` (`aspect-ratio` ×2),
 - Nothing on the always-visible home screen animates perpetually — the ambient
   background is one-shot on purpose.
 
-**z-index order:** toasts/video 1000 · CommandPalette 1900 · Dialog 2000, so a
-confirm raised by a palette action still wins.
+**z-index order:** toasts 1000 · floating panels and modals 1500 (Workflows
+bubble, specs modal) · VideoOverlay 1600 · CommandPalette 1900 · Dialog 2000,
+so a confirm raised by a palette action still wins. **The player sits above
+the panels** because it is always opened deliberately from one of them — at
+1000 a clip played from the Workflows bubble opened behind it, and the only
+way to watch was to close the panel.
 
 ---
 
