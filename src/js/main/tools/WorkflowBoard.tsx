@@ -55,6 +55,7 @@ import Tooltip from "../Tooltip";
 import Droplet from "../Droplet";
 import VideoOverlay from "../VideoOverlay";
 import { toFileUrl } from "../lib/fileUrl";
+import { usePosterFrame, pickPreviewRender, isImageFile, type RenderEntry } from "../lib/renderPreview";
 import "../shared.scss";
 import "./WorkflowBoard.scss";
 
@@ -544,6 +545,48 @@ const StepLinkChip: React.FC<{
 // both come straight off the registry, so a tool that isn't registered cannot
 // be linked to and a button that doesn't exist cannot be named.
 // ---------------------------------------------------------------------------
+/**
+ * The picture on a creative's card: the same one Review shows.
+ *
+ * A STILL IS AN <img> AND A RENDER IS A <video>, because a <video> tag with an
+ * image src shows nothing at all -- no error event either, which is how a PNG
+ * override silently blanked OV Library's cards before that branch existed.
+ * The poster hook seeks off frame 0 for the same reason it does there: frame 0
+ * of a DOOH render is routinely the worst frame in the clip.
+ */
+const CreativeArt: React.FC<{ src?: string; fallback?: string; initial: string }> = ({ src, fallback, initial }) => {
+    const videoRef = useRef<HTMLVideoElement | null>(null);
+    const [failed, setFailed] = useState(false);
+    const poster = usePosterFrame(videoRef, () => {});
+    const usable = src && !failed ? src : "";
+
+    return (
+        <span className="wfb-creative-art">
+            <span className="wfb-creative-art-box">
+                {usable && isImageFile(usable) ? (
+                    <img src={toFileUrl(usable)} alt="" onError={() => setFailed(true)} />
+                ) : usable ? (
+                    <video
+                        ref={videoRef}
+                        src={toFileUrl(usable)}
+                        muted
+                        playsInline
+                        preload="metadata"
+                        onLoadedMetadata={poster.onLoadedMetadata}
+                        onSeeked={poster.onSeeked}
+                        onLoadedData={poster.onLoadedData}
+                        onError={() => setFailed(true)}
+                    />
+                ) : fallback ? (
+                    <img className="is-fallback" src={toFileUrl(fallback)} alt="" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                ) : (
+                    <span className="wfb-camp-art-none">{initial}</span>
+                )}
+            </span>
+        </span>
+    );
+};
+
 const LinkPicker: React.FC<{
     value?: WorkflowLink;
     /** The step being linked, echoed in the header. The picker drops below the
@@ -1654,6 +1697,52 @@ const WorkflowBoardTool: React.FC<{
     }, [pickable, creativeQuery]);
 
     /**
+     * THE SAME PICTURE REVIEW SHOWS. A pinned thumbnail wins (that is what
+     * OVLibThumbOverrides is for); with none, Review falls back to the
+     * creative's best RENDER, picked by the shared pickPreviewRender so the
+     * two screens cannot choose differently.
+     *
+     * ONLY FOR THE CREATIVES ON SCREEN, and only the documented ones. Each
+     * lookup is a directory walk on the NAS, and OV Library pays for a whole
+     * campaign because a grid of every creative IS its job. Here the folded
+     * half is not on screen, so it is not worth a walk; opening the fold asks
+     * for those too.
+     */
+    const [renderThumbs, setRenderThumbs] = useState<Record<string, string>>({});
+    const wantThumbsFor = useMemo(() => {
+        if (!picking || !pickCampaign) return [] as string[];
+        // Exactly what the list is drawing: the folded half is not on screen.
+        const onScreen = pickableShown.filter((c) => c.hasWorkflow || showUndocumented || creativeQuery.trim() !== "");
+        return onScreen
+            .filter((c) => !creativeThumbs[c.name] && renderThumbs[c.name] === undefined)
+            .map((c) => c.name);
+    }, [picking, pickCampaign, creativeThumbs, renderThumbs, pickableShown, showUndocumented, creativeQuery]);
+
+    useEffect(() => {
+        if (wantThumbsFor.length === 0) return;
+        const camp = campaigns.filter((c) => c.name === pickCampaign)[0];
+        if (!camp || !camp.mastersRoot) return;
+        let cancelled = false;
+        (async () => {
+            for (const name of wantThumbsFor) {
+                if (cancelled) return;
+                try {
+                    const renders = (await evalTS("scanRendersForCreative", camp.mastersRoot, name)) as RenderEntry[];
+                    const best = pickPreviewRender(renders || []);
+                    // MARKED EITHER WAY. "" records that this creative was
+                    // looked up and has nothing, so the walk is not repeated on
+                    // every render of the list.
+                    if (!cancelled) setRenderThumbs((prev) => ({ ...prev, [name]: best ? best.path : "" }));
+                } catch {
+                    if (!cancelled) setRenderThumbs((prev) => ({ ...prev, [name]: "" }));
+                }
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [wantThumbsFor, campaigns, pickCampaign]);
+
+
+    /**
      * A second (or third) workflow for the creative on screen.
      *
      * The name is what makes it deliberate rather than a duplicate — see
@@ -2115,29 +2204,11 @@ const WorkflowBoardTool: React.FC<{
                                             animate={{ opacity: 1, y: 0 }}
                                             transition={reduced ? { duration: 0 } : { ...SPRING.snappy, delay: rowDelay(i) }}
                                         >
-                                            <span className="wfb-creative-art">
-                                                <span className="wfb-creative-art-box">
-                                                    {creativeThumbs[c.name] ? (
-                                                        <img
-                                                            src={toFileUrl(creativeThumbs[c.name])}
-                                                            alt=""
-                                                            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-                                                        />
-                                                    ) : banners[pickCampaign] ? (
-                                                        // The campaign's own artwork, faded: a grid of
-                                                        // blank frames is worse than a grid that shows
-                                                        // which campaign you are in.
-                                                        <img
-                                                            className="is-fallback"
-                                                            src={toFileUrl(banners[pickCampaign])}
-                                                            alt=""
-                                                            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-                                                        />
-                                                    ) : (
-                                                        <span className="wfb-camp-art-none">{prettyCreative(c.name).charAt(0)}</span>
-                                                    )}
-                                                </span>
-                                            </span>
+                                            <CreativeArt
+                                                src={creativeThumbs[c.name] || renderThumbs[c.name] || ""}
+                                                fallback={banners[pickCampaign]}
+                                                initial={prettyCreative(c.name).charAt(0)}
+                                            />
                                             <span className="wfb-creative-text">
                                                 <span className="wfb-creative-name">{prettyCreative(c.name)}</span>
                                                 <span className="wfb-creative-meta">

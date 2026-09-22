@@ -712,15 +712,16 @@
     justify-content: center;
     overflow: hidden;
 
-    img {
+    img,
+    video {
         width: 100%;
         height: 100%;
         object-fit: cover;
         display: block;
 
-        // The campaign's banner standing in for a creative with nothing
-        // pinned: present enough to place the card, quiet enough not to claim
-        // it is this creative's own artwork.
+        // The campaign's banner standing in for a creative with no picture of
+        // its own: present enough to place the card, quiet enough not to claim
+        // it is this creative's artwork.
         &.is-fallback { opacity: 0.3; filter: grayscale(0.4); }
     }
 }
