@@ -26,7 +26,7 @@ import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import {
     ListChecks, Plus, X, Trash2, Pencil, Check, RotateCcw, StickyNote,
     RefreshCw, AlertCircle, FolderSearch, ChevronLeft, ChevronRight, GripVertical, Users,
-    ArrowRight, Link2, Link2Off, Search, Globe, FolderOpen, Wand2, MoreHorizontal, Crosshair,
+    ArrowRight, Link2, Link2Off, Search, Globe, FolderOpen, Wand2, MoreHorizontal,
     Play, Film,
 } from "lucide-react";
 import {
@@ -812,11 +812,6 @@ const WorkflowBoardTool: React.FC<{
      *  greying the lot — the same "no data is not the same as couldn't read"
      *  rule the board itself follows. */
     const [retired, setRetired] = useState<Record<string, string>>({});
-    const [detected, setDetected] = useState<{ project: string; creative: string; campaign: string }>({
-        project: "", creative: "", campaign: "",
-    });
-    // What the board is SHOWING, which starts as what was detected and then
-    // follows the picker.
     // Saved scripts on THIS machine, for resolving a step's script link. They
     // are per-machine (app.settings), so a link written elsewhere may not
     // resolve here — the chip says so rather than pretending.
@@ -935,10 +930,11 @@ const WorkflowBoardTool: React.FC<{
                 campaign?: string; campaigns?: CampaignRef[];
             };
             if (!ctx || !ctx.success) return;
-            const label = ctx.creativeLabel || ctx.creative || "";
+            // WHAT THIS POLL IS STILL FOR: the campaign list. It used to carry
+            // the open project's creative onto the board as well, which is
+            // gone -- see below.
             setCampaigns(ctx.campaigns || []);
-            setDetected({ project: ctx.project || "", creative: label, campaign: ctx.campaign || "" });
-            // DETECTION NEVER MOVES THE BOARD ANY MORE. It used to open
+            // DETECTION NEVER MOVES THE BOARD. It used to open
             // whatever creative the front project named, which sounds helpful
             // and is not: the panel would land you inside one creative's board
             // when what you opened it for was the campaign wall, and a project
@@ -953,17 +949,6 @@ const WorkflowBoardTool: React.FC<{
             detecting.current = false;
         }
     }, []);
-
-    /** Follow the open project again, from the header's own nudge. */
-    const followDetected = () => {
-        if (!detected.creative) return;
-        setCampaign(detected.campaign);
-        setCreative(detected.creative);
-        setWfName("");
-        setPickCampaign(detected.campaign);
-        setPicking(false);
-        sfx.click();
-    };
 
     // RE-DETECT WHILE THE PANEL IS UP. It is mounted once and hidden with CSS,
     // so a mount-only detection meant the board still named whatever was open
@@ -1808,11 +1793,29 @@ const WorkflowBoardTool: React.FC<{
         if (path) await setTutorial(path);
     };
 
+    /**
+     * OPEN A CREATIVE ON A WORKFLOW IT ACTUALLY HAS.
+     *
+     * Picking a creative used to open its UNNAMED board — and a creative whose
+     * workflows have all been named has none, so a creative with two boards on
+     * the shelf greeted you with "no workflow saved" and an offer to start one.
+     * The variant chips right above it were showing the two it already had.
+     *
+     * So: the unnamed board when there is one (the overwhelming case), else
+     * the creative's first named board. An explicit name still wins, which is
+     * what the variant chips and the picker's own variant rows pass.
+     */
     const choose = (campName: string, creativeName: string, name?: string) => {
         setCampaign(campName);
         setCreative(creativeName);
-        setWfName(name || "");
-        // Picking by hand stops the poll moving the board underneath you.
+        if (name !== undefined) setWfName(name);
+        else {
+            const base = keyFor(campName, creativeName);
+            const mine = entries.filter((e) => e.key === base || e.key.indexOf(base + "|") === 0);
+            const unnamed = mine.filter((e) => !e.name)[0];
+            const first = mine.slice().sort((a, b) => (a.name || "").localeCompare(b.name || ""))[0];
+            setWfName(unnamed ? "" : (first ? first.name || "" : ""));
+        }
         setPicking(false);
         setEditing(false);
     };
@@ -1835,25 +1838,9 @@ const WorkflowBoardTool: React.FC<{
                         <span className="wfb-id-sub">
                             {campaign || "no campaign"}
                             {wfName ? <em> · {wfName}</em> : null}
-                            {detected.project && detected.creative === creative
-                                ? <em> · open in AE</em>
-                                : null}
                         </span>
                     </div>
                 </div>
-
-                {/* PINNED SOMEWHERE ELSE. The poll does not move the board
-                    under somebody who picked a creative by hand, so it says
-                    what is actually open instead and offers one click back.
-                    Doing it silently is the version people would hate. */}
-                {detected.creative && canon(detected.creative) !== canon(creative) && (
-                    <Tooltip text={`${detected.project} is open`}>
-                        <button type="button" className="wfb-follow" onClick={followDetected}>
-                            <Crosshair size={11} />
-                            <span>{prettyCreative(detected.creative)}</span>
-                        </button>
-                    </Tooltip>
-                )}
 
                 <div className="wfb-head-actions">
                     {/* A creative can carry several workflows, and this is the
@@ -1891,71 +1878,83 @@ const WorkflowBoardTool: React.FC<{
                             ))}
                         </div>
                     )}
-                    {/* THE CREATIVE'S OWN CLIP. Present it plays; absent, and
-                        only while a board is open, it offers to attach one —
-                        the same rule the tool tutorials follow ("the
-                        affordance only exists when the clip does"), except a
-                        creative has no filename convention to be found by, so
-                        somebody has to point at the file once. */}
+                    {/* THE CREATIVE'S OWN CLIP, and the only icon left that is
+                        not a word: a play triangle on a board means what it
+                        means everywhere. Everything else that used to sit here
+                        as a bare glyph — add a workflow, attach a clip, re-read
+                        the board — is in the menu beside it, named.
+
+                        The crosshair that offered to jump to whatever was open
+                        in AE is gone with the auto-detection it belonged to. */}
                     {entry && entry.tutorial && (
-                        <Tooltip text={`Watch ${fileLabel(entry.tutorial)} — right-click to replace or remove`}>
+                        <Tooltip text={`Watch ${fileLabel(entry.tutorial)}`}>
                             <button
                                 type="button"
-                                className="wfb-btn wfb-btn--icon wfb-btn--tut"
+                                className="wfb-btn wfb-btn--tut"
                                 onClick={() => playClip(entry.tutorial as string, `${prettyCreative(creative)} — tutorial`)}
-                                onContextMenu={async (e) => {
-                                    e.preventDefault();
-                                    const ok = await confirmDialog(
-                                        `Replace the clip for ${prettyCreative(creative)}?\n\n` +
-                                        `It is currently ${fileLabel(entry.tutorial as string)}.\n\n` +
-                                        "OK picks a new one; Cancel leaves it alone. To remove it, pick nothing in the dialog."
-                                    );
-                                    if (ok) await attachTutorial();
-                                }}
-                                aria-label="Play this creative's tutorial"
                             >
-                                <Play size={12} />
+                                <Play size={12} /><span>Watch</span>
                             </button>
                         </Tooltip>
                     )}
-                    {/* SHOWN WHENEVER A CREATIVE IS, not only once the board
-                        exists. A clip hangs off a saved entry by id, so a
-                        workflow nobody has saved yet has nothing to hang it on
-                        — but hiding the button for that made it look like the
-                        feature was missing, on the one screen where somebody is
-                        most likely to be looking for it. It says why instead. */}
-                    {creative && !(entry && entry.tutorial) && (
-                        <Tooltip text={entry
-                            ? `Attach a screen recording for ${prettyCreative(creative)} — everyone on the team sees it`
-                            : "Save this workflow for the team first, then a clip can be attached to it"}>
-                            <button
-                                type="button"
-                                className={"wfb-btn wfb-btn--icon" + (entry ? "" : " is-waiting")}
-                                onClick={() => {
-                                    if (!entry) { toast("error", "Save this workflow for the team first — then attach a clip."); return; }
-                                    void attachTutorial();
-                                }}
-                                aria-label="Attach a tutorial for this creative"
-                            >
-                                <Film size={12} />
-                            </button>
-                        </Tooltip>
-                    )}
-                    <Tooltip text="Add another workflow for this creative — a name separates it from the one you're on">
-                        <button type="button" className="wfb-btn wfb-btn--icon" onClick={startNamedWorkflow} disabled={!creative}>
-                            <Plus size={12} />
-                        </button>
-                    </Tooltip>
                     <Tooltip text="Pick a different creative">
                         <button type="button" className="wfb-btn" onClick={openPicker}>
                             <FolderSearch size={12} /><span>Change</span>
                         </button>
                     </Tooltip>
-                    <Tooltip text="Re-read the team board">
-                        <button type="button" className="wfb-btn wfb-btn--icon" onClick={() => loadBoard(true)}>
-                            <RefreshCw size={12} />
-                        </button>
-                    </Tooltip>
+                    <Droplet
+                        panelClassName="wfb-menu"
+                        trigger={({ toggle }) => (
+                            <button type="button" className="wfb-btn wfb-btn--icon" onClick={toggle} aria-label="More">
+                                <MoreHorizontal size={13} />
+                            </button>
+                        )}
+                    >
+                        {(close) => (
+                            <div className="wfb-menu-list">
+                                <button
+                                    type="button"
+                                    className="wfb-menu-row"
+                                    disabled={!creative}
+                                    onClick={() => { close(); startNamedWorkflow(); }}
+                                >
+                                    <Plus size={12} />
+                                    <span>Add another workflow for this creative</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    className="wfb-menu-row"
+                                    onClick={() => {
+                                        close();
+                                        if (!creative) return;
+                                        if (!entry) { toast("error", "Save this workflow for the team first — then attach a clip."); return; }
+                                        void attachTutorial();
+                                    }}
+                                >
+                                    <Film size={12} />
+                                    <span>{entry && entry.tutorial ? "Replace this creative's clip" : "Attach a clip for this creative"}</span>
+                                </button>
+                                {entry && entry.tutorial && (
+                                    <button
+                                        type="button"
+                                        className="wfb-menu-row"
+                                        onClick={() => { close(); void setTutorial(""); }}
+                                    >
+                                        <X size={12} />
+                                        <span>Remove the clip</span>
+                                    </button>
+                                )}
+                                <button
+                                    type="button"
+                                    className="wfb-menu-row"
+                                    onClick={() => { close(); loadBoard(true); }}
+                                >
+                                    <RefreshCw size={12} />
+                                    <span>Re-read the team board</span>
+                                </button>
+                            </div>
+                        )}
+                    </Droplet>
                 </div>
             </div>
 

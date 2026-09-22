@@ -2272,31 +2272,6 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     font-family: Georgia, "Times New Roman", serif;
 }
 
-// "Trio is open" — shown only while you have pinned a different creative by
-// hand. One click back to following the project; never a silent switch.
-.workflow-board .wfb-follow {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    flex: none;
-    max-width: 120px;
-    padding: 3px 8px;
-    border: 1px solid var(--cat-border, #fb923c);
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--cat-icon, #fdba74);
-    font-size: 9.5px;
-    font-weight: 600;
-    cursor: pointer;
-    white-space: nowrap;
-
-    &:hover { background: rgba(255, 255, 255, 0.1); }
-    &:active { background: rgba(255, 255, 255, 0.1); }
-
-    svg { flex: none; }
-
-    span { overflow: hidden; text-overflow: ellipsis; }
-}
 
 // The composer, closed. One line that says what it does, instead of five
 // controls sitting permanently under a list you are usually just reading.
@@ -2377,4 +2352,49 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
 .workflow-board .wfb-note.is-editing {
     border-left-color: var(--cat-icon, #fdba74);
     background: rgba(255, 255, 255, 0.06);
+}
+
+// ── the header's overflow menu ───────────────────────────────────────────────
+// Everything that used to be a bare glyph in the header lives here with a
+// sentence on it. Portalled by Droplet, so it is reached by its own class
+// rather than from the board's subtree.
+.wfb-menu {
+    min-width: 236px;
+    padding: 4px;
+}
+
+.wfb-menu-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.wfb-menu-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 9px;
+    border: 0;
+    border-radius: 5px;
+    background: none;
+    color: #d0d0d0;
+    font-size: 11.5px;
+    text-align: left;
+    cursor: pointer;
+
+    // index.scss's global button:hover/:active paints any button blue.
+    &:hover:not(:disabled),
+    &:active:not(:disabled) { background: rgba(255, 255, 255, 0.07); color: #fff; }
+
+    &:disabled { opacity: 0.4; cursor: default; }
+
+    svg { flex: none; opacity: 0.8; }
+}
+
+// The one icon left in the header that is not a word, and it carries one
+// anyway: a clip is the thing people come back for.
+.workflow-board .wfb-btn--tut {
+    border-color: var(--cat-border, #fb923c);
+    color: var(--cat-icon, #fdba74);
 }
