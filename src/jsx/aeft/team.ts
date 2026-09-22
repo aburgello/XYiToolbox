@@ -3390,6 +3390,79 @@ export const workflowAddTimedNote = (
 };
 
 /**
+ * Fold one creative's board into another's.
+ *
+ * FOR THE SPELLINGS, not for tidying. A creative whose folder and filenames
+ * disagree ends up with two boards -- one written from the picker, one from
+ * 67 -- and neither can see the other. Aliasing stops new ones appearing;
+ * this is how the pair already on the share becomes one.
+ *
+ * NOTHING IS OVERWRITTEN. Notes are appended (by id, so a re-run cannot
+ * duplicate them), and steps move only when the destination has NONE: two
+ * real checklists are two people's work, and silently concatenating them
+ * would be worse than leaving them apart. The source is removed only after
+ * everything it held is somewhere else.
+ */
+export const workflowMergeEntries = (fromId: string, intoId: string): WorkflowBoardResult => {
+  try {
+    if (!teamFolder()) return { success: false, error: "Team folder not set." };
+    if (!fromId || !intoId || fromId === intoId) return { success: false, error: "Pick two different boards." };
+    const shared = readWorkflowEntries();
+    if (shared === null) return { success: false, error: "Couldn't read the team board -- is the NAS mounted?" };
+
+    let from = -1;
+    let into = -1;
+    for (let i = 0; i < shared.length; i++) {
+      if (shared[i].id === fromId) from = i;
+      if (shared[i].id === intoId) into = i;
+    }
+    if (from === -1 || into === -1) return { success: false, error: "One of those boards is no longer on the share -- reload and try again." };
+
+    const src = shared[from];
+    const dst = shared[into];
+
+    const seen: { [id: string]: boolean } = {};
+    const dstNotes = dst.notes || [];
+    for (let i = 0; i < dstNotes.length; i++) seen[dstNotes[i].id] = true;
+    const srcNotes = src.notes || [];
+    let moved = 0;
+    for (let i = 0; i < srcNotes.length; i++) {
+      if (seen[srcNotes[i].id]) continue;
+      dstNotes.push(srcNotes[i]);
+      moved++;
+    }
+    dst.notes = dstNotes;
+
+    let steps = 0;
+    if ((!dst.steps || dst.steps.length === 0) && src.steps && src.steps.length > 0) {
+      dst.steps = src.steps;
+      steps = src.steps.length;
+    }
+    dst.updatedAt = new Date().toString();
+
+    const out: WorkflowEntry[] = [];
+    for (let i = 0; i < shared.length; i++) {
+      if (i !== from) out.push(shared[i]);
+    }
+
+    if (!writeSharedFile(SHARED_WORKFLOWS_FILE, SHARED_WORKFLOWS_TYPE, out)) {
+      return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
+    }
+    return {
+      success: true,
+      read: true,
+      entries: out,
+      me: loadLocalSetting(MACHINE_OWNER_KEY) || "",
+      message: "Merged " + moved + " note" + (moved === 1 ? "" : "s")
+        + (steps > 0 ? " and " + steps + " step" + (steps === 1 ? "" : "s") : "")
+        + " into " + dst.creative + ".",
+    } as WorkflowBoardResult;
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/**
  * Set or clear a note's time in the piece.
  *
  * BY NOTE ID ALONE. 67 knows the note it is looking at and nothing about which

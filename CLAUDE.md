@@ -1387,6 +1387,13 @@ prefix, so a second press replaces what the first left and **somebody else's
 markers on the same comp are never touched**. A note past the comp's end is
 clamped to the last frame rather than dropped.
 
+**Two boards for one creative are MERGED, never deduplicated silently.**
+`workflowMergeEntries` (the board's ⋯ menu) appends the source's notes by id,
+so a re-run cannot duplicate them, and moves its steps ONLY when the
+destination has none — two real checklists are two people's work, and
+concatenating them silently would be worse than leaving them apart. The source
+goes only after everything it held is somewhere else.
+
 **A CREATIVE'S FOLDER AND ITS FILENAMES CAN DISAGREE, and both are in use.**
 Street Fighter's masters sit in `AE/CharacterMotionPoster/` while the `.aep`
 inside says `SF_INTL_Characters_DOOH_MotionPoster_…` — so the Workflows picker

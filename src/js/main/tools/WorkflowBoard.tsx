@@ -49,7 +49,7 @@ import { navigateToToolsetAction } from "../lib/navigation";
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import { sfx } from "../../lib/utils/sfx";
-import { confirmDialog, promptDialog } from "../Dialog";
+import { confirmDialog, promptDialog, selectDialog } from "../Dialog";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
 import Droplet from "../Droplet";
@@ -1314,6 +1314,50 @@ const WorkflowBoardTool: React.FC<{
         setEditing(false);
         sfx.click();
         toast("success", `Saved ${prettyCreative(creative)}'s workflow for the team.`);
+    };
+
+    /**
+     * Fold this board into another creative's.
+     *
+     * FOR THE SPELLINGS. A creative whose masters folder and filenames
+     * disagree (CharacterMotionPoster vs Characters) ends up with two boards,
+     * because the picker lists folders and 67 reads the comp's name. Aliasing
+     * stops new ones appearing; this collapses the pair already on the share,
+     * in whichever direction the team wants to keep.
+     */
+    const mergeInto = async () => {
+        if (!entry) return;
+        const others = entries.filter((e) => e.id !== entry.id && canon(e.campaign) === canon(campaign));
+        if (others.length === 0) {
+            toast("error", "No other board in this campaign to merge into.");
+            return;
+        }
+        const labels = others.map((e) =>
+            `${prettyCreative(e.creative)}${e.name ? " · " + e.name : ""}  (${e.steps.length} steps, ${(e.notes || []).length} notes)`);
+        const pick = await selectDialog(
+            `Merge “${prettyCreative(entry.creative)}” into which board?\n\n` +
+            "Its notes move across. Its steps move only if the other board has none — two real checklists are two people's work.",
+            labels
+        );
+        if (pick === null) return;
+        const target = others[pick];
+        const ok = await confirmDialog(
+            `Merge ${prettyCreative(entry.creative)} into ${prettyCreative(target.creative)}?\n\n` +
+            `${(entry.notes || []).length} note(s)` +
+            (target.steps.length === 0 && entry.steps.length > 0 ? ` and ${entry.steps.length} step(s)` : "") +
+            ` move across, and “${prettyCreative(entry.creative)}” is removed for the whole team.\n\nThere is no undo.`
+        );
+        if (!ok) return;
+        setBusy(true);
+        const r = (await evalTSSafe("workflowMergeEntries", entry.id, target.id)) as {
+            success: boolean; error?: string; message?: string; entries?: WorkflowEntry[];
+        };
+        setBusy(false);
+        if (!r || !r.success) { toast("error", (r && r.error) || "Couldn't merge."); return; }
+        if (r.entries) setEntries(r.entries);
+        setCreative(target.creative);
+        setWfName(target.name || "");
+        toast("success", r.message || "Merged.");
     };
 
     const deleteEntry = async () => {
