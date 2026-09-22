@@ -138,6 +138,12 @@
 
     &.is-past { opacity: 0.32; }
 
+    // Its moment: two pulses of the category tint, then it settles. Pre-blended
+    // rgba rather than color-mix(), which is Chrome 111 against a 74 target.
+    &.is-arriving {
+        animation: wft-arrive 2.2s ease-out 1;
+    }
+
     &.is-done .wft-text { text-decoration: line-through; }
 }
 
@@ -246,4 +252,17 @@
 // smaller anyway.
 @media (max-width: 720px) {
     .wft-strip { max-height: 58%; }
+}
+
+@keyframes wft-arrive {
+    0%   { box-shadow: 0 0 0 0 rgba(45, 212, 191, 0); background: rgba(8, 8, 10, 0.82); }
+    12%  { box-shadow: 0 0 18px 2px rgba(45, 212, 191, 0.55); background: rgba(24, 48, 46, 0.9); }
+    34%  { box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.1); background: rgba(8, 8, 10, 0.82); }
+    52%  { box-shadow: 0 0 16px 2px rgba(45, 212, 191, 0.42); background: rgba(24, 48, 46, 0.88); }
+    100% { box-shadow: 0 0 0 0 rgba(45, 212, 191, 0); background: rgba(8, 8, 10, 0.82); }
+}
+
+// A pulse is the one thing here somebody might genuinely not want.
+@media (prefers-reduced-motion: reduce) {
+    .wft-line.is-arriving { animation: none; }
 }

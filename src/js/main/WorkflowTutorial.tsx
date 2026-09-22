@@ -74,6 +74,18 @@ const WorkflowTutorial: React.FC<{
         if (at !== undefined && at <= now + 0.05) current = i;
     });
 
+    // ARRIVING. A step turning up mid-clip has to catch your eye while you are
+    // watching the picture, so it pulses for a couple of seconds and then
+    // settles into the ordinary lit state. Keyed on the index so a seek
+    // backwards announces the step again.
+    const [arriving, setArriving] = useState(false);
+    useEffect(() => {
+        if (current < 0) return;
+        setArriving(true);
+        const t = window.setTimeout(() => setArriving(false), 2200);
+        return () => window.clearTimeout(t);
+    }, [current]);
+
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
         window.addEventListener("keydown", onKey);
@@ -166,6 +178,7 @@ const WorkflowTutorial: React.FC<{
                                 key={st.id}
                                 className={"wft-line"
                                     + (i === current ? " is-current" : "")
+                                    + (i === current && arriving ? " is-arriving" : "")
                                     + (current > -1 && i < current ? " is-past" : "")
                                     + (done ? " is-done" : "")}
                             >
