@@ -1360,6 +1360,15 @@ of the same resolution; when the campaign cannot be placed at all, a note is
 labelled with the campaign it came from rather than being shown as if it
 belonged here. `node scripts/probe-sixty-seven.cjs` guards it.
 
+**A RENDER SCAN WANTS THE CREATIVE AS THE DISK SPELLS IT.**
+`scanRendersForCreative` opens `<root>/Renders/<creative>` literally, so the
+string has to be the FOLDER's name — OV Library passes one it read off disk,
+and 67 passed the token out of the comp's filename. `Trio` against a folder
+called `TRIO` misses, `PortalToParadise` against `PORTAL_TO_PARADISE` misses
+harder, and the symptom is "no playable render" for a master OV Library shows a
+render for. Take the folder off the MASTER'S OWN PATH (skipping an `AE` level),
+never off the parsed name.
+
 **67 IS THE CREATIVE'S PITFALLS, AT THE SECOND THEY HAPPEN.** A Toolset card
 (`actionSafety: "read"` — it opens a player and changes nothing): the comp's
 name gives the creative, the SAME scorer CSV Localiser uses gives the master,

@@ -35,6 +35,8 @@ export interface SixtySevenContext extends Result {
   /** The master this deliverable was built from, when one matches. */
   masterName?: string;
   masterPath?: string;
+  /** The creative as the masters tree spells it -- what the render scan needs. */
+  creativeFolder?: string;
   /** Playable renders for this creative, best guess first. Empty is normal. */
   renders?: { stem: string; path: string }[];
 }
@@ -138,15 +140,46 @@ export const sixtySevenContext = (): SixtySevenContext => {
       }
     }
 
+    // THE CREATIVE AS THE DISK SPELLS IT, not as the filename does.
+    //
+    // scanRendersForCreative opens `<root>/Renders/<creative>` literally, so
+    // the string has to be the FOLDER's name -- OV Library passes one it read
+    // off disk, and 67 was passing the token out of the comp's name. "Trio"
+    // against a folder called "TRIO" is a miss, and "PortalToParadise" against
+    // "PORTAL_TO_PARADISE" is a worse one: the master was found, the render
+    // was not, and the panel said there wasn't one.
+    //
+    // The master's own path is the answer -- it IS inside that folder.
+    let creativeFolder = creative;
+    if (masterPath && mastersRoot) {
+      const rootFs = String(mastersRoot).replace(/[\/\\]+$/, "");
+      if (masterPath.indexOf(rootFs) === 0) {
+        const rel = masterPath.slice(rootFs.length + 1).split(/[\/\\]/);
+        // A root pointed at the campaign rather than its AE folder.
+        let first = rel.length > 0 ? rel[0] : "";
+        if (String(first).toUpperCase() === "AE" && rel.length > 1) first = rel[1];
+        if (first && rel.length > 1) creativeFolder = first;
+      }
+    }
+
     // The renders for this creative, with the one matching the master's own
     // stem first. Without a master, whatever the creative has.
     const renders: { stem: string; path: string }[] = [];
     if (mastersRoot) {
       let found: RenderEntry[] = [];
       try {
-        found = scanRendersForCreative(mastersRoot, creative) || [];
+        found = scanRendersForCreative(mastersRoot, creativeFolder) || [];
       } catch (eScan) {
         found = [];
+      }
+      // Still nothing, and the folder we guessed was not the parsed token:
+      // try that too rather than reporting "no render" on a spelling.
+      if (found.length === 0 && creativeFolder !== creative) {
+        try {
+          found = scanRendersForCreative(mastersRoot, creative) || [];
+        } catch (eScan2) {
+          found = [];
+        }
       }
       const wanted = canon(String(masterName).replace(/\.aep$/i, ""));
       for (let r = 0; r < found.length; r++) {
@@ -169,6 +202,7 @@ export const sixtySevenContext = (): SixtySevenContext => {
       mastersRoot: mastersRoot,
       masterName: masterName,
       masterPath: masterPath,
+      creativeFolder: creativeFolder,
       renders: renders,
     };
   } catch (e) {
