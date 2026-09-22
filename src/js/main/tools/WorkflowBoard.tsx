@@ -807,7 +807,11 @@ const WorkflowBoardTool: React.FC<{
      *  tutorial by doing the steps, so the list has to survive the player.
      *  Step and note clips still take the plain overlay: those are watched,
      *  not worked along with. */
-    const [tutorialOpen, setTutorialOpen] = useState(false);
+    /** The entry whose clip is playing with its steps over it. The BOARD's
+     *  entry when Watch is pressed there, and the card's own when a creative
+     *  is played from the picker — a clip is always somebody's workflow, so it
+     *  always brings that workflow's steps. */
+    const [tutorialFor, setTutorialFor] = useState<WorkflowEntry | null>(null);
     /**
      * The category tint, read off the board and handed to the portal.
      *
@@ -1201,13 +1205,16 @@ const WorkflowBoardTool: React.FC<{
         onSelectTool("my-tools");
     }, [onSelectTool, toast]);
 
-    const toggleStep = (stepId: string) => {
-        const forKey = { ...(ticks[activeKey] || {}) };
+    /** Tick a step on any entry's key — the board passes its own, the
+     *  tutorial passes the entry it is playing for. */
+    const toggleStepOn = (key: string, stepId: string) => {
+        const forKey = { ...(ticks[key] || {}) };
         if (forKey[stepId]) delete forKey[stepId];
         else forKey[stepId] = true;
         sfx.click();
-        persistTicks({ ...ticks, [activeKey]: forKey });
+        persistTicks({ ...ticks, [key]: forKey });
     };
+    const toggleStep = (stepId: string) => toggleStepOn(activeKey, stepId);
 
     const resetTicks = async () => {
         if (doneCount === 0) return;
@@ -1240,11 +1247,10 @@ const WorkflowBoardTool: React.FC<{
      * edited in the meantime away with it; that is true of the editor too, and
      * the alternative is a second write path for one number.
      */
-    const saveMarks = async (marks: Record<string, number>) => {
-        if (!entry) return;
-        const steps = entry.steps.map((s) => (marks[s.id] === undefined ? s : { ...s, at: marks[s.id] }));
+    const saveMarksOn = async (target: WorkflowEntry, marks: Record<string, number>) => {
+        const steps = target.steps.map((s) => (marks[s.id] === undefined ? s : { ...s, at: marks[s.id] }));
         const payload: WorkflowEntry = {
-            ...entry,
+            ...target,
             steps,
             notes: [],
         };
@@ -1877,7 +1883,7 @@ const WorkflowBoardTool: React.FC<{
         }
         setPicking(false);
         setEditing(false);
-        setTutorialOpen(false);
+        setTutorialFor(null);
     };
 
     // --- render --------------------------------------------------------------
@@ -2039,15 +2045,15 @@ const WorkflowBoardTool: React.FC<{
             {/* ONE PLAYER for a step's clip, a note's, and the creative's own.
                 VideoOverlay portals itself to <body> and re-applies the
                 category tint, so it is mounted here rather than per chip. */}
-            {tutorialOpen && entry && entry.tutorial && (
+            {tutorialFor && tutorialFor.tutorial && (
                 <WorkflowTutorial
-                    path={entry.tutorial}
-                    title={`${prettyCreative(creative)} — tutorial`}
-                    steps={entry.steps}
-                    ticks={myTicks}
-                    onTick={toggleStep}
-                    onSaveMarks={saveMarks}
-                    onClose={() => setTutorialOpen(false)}
+                    path={tutorialFor.tutorial}
+                    title={`${prettyCreative(tutorialFor.creative)} — tutorial`}
+                    steps={tutorialFor.steps}
+                    ticks={ticks[tutorialFor.key] || {}}
+                    onTick={(id) => toggleStepOn(tutorialFor.key, id)}
+                    onSaveMarks={(marks) => saveMarksOn(tutorialFor, marks)}
+                    onClose={() => setTutorialFor(null)}
                     style={portalCatVars()}
                 />
             )}
@@ -2305,7 +2311,15 @@ const WorkflowBoardTool: React.FC<{
                                                 <button
                                                     type="button"
                                                     className="wfb-creative-play"
-                                                    onClick={() => playClip(c.tutorial as string, `${prettyCreative(c.name)} — tutorial`)}
+                                                    onClick={() => {
+                                                        // The ENTRY, so the clip arrives with its
+                                                        // steps over it exactly as it does from
+                                                        // the board.
+                                                        const base = keyFor(pickCampaign, c.name);
+                                                        const hit = entries.filter((e) =>
+                                                            (e.key === base || e.key.indexOf(base + "|") === 0) && e.tutorial)[0];
+                                                        if (hit) { sfx.click(); setTutorialFor(hit); }
+                                                    }}
                                                     aria-label={`Play ${prettyCreative(c.name)}'s tutorial`}
                                                 >
                                                     <Play size={11} />
@@ -2610,7 +2624,7 @@ const WorkflowBoardTool: React.FC<{
                                 <button
                                     type="button"
                                     className="wfb-watch"
-                                    onClick={() => { sfx.click(); setTutorialOpen(true); }}
+                                    onClick={() => { sfx.click(); setTutorialFor(entry); }}
                                 >
                                     <Play size={13} />
                                     <span>Watch the tutorial</span>
