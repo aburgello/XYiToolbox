@@ -1,0 +1,258 @@
+// =============================================================================
+// src/js/main/WorkflowTutorial.scss
+// -----------------------------------------------------------------------------
+// Video left, steps right; stacked when the panel is too narrow to hold both.
+// z-index 1600 — the VideoOverlay tier, above the floating panels at 1500 and
+// below CommandPalette/Dialog. No aspect-ratio, :has() or color-mix(): the
+// build target is chrome74.
+// =============================================================================
+.wft-overlay {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 1600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    background: rgba(8, 8, 10, 0.88);
+}
+
+.wft {
+    display: flex;
+    width: 100%;
+    max-width: 1180px;
+    max-height: 88vh;
+    overflow: hidden;
+    border: 1px solid var(--surface-edge, #3a3a3a);
+    border-radius: 10px;
+    background: var(--surface-0, #141416);
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6);
+}
+
+.wft-video {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+
+    video {
+        display: block;
+        width: 100%;
+        max-height: 88vh;
+    }
+}
+
+.wft-error {
+    margin: 0;
+    padding: 24px;
+    max-width: 380px;
+    color: #e0b050;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.wft-side {
+    flex: 0 0 300px;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    border-left: 1px solid var(--surface-divider, #2a2a2a);
+}
+
+.wft-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 10px 8px 12px;
+    border-bottom: 1px solid var(--surface-divider, #2a2a2a);
+}
+
+.wft-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #e8e8e8;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.wft-close {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: 5px;
+    background: none;
+    color: #8a8a8a;
+    cursor: pointer;
+
+    &:hover,
+    &:active { background: rgba(255, 255, 255, 0.08); color: #ddd; }
+}
+
+.wft-steps {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    margin: 0;
+    padding: 8px;
+    list-style: none;
+}
+
+.wft-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    padding: 7px 6px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    // Fading is the whole point, so it is the thing that animates.
+    opacity: 0.55;
+    transition: opacity 220ms ease, background-color 220ms ease, border-color 220ms ease;
+
+    &.is-current {
+        opacity: 1;
+        border-color: var(--cat-border, #2dd4bf);
+        background: rgba(255, 255, 255, 0.05);
+    }
+
+    // BEHIND YOU. Further back than an unreached step, because what is left to
+    // do matters more than what is done.
+    &.is-past { opacity: 0.3; }
+
+    &.is-done .wft-text { text-decoration: line-through; }
+}
+
+.wft-tick {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 1px solid var(--surface-edge, #3a3a3a);
+    border-radius: 50%;
+    background: none;
+    color: #b0b0b0;
+    font-size: 10px;
+    cursor: pointer;
+
+    &:hover,
+    &:active { background: rgba(255, 255, 255, 0.08); }
+}
+
+.wft-step.is-done .wft-tick {
+    border-color: var(--cat-border, #2dd4bf);
+    color: var(--cat-icon, #5eead4);
+}
+
+.wft-text {
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: #d8d8d8;
+    font-size: 11.5px;
+    line-height: 1.4;
+    text-align: left;
+    cursor: pointer;
+    // break-word, never overflow-wrap: anywhere (Chrome 80).
+    overflow-wrap: break-word;
+
+    &:hover,
+    &:active { background: none; color: #fff; }
+}
+
+.wft-at {
+    flex: none;
+    color: #7a7a7a;
+    font-size: 9.5px;
+    font-variant-numeric: tabular-nums;
+}
+
+.wft-mark {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    border-radius: 5px;
+    background: none;
+    color: #7a7a7a;
+    cursor: pointer;
+
+    &:hover,
+    &:active { background: rgba(255, 255, 255, 0.08); color: var(--cat-icon, #5eead4); }
+}
+
+.wft-foot {
+    flex: none;
+    padding: 8px;
+    border-top: 1px solid var(--surface-divider, #2a2a2a);
+}
+
+.wft-save {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid var(--cat-border, #2dd4bf);
+    border-radius: 6px;
+    background: rgba(45, 212, 191, 0.14);
+    color: #cfeee9;
+    font-size: 11.5px;
+    cursor: pointer;
+
+    &:hover:not(:disabled),
+    &:active:not(:disabled) { background: rgba(45, 212, 191, 0.24); }
+    &:disabled { opacity: 0.5; cursor: default; }
+}
+
+.wft-hint {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: #6f6f6f;
+    font-size: 10px;
+}
+
+.wft-empty {
+    padding: 10px 6px;
+    color: #7a7a7a;
+    font-size: 11px;
+}
+
+// A docked panel is narrower than the two columns need.
+@media (max-width: 720px) {
+    .wft {
+        flex-direction: column;
+        max-height: 92vh;
+    }
+
+    .wft-video video { max-height: 44vh; }
+
+    .wft-side {
+        flex: 1 1 auto;
+        min-height: 0;
+        border-left: 0;
+        border-top: 1px solid var(--surface-divider, #2a2a2a);
+    }
+}

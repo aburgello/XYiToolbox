@@ -54,6 +54,7 @@ import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
 import Droplet from "../Droplet";
 import VideoOverlay from "../VideoOverlay";
+import WorkflowTutorial from "../WorkflowTutorial";
 import { toFileUrl } from "../lib/fileUrl";
 import { usePosterFrame, pickPreviewRender, isImageFile, type RenderEntry } from "../lib/renderPreview";
 import "../shared.scss";
@@ -104,7 +105,14 @@ interface WorkflowLink {
     video?: string;
 }
 
-interface WorkflowStep { id: string; text: string; link?: WorkflowLink }
+interface WorkflowStep {
+    id: string;
+    text: string;
+    link?: WorkflowLink;
+    /** Where this step starts in the creative's clip, in seconds. Mirrors
+     *  team.ts's WorkflowStep -- see WorkflowTutorial. */
+    at?: number;
+}
 interface WorkflowNote {
     id: string;
     text: string;
@@ -795,11 +803,32 @@ const WorkflowBoardTool: React.FC<{
     /** The clip on screen: a step's, a note's, or the creative's own. One
      *  player for all three, portalled by VideoOverlay itself. */
     const [clip, setClip] = useState<{ path: string; title: string } | null>(null);
-    /** The creative's own clip, played INLINE above the steps rather than in
-     *  the overlay: you follow a tutorial by doing the steps, and a full-screen
-     *  player hides the list you are following. Step and note clips still take
-     *  the overlay — those are watched, not worked along with. */
-    const [inlineClip, setInlineClip] = useState<string>("");
+    /** The creative's own clip, played with the STEPS OVER IT -- you follow a
+     *  tutorial by doing the steps, so the list has to survive the player.
+     *  Step and note clips still take the plain overlay: those are watched,
+     *  not worked along with. */
+    const [tutorialOpen, setTutorialOpen] = useState(false);
+    /**
+     * The category tint, read off the board and handed to the portal.
+     *
+     * --cat-* is an inline style on the mounted tool (and pinned on the
+     * bubble's own panel), so anything portalled to <body> lands outside it
+     * and would fall back to the theme accent. CSVLocaliser does the same for
+     * its modals; this is that, scoped to this board.
+     */
+    const rootRef = useRef<HTMLDivElement | null>(null);
+    const portalCatVars = (): React.CSSProperties => {
+        const el = rootRef.current;
+        if (!el || typeof getComputedStyle !== "function") return {};
+        const cs = getComputedStyle(el);
+        const out: Record<string, string> = {};
+        const names = ["--cat-grad", "--cat-border", "--cat-glow", "--cat-icon"];
+        for (const n of names) {
+            const v = cs.getPropertyValue(n);
+            if (v && v.trim() !== "") out[n] = v.trim();
+        }
+        return out as React.CSSProperties;
+    };
     const playClip = useCallback((path: string, title?: string) => {
         if (!path) return;
         sfx.click();
@@ -1201,6 +1230,30 @@ const WorkflowBoardTool: React.FC<{
         setDraftSteps(["Title treatment from Components", "Pedigree from Components", "Tagline from Components", "Date from Components"]
             .map((text) => ({ id: nextId("step"), text })));
         setEditing(true);
+    };
+
+    /**
+     * Write the clip marks back for the team.
+     *
+     * The SAME shape a step save uses -- notes empty, host merges -- because a
+     * mark is part of a step. It is a save, so it carries a step somebody else
+     * edited in the meantime away with it; that is true of the editor too, and
+     * the alternative is a second write path for one number.
+     */
+    const saveMarks = async (marks: Record<string, number>) => {
+        if (!entry) return;
+        const steps = entry.steps.map((s) => (marks[s.id] === undefined ? s : { ...s, at: marks[s.id] }));
+        const payload: WorkflowEntry = {
+            ...entry,
+            steps,
+            notes: [],
+        };
+        const r = (await evalTSSafe("workflowSaveEntry", JSON.stringify(payload))) as {
+            success: boolean; error?: string; entries?: WorkflowEntry[];
+        };
+        if (!r || !r.success) { toast("error", (r && r.error) || "Couldn't save the marks."); return; }
+        if (r.entries) setEntries(r.entries);
+        toast("success", "Marks saved — the list will follow the clip.");
     };
 
     const saveSteps = async () => {
@@ -1824,7 +1877,7 @@ const WorkflowBoardTool: React.FC<{
         }
         setPicking(false);
         setEditing(false);
-        setInlineClip("");
+        setTutorialOpen(false);
     };
 
     // --- render --------------------------------------------------------------
@@ -1833,7 +1886,7 @@ const WorkflowBoardTool: React.FC<{
     const rowDelay = (i: number) => (reduced ? 0 : Math.min(i, 12) * 0.035);
 
     return (
-        <div className={"workflow-board" + (panel ? " is-panel" : "")}>
+        <div className={"workflow-board" + (panel ? " is-panel" : "")} ref={rootRef}>
             {/* ── who am I looking at ──────────────────────────────────── */}
             {/* NOT WHILE CHOOSING. This bar describes the board you are on, and
                 during a pick that is the board you just left — a title, a Watch
@@ -1986,6 +2039,19 @@ const WorkflowBoardTool: React.FC<{
             {/* ONE PLAYER for a step's clip, a note's, and the creative's own.
                 VideoOverlay portals itself to <body> and re-applies the
                 category tint, so it is mounted here rather than per chip. */}
+            {tutorialOpen && entry && entry.tutorial && (
+                <WorkflowTutorial
+                    path={entry.tutorial}
+                    title={`${prettyCreative(creative)} — tutorial`}
+                    steps={entry.steps}
+                    ticks={myTicks}
+                    onTick={toggleStep}
+                    onSaveMarks={saveMarks}
+                    onClose={() => setTutorialOpen(false)}
+                    style={portalCatVars()}
+                />
+            )}
+
             {clip && (
                 <VideoOverlay
                     path={clip.path}
@@ -2393,44 +2459,6 @@ const WorkflowBoardTool: React.FC<{
                                 a card you press rather than a line you click.
                                 The metaphor is the same one the launcher icon
                                 carries. */}
-                            {/* DOCKED, NOT FULL-SCREEN. The clip sits above the
-                                steps at the panel's width, so the list stays on
-                                screen and you can tick along with it. Native
-                                controls: this is a thing to scrub, and the
-                                panel has no better scrubber than the one
-                                Chromium already draws. */}
-                            {inlineClip && (
-                                <div className="wfb-inline-clip">
-                                    <video
-                                        src={toFileUrl(inlineClip)}
-                                        controls
-                                        autoPlay
-                                        onError={() => {
-                                            setInlineClip("");
-                                            toast("error", "Couldn't open that clip — if it lives on somebody's desktop, other machines can't reach it.");
-                                        }}
-                                    />
-                                    <div className="wfb-inline-clip-bar">
-                                        <span>{fileLabel(inlineClip)}</span>
-                                        <Tooltip text="Full screen">
-                                            <button
-                                                type="button"
-                                                className="wfb-mini"
-                                                onClick={() => { const p = inlineClip; setInlineClip(""); playClip(p, `${prettyCreative(creative)} — tutorial`); }}
-                                                aria-label="Full screen"
-                                            >
-                                                <Maximize2 size={11} />
-                                            </button>
-                                        </Tooltip>
-                                        <Tooltip text="Close the clip">
-                                            <button type="button" className="wfb-mini" onClick={() => setInlineClip("")} aria-label="Close">
-                                                <X size={11} />
-                                            </button>
-                                        </Tooltip>
-                                    </div>
-                                </div>
-                            )}
-
                             <ol className="wfb-steps">
                                 {entry.steps.map((s, i) => {
                                     const on = !!myTicks[s.id];
@@ -2578,11 +2606,11 @@ const WorkflowBoardTool: React.FC<{
                                 explains, which is where somebody looks after
                                 reading three steps and wanting to see them
                                 done. */}
-                            {entry.tutorial && !inlineClip && (
+                            {entry.tutorial && (
                                 <button
                                     type="button"
                                     className="wfb-watch"
-                                    onClick={() => { sfx.click(); setInlineClip(entry.tutorial as string); }}
+                                    onClick={() => { sfx.click(); setTutorialOpen(true); }}
                                 >
                                     <Play size={13} />
                                     <span>Watch the tutorial</span>

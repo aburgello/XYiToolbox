@@ -2860,6 +2860,10 @@ export interface WorkflowStep {
    * Toolset grid or somebody's saved scripts, and should not learn them.
    */
   link?: WorkflowNoteLink;
+  /** Seconds into the creative's tutorial where this step starts, when
+   *  somebody marked it. Absent is normal -- it only means the list does not
+   *  advance itself while the clip plays. */
+  at?: number;
 }
 
 export interface WorkflowNote {
