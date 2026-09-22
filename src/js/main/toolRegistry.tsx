@@ -33,6 +33,7 @@ import {
     Target,
     Grid3x3,
     Expand,
+    Scan,
     FileSpreadsheet,
     Repeat,
     Layers,
@@ -76,6 +77,7 @@ const CheckTool             = React.lazy(() => import("./tools/Check"));
 const DeliveryHubTool       = React.lazy(() => import("./tools/DeliveryHub"));
 const ReviewHubTool         = React.lazy(() => import("./tools/ReviewHub"));
 const ScaleCompositionTool  = React.lazy(() => import("./tools/ScaleComposition"));
+const EdgeControllerTool    = React.lazy(() => import("./tools/EdgeController"));
 const AdjustTool            = React.lazy(() => import("./tools/Adjust"));
 const SafeGeneratorTool     = React.lazy(() => import("./tools/SafeGenerator"));
 const EditToolsTool         = React.lazy(() => import("./tools/EditTools"));
@@ -130,6 +132,7 @@ const PREFETCH_MAP: Record<string, () => Promise<any>> = {
     "delivery-hub":       () => import("./tools/DeliveryHub"),
     "review-hub":         () => import("./tools/ReviewHub"),
     "scale-composition":  () => import("./tools/ScaleComposition"),
+    "edge-controller":    () => import("./tools/EdgeController"),
     "adjust":             () => import("./tools/Adjust"),
     "safe-generator":     () => import("./tools/SafeGenerator"),
     "edit-tools":         () => import("./tools/EditTools"),
@@ -493,6 +496,15 @@ export const TOOLS: ToolEntry[] = [
         icon: Truck,
         Component: DeliveryHubTool,
         actions: ["Delivery", "Set Frame Rate", "Load Selected Comps", "Queue"],
+    },
+    {
+        id: "edge-controller",
+        label: "Edge Controller",
+        categories: ["tools"],
+        icon: Scan,
+        Component: EdgeControllerTool,
+        actions: ["Rig Selected Layer"],
+        description: "Rigs a layer's boundary: choke the matte, soften the edge without softening the picture, and optionally add a coloured halo outside or a tint inside. Native effects only, driven from one EDGE CTRL null.",
     },
     {
         id: "scale-composition",

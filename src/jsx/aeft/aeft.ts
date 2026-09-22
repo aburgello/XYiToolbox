@@ -42,4 +42,5 @@ export * from "./artwork";
 export * from "./preflight";
 export * from "./puppeteer";
 export * from "./insitu";
+export * from "./edgeController";
 export * from "./wordGame";

@@ -456,7 +456,22 @@ only as reliable as the page surviving the run.
   every category has bespoke routing.
 
 **Adding a tool** = `tools/X.tsx` + `X.scss` + ExtendScript in
-`src/jsx/aeft/*.ts` + one entry in **`toolRegistry.tsx`'s `TOOLS`**.
+`src/jsx/aeft/*.ts` + one entry in **`toolRegistry.tsx`'s `TOOLS`**. A NEW
+`src/jsx/aeft` file also needs its `export *` line in `aeft.ts`, or the bridge
+cannot see a single one of its functions.
+
+**Edge Controller is a RIG, not an effect.** Everything it does exists
+natively; what does not is the assembly, so it builds the stack once
+(`edgeController.ts`) and hangs every number on one `EDGE CTRL` null, leaving
+it adjustable in AE — the panel's values are starting positions, because a
+panel cannot show you an edge. Three things are load-bearing: **edge softening
+is Channel Blur on the ALPHA** (Fast Box Blur would soften the picture too, and
+Blur Dimensions gives H/V/both free); **the precomp is GROWN and its layer
+moved with the walls**, or a spread past the layer's bounds clips flat; and
+Simple Choker's slider is **positive = contract**, so the sign is flipped once
+here rather than in the artist's head. `node scripts/probe-edge-controller.cjs`
+guards the structure and, in particular, that every expression points at a
+control the rig actually made.
 
 - A one-click action with no inputs goes in `Toolset.tsx`'s `ACTIONS` instead,
   not its own `TOOLS` entry.
@@ -1140,6 +1155,12 @@ differently-cased name, the never-repoint rule, and what a fresh machine
 actually gets. Run it after touching either — the failure it exists for is
 silent, a row reaching colleagues with one half missing while the toast says
 "already in the team library".
+
+`node scripts/probe-edge-controller.cjs` (after `yarn build`) drives
+`edgeControllerApply` over a stubbed comp: the layers and controls it builds,
+that no expression points at a control it did not make, that a camera in the
+selection is skipped rather than fatal, and that a missing effect matchName is
+reported rather than half-applied.
 
 `node scripts/probe-language-token.cjs` (after `yarn build`) drives the
 language token through the parser, the name builder and MC It!'s artwork
