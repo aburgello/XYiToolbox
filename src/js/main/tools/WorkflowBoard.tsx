@@ -1828,6 +1828,12 @@ const WorkflowBoardTool: React.FC<{
     return (
         <div className={"workflow-board" + (panel ? " is-panel" : "")}>
             {/* ── who am I looking at ──────────────────────────────────── */}
+            {/* NOT WHILE CHOOSING. This bar describes the board you are on, and
+                during a pick that is the board you just left — a title, a Watch
+                button and a menu acting on something not on screen, sitting
+                above the thing that is. The picker has its own head, and its
+                back arrow is the way back to this one. */}
+            {!picking && (
             <div className="wfb-head">
                 <div className="wfb-id">
                     <ListChecks size={15} className="wfb-id-icon" />
@@ -1978,6 +1984,7 @@ const WorkflowBoardTool: React.FC<{
                     </Droplet>
                 </div>
             </div>
+            )}
 
             {stale && (
                 <div className="wfb-stale">
@@ -2021,13 +2028,19 @@ const WorkflowBoardTool: React.FC<{
                             button returns to the wall of campaigns rather than
                             closing the whole picker. */}
                         <div className="wfb-picker-head">
-                            <button
-                                type="button"
-                                className="wfb-btn wfb-btn--icon"
-                                onClick={() => { if (pickCampaign) setPickCampaign(""); else setPicking(false); }}
-                            >
-                                <ChevronLeft size={12} />
-                            </button>
+                            <Tooltip text={pickCampaign
+                                ? "Back to the campaigns"
+                                : creative
+                                    ? `Back to ${prettyCreative(creative)}`
+                                    : "Close"}>
+                                <button
+                                    type="button"
+                                    className="wfb-btn wfb-btn--icon"
+                                    onClick={() => { if (pickCampaign) setPickCampaign(""); else setPicking(false); }}
+                                >
+                                    <ChevronLeft size={12} />
+                                </button>
+                            </Tooltip>
                             <span>{pickCampaign ? prettyCreative(pickCampaign) : "Which campaign?"}</span>
                         </div>
 
