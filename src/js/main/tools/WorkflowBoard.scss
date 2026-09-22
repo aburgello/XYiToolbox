@@ -2398,3 +2398,15 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     border-color: var(--cat-border, #fb923c);
     color: var(--cat-icon, #fdba74);
 }
+
+// The way back out of a board. Quieter than the actions beside it: leaving is
+// not the thing you came to do.
+.workflow-board .wfb-btn--back {
+    max-width: 148px;
+
+    span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+}

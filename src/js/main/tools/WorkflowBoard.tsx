@@ -1897,9 +1897,15 @@ const WorkflowBoardTool: React.FC<{
                             </button>
                         </Tooltip>
                     )}
-                    <Tooltip text="Pick a different creative">
-                        <button type="button" className="wfb-btn" onClick={openPicker}>
-                            <FolderSearch size={12} /><span>Change</span>
+                    {/* A WAY BACK, not a verb. "Change" next to a board full of
+                        somebody's steps reads as "change this", which is the one
+                        thing it does not do — it is the level above, and the
+                        picker's own back arrow then goes up to the campaigns.
+                        So it points the way it travels and names where it
+                        lands. */}
+                    <Tooltip text={campaign ? `Back to ${prettyCreative(campaign)}'s creatives` : "Back to the campaigns"}>
+                        <button type="button" className="wfb-btn wfb-btn--back" onClick={openPicker}>
+                            <ChevronLeft size={12} /><span>{campaign ? prettyCreative(campaign) : "Campaigns"}</span>
                         </button>
                     </Tooltip>
                     <Droplet
