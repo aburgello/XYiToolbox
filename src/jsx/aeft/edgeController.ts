@@ -41,6 +41,12 @@ const INNER_LAYER = "EDGE INNER";
 /** Suffix for the precomp the rig is built inside. */
 const RIG_SUFFIX = " EDGE";
 
+/** Channel Blur's secondary slots, in the order builds have used them. */
+const REPEAT_EDGE = ["ADBE Channel Blur-0005", "ADBE Channel Blur-0007"];
+const BLUR_DIMS = ["ADBE Channel Blur-0006", "ADBE Channel Blur-0008"];
+const NOTE_REPEAT = "this AE's Channel Blur has no Repeat Edge Pixels slot — set it by hand if the edge fades";
+const NOTE_DIMS = "this AE's Channel Blur has no Blur Dimensions slot — the Direction slider does nothing";
+
 /** Slider and colour names on the control null. These are OUR names, so the
  *  expressions below can safely address them by name -- unlike AE's own
  *  parameters, which are addressed by matchName throughout. */
@@ -92,6 +98,23 @@ function fxParam(fx: PropertyGroup, matchName: string, label: string): Property 
   const p = fx.property(matchName) as Property;
   if (!p) throw new Error("This After Effects has no " + label + " (" + matchName + ") on " + fx.name + ".");
   return p;
+}
+
+/**
+ * A parameter under whichever of several matchNames this build uses, or null.
+ *
+ * Channel Blur's slot numbers are not what a reasonable person counts to:
+ * Repeat Edge Pixels and Blur Dimensions sit at -0005/-0006 here and were
+ * guessed as -0007/-0008, which threw and took the whole rig with it. These
+ * two are NOT worth failing over -- the blur works without them -- so they are
+ * tried, and their absence is reported at the end instead.
+ */
+function fxParamAny(fx: PropertyGroup, matchNames: string[]): Property | null {
+  for (let i = 0; i < matchNames.length; i++) {
+    const p = fx.property(matchNames[i]) as Property;
+    if (p) return p;
+  }
+  return null;
 }
 
 /** A slider on the control null. */
@@ -189,6 +212,9 @@ export const edgeControllerApply = (optionsJson: string): EdgeControllerResult =
 
     let rigged = 0;
     let lastComp = "";
+    // Secondary parameters that were not where they were expected. Reported,
+    // never silent -- but not worth failing a rig that otherwise works.
+    const notes: string[] = [];
 
     // LAST TO FIRST. Precomposing layer 3 leaves layers 1 and 2 where they
     // were; doing it the other way round shifts every index still to come.
@@ -256,10 +282,16 @@ export const edgeControllerApply = (optionsJson: string): EdgeControllerResult =
       fxParam(soft, "ADBE Channel Blur-0004", "Alpha Blurriness").expression = sliderExpr(P_BLUR);
       // Repeat Edge Pixels ON: without it the blur pulls transparency in from
       // outside the frame and the rig fades out against its own comp edge.
-      fxParam(soft, "ADBE Channel Blur-0007", "Repeat Edge Pixels").setValue(1);
+      const repeat = fxParamAny(soft, REPEAT_EDGE);
+      if (repeat) repeat.setValue(1);
+      else if (notes.indexOf(NOTE_REPEAT) === -1) notes.push(NOTE_REPEAT);
       // 1 = Horizontal and Vertical, 2 = Horizontal, 3 = Vertical.
-      fxParam(soft, "ADBE Channel Blur-0008", "Blur Dimensions").expression =
-        "var d = " + sliderExpr(P_DIRECTION) + "; d < 0.5 ? 1 : (d < 1.5 ? 2 : 3)";
+      const dims = fxParamAny(soft, BLUR_DIMS);
+      if (dims) {
+        dims.expression = "var d = " + sliderExpr(P_DIRECTION) + "; d < 0.5 ? 1 : (d < 1.5 ? 2 : 3)";
+      } else if (notes.indexOf(NOTE_DIMS) === -1) {
+        notes.push(NOTE_DIMS);
+      }
 
       // ── the halo, underneath ────────────────────────────────────────────
       if (o.useOuter) {
@@ -277,7 +309,8 @@ export const edgeControllerApply = (optionsJson: string): EdgeControllerResult =
         fxParam(fill, "ADBE Fill-0002", "Color").expression = colourExpr(P_OUTER_COLOUR);
         const outerSoft = addFx(outer, "ADBE Channel Blur", "Outer Softness");
         fxParam(outerSoft, "ADBE Channel Blur-0004", "Alpha Blurriness").expression = sliderExpr(P_BLUR);
-        fxParam(outerSoft, "ADBE Channel Blur-0007", "Repeat Edge Pixels").setValue(1);
+        const outerRepeat = fxParamAny(outerSoft, REPEAT_EDGE);
+        if (outerRepeat) outerRepeat.setValue(1);
         (outer.property("ADBE Transform Group").property("ADBE Opacity") as Property).expression =
           sliderExpr(P_OUTER_OPACITY);
       }
@@ -300,7 +333,8 @@ export const edgeControllerApply = (optionsJson: string): EdgeControllerResult =
         const innerSoft = addFx(inner, "ADBE Channel Blur", "Inner Feather");
         fxParam(innerSoft, "ADBE Channel Blur-0004", "Alpha Blurriness").expression =
           sliderExpr(P_INNER_FEATHER);
-        fxParam(innerSoft, "ADBE Channel Blur-0007", "Repeat Edge Pixels").setValue(1);
+        const innerRepeat = fxParamAny(innerSoft, REPEAT_EDGE);
+        if (innerRepeat) innerRepeat.setValue(1);
         // The tint belongs INSIDE the subject: an alpha matte of the original
         // is what stops it bleeding past the softened edge.
         (inner.property("ADBE Transform Group").property("ADBE Opacity") as Property).expression =
@@ -318,7 +352,7 @@ export const edgeControllerApply = (optionsJson: string): EdgeControllerResult =
       success: true,
       compName: lastComp,
       rigged: rigged,
-      skipped: skipped,
+      skipped: skipped.concat(notes),
       message: rigged === 1
         ? 'Rigged "' + lastComp + '" — the sliders are on ' + CTRL_LAYER + "."
         : "Rigged " + rigged + " layers — the sliders are on each " + CTRL_LAYER + ".",

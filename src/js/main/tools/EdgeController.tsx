@@ -1,22 +1,13 @@
 // =============================================================================
 // src/js/main/tools/EdgeController.tsx
 // -----------------------------------------------------------------------------
-// EDGE CONTROLLER -- the panel half of jsx/aeft/edgeController.ts.
-//
-// WHAT THIS SCREEN IS FOR, and what it is deliberately not. The numbers here
-// are STARTING POSITIONS: pressing Rig builds the stack inside a precomp and
-// hangs every one of them on an EDGE CTRL null, where they are adjusted with
-// the picture in front of you. A panel cannot show you an edge, so it does not
-// pretend to be the place you dial one in -- it is the place you say what kind
-// of edge you want, once.
-//
-// The halo and the inner tint are OFF by default. Cleaning up a harsh cutout
-// is the everyday job; neon outlines are the occasional one, and two colour
-// pickers in front of the common case is the tax that stops people opening a
-// tool at all.
+// Panel half of jsx/aeft/edgeController.ts. The values here are STARTING
+// POSITIONS -- the rig hangs them all on an EDGE CTRL null, which is where
+// they get dialled in against the picture. Halo and tint are off by default:
+// cleaning a cutout is the everyday job.
 // =============================================================================
 import React, { useState } from "react";
-import { Scan, Sparkles } from "lucide-react";
+import { Scan } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
@@ -105,13 +96,6 @@ const EdgeControllerTool = () => {
 
     return (
         <div className="form-tool ec-tool">
-            <p className="hint">
-                Builds an edge rig around the selected layer: choke the matte, soften where it ends
-                without softening the picture, and optionally lay a coloured halo outside it or a tint
-                inside. Everything lands on an <strong>EDGE CTRL</strong> null in the new precomp, so
-                these are starting values — you dial it in against the picture.
-            </p>
-
             <div className="ec-row">
                 <NumField
                     id="ec-choke" label="Dilate / Erode" value={choke} onChange={setChoke}
@@ -168,11 +152,6 @@ const EdgeControllerTool = () => {
                 </p>
             )}
 
-            <p className="hint ec-note">
-                <Sparkles size={11} /> The rig is native effects only — Simple Choker, Channel Blur on
-                the alpha, and Fill — so it renders anywhere After Effects does and needs nothing
-                installed. A dedicated C++ plugin will beat it for speed on heavy 4K comps.
-            </p>
         </div>
     );
 };

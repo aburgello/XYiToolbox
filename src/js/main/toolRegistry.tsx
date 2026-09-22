@@ -504,7 +504,7 @@ export const TOOLS: ToolEntry[] = [
         icon: Scan,
         Component: EdgeControllerTool,
         actions: ["Rig Selected Layer"],
-        description: "Rigs a layer's boundary: choke the matte, soften the edge without softening the picture, and optionally add a coloured halo outside or a tint inside. Native effects only, driven from one EDGE CTRL null.",
+        description: "Choke, soften and outline a layer's edge, rigged to one control null.",
     },
     {
         id: "scale-composition",
