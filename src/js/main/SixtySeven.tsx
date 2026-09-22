@@ -18,7 +18,7 @@
 // =============================================================================
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, MapPin, Plus, Film, AlertCircle, Loader2 } from "lucide-react";
+import { X, MapPin, Plus, Film, AlertCircle, Loader2, Layers } from "lucide-react";
 import { toFileUrl } from "./lib/fileUrl";
 import { pickPreviewRender } from "./lib/renderPreview";
 import { evalTS } from "../lib/utils/bolt";
@@ -86,6 +86,8 @@ export const SixtySevenHost: React.FC = () => {
     const [draft, setDraft] = useState("");
     const [draftAt, setDraftAt] = useState<number | null>(null);
     const [saving, setSaving] = useState(false);
+    const [dropping, setDropping] = useState(false);
+    const [dropped, setDropped] = useState("");
     const videoRef = useRef<HTMLVideoElement | null>(null);
 
     useEffect(() => {
@@ -164,6 +166,24 @@ export const SixtySevenHost: React.FC = () => {
         void v.play();
     };
 
+    /**
+     * Put the clip over the comp as a guide layer, and the timed notes on the
+     * comp's marker track — the panel closes, the reminders stay.
+     */
+    const dropIn = async () => {
+        setDropping(true);
+        try {
+            const r = (await evalTSSafe(
+                "sixtySevenDropIn",
+                render ? render.path : "",
+                JSON.stringify(timed.map((n) => ({ text: n.text, at: n.at })))
+            )) as { success: boolean; error?: string; message?: string };
+            setDropped(r && r.success ? (r.message || "Added.") : (r && r.error) || "Couldn't add it.");
+        } finally {
+            setDropping(false);
+        }
+    };
+
     const addNote = async () => {
         const body = draft.trim();
         if (!body || !ctx || !ctx.creative) return;
@@ -217,6 +237,15 @@ export const SixtySevenHost: React.FC = () => {
                             ? `${ctx.creative}${ctx.size ? " · " + ctx.size : ""}${ctx.duration ? " · " + ctx.duration : ""}`
                             : "67"}
                     </span>
+                    {/* Only when there is something to put there. */}
+                    {ctx && ctx.success && (render || timed.length > 0) && (
+                        <Tooltip text={`Adds ${render ? "the master as a guide layer (it never renders) and " : ""}${timed.length} marker${timed.length === 1 ? "" : "s"} to the comp you are in. Press again to replace them.`}>
+                            <button type="button" className="s67-drop" disabled={dropping} onClick={dropIn}>
+                                <Layers size={12} />
+                                <span>{dropping ? "Adding…" : "Add to comp"}</span>
+                            </button>
+                        </Tooltip>
+                    )}
                     <button type="button" className="wft-icon" onClick={() => setOpen(false)} aria-label="Close">
                         <X size={14} />
                     </button>
@@ -280,6 +309,7 @@ export const SixtySevenHost: React.FC = () => {
                                 <span className="s67-by">{!ctx?.campaign && n._campaign ? n._campaign + " · " : ""}{n.author}</span>
                             </div>
                         ))}
+                        {dropped !== "" && <p className="s67-dropped">{dropped}</p>}
                         {!loading && notes.length === 0 && (
                             <p className="s67-empty">
                                 <AlertCircle size={12} /> Nothing written down for {ctx?.creative || "this creative"} yet — add the first one.

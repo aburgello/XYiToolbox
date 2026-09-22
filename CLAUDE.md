@@ -1377,6 +1377,16 @@ harder, and the symptom is "no playable render" for a master OV Library shows a
 render for. Take the folder off the MASTER'S OWN PATH (skipping an `AE` level),
 never off the parsed name.
 
+**67's "Add to comp" leaves a GUIDE layer and PREFIXED markers.**
+`sixtySevenDropIn` puts the master's render over the open comp and the timed
+notes on its marker track — the clip to compare against, the markers for the
+rest of the day when the panel is shut. Two rules make it safe to press twice:
+the layer is a **guide layer**, so a forgotten reference can never render into
+a deliverable, and both the layer (`67 · `) and the markers (`67: `) carry a
+prefix, so a second press replaces what the first left and **somebody else's
+markers on the same comp are never touched**. A note past the comp's end is
+clamped to the last frame rather than dropped.
+
 **67 IS THE CREATIVE'S PITFALLS, AT THE SECOND THEY HAPPEN.** A Toolset card
 (`actionSafety: "read"` — it opens a player and changes nothing): the comp's
 name gives the creative, the SAME scorer CSV Localiser uses gives the master,

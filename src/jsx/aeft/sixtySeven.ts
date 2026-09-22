@@ -209,3 +209,134 @@ export const sixtySevenContext = (): SixtySevenContext => {
     return { success: false, error: e.toString() };
   }
 };
+
+/** What a dropped-in layer and its markers are called, so a second press
+ *  replaces the first instead of stacking. */
+const DROP_PREFIX = "67 · ";
+const MARKER_PREFIX = "67: ";
+
+export interface SixtySevenDropResult extends Result {
+  markers?: number;
+  clipAdded?: boolean;
+  compName?: string;
+}
+
+/**
+ * Put the master's render over the comp you are in, and its pitfalls on the
+ * comp's own marker track.
+ *
+ * WHY BOTH. The clip is for comparing against; the markers are for the rest of
+ * the day, when the panel is closed and you are working. Markers are where
+ * artists already look, which is the whole reason this is not just a player.
+ *
+ * TWO THINGS KEEP IT SAFE TO PRESS TWICE. The layer is a GUIDE layer -- it
+ * never renders, so a forgotten one cannot reach a deliverable -- and both the
+ * layer and the markers carry a "67" prefix, so a second press replaces what
+ * the first one left rather than stacking a second copy.
+ *
+ * `notesJson` is a JSON STRING: an array of objects spliced into eval'd
+ * ExtendScript source loses its values in transit (CLAUDE.md).
+ */
+export const sixtySevenDropIn = (renderPath: string, notesJson: string): SixtySevenDropResult => {
+  let undoOpen = false;
+  try {
+    const item = app.project.activeItem;
+    if (!item || typeof (item as CompItem).numLayers !== "number") {
+      return { success: false, error: "Open the comp you are working on first." };
+    }
+    const comp = item as CompItem;
+
+    let notes: { text: string; at: number }[] = [];
+    if (notesJson) {
+      try {
+        notes = JSON.parse(notesJson) as { text: string; at: number }[];
+      } catch (eParse) {
+        notes = [];
+      }
+    }
+
+    app.beginUndoGroup("XYi 67 — drop in");
+    undoOpen = true;
+
+    // --- the clip -----------------------------------------------------------
+    let clipAdded = false;
+    if (renderPath) {
+      // Anything this tool left last time goes first, so pressing twice does
+      // not build a stack of the same clip.
+      for (let i = comp.numLayers; i >= 1; i--) {
+        const l = comp.layer(i);
+        if (String(l.name).indexOf(DROP_PREFIX) === 0) l.remove();
+      }
+
+      const f = new File(renderPath);
+      // NOT gated on File.exists: it answers false for files that are plainly
+      // on the studio NAS (CLAUDE.md). Attempt the import and let it fail.
+      let footage: FootageItem | null = null;
+      try {
+        const io = new ImportOptions(f);
+        footage = app.project.importFile(io) as FootageItem;
+      } catch (eImp) {
+        footage = null;
+      }
+      if (footage) {
+        const layer = comp.layers.add(footage) as AVLayer;
+        layer.name = DROP_PREFIX + String(footage.name).replace(/\.[A-Za-z0-9]{1,5}$/, "");
+        layer.moveToBeginning();
+        // A GUIDE LAYER, so it cannot render into anything. The comparison is
+        // for eyes, and a reference left in a delivery is the failure this
+        // whole button would otherwise invite.
+        (layer as any).guideLayer = true;
+        // Contained, not cropped: the master is routinely a different shape
+        // from the deliverable, and the point is to see all of it.
+        const w = (footage as any).width || comp.width;
+        const h = (footage as any).height || comp.height;
+        let fit = Math.min(comp.width / w, comp.height / h) * 100;
+        if (!fit || fit <= 0) fit = 100;
+        const scale = layer.property("ADBE Transform Group").property("ADBE Scale") as Property;
+        scale.setValue([fit, fit]);
+        const pos = layer.property("ADBE Transform Group").property("ADBE Position") as Property;
+        pos.setValue([comp.width / 2, comp.height / 2]);
+        clipAdded = true;
+      }
+    }
+
+    // --- the markers --------------------------------------------------------
+    // Ours are removed first, by comment prefix, so somebody else's markers on
+    // the same comp are never touched.
+    const mp = comp.markerProperty;
+    for (let k = mp.numKeys; k >= 1; k--) {
+      const mv = mp.keyValue(k) as MarkerValue;
+      const comment = mv && mv.comment ? String(mv.comment) : "";
+      if (comment.indexOf(MARKER_PREFIX) === 0) mp.removeKey(k);
+    }
+
+    let added = 0;
+    for (let n = 0; n < notes.length; n++) {
+      const at = Number(notes[n].at);
+      if (isNaN(at) || at < 0) continue;
+      // Past the end of the comp is a marker nobody can see; clamped rather
+      // than dropped, because the note still applies to the last frame.
+      const t = at > comp.duration ? comp.duration : at;
+      mp.setValueAtTime(t, new MarkerValue(MARKER_PREFIX + String(notes[n].text || "")));
+      added++;
+    }
+
+    app.endUndoGroup();
+    undoOpen = false;
+
+    if (!clipAdded && added === 0) {
+      return { success: false, error: "Nothing to add: no playable render, and no notes with a time on them." };
+    }
+    return {
+      success: true,
+      clipAdded: clipAdded,
+      markers: added,
+      compName: comp.name,
+      message: (clipAdded ? "Clip added as a guide layer" : "No clip added")
+        + (added > 0 ? ", " + added + " marker" + (added === 1 ? "" : "s") + " on the comp." : "."),
+    } as SixtySevenDropResult;
+  } catch (e) {
+    if (undoOpen) { try { app.endUndoGroup(); } catch (e2) {} }
+    return { success: false, error: e.toString() };
+  }
+};
