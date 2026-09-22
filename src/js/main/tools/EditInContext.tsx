@@ -25,11 +25,12 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
     ArrowLeft, ArrowRight, ArrowUp, ArrowDown,
-    Plus, Minus, ChevronRight, Layers, Crosshair, RefreshCw, Loader2, Lock, Keyboard,
+    Plus, Minus, ChevronRight, Layers, Crosshair, RefreshCw, Loader2, Lock, Keyboard, X,
 } from "lucide-react";
 import { evalTS, csi } from "../../lib/utils/bolt";
 import StatusIcon from "../StatusIcon";
 import CheckboxToggle from "../CheckboxToggle";
+import Tooltip from "../Tooltip";
 import "../shared.scss";
 import "./formTool.scss";
 import "./EditInContext.scss";
@@ -137,6 +138,17 @@ const EditInContextTool = () => {
     // path.
     const [path, setPath] = useState<number[]>([]);
     const [targetPath, setTargetPath] = useState<number[] | null>(null);
+    /**
+     * THE OTHER LAYERS MOVING WITH IT. Cmd/Ctrl-click adds a row here; the
+     * primary target stays the one whose numbers are on screen, because six
+     * layers have six different positions and showing one set of figures for
+     * all of them would be a lie.
+     *
+     * Paths, not indices: a selection is only ever within one comp, but the
+     * path is what the host resolves and what survives a drill.
+     */
+    const [alsoPaths, setAlsoPaths] = useState<number[][]>([]);
+    const samePath = (a: number[], b: number[]) => a.length === b.length && a.every((n, i) => n === b[i]);
     const [target, setTarget] = useState<TargetState | null>(null);
     const [loading, setLoading] = useState(false);
     // A STEP PER PROPERTY. These are different units -- 2px is a nudge, 2% is a
@@ -214,6 +226,7 @@ const EditInContextTool = () => {
         setTarget(null);
         setPath([]);
         setTargetPath(null);
+        setAlsoPaths([]);
         const r = await call("editInContextRoot");
         if (!r) { setLoading(false); return; }
         if (!r.success) { say(r.error || "Couldn't read the active comp."); setLoading(false); return; }
@@ -298,6 +311,7 @@ const EditInContextTool = () => {
         setLayers(l.layers || []);
         setTarget(null);
         setTargetPath(null);
+        setAlsoPaths([]);
         setStatus(null);
     };
 
@@ -321,6 +335,7 @@ const EditInContextTool = () => {
         setLayers(l.layers || []);
         setTarget(null);
         setTargetPath(null);
+        setAlsoPaths([]);
         return true;
     };
 
@@ -337,14 +352,28 @@ const EditInContextTool = () => {
         setLayers(l.layers || []);
         setTarget(null);
         setTargetPath(null);
+        setAlsoPaths([]);
         setStatus(null);
     };
 
     // ── pick the layer to edit ──────────────────────────────────────────────
-    const pick = async (layer: LayerInfo) => {
+    const pick = async (layer: LayerInfo, additive?: boolean) => {
         if (!rootId) return;
         if (!layer.transformable) { say("That layer has no scale/position (camera, light or audio)."); return; }
         const full = [...path, layer.index];
+
+        // ADD OR REMOVE, without disturbing the primary. Cmd/Ctrl-clicking the
+        // primary itself is ignored rather than leaving a selection with no
+        // figures on screen.
+        if (additive && targetPath) {
+            if (samePath(full, targetPath)) return;
+            setAlsoPaths((prev) => prev.some((p) => samePath(p, full))
+                ? prev.filter((p) => !samePath(p, full))
+                : [...prev, full]);
+            setStatus(null);
+            return;
+        }
+        setAlsoPaths([]);
         const r = await call("editInContextTarget", rootId, JSON.stringify(full));
         if (!r) return;
         if (!r.success) { say(r.error || "Couldn't read that layer."); return; }
@@ -368,6 +397,30 @@ const EditInContextTool = () => {
 
     const nudge = async (kind: string, ax: number, ay: number) => {
         if (!rootId || !target || !targetPath) return;
+
+        // SEVERAL SELECTED: one host call, one undo group. A loop here would
+        // be one undo step per layer, which is the thing you would want back
+        // in one press.
+        if (alsoPaths.length > 0) {
+            const all = [targetPath, ...alsoPaths];
+            const r = await call("editInContextNudgeMany", rootId, JSON.stringify(all), kind, ax, ay, rootSpace);
+            if (!r) return;
+            if (!r.success) { say(r.error || "Nudge failed."); return; }
+            // The primary's own figures, re-read: the panel shows one layer's
+            // numbers and they have just changed.
+            const t2 = await call("editInContextTarget", rootId, JSON.stringify(targetPath));
+            if (t2 && t2.success) {
+                setTarget((t) => t ? {
+                    ...t, position: t2.position, scale: t2.scale,
+                    rotation: t2.rotation, opacity: t2.opacity, rootScale: t2.rootScale,
+                } : t);
+            }
+            const skipped = (r as { skipped?: string[] }).skipped || [];
+            if (skipped.length > 0) say(`Moved ${(r as { moved?: number }).moved} — skipped ${skipped.join(", ")}.`, "success");
+            else if (r.keyed) setStatus({ text: "A property is animated — set a keyframe at the playhead.", type: "success" });
+            return;
+        }
+
         const r = await call("editInContextNudge", rootId, JSON.stringify(targetPath), kind, ax, ay, rootSpace);
         if (!r) return;
         if (!r.success) { say(r.error || "Nudge failed."); return; }
@@ -441,6 +494,8 @@ const EditInContextTool = () => {
                         const isTarget = !!targetPath
                             && targetPath.length === path.length + 1
                             && targetPath[targetPath.length - 1] === l.index;
+                        const isAlso = alsoPaths.some((p) =>
+                            p.length === path.length + 1 && p[p.length - 1] === l.index);
 
                         // Top level: the whole row opens the precomp.
                         if (atRoot) {
@@ -454,12 +509,19 @@ const EditInContextTool = () => {
                         }
 
                         return (
-                            <div className={"eic-layer-row" + (isTarget ? " eic-layer-row--on" : "")} key={l.index}>
+                            <div
+                                className={"eic-layer-row"
+                                    + (isTarget ? " eic-layer-row--on" : "")
+                                    + (isAlso ? " eic-layer-row--also" : "")}
+                                key={l.index}
+                            >
                                 <button
                                     className="eic-layer-main"
-                                    onClick={() => pick(l)}
+                                    onClick={(e) => pick(l, e.metaKey || e.ctrlKey)}
                                     disabled={!l.transformable}
-                                    title={l.transformable ? "Edit this layer's transform" : "No transform to edit"}
+                                    title={l.transformable
+                                        ? "Edit this layer's transform — ⌘/Ctrl-click to move it with the selected one"
+                                        : "No transform to edit"}
                                 >
                                     <span className="eic-layer-idx">{l.index}</span>
                                     <span className="eic-layer-name">{l.name}</span>
@@ -480,6 +542,22 @@ const EditInContextTool = () => {
                     <div className="eic-editor-head">
                         <span className="eic-editor-title">{target.layerName}</span>
                         <span className="eic-editor-sub">in {target.compName}</span>
+                        {/* WHOSE NUMBERS ARE ON SCREEN. With several selected the
+                            readout below is still ONE layer's — six layers have six
+                            positions — so the count says how many are actually
+                            moving, and the sentence says what scale does to them. */}
+                        {alsoPaths.length > 0 && (
+                            <Tooltip text={`Every nudge moves all ${alsoPaths.length + 1}, in one undo step. Scale changes each layer by the same amount about its own anchor — it is not a group scale about a common centre. The figures below are ${target.layerName}'s.`}>
+                                <button
+                                    type="button"
+                                    className="eic-multi"
+                                    onClick={() => setAlsoPaths([])}
+                                    aria-label="Clear the extra layers"
+                                >
+                                    +{alsoPaths.length} more <X size={9} />
+                                </button>
+                            </Tooltip>
+                        )}
                         {target.locked && <span className="eic-locked"><Lock size={10} /> locked</span>}
                     </div>
 

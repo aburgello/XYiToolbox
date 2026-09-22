@@ -83,6 +83,13 @@
     align-items: stretch;
     gap: 3px;
 
+    // Moving WITH the target: marked, but never mistaken for it -- the
+    // editor's figures belong to the target alone.
+    &--also .eic-layer-main {
+        border-color: rgba(45, 212, 191, 0.45);
+        background: rgba(255, 255, 255, 0.03);
+    }
+
     // The layer currently loaded into the editor below.
     &--on .eic-layer-main {
         border-color: var(--ov-accent, #2dd4bf);
@@ -400,4 +407,24 @@
     &:hover:not(:disabled) { border-color: var(--ov-accent, #2dd4bf); color: #fff; }
     &:active:not(:disabled) { background: #1d2729; }
     &:disabled { opacity: 0.35; cursor: default; }
+}
+
+// The count of layers moving with the target, and the way to drop them.
+.eic-multi {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 6px;
+    padding: 1px 6px;
+    border: 1px solid var(--ov-accent, #2dd4bf);
+    border-radius: 9px;
+    // index.scss's global button:hover/:active paints any button blue, so both
+    // states are re-declared.
+    background: rgba(45, 212, 191, 0.14);
+    color: #cfeee9;
+    font-size: 9.5px;
+    cursor: pointer;
+
+    &:hover,
+    &:active { background: rgba(45, 212, 191, 0.24); }
 }

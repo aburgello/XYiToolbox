@@ -9462,6 +9462,96 @@ export const editInContextNudge = (
 };
 
 /**
+ * The same nudge, over SEVERAL nested layers, in ONE undo group.
+ *
+ * Each layer converts the root-space delta through its OWN parent chain, so a
+ * selection spanning two precomps at different scales still moves together on
+ * screen -- which is the whole reason this cannot be a loop in the panel
+ * (that would also be one undo step per layer).
+ *
+ * WHAT SCALE MEANS HERE: each layer scales about its own anchor point, by the
+ * same on-screen percentage. It is NOT a group scale about a common centre --
+ * that would have to move every layer's position too, and a tool that
+ * silently repositioned layers somebody only asked to resize would be worse
+ * than one that says which it does.
+ *
+ * A LOCKED layer is skipped and reported rather than failing the whole run:
+ * with six selected, one locked layer must not undo the other five.
+ *
+ * `pathsJson` is a JSON STRING of arrays -- nested arrays do not survive being
+ * spliced into eval'd ExtendScript source (CLAUDE.md).
+ */
+export const editInContextNudgeMany = (
+  rootId: number, pathsJson: string, kind: string, dx: number, dy: number, inRootSpace: boolean
+): Result & { moved?: number; skipped?: string[]; keyed?: boolean } => {
+  let undoOpen = false;
+  try {
+    let paths: number[][] = [];
+    try { paths = JSON.parse(pathsJson) as number[][]; } catch (e2) { return { success: false, error: "Bad layer paths." }; }
+    if (!paths || paths.length === 0) return { success: false, error: "Nothing selected." };
+
+    const skipped: string[] = [];
+    let moved = 0;
+    let keyed = false;
+
+    app.beginUndoGroup("Edit In Context nudge");
+    undoOpen = true;
+
+    for (let i = 0; i < paths.length; i++) {
+      const r = eicResolve(rootId, paths[i]);
+      if (!r) { skipped.push("a layer that has moved"); continue; }
+      if (r.layer.locked) { skipped.push(r.layer.name + " (locked)"); continue; }
+      if (!eicTransformable(r.layer)) { skipped.push(r.layer.name + " (no transform)"); continue; }
+
+      const t = (r.layer as any).transform;
+      const time = r.comp.time;
+      const write = function (prop: any, value: any) {
+        if (prop.numKeys > 0) { prop.setValueAtTime(time, value); keyed = true; }
+        else { prop.setValue(value); }
+      };
+
+      if (kind === "position") {
+        let d = [dx, dy];
+        if (inRootSpace && r.chain.length > 0) d = eicRootDeltaToLocal(r.chain, dx, dy);
+        const cur = t.position.value;
+        const next = cur.length > 2 ? [cur[0] + d[0], cur[1] + d[1], cur[2]] : [cur[0] + d[0], cur[1] + d[1]];
+        write(t.position, next);
+      } else if (kind === "scale") {
+        const cum = eicCumulativeScale(r.chain);
+        let ax = dx;
+        let ay = dy;
+        if (inRootSpace && cum[0] !== 0) ax = dx / cum[0];
+        if (inRootSpace && cum[1] !== 0) ay = dy / cum[1];
+        const cur = t.scale.value;
+        const next = cur.length > 2 ? [cur[0] + ax, cur[1] + ay, cur[2]] : [cur[0] + ax, cur[1] + ay];
+        write(t.scale, next);
+      } else if (kind === "rotation") {
+        write(t.rotation, t.rotation.value + dx);
+      } else if (kind === "opacity") {
+        let v = t.opacity.value + dx;
+        if (v < 0) v = 0;
+        if (v > 100) v = 100;
+        write(t.opacity, v);
+      } else {
+        app.endUndoGroup();
+        undoOpen = false;
+        return { success: false, error: "Unknown nudge kind: " + kind };
+      }
+      moved++;
+    }
+
+    app.endUndoGroup();
+    undoOpen = false;
+
+    if (moved === 0) return { success: false, error: "Nothing moved -- " + skipped.join(", ") + "." };
+    return { success: true, moved: moved, skipped: skipped, keyed: keyed };
+  } catch (e) {
+    if (undoOpen) { try { app.endUndoGroup(); } catch (e3) {} }
+    return { success: false, error: e.toString() };
+  }
+};
+
+/**
  * Select the nested layer in AE's own timeline, for when the artist does want
  * to go in and do something this panel can't. Opens the nested comp's viewer
  * deliberately -- the one place navigation is the point rather than the problem.
