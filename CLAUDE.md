@@ -1387,6 +1387,17 @@ prefix, so a second press replaces what the first left and **somebody else's
 markers on the same comp are never touched**. A note past the comp's end is
 clamped to the last frame rather than dropped.
 
+**A CREATIVE'S FOLDER AND ITS FILENAMES CAN DISAGREE, and both are in use.**
+Street Fighter's masters sit in `AE/CharacterMotionPoster/` while the `.aep`
+inside says `SF_INTL_Characters_DOOH_MotionPoster_…` — so the Workflows picker
+(which lists FOLDERS) and 67 (which reads the COMP's name) addressed two
+entries for one creative, each invisible to the other, and a pitfall written in
+one never reached the other. Both spellings are carried: 67 reads notes under
+either, and `workflowAddTimedNote` takes an `alias` and **prefers an existing
+entry over making a new one**, so whichever spelling the team started with is
+the one it keeps. Renaming the folder is not the fix — it is too late for a
+live campaign, which is exactly why this has to tolerate it.
+
 **67 IS THE CREATIVE'S PITFALLS, AT THE SECOND THEY HAPPEN.** A Toolset card
 (`actionSafety: "read"` — it opens a player and changes nothing): the comp's
 name gives the creative, the SAME scorer CSV Localiser uses gives the master,

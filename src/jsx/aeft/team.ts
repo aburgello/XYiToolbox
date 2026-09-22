@@ -3311,7 +3311,8 @@ export const workflowAddTimedNote = (
   text: string,
   territory?: string,
   at?: number,
-  atDuration?: string
+  atDuration?: string,
+  alias?: string
 ): WorkflowBoardResult => {
   try {
     if (!teamFolder()) return { success: false, error: "Team folder not set." };
@@ -3324,14 +3325,32 @@ export const workflowAddTimedNote = (
     const shared = readWorkflowEntries();
     if (shared === null) return { success: false, error: "Couldn't read the team board -- is the NAS mounted?" };
 
+    // THE FOLDER AND THE FILENAME CAN DISAGREE, and both are in use. Street
+    // Fighter's masters sit in a folder called CharacterMotionPoster while the
+    // .aep inside says Characters -- so the Workflows picker (which lists
+    // folders) and 67 (which reads the comp's name) were writing to two
+    // entries for one creative, each invisible to the other. An alias is
+    // therefore tried as well, and an EXISTING entry always wins over making
+    // a new one: whichever spelling the team started with is the one it keeps.
     const base = workflowKeyFor(campaign, creative);
+    const aliasBase = alias ? workflowKeyFor(campaign, alias) : "";
     let target = -1;
     for (let i = 0; i < shared.length; i++) {
       if (shared[i].key === base) { target = i; break; }
     }
+    if (target === -1 && aliasBase) {
+      for (let i = 0; i < shared.length; i++) {
+        if (shared[i].key === aliasBase) { target = i; break; }
+      }
+    }
     if (target === -1) {
       for (let i = 0; i < shared.length; i++) {
         if (shared[i].key.indexOf(base + "|") === 0) { target = i; break; }
+      }
+    }
+    if (target === -1 && aliasBase) {
+      for (let i = 0; i < shared.length; i++) {
+        if (shared[i].key.indexOf(aliasBase + "|") === 0) { target = i; break; }
       }
     }
     if (target === -1) {
@@ -3365,6 +3384,53 @@ export const workflowAddTimedNote = (
       return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
     }
     return { success: true, read: true, entries: shared, me: me };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/**
+ * Set or clear a note's time in the piece.
+ *
+ * BY NOTE ID ALONE. 67 knows the note it is looking at and nothing about which
+ * entry holds it -- notes are read as the union across a creative's workflows,
+ * so the one on screen may belong to any of them. Ids are unique, so the
+ * search is exact. A negative `at` clears the time, which is how the panel
+ * takes a timestamp off without deleting the note.
+ */
+export const workflowSetNoteTime = (
+  noteId: string,
+  at: number,
+  atDuration?: string
+): WorkflowBoardResult => {
+  try {
+    if (!teamFolder()) return { success: false, error: "Team folder not set." };
+    const shared = readWorkflowEntries();
+    if (shared === null) return { success: false, error: "Couldn't read the team board -- is the NAS mounted?" };
+
+    let found = false;
+    for (let i = 0; i < shared.length; i++) {
+      const notes = shared[i].notes || [];
+      for (let n = 0; n < notes.length; n++) {
+        if (notes[n].id !== noteId) continue;
+        if (typeof at === "number" && at >= 0) {
+          notes[n].at = at;
+          notes[n].atDuration = String(atDuration || "");
+        } else {
+          delete notes[n].at;
+          delete notes[n].atDuration;
+        }
+        found = true;
+        break;
+      }
+      if (found) break;
+    }
+    if (!found) return { success: false, error: "That note is no longer on the board -- reload and try again." };
+
+    if (!writeSharedFile(SHARED_WORKFLOWS_FILE, SHARED_WORKFLOWS_TYPE, shared)) {
+      return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
+    }
+    return { success: true, read: true, entries: shared, me: loadLocalSetting(MACHINE_OWNER_KEY) || "" };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

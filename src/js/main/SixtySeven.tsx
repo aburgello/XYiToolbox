@@ -18,17 +18,19 @@
 // =============================================================================
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, MapPin, Plus, Film, AlertCircle, Loader2, Layers } from "lucide-react";
+import { X, MapPin, Plus, Film, AlertCircle, Loader2, Layers, Trash2, TimerOff } from "lucide-react";
 import { toFileUrl } from "./lib/fileUrl";
 import { pickPreviewRender } from "./lib/renderPreview";
 import { evalTS } from "../lib/utils/bolt";
 import { evalTSSafe } from "../lib/utils/evalTSSafe";
 import Tooltip from "./Tooltip";
+import { confirmDialog } from "./Dialog";
 import "./WorkflowTutorial.scss";
 import "./SixtySeven.scss";
 
 interface Ctx {
     success: boolean;
+    creativeFolder?: string;
     error?: string;
     compName?: string;
     creative?: string;
@@ -46,6 +48,8 @@ interface Note {
      *  place the comp's own campaign — two campaigns can carry a creative of
      *  the same name, so an unplaced one must say whose note this is. */
     _campaign?: string;
+    /** Which entry holds it — needed to delete it. */
+    _entryId?: string;
     text: string;
     author: string;
     stamp: string;
@@ -55,6 +59,7 @@ interface Note {
 }
 
 interface Entry {
+    id: string;
     key: string;
     campaign: string;
     creative: string;
@@ -106,6 +111,12 @@ export const SixtySevenHost: React.FC = () => {
             const board = (await evalTS("workflowBoardLoad")) as { success?: boolean; entries?: Entry[] };
             const entries = (board && board.entries) || [];
             const base = canon(c.campaign || "") + "|" + canon(c.creative);
+            // THE FOLDER IS A SECOND SPELLING OF THE SAME CREATIVE. Street
+            // Fighter's masters live in CharacterMotionPoster while the .aep
+            // says Characters, and the Workflows picker lists folders — so a
+            // board written there is this creative's board, and must be read
+            // as one.
+            const aliasBase = c.creativeFolder ? canon(c.campaign || "") + "|" + canon(c.creativeFolder) : "";
             const mine: Note[] = [];
             entries.forEach((e) => {
                 // Every workflow of this creative: notes belong to the creative,
@@ -113,11 +124,12 @@ export const SixtySevenHost: React.FC = () => {
                 // The campaign half is only compared when we know it — 67 can
                 // identify a creative without having placed its campaign.
                 const key = String(e.key || "");
+                const matches = (b: string) => !!b && (key === b || key.indexOf(b + "|") === 0);
                 const hit = c.campaign
-                    ? (key === base || key.indexOf(base + "|") === 0)
-                    : canon(e.creative) === canon(c.creative || "");
+                    ? (matches(base) || matches(aliasBase))
+                    : (canon(e.creative) === canon(c.creative || "") || canon(e.creative) === canon(c.creativeFolder || ""));
                 if (!hit) return;
-                (e.notes || []).forEach((n) => mine.push({ ...n, _campaign: e.campaign }));
+                (e.notes || []).forEach((n) => mine.push({ ...n, _campaign: e.campaign, _entryId: e.id }));
             });
             setNotes(mine);
         } finally {
@@ -184,6 +196,27 @@ export const SixtySevenHost: React.FC = () => {
         }
     };
 
+    /** Move a note's time to where the clip is, or take the time off. */
+    const setNoteTime = async (n: Note, at: number | null) => {
+        const r = (await evalTSSafe(
+            "workflowSetNoteTime",
+            n.id,
+            at === null ? -1 : at,
+            at === null ? "" : (ctx?.duration || "")
+        )) as { success: boolean; error?: string };
+        if (r && r.success) await load();
+    };
+
+    const removeNote = async (n: Note) => {
+        if (!n._entryId) return;
+        const ok = await confirmDialog(
+            "Delete this pitfall for the whole team?\n\n“" + n.text + "”\n\nThere is no undo."
+        );
+        if (!ok) return;
+        const r = (await evalTSSafe("workflowDeleteNote", n._entryId, n.id)) as { success: boolean };
+        if (r && r.success) await load();
+    };
+
     const addNote = async () => {
         const body = draft.trim();
         if (!body || !ctx || !ctx.creative) return;
@@ -196,7 +229,10 @@ export const SixtySevenHost: React.FC = () => {
                 body,
                 ctx.territory || "",
                 draftAt === null ? -1 : draftAt,
-                draftAt === null ? "" : (ctx.duration || "")
+                draftAt === null ? "" : (ctx.duration || ""),
+                // The folder's spelling, so a note lands on the board the team
+                // already has rather than starting a second one.
+                ctx.creativeFolder || ""
             )) as { success: boolean; error?: string };
             if (!r || !r.success) return;
             setDraft("");
@@ -290,11 +326,30 @@ export const SixtySevenHost: React.FC = () => {
 
                     <div className="s67-list">
                         {timed.map((n) => (
-                            <button key={n.id} type="button" className="s67-note" onClick={() => seek(n.at)}>
-                                <span className="s67-at">{clock(n.at || 0)}</span>
-                                <span className="s67-text">{n.text}</span>
+                            <div key={n.id} className="s67-note">
+                                <button type="button" className="s67-jump" onClick={() => seek(n.at)} title={`Jump to ${clock(n.at || 0)}`}>
+                                    <span className="s67-at">{clock(n.at || 0)}</span>
+                                    <span className="s67-text">{n.text}</span>
+                                </button>
                                 <span className="s67-by">{!ctx?.campaign && n._campaign ? n._campaign + " · " : ""}{n.author}</span>
-                            </button>
+                                <span className="s67-rowacts">
+                                    <Tooltip text="Move it to where the clip is now">
+                                        <button type="button" className="s67-rowbtn" disabled={!render} onClick={() => setNoteTime(n, Math.max(0, videoRef.current?.currentTime || 0))} aria-label="Move the time">
+                                            <MapPin size={10} />
+                                        </button>
+                                    </Tooltip>
+                                    <Tooltip text="Take the time off — it stays as a general note">
+                                        <button type="button" className="s67-rowbtn" onClick={() => setNoteTime(n, null)} aria-label="Clear the time">
+                                            <TimerOff size={10} />
+                                        </button>
+                                    </Tooltip>
+                                    <Tooltip text="Delete this pitfall for the team">
+                                        <button type="button" className="s67-rowbtn s67-rowbtn--danger" onClick={() => removeNote(n)} aria-label="Delete">
+                                            <Trash2 size={10} />
+                                        </button>
+                                    </Tooltip>
+                                </span>
+                            </div>
                         ))}
                         {/* THE UNTIMED ONES ARE A DIFFERENT KIND OF THING --
                             standing advice rather than a moment — and notes
@@ -307,6 +362,20 @@ export const SixtySevenHost: React.FC = () => {
                                 <span className="s67-at">—</span>
                                 <span className="s67-text">{n.text}</span>
                                 <span className="s67-by">{!ctx?.campaign && n._campaign ? n._campaign + " · " : ""}{n.author}</span>
+                                <span className="s67-rowacts">
+                                    {/* A NOTE WRITTEN BEFORE 67 EXISTED can be given
+                                        a time now — which is most of them. */}
+                                    <Tooltip text={render ? "Pin it to where the clip is now" : "No clip to take a time from"}>
+                                        <button type="button" className="s67-rowbtn" disabled={!render} onClick={() => setNoteTime(n, Math.max(0, videoRef.current?.currentTime || 0))} aria-label="Pin to the current time">
+                                            <MapPin size={10} />
+                                        </button>
+                                    </Tooltip>
+                                    <Tooltip text="Delete this pitfall for the team">
+                                        <button type="button" className="s67-rowbtn s67-rowbtn--danger" onClick={() => removeNote(n)} aria-label="Delete">
+                                            <Trash2 size={10} />
+                                        </button>
+                                    </Tooltip>
+                                </span>
                             </div>
                         ))}
                         {dropped !== "" && <p className="s67-dropped">{dropped}</p>}

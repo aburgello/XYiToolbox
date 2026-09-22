@@ -142,13 +142,63 @@
     background: none;
     color: inherit;
     text-align: left;
+
+    &:hover { background: rgba(255, 255, 255, 0.05); }
+
+    &.is-untimed { opacity: 0.75; }
+
+    // The row's controls only when it is pointed at: three glyphs on every
+    // line is a list you have to read past.
+    .s67-rowacts { opacity: 0; }
+    &:hover .s67-rowacts,
+    &:focus-within .s67-rowacts { opacity: 1; }
+}
+
+// The time and the text together are the jump; the buttons beside them are
+// not, which is why this is its own button rather than the whole row.
+.s67-jump {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    text-align: left;
     cursor: pointer;
 
     &:hover,
-    &:active { background: rgba(255, 255, 255, 0.05); }
+    &:active { background: none; }
+}
 
-    &.is-untimed { cursor: default; opacity: 0.75; }
-    &.is-untimed:hover { background: none; }
+.s67-rowacts {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    transition: opacity 140ms ease;
+}
+
+.s67-rowbtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: none;
+    color: #8a8a8a;
+    cursor: pointer;
+
+    &:hover:not(:disabled),
+    &:active:not(:disabled) { background: rgba(255, 255, 255, 0.09); color: #ddd; }
+    &:disabled { opacity: 0.35; cursor: default; }
+
+    &--danger:hover:not(:disabled) { background: rgba(224, 122, 122, 0.16); color: #e08a8a; }
 }
 
 .s67-at {
