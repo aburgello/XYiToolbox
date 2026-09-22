@@ -1,0 +1,154 @@
+// =============================================================================
+// src/jsx/aeft/sixtySeven.ts
+// -----------------------------------------------------------------------------
+// 67 -- the master for the comp you are in, with this creative's pitfalls
+// pinned to the seconds they happen.
+//
+// The job it is for: checking your own work BEFORE it goes for review. The
+// things that get missed are the ones somebody already knows about ("the date
+// card clips on the 2L version"), and they are known by whoever hit them last
+// week, not by whoever is looking now.
+//
+// EVERY LOOKUP IS ONE THE PANEL ALREADY DOES, deliberately: the comp's name is
+// read by the same parser Cheeky T uses, the master is chosen by the same
+// scorer CSV Localiser localises with, and the render is found the way OV
+// Library finds it. A second way of answering "which master is this" is a
+// second answer to disagree with the first.
+//
+// A MISSING RENDER IS NOT A FAILURE. Plenty of creatives have no mp4 where the
+// library looks; the notes are the point, and they are returned either way.
+// =============================================================================
+import { Result } from "./shared";
+import { parseFilenameMeta, getMastersIndex, pickBestMasterFromIndex, firstSizeToken } from "./tools";
+import { loadCampaignsRaw, scanRendersForCreative, RenderEntry } from "./review";
+
+export interface SixtySevenContext extends Result {
+  /** What the comp's own name says. */
+  compName?: string;
+  creative?: string;
+  size?: string;
+  duration?: string;
+  territory?: string;
+  /** The campaign this creative belongs to, and where its masters live. */
+  campaign?: string;
+  mastersRoot?: string;
+  /** The master this deliverable was built from, when one matches. */
+  masterName?: string;
+  masterPath?: string;
+  /** Playable renders for this creative, best guess first. Empty is normal. */
+  renders?: { stem: string; path: string }[];
+}
+
+/** Canonical form for comparing a render's stem to a master's. */
+function canon(s: string): string {
+  return String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+/**
+ * Everything 67 needs about the comp in front of you.
+ *
+ * Read-only throughout: this opens nothing, writes nothing and touches no
+ * layer. It is a question, asked of the project and the masters index.
+ */
+export const sixtySevenContext = (): SixtySevenContext => {
+  try {
+    const item = app.project.activeItem;
+    // Duck-typed: a CompItem is the thing with layers and a duration.
+    if (!item || typeof (item as CompItem).numLayers !== "number") {
+      return { success: false, error: "Open the comp you are working on first." };
+    }
+    const comp = item as CompItem;
+    const meta = parseFilenameMeta(comp.name);
+    const creative = meta.campaign || "";
+    if (!creative) {
+      return {
+        success: false,
+        error: '"' + comp.name + '" does not read as a deliverable name, so there is no creative to look up.',
+      };
+    }
+
+    // The size and duration come off the comp's NAME rather than its
+    // dimensions: a working comp is routinely a different size from the
+    // deliverable it is building towards, and the name is what the master was
+    // matched on in the first place.
+    const size = meta.size || firstSizeToken(comp.name) || "";
+    const duration = meta.duration || "";
+
+    // WHICH CAMPAIGN. The creative token is matched against each saved
+    // campaign's own masters, which is the same test the scorer uses -- a
+    // campaign owns a token if its masters carry it.
+    let campaign = "";
+    let mastersRoot = "";
+    let masterName = "";
+    let masterPath = "";
+    const camps = loadCampaignsRaw();
+    for (let i = 0; i < camps.length; i++) {
+      const root = camps[i].mastersRoot;
+      if (!root) continue;
+      let index;
+      try {
+        index = getMastersIndex(root);
+      } catch (eIdx) {
+        continue; // an unmounted share is a normal state, not an error
+      }
+      if (!index || index.length === 0) continue;
+      const best = size && duration ? pickBestMasterFromIndex(index, creative, size, duration) : null;
+      if (best) {
+        campaign = camps[i].name;
+        mastersRoot = root;
+        masterName = best.name;
+        masterPath = best.path;
+        break;
+      }
+      // No master at this shape, but the campaign may still be the right one:
+      // remember the first that carries the creative at all, and keep looking
+      // for an exact match.
+      if (!campaign) {
+        const canonCreative = canon(creative);
+        for (let j = 0; j < index.length; j++) {
+          if (index[j].canonPath.indexOf(canonCreative) !== -1) {
+            campaign = camps[i].name;
+            mastersRoot = root;
+            break;
+          }
+        }
+      }
+    }
+
+    // The renders for this creative, with the one matching the master's own
+    // stem first. Without a master, whatever the creative has.
+    const renders: { stem: string; path: string }[] = [];
+    if (mastersRoot) {
+      let found: RenderEntry[] = [];
+      try {
+        found = scanRendersForCreative(mastersRoot, creative) || [];
+      } catch (eScan) {
+        found = [];
+      }
+      const wanted = canon(String(masterName).replace(/\.aep$/i, ""));
+      for (let r = 0; r < found.length; r++) {
+        if (wanted && canon(found[r].stem) === wanted) renders.push({ stem: found[r].stem, path: found[r].path });
+      }
+      for (let r = 0; r < found.length; r++) {
+        const already = wanted && canon(found[r].stem) === wanted;
+        if (!already) renders.push({ stem: found[r].stem, path: found[r].path });
+      }
+    }
+
+    return {
+      success: true,
+      compName: comp.name,
+      creative: creative,
+      size: size,
+      duration: duration,
+      territory: meta.territory || "",
+      campaign: campaign,
+      mastersRoot: mastersRoot,
+      masterName: masterName,
+      masterPath: masterPath,
+      renders: renders,
+    };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};

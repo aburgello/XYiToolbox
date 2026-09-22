@@ -34,6 +34,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+    Eye,
     RotateCw,
     RotateCcw,
     Save,
@@ -73,6 +74,7 @@ import {
 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { showMcItReport, type McReport } from "../McItReportModal";
+import { showSixtySeven } from "../SixtySeven";
 import CheekyTModal, { type CheekyTInspection } from "../CheekyTModal";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import { sfx } from "../../lib/utils/sfx";
@@ -253,6 +255,22 @@ const LABEL_SWATCH_COLORS = [
 // is already fully self-contained (no dependency on this component's own
 // state), so calling it from elsewhere needs no changes here.
 export const ACTIONS: ActionEntry[] = [
+    {
+        id: "sixty-seven",
+        label: "67",
+        description: "Plays the master behind the comp you are in, with this creative's known pitfalls arriving at the seconds they happen — and a box to write the next one down. Reads the project; changes nothing.",
+        icon: Eye,
+        group: "qc",
+        safety: "read",
+        // The card OPENS the player; the work happens in there. Returning a
+        // plain success keeps the card's own feedback honest -- nothing has
+        // been done to the project, and nothing is claimed to have been.
+        run: async () => {
+            showSixtySeven();
+            return { success: true } as ActionResult;
+        },
+        successText: () => "",
+    },
     {
         id: "organise-folders",
         label: "Organise",

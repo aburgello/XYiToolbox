@@ -29,7 +29,7 @@ interface MasterRecord {
   aepPath: string;
 }
 
-interface RenderEntry {
+export interface RenderEntry {
   stem: string;
   path: string;
 }

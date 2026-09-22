@@ -2869,6 +2869,16 @@ export interface WorkflowStep {
 export interface WorkflowNote {
   id: string;
   text: string;
+  /**
+   * WHERE IN THE PIECE, in seconds -- "at 0:05 watch the gutter".
+   *
+   * A time only means something against ONE cut: 0:05 of the 15s master is a
+   * different beat from 0:05 of the 30s. So `atDuration` records which one it
+   * was timed against, and a note shown against any other duration is listed
+   * without its time rather than fired at the wrong second.
+   */
+  at?: number;
+  atDuration?: string;
   /** Whoever posted it. Never guessed -- an untagged machine is refused. */
   author: string;
   stamp: string;
@@ -3276,6 +3286,81 @@ export const workflowAddNote = (
       break;
     }
     if (!found) return { success: false, error: "That workflow is no longer on the board -- reload and try again." };
+    if (!writeSharedFile(SHARED_WORKFLOWS_FILE, SHARED_WORKFLOWS_TYPE, shared)) {
+      return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
+    }
+    return { success: true, read: true, entries: shared, me: me };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/**
+ * Add a note to a CREATIVE, without a board being open.
+ *
+ * 67 knows the creative from the comp's own name and nothing else -- there may
+ * be no workflow for it yet, and the note is still worth keeping. So: the
+ * creative's unnamed entry when it exists, any sibling when it does not, and a
+ * bare entry created for it when there is neither. An entry with no steps is
+ * an honest thing here: somebody has written down a pitfall before anybody has
+ * written down the process.
+ */
+export const workflowAddTimedNote = (
+  campaign: string,
+  creative: string,
+  text: string,
+  territory?: string,
+  at?: number,
+  atDuration?: string
+): WorkflowBoardResult => {
+  try {
+    if (!teamFolder()) return { success: false, error: "Team folder not set." };
+    const me = loadLocalSetting(MACHINE_OWNER_KEY);
+    if (!me) return { success: false, error: "This machine isn't tagged with your name yet -- set it in the Team menu before posting a note." };
+    const body = String(text || "").replace(/^\s+|\s+$/g, "");
+    if (!body) return { success: false, error: "The note is empty." };
+    if (!creative) return { success: false, error: "No creative to attach this to." };
+
+    const shared = readWorkflowEntries();
+    if (shared === null) return { success: false, error: "Couldn't read the team board -- is the NAS mounted?" };
+
+    const base = workflowKeyFor(campaign, creative);
+    let target = -1;
+    for (let i = 0; i < shared.length; i++) {
+      if (shared[i].key === base) { target = i; break; }
+    }
+    if (target === -1) {
+      for (let i = 0; i < shared.length; i++) {
+        if (shared[i].key.indexOf(base + "|") === 0) { target = i; break; }
+      }
+    }
+    if (target === -1) {
+      shared.push({
+        id: "wf-" + new Date().getTime() + "-" + Math.floor(Math.random() * 100000),
+        campaign: campaign,
+        creative: creative,
+        key: base,
+        steps: [],
+        notes: [],
+        author: me,
+        updatedAt: new Date().toString(),
+      });
+      target = shared.length - 1;
+    }
+
+    const note: WorkflowNote = {
+      id: "note-" + new Date().getTime() + "-" + Math.floor(Math.random() * 100000),
+      text: body,
+      author: me,
+      stamp: new Date().toString(),
+      territory: normaliseTerritoryCode(territory),
+    };
+    if (typeof at === "number" && at >= 0) {
+      note.at = at;
+      note.atDuration = String(atDuration || "");
+    }
+    shared[target].notes.push(note);
+
     if (!writeSharedFile(SHARED_WORKFLOWS_FILE, SHARED_WORKFLOWS_TYPE, shared)) {
       return { success: false, error: "Could not write to the team folder (is the NAS mounted?)." };
     }

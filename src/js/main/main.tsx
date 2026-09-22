@@ -29,6 +29,7 @@ import "./main.scss";
 import { DialogHost } from "./Dialog";
 import { PreFlightHost } from "./PreFlightModal";
 import { McItReportHost } from "./McItReportModal";
+import { SixtySevenHost } from "./SixtySeven";
 import { LocGenReportHost } from "./LocGenReportModal";
 import { HomeScreen } from "./screens/HomeScreen";
 import { CategoryScreen } from "./screens/CategoryScreen";
@@ -217,6 +218,7 @@ const Main = () => {
             <DialogHost />
             <PreFlightHost />
             <McItReportHost />
+            <SixtySevenHost />
             <LocGenReportHost />
         </div>
     );

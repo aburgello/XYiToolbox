@@ -1345,6 +1345,20 @@ campaign was taking a card's worth of room to say it is not a place to write a
 workflow. The one you are standing in stays, retired or not, so retiring a
 campaign while you have it open cannot strand you.
 
+**67 IS THE CREATIVE'S PITFALLS, AT THE SECOND THEY HAPPEN.** A Toolset card
+(`actionSafety: "read"` — it opens a player and changes nothing): the comp's
+name gives the creative, the SAME scorer CSV Localiser uses gives the master,
+OV Library's own render pairing gives the mp4, and the creative's workflow
+notes play over it. **A note's time belongs to ONE cut** (`at` + `atDuration`):
+0:05 of the 15s master is a different beat from 0:05 of the 30s, so a note
+timed on another length is listed WITHOUT its time rather than fired at the
+wrong second. **No render is a normal answer** — plenty of creatives have no
+mp4 where the library looks, and the notes are the point. Writing one back
+takes `workflowAddTimedNote`, which targets the creative's unnamed entry, then
+any sibling, and **creates a bare entry when there is neither**: somebody
+knowing a pitfall before anybody has written the process down is the ordinary
+case, not an error.
+
 **A WORKFLOW CAN CARRY CLIPS, and they are PICKED, not matched.** A tool's
 tutorial is found by filename in `_tuts` because a tool has a stable id to
 match on; a creative does not, so `WorkflowEntry.tutorial` stores the path
