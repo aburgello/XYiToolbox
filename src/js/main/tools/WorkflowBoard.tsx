@@ -1621,11 +1621,12 @@ const WorkflowBoardTool: React.FC<{
         return out;
     }, [entries]);
 
-    /** Undocumented creatives are folded away until asked for: the list is
-     *  opened to find a workflow, and a dozen folders nobody has written up
-     *  yet buries the three that matter. A search opens it automatically —
-     *  hunting for a name means you want every name. */
-    const [showUndocumented, setShowUndocumented] = useState(false);
+    /** OPEN BY DEFAULT. Folding the undocumented half away made the list
+     *  shorter and the campaign smaller than it is: what a creative needs is
+     *  often a board nobody has written yet, and a fold hides the very thing
+     *  you would start one from. They are dimmer instead, and the heading
+     *  still folds them if a campaign with forty is too much to scroll. */
+    const [showUndocumented, setShowUndocumented] = useState(true);
 
     /**
      * THE CAMPAIGNS WORTH OPENING, in the order somebody would look for them.
@@ -1835,6 +1836,15 @@ const WorkflowBoardTool: React.FC<{
                 back arrow is the way back to this one. */}
             {!picking && (
             <div className="wfb-head">
+                {/* FIRST, AND ON THE LEFT. It was the third control in a row of
+                    them on the right, where a way out reads as one more action
+                    to weigh up. A back button belongs where everything else
+                    puts one. */}
+                <Tooltip text={campaign ? `Back to ${prettyCreative(campaign)}'s creatives` : "Back to the campaigns"}>
+                    <button type="button" className="wfb-btn wfb-btn--icon wfb-btn--back" onClick={openPicker} aria-label="Back">
+                        <ChevronLeft size={13} />
+                    </button>
+                </Tooltip>
                 <div className="wfb-id">
                     <ListChecks size={15} className="wfb-id-icon" />
                     <div className="wfb-id-text">
@@ -1903,17 +1913,6 @@ const WorkflowBoardTool: React.FC<{
                             </button>
                         </Tooltip>
                     )}
-                    {/* A WAY BACK, not a verb. "Change" next to a board full of
-                        somebody's steps reads as "change this", which is the one
-                        thing it does not do — it is the level above, and the
-                        picker's own back arrow then goes up to the campaigns.
-                        So it points the way it travels and names where it
-                        lands. */}
-                    <Tooltip text={campaign ? `Back to ${prettyCreative(campaign)}'s creatives` : "Back to the campaigns"}>
-                        <button type="button" className="wfb-btn wfb-btn--back" onClick={openPicker}>
-                            <ChevronLeft size={12} /><span>{campaign ? prettyCreative(campaign) : "Campaigns"}</span>
-                        </button>
-                    </Tooltip>
                     <Droplet
                         panelClassName="wfb-menu"
                         trigger={({ toggle }) => (

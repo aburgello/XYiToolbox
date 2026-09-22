@@ -2405,14 +2405,9 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
     color: var(--cat-icon, #fdba74);
 }
 
-// The way back out of a board. Quieter than the actions beside it: leaving is
-// not the thing you came to do.
+// The way back out of a board: first in the row, left of the title, and
+// quieter than the actions on the right — leaving is not what you came to do.
 .workflow-board .wfb-btn--back {
-    max-width: 148px;
-
-    span {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
+    flex: none;
+    margin-right: 2px;
 }
