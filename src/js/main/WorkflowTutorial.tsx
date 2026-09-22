@@ -18,7 +18,7 @@
 // =============================================================================
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, MapPin, Check, Save, ListChecks } from "lucide-react";
+import { X, MapPin, Check, Save, ListChecks, Eye, EyeOff } from "lucide-react";
 import { toFileUrl } from "./lib/fileUrl";
 import Tooltip from "./Tooltip";
 import "./WorkflowTutorial.scss";
@@ -58,6 +58,9 @@ const WorkflowTutorial: React.FC<{
     /** Every step, rather than just the one you are on. Marking wants the list;
      *  following it does not. */
     const [expanded, setExpanded] = useState(false);
+    /** Steps off entirely — for the stretch of a clip where you just want to
+     *  watch the screen without a card over the corner of it. */
+    const [hidden, setHidden] = useState(false);
 
     const markOf = (s: TutorialStep) => (draftMarks[s.id] !== undefined ? draftMarks[s.id] : s.at);
     const dirty = Object.keys(draftMarks).length > 0;
@@ -133,9 +136,16 @@ const WorkflowTutorial: React.FC<{
 
                 <div className="wft-top">
                     <span className="wft-title">{title}</span>
-                    <Tooltip text={expanded ? "Show just the step you are on" : "Show every step"}>
-                        <button type="button" className="wft-icon" onClick={() => setExpanded((v) => !v)} aria-label="All steps">
-                            <ListChecks size={13} />
+                    {!hidden && (
+                        <Tooltip text={expanded ? "Show just the step you are on" : "Show every step"}>
+                            <button type="button" className="wft-icon" onClick={() => setExpanded((v) => !v)} aria-label="All steps">
+                                <ListChecks size={13} />
+                            </button>
+                        </Tooltip>
+                    )}
+                    <Tooltip text={hidden ? "Show the steps" : "Hide the steps"}>
+                        <button type="button" className="wft-icon" onClick={() => setHidden((v) => !v)} aria-label={hidden ? "Show steps" : "Hide steps"}>
+                            {hidden ? <Eye size={13} /> : <EyeOff size={13} />}
                         </button>
                     </Tooltip>
                     <button type="button" className="wft-icon" onClick={onClose} aria-label="Close">
@@ -146,6 +156,7 @@ const WorkflowTutorial: React.FC<{
                 {/* OVER THE PICTURE, FROM THE BOTTOM — like a subtitle, because
                     that is the job: a line you read without looking away. It
                     clears the video's own controls rather than fighting them. */}
+                {!hidden && (
                 <div className={"wft-strip" + (expanded ? " is-open" : "")}>
                     {shown.map(({ s: st, i }) => {
                         const at = markOf(st);
@@ -188,6 +199,7 @@ const WorkflowTutorial: React.FC<{
                         </button>
                     )}
                 </div>
+                )}
             </div>
         </div>,
         document.body
