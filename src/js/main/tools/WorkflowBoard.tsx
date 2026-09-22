@@ -1501,6 +1501,28 @@ const WorkflowBoardTool: React.FC<{
         return () => { cancelled = true; };
     }, [picking, campaigns]);
 
+    /**
+     * PER-CREATIVE ARTWORK, from the thumbnails pinned in OV Library
+     * (`OVLibThumbOverrides`, keyed campaign+creative). One settings read per
+     * campaign, no disk walk -- unlike OV Library's own cards, which scan the
+     * Renders tree per creative. A creative with nothing pinned falls back to
+     * the campaign's banner, dimmed, so a grid still reads as a grid.
+     */
+    const [creativeThumbs, setCreativeThumbs] = useState<Record<string, string>>({});
+    useEffect(() => {
+        if (!picking || !pickCampaign) { setCreativeThumbs({}); return; }
+        let cancelled = false;
+        (async () => {
+            try {
+                const map = (await evalTS("loadThumbOverrides", pickCampaign)) as Record<string, string>;
+                if (!cancelled) setCreativeThumbs(map || {});
+            } catch {
+                if (!cancelled) setCreativeThumbs({});
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [picking, pickCampaign]);
+
     /** The campaign's creatives read off the masters tree, so a creative nobody
      *  has written a workflow for is still offerable. An unmounted share gives
      *  null, which the UI reports as "couldn't look" rather than "none". */
@@ -2072,12 +2094,18 @@ const WorkflowBoardTool: React.FC<{
                                         {first && (!showUndocumented || creativeQuery.trim() !== "") && (
                                             <p className="wfb-creative-sep">Nothing written down yet</p>
                                         )}
-                                        {/* A WRAPPER, because the clip's button is a
-                                            SIBLING of the row's: a button inside a
-                                            button is invalid markup and would inherit
-                                            the row's own click — so watching a clip
-                                            would also open the board. Same shape as
-                                            the workflow-variant chip's rename. */}
+                                        {/* A CARD, like the campaign wall above it.
+                                            The rail down the left said "written up"
+                                            in a language nobody reads; a card with
+                                            the creative's own artwork, its counts
+                                            underneath and a play badge on the
+                                            picture says the same thing by looking
+                                            like the thing it describes.
+
+                                            The clip's button is a SIBLING of the
+                                            card's, not a child: a button inside a
+                                            button is invalid, and would inherit the
+                                            card's own click. */}
                                         <span className={"wfb-creative-wrap" + (c.tutorial ? " has-clip" : "")}>
                                         <motion.button
                                             type="button"
@@ -2087,19 +2115,48 @@ const WorkflowBoardTool: React.FC<{
                                             animate={{ opacity: 1, y: 0 }}
                                             transition={reduced ? { duration: 0 } : { ...SPRING.snappy, delay: rowDelay(i) }}
                                         >
-                                            <span className="wfb-creative-name">{prettyCreative(c.name)}</span>
-                                            {c.hasWorkflow && (
-                                                <span className="wfb-creative-meta">
-                                                    <span className="wfb-creative-count" title={`${c.steps} step${c.steps === 1 ? "" : "s"}`}>
-                                                        <ListChecks size={9} />{c.steps}
-                                                    </span>
-                                                    {c.notes > 0 && (
-                                                        <span className="wfb-creative-count" title={`${c.notes} note${c.notes === 1 ? "" : "s"}`}>
-                                                            <StickyNote size={9} />{c.notes}
-                                                        </span>
+                                            <span className="wfb-creative-art">
+                                                <span className="wfb-creative-art-box">
+                                                    {creativeThumbs[c.name] ? (
+                                                        <img
+                                                            src={toFileUrl(creativeThumbs[c.name])}
+                                                            alt=""
+                                                            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                                                        />
+                                                    ) : banners[pickCampaign] ? (
+                                                        // The campaign's own artwork, faded: a grid of
+                                                        // blank frames is worse than a grid that shows
+                                                        // which campaign you are in.
+                                                        <img
+                                                            className="is-fallback"
+                                                            src={toFileUrl(banners[pickCampaign])}
+                                                            alt=""
+                                                            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                                                        />
+                                                    ) : (
+                                                        <span className="wfb-camp-art-none">{prettyCreative(c.name).charAt(0)}</span>
                                                     )}
                                                 </span>
-                                            )}
+                                            </span>
+                                            <span className="wfb-creative-text">
+                                                <span className="wfb-creative-name">{prettyCreative(c.name)}</span>
+                                                <span className="wfb-creative-meta">
+                                                    {c.hasWorkflow ? (
+                                                        <>
+                                                            <span className="wfb-creative-count" title={`${c.steps} step${c.steps === 1 ? "" : "s"}`}>
+                                                                <ListChecks size={9} />{c.steps}
+                                                            </span>
+                                                            {c.notes > 0 && (
+                                                                <span className="wfb-creative-count" title={`${c.notes} note${c.notes === 1 ? "" : "s"}`}>
+                                                                    <StickyNote size={9} />{c.notes}
+                                                                </span>
+                                                            )}
+                                                        </>
+                                                    ) : (
+                                                        <span className="wfb-creative-count">nothing written yet</span>
+                                                    )}
+                                                </span>
+                                            </span>
                                         </motion.button>
                                         {c.tutorial && (
                                             <Tooltip text={`Watch ${fileLabel(c.tutorial)} — without opening the board`}>
@@ -2109,7 +2166,7 @@ const WorkflowBoardTool: React.FC<{
                                                     onClick={() => playClip(c.tutorial as string, `${prettyCreative(c.name)} — tutorial`)}
                                                     aria-label={`Play ${prettyCreative(c.name)}'s tutorial`}
                                                 >
-                                                    <Play size={10} />
+                                                    <Play size={11} />
                                                 </button>
                                             </Tooltip>
                                         )}
