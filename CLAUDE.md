@@ -1303,6 +1303,14 @@ named — and it collides like any other name.
 `tags` (free-form, upper-cased so the vocabulary converges instead of splitting
 into CTA/cta/Cta), and `links` — words in the body that open a folder or a tool.
 
+**Detection never moves the Workflows board.** `workflowContext` still polls
+what is open in AE, but only to label the header ("open in AE") and to offer a
+one-press jump; the panel always opens on the campaign wall. It used to adopt
+the front project's creative, which lands you inside one board when you opened
+the panel to choose, and moved the board under you when a colleague's project
+opened in the background. Going there is a decision now, which is also why
+there is no longer anything to "pin" against.
+
 **Workflows' front door is a WALL OF CAMPAIGNS, and a card is a door.**
 Pressing one opens that campaign's creatives; the back button returns to the
 wall rather than closing the picker. Cards carry the hero image pinned in OV

@@ -827,16 +827,8 @@ const WorkflowBoardTool: React.FC<{
     // original single workflow, which is what every board written before this
     // existed is — so the default state is the old behaviour exactly.
     const [wfName, setWfName] = useState("");
-    /**
-     * The artist chose this creative by hand, so stop following the open
-     * project.
-     *
-     * Autotracking without this is worse than no autotracking: you open the
-     * picker to read another creative's workflow, and four seconds later the
-     * board yanks itself back to whatever is open in AE. Picking pins; the
-     * header then offers to follow rather than doing it behind you.
-     */
-    const [pinned, setPinned] = useState(false);
+    // (The board no longer follows the open project at all, so there is
+    // nothing to pin against. See detect().)
 
     const [picking, setPicking] = useState(false);
     const [pickCampaign, setPickCampaign] = useState("");
@@ -934,7 +926,7 @@ const WorkflowBoardTool: React.FC<{
      * while the panel is actually on screen.
      */
     const detecting = useRef(false);
-    const detect = useCallback(async (applyToView: boolean) => {
+    const detect = useCallback(async () => {
         if (detecting.current) return;
         detecting.current = true;
         try {
@@ -946,18 +938,15 @@ const WorkflowBoardTool: React.FC<{
             const label = ctx.creativeLabel || ctx.creative || "";
             setCampaigns(ctx.campaigns || []);
             setDetected({ project: ctx.project || "", creative: label, campaign: ctx.campaign || "" });
-            // NOTHING OPEN IS NOT AN INSTRUCTION. Closing a project, or opening
-            // one whose name carries no creative, must not blank a board you
-            // were reading — it just stops being the thing that is detected.
-            if (!label) return;
-            if (!applyToView) return;
-            setCampaign(ctx.campaign || "");
-            setCreative(label);
-            // A named workflow belongs to the creative it was picked under, so
-            // following a different project drops back to that creative's
-            // default board rather than looking for a same-named variant.
-            setWfName("");
-            setPickCampaign(ctx.campaign || "");
+            // DETECTION NEVER MOVES THE BOARD ANY MORE. It used to open
+            // whatever creative the front project named, which sounds helpful
+            // and is not: the panel would land you inside one creative's board
+            // when what you opened it for was the campaign wall, and a project
+            // opened in the background moved the board under you mid-read.
+            //
+            // What is open is still worth knowing -- the header says "open in
+            // AE" when it matches, and offers a one-press jump when it does
+            // not (followDetected). Going there is now a decision.
         } catch {
             /* AE busy, or nothing open. The picker covers it. */
         } finally {
@@ -968,7 +957,6 @@ const WorkflowBoardTool: React.FC<{
     /** Follow the open project again, from the header's own nudge. */
     const followDetected = () => {
         if (!detected.creative) return;
-        setPinned(false);
         setCampaign(detected.campaign);
         setCreative(detected.creative);
         setWfName("");
@@ -983,10 +971,10 @@ const WorkflowBoardTool: React.FC<{
     // been through six projects since.
     useEffect(() => {
         if (!active) return;
-        detect(!pinned);
-        const id = window.setInterval(() => detect(!pinned), 4000);
+        detect();
+        const id = window.setInterval(detect, 4000);
         return () => window.clearInterval(id);
-    }, [active, pinned, detect]);
+    }, [active, detect]);
 
     useEffect(() => {
         let cancelled = false;
@@ -1794,7 +1782,6 @@ const WorkflowBoardTool: React.FC<{
             return;
         }
         setWfName(clean);
-        setPinned(true);
         setPicking(false);
         startNew();
     };
@@ -1826,7 +1813,6 @@ const WorkflowBoardTool: React.FC<{
         setCreative(creativeName);
         setWfName(name || "");
         // Picking by hand stops the poll moving the board underneath you.
-        setPinned(true);
         setPicking(false);
         setEditing(false);
     };
@@ -1860,7 +1846,7 @@ const WorkflowBoardTool: React.FC<{
                     under somebody who picked a creative by hand, so it says
                     what is actually open instead and offers one click back.
                     Doing it silently is the version people would hate. */}
-                {pinned && detected.creative && canon(detected.creative) !== canon(creative) && (
+                {detected.creative && canon(detected.creative) !== canon(creative) && (
                     <Tooltip text={`${detected.project} is open`}>
                         <button type="button" className="wfb-follow" onClick={followDetected}>
                             <Crosshair size={11} />
@@ -1881,7 +1867,7 @@ const WorkflowBoardTool: React.FC<{
                                     <button
                                         type="button"
                                         className={"wfb-variant" + (n === wfName ? " is-on" : "")}
-                                        onClick={() => { setWfName(n); setPinned(true); setEditing(false); }}
+                                        onClick={() => { setWfName(n); setEditing(false); }}
                                     >
                                         {n || "Main"}
                                     </button>
@@ -2353,7 +2339,7 @@ const WorkflowBoardTool: React.FC<{
                                 <div className="wfb-others">
                                     <span className="wfb-others-label">This campaign already has:</span>
                                     {creativesWithWorkflow.map((name) => (
-                                        <button key={name} type="button" className="wfb-chip" onClick={() => { setCreative(name); setWfName(""); setPinned(true); }}>
+                                        <button key={name} type="button" className="wfb-chip" onClick={() => { setCreative(name); setWfName(""); }}>
                                             {prettyCreative(name)}
                                         </button>
                                     ))}
