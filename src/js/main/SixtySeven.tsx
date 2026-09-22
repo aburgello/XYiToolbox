@@ -41,6 +41,10 @@ interface Ctx {
 
 interface Note {
     id: string;
+    /** The campaign the note's entry belongs to. Shown only when 67 could not
+     *  place the comp's own campaign — two campaigns can carry a creative of
+     *  the same name, so an unplaced one must say whose note this is. */
+    _campaign?: string;
     text: string;
     author: string;
     stamp: string;
@@ -110,7 +114,7 @@ export const SixtySevenHost: React.FC = () => {
                     ? (key === base || key.indexOf(base + "|") === 0)
                     : canon(e.creative) === canon(c.creative || "");
                 if (!hit) return;
-                (e.notes || []).forEach((n) => mine.push(n));
+                (e.notes || []).forEach((n) => mine.push({ ...n, _campaign: e.campaign }));
             });
             setNotes(mine);
         } finally {
@@ -254,14 +258,14 @@ export const SixtySevenHost: React.FC = () => {
                             <button key={n.id} type="button" className="s67-note" onClick={() => seek(n.at)}>
                                 <span className="s67-at">{clock(n.at || 0)}</span>
                                 <span className="s67-text">{n.text}</span>
-                                <span className="s67-by">{n.author}</span>
+                                <span className="s67-by">{!ctx?.campaign && n._campaign ? n._campaign + " · " : ""}{n.author}</span>
                             </button>
                         ))}
                         {untimed.map((n) => (
                             <div key={n.id} className="s67-note is-untimed">
                                 <span className="s67-at">—</span>
                                 <span className="s67-text">{n.text}</span>
-                                <span className="s67-by">{n.author}</span>
+                                <span className="s67-by">{!ctx?.campaign && n._campaign ? n._campaign + " · " : ""}{n.author}</span>
                             </div>
                         ))}
                         {!loading && notes.length === 0 && (

@@ -1156,6 +1156,11 @@ actually gets. Run it after touching either — the failure it exists for is
 silent, a row reaching colleagues with one half missing while the toast says
 "already in the team library".
 
+`node scripts/probe-sixty-seven.cjs` (after `yarn build`) drives
+`sixtySevenContext` over two stubbed campaigns that share a creative name —
+the wrong master here shows another campaign's warnings with nothing on screen
+saying so.
+
 `node scripts/probe-edge-controller.cjs` (after `yarn build`) drives
 `edgeControllerApply` over a stubbed comp: the layers and controls it builds,
 that no expression points at a control it did not make, that a camera in the
@@ -1344,6 +1349,16 @@ did it go" never comes up: this is a wall you navigate by, and a finished
 campaign was taking a card's worth of room to say it is not a place to write a
 workflow. The one you are standing in stays, retired or not, so retiring a
 campaign while you have it open cannot strand you.
+
+**TWO CAMPAIGNS CAN SHARE A CREATIVE NAME, so the FILM TITLE decides.** Street
+Fighter has a Trio and so does Forgotten Island, at the same size and length —
+67 matched creative + size + duration and took whichever campaign's index was
+walked first, putting FID's pitfalls in front of an SF comp. The prefix
+(`SF_`, `FID_`) is the one token both the comp and its master always carry, and
+a master that does not share it is **refused, not preferred**. Notes fall out
+of the same resolution; when the campaign cannot be placed at all, a note is
+labelled with the campaign it came from rather than being shown as if it
+belonged here. `node scripts/probe-sixty-seven.cjs` guards it.
 
 **67 IS THE CREATIVE'S PITFALLS, AT THE SECOND THEY HAPPEN.** A Toolset card
 (`actionSafety: "read"` — it opens a player and changes nothing): the comp's

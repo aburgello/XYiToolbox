@@ -45,6 +45,20 @@ function canon(s: string): string {
 }
 
 /**
+ * The FILM TITLE token a name starts with -- "SF", "FID", "ODY".
+ *
+ * TWO CAMPAIGNS CAN SHARE A CREATIVE NAME. Street Fighter has a Trio and so
+ * does Forgotten Island, so creative + size + duration matched FID's master
+ * from an SF comp: whichever campaign's index was walked first won, and the
+ * panel then showed the wrong campaign's pitfalls. The prefix is what
+ * separates them, and it is the one token both names always carry.
+ */
+function titleToken(name: string): string {
+  const parts = String(name || "").split("_");
+  return parts.length > 0 ? canon(parts[0]) : "";
+}
+
+/**
  * Everything 67 needs about the comp in front of you.
  *
  * Read-only throughout: this opens nothing, writes nothing and touches no
@@ -81,6 +95,9 @@ export const sixtySevenContext = (): SixtySevenContext => {
     let mastersRoot = "";
     let masterName = "";
     let masterPath = "";
+    // The comp's own prefix. A master that does not share it belongs to
+    // another campaign, however well the creative and the shape line up.
+    const wantTitle = titleToken(comp.name);
     const camps = loadCampaignsRaw();
     for (let i = 0; i < camps.length; i++) {
       const root = camps[i].mastersRoot;
@@ -93,6 +110,10 @@ export const sixtySevenContext = (): SixtySevenContext => {
       }
       if (!index || index.length === 0) continue;
       const best = size && duration ? pickBestMasterFromIndex(index, creative, size, duration) : null;
+      // REFUSED, not preferred: a Trio master under FID is not this comp's
+      // master at all, and taking it would put another campaign's pitfalls in
+      // front of somebody checking their own work.
+      if (best && wantTitle && titleToken(best.name) !== wantTitle) continue;
       if (best) {
         campaign = camps[i].name;
         mastersRoot = root;
@@ -106,11 +127,13 @@ export const sixtySevenContext = (): SixtySevenContext => {
       if (!campaign) {
         const canonCreative = canon(creative);
         for (let j = 0; j < index.length; j++) {
-          if (index[j].canonPath.indexOf(canonCreative) !== -1) {
-            campaign = camps[i].name;
-            mastersRoot = root;
-            break;
-          }
+          if (index[j].canonPath.indexOf(canonCreative) === -1) continue;
+          // Same rule for the fallback: the campaign has to be one whose
+          // masters carry this comp's prefix.
+          if (wantTitle && titleToken(index[j].name) !== wantTitle) continue;
+          campaign = camps[i].name;
+          mastersRoot = root;
+          break;
         }
       }
     }
