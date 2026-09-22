@@ -46,7 +46,7 @@ function loadTeamFolderPath(): string {
 // The folder object, or null when unset / the share isn't mounted right now.
 // Callers treat null as "team features quietly unavailable", not an error --
 // an unmounted NAS on a laptop at home is a normal state, not a failure.
-function teamFolder(): Folder | null {
+export function teamFolder(): Folder | null {
   const path = loadTeamFolderPath();
   if (!path) return null;
   const folder = new Folder(path);
@@ -408,12 +408,12 @@ export const teamSaveProfile = (name: string): ProfileListResult => {
 //   TeamPreGuestBackup -- JSON {type, appliedProfile, at, settings} of the
 //                         machine's own setup, written by the first guest
 //                         apply, cleared by restore / owner re-apply
-const MACHINE_OWNER_KEY = "TeamMachineOwner";
+export const MACHINE_OWNER_KEY = "TeamMachineOwner";
 const LIVE_SYNC_KEY = "TeamLiveSync";
 const GUEST_BACKUP_KEY = "TeamPreGuestBackup";
 const GUEST_BACKUP_TYPE = "xyi-guest-backup";
 
-function loadLocalSetting(key: string): string {
+export function loadLocalSetting(key: string): string {
   try {
     return app.settings.haveSetting(SETTINGS_SECTION, key) ? app.settings.getSetting(SETTINGS_SECTION, key) : "";
   } catch (e) {
@@ -1459,7 +1459,10 @@ function ensureSharedFolder(dir: string): Folder | null {
  * pass this distinction on (see teamArcadeScores' `read` flag) so the UI can
  * keep what it already has instead of destroying it on one bad read.
  */
-function readSharedFile<T>(fileName: string, expectedType: string): T[] | null {
+// Exported for cutdowns.ts: the shared-file envelope (type tag, "couldn't
+// read" as null) is the contract every shared list follows, and a second
+// implementation of it would be a second set of failure modes.
+export function readSharedFile<T>(fileName: string, expectedType: string): T[] | null {
   const root = teamFolder();
   if (!root) return null;
   // Preferred location first (misc/arcade/ for games, misc/ otherwise), then
@@ -1496,7 +1499,7 @@ function sharedTypeNoun(expectedType: string, count: number): string {
   return count === 1 ? singular : singular + "s";
 }
 
-function writeSharedFile<T>(fileName: string, expectedType: string, entries: T[]): boolean {
+export function writeSharedFile<T>(fileName: string, expectedType: string, entries: T[]): boolean {
   const root = teamFolder();
   if (!root) return false;
   const count = entries.length;

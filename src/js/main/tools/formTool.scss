@@ -2523,6 +2523,16 @@
         opacity: 0.35;
         cursor: default;
     }
+
+    // A registered cut-down rather than a duration multiple: a different kind
+    // of answer, so a different colour from the amber offer beside it.
+    &--cut {
+        border-color: #2dd4bf;
+        color: #5eead4;
+
+        &:hover,
+        &:active { background: rgba(45, 212, 191, 0.18); color: #99f6e4; }
+    }
 }
 
 // An excluded row's indicator shouldn't shout — that row isn't going to run.

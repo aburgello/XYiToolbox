@@ -533,6 +533,10 @@ interface ResolvedMaster {
     // no same-duration master. An OFFER: nothing is built this way unless the
     // row is opted in. See multipleMasterOptions in jsx/aeft/tools.ts.
     multiples?: { factor: number; duration: string; master: string }[];
+    /** A registered cut-down of this creative at this length — somebody's
+     *  Australia 7s, declared a master. Offered only when the masters tree has
+     *  nothing; its artwork belongs to another market, which the chip says. */
+    cutdown?: { name: string; path: string; territory: string; size: string };
 }
 
 // One entry in the master picker, as csvLocaliserListMasters returns it.
@@ -3278,6 +3282,24 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                         // it costs nothing on a normal row.
                                         // A pinned row has its master; nothing to multiply.
                                         const res = buildRes(r.id);
+                                        const cut = res?.cutdown;
+                                        // A REGISTERED CUT-DOWN, where the masters tree
+                                        // has nothing at this length. Pinning it reuses
+                                        // the master-picker's own mechanism, so the run
+                                        // needs no new argument.
+                                        if (cut && !buildPins[r.id]) {
+                                            return (
+                                                <Tooltip text={`No ${r.duration}s master, but ${cut.name} is registered as one (${cut.territory || "another market"}). Click to build from it — its artwork is that market's, so MC It! will not swap it and you do it by hand.`}>
+                                                    <button
+                                                        type="button"
+                                                        className="specs-mult specs-mult--cut"
+                                                        onClick={() => setBuildPins((prev) => ({ ...prev, [r.id]: { name: cut.name, path: cut.path } }))}
+                                                    >
+                                                        {cut.territory || "cut"}
+                                                    </button>
+                                                </Tooltip>
+                                            );
+                                        }
                                         const opts = res?.multiples || [];
                                         if (!opts.length) return <span />;
                                         const factors = opts.map((o) => o.factor);

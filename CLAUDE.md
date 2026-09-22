@@ -1156,6 +1156,11 @@ actually gets. Run it after touching either — the failure it exists for is
 silent, a row reaching colleagues with one half missing while the toast says
 "already in the team library".
 
+`node scripts/probe-cutdowns.cjs` (after `yarn build`) drives the cut-down
+registry over a stubbed Peru batch: what a scan finds (and what it must not —
+another creative, an Auto-Save copy), that registering twice is one answer, and
+that a length nobody registered is offered nothing.
+
 `node scripts/probe-sixty-seven.cjs` (after `yarn build`) drives
 `sixtySevenContext` over two stubbed campaigns that share a creative name —
 the wrong master here shows another campaign's warnings with nothing on screen
@@ -1404,6 +1409,19 @@ either, and `workflowAddTimedNote` takes an `alias` and **prefers an existing
 entry over making a new one**, so whichever spelling the team started with is
 the one it keeps. Renaming the folder is not the fix — it is too late for a
 live campaign, which is exactly why this has to tolerate it.
+
+**A CUT-DOWN IS A DELIVERABLE SOMEBODY DECLARED A MASTER** (`cutdowns.ts`,
+`shared-cutdowns.json`). Australia's 7s becomes Peru's, and today that lives in
+a chat message. Registering points at a BATCH FOLDER — "the 8s is in Peru
+Batch_01" is how people say it — and each `.aep`'s own name gives the length,
+size and market. Three rules: it is **never preferred over a real master**
+(only offered where the masters tree has nothing at that length); the same
+creative+length+size **replaces rather than duplicates**; and **the artwork is
+not swapped**, because a cut-down is already localised and MC It!/Support Swap
+refuse market→market on purpose — the build copies and renames, the images
+still import, and a person does the swap. `node scripts/probe-cutdowns.cjs`
+guards it. In the panel it rides the master-pin mechanism, so a run needs no
+new argument.
 
 **67 IS THE CREATIVE'S PITFALLS, AT THE SECOND THEY HAPPEN.** A Toolset card
 (`actionSafety: "read"` — it opens a player and changes nothing): the comp's

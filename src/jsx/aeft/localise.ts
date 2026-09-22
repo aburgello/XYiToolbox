@@ -6,6 +6,7 @@
 // see its header comment for context.
 // =============================================================================
 import { scaleCompToFit } from "./deliver";
+import { cutdownsFor } from "./cutdowns";
 import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, territoryCheck, parseFilenameMeta, frontcardWrap, cheekyTCheck, organiseFolders, FRONTCARD_LEAD_IN_SECONDS, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, rankMastersFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, MasterIndexEntry, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, mcItTerritoryOfImageFolder, matchCreativeInName, ssFindSupportRoot, ssCollectSupport, ssCreativesOf, ssApplyToOpenProject, ssCountReplaced, ssOneTokenDiff, ssTokensOf, SupportSwapCandidate, scanMastersForBestMatch, firstSizeToken, ownProjectFolder } from "./tools";
 import { findMotionComponents } from "./artwork";
 import { makeParentLayerOfAllUnparented, scaleAllCameraZooms } from "./deliver";
@@ -5063,6 +5064,11 @@ interface ResolvedMasterRow {
   // master. Purely an offer -- the run ignores it unless the row is opted in
   // to a specific factor. A LIST because the panel cycles 2x -> 3x -> off.
   multiples?: { factor: number; duration: string; master: string }[];
+  /** A registered CUT-DOWN of this creative at this length -- a deliverable
+   *  somebody has declared a master. Offered only when the masters tree has
+   *  nothing at all, and never preferred over a real master. Its artwork is
+   *  another market's, which the panel says out loud. */
+  cutdown?: { name: string; path: string; territory: string; size: string };
 }
 
 interface CsvLocResolveResult extends Result {
@@ -6856,6 +6862,22 @@ export const csvLocaliserResolveMasters = (mastersPath: string, rowsJson: string
           listed.push({ factor: opts[oi].factor, duration: opts[oi].sourceDuration, master: opts[oi].entry.name });
         }
         out.push({ master: null, path: null, multiples: listed });
+        continue;
+      }
+      // NOTHING AT ALL FROM THE MASTERS TREE. The last thing to try is what
+      // somebody registered by hand: Australia's 7s, which became Peru's.
+      // The CSV's "campaign" column IS the creative (parseFilenameMeta's own
+      // naming). The registry's campaign is the job's name, which a CSV row
+      // does not carry -- so it is left blank rather than filtered on a value
+      // that would never match.
+      const cut = cutdownsFor("", r.campaign || "", r.size || "", r.duration || "");
+      const hit = cut && cut.success && cut.entries && cut.entries.length > 0 ? cut.entries[0] : null;
+      if (hit) {
+        out.push({
+          master: null,
+          path: null,
+          cutdown: { name: hit.name, path: hit.path, territory: hit.territory, size: hit.size },
+        });
       } else {
         out.push({ master: null, path: null });
       }
