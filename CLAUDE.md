@@ -797,6 +797,12 @@ Naming Audit, which skips only `Auto-Save`/`_Archive`/`_Old`/`_DEV`.
   literal artist-tuned pixel values. Re-read the live `XYi_Toolbox.jsx`
   `ComSiz(w,h)` wiring.
 - Batch Match transform modes are an explicit user choice — never infer one.
+- **A NON-UNIFORM SCALE IS A DECISION.** Swapper matched width by computing one
+  factor and writing it to BOTH axes, so a layer squashed to `[100, 90]` came
+  back `[400, 400]` instead of `[400, 360]` — artwork quietly changing shape,
+  reported from the floor rather than by any check. Width still drives the
+  size; the height keeps its RATIO to the width, which is the old behaviour
+  exactly when the layer was uniform. `node scripts/probe-swapper.cjs`.
 - Each `DELIVERY_TEMPLATE_BITRATES_MBPS` value needs a hand-built,
   identically-named AE Output Module Template; AE's API cannot create them.
 - Ease **influence** is portable; ease **speed** is absolute and tied to one

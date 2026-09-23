@@ -2258,18 +2258,39 @@ export const swapper = (): Result => {
 
     app.beginUndoGroup("Replace Layer and Match Width");
 
-    const oldVisualWidth = targetLayer.width * (targetLayer.scale.value[0] / 100);
+    const oldScale = targetLayer.scale.value;
+    const oldVisualWidth = targetLayer.width * (oldScale[0] / 100);
     const anchorRatioX = targetLayer.anchorPoint.value[0] / targetLayer.width;
     const anchorRatioY = targetLayer.anchorPoint.value[1] / targetLayer.height;
     const oldPos = targetLayer.position.value;
 
     targetLayer.replaceSource(replacementAsset, false);
 
+    // A NON-UNIFORM SCALE IS A DECISION, and it used to be thrown away: one
+    // factor was computed from the width and written to BOTH axes, so a layer
+    // squashed to [100, 90] came back [400, 400] instead of [400, 360] --
+    // reported from the floor, as artwork that had quietly changed shape.
+    //
+    // The width still drives the size (this tool matches width, by name and by
+    // habit); the height keeps the RATIO it had to the width, so a deliberate
+    // squash survives and an ordinary uniform layer is unaffected -- ratio 1
+    // gives the old behaviour exactly.
     const newScaleFactor = (oldVisualWidth / replacementAsset.width) * 100;
-    targetLayer.scale.setValue([newScaleFactor, newScaleFactor]);
+    // Guarded: a layer at 0% width has no ratio to preserve, and dividing by
+    // it would write NaN into the scale, which AE accepts and nothing renders.
+    let ratio = 1;
+    if (oldScale[0] !== 0) ratio = oldScale[1] / oldScale[0];
+    const newScaleY = newScaleFactor * ratio;
 
-    targetLayer.anchorPoint.setValue([replacementAsset.width * anchorRatioX, replacementAsset.height * anchorRatioY]);
-    targetLayer.position.setValue(oldPos);
+    // Keyframed scale cannot take setValue -- it throws, and the swap is
+    // already done by this point. A key at the playhead keeps the animation.
+    if (targetLayer.scale.numKeys > 0) targetLayer.scale.setValueAtTime(comp.time, [newScaleFactor, newScaleY]);
+    else targetLayer.scale.setValue([newScaleFactor, newScaleY]);
+
+    const newAnchor = [replacementAsset.width * anchorRatioX, replacementAsset.height * anchorRatioY];
+    if (targetLayer.anchorPoint.numKeys > 0) targetLayer.anchorPoint.setValueAtTime(comp.time, newAnchor);
+    else targetLayer.anchorPoint.setValue(newAnchor);
+    if (targetLayer.position.numKeys === 0) targetLayer.position.setValue(oldPos);
 
     app.endUndoGroup();
     return { success: true };
