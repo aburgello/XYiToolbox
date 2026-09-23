@@ -258,7 +258,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "sixty-seven",
         label: "67",
-        description: "Plays the master behind the comp you are in, with this creative's known pitfalls arriving at the seconds they happen — and a box to write the next one down. Reads the project; changes nothing.",
+        description: "Plays this creative's master with its known pitfalls arriving at the seconds they happen, and a box to add the next one.",
         icon: Eye,
         group: "qc",
         safety: "read",
@@ -274,7 +274,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "organise-folders",
         label: "Organise",
-        description: "Arranges the currently open project's comps/footage into standard folders (Composition/PreComp/Main, Footage/MOVs/Artwork/Solids/PNG), then removes any that end up empty.",
+        description: "Sorts the project's comps and footage into the standard folders, dropping any left empty.",
         icon: FolderTree,
         group: "qc",
         safety: "undoable",
@@ -284,7 +284,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "cheeky-t-check",
         label: "Cheeky T",
-        description: "Updates the active comp's Frontcard text layers (artwork type, version, territory check, date) from its filename. Requires a Frontcard-based project.",
+        description: "Fills the Frontcard's artwork, version, territory and date from the comp's filename.",
         icon: CheckSquare,
         group: "qc",
         safety: "undoable",
@@ -312,7 +312,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "frontcard",
         label: "Frontcard",
-        description: "Imports the studio's brand Frontcard template and wraps the active comp in a new comp with it layered on top.",
+        description: "Wraps the active comp in a new one with the brand Frontcard on top.",
         icon: PanelTop,
         group: "organise",
         safety: "undoable",
@@ -322,7 +322,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "multi-comp-scale",
         label: "Multi Comp Scale",
-        description: "Scales every selected layer's source pre-comp to match the active comp's current size, then resets that layer's own Scale to 100%.",
+        description: "Scales each selected layer's precomp to this comp's size and puts the layer back to 100%.",
         icon: Copy,
         group: "organise",
         safety: "undoable",
@@ -332,7 +332,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "true-comp-duplicator",
         label: "True Comp Duplicator",
-        description: "Duplicates the selected composition(s) while keeping all layer references, effects, and expressions intact, recursing into nested pre-comps. Runs with defaults (suffix _DUP, include nested + update expressions on).",
+        description: "Duplicates the selected comps with their precomps, keeping references and expressions intact.",
         icon: CopyPlus,
         group: "organise",
         safety: "undoable",
@@ -364,7 +364,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "drqr",
         label: "DRQR",
-        description: "Automatically scales small comps (under 500px = quad res, under 1000px = double res) up for a better preview.",
+        description: "Scales small comps up for a clearer preview: under 500px to quad, under 1000px to double.",
         icon: ZoomIn,
         group: "qc",
         safety: "undoable",
@@ -374,7 +374,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "scale-by-name",
         label: "Scale by Name",
-        description: "Scales the active comp to the size in its name: a bare WxH scales to WxH, and _DOUBLE_RES / _QUAD_RES scales to 2x / 4x that (re-rendering the inner comp at native res on a clean Frontcard+precomp structure). Never adds a suffix. Use DRQR to promote a comp to double/quad res.",
+        description: "Scales the comp to the size in its name, including _DOUBLE_RES and _QUAD_RES.",
         icon: Tag,
         group: "qc",
         safety: "undoable",
@@ -384,7 +384,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "scale-fit",
         label: "Scale Fit",
-        description: "Adds a fit/fill-to-comp expression on each selected layer's Scale (toggle via the added \"Extreme\" checkbox effect).",
+        description: "Rigs each selected layer to fit or fill the comp, toggled by a checkbox on the layer.",
         icon: Maximize2,
         group: "transform",
         safety: "undoable",
@@ -394,7 +394,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "delivery",
         label: "Delivery",
-        description: "Wraps each selected item in a new comp scaled to the size in its filename, trimmed to its work area, ready for delivery.",
+        description: "Wraps each selected item in a comp at the size its filename gives, trimmed to the work area.",
         icon: Truck,
         group: "organise",
         safety: "undoable",
@@ -404,7 +404,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "render-me",
         label: "RenderMe!",
-        description: "Finds this project's Renders folder (a sibling of AE in the market/territory root), creates a matching batch folder inside it, and queues the active comp with AE's default render settings, output redirected there -- plus a second queued row using the H264_16MBPS_MOS preset, output into a \"_mp4\" subfolder of that same batch folder.",
+        description: "Queues the active comp into this project's Renders folder, in a matching batch folder.",
         icon: Film,
         group: "organise",
         safety: "additive",
@@ -424,7 +424,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "swapper",
         label: "Swapper",
-        description: "Replaces the one selected layer's source with whatever's selected in the Project panel, matching its visual width/anchor/position.",
+        description: "Swaps the selected layer's source for the item picked in the Project panel, keeping its size and position.",
         icon: ArrowLeftRight,
         group: "transform",
         safety: "undoable",
@@ -434,7 +434,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "edit-markers",
         label: "Edit Markers",
-        description: "Adds a transparent \"Edit_Points\" solid to the active comp with a marker at every layer's inPoint.",
+        description: "Adds an Edit_Points solid with a marker at every layer's in point.",
         icon: Tag,
         group: "transform",
         safety: "undoable",
@@ -444,7 +444,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "make-textless",
         label: "Make Textless",
-        description: "Recursively disables every layer labelled yellow (2) inside the first comp found in a \"Main\" folder.",
+        description: "Disables every yellow-labelled layer in the project's Main comp, precomps included.",
         icon: Type,
         group: "naming",
         safety: "undoable",
@@ -454,7 +454,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "transform-apply",
         label: "Transform Apply",
-        description: "Moves each selected layer's Transform properties onto a Transform effect instead, resetting the layer's own transform to default.",
+        description: "Moves each selected layer's transform onto a Transform effect and resets the layer's own.",
         icon: Move,
         group: "transform",
         safety: "undoable",
@@ -474,7 +474,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "save-component",
         label: "Save Component",
-        description: "Saves the selected comp out as its own reduced .aep, named after the comp, then puts your project back exactly as it was.",
+        description: "Saves the selected comp as its own reduced .aep, then reopens your project as it was.",
         icon: PackageOpen,
         group: "organise",
         // NOT "additive": this reopens the artist's project from disk, so their
@@ -493,7 +493,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "rename-main-comp",
         label: "Rename Main Comp",
-        description: "Renames every comp inside a \"Main\" folder to match the project's own filename + version tag.",
+        description: "Renames the comps in Main to match the project's filename and version.",
         icon: PencilLine,
         group: "qc",
         safety: "undoable",
@@ -503,7 +503,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "mc-it",
         label: "MC It!",
-        description: "Batch-replaces PNG/JPG footage across a folder of .aep files with the best-matching image from the territory's JPG_PNG batch (auto-derived when the standard tree matches). Previews first. Nothing is saved until you Apply in the results modal.",
+        description: "Swaps the PNG/JPG artwork across a folder of .aep files for the territory's own. Previews first.",
         icon: ImageIcon,
         group: "naming",
         safety: "destructive",
@@ -517,7 +517,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "reduce-project",
         label: "Reduce",
-        description: "File > Dependencies > Reduce Project, as a button. Keeps the comps selected in the Project panel and drops everything they don't use. Ctrl+Z undoes it. As AE warns on the menu itself, anything referenced only by an expression is not preserved.",
+        description: "Keeps the comps selected in the Project panel and drops everything they don't use. Ctrl+Z undoes it.",
         icon: Scissors,
         group: "qc",
         safety: "destructive",
@@ -543,7 +543,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "support-swap",
         label: "Support Swap",
-        description: "Swaps the open project's .ai/.psd component sources for this territory's own, from Masters/Support. Matches on the filename, so it works whatever the creative folders are called. Previews first; nothing is saved until you Apply. Build a Batch has the same button for a whole batch.",
+        description: "Swaps the project's .ai/.psd component sources for this territory's own. Previews first.",
         icon: Layers,
         group: "naming",
         safety: "destructive",
@@ -556,7 +556,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "campaign-rename",
         label: "Campaign Rename",
-        description: "Matches PDFs to AE/render files by shared size (WxH) and renames the AE file to include the PDF's screen name/campaign tokens.",
+        description: "Pairs PDFs to AE files by size and renames the AE file with the PDF's screen and campaign.",
         icon: FileEdit,
         group: "naming",
         safety: "destructive",
@@ -566,7 +566,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "loc-it",
         label: "Loc it",
-        description: "Recursively sorts a source folder's .aep files into aspect-ratio subfolders in a destination folder (copy-only, skips duplicates).",
+        description: "Copies a folder's .aep files into subfolders by aspect ratio.",
         icon: Globe,
         group: "naming",
         safety: "additive",
@@ -597,7 +597,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "toggle-by-label",
         label: "Toggle By Label",
-        description: "Pick a label color, then toggles enabled/disabled on every layer in the active comp with that label.",
+        description: "Toggles every layer of one label colour on or off.",
         icon: ToggleLeft,
         group: "transform",
         safety: "undoable",
@@ -637,7 +637,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "pre-flight",
         label: "Pre-Flight",
-        description: "Audits the open project before handover/render: missing footage, effects not installed on this machine, and (where AE allows) missing fonts.",
+        description: "Checks the project for missing footage, effects and fonts before handover.",
         icon: CheckSquare,
         group: "qc",
         safety: "read",
@@ -660,7 +660,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "quick-fx-recent",
         label: "Quick FX",
-        description: "Re-apply one of your last 5 used effects to the selected layer(s) -- see the full Effects page (Tools) for the whole curated list.",
+        description: "Re-applies one of your last five effects to the selected layers.",
         icon: Sparkles,
         group: "transform",
         safety: "undoable",
@@ -694,7 +694,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "build-from-csv",
         label: "Build From CSV",
-        description: "Pick a CSV of positioned/masked assets and build a single new comp from it (also on the Extreme Tools 02 page).",
+        description: "Builds one comp from a CSV of positioned and masked assets.",
         icon: LayoutTemplate,
         group: "organise",
         safety: "undoable",
