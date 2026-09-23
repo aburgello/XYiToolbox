@@ -15,6 +15,7 @@ import {
     Search,
     Play,
     FolderPlus,
+    Scissors,
     RefreshCw,
     Trash2,
     ChevronDown,
@@ -217,6 +218,14 @@ function mockFor(name: string, args: any[]): any {
             return MOCK_RECORDS[args[1]] || [];
         case "scanRendersForCreative":
             return MOCK_RENDERS[args[1]] || [];
+        case "cutdownsFor":
+        case "cutdownsAdd":
+        case "cutdownsRemove":
+            return { success: true, entries: [] };
+        case "cutdownsScanFolder":
+            return { success: true, found: [] };
+        case "workflowSelectFolder":
+            return "";
         case "selectMastersFolder":
             return "/mock/odyssey";
         case "loadCampaignBanner":
@@ -619,6 +628,19 @@ interface Props {
     onCampaignChange?: (campaign: Campaign | null) => void;
 }
 
+interface CutdownRec {
+    id: string;
+    campaign: string;
+    creative: string;
+    duration: string;
+    size: string;
+    territory: string;
+    path: string;
+    name: string;
+    folder: string;
+    author: string;
+}
+
 const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
     useHostTheme();
 
@@ -633,6 +655,14 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
     // See setCreativeThumbnailOverride()/loadThumbOverrides() in aeft.ts.
     const [thumbOverrides, setThumbOverrides] = useState<Record<string, string>>({});
     const [selectedCreative, setSelectedCreative] = useState<string | null>(null);
+    /**
+     * CUT-DOWNS: lengths that became masters without being masters -- an
+     * Australia 7s that ends up as Peru's. They belong here because this is
+     * where a creative's lengths are read off, and "do we have a 12s" is the
+     * same question as the list above answers for real masters.
+     */
+    const [cutdowns, setCutdowns] = useState<CutdownRec[]>([]);
+    const [cutBusy, setCutBusy] = useState(false);
     const [loadingCreatives, setLoadingCreatives] = useState(false);
 
     const [records, setRecords] = useState<MasterRecord[]>([]);
@@ -834,6 +864,15 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
             setLoadingVariants(true);
             try {
                 const recs: MasterRecord[] = await safeEvalTS("scanMastersForCreative", selectedCampaign.mastersRoot, selectedCreative);
+                // Quiet: an unreachable team folder leaves the strip empty
+                // rather than failing the creative's masters with it.
+                try {
+                    const cd = (await safeEvalTS("cutdownsFor", selectedCampaign.name, selectedCreative, "", "")) as
+                        { entries?: CutdownRec[] };
+                    setCutdowns((cd && cd.entries) || []);
+                } catch {
+                    setCutdowns([]);
+                }
                 const renders: RenderEntry[] = await safeEvalTS("scanRendersForCreative", selectedCampaign.mastersRoot, selectedCreative);
                 const map: Record<string, string> = {};
                 for (const r of renders || []) map[r.stem] = r.path;
@@ -963,6 +1002,42 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
     };
 
     // --- File actions ---------------------------------------------------
+    /**
+     * Register a cut-down by pointing at the batch folder that holds it.
+     *
+     * A FOLDER, not a file: "the 8s is in Peru Batch_01" is how people say it,
+     * and each .aep's own name gives the length, size and market. Everything
+     * in there reading as this creative is registered.
+     */
+    const registerCutdowns = async () => {
+        if (!selectedCampaign || !selectedCreative) return;
+        setCutBusy(true);
+        try {
+            const folder = (await evalTS("workflowSelectFolder")) as string;
+            if (!folder) return;
+            const scan = (await safeEvalTS("cutdownsScanFolder", folder, selectedCampaign.name, selectedCreative)) as
+                { success: boolean; error?: string; found?: CutdownRec[] };
+            if (!scan || !scan.success) { pushToast(scan?.error || "Couldn't read that folder.", "error"); return; }
+            const found = scan.found || [];
+            if (found.length === 0) { pushToast(`Nothing in that folder reads as ${selectedCreative}.`, "error"); return; }
+            const r = (await safeEvalTS("cutdownsAdd", JSON.stringify(found))) as
+                { success: boolean; error?: string; entries?: CutdownRec[] };
+            if (!r || !r.success) { pushToast(r?.error || "Couldn't register those.", "error"); return; }
+            setCutdowns((r.entries || []).filter((c) =>
+                c.creative.toUpperCase() === selectedCreative.toUpperCase()));
+            pushToast(`Registered ${found.length} cut-down${found.length === 1 ? "" : "s"}.`, "success");
+        } finally {
+            setCutBusy(false);
+        }
+    };
+
+    const removeCutdown = async (c: CutdownRec) => {
+        const r = (await safeEvalTS("cutdownsRemove", c.id)) as { success: boolean; entries?: CutdownRec[] };
+        if (!r || !r.success) { pushToast("Couldn't remove it.", "error"); return; }
+        setCutdowns((r.entries || []).filter((x) =>
+            selectedCreative && x.creative.toUpperCase() === selectedCreative.toUpperCase()));
+    };
+
     const handleImport = async (path: string) => {
         const result = await safeEvalTS("importFile", path);
         pushToast(
@@ -1345,6 +1420,33 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
                             );
                         })}
                 </div>
+
+                {/* CUT-DOWNS, under the masters they are not. A length that
+                    became a master without being one -- Australia's 7s, which
+                    ends up as Peru's -- has nowhere else to be written down,
+                    and this is where a creative's lengths are read off. */}
+                {selectedCreative && (
+                    <div className="cutdown-bar">
+                        <span className="cutdown-label"><Scissors size={11} /> Cut-downs</span>
+                        {cutdowns.map((c) => (
+                            <Tooltip key={c.id} text={`${c.name}\n${c.folder}`}>
+                                <span className="cutdown-chip">
+                                    <b>{c.duration}s</b>
+                                    <em>{c.size}{c.territory ? " · " + c.territory : ""}</em>
+                                    <button onClick={() => removeCutdown(c)} aria-label="Remove">
+                                        <X size={9} />
+                                    </button>
+                                </span>
+                            </Tooltip>
+                        ))}
+                        {cutdowns.length === 0 && <span className="cutdown-none">none registered</span>}
+                        <Tooltip text={`Point at the batch folder holding a length of ${selectedCreative} that became a master — a 7s built for one market and reused by the next. Localise offers it where no real master exists at that length.`}>
+                            <button className="cutdown-add" disabled={cutBusy} onClick={registerCutdowns}>
+                                <FolderPlus size={11} /> {cutBusy ? "Reading…" : "Register from a folder…"}
+                            </button>
+                        </Tooltip>
+                    </div>
+                )}
 
                 {/* Only the OUTCOME lives down here now. The control moved up
                     into the filter row; a note appears when there is something

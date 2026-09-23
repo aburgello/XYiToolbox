@@ -18,7 +18,7 @@
 // =============================================================================
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, MapPin, Plus, Film, AlertCircle, Loader2, Layers, Trash2, TimerOff, Scissors, FolderPlus } from "lucide-react";
+import { X, MapPin, Plus, Film, AlertCircle, Loader2, Layers, Trash2, TimerOff } from "lucide-react";
 import { toFileUrl } from "./lib/fileUrl";
 import { pickPreviewRender } from "./lib/renderPreview";
 import { evalTS } from "../lib/utils/bolt";
@@ -58,19 +58,6 @@ interface Note {
     atDuration?: string;
 }
 
-interface Cutdown {
-    id: string;
-    campaign: string;
-    creative: string;
-    duration: string;
-    size: string;
-    territory: string;
-    path: string;
-    name: string;
-    folder: string;
-    author: string;
-}
-
 interface Entry {
     id: string;
     key: string;
@@ -105,9 +92,6 @@ export const SixtySevenHost: React.FC = () => {
     const [draftAt, setDraftAt] = useState<number | null>(null);
     const [saving, setSaving] = useState(false);
     const [dropping, setDropping] = useState(false);
-    /** Lengths of this creative that became masters without being masters. */
-    const [cutdowns, setCutdowns] = useState<Cutdown[]>([]);
-    const [cutBusy, setCutBusy] = useState(false);
     const [dropped, setDropped] = useState("");
     const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -149,15 +133,6 @@ export const SixtySevenHost: React.FC = () => {
             });
             setNotes(mine);
 
-            // The creative's registered cut-downs. Quiet: an unreachable team
-            // folder leaves the strip empty rather than raising anything.
-            try {
-                const cd = (await evalTS("cutdownsFor", c.campaign || "", c.creative, "", "")) as
-                    { success?: boolean; entries?: Cutdown[] };
-                setCutdowns((cd && cd.entries) || []);
-            } catch {
-                setCutdowns([]);
-            }
         } finally {
             setLoading(false);
         }
@@ -240,47 +215,6 @@ export const SixtySevenHost: React.FC = () => {
         );
         if (!ok) return;
         const r = (await evalTSSafe("workflowDeleteNote", n._entryId, n.id)) as { success: boolean };
-        if (r && r.success) await load();
-    };
-
-    /**
-     * Register the cut-downs in a folder.
-     *
-     * POINT AT THE BATCH, not at a file: "the 8s is in Peru Batch_01" is how
-     * people say it, and the scan then reads each .aep's own name for its
-     * length, size and territory. Everything it finds for this creative is
-     * registered -- a batch folder holds what the territory ordered, and the
-     * lengths the masters tree cannot answer are exactly what this list is
-     * for.
-     */
-    const addCutdowns = async () => {
-        if (!ctx || !ctx.creative) return;
-        setCutBusy(true);
-        try {
-            const folder = (await evalTS("workflowSelectFolder")) as string;
-            if (!folder) return;
-            const scan = (await evalTSSafe("cutdownsScanFolder", folder, ctx.campaign || "", ctx.creative)) as
-                { success: boolean; error?: string; found?: Cutdown[] };
-            if (!scan || !scan.success) { setDropped((scan && scan.error) || "Couldn't read that folder."); return; }
-            const found = scan.found || [];
-            if (found.length === 0) {
-                setDropped(`Nothing in that folder reads as ${ctx.creative}.`);
-                return;
-            }
-            const r = (await evalTSSafe("cutdownsAdd", JSON.stringify(found))) as
-                { success: boolean; error?: string; entries?: Cutdown[] };
-            if (!r || !r.success) { setDropped((r && r.error) || "Couldn't register those."); return; }
-            setDropped(`Registered ${found.length} cut-down${found.length === 1 ? "" : "s"} for ${ctx.creative}.`);
-            await load();
-        } finally {
-            setCutBusy(false);
-        }
-    };
-
-    const removeCutdown = async (c: Cutdown) => {
-        const ok = await confirmDialog(`Stop offering ${c.name} as a ${c.duration}s master?\n\nThe file is not touched.`);
-        if (!ok) return;
-        const r = (await evalTSSafe("cutdownsRemove", c.id)) as { success: boolean };
         if (r && r.success) await load();
     };
 
@@ -388,28 +322,6 @@ export const SixtySevenHost: React.FC = () => {
                         </Tooltip>
                         <button type="button" className="s67-save" disabled={saving || !draft.trim()} onClick={addNote}>
                             <Plus size={12} /> <span>{saving ? "Saving…" : "Add"}</span>
-                        </button>
-                    </div>
-
-                    {/* THE LENGTHS THAT BECAME MASTERS. Listed here because
-                        this is the screen somebody is on when they wonder
-                        whether a 7s exists, and registering one is the same
-                        act as writing down a pitfall: knowledge that was in a
-                        chat message. */}
-                    <div className="s67-cuts">
-                        <span className="s67-cuts-label"><Scissors size={11} /> Cut-downs</span>
-                        {cutdowns.map((c) => (
-                            <span key={c.id} className="s67-cut" title={`${c.name}\n${c.folder}`}>
-                                <b>{c.duration}s</b>
-                                <em>{c.size}{c.territory ? " · " + c.territory : ""}</em>
-                                <button type="button" onClick={() => removeCutdown(c)} aria-label="Remove">
-                                    <X size={9} />
-                                </button>
-                            </span>
-                        ))}
-                        {cutdowns.length === 0 && <span className="s67-cuts-none">none registered</span>}
-                        <button type="button" className="s67-cut-add" disabled={cutBusy} onClick={addCutdowns}>
-                            <FolderPlus size={11} /> {cutBusy ? "Reading…" : "Add from a folder…"}
                         </button>
                     </div>
 

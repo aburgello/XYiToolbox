@@ -1411,7 +1411,10 @@ the one it keeps. Renaming the folder is not the fix — it is too late for a
 live campaign, which is exactly why this has to tolerate it.
 
 **A CUT-DOWN IS A DELIVERABLE SOMEBODY DECLARED A MASTER** (`cutdowns.ts`,
-`shared-cutdowns.json`). Australia's 7s becomes Peru's, and today that lives in
+`shared-cutdowns.json`), registered and listed in **OV Library**, under the
+creative's own masters — that is where a creative's lengths are read off, and
+"do we have a 12s" is the same question the list above answers for real
+masters. Australia's 7s becomes Peru's, and today that lives in
 a chat message. Registering points at a BATCH FOLDER — "the 8s is in Peru
 Batch_01" is how people say it — and each `.aep`'s own name gives the length,
 size and market. Three rules: it is **never preferred over a real master**
