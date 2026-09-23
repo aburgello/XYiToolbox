@@ -361,22 +361,6 @@
     gap: 6px;
     padding: 9px 9px 2px;
 
-    // The campaign that is OPEN is a header, not a card: its artwork stays as
-    // a strip so you know where you are, and the creatives get the height.
-    &.is-picked {
-        padding-bottom: 0;
-
-        .wfb-camp {
-            flex: 1 1 100%;
-            flex-direction: row;
-            align-items: center;
-            gap: 8px;
-            cursor: default;
-        }
-
-        .wfb-camp-art { width: 74px; flex: none; padding-bottom: 42px; }
-        .wfb-camp-text { padding: 0; }
-    }
 }
 
 .workflow-board .wfb-camp {
@@ -2434,3 +2418,43 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 
+
+// The campaign, in the picker's own head row: a thumbnail, its name and what
+// it holds, where the name used to be printed twice.
+.workflow-board .wfb-picker-camp {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+
+    img {
+        flex: none;
+        width: 46px;
+        height: 26px;
+        object-fit: cover;
+        border-radius: 4px;
+        display: block;
+    }
+}
+
+.workflow-board .wfb-picker-camp-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.25;
+
+    b {
+        font-size: 12px;
+        font-weight: 600;
+        color: #e8e8e8;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    em {
+        font-style: normal;
+        font-size: 9.5px;
+        color: #7a7a7a;
+    }
+}

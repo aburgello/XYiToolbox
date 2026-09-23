@@ -2158,7 +2158,36 @@ const WorkflowBoardTool: React.FC<{
                                     <ChevronLeft size={12} />
                                 </button>
                             </Tooltip>
-                            <span>{pickCampaign ? prettyCreative(pickCampaign) : "Which campaign?"}</span>
+                            {/* THE CAMPAIGN IS THIS ROW, not a card under it.
+                                Inside a campaign the strip repeated the name
+                                already in the head and spent a row saying it
+                                twice. */}
+                            {pickCampaign ? (
+                                <span className="wfb-picker-camp">
+                                    {banners[pickCampaign] && (
+                                        <img src={toFileUrl(banners[pickCampaign])} alt="" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                                    )}
+                                    <span className="wfb-picker-camp-text">
+                                        <b>{pickCampaign}</b>
+                                        {(() => {
+                                            const st = campaignStats[canon(pickCampaign)] || { workflows: 0, clips: 0 };
+                                            const total = folderCreatives ? folderCreatives.length : 0;
+                                            return (
+                                                <em>
+                                                    {st.workflows === 0
+                                                        ? "nothing written yet"
+                                                        : total
+                                                            ? `${st.workflows} of ${total}`
+                                                            : `${st.workflows} workflow${st.workflows === 1 ? "" : "s"}`}
+                                                    {st.clips > 0 ? ` · ${st.clips} clip${st.clips === 1 ? "" : "s"}` : ""}
+                                                </em>
+                                            );
+                                        })()}
+                                    </span>
+                                </span>
+                            ) : (
+                                <span>Which campaign?</span>
+                            )}
                         </div>
 
                         {/* CARDS, NOT CHIPS. This is the screen somebody opens
@@ -2166,7 +2195,7 @@ const WorkflowBoardTool: React.FC<{
                             — how many creatives are written up, and how many
                             carry a recording — rather than being a name you
                             have to click to learn anything about. */}
-                        <div className={"wfb-camps" + (pickCampaign ? " is-picked" : "")}>
+                        <div className="wfb-camps">
                             {campaigns.length === 0 && (
                                 <p className="wfb-empty-line">
                                     No campaigns saved yet — add one in OV Library or Localised Library first.
@@ -2177,7 +2206,7 @@ const WorkflowBoardTool: React.FC<{
                                     Every campaign on this machine is retired. CSV Localiser's restore button brings one back.
                                 </p>
                             )}
-                            {(pickCampaign ? campaignCards.filter((c) => c.name === pickCampaign) : campaignCards).map((c) => {
+                            {(pickCampaign ? [] : campaignCards).map((c) => {
                                 // A FINISHED CAMPAIGN IS NOT A PLACE TO WRITE A
                                 // WORKFLOW. Greyed and unclickable here for the
                                 // same reason as in the other two pickers, and
