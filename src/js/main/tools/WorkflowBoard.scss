@@ -2458,3 +2458,13 @@ $wfb-snap: cubic-bezier(0.22, 1, 0.36, 1);
         color: #7a7a7a;
     }
 }
+
+// The campaign's artwork in the board's header, in the glyph's place.
+.workflow-board .wfb-id-thumb {
+    flex: none;
+    width: 44px;
+    height: 26px;
+    object-fit: cover;
+    border-radius: 4px;
+    display: block;
+}

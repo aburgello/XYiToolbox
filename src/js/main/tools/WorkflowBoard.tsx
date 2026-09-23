@@ -1610,7 +1610,9 @@ const WorkflowBoardTool: React.FC<{
      */
     const [banners, setBanners] = useState<Record<string, string>>({});
     useEffect(() => {
-        if (!picking || campaigns.length === 0) return;
+        // Not only while picking: the board's header wears the campaign's
+        // artwork too, and it is a settings read per campaign, not a scan.
+        if (!active || campaigns.length === 0) return;
         let cancelled = false;
         (async () => {
             const out: Record<string, string> = {};
@@ -1623,7 +1625,7 @@ const WorkflowBoardTool: React.FC<{
             if (!cancelled) setBanners(out);
         })();
         return () => { cancelled = true; };
-    }, [picking, campaigns]);
+    }, [active, campaigns]);
 
     /**
      * PER-CREATIVE ARTWORK, from the thumbnails pinned in OV Library
@@ -1955,7 +1957,21 @@ const WorkflowBoardTool: React.FC<{
                     </button>
                 </Tooltip>
                 <div className="wfb-id">
-                    <ListChecks size={15} className="wfb-id-icon" />
+                    {/* THE CAMPAIGN'S ARTWORK, where a generic checklist glyph
+                        was. It says which job you are in at a glance, and the
+                        glyph said only "this is a list", which the list below
+                        already says. Falls back to the glyph when nothing is
+                        pinned in OV Library. */}
+                    {campaign && banners[campaign] ? (
+                        <img
+                            className="wfb-id-thumb"
+                            src={toFileUrl(banners[campaign])}
+                            alt=""
+                            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                        />
+                    ) : (
+                        <ListChecks size={15} className="wfb-id-icon" />
+                    )}
                     <div className="wfb-id-text">
                         <span className="wfb-id-creative">
                             {creative ? prettyCreative(creative) : "No creative picked"}
