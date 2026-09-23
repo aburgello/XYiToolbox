@@ -969,68 +969,57 @@
 }
 
 // ── cut-downs ────────────────────────────────────────────────────────────────
-// A length that became a master without being one. One strip under the
-// masters, because that is the list it belongs beside.
-.cutdown-bar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 5px;
-    padding: 8px 10px;
-    border-top: 1px solid var(--surface-divider, #2a2a2a);
+// Rows in the masters' own shape, because that is what they are being used as.
+// The tint is what separates them: this file belongs to a market, and somebody
+// should never mistake it for the campaign's own master.
+// Scoped past `.ov-library .orientation-group h4`, which is more specific than
+// a bare class — and not clickable, unlike the orientation headers it sits
+// among, so it does not offer a cursor that promises a toggle.
+.ov-library .orientation-group.cutdown-group h4 {
+    color: #8a8a8a;
+    cursor: default;
 }
 
-.cutdown-label {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    margin-right: 2px;
-    color: #7a7a7a;
-    font-size: 9.5px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-}
+.variant-block.is-cutdown {
+    border-color: rgba(45, 212, 191, 0.28);
+    background: linear-gradient(90deg, rgba(45, 212, 191, 0.06), rgba(45, 212, 191, 0));
 
-.cutdown-none { color: #6f6f6f; font-size: 10.5px; }
+    .variant-preview-empty { color: rgba(45, 212, 191, 0.55); }
 
-.cutdown-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 2px 4px 2px 7px;
-    border: 1px solid var(--surface-edge, #3a3a3a);
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.03);
-    font-size: 10px;
-
-    b { color: var(--ov-accent, #2dd4bf); font-weight: 700; }
-    em { font-style: normal; color: #8a8a8a; }
-
-    button {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 16px;
-        height: 16px;
-        padding: 0;
-        border: 0;
-        border-radius: 50%;
-        background: none;
-        color: #7a7a7a;
-        cursor: pointer;
-
-        // index.scss's global button:hover/:active paints any button blue.
-        &:hover,
-        &:active { background: rgba(224, 122, 122, 0.18); color: #e08a8a; }
+    .action-row > span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 }
 
+.cutdown-tag {
+    margin-left: 8px;
+    padding: 1px 6px;
+    border: 1px solid rgba(45, 212, 191, 0.5);
+    border-radius: 9px;
+    color: #5eead4;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    vertical-align: middle;
+}
+
+.cutdown-none {
+    margin: 2px 0 8px;
+    padding: 0 2px;
+    color: #6f6f6f;
+    font-size: 11px;
+}
+
+// Sits in the group's own header, like the count beside it.
 .cutdown-add {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    padding: 3px 8px;
+    margin-left: auto;
+    padding: 3px 9px;
     border: 1px dashed var(--surface-border, #4a4a4a);
     border-radius: 10px;
     background: none;
@@ -1038,6 +1027,7 @@
     font-size: 10px;
     cursor: pointer;
 
+    // index.scss's global button:hover/:active paints any button blue.
     &:hover:not(:disabled),
     &:active:not(:disabled) { border-color: var(--ov-accent, #2dd4bf); color: #ddd; background: none; }
     &:disabled { opacity: 0.5; cursor: default; }

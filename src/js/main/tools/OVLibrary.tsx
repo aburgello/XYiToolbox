@@ -1419,34 +1419,59 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
                                 </div>
                             );
                         })}
-                </div>
 
-                {/* CUT-DOWNS, under the masters they are not. A length that
-                    became a master without being one -- Australia's 7s, which
-                    ends up as Peru's -- has nowhere else to be written down,
-                    and this is where a creative's lengths are read off. */}
-                {selectedCreative && (
-                    <div className="cutdown-bar">
-                        <span className="cutdown-label"><Scissors size={11} /> Cut-downs</span>
-                        {cutdowns.map((c) => (
-                            <Tooltip key={c.id} text={`${c.name}\n${c.folder}`}>
-                                <span className="cutdown-chip">
-                                    <b>{c.duration}s</b>
-                                    <em>{c.size}{c.territory ? " · " + c.territory : ""}</em>
-                                    <button onClick={() => removeCutdown(c)} aria-label="Remove">
-                                        <X size={9} />
+                    {/* CUT-DOWNS AS ROWS, in the masters' own shape -- they
+                        act as masters, so they read as masters, with the tag
+                        that says which market's file it actually is. The group
+                        header carries the way to add one, like the orientation
+                        groups carry their count. */}
+                    {selectedCreative && (
+                        <div className="orientation-group cutdown-group">
+                            <h4>
+                                <Scissors size={13} />
+                                CUT-DOWNS ({cutdowns.length})
+                                <Tooltip text={`Point at the batch folder holding a length of ${selectedCreative} that became a master — a 7s built for one market and reused by the next. Localise offers it where no real master exists at that length.`}>
+                                    <button className="cutdown-add" disabled={cutBusy} onClick={registerCutdowns}>
+                                        <FolderPlus size={11} /> {cutBusy ? "Reading…" : "Register…"}
                                     </button>
-                                </span>
-                            </Tooltip>
-                        ))}
-                        {cutdowns.length === 0 && <span className="cutdown-none">none registered</span>}
-                        <Tooltip text={`Point at the batch folder holding a length of ${selectedCreative} that became a master — a 7s built for one market and reused by the next. Localise offers it where no real master exists at that length.`}>
-                            <button className="cutdown-add" disabled={cutBusy} onClick={registerCutdowns}>
-                                <FolderPlus size={11} /> {cutBusy ? "Reading…" : "Register from a folder…"}
-                            </button>
-                        </Tooltip>
-                    </div>
-                )}
+                                </Tooltip>
+                            </h4>
+                            {cutdowns.length === 0 && (
+                                <p className="cutdown-none">
+                                    Nothing registered. A length built for one market and reused by the next belongs here.
+                                </p>
+                            )}
+                            {cutdowns.map((c) => (
+                                <div key={c.id} className="variant-block is-cutdown">
+                                    <div className="variant-preview">
+                                        <div className="variant-preview-empty"><Scissors size={16} /></div>
+                                    </div>
+                                    <div className="variant-details">
+                                        <div className="variant-title">
+                                            {c.size} — {c.duration}s
+                                            <span className="cutdown-tag">{c.territory || "cut-down"}</span>
+                                        </div>
+                                        <div className="action-row">
+                                            <Tooltip text={c.path}>
+                                                <span>{c.name}</span>
+                                            </Tooltip>
+                                            <Tooltip text="Reveal in Finder/Explorer">
+                                                <button onClick={() => handleReveal(c.path)}>
+                                                    <Search size={14} />
+                                                </button>
+                                            </Tooltip>
+                                            <Tooltip text="Stop offering this as a master. The file is not touched.">
+                                                <button onClick={() => removeCutdown(c)}>
+                                                    <X size={14} />
+                                                </button>
+                                            </Tooltip>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
 
                 {/* Only the OUTCOME lives down here now. The control moved up
                     into the filter row; a note appears when there is something
