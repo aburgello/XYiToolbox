@@ -160,3 +160,34 @@
 
     .dropdown-option-hint { opacity: 1; }
 }
+
+// Picture beside an option (DropdownOption.thumb). 16:9-ish, cover-cropped,
+// fixed size so a list of campaigns reads as a column of faces. Fixed px, no
+// aspect-ratio (Chrome 88 — the target is chrome74).
+.dropdown-thumb {
+    flex: 0 0 auto;
+    width: 36px;
+    height: 20px;
+    border-radius: 3px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.06);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+
+    img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+}
+
+.dropdown-thumb-none {
+    font-size: 10px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.35);
+}
+
+.dropdown-option.is-disabled .dropdown-thumb img { filter: grayscale(1); opacity: 0.5; }

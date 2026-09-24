@@ -30,6 +30,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ChevronDown, Check } from "lucide-react";
 import Droplet from "./Droplet";
+import { toFileUrl } from "./lib/fileUrl";
 import "./Dropdown.scss";
 
 export interface DropdownOption {
@@ -54,7 +55,27 @@ export interface DropdownOption {
      *  trigger has to be able to show what is selected, and retiring the
      *  campaign you are standing on must not lock you out of un-retiring it. */
     disabled?: boolean;
+    /** A picture for the row — a file path, drawn through `toFileUrl`. Set it
+     *  (even to "") on EVERY option of a list that has pictures: an option with
+     *  `thumb: ""` gets its label's initial in the same tile, so the column
+     *  stays aligned and a campaign with nothing pinned still has a face.
+     *  Left undefined on all options, the list renders exactly as before. */
+    thumb?: string;
 }
+
+/** The tile beside an option. A broken path falls back to the initial rather
+ *  than an empty frame — a moved banner is a normal state on the share. */
+const OptionThumb: React.FC<{ src: string; label: string }> = ({ src, label }) => {
+    const [failed, setFailed] = useState(false);
+    useEffect(() => { setFailed(false); }, [src]);
+    return (
+        <span className="dropdown-thumb" aria-hidden="true">
+            {src && !failed
+                ? <img src={toFileUrl(src)} alt="" onError={() => setFailed(true)} />
+                : <span className="dropdown-thumb-none">{label.charAt(0).toUpperCase()}</span>}
+        </span>
+    );
+};
 
 interface Props {
     value: string;
@@ -90,7 +111,9 @@ const Dropdown: React.FC<Props> = ({ value, onChange, options, placeholder = "Se
                         toggle();
                     }}
                 >
-                    {icon && <span className="dropdown-trigger-icon">{icon}</span>}
+                    {selected && selected.thumb !== undefined
+                        ? <OptionThumb src={selected.thumb} label={selected.label} />
+                        : icon && <span className="dropdown-trigger-icon">{icon}</span>}
                     <span className={"dropdown-trigger-label" + (selected ? "" : " placeholder")}>
                         {selected ? selected.label : placeholder}
                     </span>
@@ -160,6 +183,7 @@ const Dropdown: React.FC<Props> = ({ value, onChange, options, placeholder = "Se
                                     close();
                                 }}
                             >
+                                {opt.thumb !== undefined && <OptionThumb src={opt.thumb} label={opt.label} />}
                                 <span className="dropdown-option-label">{opt.label}</span>
                                 {opt.hint && <span className="dropdown-option-hint">{opt.hint}</span>}
                                 {opt.value === value && <Check size={13} className="dropdown-option-check" />}

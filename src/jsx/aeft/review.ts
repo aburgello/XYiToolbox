@@ -179,6 +179,14 @@ export const loadCampaignBanner = (campaign: string): string => {
     for (let i = 0; i < all.length; i++) {
       if (all[i].campaign === campaign) return all[i].path;
     }
+    // Exact first; then case/whitespace-insensitive. OV Library and the
+    // Localise tools keep two campaign lists (OVLibCampaigns / LocLibCampaigns)
+    // and pairing leaves an existing name alone, so "Forgotten Island" in one
+    // can be "FORGOTTEN ISLAND" in the other -- the same job, one banner.
+    const want = String(campaign).replace(/^\s+|\s+$/g, "").toLowerCase();
+    for (let j = 0; j < all.length; j++) {
+      if (String(all[j].campaign).replace(/^\s+|\s+$/g, "").toLowerCase() === want) return all[j].path;
+    }
     return "";
   } catch (e) {
     return "";

@@ -56,6 +56,7 @@ import { fs, path } from "../../lib/cep/node";
 import CheckboxToggle from "../CheckboxToggle";
 import Tooltip from "../Tooltip";
 import Dropdown from "../Dropdown";
+import { toFileUrl } from "../lib/fileUrl";
 import { alertDialog, confirmDialog, promptDialog, selectDialog } from "../Dialog";
 import { showMcItReport, type McReport } from "../McItReportModal";
 import { showLocGenReport, type LocGenReport, type LocGenRow } from "../LocGenReportModal";
@@ -1471,6 +1472,34 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
         }
     };
 
+    /**
+     * THE CAMPAIGN'S FACE, borrowed from OV Library. `OVLibCampaignBanners` is
+     * the hero image somebody pinned there -- the same one Workflows' wall
+     * wears -- so picking a campaign here shows the artwork you are about to
+     * localise, not just a name that reads a lot like the last job's. A
+     * settings read per campaign, no disk walk, and quiet: no bridge or nothing
+     * pinned both fall back to the initial.
+     */
+    const [banners, setBanners] = useState<Record<string, string>>({});
+    useEffect(() => {
+        if (campaigns.length === 0) return;
+        let cancelled = false;
+        (async () => {
+            const out: Record<string, string> = {};
+            for (const c of campaigns) {
+                try {
+                    const p = (await evalTS("loadCampaignBanner", c.name)) as string;
+                    if (p) out[c.name] = p;
+                } catch { /* no bridge, or nothing pinned -- both normal */ }
+            }
+            if (!cancelled) setBanners(out);
+        })();
+        return () => { cancelled = true; };
+    }, [campaigns]);
+    const [bannerFailed, setBannerFailed] = useState(false);
+    const readyBanner = banners[campaignName] || "";
+    useEffect(() => { setBannerFailed(false); }, [readyBanner]);
+
     useEffect(() => {
         (async () => {
             await refreshCampaigns();
@@ -2189,8 +2218,22 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                     /* Everything the form would ask for, already answered. Edit
                        puts the full form back; it never disappears, it just
                        stops being the first thing you meet. */
-                    <div className="specs-ready">
-                        <Check size={14} className="specs-ready-tick" />
+                    <div className={"specs-ready" + (readyBanner && !bannerFailed ? " has-banner" : "")}>
+                        {/* The pinned banner, twice: washed behind the row so
+                            the whole card takes the campaign's colour, and as a
+                            tile you can actually recognise. The tick rides the
+                            tile's corner -- it still says "set up". */}
+                        {readyBanner && !bannerFailed && (
+                            <span className="specs-ready-wash" aria-hidden="true">
+                                <img src={toFileUrl(readyBanner)} alt="" />
+                            </span>
+                        )}
+                        <span className="specs-ready-art" aria-hidden="true">
+                            {readyBanner && !bannerFailed
+                                ? <img src={toFileUrl(readyBanner)} alt="" onError={() => setBannerFailed(true)} />
+                                : <span className="specs-ready-art-none">{campaignName.charAt(0).toUpperCase()}</span>}
+                            <Check size={10} className="specs-ready-tick" />
+                        </span>
                         <span className="specs-ready-text">
                             <strong>{campaignName}</strong>
                             <span>{baseName(marketsRoot)} · {mastersAuto ? "masters found" : baseName(aepPath)}</span>
@@ -2240,6 +2283,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                     // you able to un-retire it, and the archive
                                     // button acts on the selection.
                                     disabled: !!retiredEntry(c.name),
+                                    thumb: banners[c.name] || "",
                                 }))}
                                 placeholder="Select a campaign…"
                                 emptyMessage="No campaigns yet. Add one with the + button."

@@ -1651,9 +1651,81 @@
         border: 1px solid rgba(45, 212, 191, 0.32);
         border-radius: 8px;
         background: rgba(45, 212, 191, 0.06);
+        // Positioned so the wash below can sit inside it; content is lifted
+        // above the wash with its own z-index (a positioned element paints
+        // over non-positioned siblings regardless of z-index).
+        position: relative;
+        overflow: hidden;
+
+        > *:not(.specs-ready-wash) { position: relative; z-index: 1; }
     }
 
-    .specs-ready-tick { flex-shrink: 0; color: var(--cat-icon, #5eead4); }
+    // The banner, blurred and faded in from the left: the card takes the
+    // campaign's colour without the picture fighting the text over it.
+    .specs-ready-wash {
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        pointer-events: none;
+        z-index: 0;
+        overflow: hidden;
+        -webkit-mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.35) 45%, transparent 85%);
+
+        img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            filter: blur(14px) saturate(1.2);
+            opacity: 0.32;
+            transform: scale(1.2);
+        }
+    }
+
+    // The recognisable picture. Fixed px rather than aspect-ratio (Chrome 88).
+    .specs-ready-art {
+        flex: 0 0 auto;
+        width: 72px;
+        height: 40px;
+        border-radius: 5px;
+        overflow: visible;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255, 255, 255, 0.05);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+
+        img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 5px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+        }
+    }
+
+    .specs-ready-art-none {
+        font-size: 17px;
+        font-weight: 700;
+        color: rgba(255, 255, 255, 0.28);
+    }
+
+    // Tick as a badge on the tile's corner: still says "set up", no longer
+    // spends a column of its own.
+    .specs-ready-tick {
+        position: absolute;
+        right: -5px;
+        bottom: -5px;
+        width: 16px;
+        height: 16px;
+        padding: 3px;
+        box-sizing: border-box;
+        border-radius: 50%;
+        background: #0f2a27;
+        box-shadow: 0 0 0 1.5px var(--cat-border, #2dd4bf);
+        color: var(--cat-icon, #5eead4);
+    }
 
     .specs-ready-text {
         flex: 1;
