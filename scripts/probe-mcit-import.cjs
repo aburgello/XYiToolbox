@@ -140,5 +140,76 @@ const dry = aeft.mcItApplyToOpenProject(proj, A + '_V01.aep', images, true, unde
 say(proj._imported.length === 0, 'nothing brought in', String(proj._imported.length));
 say(dry.imported === 6, 'but it still says how many it would bring', String(dry.imported));
 
+console.log('\n6. a territory with NO batch level under JPG_PNG (Street Fighter INT)');
+// AE/Batch_01 beside JPG_PNG/<deliverable>/ -- no JPG_PNG/Batch_01. This used
+// to derive "" and the inline run saved every project unswapped.
+const T = '/Volumes/paramount/StreetFighter/INT/XY026205_Markets';
+const CG = 'SF_INTL_Trio_DINTH_CineGrand_1080x1920px_15s_BG';
+const LCD = 'SF_INTL_Trio_DINTH_GenericLCD_1080x1920px_15s_BG';
+const tree = {
+    [`${T}/AE/Batch_01`]: [new File(`${T}/AE/Batch_01/${CG}_V01.aep`), new File(`${T}/AE/Batch_01/${LCD}_V01.aep`)],
+    [`${T}/JPG_PNG`]: [new Folder(`${T}/JPG_PNG/_Delivered`), new Folder(`${T}/JPG_PNG/_Old`), new Folder(`${T}/JPG_PNG/${CG}`), new Folder(`${T}/JPG_PNG/${LCD}`)],
+    [`${T}/JPG_PNG/_Delivered`]: [new Folder(`${T}/JPG_PNG/_Delivered/${CG}`)],
+    [`${T}/JPG_PNG/_Delivered/${CG}`]: [new File(`${T}/JPG_PNG/_Delivered/${CG}/${CG}.jpg`)],
+    [`${T}/JPG_PNG/_Old`]: [],
+    [`${T}/JPG_PNG/${CG}`]: [new Folder(`${T}/JPG_PNG/${CG}/ARTWORK_ONLY`), new File(`${T}/JPG_PNG/${CG}/${CG}.csv`), new File(`${T}/JPG_PNG/${CG}/${CG}.jpg`), new File(`${T}/JPG_PNG/${CG}/${CG}1.png`)],
+    [`${T}/JPG_PNG/${CG}/ARTWORK_ONLY`]: [new File(`${T}/JPG_PNG/${CG}/ARTWORK_ONLY/${CG}_ARTWORK_1.jpg`)],
+    [`${T}/JPG_PNG/${LCD}`]: [new File(`${T}/JPG_PNG/${LCD}/${LCD}.jpg`)],
+    [`${T}/AE/Stray`]: [new File(`${T}/AE/Stray/Unrelated_V01.aep`)],
+};
+Folder.prototype.getFiles = function () { return tree[this.fsName] || []; };
+const derived = aeft.mcItDeriveImageFolderFor(new Folder(`${T}/AE/Batch_01`));
+say(derived === `${T}/JPG_PNG`, 'JPG_PNG itself is the image folder when it holds this batch\'s deliverables', derived);
+say(aeft.mcItDeriveImageFolderFor(new Folder(`${T}/AE/Stray`)) === '',
+    'but not for a batch none of whose deliverables are in it');
+const flat = aeft.mcItCollectImages(new Folder(derived));
+say(!flat.some((f) => f.fsName.indexOf('/_Delivered/') !== -1), '_Delivered is never searched', String(flat.length) + ' images');
+say(aeft.mcItTerritoryOfImageFolder(new Folder(derived)) === 'XY026205_Markets', 'territory read one level up', aeft.mcItTerritoryOfImageFolder(new Folder(derived)));
+
+function sfProject() {
+    const jpg = new FolderItem('JPG');
+    const png = new FolderItem('PNG');
+    const j = [new FootageItem(new File('/m/SF_INTL_Trio_DOOH_MotionPoster_1080x1920px_15s_OV.jpg'), jpg)];
+    const p = [new FootageItem(new File('/m/SF_INTL_Trio_DOOH_MotionPoster_1080x1920px_15s_OV1.png'), png)];
+    jpg.numItems = 1; jpg.item = () => j[0];
+    png.numItems = 1; png.item = () => p[0];
+    const footage = new FolderItem('Footage');
+    const kids = [jpg, png];
+    footage.numItems = 2; footage.item = (i) => kids[i - 1];
+    jpg.parentFolder = footage; png.parentFolder = footage;
+    const items = [footage, jpg, png, j[0], p[0]];
+    return { numItems: items.length, item: (i) => items[i - 1], items: { addFolder: () => new FolderItem('x') }, importFile: () => new FootageItem(null), _j: j[0], _p: p[0] };
+}
+const sp = sfProject();
+const srep = aeft.mcItApplyToOpenProject(sp, CG + '_V01.aep', flat, true, undefined, '');
+const got = srep.items.map((i) => i.action + ':' + (i.newName || i.reason)).join(' | ');
+say(srep.items.length === 2 && srep.items.every((i) => i.action === 'replaced'), 'both the OV jpg and the OV1 png find their CineGrand exports', got);
+say(srep.items.some((i) => decodeURI(i.newName || '') === CG + '.jpg') && srep.items.some((i) => decodeURI(i.newName || '') === CG + '1.png'),
+    'and the right ones, not GenericLCD\'s or _Delivered\'s');
+
+console.log('\n7. an unnumbered slot takes the ONLY numbered export, and never one of several');
+// Latvia: master has _OV.png, the mech export is _LV1.png and nothing else.
+const LV = 'SF_INTL_Trio_DINTH_1080x1920px_10s_LV';
+const LVD = `${T}/JPG_PNG/${LV}`;
+function oneSlot(orig) {
+    const png = new FolderItem('PNG');
+    const it = new FootageItem(new File('/m/' + orig), png);
+    png.numItems = 1; png.item = () => it;
+    const footage = new FolderItem('Footage'); footage.numItems = 1; footage.item = () => png; png.parentFolder = footage;
+    const items = [footage, png, it];
+    return { numItems: 3, item: (i) => items[i - 1], items: { addFolder: () => new FolderItem('x') }, importFile: () => new FootageItem(null) };
+}
+const OVPNG = 'SF_INTL_Trio_DOOH_MotionPoster_1080x1920px_15s_OV.png';
+let r7 = aeft.mcItApplyToOpenProject(oneSlot(OVPNG), LV + '_V01.aep', [new File(`${LVD}/${LV}1.png`), new File(`${LVD}/${LV}.jpg`)], true, undefined, '');
+say(r7.items[0].action === 'replaced' && decodeURI(r7.items[0].newName) === LV + '1.png', '_OV.png -> the lone _LV1.png', r7.items[0].action + ' ' + (r7.items[0].newName || r7.items[0].reason));
+r7 = aeft.mcItApplyToOpenProject(oneSlot(OVPNG), LV + '_V01.aep', [new File(`${LVD}/${LV}1.png`), new File(`${LVD}/${LV}2.png`)], true, undefined, '');
+say(r7.items[0].action === 'no-match', 'two numbered exports stay a question', r7.items[0].reason);
+r7 = aeft.mcItApplyToOpenProject(oneSlot(OVPNG), LV + '_V01.aep', [new File(`${LVD}/${LV}1.png`), new File(`${LVD}/${LV}.png`)], true, undefined, '');
+say(decodeURI(r7.items[0].newName || '') === LV + '.png', 'an unnumbered export still wins outright', r7.items[0].newName);
+r7 = aeft.mcItApplyToOpenProject(oneSlot(OVPNG.replace('_OV.png', '_OV2.png')), LV + '_V01.aep', [new File(`${LVD}/${LV}1.png`)], true, undefined, '');
+say(r7.items[0].action === 'no-match', 'a NUMBERED slot never borrows another number', r7.items[0].reason);
+r7 = aeft.mcItApplyToOpenProject(oneSlot(OVPNG.replace('.png', '.jpg')), LV + '_V01.aep', [new File(`${LVD}/ARTWORK_ONLY/${LV}_ARTWORK_1.jpg`)], true, undefined, '');
+say(r7.items[0].action === 'no-match', 'an ARTWORK_ONLY extra is never the lone answer', r7.items[0].reason);
+
 console.log(fails === 0 ? '\nCLEAN — each project gets its own images, once.' : '\n' + fails + ' FAILED');
 process.exit(fails ? 1 : 0);

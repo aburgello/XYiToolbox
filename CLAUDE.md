@@ -1020,6 +1020,18 @@ are not this deliverable's artwork and never will be.
 deliverable; exact equality picks `_BR.jpg` for an unnumbered original and
 leaves nothing to guess at. Relaxing it to "skip the filter when the original
 has no number" turns one exact answer into four candidates and a question.
+**One exception, and only one:** an unnumbered slot with NO unnumbered export
+of its type takes the numbered export when exactly ONE survives every other
+filter (Latvia: `_OV.png` against a lone `_LV1.png`). Two or more stay a
+no-match, a numbered slot never borrows another number, and `ARTWORK_ONLY`
+extras (`_LV_ARTWORK_1.jpg`) are never that one answer. `probe-mcit-import.cjs`
+section 7.
+
+**A territory may have NO batch level under `JPG_PNG`** (Street Fighter INT:
+`AE/Batch_01` beside `JPG_PNG/<deliverable>/`). `mcItDeriveImageFolder` tries
+the batch folder first; only when none matches does it take `JPG_PNG` itself,
+and only when a folder there is named exactly as one of the batch's `.aep`s.
+The image walk skips `_` folders — `_Delivered` holds same-named old exports.
 
 **A Multiple Art deliverable draws artwork from MORE THAN ONE creative**, so
 Artwork Check lets each ROW name a creative as well as the deliverable.

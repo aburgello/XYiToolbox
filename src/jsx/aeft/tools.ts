@@ -3182,6 +3182,10 @@ function mcItGetAllImageFiles(folder: Folder): File[] {
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     if (item instanceof Folder) {
+      // `_Delivered`, `_Old`: every scan skips `_` folders, and here it is
+      // load-bearing -- they hold earlier copies of the SAME deliverables
+      // under the same names, so an old export would be a valid candidate.
+      if (decode(String(item.name)).charAt(0) === "_") continue;
       out.push(...mcItGetAllImageFiles(item));
     } else if (item instanceof File && /\.(png|jpe?g)$/i.test(item.name)) {
       out.push(item);
@@ -3309,7 +3313,41 @@ function mcItDeriveImageFolder(aepFolder: Folder): string {
   // Exactly one, or none: two candidates is a question, and guessing at it
   // would put another batch's artwork into a finished deliverable.
   if (hits.length === 1) return hits[0].fsName;
+  if (hits.length > 1) return "";
+
+  // NO BATCH LEVEL AT ALL. Some territories file the deliverable folders
+  // straight under JPG_PNG (Street Fighter INT: AE/Batch_01 beside
+  // JPG_PNG/SF_INTL_Trio_DINTH_CineGrand_..._BG/), and this returned "" for
+  // them, so the inline run saved every project unswapped. Decided
+  // STRUCTURALLY, never by "no batch matched so take the root": the root is
+  // only the answer when a folder in it is named exactly as one of this
+  // batch's .aep files. Anything less and the whole territory's images would
+  // be offered to a batch they were never made for.
+  if (mcItRootHoldsDeliverablesOf(aepFolder, folders)) return jpgRoot.fsName;
   return "";
+}
+
+/** Deliverable key: the .aep's or folder's name minus extension and _V01,
+ *  alphanumerics only -- the same key mcItImagesForAep pairs on. */
+function mcItDeliverableKey(name: string): string {
+  let stem = decode(String(name));
+  const dot = stem.lastIndexOf(".");
+  if (dot > 0 && /\.aep$/i.test(stem)) stem = stem.substring(0, dot);
+  stem = stem.replace(/_V\d+$/i, "");
+  return stem.toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+function mcItRootHoldsDeliverablesOf(aepFolder: Folder, folders: Folder[]): boolean {
+  const have: { [k: string]: boolean } = {};
+  for (let i = 0; i < folders.length; i++) have[mcItDeliverableKey(folders[i].name)] = true;
+  const kids = aepFolder.getFiles();
+  for (let j = 0; j < kids.length; j++) {
+    const n = decode(String(kids[j].name));
+    if (!/\.aep$/i.test(n)) continue;
+    const k = mcItDeliverableKey(n);
+    if (k !== "" && have[k]) return true;
+  }
+  return false;
 }
 
 // Suggestion list for an item the matcher could NOT place -- shown in the dry
@@ -3569,6 +3607,9 @@ export function mcItApplyToOpenProject(
         const creativesSeen: string[] = [];
         const resSeenSameType: string[] = [];
         const validCandidates: File[] = [];
+        // Candidates that passed everything except being numbered where the
+        // original is not -- see the single-candidate fallback below.
+        const numberedOnly: File[] = [];
         for (let k = 0; k < imageFiles.length; k++) {
           const candidate = imageFiles[k];
           const candidateExt = mcItGetExt(candidate.name);
@@ -3637,8 +3678,28 @@ export function mcItApplyToOpenProject(
           // nothing to guess at. Relaxing it to "skip the filter when the
           // original has no number" turned that one exact answer into four
           // candidates and a question.
-          if (parsedOriginal.pngNumber !== parsedCandidate.pngNumber) continue;
+          if (parsedOriginal.pngNumber !== parsedCandidate.pngNumber) {
+            // Never an ARTWORK_ONLY file: "_LV_ARTWORK_1.jpg" is numbered too,
+            // and it is the extras a territory supplies, not this slot.
+            const isArtworkOnly = /(^|_)ARTWORK(_|$)/i.test(decode(String(candidate.name)).replace(/\.[^.]+$/, ""));
+            if (parsedOriginal.pngNumber === "" && parsedCandidate.pngNumber !== "" && !isArtworkOnly) numberedOnly.push(candidate);
+            continue;
+          }
           validCandidates.push(candidate);
+        }
+
+        // AN UNNUMBERED SLOT WITH ONLY ONE NUMBERED ANSWER. Latvia's mech
+        // export for a master's "_OV.png" is "_LV1.png" and nothing else --
+        // no "_LV.png" exists -- so the exact rule above left it unswapped.
+        // The exact rule stays first and stays the only thing that can win
+        // when an unnumbered export exists. This fires only when there is
+        // NONE and exactly ONE numbered file survived every other filter:
+        // Brazil's "_BR2 / _BR_ARTWORK_1 / _BR_ARTWORK_2" case is still two or
+        // more candidates, and still a question rather than a guess.
+        let slotFallback = false;
+        if (validCandidates.length === 0 && parsedOriginal.pngNumber === "" && numberedOnly.length === 1) {
+          validCandidates.push(numberedOnly[0]);
+          slotFallback = true;
         }
 
         const bestFile = findBestComponentFile(originalName, validCandidates);
@@ -3652,6 +3713,7 @@ export function mcItApplyToOpenProject(
             name: originalName,
             action: "replaced",
             newName: bestFile.name,
+            reason: slotFallback ? "Only numbered export for an unnumbered slot — taken as the one answer." : undefined,
             key: itemKey,
           });
         } else {
@@ -3662,6 +3724,8 @@ export function mcItApplyToOpenProject(
             + " at that resolution — found " + creativesSeen.join(", ") + ".";
           else if (cPlusLanguage === 0) reason = "No " + (aepLanguage !== "" ? aepLanguage + " " : "language-free ")
             + "artwork for " + (parsedAEP.firstOne || "this deliverable") + " at that resolution.";
+          else if (validCandidates.length === 0 && numberedOnly.length > 1) reason = "No unnumbered export, and " + numberedOnly.length
+            + " numbered ones — not guessing which. Pick one by hand.";
           else if (validCandidates.length === 0) reason = "No candidate for artwork slot '" + (parsedOriginal.pngNumber || "<none>") + "' at that resolution.";
           projReport.items.push({
             folder: targetFolder.name,
@@ -3824,6 +3888,11 @@ function persistLastReport(result: McItResult): void {
  */
 export function mcItTerritoryOfImageFolder(imageFolder: Folder | null): string {
   if (!imageFolder) return "";
+  // A territory with no batch level hands over JPG_PNG itself.
+  if (llLikeJpgPngName(decode(imageFolder.name))) {
+    const t = imageFolder.parent;
+    return t ? decode(t.name) : "";
+  }
   const batchParent = imageFolder.parent;              // .../<Territory>/JPG_PNG
   if (!batchParent) return "";
   if (!llLikeJpgPngName(decode(batchParent.name))) return "";
