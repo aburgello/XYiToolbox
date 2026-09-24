@@ -24,7 +24,8 @@
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { X, AlertTriangle, CheckCircle2 } from "lucide-react";
-import { parseJobTitle, type WrikeJob } from "./lib/jobsFeed";
+import { parseJobTitle, territoryFlag, type WrikeJob } from "./lib/jobsFeed";
+import { categoryStyleVars } from "./toolRegistry";
 // PARSING AND VERDICTS LIVE IN lib/jobRows.ts. They were here, which meant the
 // Ask agent could not reach them without keeping a second copy -- the same
 // trap jobsFeed.ts calls out for readiness. This file renders them now, and
@@ -43,6 +44,13 @@ interface Props {
     job: WrikeJob;
     onClose: () => void;
     onOpenLocaliser: () => void;
+}
+
+/** A real browser tab, not the panel's own webview. */
+function openInBrowser(url: string) {
+    const cep = (window as any).cep;
+    if (cep && cep.util && typeof cep.util.openURLInDefaultBrowser === "function") cep.util.openURLInDefaultBrowser(url);
+    else window.open(url, "_blank", "noopener");
 }
 
 export const ActiveJobModal: React.FC<Props> = ({ job, onClose, onOpenLocaliser }) => {
@@ -80,7 +88,9 @@ export const ActiveJobModal: React.FC<Props> = ({ job, onClose, onOpenLocaliser 
     const clean = usable.length;
 
     return createPortal(
-        <div className="ajm-overlay" onClick={onClose} role="presentation">
+        // Localise's tint, re-applied because this is portalled to <body> and
+        // opened from home: its one primary action sends you INTO Localise.
+        <div className="ajm-overlay" style={categoryStyleVars("localise")} onClick={onClose} role="presentation">
             <div
                 className="ajm"
                 onClick={(e) => e.stopPropagation()}
@@ -90,12 +100,15 @@ export const ActiveJobModal: React.FC<Props> = ({ job, onClose, onOpenLocaliser 
             >
                 <div className="ajm-head">
                     <div className="ajm-head-text">
-                        <span className="ajm-title">{parts.name || job.title}</span>
-                        <span className="ajm-sub">
-                            {parts.territory && <span className="ajm-chip">{parts.territory}</span>}
-                            {parts.batch && <span className="ajm-chip">{parts.batch}</span>}
-                            <span className="ajm-assignee">{job.assignee}</span>
+                        {/* WHERE, THEN WHAT -- the order every Localise screen now
+                            uses: the territory and batch as the small line, the
+                            job's name large. It led with the name alone ("DINTH")
+                            and boxed the territory into a 9px chip. */}
+                        <span className="ajm-kicker">
+                            {territoryFlag(parts.territory) && <span className="ajm-flag">{territoryFlag(parts.territory)}</span>}
+                            {[parts.territory, parts.batch, job.assignee].filter(Boolean).join(" · ")}
                         </span>
+                        <span className="ajm-title">{parts.name || job.title}</span>
                     </div>
                     <button type="button" className="ajm-close" onClick={onClose} aria-label="Close">
                         <X size={15} />
@@ -103,6 +116,29 @@ export const ActiveJobModal: React.FC<Props> = ({ job, onClose, onOpenLocaliser 
                 </div>
 
                 <div className="ajm-body">
+                    {/* SOME NAMES MISSING. The feed sent these subtasks without a
+                        name (it knows their ids; resolving the names is a
+                        separate step on its side that can come back blank), so
+                        they can't become rows. Dropped silently, a job of five
+                        read as a job of one. Not "press refresh": a live
+                        refresh is the path that LOSES names (see below). */}
+                    {rows && rows.length > 0 && (job.unnamedSubtasks ?? 0) > 0 && (
+                        <p className="ajm-note ajm-note--warn">
+                            <AlertTriangle size={13} />
+                            <span>
+                                {job.unnamedSubtasks} more subtask{job.unnamedSubtasks === 1 ? " is" : "s are"} on this job in Wrike, but the
+                                jobs feed sent {job.unnamedSubtasks === 1 ? "it" : "them"} without a name, so {job.unnamedSubtasks === 1 ? "it" : "they"} can't be listed or sent from here.
+                                {job.permalink && (
+                                    <>
+                                        {" "}
+                                        <button type="button" className="ajm-link" onClick={() => openInBrowser(job.permalink!)}>
+                                            Open in Wrike
+                                        </button>
+                                    </>
+                                )}
+                            </span>
+                        </p>
+                    )}
                     {rows === null ? (
                         <p className="ajm-note">Reading subtasks…</p>
                     ) : rows.length === 0 ? (
@@ -138,7 +174,7 @@ export const ActiveJobModal: React.FC<Props> = ({ job, onClose, onOpenLocaliser 
                             <p className="ajm-summary">
                                 {hidden === 0 ? (
                                     <>
-                                        <CheckCircle2 size={12} className="ajm-ok" /> All {rows.length} subtask
+                                        <CheckCircle2 size={12} className="ajm-ok" /> {(job.unnamedSubtasks ?? 0) > 0 ? "" : "All "}{rows.length} subtask
                                         {rows.length === 1 ? "" : "s"} can be localised.
                                     </>
                                 ) : (

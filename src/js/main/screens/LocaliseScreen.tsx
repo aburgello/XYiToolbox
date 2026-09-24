@@ -20,6 +20,7 @@ import StatusIcon from "../StatusIcon";
 import { evalTS } from "../../lib/utils/bolt";
 import CSVLocaliserTool, { type LocaliserCampaignInfo } from "../tools/CSVLocaliser";
 import LocaliseLibraryCard, { type HereTerritory } from "./LocaliseLibraryCard";
+import LocaliseJobsStrip from "./LocaliseJobsStrip";
 import { territoryFlag } from "../lib/jobsFeed";
 import { toFileUrl } from "../lib/fileUrl";
 import { setPendingLibraryCampaign } from "../lib/localiseHandoff";
@@ -178,6 +179,14 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
         return /^batch/i.test(b) && ti + 3 < bits.length ? b : "";
     })();
     const libraryCard = <LocaliseLibraryCard campaign={libCampaign} onOpen={openLibrary} onHere={onHere} />;
+
+    // A job sent from the strip: Big Guy Localiser takes it, now. The tick is
+    // what tells an already-mounted CSV Localiser to take the staged batch.
+    const [handoffTick, setHandoffTick] = useState(0);
+    const onJobSent = useCallback(() => {
+        setPane("csv");
+        setHandoffTick((t) => t + 1);
+    }, []);
 
     const runInPlace = async (id: string, label: string, fnName: string) => {
         setRunningId(id);
@@ -395,6 +404,7 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
                                 ))}
                             </div>
                         </div>
+                        <LocaliseJobsStrip hereCode={here ? here.code : undefined} onSent={onJobSent} />
                         {/* Trott & Batch has no campaign card to sit beside, so
                             the Library leads the pane on its own. */}
                         {pane === "batch" && <div className="ls-libcard-solo">{libraryCard}</div>}
@@ -410,6 +420,7 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
                                     onCampaignChange={onCampaignChange}
                                     librarySlot={libraryCard}
                                     hereTerritory={here ? here.name : undefined}
+                                    handoffTick={handoffTick}
                                 />
                             )}
                             {pane === "batch" && <CampaignLocaliserTool />}

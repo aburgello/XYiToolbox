@@ -2393,3 +2393,80 @@ textarea {
 @media (prefers-reduced-motion: reduce) {
     .loading-chatter-dot { animation: none; opacity: 0.7; }
 }
+
+// ── Active Jobs, in the Localise design language ────────────────────────────
+// The job window leads with WHERE (flag, territory, batch) as a quiet line and
+// the job's name large, like every Localise screen. Its one primary action
+// sends you into Localise, so it wears Localise's teal (--cat-grad, re-applied
+// on the portalled overlay) rather than the theme accent. The card's batch is
+// plain text: boxed 9px chips were the clutter this pass removed elsewhere.
+.ajm-kicker {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.6);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ajm-flag { font-size: 14px; line-height: 1; }
+
+.ajm-head-text .ajm-title {
+    font-size: 17px;
+    font-weight: 750;
+    letter-spacing: -0.2px;
+    color: #fff;
+}
+
+.ajm-btn.ajm-btn--primary {
+    background: var(--cat-grad, #2c7a72);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+
+    &:hover:not(:disabled),
+    &:active:not(:disabled) {
+        background: var(--cat-grad, #2c7a72);
+        filter: brightness(1.12);
+    }
+
+    &:disabled { opacity: 0.5; filter: none; }
+}
+
+.active-jobs-batch {
+    padding: 0;
+    border: none;
+    font-size: 11px;
+    color: #8a9a98;
+}
+
+// Some subtasks arrived without names: said, not silently dropped.
+.ajm-note.ajm-note--warn {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 10px;
+    margin-bottom: 10px;
+    border-radius: 7px;
+    background: rgba(250, 204, 21, 0.08);
+    border: 1px solid rgba(250, 204, 21, 0.25);
+    color: #e8d9a0;
+    line-height: 1.4;
+
+    svg { flex-shrink: 0; margin-top: 2px; color: #facc15; }
+}
+
+.ajm-link {
+    display: inline;
+    padding: 0;
+    border: none;
+    background: none;
+    color: #facc15;
+    font: inherit;
+    font-weight: 650;
+    text-decoration: underline;
+    cursor: pointer;
+
+    &:hover, &:active { background: none; color: #fff; }
+}

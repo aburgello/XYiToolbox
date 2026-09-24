@@ -39,6 +39,15 @@ const FIXTURES = `{
       territory: t[si + 2] || "", language: t[si + 3] || "",
     };
   }),
+  // Master lookups for Build a Batch. The masters folder has nothing at the
+  // row's size and length (only a 15s at other durations); "another folder"
+  // has one. The two dialogs answer as a person picking would.
+  csvLocaliserResolveMasters: (root, json) => ({ success: true, indexed: 5, rows: JSON.parse(json).map(() => ({ master: null, path: null })) }),
+  csvLocaliserListMasters: (root) => root.indexOf("Other_Masters") !== -1
+    ? { success: true, candidates: [{ name: "FID_INTL_Trio_DINTH_Showtime_1920x1080px_30s_OV.aep", path: root + "/Trio/FID_INTL_Trio_DINTH_Showtime_1920x1080px_30s_OV.aep", creative: "Trio", tier: 2 }], otherDurations: [] }
+    : { success: true, candidates: [], otherDurations: [{ name: "FID_INTL_Trio_DOOH_MotionPoster_1920x1080px_15s_OV_with_a_long_name_that_used_to_scroll.aep", path: root + "/Trio/x_15s_OV.aep", creative: "Trio", tier: 2, seconds: "15" }] },
+  csvLocaliserPickMasterFolder: () => "/Volumes/paramount/SF/Other_Masters/AE",
+  csvLocaliserPickMasterFile: () => "/Volumes/paramount/SF/Other_Masters/AE/Trio/FID_INTL_Trio_Handpicked_1920x1080px_30s_OV.aep",
   // A tagged machine, or Active Jobs has nobody's jobs to show.
   teamGetMachineState: () => ({ owner: "Antonio", tag: "Antonio" }),
   csvLocaliserLoadLastCampaign: () => "Street Fighter",
@@ -249,6 +258,30 @@ try {
     const built = await page.eval(`document.querySelectorAll(".specs-build-rows .specs-build-row:not(.specs-build-row--head)").length`);
     check(built === n && n > 0, "…holding exactly the job's rows", { rows: built, sent: n });
     check(await page.waitFor(`document.querySelector(".specs-camp") && document.querySelector(".ls-libcard-row")`, 8000), "…under the same campaign card and Library");
+    const buildBtns = await page.eval(`[...document.querySelectorAll(".specs-build-actions button")].map(b => b.innerText.replace(/\\s+/g, " ").trim())`);
+    // The redo buttons only ever appeared after a run, which this test does not
+    // make -- so this checks the switches, not their absence.
+    check(buildBtns.indexOf("MC It!") !== -1 && buildBtns.indexOf("Support Swap") !== -1, "the builder's switches read MC It! and Support Swap", buildBtns);
+    check(!buildBtns.some((t) => /inline/i.test(t)), "the switches no longer say 'inline'", buildBtns);
+
+    console.log("\n6b. Hand-picking a master");
+    check(await page.waitFor(`document.querySelector(".specs-master--none")`, 6000), "an unmatched row offers to pick a master");
+    await page.click(".specs-master--none");
+    check(await page.waitFor(`document.querySelector(".mpick")`, 4000), "the picker opens even with nothing at this size and length");
+    check(/No master at/.test(await page.eval(text(".mpick-empty"))) || (await page.eval(count(".mpick-option--elsewhere"))) > 0, "…and says what it looked for, or offers other lengths");
+    const sideways = await page.eval(`(() => { const l = document.querySelector(".mpick-list"); return l.scrollWidth - l.clientWidth; })()`);
+    check(sideways <= 0, "the picker never scrolls sideways", sideways);
+    await page.click(".mpick-foot-btn", "Look in another folder");
+    check(await page.waitFor(`/Other_Masters\\/AE/.test(document.querySelector(".mpick-sub")?.innerText || "")`, 4000), "Look in another folder lists that folder's masters", await page.eval(text(".mpick-sub")));
+    await page.click(".mpick-option", "Showtime");
+    check(await page.waitFor(`!document.querySelector(".mpick") && document.querySelector(".specs-master--pinned")`, 4000), "picking one pins it to the row");
+    await page.click(".specs-master--pinned");
+    await page.waitFor(`document.querySelector(".mpick")`, 4000);
+    await page.click(".mpick-foot-btn", "Pick a file");
+    check(await page.waitFor(`!document.querySelector(".mpick")`, 4000), "Pick a file… closes the picker");
+    check((await page.eval(`window.__calls.filter(c => c.fn === "csvLocaliserPickMasterFile" || c.fn === "csvLocaliserPickMasterFolder").map(c => c.args[0])`)).every((a) => typeof a === "string" && a.length > 0), "both dialogs start in a folder, not wherever AE was last");
+    await page.shot(path.join(SHOTS, "ui-handpick.png"));
+
     await pause(800);
     await page.shot(path.join(SHOTS, "ui-handoff.png"));
     // TAKE-ONCE: leaving and coming back must not re-prefill the builder with
@@ -259,11 +292,66 @@ try {
     await pause(600);
     check(!(await page.eval(`!!document.querySelector(".specs-handoff")`)), "…and is taken once: coming back does not replay it");
 
+    console.log("\n7. Your jobs, on the Localise page");
+    await page.click(".home-button");
+    await openLocalise(page);
+    check(await page.waitFor(`document.querySelectorAll(".ls-jobs-chip").length > 0`, 6000), "the jobs strip sits under the header");
+    const chips = await page.eval(`[...document.querySelectorAll(".ls-jobs-chip")].map(b => b.innerText.replace(/\\s+/g, " ").trim())`);
+    check(chips.length === 2 && chips.some((c) => /TW/.test(c)) && chips.some((c) => /IT/.test(c)), "open jobs only (the finished SE job is left out)", chips);
+    check(await page.eval(`!!document.querySelector(".ls-jobs-sample")`), "the feed's sample list is marked SAMPLE");
+    await page.click(".ls-jobs-chip", "TW");
+    check(await page.waitFor(`document.querySelector(".ajm-kicker")`, 4000), "a chip opens the job window");
+    check(/TW · Batch 1/.test(await page.eval(text(".ajm-kicker"))), "…leading with where: territory and batch", await page.eval(text(".ajm-kicker")));
+    check((await page.eval(text(".ajm-title"))) === "DINTH", "…then the job's name");
+    const sendBg = await page.eval(`getComputedStyle(document.querySelector(".ajm-btn--primary")).backgroundImage`);
+    check(/gradient/.test(sendBg), "…and its Send button wears Localise's teal, not the theme accent", sendBg.slice(0, 40));
+    await page.waitFor(`[...document.querySelectorAll(".ajm-btn--primary")].some(b => /Send/.test(b.textContent) && !b.disabled)`, 6000);
+    await page.click(".ajm-btn--primary", "Send");
+    check(await page.waitFor(`document.querySelector(".specs-handoff")`, 6000), "Send fills Build a Batch without leaving the page");
+    check(await page.eval(`!!document.querySelector(".ls-jobs")`) && !(await page.eval(`!!document.querySelector(".active-jobs-toggle")`)), "…still on Localise, not bounced home");
+    check((await page.eval(`document.querySelectorAll(".specs-build-rows .specs-build-row:not(.specs-build-row--head)").length`)) === 3, "…with the job's three rows");
+    await page.shot(path.join(SHOTS, "ui-jobs-strip.png"));
+
     console.log("");
     check(page.errors.length === 0, "no page errors", page.errors.slice(0, 5));
     check(page.blocked.every((u) => !/^http:\/\/127\.0\.0\.1/.test(u)), "nothing but the local build was requested", page.blocked.length + " blocked");
 } finally {
     await page.close();
+}
+
+// 8. A job whose subtask NAMES didn't arrive. The real SF Motion Outdoor ID
+// job: five subtasks, the feed resolved one name and sent four blank. They
+// can't be rows, and dropping them silently made a job of five read as one.
+{
+    const FEED = [{
+        id: "IEAB1", title: "SF Motion Outdoor ID", assignee: "Antonio", status: "Motion", updated_at: "2026-09-24T10:00:00Z",
+        permalink: "https://www.wrike.com/open.htm?id=1", subtask_count: 5, subtasks_done: 0,
+        subtasks: [
+            { id: "a", name: "SF_INTL_Trio_DOOH_MRTLCD_1080x1920px_15s_ID", status: "Active", customStatusName: "Motion" },
+            { id: "b", name: "", status: "", customStatusName: "" },
+            { id: "c", name: "", status: "", customStatusName: "" },
+            { id: "d", name: "", status: "", customStatusName: "" },
+            { id: "e", name: "", status: "", customStatusName: "" },
+        ],
+    }];
+    const p2 = await launch({ root: ROOT, fixturesSrc: FIXTURES, routes: { "/api/panel/jobs": FEED } });
+    try {
+        console.log("\n8. Subtasks the feed sent without names");
+        await p2.goto();
+        await openLocalise(p2);
+        check(await p2.waitFor(`document.querySelectorAll(".ls-jobs-chip").length === 1`, 6000), "the strip shows the real feed's job", await p2.eval(text(".ls-jobs")));
+        check(!(await p2.eval(`!!document.querySelector(".ls-jobs-sample")`)), "…not marked SAMPLE");
+        await p2.click(".ls-jobs-chip", "ID");
+        check(await p2.waitFor(`document.querySelector(".ajm-note--warn")`, 6000), "the job window says names are missing");
+        check(/4 more subtasks/.test(await p2.eval(text(".ajm-note--warn"))), "…how many", await p2.eval(text(".ajm-note--warn")));
+        check(await p2.eval(`!!document.querySelector(".ajm-note--warn .ajm-link")`), "…with a way to open the job in Wrike");
+        check((await p2.eval(`document.querySelectorAll(".ajm table tbody tr, .ajm-row").length`)) >= 1, "…and still lists the one that did arrive");
+        await p2.shot(path.join(SHOTS, "ui-unnamed-subtasks.png"));
+        check(!p2.blocked.some((u) => /refresh=1/.test(u)) && !(await p2.eval(`performance.getEntriesByType("resource").some(e => /refresh=1/.test(e.name))`)), "no live Wrike refresh was asked for");
+        check(p2.errors.length === 0, "no page errors", p2.errors.slice(0, 5));
+    } finally {
+        await p2.close();
+    }
 }
 console.log(failures ? `\n${failures} FAILED` : "\nCLEAN — the Localise landing, the Library and the Active Jobs handoff all click through.");
 process.exit(failures ? 1 : 0);

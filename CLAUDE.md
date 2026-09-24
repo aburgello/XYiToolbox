@@ -470,7 +470,12 @@ Side by side above 620px, stacked below (plain `@media`). **The header says
 where you are**: the territory comes from the card's detection (`onHere`), never
 a second lookup, and the batch only when the open project's path really is
 `<Territory>/AE/<Batch_*>/…`. The campaign banner washes behind it. CSV
-Localiser's scan list pins the same territory first (`hereTerritory`). The Library's own
+Localiser's scan list pins the same territory first (`hereTerritory`).
+**Your Wrike jobs sit on the page too** (`LocaliseJobsStrip.tsx`), one line of
+chips under the header, the open project's territory lit. A chip opens the same
+`ActiveJobModal` as the home card; sending bumps CSV Localiser's
+`handoffTick`, because that tool is already mounted and takes a staged batch
+only on mount otherwise. No strip at all when untagged, empty or finished. The Library's own
 territory list pins the open project's territory first rather than repeating it
 in a banner, and folds empty territories into one line.
 
@@ -776,8 +781,19 @@ Naming Audit, which skips only `Auto-Save`/`_Archive`/`_Old`/`_DEV`.
   `rankMastersFromIndex` is the same order as a list for Build a Batch's master
   picker, and its first entry must equal the scorer's answer. A picked master
   travels to `csvLocaliserRun` as `pinnedJson` (CSV index → path), beats the
-  scorer and any multiple, and a pin whose file has gone is **refused, never
-  re-scored**. `node scripts/probe-master-tiers.cjs` guards all of it.
+  scorer and any multiple, and a pin whose file can't be opened is **refused, never
+  re-scored**. A pin is looked up in the masters index first and, failing
+  that, **opened from disk** (never `.exists` on the NAS): a hand-picked
+  master is often somewhere the index never walks, and refusing those as
+  "no longer in" the masters folder refused every hand-pick from `_DEV` or
+  another folder. The index's `_DEV`/`_Old`/`_Archive`/`Auto-Save` skip is
+  tested on the path BELOW the scanned root, so a `_DEV` folder somebody
+  picks lists its own masters. When the list has nothing, the picker still opens and offers
+  **Look in another folder…** (the same scorer over a folder you pick, the
+  Trott way) and **Pick a file…** (any `.aep`, pinned as-is). Both dialogs
+  start in the masters folder (`selectDlg`/`openDlg` on an object;
+  `Folder.selectDialog`/`File.openDialog` open wherever AE was last) and
+  answer `""` on cancel. `node scripts/probe-master-tiers.cjs` guards all of it.
 - **CSV Localiser always skips existing files — there is no checkbox.** With
   it off, `csvLocaliserRun` copied the master over an existing `_V01.aep`, an
   artist's localised file, and opened the copy. No run wants that, so
@@ -1239,6 +1255,11 @@ for anything else: a `require` that resolves every name makes bundled
 libraries take their CommonJS branch, and every className on the page vanished. Run it after touching the
 Localise screen, CSV Localiser's landing, the Library's territory list or any
 handoff.
+
+`node scripts/probe-job-titles.cjs` (no build needed) drives
+`parseJobTitle` over dashed and dashless Wrike titles. The batch is read only
+from the word "Batch": it becomes an output folder, so a trailing number is
+never guessed at.
 
 `node scripts/probe-campaign-rename.cjs` (after `yarn build`) drives
 `campaignRename` over a stubbed folder pair on BOTH naming conventions. Run it

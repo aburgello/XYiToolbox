@@ -929,3 +929,109 @@ $ls-shift: cubic-bezier(0.22, 1, 0.36, 1);    // colour, border, shadow
 @media (max-width: 420px) {
     .ls-tool-groups { grid-template-columns: minmax(0, 1fr); }
 }
+
+// A last guard, not the fix: `.form-tool` scrolls vertically, which makes its
+// overflow-x `auto` too, so a few pixels of anything too wide inside it grows
+// a horizontal scrollbar across the whole Localise page. On the landing the
+// page itself scrolls; sideways is never wanted here.
+.ls-main-surface.is-bare > .form-tool { overflow-x: hidden; }
+
+// ── Your jobs: one line under the header ────────────────────────────────────
+// Chips, not rows: this is a way in, not a list to read. The job for the
+// territory the open project sits in is lit, like everywhere else on the page.
+.ls-jobs {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    min-width: 0;
+}
+
+.ls-jobs-label {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 650;
+    color: #fff;
+
+    svg { color: var(--cat-icon, #5eead4); }
+}
+
+.ls-jobs-sample {
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: rgba(250, 204, 21, 0.14);
+    color: #facc15;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+// Scrolls sideways within itself rather than wrapping into a wall, and never
+// widens the page. Scrollbar hidden: the fade at the edge says there is more.
+.ls-jobs-chips {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent 100%);
+
+    &::-webkit-scrollbar { display: none; }
+}
+
+.ls-jobs-chip {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px 5px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.05);
+    color: #dfe8e6;
+    font-size: 12px;
+    white-space: nowrap;
+    cursor: pointer;
+
+    // Re-declared against index.scss's global blue hover.
+    &:hover, &:active {
+        background: rgba(255, 255, 255, 0.1);
+        border-color: rgba(94, 234, 212, 0.35);
+        color: #fff;
+    }
+
+    &.is-here {
+        background: rgba(94, 234, 212, 0.12);
+        border-color: rgba(94, 234, 212, 0.5);
+        color: #fff;
+        font-weight: 600;
+
+        &:hover, &:active { background: rgba(94, 234, 212, 0.2); }
+    }
+}
+
+.ls-jobs-flag { font-size: 13px; line-height: 1; }
+.ls-jobs-terr { font-weight: 650; }
+.ls-jobs-batch { color: #9fb3b0; }
+.ls-jobs-left { color: #8fa3a0; font-variant-numeric: tabular-nums; }
+
+.ls-jobs-refresh {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    border-radius: 7px;
+    background: none;
+    color: #8fa3a0;
+    cursor: pointer;
+
+    &:hover, &:active { background: rgba(255, 255, 255, 0.06); color: #fff; }
+}

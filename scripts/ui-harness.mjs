@@ -105,7 +105,10 @@ function bridgeSource(fixturesSrc) {
 })();`;
 }
 
-export async function launch({ root, fixturesSrc, width = 760, height = 1100 }) {
+// `routes`: { "<url substring>": <JSON body> } -- requests matching one are
+// ANSWERED with that body instead of blocked, so a test can stand in for the
+// jobs feed (or any HTTP source) without reaching the real one.
+export async function launch({ root, fixturesSrc, width = 760, height = 1100, routes = {} }) {
     const { server, port } = await serve(root);
     const prof = fs.mkdtempSync(path.join(os.tmpdir(), "xyi-ui-"));
     const dbg = 9300 + Math.floor(Math.random() * 500);
@@ -129,7 +132,19 @@ export async function launch({ root, fixturesSrc, width = 760, height = 1100 }) 
         // data nor send traffic anywhere -- an unreachable feed falls back to
         // the panel's own sample jobs, which is the state tested here.
         if (d.method === "Fetch.requestPaused") {
-            const local = d.params.request.url.startsWith(origin);
+            const url = d.params.request.url;
+            const hit = Object.keys(routes).find((k) => url.indexOf(k) !== -1);
+            if (hit) {
+                const headers = [
+                    { name: "Content-Type", value: "application/json" },
+                    { name: "Access-Control-Allow-Origin", value: "*" },
+                    { name: "Access-Control-Allow-Headers", value: "*" },
+                ];
+                const body = Buffer.from(d.params.request.method === "OPTIONS" ? "" : JSON.stringify(routes[hit])).toString("base64");
+                send("Fetch.fulfillRequest", { requestId: d.params.requestId, responseCode: 200, responseHeaders: headers, body });
+                return;
+            }
+            const local = url.startsWith(origin);
             if (!local) blocked.push(d.params.request.url);
             send(local ? "Fetch.continueRequest" : "Fetch.failRequest",
                 local ? { requestId: d.params.requestId } : { requestId: d.params.requestId, errorReason: "BlockedByClient" });

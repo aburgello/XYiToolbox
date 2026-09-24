@@ -38,6 +38,10 @@ export interface WrikeJob {
     // The subtask NAMES are the point: they are deliverable filenames in the
     // studio convention, so the modal can parse them into localiser rows.
     subtasks?: WrikeSubtask[];
+    /** Subtasks the feed sent WITHOUT a name. They can't become rows, and
+     *  dropping them silently made a five-subtask job read as a one-subtask
+     *  job; the job window says how many are missing instead. */
+    unnamedSubtasks?: number;
 }
 
 export interface WrikeSubtask {
@@ -334,6 +338,9 @@ function normalise(rows: any[]): WrikeJob[] {
                       customStatusName: String(st?.customStatusName ?? "").trim(),
                   })).filter((st: WrikeSubtask) => st.name !== "")
                 : undefined,
+            unnamedSubtasks: r.subtasks instanceof Array
+                ? r.subtasks.filter((st: any) => !String(st?.name ?? st?.title ?? "").trim()).length
+                : undefined,
         });
     }
     return out.filter((j) => j.title !== "");
@@ -427,6 +434,28 @@ export function refreshJobs(member: string): Promise<JobsFeedResult> {
 // still lists -- it just shows fewer chips.
 export function parseJobTitle(title: string): { film: string; territory: string; name: string; batch: string } {
     const parts = title.split(/\s+-\s+/).map((p) => p.trim());
+    // TITLES WITHOUT DASHES. Real boards also write "SF Motion Outdoor LV" and
+    // "XY026305 DOOH AU 1": no separators, so the territory was never found and
+    // the card showed a pin and the title twice. The territory is then the LAST
+    // two-letter capitals token (never OV); a batch only when the word "Batch"
+    // is there -- a bare trailing "2" might be a batch, and a guessed batch
+    // becomes a wrong OUTPUT FOLDER when the rows are sent to Localise.
+    if (parts.length === 1) {
+        const words = title.trim().split(/\s+/);
+        let ti = -1;
+        for (let i = words.length - 1; i > 0; i--) {
+            if (/^[A-Z]{2}$/.test(words[i]) && words[i] !== "OV") { ti = i; break; }
+        }
+        const batchMatch = title.match(/\bbatch\s*\d+\b/i);
+        if (ti > 0) {
+            return {
+                film: words[0],
+                territory: words[ti],
+                name: words.slice(0, ti).join(" "),
+                batch: batchMatch ? batchMatch[0] : "",
+            };
+        }
+    }
     const batchPart = parts.find((p) => /^batch\b/i.test(p)) || "";
     const rest = parts.filter((p) => p !== batchPart);
     return {
