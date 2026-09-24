@@ -258,7 +258,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "sixty-seven",
         label: "67",
-        description: "Plays this creative's master with its known pitfalls arriving at the seconds they happen, and a box to add the next one.",
+        description: "Plays this creative's master with its known pitfalls timed to the second.",
         icon: Eye,
         group: "qc",
         safety: "read",
@@ -424,7 +424,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "swapper",
         label: "Swapper",
-        description: "Swaps the selected layer's source for the item picked in the Project panel, keeping its size and position.",
+        description: "Swaps the selected layer's source for the Project panel's pick, keeping size and position.",
         icon: ArrowLeftRight,
         group: "transform",
         safety: "undoable",

@@ -280,7 +280,7 @@ export const TOOLS: ToolEntry[] = [
         icon: Repeat,
         Component: OVSwapTool,
         actions: ["Scan Active Comp", "Swap Selected", "Reset"],
-        description: "Swaps the OV precomps and OV artwork in the active comp for the territory components already imported into the project. Exact name match only, with a manual picker for anything it won't guess at.",
+        description: "Swaps the active comp's OV precomps and artwork for the territory components already imported.",
     },
     {
         id: "random-layers",
@@ -289,7 +289,7 @@ export const TOOLS: ToolEntry[] = [
         icon: Shuffle,
         Component: RandomLayersTool,
         actions: ["Random Z", "Random Starting Point"],
-        description: "Applies a random value within [Minimum, Minimum + Range] to whichever layers are currently selected in the active comp, either their Z position or their start time.",
+        description: "Randomises the Z position or start time of the selected layers within a range.",
     },
     {
         id: "name-generator",
@@ -298,7 +298,7 @@ export const TOOLS: ToolEntry[] = [
         icon: FileSignature,
         Component: NameGeneratorTool,
         actions: ["Generate Name", "Detect Name", "Reset"],
-        description: "Builds a standardised comp/filename from these fields for every selected item, or reverse-parses a selected item's existing name back into them (\"Detect Name\").",
+        description: "Builds a studio-standard name for the selected items, or reads one back into the fields.",
         // THE FIRST FILLABLE TOOL, and a deliberately unexciting one. Five short
         // text fields, each bounded by what it is: a film title, an artwork
         // type, a campaign, a site, a country. The worst case is a wrong word
@@ -365,7 +365,7 @@ export const TOOLS: ToolEntry[] = [
         icon: FileSpreadsheet,
         Component: CSVLocaliserTool,
         actions: ["Scan territories", "Re-scan", "Build a Batch", "Bespoke It", "Add row"],
-        description: "The main CSV-driven batch localiser: scan a campaign's territories, see what each one still needs, and generate the batch. Build a Batch picks creatives and sizes by hand.",
+        description: "Scans a campaign's territories and builds each batch from its specs or by hand.",
         // It is the DEFAULT pane of the Localise screen, so that is where an
         // artist should be sent -- in context with the rest of the pipeline,
         // not on an isolated tool page.
@@ -392,7 +392,7 @@ export const TOOLS: ToolEntry[] = [
         icon: Copy,
         Component: AEPThiefTool,
         actions: ["Copy AEPs"],
-        description: "Recursively copies .aep files from a source folder into a destination folder, skipping ones already there.",
+        description: "Copies .aep files from one folder tree into another, skipping ones already there.",
     },
     {
         id: "jpeg-loc",
@@ -401,7 +401,7 @@ export const TOOLS: ToolEntry[] = [
         icon: Image,
         Component: JPEGLocTool,
         actions: ["JPEG Loc"],
-        description: "Batch-replaces .jpg footage across a folder of .aep files with the best-matching JPG (by resolution + number) from a second folder.",
+        description: "Swaps the .jpg footage in a folder of .aep files for the best-matching localised JPGs.",
     },
     {
         id: "pdf-to-csv",
@@ -410,7 +410,7 @@ export const TOOLS: ToolEntry[] = [
         icon: FileSpreadsheet,
         Component: PDFToCSVTool,
         actions: ["PDF to CSV"],
-        description: "Scans a folder of PDFs and writes a Campaign_Data_<CC>.csv of matched master info. Filename scan only, never opens a project.",
+        description: "Turns a folder of spec PDFs into a campaign CSV of matched masters.",
     },
     {
         id: "edit-generator",
@@ -428,7 +428,7 @@ export const TOOLS: ToolEntry[] = [
         icon: FileText,
         Component: GenerateCueSheetTool,
         actions: ["Generate Cue Sheet"],
-        description: "Exports a cue sheet (layer in/out points and durations) for the active comp to a .txt file on the Desktop.",
+        description: "Exports the active comp's layer in and out points to a .txt on the Desktop.",
     },
     {
         // Named for where it is going, not what it does first: a tool id can't
@@ -444,7 +444,7 @@ export const TOOLS: ToolEntry[] = [
         // mode chooser, so "Screen library" does not exist yet for anything to
         // click — every button here stays unpressable by a stored link, and a
         // workflow step that wants the library has to open the tool and say so.
-        description: "Compose a deliverable from several masters. Creatives tiled across the frame, segments played in order. For MultipleArt rows, where no single master fits.",
+        description: "Builds one deliverable from several masters, tiled across the frame or played in sequence.",
     },
     {
         id: "cheeky-dt",
@@ -453,7 +453,7 @@ export const TOOLS: ToolEntry[] = [
         icon: Stamp,
         Component: CheekyDTTool,
         actions: ["Cheeky DT", "Territory Check"],
-        description: "Select what you would like to update on the active Frontcard from its filename.",
+        description: "Updates the active Frontcard's fields from its filename.",
     },
     {
         id: "artwork-check",
@@ -467,7 +467,7 @@ export const TOOLS: ToolEntry[] = [
         // press it on somebody's behalf. Nor is the folder picker: it opens a
         // modal AE dialog that only a person at the machine can answer.
         actionSafety: { "Check this deliverable": "read" },
-        description: "Which art edit this deliverable is supposed to use, read off the mech sheet in JPG_PNG, and whether that tiff is actually in the project. Point it at the JPG_PNG folder yourself when it can't find one above the project.",
+        description: "Reads the mech sheet for the art edit a deliverable needs, and checks it's in the project.",
     },
     {
         id: "check",
@@ -476,7 +476,7 @@ export const TOOLS: ToolEntry[] = [
         icon: ClipboardCheck,
         Component: CheckTool,
         actions: ["Aspect Ratio Rename", "Effects Used", "Comp / Footage Details", "File Name Check", "Marker Comment Guide", "Render Check"],
-        description: "A QC grab bag: aspect-ratio rename, effects-used report, comp/footage details, filename check, marker guide, and a render timecode checker.",
+        description: "QC checks: aspect-ratio rename, effects used, comp details, filenames, markers and timecode.",
     },
     {
         // LOCALISE, not Tools: it answers "how do I localise this one",
@@ -487,7 +487,7 @@ export const TOOLS: ToolEntry[] = [
         icon: ListChecks,
         Component: WorkflowBoardTool,
         actions: ["Change", "Start one", "Edit steps", "Reset", "Add", "Save for the team"],
-        description: "The team's checklist for localising a creative: which Components to use, what to watch for, plus shared notes. Reads the creative off the open project, or pick one from the campaign.",
+        description: "The team's checklist and shared notes for localising each creative.",
     },
     {
         id: "delivery-hub",
@@ -513,7 +513,7 @@ export const TOOLS: ToolEntry[] = [
         icon: Expand,
         Component: ScaleCompositionTool,
         actions: ["Scale by Width", "Scale by Height", "Scale Composition (Width + Height)", "Scale by Factor", "Multi Comp Scale", "Scale Detect", "Scale by Name", "Scale Reset"],
-        description: "Scales the active comp and every layer within it (including cameras) to fit a new size, keeping content proportional rather than stretching it.",
+        description: "Scales the active comp and all its layers to a new size, without stretching.",
     },
     {
         id: "adjust",
@@ -522,7 +522,7 @@ export const TOOLS: ToolEntry[] = [
         icon: SlidersHorizontal,
         Component: AdjustTool,
         actions: ["Adjust Width", "Adjust Height", "Adjust Duration", "Adjust Frame Rate", "Adjust Aspect Ratio"],
-        description: "Adjusts a single property of every selected composition directly, one field at a time.",
+        description: "Sets one property on every selected comp at once.",
     },
     {
         id: "safe-generator",
@@ -531,7 +531,7 @@ export const TOOLS: ToolEntry[] = [
         icon: ShieldCheck,
         Component: SafeGeneratorTool,
         actions: ["Generate Safe", "Generate Full Safe"],
-        description: "Draws safe-area guide overlays (a dimmed outer solid on an alpha-inverted matte) into the active comp.",
+        description: "Draws safe-area guides into the active comp.",
     },
     {
         id: "edit-tools",
@@ -574,7 +574,7 @@ export const TOOLS: ToolEntry[] = [
         icon: Target,
         Component: MasterOfNullsTool,
         actions: ["Master Null", "Master Selected Null", "Parental Guidance"],
-        description: "Creates a 3D master control null and parents unparented layers to it, or reports on an existing parenting hierarchy.",
+        description: "Parents unparented layers to a 3D master null, or reports the parenting.",
     },
     {
         id: "wall-tools",
@@ -592,7 +592,7 @@ export const TOOLS: ToolEntry[] = [
         icon: Expand,
         Component: ExtremeTools01Tool,
         actions: ["Landscape Extreme Generate", "Portrait Extreme Generate"],
-        description: "Generates ultra-wide/tall \"extreme\" format comps from surround-panel counts, total size, and aspect-ratio limits.",
+        description: "Builds ultra-wide or tall comps from panel counts, total size and aspect limits.",
     },
     {
         id: "extreme-tools-02",
@@ -610,7 +610,7 @@ export const TOOLS: ToolEntry[] = [
         icon: ScanSearch,
         Component: NameAuditTool,
         actions: ["Audit a Masters root", "Audit a batch / AE folder"],
-        description: "Checks a folder tree's filenames against the studio convention. What's on the new form, what's still on the old DGTL one, and what can't be parsed.",
+        description: "Checks a folder's filenames against the naming convention, old and new.",
     },
     {
         id: "batch-match",
@@ -619,7 +619,7 @@ export const TOOLS: ToolEntry[] = [
         icon: Crosshair,
         Component: BatchMatchTool,
         actions: ["Capture from selection", "Preview changes"],
-        description: "Copies a property value you've already got right onto the matching layer in every .aep in a folder. Verbatim, offset, or scaled proportionally to each file's own comp/source size.",
+        description: "Copies a property you've set onto the matching layer in every .aep in a folder.",
     },
     {
         id: "edit-in-context",
@@ -637,7 +637,7 @@ export const TOOLS: ToolEntry[] = [
         icon: Repeat,
         Component: LOSToolsTool,
         actions: ["Apply CSV to Projects"],
-        description: "Replaces a named target layer across every .aep in a project folder, from a CSV mapping matched by size token.",
+        description: "Replaces a named layer across every .aep in a folder, from a CSV matched by size.",
     },
     {
         id: "master-tools",
@@ -646,7 +646,7 @@ export const TOOLS: ToolEntry[] = [
         icon: Layers,
         Component: MasterToolsTool,
         actions: ["Auto AR", "Velocity Scaler", "Transform Apply - Scale", "Transform Apply - Position"],
-        description: "Auto aspect-ratio rig, velocity scaler, one-click comp sizes, and transform-apply for scale/position.",
+        description: "Auto aspect-ratio rig, velocity scaler, comp size presets and transform apply.",
     },
     {
         id: "project-buttons",
@@ -655,7 +655,7 @@ export const TOOLS: ToolEntry[] = [
         icon: MousePointerClick,
         Component: ProjectButtonsTool,
         actions: ["Shape to Masks", "C4D Line Art", "Optimal Placement", "Detail-Preserving Scale", "Midcarder"],
-        description: "Misc shortcut buttons: shape-to-mask conversion, Cinema 4D line-art import, optimal placement, and detail-preserving scale.",
+        description: "Shortcuts: shape to mask, C4D line-art import, placement and detail-preserving scale.",
     },
     {
         id: "timesheet-tracker",
@@ -664,7 +664,7 @@ export const TOOLS: ToolEntry[] = [
         icon: Clock,
         Component: TimesheetTrackerTool,
         actions: ["Generate JSON", "Copy to Clipboard", "New Batch", "Generate Batch JSON"],
-        description: "Track time against a job, territory, and category. Quick mode logs one file; Batch mode auto-tracks time per file across a whole delivery batch and compiles one JSON at the end.",
+        description: "Tracks time per job, territory and category, for one file or a whole batch.",
     },
     {
         id: "useful-folders",
@@ -720,7 +720,7 @@ export const TOOLS: ToolEntry[] = [
         icon: Code2,
         Component: ExpressionsBankTool,
         actions: ["Add", "Save", "Copy code", "Share to team library", "Group by Source", "Group by Tag"],
-        description: "Save, search, and copy expressions the team uses often, sectioned into yours, the team's, and the built-ins. Click an entry to copy its code.",
+        description: "Search, save and copy the expressions the team uses most.",
     },
     {
         id: "comp-inspector",
@@ -747,7 +747,7 @@ export const TOOLS: ToolEntry[] = [
         icon: Scissors,
         Component: MaskSeparatorTool,
         actions: ["Separate Masks"],
-        description: "Splits a layer with 2+ masks into one duplicate layer per mask (by Christopher R. Green, via aenhancers.com).",
+        description: "Splits a layer with several masks into one layer per mask (by Christopher R. Green).",
     },
     {
         id: "darken",
@@ -765,7 +765,7 @@ export const TOOLS: ToolEntry[] = [
         icon: Copy,
         Component: ReplicatorTool,
         actions: ["Copy"],
-        description: "Recursively copies a source folder's contents into a destination folder, skipping files that already exist there.",
+        description: "Copies a folder's contents into another, skipping files already there.",
     },
     {
         id: "quick-fx",
@@ -780,7 +780,7 @@ export const TOOLS: ToolEntry[] = [
             "Glow", "Drop Shadow",
             "Turbulent Displace",
         ],
-        description: "One-click apply for a curated list of AE effects to the selected layer(s) -- a faster alternative to AE's own Effects & Presets search.",
+        description: "One-click apply for a curated list of effects on the selected layers.",
     },
     // "ask" is deliberately NOT registered as a tool. It moved to a floating
     // panel mounted in main.tsx (AgentBubble.tsx) so it survives navigation --
