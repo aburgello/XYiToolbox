@@ -1,0 +1,56 @@
+// A drawn file tile (FileBadge.tsx). Fixed px throughout -- no aspect-ratio
+// (Chrome 88, the target is chrome74). Colours are the apps' own hues,
+// darkened for the page and brightened for the lettering, as literals rather
+// than color-mix() (Chrome 111).
+.file-badge {
+    position: relative;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: flex-end;
+    justify-content: center;
+    box-sizing: border-box;
+    border-radius: 3px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    font-weight: 800;
+    letter-spacing: 0.2px;
+    line-height: 1;
+    background: #2a2f33;
+    color: #b8c2c6;
+
+    // The folded corner: a triangle of the page behind, and a lighter fold.
+    &::before {
+        content: "";
+        position: absolute;
+        top: -1px;
+        right: -1px;
+        background: linear-gradient(225deg, #1c1f21 50%, rgba(255, 255, 255, 0.28) 50%);
+        border-top-right-radius: 3px;
+    }
+
+    &--sm {
+        width: 18px;
+        height: 21px;
+        padding-bottom: 3px;
+        font-size: 6.5px;
+
+        &::before { width: 5px; height: 5px; }
+    }
+
+    &--md {
+        width: 26px;
+        height: 30px;
+        padding-bottom: 4px;
+        border-radius: 4px;
+        font-size: 8px;
+
+        &::before { width: 8px; height: 8px; border-top-right-radius: 4px; }
+    }
+
+    &--aep { background: #231a3d; color: #b69cff; }
+    &--ai  { background: #3a2206; color: #ffb454; }
+    &--psd { background: #0c2a44; color: #6cc4ff; }
+    &--png { background: #0e3330; color: #5eead4; }
+    &--jpg { background: #13302a; color: #86efac; }
+    &--mov { background: #2a1238; color: #e59cff; }
+    &--pdf { background: #3a1010; color: #ff8a80; }
+}

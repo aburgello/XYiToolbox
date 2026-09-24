@@ -26,7 +26,9 @@ interface Props {
 // the generic tool-content-header above them would double up. Every other
 // tool relies on this header for its title/description now that the
 // per-tool internal <h2> + hint headers were removed (they duplicated it).
-const HUB_TOOL_IDS = ["review-hub", "delivery-hub"];
+// Localised Library joined them: it leads with its campaign, and carries its
+// own TutorialIcon.
+const HUB_TOOL_IDS = ["review-hub", "delivery-hub", "localised-library"];
 
 export const ToolScreen: React.FC<Props> = ({ toolId, onBack, onHome }) => {
     const tool = TOOLS.find((t) => t.id === toolId);

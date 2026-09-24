@@ -32,6 +32,9 @@ import {
     MapPin,
     ChevronRight,
     ChevronDown,
+    ChevronUp,
+    Globe,
+    MoreHorizontal,
     Check,
     Search,
     RefreshCw,
@@ -56,6 +59,7 @@ import { fs, path } from "../../lib/cep/node";
 import CheckboxToggle from "../CheckboxToggle";
 import Tooltip from "../Tooltip";
 import Dropdown from "../Dropdown";
+import Droplet from "../Droplet";
 import { toFileUrl } from "../lib/fileUrl";
 import { alertDialog, confirmDialog, promptDialog, selectDialog } from "../Dialog";
 import { showMcItReport, type McReport } from "../McItReportModal";
@@ -548,6 +552,13 @@ interface MasterPick {
     tier: number; // > 0 matches the row's creative; 0 is another creative's
 }
 
+/** A batch tag and its sheet's filename usually say the same thing
+ *  ("SF Motion Outdoor AR" / "SF Motion Outdoor AR.pdf"). */
+const sameName = (a: string, b: string) => {
+    const k = (x: string) => String(x || "").replace(/\.pdf$/i, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    return k(a) === k(b);
+};
+
 const isBridge = () => typeof (window as any).cep !== "undefined";
 const batchKey = (territory: string, pdfName: string) => `${territory}/${pdfName}`;
 
@@ -589,13 +600,35 @@ function baseName(p: string): string {
     return bits[bits.length - 1] || "";
 }
 
-const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
+/** What the Localise screen's Library card shows: the campaign this tool is
+ *  set to, and its pinned banner. Reported up rather than re-read, so the card
+ *  and this picker can never name different campaigns. */
+export interface LocaliserCampaignInfo {
+    name: string;
+    marketsRoot: string;
+    banner: string;
+}
+
+const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTerritory }: ToolProps & {
+    onCampaignChange?: (c: LocaliserCampaignInfo | null) => void;
+    /** The Localise screen's Library card. Placed here because only this tool
+     *  knows whether the campaign is set up: beside the campaign card when it
+     *  is, above the setup form while it is not. */
+    librarySlot?: React.ReactNode;
+    /** The territory the open project sits in (the Library card detected it),
+     *  pinned first in the scan list. */
+    hereTerritory?: string;
+}) => {
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
     const [campaignName, setCampaignName] = useState("");
     const [aepPath, setAepPath] = useState("");
     const [mastersAuto, setMastersAuto] = useState(false);
     const [marketsRoot, setMarketsRoot] = useState("");
-    const [skipExisting, setSkipExisting] = useState(true);
+    // A RULE, NOT A SETTING. Off, csvLocaliserRun copies the master straight
+    // over an existing _V01.aep -- an artist's localised file -- and opens the
+    // copy. There is no run where that is what somebody wants, so there is no
+    // box to untick. "Done · Re-run" therefore builds only what is missing.
+    const skipExisting = true;
     // Inline MC It! -- ON by default. Each generated file is already open and
     // about to be saved, so swapping its PNG/JPG footage in that same session
     // costs no extra open/save cycle; running MC It! separately afterwards
@@ -688,6 +721,10 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
     const [notice, setNotice] = useState<string | null>(null);
 
     const [scan, setScan] = useState<TerritoryScan[] | null>(null);
+    // The scan's list can be put away without throwing it away: it was only
+    // ever closable by leaving the page, and it pushes Tools off the bottom.
+    // Hiding keeps every read territory, so Show is instant; a new scan opens it.
+    const [resultsOpen, setResultsOpen] = useState(true);
 
 
     // Territories whose specs are being read right now (one spinner each).
@@ -1496,6 +1533,11 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
         })();
         return () => { cancelled = true; };
     }, [campaigns]);
+    // Tell the Localise screen, so its Library card names this campaign.
+    useEffect(() => {
+        if (!onCampaignChange) return;
+        onCampaignChange(campaignName ? { name: campaignName, marketsRoot, banner: banners[campaignName] || "" } : null);
+    }, [campaignName, marketsRoot, banners, onCampaignChange]);
     const [bannerFailed, setBannerFailed] = useState(false);
     const readyBanner = banners[campaignName] || "";
     useEffect(() => { setBannerFailed(false); }, [readyBanner]);
@@ -1548,7 +1590,9 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
         setMastersAuto(!!masters);
         if (masters) setAepPath(masters);
         if (!restoring) {
-            setNotice(masters ? "Markets from campaign; Masters auto-detected from its root." : "Markets set. Pick the AEP masters folder below.");
+            // Only when there is something to do. The success case is already
+            // said by the Masters field's "auto-detected" badge.
+            setNotice(masters ? null : "No masters folder found beside this campaign. Pick the AEP masters folder below.");
             evalTS("csvLocaliserSaveLastCampaign", name).catch(() => {});
         }
     };
@@ -1789,6 +1833,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
         }
         setBusy(true);
         setScan(null);
+        setResultsOpen(true);
         setMasters({});
         try {
             const territories: string[] = (await evalTS("scanTerritories", marketsRoot)) || [];
@@ -1806,11 +1851,9 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
             );
             setBatchStatus({});
             setExcludedRows({});
-            setNotice(
-                territories.length
-                    ? `${territories.length} territor${territories.length === 1 ? "y" : "ies"}. Open one to read its specs.`
-                    : "No territories found under that Markets folder."
-            );
+            // Only when there is nothing to show -- a line repeating the
+            // list's own length under the list said nothing.
+            setNotice(territories.length ? null : "No territories found under that Markets folder.");
         } catch (e: any) {
             setNotice(e?.message || "Scan failed.");
         } finally {
@@ -2201,8 +2244,56 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
 
     const filtered = useMemo(() => {
         const q = search.trim().toLowerCase();
-        return (scan || []).filter((t) => !q || t.territory.toLowerCase().includes(q));
-    }, [scan, search]);
+        const list = (scan || []).filter((t) => !q || t.territory.toLowerCase().includes(q));
+        // The open project's territory first -- the one you are most likely
+        // here for, the same pin the Library card and the Library make.
+        const pinned = list.filter((t) => t.territory === hereTerritory);
+        return pinned.concat(list.filter((t) => t.territory !== hereTerritory));
+    }, [scan, search, hereTerritory]);
+
+    // TWO ROUTES, AS BUTTONS. These were disclosure triangles reading "Build a
+    // batch" and "Paste a CSV instead" -- the second is gone (nobody pastes a
+    // CSV now the builder exists) and the first was doing too much work as a
+    // caret. Bespoke sits beside it because it answers the same question a row
+    // poses: this one isn't a single master.
+    const routesEl = (
+        <div className="specs-routes">
+            <button
+                className={"specs-route" + (buildOpen ? " is-open" : "")}
+                onClick={() => setBuildOpen((v) => !v)}
+            >
+                <Wand2 size={14} />
+                <span className="specs-route-t">Build a Batch</span>
+                <span className="specs-route-s">Pick creatives and sizes by hand</span>
+            </button>
+            {/* NEVER DISABLED. This was gated on the Build-a-Batch grid
+                having complete rows, and that grid sits BEHIND the button
+                next to this one -- so with it closed the grid is one empty
+                row, the count is zero, and the route to Bespoke was greyed
+                out at exactly the moment somebody first reaches for it.
+                Rows are a bonus this button carries when they exist, not a
+                precondition for opening a screen that works on its own. */}
+            <button
+                className="specs-route"
+                onClick={sendToBespoke}
+            >
+                <Layers size={14} />
+                <span className="specs-route-t">
+                    Bespoke It
+                    {/* The count the subtitle carries, for the compact card
+                        where subtitles are hidden. */}
+                    {bespokeCandidates.length > 0 && (
+                        <span className="specs-route-badge">{bespokeCandidates.length}</span>
+                    )}
+                </span>
+                <span className="specs-route-s">
+                    {bespokeCandidates.length > 0
+                        ? `Take ${bespokeCandidates.length} row${bespokeCandidates.length === 1 ? " that needs" : "s that need"} more than one master`
+                        : "Several masters in one deliverable"}
+                </span>
+            </button>
+        </div>
+    );
 
     return (
         <div className="form-tool specs-tool" ref={toolRootRef}>
@@ -2215,35 +2306,37 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                 of requiring you to notice an empty box. */}
             <div className="specs-setup">
                 {!showSetup && (
-                    /* Everything the form would ask for, already answered. Edit
-                       puts the full form back; it never disappears, it just
-                       stops being the first thing you meet. */
-                    <div className={"specs-ready" + (readyBanner && !bannerFailed ? " has-banner" : "")}>
-                        {/* The pinned banner, twice: washed behind the row so
-                            the whole card takes the campaign's colour, and as a
-                            tile you can actually recognise. The tick rides the
-                            tile's corner -- it still says "set up". */}
-                        {readyBanner && !bannerFailed && (
-                            <span className="specs-ready-wash" aria-hidden="true">
-                                <img src={toFileUrl(readyBanner)} alt="" />
-                            </span>
-                        )}
-                        <span className="specs-ready-art" aria-hidden="true">
-                            {readyBanner && !bannerFailed
-                                ? <img src={toFileUrl(readyBanner)} alt="" onError={() => setBannerFailed(true)} />
-                                : <span className="specs-ready-art-none">{campaignName.charAt(0).toUpperCase()}</span>}
-                            <Check size={10} className="specs-ready-tick" />
-                        </span>
-                        <span className="specs-ready-text">
-                            <strong>{campaignName}</strong>
-                            <span>{baseName(marketsRoot)} · {mastersAuto ? "masters found" : baseName(aepPath)}</span>
-                        </span>
-                        <button className="specs-ready-edit" onClick={() => setSetupOpen(true)}>Edit</button>
-                        <button className="specs-scan-btn" disabled={busy || !marketsRoot} onClick={runScan}>
-                            {scan ? <RefreshCw size={14} /> : <ScanSearch size={14} />} {scan ? "Re-scan" : "Scan territories"}
-                        </button>
+                    /* THE CAMPAIGN, AS THE PAGE'S SUBJECT. Everything the form
+                       would ask for, already answered: the banner pinned in OV
+                       Library, the name, and what to do next -- Scan leads,
+                       the two routes follow. The Library card sits beside it
+                       (under it on a narrow dock), so the campaign and what is
+                       already localised for it are read together. */
+                    <div className={"specs-hub" + (librarySlot ? " has-library" : "") + (readyBanner && !bannerFailed ? " has-banner" : "")}>
+                        <div className={"specs-camp" + (readyBanner && !bannerFailed ? " has-banner" : "")}>
+                            <div className="specs-camp-banner" aria-hidden="true">
+                                {readyBanner && !bannerFailed
+                                    ? <img src={toFileUrl(readyBanner)} alt="" onError={() => setBannerFailed(true)} />
+                                    : <span className="specs-camp-initial">{campaignName.charAt(0).toUpperCase()}</span>}
+                            </div>
+                            <div className="specs-camp-head">
+                                <span className="specs-camp-text">
+                                    <strong>{campaignName}</strong>
+                                    <span>{baseName(marketsRoot)} · {mastersAuto ? "masters found" : baseName(aepPath)}</span>
+                                </span>
+                                <button className="specs-ready-edit" onClick={() => setSetupOpen(true)}>Edit</button>
+                            </div>
+                            <div className="specs-camp-actions">
+                                <button className={"specs-scan-btn specs-camp-scan" + (scan ? " is-secondary" : "")} disabled={busy || !marketsRoot} onClick={runScan}>
+                                    {scan ? <RefreshCw size={14} /> : <ScanSearch size={14} />} {scan ? "Re-scan" : "Scan territories"}
+                                </button>
+                                {routesEl}
+                            </div>
+                        </div>
+                        {librarySlot}
                     </div>
                 )}
+                {showSetup && librarySlot && <div className="specs-hub-solo">{librarySlot}</div>}
                 {showSetup && (
                 <>
                 <div className="specs-setup-root">
@@ -2290,46 +2383,58 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                 disabled={busy}
                             />
                         </div>
-                        <Tooltip text="Add a campaign (pick its Markets folder)">
-                            <button className="icon-btn specs-campaign-btn" disabled={busy} onClick={addCampaign}><FolderPlus size={14} /></button>
-                        </Tooltip>
-                        <Tooltip text={campaignName ? `Share "${campaignName}"'s Markets path with the team` : "Pick a campaign to share it"}>
-                            <button className="icon-btn specs-campaign-btn" disabled={busy || !campaignName} onClick={shareCampaign}><Share2 size={14} /></button>
-                        </Tooltip>
-                        <Tooltip
-                            text={
-                                !campaignName
-                                    ? "Pick a campaign first"
-                                    : retiredEntry(campaignName)
-                                    ? `Retired by ${retiredEntry(campaignName)!.retiredBy}. Click to un-retire for the team`
-                                    : "Mark retired for the team (volume archived). Marks everyone's picker; deletes nothing."
-                            }
-                        >
-                            <button
-                                className={"icon-btn specs-campaign-btn" + (campaignName && retiredEntry(campaignName) ? " is-retired" : "")}
-                                disabled={busy || !campaignName}
-                                onClick={toggleRetireCampaign}
-                            >
-                                <Archive size={14} />
-                            </button>
-                        </Tooltip>
-                        {/* ONLY WHILE SOMETHING IS RETIRED. Zero estate the
-                            rest of the time, and impossible to miss when it
-                            matters. */}
-                        {teamCampaigns.rows.some((r) => r.retiredBy) && (
-                            <Tooltip text="Bring a retired campaign back into everyone's picker">
+                        {/* ONE MENU, NOT FIVE ICONS. Add, share, retire, restore
+                            and remove are all "managing the list", done a few
+                            times a campaign; five unlabelled squares beside the
+                            picker made them look like the page's main controls
+                            and made you hover each to learn which was which. */}
+                        <Droplet
+                            panelClassName="specs-manage-panel"
+                            trigger={({ open: menuOpen, toggle }) => (
                                 <button
-                                    className="icon-btn specs-campaign-btn"
+                                    className={"specs-manage-btn" + (menuOpen ? " is-open" : "")}
                                     disabled={busy}
-                                    onClick={restoreRetiredCampaign}
+                                    onClick={toggle}
                                 >
-                                    <ArchiveRestore size={14} />
+                                    Manage <ChevronDown size={13} />
                                 </button>
-                            </Tooltip>
-                        )}
-                        <Tooltip text={campaignName ? `Remove "${campaignName}" from this machine` : "Pick a campaign to remove it"}>
-                            <button className="icon-btn specs-campaign-btn specs-campaign-btn--danger" disabled={busy || !campaignName} onClick={removeCampaign}><Trash2 size={14} /></button>
-                        </Tooltip>
+                            )}
+                        >
+                            {(close) => {
+                                const retired = campaignName ? retiredEntry(campaignName) : null;
+                                return (
+                                    <div className="specs-manage-menu">
+                                        <button onClick={() => { close(); void addCampaign(); }}>
+                                            <FolderPlus size={13} />
+                                            <span><strong>Add a campaign…</strong><em>Pick its Markets folder</em></span>
+                                        </button>
+                                        <button disabled={!campaignName} onClick={() => { close(); void shareCampaign(); }}>
+                                            <Share2 size={13} />
+                                            <span><strong>Share with the team</strong><em>{campaignName ? `Send ${campaignName}'s folders to everyone` : "Pick a campaign first"}</em></span>
+                                        </button>
+                                        <button disabled={!campaignName} onClick={() => { close(); void toggleRetireCampaign(); }}>
+                                            <Archive size={13} />
+                                            <span>
+                                                <strong>{retired ? "Un-retire for the team" : "Retire for the team"}</strong>
+                                                <em>{retired ? `Retired by ${retired.retiredBy}` : "Greys it out in everyone's picker. Deletes nothing."}</em>
+                                            </span>
+                                        </button>
+                                        {/* Only while something is retired. */}
+                                        {teamCampaigns.rows.some((r) => r.retiredBy) && (
+                                            <button onClick={() => { close(); void restoreRetiredCampaign(); }}>
+                                                <ArchiveRestore size={13} />
+                                                <span><strong>Restore a retired campaign…</strong><em>Back into everyone's picker</em></span>
+                                            </button>
+                                        )}
+                                        <span className="specs-manage-sep" />
+                                        <button className="is-danger" disabled={!campaignName} onClick={() => { close(); void removeCampaign(); }}>
+                                            <Trash2 size={13} />
+                                            <span><strong>Remove from this machine</strong><em>{campaignName ? `Only here. The team keeps ${campaignName}.` : "Pick a campaign first"}</em></span>
+                                        </button>
+                                    </div>
+                                );
+                            }}
+                        </Droplet>
                     </div>
                     {campaignName && retiredEntry(campaignName) && (
                         <p className="specs-campaign-retired">
@@ -2390,27 +2495,18 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                     they no longer share a shape -- the two toggles sit quietly
                     on their own line rather than wearing button costumes next
                     to the primary action. */}
+                {/* The inline MC It! / Support Swap switches live in Build a
+                    Batch, beside the Localise button they govern (and the
+                    batch rows run with the same state), so Setup no longer
+                    carries a second copy. Skip existing is a rule, above. */}
                 <div className="specs-run-row">
-                    <div className="specs-options">
-                        <CheckboxToggle checked={skipExisting} onChange={setSkipExisting} label="Skip existing files" />
-                        <Tooltip text="Swap each generated file's PNG/JPG footage for the localised versions in the territory's JPG_PNG batch folder, while the file is still open, instead of re-opening every file afterwards with MC It!">
-                            <span>
-                                <CheckboxToggle checked={runMcIt} onChange={setRunMcIt} label="Run MC It! inline" />
-                            </span>
-                        </Tooltip>
-                        <Tooltip text="Swap each generated file's .ai/.psd component sources for this market's own, from the territory's Masters/Support, while the file is still open. Needs that folder to exist.">
-                            <span>
-                                <CheckboxToggle checked={runSupportSwap} onChange={setRunSupportSwap} label="Support Swap inline" />
-                            </span>
-                        </Tooltip>
-                    </div>
+                    {setupComplete && (
+                        <button className="specs-ready-done" onClick={() => setSetupOpen(false)}>Done</button>
+                    )}
                     <button className="specs-scan-btn" disabled={busy || !marketsRoot} onClick={runScan}>
                         {scan ? <RefreshCw size={14} /> : <ScanSearch size={14} />} {scan ? "Re-scan" : "Scan territories"}
                     </button>
                 </div>
-                {setupComplete && (
-                    <button className="specs-ready-done" onClick={() => setSetupOpen(false)}>Done</button>
-                )}
                 </>
                 )}
             </div>
@@ -2418,13 +2514,23 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
             {progress && <p className="hint specs-progress">{progress}</p>}
 
             {/* Results */}
-            {scan && scan.length > 0 && (
+            {scan && scan.length > 0 && !resultsOpen && (
+                <button className="specs-results-collapsed" onClick={() => setResultsOpen(true)}>
+                    <ScanSearch size={13} />
+                    <span>{scan.length} territor{scan.length === 1 ? "y" : "ies"} scanned</span>
+                    <span className="specs-results-show">Show <ChevronDown size={13} /></span>
+                </button>
+            )}
+            {scan && scan.length > 0 && resultsOpen && (
                 <div className="specs-results">
                     <div className="specs-toolbar">
                         <div className="specs-search">
                             <Search size={13} />
                             <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filter territories…" />
                         </div>
+                        <button className="specs-results-hide" onClick={() => setResultsOpen(false)}>
+                            Hide <ChevronUp size={13} />
+                        </button>
                     </div>
 
                     {!aepPath && <p className="hint specs-warn">Pick the AEP masters folder above to enable batch runs.</p>}
@@ -2437,12 +2543,14 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                             // so it must stay clickable -- clicking is what reads it.
                             const runnable = !t.loaded || t.rowCount > 0;
                             const batchCount = t.batches.filter((b) => b.rows.length).length;
+                            // NOTHING until read: "open to read" on all 23 rows
+                            // was one grey pill repeated down the page.
                             const status = loading
                                 ? "reading…"
                                 : !t.loaded
-                                ? "open to read"
+                                ? ""
                                 : t.rowCount > 0
-                                ? `${batchCount} batch${batchCount === 1 ? "" : "es"} · ${t.rowCount} rows`
+                                ? `${batchCount} batch${batchCount === 1 ? "" : "es"} · ${t.rowCount} row${t.rowCount === 1 ? "" : "s"}`
                                 : t.hasSpecs
                                 ? "no rows"
                                 : "no Specs";
@@ -2451,7 +2559,7 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                             return (
                                 <motion.div
                                     key={t.territory}
-                                    className={"specs-terr" + (runnable ? "" : " is-disabled")}
+                                    className={"specs-terr" + (runnable ? "" : " is-disabled") + (t.territory === hereTerritory ? " is-here" : "")}
                                     initial={reduced ? false : { opacity: 0, y: 6 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     /* Explicit per-item delay, not staggerChildren --
@@ -2463,13 +2571,21 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                 >
                                     <div className="specs-terr-head">
                                         <button className="specs-terr-main" onClick={() => runnable && toggleExpand(t.territory)} disabled={!runnable}>
+                                            {/* No flag known: a globe, not a pin -- the pin
+                                                means "the open project is here". */}
                                             {flag ? (
                                                 <span className="specs-terr-flag" aria-hidden="true">{flag}</span>
                                             ) : (
-                                                <MapPin size={13} />
+                                                <Globe size={13} className="specs-terr-noflag" />
                                             )}
-                                            <span className="specs-terr-name">{t.territory}</span>
-                                            <span className={"specs-pill specs-pill--" + statusClass}>{status}</span>
+                                            <span className="specs-terr-name">{t.territory.replace(/_/g, " ")}</span>
+                                            {t.territory === hereTerritory && (
+                                                <span className="specs-terr-here"><MapPin size={11} /> open project</span>
+                                            )}
+                                            {/* Pushes the status and chevron to the edge whether
+                                                or not a status is showing. */}
+                                            <span className="specs-terr-spacer" />
+                                            {status && <span className={"specs-pill specs-pill--" + statusClass}>{status}</span>}
                                             {runnable && (open ? <ChevronDown size={14} /> : <ChevronRight size={14} />)}
                                         </button>
                                         <Tooltip text={t.hasSpecs ? "Open this territory's Specs folder in Finder/Explorer" : "Open this territory's folder in Finder/Explorer"}>
@@ -2540,11 +2656,14 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                                                         <FileText size={13} />
                                                                     </span>
                                                                 </Tooltip>
-                                                                <span className="specs-batch-name">{b.pdfName}</span>
-                                                                <span className="specs-batch-tag">{b.batch}</span>
+                                                                <span className="specs-batch-name">{b.pdfName.replace(/\.pdf$/i, "")}</span>
+                                                                {/* Only when it differs from the sheet's own
+                                                                    name -- the same words twice side by side
+                                                                    was most of this row. */}
+                                                                {sameName(b.batch, b.pdfName) ? null : <span className="specs-batch-tag">{b.batch}</span>}
                                                                 {b.error ? <span className="specs-batch-err">{b.error}</span> : (
                                                                     <span className={"specs-batch-ok" + (someExcluded ? " specs-batch-ok--filtered" : "")}>
-                                                                        {someExcluded ? `${incl} of ${b.rows.length} rows` : `${b.rows.length} rows`}
+                                                                        {someExcluded ? `${incl} of ${b.rows.length} rows` : `${b.rows.length} row${b.rows.length === 1 ? "" : "s"}`}
                                                                     </span>
                                                                 )}
                                                                 {/* The headline for a batch that has gained sizes:
@@ -2596,36 +2715,45 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                                                                             <RotateCcw size={13} />
                                                                         </button>
                                                                     </Tooltip>
-                                                                    {/* Enabled once the batch's AE output exists (pre-scan
-                                                                        detection or a completed run this session). */}
-                                                                    <Tooltip
-                                                                        text={
-                                                                            mcItInlineDone[key]
-                                                                                ? "Footage was already swapped during localisation. Run this only to redo the swap. The preview will list matches again, including ones already applied."
-                                                                                : "Swap the placeholder PNG/JPGs in this batch's AEPs for the localised images (previews first)"
-                                                                        }
+                                                                    {/* THE FOLLOW-UPS, IN A MENU. MC It! and Support
+                                                                        Swap usually run INLINE during the localise, so
+                                                                        these are the redo and the way in for a batch
+                                                                        built in an earlier session -- four buttons in
+                                                                        four colours made them look like four equal
+                                                                        next steps. Enabled once the batch's AE output
+                                                                        exists (pre-scan detection or a run this session). */}
+                                                                    <Droplet
+                                                                        panelClassName="specs-batch-menu-panel"
+                                                                        trigger={({ open: menuOpen, toggle }) => (
+                                                                            <button
+                                                                                className={"specs-batch-run specs-batch-more" + (menuOpen ? " is-open" : "")}
+                                                                                disabled={busy || (!b.done && st !== "done")}
+                                                                                onClick={toggle}
+                                                                                aria-label="More for this batch: MC It!, Support Swap"
+                                                                            >
+                                                                                <MoreHorizontal size={14} />
+                                                                            </button>
+                                                                        )}
                                                                     >
-                                                                        <button
-                                                                            className="specs-batch-run specs-batch-mcit"
-                                                                            disabled={busy || (!b.done && st !== "done")}
-                                                                            onClick={() => runBatchMcIt(t, b)}
-                                                                        >
-                                                                            <ImageIcon size={13} /> {mcItInlineDone[key] ? "Re-run MC It!" : "MC It!"}
-                                                                        </button>
-                                                                    </Tooltip>
-                                                                    {/* The other half of the same job, and the only
-                                                                        way to reach it for a batch built in an
-                                                                        earlier session — the builder's own copy
-                                                                        only knows about runs it made itself. */}
-                                                                    <Tooltip text="Swap this batch's AEPs' .ai/.psd component sources for this market's own, from its Masters/Support (previews first)">
-                                                                        <button
-                                                                            className="specs-batch-run specs-batch-mcit"
-                                                                            disabled={busy || (!b.done && st !== "done")}
-                                                                            onClick={() => runBatchSupportSwap(t, b)}
-                                                                        >
-                                                                            <Layers size={13} /> Support Swap
-                                                                        </button>
-                                                                    </Tooltip>
+                                                                        {(close) => (
+                                                                            <div className="specs-batch-menu">
+                                                                                <button onClick={() => { close(); runBatchMcIt(t, b); }}>
+                                                                                    <ImageIcon size={13} />
+                                                                                    <span>
+                                                                                        <strong>{mcItInlineDone[key] ? "Re-run MC It!" : "MC It!"}</strong>
+                                                                                        <em>{mcItInlineDone[key] ? "Already swapped during the localise. Redo it." : "Swap the PNG/JPGs for the localised images"}</em>
+                                                                                    </span>
+                                                                                </button>
+                                                                                <button onClick={() => { close(); runBatchSupportSwap(t, b); }}>
+                                                                                    <Layers size={13} />
+                                                                                    <span>
+                                                                                        <strong>Support Swap</strong>
+                                                                                        <em>Swap the .ai/.psd sources for this market's own</em>
+                                                                                    </span>
+                                                                                </button>
+                                                                            </div>
+                                                                        )}
+                                                                    </Droplet>
                                                                 </>
                                                             )}
                                                         </div>
@@ -3043,41 +3171,9 @@ const CSVLocaliserTool = ({ onSelectTool }: ToolProps) => {
                 </div>
             )}
 
-            {/* TWO ROUTES, AS BUTTONS. These were disclosure triangles reading
-                "Build a batch" and "Paste a CSV instead" -- the second is gone
-                (nobody pastes a CSV now the builder exists) and the first was
-                doing too much work as a caret. Bespoke sits beside it because
-                it answers the same question a row poses: this one isn't a
-                single master. */}
-            <div className="specs-routes">
-                <button
-                    className={"specs-route" + (buildOpen ? " is-open" : "")}
-                    onClick={() => setBuildOpen((v) => !v)}
-                >
-                    <Wand2 size={14} />
-                    <span className="specs-route-t">Build a Batch</span>
-                    <span className="specs-route-s">Pick creatives and sizes by hand</span>
-                </button>
-                {/* NEVER DISABLED. This was gated on the Build-a-Batch grid
-                    having complete rows, and that grid sits BEHIND the button
-                    next to this one -- so with it closed the grid is one empty
-                    row, the count is zero, and the route to Bespoke was greyed
-                    out at exactly the moment somebody first reaches for it.
-                    Rows are a bonus this button carries when they exist, not a
-                    precondition for opening a screen that works on its own. */}
-                <button
-                    className="specs-route"
-                    onClick={sendToBespoke}
-                >
-                    <Layers size={14} />
-                    <span className="specs-route-t">Bespoke It</span>
-                    <span className="specs-route-s">
-                        {bespokeCandidates.length > 0
-                            ? `Take ${bespokeCandidates.length} row${bespokeCandidates.length === 1 ? " that needs" : "s that need"} more than one master`
-                            : "Several masters in one deliverable"}
-                    </span>
-                </button>
-            </div>
+            {/* Setup still open: the routes sit under the form, as before.
+                Once the campaign is ready they live inside its card. */}
+            {showSetup && routesEl}
 
             <div className="specs-fallback specs-build specs-build--headless">
                 {buildOpen && (

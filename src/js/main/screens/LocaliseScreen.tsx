@@ -6,19 +6,23 @@
 // Trott & Batch), and a flat tools row below, instead of the shared vertical
 // rail. When a tool is selected it renders full-width in place.
 // =============================================================================
-import React, { Suspense, useState, useRef, useEffect } from "react";
+import React, { Suspense, useState, useRef, useEffect, useCallback } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import gsap from "gsap";
 import LoadingChatter from "../LoadingChatter";
 import {    Layers,
- ArrowLeft, ArrowRight, BookOpen, FileSignature, Stamp, ClipboardCheck, Clapperboard, FileText, Copy, Image as ImageIcon, FileSpreadsheet, Rabbit, ScanSearch, Repeat, FileSearch} from "lucide-react";
+ ArrowLeft, FileSignature, Stamp, ClipboardCheck, Clapperboard, FileText, Copy, Image as ImageIcon, FileSpreadsheet, Rabbit, ScanSearch, Repeat, FileSearch} from "lucide-react";
 import { TOOLS, categoryStyleVars, type ToolProps } from "../toolRegistry";
 import { ToolErrorBoundary } from "../ToolErrorBoundary";
 import { PaletteTrigger, triggerPalette } from "../CommandPalette";
 import Tooltip from "../Tooltip";
 import StatusIcon from "../StatusIcon";
 import { evalTS } from "../../lib/utils/bolt";
-import CSVLocaliserTool from "../tools/CSVLocaliser";
+import CSVLocaliserTool, { type LocaliserCampaignInfo } from "../tools/CSVLocaliser";
+import LocaliseLibraryCard, { type HereTerritory } from "./LocaliseLibraryCard";
+import { territoryFlag } from "../lib/jobsFeed";
+import { toFileUrl } from "../lib/fileUrl";
+import { setPendingLibraryCampaign } from "../lib/localiseHandoff";
 import CampaignLocaliserTool from "../tools/CampaignLocaliser";
 import { sfx } from "../../lib/utils/sfx";
 import "./LocaliseScreen.scss";
@@ -75,6 +79,19 @@ const TOOLS_ROW: (UtilityEntry & { run?: string })[] = [
     { id: "edit-generator",    label: "Edit Generator", icon: Clapperboard },
 ];
 
+// Tools that draw their OWN header on this screen, so the shared strip
+// (icon, name, underline) is skipped for them. Each must carry its own
+// TutorialIcon, or its _tuts clip has nowhere to play from (CLAUDE.md).
+const OWN_HEADER_IDS = ["localised-library"];
+
+// The same tools, by the kind of job. Every TOOLS_ROW id appears exactly once;
+// an id missing here would simply not render, so keep the two in step.
+const TOOL_GROUPS: { name: string; ids: string[] }[] = [
+    { name: "Prepare",      ids: ["pdf-to-csv", "name-generator", "edit-generator", "generate-cue-sheet"] },
+    { name: "Swap & build", ids: ["ov-swap", "jpeg-loc", "aep-thief", "bespoke"] },
+    { name: "Check",        ids: ["artwork-check", "check", "name-audit", "cheeky-dt"] },
+];
+
 /** Placeholder furniture for a tool that hasn't mounted yet. Bounded by the
  *  mount, so it isn't one of the perpetual animations the home screen bans. */
 const ToolSkeleton = () => (
@@ -117,6 +134,50 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
     const [runningId, setRunningId] = useState<string | null>(null);
     const [runStatus, setRunStatus] = useState<{ type: "success" | "error"; text: string } | null>(null);
     const [pane, setPane] = useState<Pane>("csv");
+
+    // THE CAMPAIGN THE LIBRARY CARD NAMES, reported up by CSV Localiser so the
+    // two can never disagree.
+    const [libCampaign, setLibCampaign] = useState<LocaliserCampaignInfo | null>(null);
+    const onCampaignChange = useCallback((c: LocaliserCampaignInfo | null) => {
+        setLibCampaign((prev) =>
+            prev && c && prev.name === c.name && prev.marketsRoot === c.marketsRoot && prev.banner === c.banner ? prev : c);
+    }, []);
+    // Open the Library on the campaign the card names -- and straight into a
+    // territory when one of its rows was pressed.
+    const openLibrary = useCallback((territory?: string) => {
+        sfx.click();
+        setPendingLibraryCampaign(libCampaign ? libCampaign.name : null, territory);
+        handleSelect("localised-library");
+    }, [libCampaign]);
+    // WHERE YOU ARE, for the header: the territory the Library card detected
+    // for the open project, and the batch folder the project sits in. The
+    // batch is only claimed when the path really is <Territory>/AE/<Batch_*>/;
+    // anything looser and a project in somebody's Downloads would announce a
+    // batch it isn't in.
+    const [here, setHere] = useState<HereTerritory | null>(null);
+    const onHere = useCallback((t: HereTerritory | null) => {
+        setHere((prev) => (prev && t && prev.name === t.name && prev.code === t.code) || (!prev && !t) ? prev : t);
+    }, []);
+    const [openPath, setOpenPath] = useState("");
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const f = (await evalTS("timesheetActiveFile")) as { path?: string | null } | undefined;
+                if (!cancelled) setOpenPath((f && f.path) || "");
+            } catch { /* no bridge or no project -- no batch, no fuss */ }
+        })();
+        return () => { cancelled = true; };
+    }, [libCampaign?.name]);
+    const hereBatch = (() => {
+        if (!here || !openPath) return "";
+        const bits = openPath.split(/[\\/]/);
+        const ti = bits.lastIndexOf(here.name);
+        if (ti < 0 || String(bits[ti + 1] || "").toUpperCase() !== "AE") return "";
+        const b = bits[ti + 2] || "";
+        return /^batch/i.test(b) && ti + 3 < bits.length ? b : "";
+    })();
+    const libraryCard = <LocaliseLibraryCard campaign={libCampaign} onOpen={openLibrary} onHere={onHere} />;
 
     const runInPlace = async (id: string, label: string, fnName: string) => {
         setRunningId(id);
@@ -161,7 +222,7 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
         const ctx = gsap.context(() => {
             // The hero + the work surface are the "cards" tier now (the old two
             // big .ls-card tiles are gone); tools row cascades after.
-            const cards = gsap.utils.toArray<HTMLElement>(".ls-library-hero, .ls-main");
+            const cards = gsap.utils.toArray<HTMLElement>(".ls-main");
             const gridItems = gsap.utils.toArray<HTMLElement>(".ls-grid-item, .ls-stage");
             const gridLabel = gsap.utils.toArray<HTMLElement>(".ls-grid-label");
 
@@ -225,23 +286,28 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
                                 bare line of text on an otherwise empty pane reads as a panel that
                                 has hung rather than one that is working. */}
                             <Suspense fallback={<ToolSkeleton />}>
-                                <div className="tool-content-header ls-tool-header" style={env}>
-                                    <TutorialIcon
-                                        toolId={tool.id}
-                                        toolLabel={tool.label}
-                                        className="ls-header-icon"
-                                        hover="pop"
-                                    >
-                                        <tool.icon size={24} />
-                                    </TutorialIcon>
-                                    <h3 className="tool-content-header-title">{tool.label}</h3>
-                                    <motion.div
-                                        className="ls-header-line"
-                                        initial={{ scaleX: 0 }}
-                                        animate={{ scaleX: 1 }}
-                                        transition={{ duration: 0.5, ease: "easeOut" }}
-                                    />
-                                </div>
+                                {/* Tools that draw their own header (the Library leads
+                                    with its campaign) skip the shared strip. They must
+                                    carry their own TutorialIcon -- see OWN_HEADER_IDS. */}
+                                {OWN_HEADER_IDS.indexOf(tool.id) === -1 && (
+                                    <div className="tool-content-header ls-tool-header" style={env}>
+                                        <TutorialIcon
+                                            toolId={tool.id}
+                                            toolLabel={tool.label}
+                                            className="ls-header-icon"
+                                            hover="pop"
+                                        >
+                                            <tool.icon size={24} />
+                                        </TutorialIcon>
+                                        <h3 className="tool-content-header-title">{tool.label}</h3>
+                                        <motion.div
+                                            className="ls-header-line"
+                                            initial={{ scaleX: 0 }}
+                                            animate={{ scaleX: 1 }}
+                                            transition={{ duration: 0.5, ease: "easeOut" }}
+                                        />
+                                    </div>
+                                )}
                                 <div className="tool-content-body">
                                     <Component onSelectTool={handleSelect} />
                                 </div>
@@ -279,30 +345,41 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
 
                 <div className="ls-frame" style={env}>
                     <div className="ls-landing" ref={landingRef}>
-                    {/* 1. Localised Library -- its own prominent destination, not a
-                        tab wedged between the two campaign-localisation tools.
-                        Opens full-width like any other tool page. */}
-                    <button
-                        className="ls-library-hero"
-                        onClick={() => { sfx.click(); handleSelect("localised-library"); }}
-                    >
-                        <span className="ls-library-hero-glow" aria-hidden="true" />
-                        <span className="ls-library-hero-icon"><BookOpen size={19} /></span>
-                        <span className="ls-library-hero-text">
-                            <span className="ls-library-hero-eyebrow">Library</span>
-                            <span className="ls-library-hero-title">Localised Library</span>
-                            <span className="ls-library-hero-desc">
-                                Browse &amp; import localised components, per territory.
-                            </span>
-                        </span>
-                        <span className="ls-library-hero-arrow"><ArrowRight size={20} /></span>
-                    </button>
-
-                    {/* 2. The work surface: the two halves of "localise a
-                        campaign" as panes, switched by a toggle -- no nesting. */}
+                    {/* THE PAGE, CAMPAIGN-LED. The Library used to be a full-width
+                        banner up here, read as a heading and skipped; it is now a
+                        card beside the campaign it belongs to (under it on a narrow
+                        dock -- LocaliseScreen.scss), showing the territories behind
+                        it. CSV Localiser places it, because only it knows whether
+                        the campaign is set up (card beside the campaign) or still
+                        being filled in (card above the form). */}
                     <div className="ls-main">
+                        {/* The campaign's own artwork, blurred behind the header,
+                            so the page takes Street Fighter's colour rather than
+                            generic teal. One still image; nothing animates. */}
+                        {libCampaign && libCampaign.banner && (
+                            <span className="ls-head-wash" aria-hidden="true">
+                                <img src={toFileUrl(libCampaign.banner)} alt="" onError={(e) => { (e.currentTarget.parentElement as HTMLElement).style.display = "none"; }} />
+                            </span>
+                        )}
                         <div className="ls-main-head">
-                            <span className="ls-section-caption">Localise a campaign</span>
+                            {/* WHERE YOU ARE, not what the page is: the category
+                                button already said "Localise". With a project
+                                open in one of this campaign's territories, that
+                                territory (and its batch) is the headline. */}
+                            {here ? (
+                                <span className="ls-page-heading">
+                                    <span className="ls-page-kicker">
+                                        Localise{libCampaign ? " · " + libCampaign.name : ""}
+                                    </span>
+                                    <span className="ls-page-title">
+                                        {territoryFlag(here.code) && <span className="ls-page-flag">{territoryFlag(here.code)}</span>}
+                                        {here.name.replace(/_/g, " ")}
+                                        {hereBatch && <span className="ls-page-batch"> · {hereBatch}</span>}
+                                    </span>
+                                </span>
+                            ) : (
+                                <span className="ls-page-title">Localise</span>
+                            )}
                             <div className="ls-pane-tabs" role="tablist">
                                 {PANES.map(({ id, label, icon: Icon }) => (
                                     <button
@@ -318,37 +395,58 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
                                 ))}
                             </div>
                         </div>
-                        <div className="ls-main-surface">
+                        {/* Trott & Batch has no campaign card to sit beside, so
+                            the Library leads the pane on its own. */}
+                        {pane === "batch" && <div className="ls-libcard-solo">{libraryCard}</div>}
+                        <div className={"ls-main-surface" + (pane === "csv" ? " is-bare" : "")}>
                             {/* onSelectTool is what makes the localiser's own
                                 "Bespoke It" button able to navigate. The drilled
                                 tool at the top of this file already receives it;
                                 the LANDING pane did not, so that button silently
                                 did nothing. */}
-                            {pane === "csv" && <CSVLocaliserTool onSelectTool={handleSelect} />}
+                            {pane === "csv" && (
+                                <CSVLocaliserTool
+                                    onSelectTool={handleSelect}
+                                    onCampaignChange={onCampaignChange}
+                                    librarySlot={libraryCard}
+                                    hereTerritory={here ? here.name : undefined}
+                                />
+                            )}
                             {pane === "batch" && <CampaignLocaliserTool />}
                         </div>
                     </div>
 
-                    {/* 3. Tools -- one flat row of plain rounded buttons, split
-                        by a divider rather than the old numbered ->arrow
-                        pipeline (which implied an order nobody works in). */}
-                    <div className="ls-utilities">
-                        <span className="ls-grid-label">Tools</span>
-                        <div className="ls-grid">
-                            {TOOLS_ROW.map(({ id, label, icon: Icon, run }) => (
-                                <Tooltip key={id} text={run ? `${toolDescription(id)} (runs here)` : toolDescription(id)} delay={500}>
-                                    <button
-                                        className={run ? "ls-grid-item ls-grid-item--runnable" : "ls-grid-item"}
-                                        disabled={runningId === id}
-                                        onClick={() => {
-                                            if (run) { sfx.click(); runInPlace(id, label, run); }
-                                            else { sfx.click(); handleSelect(id); }
-                                        }}
-                                    >
-                                        <Icon size={14} />
-                                        <span>{runningId === id ? "Running…" : label}</span>
-                                    </button>
-                                </Tooltip>
+                    {/* Tools, in three groups. Not a pipeline (the numbered
+                        strip that implied one is gone for good) -- just the
+                        kinds of job, so twelve identical buttons stop being a
+                        wall. Group labels are names, not explanations. */}
+                    <div className="ls-tools">
+                        <span className="ls-tools-title">Tools</span>
+                        <div className="ls-tool-groups">
+                            {TOOL_GROUPS.map((g) => (
+                                <div key={g.name} className="ls-tool-group">
+                                    <span className="ls-grid-label">{g.name}</span>
+                                    {g.ids.map((tid) => {
+                                        const entry = TOOLS_ROW.filter((t) => t.id === tid)[0];
+                                        if (!entry) return null;
+                                        const { id, label, icon: Icon, run } = entry;
+                                        return (
+                                            <Tooltip key={id} text={run ? `${toolDescription(id)} (runs here)` : toolDescription(id)} delay={500}>
+                                                <button
+                                                    className={run ? "ls-grid-item ls-grid-item--runnable" : "ls-grid-item"}
+                                                    disabled={runningId === id}
+                                                    onClick={() => {
+                                                        if (run) { sfx.click(); runInPlace(id, label, run); }
+                                                        else { sfx.click(); handleSelect(id); }
+                                                    }}
+                                                >
+                                                    <span className="ls-grid-item-icon"><Icon size={14} /></span>
+                                                    <span>{runningId === id ? "Running…" : label}</span>
+                                                </button>
+                                            </Tooltip>
+                                        );
+                                    })}
+                                </div>
                             ))}
                         </div>
                         {runStatus && (

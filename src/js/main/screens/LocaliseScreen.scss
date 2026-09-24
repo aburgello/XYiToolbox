@@ -139,6 +139,9 @@ $ls-shift: cubic-bezier(0.22, 1, 0.36, 1);    // colour, border, shadow
     border-radius: 8px;
     padding: 16px;
     position: relative;
+    // Its label rides 6px ABOVE the border, so without this the section read
+    // 10px from the one above while every other gap is 16.
+    margin-top: 6px;
 
     .ls-grid-label {
         position: absolute;
@@ -401,8 +404,13 @@ $ls-shift: cubic-bezier(0.22, 1, 0.36, 1);    // colour, border, shadow
 }
 
 // The work surface: CSV Localiser embedded directly on the landing.
+// ONE VERTICAL RHYTHM on this landing: 16px between sections (the
+// .ls-landing gap), 10px from a section's header to its own box, 16px inside
+// a box on every side. This used to carry its own 22px on top of the gap, so
+// the Library card sat 38px above the section it introduces and 16px above
+// everything else.
 .ls-main {
-    margin-top: 22px;
+    margin-top: 0;
 }
 
 .ls-main-head {
@@ -450,7 +458,15 @@ $ls-shift: cubic-bezier(0.22, 1, 0.36, 1);    // colour, border, shadow
     background: rgba(0, 0, 0, 0.16);
     border: 1px solid var(--surface-edge, #333);
     border-radius: 8px;
-    padding: 4px 14px 14px;
+    // The surface owns the inset, and the embedded tool gives its own up.
+    // Stacked, the two came to 16 top / 30 sides / 26 bottom -- a box whose
+    // margins disagreed on every edge.
+    padding: 16px;
+
+    > .form-tool,
+    > .campaign-localiser {
+        padding: 0;
+    }
 }
 
 // --- Landing v3: three-pane work surface + one flat tools row -------------
@@ -495,138 +511,6 @@ $ls-shift: cubic-bezier(0.22, 1, 0.36, 1);    // colour, border, shadow
         box-shadow: 0 2px 10px var(--cat-glow, rgba(0, 0, 0, 0.35));
         svg { color: #fff; }
     }
-}
-
-// --- Landing v4: Localised Library pulled out into its own hero -----------
-// The library was a third co-equal pane between CSV Localiser and Trott &
-// Batch, which flattened the fact that it's a different KIND of job (browse/
-// import existing components, not localise a campaign). It's now a prominent
-// full-width destination card at the top of the landing; the work surface
-// below holds just the two campaign-localisation panes.
-
-.ls-library-hero {
-    position: relative;
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    width: 100%;
-    // Never let the scan list below compress the hero -- .ls-landing is a
-    // scrolling flex column, so without this the hero (a flex child) shrinks
-    // vertically once the territory list makes the column overflow, collapsing
-    // the eyebrow into the title.
-    flex: 0 0 auto;
-    text-align: left;
-    padding: 12px 16px;
-    border: 1px solid var(--surface-edge, #333);
-    border-radius: 12px;
-    background: var(--surface-1, #1c1f21);
-    color: #eee;
-    cursor: pointer;
-    box-shadow: none;
-    // No accent edge. A 2px left border against a 12px radius reads as a
-    // sliver hanging off the corner rather than as a rule, and the icon, the
-    // eyebrow and the hover glow already say which section this belongs to.
-    transition: border-color 0.3s $ls-shift, box-shadow 0.3s $ls-shift,
-        background 0.3s $ls-shift, transform 0.3s $ls-lift;
-
-    &:hover {
-        border-color: var(--cat-border, #5eead4);
-        // Override the global `button:hover` blue (#20639b) -- this hero is a
-        // <button>, so without its own hover background that generic rule would
-        // paint it blue, off-brand for the teal Localise section. Keep the
-        // resting teal gradient, just a touch brighter for hover feedback.
-        background: linear-gradient(135deg,
-            rgba(94, 234, 212, 0.14) 0%,
-            rgba(45, 212, 191, 0.07) 45%,
-            #1e2529 100%);
-        box-shadow: 0 8px 24px var(--cat-glow, rgba(0, 0, 0, 0.4));
-        transform: translateY(-2px);
-
-        .ls-library-hero-glow { opacity: 0.28; }
-        .ls-library-hero-arrow {
-            opacity: 1;
-            transform: translateX(0);
-        }
-        .ls-library-hero-icon svg { color: #fff; }
-    }
-}
-
-.ls-library-hero-glow {
-    position: absolute;
-    top: -60%;
-    left: -10%;
-    width: 70%;
-    height: 200%;
-    background: radial-gradient(ellipse at center, var(--cat-icon, #5eead4) 0%, transparent 68%);
-    opacity: 0;
-    pointer-events: none;
-    filter: blur(26px);
-    transition: opacity 0.4s ease;
-}
-
-.ls-library-hero-icon {
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 38px;
-    height: 38px;
-    border-radius: 10px;
-    background: var(--cat-grad, linear-gradient(135deg, #2dd4bf, #3a5a8a));
-    box-shadow: 0 4px 16px var(--cat-glow, rgba(0, 0, 0, 0.35)),
-        inset 0 1px 0 rgba(255, 255, 255, 0.18);
-    z-index: 1;
-
-    svg { color: #fff; transition: color 0.3s ease; }
-}
-
-.ls-library-hero-text {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    flex: 1;
-    min-width: 0;
-    z-index: 1;
-}
-
-.ls-library-hero-eyebrow {
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 1.4px;
-    text-transform: uppercase;
-    color: var(--cat-icon, #5eead4);
-    opacity: 0.9;
-}
-
-.ls-library-hero-title {
-    font-size: 17px;
-    font-weight: 800;
-    color: #fff;
-    // Negative, not positive. Letters at 800 weight already carry their own
-    // visual mass; adding tracking on top is what makes a bold title read as
-    // browser-default rather than set. Tightening is the single change that
-    // most reads as "typeset".
-    letter-spacing: -0.2px;
-    line-height: 1.15;
-}
-
-.ls-library-hero-desc {
-    font-size: 11px;
-    font-weight: 400;
-    color: #9aa;
-    line-height: 1.4;
-}
-
-.ls-library-hero-arrow {
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    color: var(--cat-icon, #5eead4);
-    opacity: 0.55;
-    transform: translateX(-6px);
-    transition: opacity 0.3s ease, transform 0.3s ease;
-    z-index: 1;
 }
 
 // Groups the two campaign-localisation panes under one clear identity, so the
@@ -675,3 +559,373 @@ $ls-shift: cubic-bezier(0.22, 1, 0.36, 1);    // colour, border, shadow
 }
 
 .ls-toolskel .loading-chatter { margin-top: 4px; }
+
+// ── Landing v5: campaign-led ────────────────────────────────────────────────
+// The page leads with its title and the Big Guy / Trott switch; the campaign
+// card (CSVLocaliser's .specs-hub) and the Library card sit side by side under
+// it, and stack on a narrow dock. The tools lose their boxes and fall into
+// three named groups.
+
+.ls-page-title {
+    font-size: 19px;
+    font-weight: 750;
+    letter-spacing: -0.3px;
+    color: #fff;
+}
+
+// Where you are: "Localise · Street Fighter" small, the territory large.
+.ls-page-heading {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+
+    .ls-page-title {
+        font-size: 22px;
+        line-height: 1.15;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+}
+
+.ls-page-kicker {
+    font-size: 11px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.62);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ls-page-flag { margin-right: 8px; }
+
+.ls-page-batch {
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.55);
+}
+
+// THE CAMPAIGN'S COLOUR behind the header: its banner, blurred to a wash and
+// faded out downward, bleeding to the landing's edges. Positioned from
+// .ls-main, which the content above it stacks over.
+.ls-main {
+    position: relative;
+
+    > *:not(.ls-head-wash) { position: relative; z-index: 1; }
+}
+
+.ls-head-wash {
+    position: absolute;
+    top: -14px;
+    left: -16px;
+    right: -16px;
+    height: 170px;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+    -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.45) 55%, transparent 100%);
+
+    img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        filter: blur(28px) saturate(1.3);
+        opacity: 0.4;
+        transform: scale(1.25);
+    }
+}
+
+// The campaign card IS the surface now; framing it again inside a second box
+// was one of the three nested borders this page was criticised for.
+.ls-main-surface.is-bare {
+    background: none;
+    border: none;
+    padding: 0;
+}
+
+.ls-libcard-solo { margin-bottom: 12px; }
+
+// ── The Library card ────────────────────────────────────────────────────────
+// Blue-teal, where everything else on the page is teal: a different KIND of
+// thing (what exists) beside the campaign (what to make). Literal colours --
+// --cat-glow is tuned for hover and must not be a resting fill.
+.ls-libcard {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px solid #2f5d73;
+    background: linear-gradient(170deg, #173345 0%, #142629 55%, #151d20 100%);
+    box-sizing: border-box;
+}
+
+.ls-libcard-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.ls-libcard-icon {
+    position: relative;
+    flex-shrink: 0;
+    width: 60px;
+    height: 40px;
+}
+
+// The fanned stack. Plain spans, no Framer, so a CSS transform is safe.
+// Scoped under the card so it outranks FileBadge's own `position: relative`
+// whichever stylesheet loads last.
+.ls-libcard .ls-libcard-file {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
+    transition: transform 0.35s $ls-lift;
+
+    &.is-psd { transform: translate(-22px, 3px) rotate(-12deg); }
+    &.is-ai  { transform: translate(-11px, -1px) rotate(-4deg); }
+    &.is-aep { transform: translate(0, -3px) rotate(6deg); }
+}
+
+.ls-libcard:hover .ls-libcard-file {
+    &.is-psd { transform: translate(-26px, 4px) rotate(-16deg); }
+    &.is-ai  { transform: translate(-13px, -1px) rotate(-6deg); }
+    &.is-aep { transform: translate(1px, -4px) rotate(8deg); }
+}
+
+.ls-libcard-text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.ls-libcard-title {
+    font-size: 16px;
+    font-weight: 750;
+    color: #fff;
+    letter-spacing: -0.2px;
+}
+
+.ls-libcard-line {
+    font-size: 11.5px;
+    color: #a9c0c8;
+    line-height: 1.35;
+}
+
+// Territory rows: two columns on the side-by-side layout, pills on a narrow
+// dock (media query below). Each one opens the Library straight into it.
+.ls-libcard .ls-libcard-rows {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px;
+}
+
+.ls-libcard .ls-libcard-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    padding: 6px 8px;
+    border-radius: 7px;
+    border: 1px solid transparent;
+    background: rgba(255, 255, 255, 0.05);
+    color: #d6e3e6;
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s $ls-shift, border-color 0.15s $ls-shift;
+
+    // Re-declared, with :not(:disabled): index.scss's global button:hover
+    // paints blue, and inside CSV Localiser `.form-tool button:hover:not(:disabled)`
+    // (0,3,1) repaints it teal and lifts it unless this outranks it.
+    &:hover:not(:disabled), &:active:not(:disabled) {
+        background: rgba(255, 255, 255, 0.1);
+        border-color: rgba(143, 208, 230, 0.35);
+        box-shadow: none;
+        transform: none;
+    }
+
+    // The territory the open project sits in: pinned first, lit teal, spans
+    // both columns so it reads as the answer rather than one of eight.
+    &.is-here {
+        grid-column: 1 / -1;
+        background: rgba(94, 234, 212, 0.12);
+        border-color: rgba(94, 234, 212, 0.45);
+        color: #fff;
+        font-weight: 600;
+
+        &:hover:not(:disabled), &:active:not(:disabled) { background: rgba(94, 234, 212, 0.2); }
+    }
+}
+
+.ls-libcard .ls-libcard-flag {
+    flex-shrink: 0;
+    width: 18px;
+    text-align: center;
+    font-size: 14px;
+    line-height: 1;
+
+    &.is-code {
+        font-size: 8.5px;
+        font-weight: 700;
+        color: #8fb0ba;
+    }
+}
+
+.ls-libcard .ls-libcard-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ls-libcard .ls-libcard-here { flex-shrink: 0; color: var(--cat-icon, #5eead4); }
+
+.ls-libcard .ls-libcard-count {
+    flex-shrink: 0;
+    color: #8fb0ba;
+    font-variant-numeric: tabular-nums;
+}
+
+.ls-libcard .ls-libcard-more {
+    align-self: center;
+    font-size: 11px;
+    color: #7f9aa3;
+    padding: 0 4px;
+}
+
+// The one light button on the page: it pulls the eye without the card having
+// to be a banner again.
+.ls-libcard .ls-libcard-open {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-height: 38px;
+    border: none;
+    border-radius: 9px;
+    background: #e6f4f7;
+    color: #0f2a33;
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s $ls-shift;
+
+    &:hover:not(:disabled), &:active:not(:disabled) {
+        background: #ffffff;
+        color: #0f2a33;
+        border: none;
+        box-shadow: none;
+        transform: none;
+    }
+    svg { transition: transform 0.25s $ls-lift; }
+    &:hover svg { transform: translateX(2px); }
+}
+
+// ── Tools, grouped ──────────────────────────────────────────────────────────
+.ls-tools {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.ls-tools-title {
+    font-size: 13px;
+    font-weight: 650;
+    color: #fff;
+}
+
+.ls-tool-groups {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.ls-tool-group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    min-width: 0;
+
+    .ls-grid-label {
+        font-size: 11px;
+        color: #7f9491;
+        padding: 0 6px 5px;
+    }
+}
+
+// Borderless: the icon tile carries the colour, the row only brightens. Sized
+// to its content on purpose -- each sits in a Tooltip wrapper, which cannot
+// stretch (CLAUDE.md), so a full-row hover fill would stop short of the edge.
+.ls-tool-group .ls-grid-item {
+    width: auto;
+    max-width: 100%;
+    gap: 9px;
+    padding: 5px 6px;
+    background: none;
+    border: none;
+    box-shadow: none;
+    color: #d3dfdd;
+    font-size: 12.5px;
+    border-radius: 8px;
+
+    &:hover, &:active {
+        background: none;
+        border: none;
+        box-shadow: none;
+        transform: none;
+        color: #fff;
+
+        .ls-grid-item-icon {
+            background: var(--cat-grad, #2c7a72);
+            svg { color: #fff; }
+        }
+    }
+}
+
+.ls-grid-item-icon {
+    flex: 0 0 auto !important;
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    background: #1b2a2a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s $ls-shift;
+}
+
+// ── Narrow dock (A1): stack, and let the Library read as a strip ────────────
+@media (max-width: 620px) {
+    .ls-tool-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+// Pills from 720px down, not 620: between the two the card still sits beside
+// the campaign in a narrow column, and two fixed columns cut names to "Slov…".
+// Pills take each name's own width and wrap.
+@media (max-width: 720px) {
+    .ls-libcard .ls-libcard-rows {
+        display: flex;
+        flex-wrap: wrap;
+    }
+
+    .ls-libcard .ls-libcard-row {
+        padding: 4px 8px 4px 5px;
+        border-radius: 999px;
+        font-size: 11px;
+
+        &.is-here { flex-basis: 100%; border-radius: 8px; }
+    }
+
+    .ls-libcard .ls-libcard-name { flex: 0 1 auto; }
+}
+
+@media (max-width: 420px) {
+    .ls-tool-groups { grid-template-columns: minmax(0, 1fr); }
+}

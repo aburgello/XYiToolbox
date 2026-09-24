@@ -115,3 +115,34 @@ export function takePendingBatch(): PendingBatch | null {
     pending = null;
     return b;
 }
+
+/**
+ * The third handoff: "open the Library on THIS campaign".
+ *
+ * The Localise screen's Library card names the campaign CSV Localiser is set
+ * to, so pressing it must land there. Left to itself, Localised Library picks
+ * a campaign from the open project's path first -- which can be a different
+ * job entirely, and a card that says "Street Fighter" opening on Forgotten
+ * Island is the exact confusion the card exists to prevent.
+ *
+ * Take-once like the others: opening the Library later from ⌘K must go back to
+ * its own detection, not replay a press from an hour ago.
+ */
+export interface PendingLibraryOpen {
+    campaign: string;
+    /** A territory to open straight into -- the card's flag rows, including
+     *  the one the open project sits in. Absent: the territory list. */
+    territory?: string;
+}
+
+let pendingLibraryOpen: PendingLibraryOpen | null = null;
+
+export function setPendingLibraryCampaign(campaign: string | null, territory?: string): void {
+    pendingLibraryOpen = campaign ? { campaign, territory: territory || undefined } : null;
+}
+
+export function takePendingLibraryCampaign(): PendingLibraryOpen | null {
+    const n = pendingLibraryOpen;
+    pendingLibraryOpen = null;
+    return n;
+}

@@ -455,6 +455,25 @@ only as reliable as the page surviving the run.
 - `CategoryScreen.tsx` is the generic fallback and is currently **unreachable** —
   every category has bespoke routing.
 
+**The Localise landing is CAMPAIGN-LED, and the Library card sits beside the
+campaign.** The Library used to be a full-width banner at the top, which people
+read as a heading and skipped. It is `screens/LocaliseLibraryCard.tsx` now,
+showing the campaign's best-stocked territories with the open project's one
+pinned first, each pressable straight into. **CSV Localiser places it**
+(`librarySlot`): beside the campaign card when the campaign is set up, above the
+form while it is not, and the Localise screen shows it alone over Trott & Batch.
+It reads the campaign from `onCampaignChange`, never on its own, so the card and
+the picker cannot name different campaigns. Pressing it goes through
+`setPendingLibraryCampaign(campaign, territory?)`, a take-once handoff like the
+others; left to itself the Library would open on whatever project is open.
+Side by side above 620px, stacked below (plain `@media`). **The header says
+where you are**: the territory comes from the card's detection (`onHere`), never
+a second lookup, and the batch only when the open project's path really is
+`<Territory>/AE/<Batch_*>/…`. The campaign banner washes behind it. CSV
+Localiser's scan list pins the same territory first (`hereTerritory`). The Library's own
+territory list pins the open project's territory first rather than repeating it
+in a banner, and folds empty territories into one line.
+
 **Adding a tool** = `tools/X.tsx` + `X.scss` + ExtendScript in
 `src/jsx/aeft/*.ts` + one entry in **`toolRegistry.tsx`'s `TOOLS`**. A NEW
 `src/jsx/aeft` file also needs its `export *` line in `aeft.ts`, or the bridge
@@ -596,7 +615,9 @@ nobody records one.
   category-tinted glyph.
 - **A surface with no registry entry carries its own icon.** The two hubs do,
   since `ToolScreen` suppresses `tool-content-header` for them
-  (`HUB_TOOL_IDS`); so does the home screen's **Active Jobs** card, which has no
+  (`HUB_TOOL_IDS`); so does **Localised Library**, which draws its own
+  campaign-led header and is on both `HUB_TOOL_IDS` and LocaliseScreen's
+  `OWN_HEADER_IDS` — its `TutorialIcon` sits in `.ll-hero`; so does the home screen's **Active Jobs** card, which has no
   tool page at all — without it `ActiveJobs.mp4` sits in `_tuts` with nowhere to
   play from. Its icon lives inside the card's expand button, so the wrapper
   stops that click **only** when `TutorialIcon` has marked itself
@@ -757,6 +778,11 @@ Naming Audit, which skips only `Auto-Save`/`_Archive`/`_Old`/`_DEV`.
   travels to `csvLocaliserRun` as `pinnedJson` (CSV index → path), beats the
   scorer and any multiple, and a pin whose file has gone is **refused, never
   re-scored**. `node scripts/probe-master-tiers.cjs` guards all of it.
+- **CSV Localiser always skips existing files — there is no checkbox.** With
+  it off, `csvLocaliserRun` copied the master over an existing `_V01.aep`, an
+  artist's localised file, and opened the copy. No run wants that, so
+  `skipExisting` is a constant and "Done · Re-run" builds only what's missing.
+  The inline MC It! / Support Swap switches live in Build a Batch only.
 - Never loosen the CSV "already built" matcher into a fuzzy match. A false
   "already built" silently loses a deliverable; a false "new" costs one re-run.
 - Same for OV Swap's `scanOvSwap`: exact normalised name only, never
@@ -1198,6 +1224,21 @@ Run it after touching any of them.
 `node scripts/probe-master-tiers.cjs` (after `yarn build`) drives the master
 scorer and the picker's ranking over a tree where one creative's masters carry
 another's name. Run it after touching either.
+
+`node scripts/ui-localise.mjs` (after `yarn build:web`) clicks through the
+Localise landing, the Localised Library and the **Active Jobs → Localise
+handoff** in a throwaway headless Chrome. It installs a FAKE `__adobe_cep__`, so
+`evalTS` runs the real CEP path against Street Fighter fixtures instead of demo
+mode's mocks, and it **blocks every request that isn't to the local build**: the
+panel has a jobs-feed URL baked in, and a test must not read live studio data.
+`scripts/ui-harness.mjs` is the reusable half. It also shims CEP's Node
+layer (`window.cep` + a `require` answering a real POSIX `path` and an INERT
+`fs`), because CSV Localiser gates its scan on `window.cep` and joins paths
+with Node's `path`. The shim must answer **only Node module names** and throw
+for anything else: a `require` that resolves every name makes bundled
+libraries take their CommonJS branch, and every className on the page vanished. Run it after touching the
+Localise screen, CSV Localiser's landing, the Library's territory list or any
+handoff.
 
 `node scripts/probe-campaign-rename.cjs` (after `yarn build`) drives
 `campaignRename` over a stubbed folder pair on BOTH naming conventions. Run it

@@ -41,6 +41,12 @@ import { alertDialog, confirmDialog, promptDialog } from "../Dialog";
 import { pairCampaignToOVLibrary } from "../lib/mastersRoot";
 import "../shared.scss";
 import "./LocalisedLibrary.scss";
+import { takePendingLibraryCampaign } from "../lib/localiseHandoff";
+import FileBadge, { fileKindOf } from "../FileBadge";
+import { territoryFlag } from "../lib/jobsFeed";
+import { toFileUrl } from "../lib/fileUrl";
+import Droplet from "../Droplet";
+import { TutorialIcon } from "../TutorialIcon";
 
 interface Campaign {
     name: string;
@@ -124,6 +130,11 @@ const EXTENSION_FOLDER_MAP: Record<string, string> = {
     mov: "MOV", mp4: "MOV",
     pdf: "PDF",
 };
+
+/** Folder names use underscores for spaces ("South_Africa"); show words. */
+function displayTerritory(t: string): string {
+    return String(t).replace(/_/g, " ");
+}
 
 // A component's own explicit `folder` always wins; otherwise derived from
 // its file extension. Never persisted for the auto-bucketed case -- this
@@ -240,6 +251,28 @@ const SkeletonTerritoryRow: React.FC = () => (
 const LocalisedLibraryTool = () => {
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
     const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
+    // Each campaign's banner, pinned in OV Library -- the same image the
+    // Localise page leads with, so the Library reads as the same campaign.
+    // Settings reads, quiet: nothing pinned or no bridge is a normal state.
+    const [banners, setBanners] = useState<Record<string, string>>({});
+    useEffect(() => {
+        if (campaigns.length === 0) return;
+        let cancelled = false;
+        (async () => {
+            const out: Record<string, string> = {};
+            for (const c of campaigns) {
+                try {
+                    const b = (await evalTS("loadCampaignBanner", c.name)) as string;
+                    if (b) out[c.name] = b;
+                } catch { /* nothing pinned, or no bridge */ }
+            }
+            if (!cancelled) setBanners(out);
+        })();
+        return () => { cancelled = true; };
+    }, [campaigns]);
+    const [heroBannerFailed, setHeroBannerFailed] = useState(false);
+    const heroBanner = selectedCampaign ? banners[selectedCampaign.name] || "" : "";
+    useEffect(() => { setHeroBannerFailed(false); }, [heroBanner]);
 
     const [territories, setTerritories] = useState<string[]>([]);
     const [components, setComponents] = useState<Component[]>([]);
@@ -419,6 +452,10 @@ const LocalisedLibraryTool = () => {
         })();
     }, [campaigns]);
 
+    // A territory the Localise screen's Library card asked to open into. Held
+    // until this campaign's territory list has loaded, then used once.
+    const pendingTerritoryRef = useRef<string | null>(null);
+
     const refreshCampaigns = async () => {
         // quietEvalTS (not safeEvalTS) for this first probe: a null result
         // here means "no bridge" (browser preview), which we handle with
@@ -442,8 +479,13 @@ const LocalisedLibraryTool = () => {
             // in localise.ts), and only fall back to camps[0] when nothing
             // has an opinion. quietEvalTS: a failed guess is not something
             // to toast about, it just means the fallback stands.
-            const detected: string | null = await quietEvalTS("detectCurrentLocLibCampaign");
-            const match = detected ? camps.find((c: Campaign) => c.name === detected) : undefined;
+            // Arriving from the Localise screen's Library card: that card named
+            // a campaign, so open on it rather than second-guessing the press.
+            const asked = takePendingLibraryCampaign();
+            const askedMatch = asked ? camps.find((c: Campaign) => c.name === asked.campaign) : undefined;
+            if (askedMatch && asked && asked.territory) pendingTerritoryRef.current = asked.territory;
+            const detected: string | null = askedMatch ? null : await quietEvalTS("detectCurrentLocLibCampaign");
+            const match = askedMatch || (detected ? camps.find((c: Campaign) => c.name === detected) : undefined);
             setSelectedCampaign(match || camps[0]);
         }
     };
@@ -511,6 +553,9 @@ const LocalisedLibraryTool = () => {
             setTerritories(terrs);
             setComponents(allComponents);
             setCustomFolders(allFolders);
+            const wanted = pendingTerritoryRef.current;
+            pendingTerritoryRef.current = null;
+            if (wanted && terrs.indexOf(wanted) !== -1) setSelectedTerritory(wanted);
 
             // Parallel, not a sequential for-loop -- these are independent
             // lookups, and a real campaign's full territory list (tens of
@@ -983,9 +1028,21 @@ const LocalisedLibraryTool = () => {
         return (t + (countryCodes[t] || "")).toLowerCase().indexOf(territorySearchLower) !== -1;
     });
 
+    const countFor = (territory: string) => components.filter((c) => c.campaign === selectedCampaign?.name && c.territory === territory).length;
+    const campaignTotal = selectedCampaign ? components.filter((c) => c.campaign === selectedCampaign.name).length : 0;
+    const stockedCount = territories.filter((t) => countFor(t) > 0).length;
+
+    // Pinned first when the open project sits in it; empty territories (not
+    // the pinned one) go to the "Nothing yet" line rather than the list.
+    const listedTerritories = (() => {
+        const withStock = visibleTerritories.filter((t) => t === detectedTerritory || countFor(t) > 0);
+        const pinned = withStock.filter((t) => t === detectedTerritory);
+        return pinned.concat(withStock.filter((t) => t !== detectedTerritory));
+    })();
+    const emptyTerritories = visibleTerritories.filter((t) => t !== detectedTerritory && countFor(t) === 0);
+
     const componentsForTerritory = components.filter((c) => c.campaign === selectedCampaign?.name && c.territory === selectedTerritory);
 
-    const countFor = (territory: string) => components.filter((c) => c.campaign === selectedCampaign?.name && c.territory === territory).length;
 
     // The creatives this territory's Support_Motion actually has a folder
     // for. Empty is the ordinary answer for every campaign filed the old
@@ -1080,6 +1137,7 @@ const LocalisedLibraryTool = () => {
                     {selectedPaths.has(c.path) ? <CheckSquare size={14} /> : <Square size={14} />}
                 </button>
             </Tooltip>
+            <FileBadge of={c.path} />
             <Tooltip text={c.path}>
                 <span className="ll-comp-name">{c.label}</span>
             </Tooltip>
@@ -1118,7 +1176,11 @@ const LocalisedLibraryTool = () => {
                 <div className="ll-folder-row-wrap">
                     <button className="ll-folder-row" onClick={() => toggleFolderOpen(creative, name)}>
                         {open ? <ChevronDown size={14} className="ll-chevron ll-chevron-lead" /> : <ChevronRight size={14} className="ll-chevron ll-chevron-lead" />}
-                        <Folder size={14} className="ll-folder-icon" />
+                        {/* A file-type bucket shows the file it holds; a folder
+                            somebody named keeps the folder glyph. */}
+                        {!isCustom && fileKindOf(name)
+                            ? <FileBadge of={name} className="ll-folder-icon" />
+                            : <Folder size={14} className="ll-folder-icon" />}
                         <span className="ll-folder-name">{name}</span>
                         <span className={rows.length > 0 ? "ll-count has" : "ll-count"}>{rows.length}</span>
                     </button>
@@ -1164,12 +1226,48 @@ const LocalisedLibraryTool = () => {
     return (
         <div className="localised-library">
 
-            {/* Campaign context bar */}
-            <div className="ll-campaign-bar">
-                <Dropdown
+            {/* THE CAMPAIGN, AS THE LOCALISE PAGE SHOWS IT. This screen used
+                to open under a generic "Localised Library" strip with a bare
+                dropdown and a dashed bar; it now leads with the campaign it is
+                showing -- its banner washed behind, its name large, what the
+                library holds -- so it reads as the same place the Localise
+                page's card promised. The shared tool header is skipped for
+                this tool (OWN_HEADER_IDS), which is why the TutorialIcon lives
+                here: without it LocalisedLibrary.mp4 has nowhere to play. */}
+            <div className="ll-hero">
+                {heroBanner && !heroBannerFailed && (
+                    <span className="ll-hero-wash" aria-hidden="true">
+                        <img src={toFileUrl(heroBanner)} alt="" onError={() => setHeroBannerFailed(true)} />
+                    </span>
+                )}
+                <div className="ll-hero-main">
+                    <TutorialIcon toolId="localised-library" toolLabel="Localised Library" className="ll-hero-icon" hover="pop">
+                        <FileBadge of="PSD" size="md" className="ll-hero-file is-psd" />
+                        <FileBadge of="AI" size="md" className="ll-hero-file is-ai" />
+                        <FileBadge of="AEP" size="md" className="ll-hero-file is-aep" />
+                    </TutorialIcon>
+                    <div className="ll-hero-text">
+                        <span className="ll-hero-kicker">Localised Library</span>
+                        <span className="ll-hero-title">{selectedCampaign ? selectedCampaign.name : "Pick a campaign"}</span>
+                        {selectedCampaign && !loadingTerritories && territories.length > 0 && (
+                            <span className="ll-hero-stats">
+                                {campaignTotal} component{campaignTotal === 1 ? "" : "s"} · {stockedCount} of {territories.length} territories
+                            </span>
+                        )}
+                    </div>
+                    {/* The page's one filled button. No tooltip: the label says
+                        what it does and which territory it does it to. */}
+                    {selectedCampaign && (
+                        <button className="ll-hero-find" disabled={busy} onClick={handleAutoPopulate}>
+                            <Wand2 size={14} className={busy ? "spin" : ""} />
+                            {selectedTerritory ? <>Find the {displayTerritory(selectedTerritory)} Motion</> : "Find the Motion"}
+                        </button>
+                    )}
+                </div>
+                <div className="ll-hero-bar">
+                    <Dropdown
                     className="ll-campaign-select"
-                    icon={<Library size={13} />}
-                    value={selectedCampaign?.name || ""}
+                                        value={selectedCampaign?.name || ""}
                     onChange={(v) => setSelectedCampaign(campaigns.find((c) => c.name === v) || null)}
                     // Same two markers CSV Localiser's picker shows -- both
                     // read the SAME campaign list, so a campaign the team has
@@ -1189,20 +1287,39 @@ const LocalisedLibraryTool = () => {
                         // current value stays selectable so the trigger can
                         // still show what you are on -- see DropdownOption.
                         disabled: !!retiredCampaigns[c.name.toLowerCase()],
+                        thumb: banners[c.name] || "",
                     }))}
                     placeholder="Select a campaign…"
-                    emptyMessage="No campaigns yet — add one with the folder icon."
+                    emptyMessage="No campaigns yet. Add one from Manage."
                 />
-                <Tooltip text="New Campaign">
-                    <button className="ll-icon-btn" onClick={handleNewCampaign}>
-                        <FolderPlus size={14} />
-                    </button>
-                </Tooltip>
-                <Tooltip text="Remove Campaign">
-                    <button className="ll-icon-btn" onClick={handleRemoveCampaign} disabled={!selectedCampaign}>
-                        <Trash2 size={14} />
-                    </button>
-                </Tooltip>
+                    {/* Managing the list, as in CSV Localiser: a labelled menu,
+                        not unlabelled squares beside the picker. */}
+                    <Droplet
+                        panelClassName="ll-manage-panel"
+                        trigger={({ open: menuOpen, toggle }) => (
+                            <button className={"ll-manage-btn" + (menuOpen ? " is-open" : "")} onClick={toggle}>
+                                Manage <ChevronDown size={13} />
+                            </button>
+                        )}
+                    >
+                        {(close) => (
+                            <div className="ll-manage-menu">
+                                <button onClick={() => { close(); void handleNewCampaign(); }}>
+                                    <FolderPlus size={13} />
+                                    <span><strong>Add a campaign…</strong><em>Pick its Markets folder</em></span>
+                                </button>
+                                <span className="ll-manage-sep" />
+                                <button className="is-danger" disabled={!selectedCampaign} onClick={() => { close(); void handleRemoveCampaign(); }}>
+                                    <Trash2 size={13} />
+                                    <span>
+                                        <strong>Remove from this machine</strong>
+                                        <em>{selectedCampaign ? `Only here. The team keeps ${selectedCampaign.name}.` : "Pick a campaign first"}</em>
+                                    </span>
+                                </button>
+                            </div>
+                        )}
+                    </Droplet>
+                </div>
             </div>
 
             {!selectedCampaign ? (
@@ -1212,40 +1329,6 @@ const LocalisedLibraryTool = () => {
                 </div>
             ) : (
                 <>
-                    {/* The two halves of the same job, grouped: Find catalogues
-                        what a territory already has, Make builds it from the
-                        master templates. Their spacing lives on the wrapper, or
-                        Find's own bottom margin sets the gap between them and
-                        Make sets the gap to whatever follows. */}
-                    <div className="ll-motion-actions">
-                        {/* No tooltip. The label already says what it does and
-                            which territory it does it to, and two lines of
-                            explanation on hover is a thing you read once and
-                            then have in the way forever. */}
-                        <button className="ll-auto-populate" disabled={busy} onClick={handleAutoPopulate}>
-                            <Wand2 size={14} className={busy ? "spin" : ""} />{" "}
-                            {selectedTerritory ? (
-                                <>
-                                    Find the <span className="ll-auto-populate-territory">{selectedTerritory}</span> Motion
-                                </>
-                            ) : (
-                                "Find the Motion"
-                            )}
-                        </button>
-
-                        {/* Only inside a territory. Pairing a creative is a
-                            judgement (Colombia files PortalToParadise as "P2P"),
-                            and one screen cannot ask it of 28 markets at once. */}
-                        {selectedTerritory && (
-                            <Tooltip text="Builds this territory's components from the master templates. Previews first.">
-                                <button className="ll-make-motion" disabled={busy || makeBusy} onClick={openMakeMotion}>
-                                    <Hammer size={14} className={makeBusy ? "spin" : ""} />{" "}
-                                    Make the <span className="ll-auto-populate-territory">{selectedTerritory}</span> Motion
-                                </button>
-                            </Tooltip>
-                        )}
-                    </div>
-
                     <div className="ll-view-wrap">
                         <motion.div
                             key={jpgPngStack.length > 0 ? "jpgpng-batch" : selectedTerritory ? "folders" : "territories"}
@@ -1261,17 +1344,6 @@ const LocalisedLibraryTool = () => {
                                         <span className="ll-section-title">Territories</span>
                                         {!loadingTerritories && <span className="ll-section-count">{territories.length}</span>}
                                     </div>
-
-                                    {!loadingTerritories && detectedTerritory && territories.includes(detectedTerritory) && (
-                                        <button className="ll-suggestion" onClick={() => setSelectedTerritory(detectedTerritory)}>
-                                            <MapPin size={13} />
-                                            <span className="ll-suggestion-text">
-                                                You may be in <strong>{detectedTerritory}</strong>
-                                                {countryCodes[detectedTerritory] ? <em> {countryCodes[detectedTerritory]}</em> : null}
-                                            </span>
-                                            <ChevronRight size={14} className="ll-chevron" />
-                                        </button>
-                                    )}
 
                                     <div className="ll-search">
                                         <Search size={12} />
@@ -1290,6 +1362,12 @@ const LocalisedLibraryTool = () => {
                                         )}
                                     </div>
 
+                                    {/* ONE LIST, THREE KINDS OF ROW. The territory the open
+                                        project sits in is pinned first and lit, instead of
+                                        a separate dashed banner repeating it above the
+                                        list; territories with components follow; empty
+                                        ones fold into one line underneath, still
+                                        clickable (they can be browsed and populated). */}
                                     <div className="ll-terr-list">
                                         {loadingTerritories &&
                                             Array.from({ length: 6 }).map((_, i) => <SkeletonTerritoryRow key={i} />)}
@@ -1299,23 +1377,41 @@ const LocalisedLibraryTool = () => {
                                             </div>
                                         )}
                                         {!loadingTerritories &&
-                                            visibleTerritories.map((t) => {
+                                            listedTerritories.map((t) => {
                                                 const count = countFor(t);
+                                                const here = t === detectedTerritory;
+                                                const flag = territoryFlag(countryCodes[t]);
                                                 return (
-                                                    // Zero-component territories stay clickable (they can still be
-                                                    // browsed/populated) but render dimmed, so scanning the list for
-                                                    // "where is there actually work" is instant.
-                                                    <button key={t} className={count > 0 ? "ll-terr-row" : "ll-terr-row ll-terr-row--empty"} onClick={() => setSelectedTerritory(t)}>
-                                                        <span className={count > 0 ? "ll-pip filled" : "ll-pip"} />
+                                                    <button
+                                                        key={t}
+                                                        className={"ll-terr-row" + (here ? " is-here" : "") + (count > 0 ? "" : " ll-terr-row--empty")}
+                                                        onClick={() => setSelectedTerritory(t)}
+                                                    >
+                                                        <span className={"ll-terr-flag" + (flag ? "" : " is-code")}>{flag || countryCodes[t] || ""}</span>
                                                         <span className="ll-terr-name">
-                                                            {t}
-                                                            {countryCodes[t] ? <em> {countryCodes[t]}</em> : null}
+                                                            {displayTerritory(t)}
+                                                            {here && (
+                                                                <span className="ll-terr-here">
+                                                                    <MapPin size={11} /> open project is here
+                                                                </span>
+                                                            )}
                                                         </span>
-                                                        <span className={count > 0 ? "ll-count has" : "ll-count"}>{count}</span>
+                                                        <span className="ll-terr-count">{count}</span>
                                                         <ChevronRight size={14} className="ll-chevron" />
                                                     </button>
                                                 );
                                             })}
+                                        {!loadingTerritories && emptyTerritories.length > 0 && (
+                                            <div className="ll-terr-empty-line">
+                                                <span className="ll-terr-empty-label">Nothing yet</span>
+                                                {emptyTerritories.map((t) => (
+                                                    <button key={t} className="ll-terr-empty" onClick={() => setSelectedTerritory(t)}>
+                                                        {territoryFlag(countryCodes[t]) ? <span className="ll-terr-empty-flag">{territoryFlag(countryCodes[t])}</span> : null}
+                                                        {displayTerritory(t)}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
 
                                 </>
@@ -1406,6 +1502,7 @@ const LocalisedLibraryTool = () => {
                                                             {selectedPaths.has(f.path) ? <CheckSquare size={14} /> : <Square size={14} />}
                                                         </button>
                                                     </Tooltip>
+                                                    <FileBadge of={f.name} />
                                                     <Tooltip text={f.path}>
                                                         <span className="ll-comp-name">{f.name}</span>
                                                     </Tooltip>
@@ -1448,18 +1545,36 @@ const LocalisedLibraryTool = () => {
                             ) : (
                                 /* ── Folders view (the "mini directories" split) ── */
                                 <>
-                                    <button className="ll-back" onClick={() => setSelectedTerritory(null)}>
-                                        <ArrowLeft size={13} /> All territories
-                                    </button>
+                                    {/* A breadcrumb, not a Back button: where you are
+                                        in the campaign, one press from the list. */}
+                                    <div className="ll-crumb">
+                                        <button className="ll-back" onClick={() => setSelectedTerritory(null)}>
+                                            <ArrowLeft size={13} /> All territories
+                                        </button>
+                                    </div>
 
                                     <div className="ll-comp-head">
-                                        <div className="ll-comp-title">
-                                            {selectedTerritory}
-                                            {countryCodes[selectedTerritory] ? <em> {countryCodes[selectedTerritory]}</em> : null}
-                                        </div>
-                                        <span className={componentsForTerritory.length > 0 ? "ll-count has" : "ll-count"}>
-                                            {componentsForTerritory.length}
+                                        <span className={"ll-comp-flag" + (territoryFlag(countryCodes[selectedTerritory]) ? "" : " is-code")}>
+                                            {territoryFlag(countryCodes[selectedTerritory]) || countryCodes[selectedTerritory] || ""}
                                         </span>
+                                        <div className="ll-comp-title">
+                                            {displayTerritory(selectedTerritory)}
+                                            <span className="ll-comp-sub">
+                                                {componentsForTerritory.length} component{componentsForTerritory.length === 1 ? "" : "s"}
+                                                {selectedTerritory === detectedTerritory && (
+                                                    <span className="ll-terr-here"><MapPin size={11} /> open project is here</span>
+                                                )}
+                                            </span>
+                                        </div>
+                                        {/* The territory's own action. Pairing a creative is
+                                            a judgement (Colombia files PortalToParadise as
+                                            "P2P"), and one screen cannot ask it of 28
+                                            markets at once -- so it lives here, not above. */}
+                                        <Tooltip text="Builds this territory's components from the master templates. Previews first.">
+                                            <button className="ll-make-motion" disabled={busy || makeBusy} onClick={openMakeMotion}>
+                                                <Hammer size={14} className={makeBusy ? "spin" : ""} /> Make the Motion
+                                            </button>
+                                        </Tooltip>
                                     </div>
 
                                     {/* Shared scroll region for the whole tree AND the
@@ -1602,7 +1717,7 @@ const LocalisedLibraryTool = () => {
                                                         {!jpgPngLoading &&
                                                             jpgPngRootFiles.map((f) => (
                                                                 <div key={f.path} className="ll-comp-row">
-                                                                    <Image size={14} className="ll-folder-icon" />
+                                                                    <FileBadge of={f.name} className="ll-folder-icon" />
                                                                     <Tooltip text={f.path}>
                                                                         <span className="ll-comp-name">{f.name}</span>
                                                                     </Tooltip>

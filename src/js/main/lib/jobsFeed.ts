@@ -161,6 +161,13 @@ const TERRITORY_CODES: Record<string, string> = {
     uk: "GB", "united kingdom": "GB", usa: "US", vietnam: "VN", brazil: "BR",
     argentina: "AR", chile: "CL", colombia: "CO", peru: "PE", austria: "AT",
     belgium: "BE", estonia: "EE", "hong kong": "HK", china: "CN", canada: "CA",
+    cyprus: "CY", luxembourg: "LU", malta: "MT", ukraine: "UA", albania: "AL",
+    "north macedonia": "MK", montenegro: "ME", "bosnia and herzegovina": "BA", bosnia: "BA",
+    "south korea": "KR", uae: "AE", "united arab emirates": "AE", "saudi arabia": "SA",
+    qatar: "QA", kuwait: "KW", egypt: "EG", morocco: "MA", nigeria: "NG", kenya: "KE",
+    ecuador: "EC", uruguay: "UY", paraguay: "PY", bolivia: "BO", venezuela: "VE",
+    "costa rica": "CR", panama: "PA", guatemala: "GT", "dominican republic": "DO",
+    "puerto rico": "PR", pakistan: "PK", "sri lanka": "LK",
 };
 
 /** Folder name -> flag, or "" when we don't know the code. */
