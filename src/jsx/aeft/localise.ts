@@ -4464,12 +4464,44 @@ export const csvLocaliserRun = (
             break;
           }
         }
+        // NOT IN THE INDEX IS NOT GONE. A master picked by hand ("Pick a
+        // file…", "Look in another folder…") is often somewhere the index
+        // never walks -- another folder, or a _DEV one, which every scan
+        // skips -- so looking only in the index refused every such pick as
+        // "no longer in" a folder it was never in. The file itself is asked
+        // instead, by OPENING it: .exists is not trusted on the NAS.
+        if (!bestMatch && /\.aep$/i.test(pinnedPath)) {
+          const pinnedFile = new File(pinnedPath);
+          let readable = false;
+          try {
+            if (pinnedFile.open("r")) {
+              readable = true;
+              pinnedFile.close();
+            }
+          } catch (pinErr) {
+            readable = false;
+          }
+          if (readable) {
+            // firstSizeToken, not /\d+x\d+/: a site like "Hoyts3x3" is not a size.
+            const pinSize = firstSizeToken(decode(String(pinnedFile.name)));
+            const pinParts = pinSize ? pinSize.replace(/px$/i, "").split("x") : ["1", "1"];
+            const pinRatio = Number(pinParts[0]) / Number(pinParts[1]) || 1;
+            bestMatch = {
+              file: pinnedFile,
+              path: String(pinnedFile.fsName),
+              name: pinnedFile.name,
+              canonPath: String(pinnedFile.fsName).toUpperCase().replace(/[^A-Z0-9]/g, ""),
+              ratio: pinRatio,
+              orientation: pinRatio >= 1 ? "Landscape" : "Portrait",
+            };
+          }
+        }
         if (!bestMatch) {
           // REFUSED, never re-guessed. The pin exists because the scorer's
           // answer was wrong for this row, so quietly falling back to it
           // would build exactly the deliverable somebody stepped in to stop.
           rep.status = "no-master";
-          rep.error = "The master picked for this row is no longer in " + mastersPath + " (" + pinnedPath + "). Pick it again.";
+          rep.error = "The master picked for this row can't be opened any more (" + pinnedPath + "). Pick it again.";
           continue;
         }
         rep.masterNote = "Master picked by hand: " + bestMatch.name;
@@ -5096,6 +5128,49 @@ function masterSecondsOf(name: string): string {
   }
   return "";
 }
+
+/**
+ * HAND-PICKING A MASTER, when the scorer found nothing: the Trott way (point
+ * it at a folder and let it rank what is in there) and the blunt way (name the
+ * file). Both dialogs START in the campaign's masters folder -- File/Folder
+ * .openDialog/.selectDialog have no start folder and open wherever AE was last,
+ * while openDlg/selectDlg on an object start there. Cancel answers "", never a
+ * fake error; the panel treats "" as "nothing happened".
+ *
+ * A picked file becomes a row PIN like any other, so csvLocaliserRun's rule
+ * holds unchanged: a pin whose file has gone is refused, never re-scored.
+ */
+export const csvLocaliserPickMasterFolder = (startPath: string): string => {
+  try {
+    const start = startPath ? new Folder(startPath) : null;
+    const picked = start && start.exists
+      ? (start.selectDlg("Pick a folder to look for masters in") as Folder | null)
+      : Folder.selectDialog("Pick a folder to look for masters in");
+    return picked ? String(picked.fsName) : "";
+  } catch (e) {
+    return "";
+  }
+};
+
+export const csvLocaliserPickMasterFile = (startPath: string): string => {
+  try {
+    const filter = $.os.indexOf("Windows") !== -1 ? "After Effects project:*.aep" : undefined;
+    const start = startPath ? new Folder(startPath) : null;
+    let picked: File | null = null;
+    if (start && start.exists) {
+      // openDlg on a File inside the folder is what makes the dialog open there.
+      picked = new File(start.fsName + "/master.aep").openDlg("Pick the master .aep for this row", filter as any) as File | null;
+    } else {
+      picked = File.openDialog("Pick the master .aep for this row", filter as any) as File | null;
+    }
+    if (!picked) return "";
+    const name = String(picked.name);
+    if (!/\.aep$/i.test(decodeURI(name))) return "";
+    return String(picked.fsName);
+  } catch (e) {
+    return "";
+  }
+};
 
 /**
  * The master picker's list for ONE row: every master at this duration and

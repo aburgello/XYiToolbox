@@ -559,6 +559,14 @@ const sameName = (a: string, b: string) => {
     return k(a) === k(b);
 };
 
+/** A folder as a person names it: "Other_Masters/AE" rather than just "AE",
+ *  which is what half the masters folders in the studio are called. */
+const folderLabel = (p: string) => {
+    const parts = String(p || "").split(/[\\/]/).filter(Boolean);
+    const last = parts[parts.length - 1] || "";
+    return last.toUpperCase() === "AE" && parts.length > 1 ? parts[parts.length - 2] + "/" + last : last;
+};
+
 const isBridge = () => typeof (window as any).cep !== "undefined";
 const batchKey = (territory: string, pdfName: string) => `${territory}/${pdfName}`;
 
@@ -609,7 +617,7 @@ export interface LocaliserCampaignInfo {
     banner: string;
 }
 
-const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTerritory }: ToolProps & {
+const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTerritory, handoffTick = 0 }: ToolProps & {
     onCampaignChange?: (c: LocaliserCampaignInfo | null) => void;
     /** The Localise screen's Library card. Placed here because only this tool
      *  knows whether the campaign is set up: beside the campaign card when it
@@ -618,6 +626,10 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
     /** The territory the open project sits in (the Library card detected it),
      *  pinned first in the scan list. */
     hereTerritory?: string;
+    /** Bumped when a batch has been staged while this is mounted (the
+     *  Localise page's jobs strip), so it is taken now rather than on the
+     *  next mount. */
+    handoffTick?: number;
 }) => {
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
     const [campaignName, setCampaignName] = useState("");
@@ -1022,7 +1034,18 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
         // unmatched value would look like a selection that then fails on run.
         // The effect below resolves it once the territory list has loaded.
         setBuildOpen(true);
-    }, []);
+        // Arriving mid-page, the builder opens below the cards -- take the
+        // artist to it, or the send looks like it did nothing.
+        if (handoffTick) {
+            window.setTimeout(() => {
+                const el = document.querySelector(".specs-handoff");
+                if (el) (el as HTMLElement).scrollIntoView({ block: "center" });
+            }, 200);
+        }
+        // Also on `handoffTick`: the Localise page's jobs strip stages a batch
+        // while this tool is ALREADY mounted, where "take it on mount" alone
+        // would leave it waiting until the page was left and re-entered.
+    }, [handoffTick]);
 
     // Resolve the handoff's territory code against the scanned folder names,
     // once those exist.
@@ -1086,7 +1109,9 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
     // business surviving the row being changed to 10s portrait.
     const [buildPins, setBuildPins] = useState<Record<number, { name: string; path: string }>>({});
     // The master picker's open state: which row, and what the host offered.
-    const [masterPicker, setMasterPicker] = useState<{ rowId: number; creative: string; size: string; seconds: string; list: MasterPick[]; otherDurations: (MasterPick & { seconds: string })[] } | null>(null);
+    // `source` is the folder the list was read from when it isn't the
+    // campaign's masters folder ("Look in another folder…").
+    const [masterPicker, setMasterPicker] = useState<{ rowId: number; creative: string; size: string; seconds: string; list: MasterPick[]; otherDurations: (MasterPick & { seconds: string })[]; source?: string } | null>(null);
     const [masterPickerQuery, setMasterPickerQuery] = useState("");
     const dropBuildPin = (id: number) =>
         setBuildPins((prev) => {
@@ -1355,20 +1380,20 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
      * ranking rule cannot rescue. The first option is always "Automatic", which
      * is how a pin is taken back off.
      */
-    const pickBuildMaster = async (r: BuildRow) => {
-        if (!aepPath) return;
+    const pickBuildMaster = async (r: BuildRow, folder?: string) => {
+        const root = folder || aepPath;
+        if (!root) return;
         const creative = buildRowCreative(r);
         const size = `${parseInt(r.width, 10)}x${parseInt(r.height, 10)}`;
         const duration = `${parseInt(r.duration, 10)}sec`;
-        const res = await evalTSSafe("csvLocaliserListMasters", aepPath, creative, size, duration);
+        const res = await evalTSSafe("csvLocaliserListMasters", root, creative, size, duration);
         if (!res.success) return; // evalTSSafe has already said why
         const list = ((res as { candidates?: MasterPick[] }).candidates) || [];
         const otherDurations = ((res as { otherDurations?: (MasterPick & { seconds: string })[] }).otherDurations) || [];
-        if (!list.length && !otherDurations.length) {
-            await alertDialog(`No masters at ${size} / ${r.duration}s in any creative. Check the size and duration first.`);
-            return;
-        }
-        setMasterPicker({ rowId: r.id, creative, size, seconds: r.duration, list, otherDurations });
+        // OPENS EVEN WITH NOTHING TO LIST. It used to stop at an alert, which
+        // is exactly the case the hand-pick is for: a master the scorer can't
+        // see is one you go and fetch, from another folder or by file.
+        setMasterPicker({ rowId: r.id, creative, size, seconds: r.duration, list, otherDurations, source: folder });
         setMasterPickerQuery("");
     };
 
@@ -1383,6 +1408,32 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
             return;
         }
         setBuildPins((prev) => ({ ...prev, [rowId]: { name: c.name, path: c.path } }));
+    };
+
+    /** The Trott way: point it at a folder, and the same scorer ranks what is
+     *  in there. The dialog starts in the masters folder. */
+    const lookInFolder = async () => {
+        if (!masterPicker) return;
+        const row = buildRows.find((x) => x.id === masterPicker.rowId);
+        if (!row) return;
+        let folder = "";
+        try {
+            folder = ((await evalTS("csvLocaliserPickMasterFolder", masterPicker.source || aepPath || "")) as string) || "";
+        } catch { folder = ""; }
+        if (!folder) return; // cancelled
+        await pickBuildMaster(row, folder);
+    };
+
+    /** The blunt way: name the file. It becomes the row's pin like any pick. */
+    const pickMasterFile = async () => {
+        if (!masterPicker) return;
+        let file = "";
+        try {
+            file = ((await evalTS("csvLocaliserPickMasterFile", masterPicker.source || aepPath || "")) as string) || "";
+        } catch { file = ""; }
+        if (!file) return; // cancelled, or not an .aep
+        const name = file.split(/[\\/]/).pop() || file;
+        chooseBuildMaster(masterPicker.rowId, { name, path: file, creative: "", tier: 0 });
     };
 
     useEffect(() => {
@@ -3527,25 +3578,16 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
                                 too. Only once this grid has written something:
                                 over an empty output folder MC It! reports nothing
                                 and reads as a failure. */}
-                            {builderBuilt && (
-                                <Tooltip text={`Re-open every .aep in ${buildTerritory || "this territory"} · ${buildBatch.trim() || "Batch_1"} and preview the artwork swap before anything is written. Unlike the inline pass this shows its matches first, and lets you hand-pick an image for anything it couldn't place.`}>
-                                    <button className="specs-build-multi" onClick={runBuilderMcIt} disabled={busy}>
-                                        <ImageIcon size={13} /> {builtMcIt ? "Re-run MC It!" : "MC It!"}
-                                    </button>
-                                </Tooltip>
-                            )}
-                            {/* The other half of the same job: MC It! swaps the
-                                PNG/JPG artwork, this swaps the .ai/.psd component
-                                sources those are built from. Same gate — over a
-                                folder with nothing in it there is nothing to
-                                report. */}
-                            {builderBuilt && (
-                                <Tooltip text={`Swap every .aep's .ai/.psd component sources in ${buildTerritory || "this territory"} · ${buildBatch.trim() || "Batch_1"} for this market's own, from its Masters/Support. Previews first.`}>
-                                    <button className="specs-build-multi" onClick={runBuilderSupportSwap} disabled={busy}>
-                                        <Layers size={13} /> Support Swap
-                                    </button>
-                                </Tooltip>
-                            )}
+                            {/* NO MC It! BUTTON HERE. The inline switch beside
+                                Localise does the swap during the run; a redo is
+                                one press away on the batch row's ⋯ menu and in
+                                the Toolset. Two buttons for one swap on one bar
+                                read as two steps you still had to take. */}
+                            {/* No Support Swap redo button either: the switch
+                                beside Localise now carries that name, and a button
+                                of the same name next to it would read as the same
+                                control twice. The redo lives on the batch row's ⋯
+                                menu and in the Toolset. */}
                             {/* THE SETTING THAT GOVERNS THE BUTTON NEXT TO IT.
                                 It lives in Setup beside "Skip existing files",
                                 which is collapsed by the time anybody is editing
@@ -3555,12 +3597,12 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
                                 never disagree. */}
                             <Tooltip text="Swap each generated file's PNG/JPG footage for the localised versions in the territory's JPG_PNG batch folder, while the file is still open, instead of re-opening every file afterwards with MC It!">
                                 <span className="specs-build-inline-opt">
-                                    <CheckboxToggle checked={runMcIt} onChange={setRunMcIt} label="MC It! inline" />
+                                    <CheckboxToggle checked={runMcIt} onChange={setRunMcIt} label="MC It!" />
                                 </span>
                             </Tooltip>
                             <Tooltip text="Swap each generated file's .ai/.psd component sources for this market's own, from the territory's Masters/Support, while the file is still open. Needs that folder to exist.">
                                 <span className="specs-build-inline-opt">
-                                    <CheckboxToggle checked={runSupportSwap} onChange={setRunSupportSwap} label="Support Swap inline" />
+                                    <CheckboxToggle checked={runSupportSwap} onChange={setRunSupportSwap} label="Support Swap" />
                                 </span>
                             </Tooltip>
                             <button className="specs-build-run" disabled={busy || !aepPath || !buildTerritory || buildComplete.length === 0} onClick={runBuilder}>
@@ -3611,7 +3653,10 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
                             <div className="mpick" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Pick a master">
                                 <div className="mpick-head">
                                     <div className="mpick-title">Pick a master</div>
-                                    <div className="mpick-sub">{mp.creative} · {mp.size} · {mp.seconds}s</div>
+                                    <div className="mpick-sub">
+                                        {mp.creative} · {mp.size} · {mp.seconds}s
+                                        {mp.source && <span className="mpick-source"> · in {folderLabel(mp.source)}</span>}
+                                    </div>
                                     <button type="button" className="mpick-close" onClick={() => setMasterPicker(null)} aria-label="Close">
                                         <X size={14} />
                                     </button>
@@ -3666,7 +3711,34 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
                                             </Tooltip>
                                         </div>
                                     ))}
-                                    {!own.length && !other.length && !elsewhere.length && <div className="mpick-empty">Nothing matches “{masterPickerQuery}”.</div>}
+                                    {!own.length && !other.length && !elsewhere.length && (
+                                        <div className="mpick-empty">
+                                            {masterPickerQuery.trim()
+                                                ? <>Nothing matches “{masterPickerQuery}”.</>
+                                                : <>No master at {mp.size} · {mp.seconds}s {mp.source ? "in that folder" : "in the masters folder"}. Look somewhere else, or pick the file.</>}
+                                        </div>
+                                    )}
+                                </div>
+                                {/* HAND-PICK, when the list hasn't got it. Look in
+                                    another folder ranks what's there with the same
+                                    scorer (the Trott way); Pick a file… takes one
+                                    .aep as the row's master, whatever it's called. */}
+                                <div className="mpick-foot">
+                                    {mp.source && (
+                                        <button type="button" className="mpick-foot-btn is-quiet" onClick={() => {
+                                            const row = buildRows.find((x) => x.id === mp.rowId);
+                                            if (row) void pickBuildMaster(row);
+                                        }}>
+                                            Back to the masters folder
+                                        </button>
+                                    )}
+                                    <span className="mpick-foot-spacer" />
+                                    <button type="button" className="mpick-foot-btn" onClick={() => void lookInFolder()}>
+                                        <FolderSearch size={13} /> Look in another folder…
+                                    </button>
+                                    <button type="button" className="mpick-foot-btn" onClick={() => void pickMasterFile()}>
+                                        <FileText size={13} /> Pick a file…
+                                    </button>
                                 </div>
                             </div>
                         </div>

@@ -5171,6 +5171,7 @@ export function mastersSkipFolder(name: string): boolean {
 
 export function buildMastersIndex(mastersRoot: string): MasterIndexEntry[] {
   const out: MasterIndexEntry[] = [];
+  const rootLen = String(new Folder(mastersRoot).fsName).length;
   const walk = (folder: Folder) => {
     const items = folder.getFiles();
     for (let i = 0; i < items.length; i++) {
@@ -5183,12 +5184,19 @@ export function buildMastersIndex(mastersRoot: string): MasterIndexEntry[] {
         walk(item as Folder);
       } else {
         const path = (item as File).fsName;
+        // The skip tokens are tested on the part of the path BELOW the root,
+        // not the whole of it: a folder somebody PICKED ("Look in another
+        // folder…" on a _DEV folder) must list its own masters, and with the
+        // whole path tested, every file under it read as archived. For the
+        // campaign's own masters root nothing changes -- that path carries
+        // none of these tokens.
+        const below = path.slice(rootLen);
         if (
           path.slice(-4) === ".aep" &&
-          path.indexOf("Auto-Save") === -1 &&
-          path.indexOf("_Archive") === -1 &&
-          path.indexOf("_Old") === -1 &&
-          path.indexOf("_DEV") === -1
+          below.indexOf("Auto-Save") === -1 &&
+          below.indexOf("_Archive") === -1 &&
+          below.indexOf("_Old") === -1 &&
+          below.indexOf("_DEV") === -1
         ) {
           const sizeMatch = path.match(/\d+x\d+/);
           if (!sizeMatch) continue;

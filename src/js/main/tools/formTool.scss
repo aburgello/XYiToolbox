@@ -3502,3 +3502,71 @@ $rail-gap: 10px;   // exactly the flex gap between rows, so segments tile
 }
 
 .specs-tool .specs-camp-actions .specs-route-badge { display: inline-block; }
+
+// ── Pick a master: no sideways scroll, and a way to hand-pick ───────────────
+// Options were `width: 100%` PLUS their padding and border, so every row was
+// ~18px wider than the list and the modal grew a horizontal scrollbar that
+// cut "Set row to 15s" in half.
+.mpick-option { box-sizing: border-box; }
+.mpick-list { overflow-x: hidden; }
+.mpick-option--elsewhere .ov-tooltip-wrapper { flex-shrink: 0; }
+
+.mpick-source { color: #8fa3a0; }
+
+.mpick-foot {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 12px;
+    border-top: 1px solid var(--surface-divider, #2a2a2a);
+}
+
+.mpick-foot-spacer { flex: 1 1 auto; }
+
+.mpick-foot-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 32px;
+    padding: 0 12px;
+    border: 1px solid var(--surface-edge, #3a3a3a);
+    border-radius: 7px;
+    background: none;
+    color: #ddd;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+
+    svg { color: var(--cat-icon, #5eead4); }
+
+    // Portalled, outside .specs-tool: re-declared against the global blue.
+    &:hover, &:active { background: rgba(255, 255, 255, 0.06); border-color: #666; color: #fff; }
+
+    &.is-quiet { border-color: transparent; color: #9aa; font-weight: 500; }
+}
+
+// ── Build a Batch: never wider than its column ──────────────────────────────
+// Reported as a horizontal scrollbar under the builder in the panel, and not
+// reproducible in desktop Chrome -- AE's embedded Chromium sizes inputs and
+// dropdown triggers inside grid cells differently. Every cell may shrink, and
+// every box counts its padding in its width.
+.specs-tool {
+    .specs-build-body,
+    .specs-build-rows,
+    .specs-build-actions {
+        box-sizing: border-box;
+        max-width: 100%;
+        min-width: 0;
+    }
+
+    .specs-build-row > * { min-width: 0; }
+
+    .specs-build-row input,
+    .specs-build-row select,
+    .specs-build-row .dropdown-trigger {
+        min-width: 0;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+}
