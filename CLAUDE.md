@@ -507,6 +507,16 @@ control the rig actually made.
 - Register it or it is invisible to search and ⌘K (`CSVLocaliser.tsx` is live
   but unregistered, and therefore unfindable).
 
+**Write a dialog as `{ title, body?, confirm, danger? }`, not a paragraph.**
+The title is the question ("Remove Street Fighter from the library?"), the body
+one or two short lines of what actually matters (can it be undone, who else it
+touches), the button a verb ("Remove", "Find", "Delete for everyone"), and
+`danger: true` on anything destructive (red, focus never starts on it). The
+dialogs had drifted into three-paragraph explanations under an "OK", read once
+and skimmed forever. A plain string still works -- a short first paragraph
+becomes the title -- but new call sites use the object. The dialog takes the
+tint of wherever it was opened (the last-pressed element's `--cat-grad`).
+
 **Shared primitives — use these, don't re-roll them:** `Dialog` (never
 `window.alert/confirm/prompt`; natives show the panel's `file://` path),
 `StatusIcon` (never a local CheckCircle/AlertCircle ternary), `CheckboxToggle`
@@ -1272,6 +1282,13 @@ for anything else: a `require` that resolves every name makes bundled
 libraries take their CommonJS branch, and every className on the page vanished. Run it after touching the
 Localise screen, CSV Localiser's landing, the Library's territory list or any
 handoff.
+
+`node scripts/ui-edit-in-context.mjs` (after `yarn build:web`) drills, picks
+and nudges through Edit In Context on the same harness, and checks what reaches
+ExtendScript (`editInContextNudge`'s arguments). A tool inside `.form-tool` must
+scope its button styles under its own root: `.form-tool button` (0,1,1) and its
+hover (0,3,1) outrank a bare `.tool-*` class, which is how every Edit In Context
+control ended up the same black box.
 
 `node scripts/probe-job-titles.cjs` (no build needed) drives
 `parseJobTitle` over dashed and dashless Wrike titles. The batch is read only

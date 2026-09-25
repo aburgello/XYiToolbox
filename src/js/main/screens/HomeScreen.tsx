@@ -97,7 +97,7 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate, focusAction }) => {
     };
 
     const removeFolder = async (i: number, label: string) => {
-        if (!(await confirmDialog(`Remove "${label}"?`))) return;
+        if (!(await confirmDialog({ title: `Remove ${label}?`, confirm: "Remove" }))) return;
         await evalTS("removeUsefulFolder", i);
         loadFolders();
     };

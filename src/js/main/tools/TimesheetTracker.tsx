@@ -323,7 +323,7 @@ const TimesheetTrackerTool = () => {
     const backToBatchList = () => { tracker.backToList(); setOutput(""); };
 
     const removeBatch = async (b: Batch) => {
-        if (!(await confirmDialog(`Delete batch "${b.name}" and its tracked times?\n\nThis only clears the saved time entries. No files on disk are touched.`))) return;
+        if (!(await confirmDialog({ title: `Delete ${b.name} and its times?`, body: "Only the saved time entries. No files are touched.", confirm: "Delete", danger: true }))) return;
         tracker.removeBatch(b.id);
     };
 

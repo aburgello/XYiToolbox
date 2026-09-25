@@ -51,7 +51,7 @@ const MyTools: React.FC<ToolProps> = ({ onSelectTool }) => {
     };
 
     const remove = async (t: CustomToolEntry) => {
-        if (!(await confirmDialog(`Delete "${t.name}"? This can't be undone.`))) return;
+        if (!(await confirmDialog({ title: `Delete ${t.name}?`, body: "No undo.", confirm: "Delete", danger: true }))) return;
         await persist(customTools.filter((x) => x.id !== t.id));
     };
 

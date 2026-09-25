@@ -1738,12 +1738,12 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
     // this also drops that campaign's saved component entries there.
     const removeCampaign = async () => {
         if (!campaignName) return;
-        const ok = await confirmDialog(
-            `Remove "${campaignName}" from this machine's campaign list?\n\n` +
-                `It also disappears from Localised Library, along with that campaign's saved component entries and custom folders. ` +
-                `Files on disk are untouched, and you can add it back by pointing at its Markets folder again.\n\n` +
-                `This changes nothing for anyone else. Use "Retire for team" if the volume has been archived.`
-        );
+        const ok = await confirmDialog({
+            title: `Remove ${campaignName} from this machine?`,
+            body: "Its Localised Library entries go too. Files on disk and everyone else are untouched. To take it out for the team, retire it instead.",
+            confirm: "Remove",
+            danger: true,
+        });
         if (!ok) return;
         try {
             const res = await evalTS("removeLocLibCampaign", campaignName);
@@ -1824,11 +1824,11 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
         if (!campaignName) return;
         const already = !!retiredEntry(campaignName);
         if (!already) {
-            const ok = await confirmDialog(
-                `Mark "${campaignName}" retired for the whole team?\n\n` +
-                    `Everyone's picker will show it as retired, and machines syncing from now on won't pick it up. ` +
-                    `Nobody's existing campaign list is changed, and you can un-retire it here.`
-            );
+            const ok = await confirmDialog({
+                title: `Retire ${campaignName} for the team?`,
+                body: "It's greyed out in everyone's picker and stops reaching new machines. Nothing is deleted, and you can bring it back.",
+                confirm: "Retire",
+            });
             if (!ok) return;
         }
         try {

@@ -1278,11 +1278,12 @@ const WorkflowBoardTool: React.FC<{
             steps.forEach((st) => { kept[st.id] = true; });
             const dropped = entry.steps.filter((st) => !kept[st.id]);
             if (dropped.length) {
-                const ok = await confirmDialog(
-                    `Save, removing ${dropped.length} step${dropped.length === 1 ? "" : "s"} for the whole team?\n\n` +
-                    dropped.map((st) => "· " + st.text).join("\n") +
-                    "\n\nThere is no undo."
-                );
+                const ok = await confirmDialog({
+                    title: `Remove ${dropped.length} step${dropped.length === 1 ? "" : "s"} for everyone?`,
+                    body: dropped.map((st) => "· " + st.text).join("\n"),
+                    confirm: "Save",
+                    danger: true,
+                });
                 if (!ok) return;
             }
         }
@@ -1335,18 +1336,24 @@ const WorkflowBoardTool: React.FC<{
         const labels = others.map((e) =>
             `${prettyCreative(e.creative)}${e.name ? " · " + e.name : ""}  (${e.steps.length} steps, ${(e.notes || []).length} notes)`);
         const pick = await selectDialog(
-            `Merge “${prettyCreative(entry.creative)}” into which board?\n\n` +
-            "Its notes move across. Its steps move only if the other board has none — two real checklists are two people's work.",
+            {
+                title: `Merge ${prettyCreative(entry.creative)} into…`,
+                body: "Its notes move across. Its steps only move if the other board has none.",
+                confirm: "Next",
+            },
             labels
         );
         if (pick === null) return;
         const target = others[pick];
-        const ok = await confirmDialog(
-            `Merge ${prettyCreative(entry.creative)} into ${prettyCreative(target.creative)}?\n\n` +
-            `${(entry.notes || []).length} note(s)` +
-            (target.steps.length === 0 && entry.steps.length > 0 ? ` and ${entry.steps.length} step(s)` : "") +
-            ` move across, and “${prettyCreative(entry.creative)}” is removed for the whole team.\n\nThere is no undo.`
-        );
+        const movingNotes = (entry.notes || []).length;
+        const ok = await confirmDialog({
+            title: `Merge ${prettyCreative(entry.creative)} into ${prettyCreative(target.creative)}?`,
+            body: `${movingNotes} note${movingNotes === 1 ? "" : "s"}` +
+                (target.steps.length === 0 && entry.steps.length > 0 ? ` and ${entry.steps.length} step${entry.steps.length === 1 ? "" : "s"}` : "") +
+                ` move across, then ${prettyCreative(entry.creative)} is removed for everyone. No undo.`,
+            confirm: "Merge",
+            danger: true,
+        });
         if (!ok) return;
         setBusy(true);
         const r = (await evalTSSafe("workflowMergeEntries", entry.id, target.id)) as {
@@ -1362,16 +1369,16 @@ const WorkflowBoardTool: React.FC<{
 
     const deleteEntry = async () => {
         if (!entry) return;
-        const ok = await confirmDialog(
-            `Delete ${prettyCreative(entry.creative)}${entry.name ? ` · ${entry.name}` : ""} for everyone?\n\n` +
-            `${entry.steps.length} step${entry.steps.length === 1 ? "" : "s"} go with it.` +
+        const ok = await confirmDialog({
+            title: `Delete ${prettyCreative(entry.creative)}${entry.name ? ` · ${entry.name}` : ""} for everyone?`,
             // Counted off the ENTRY, not the creative's union: only the notes
             // physically on this one are lost. Saying otherwise would talk
             // somebody out of a delete that costs them nothing.
-            (entry.notes.length > 0
-                ? ` So do ${entry.notes.length} note${entry.notes.length === 1 ? "" : "s"} written here — the creative's other notes stay.`
-                : "")
-        );
+            body: `${entry.steps.length} step${entry.steps.length === 1 ? "" : "s"}` +
+                (entry.notes.length > 0 ? ` and ${entry.notes.length} note${entry.notes.length === 1 ? "" : "s"} go with it.` : " go with it."),
+            confirm: "Delete",
+            danger: true,
+        });
         if (!ok) return;
         setBusy(true);
         const r = (await evalTSSafe("workflowDeleteEntry", entry.id)) as {
@@ -1549,11 +1556,12 @@ const WorkflowBoardTool: React.FC<{
         // and no version history: a mis-click here loses somebody's writing
         // permanently, and "are you sure?" without saying WHICH note is a
         // question you cannot actually answer when four of them are on screen.
-        const ok = await confirmDialog(
-            "Delete this note?\n\n" +
-            "“" + (note ? note.text : "") + "”\n\n" +
-            "It goes for the whole team, and there is no undo."
-        );
+        const ok = await confirmDialog({
+            title: "Delete this note for everyone?",
+            body: "“" + (note ? note.text : "") + "”",
+            confirm: "Delete",
+            danger: true,
+        });
         if (!ok) return;
         const r = (await evalTSSafe("workflowDeleteNote", entry.id, noteId)) as {
             success: boolean; error?: string; entries?: WorkflowEntry[];
@@ -3086,7 +3094,7 @@ const WorkflowBoardTool: React.FC<{
                                         onClick={async () => {
                                             const dirty = !!noteDraft.trim() || noteLinks.length > 0 || noteTags.length > 0;
                                             const q = editingNote ? "Discard these changes?" : "Discard this note?";
-                                            if (dirty && !(await confirmDialog(q))) return;
+                                            if (dirty && !(await confirmDialog({ title: q, confirm: "Discard", cancel: "Keep editing", danger: true }))) return;
                                             cancelCompose();
                                         }}
                                     >

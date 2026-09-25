@@ -628,9 +628,12 @@ const LocalisedLibraryTool = () => {
     const handleRemoveCampaign = async () => {
         if (!selectedCampaign) return;
         if (
-            !(await confirmDialog(
-                `Remove campaign "${selectedCampaign.name}" from the library?\n\nThis deletes its saved component entries too — the actual files on disk are untouched.`
-            ))
+            !(await confirmDialog({
+                title: `Remove ${selectedCampaign.name} from the library?`,
+                body: "Its entries here go with it. Files on disk are untouched.",
+                confirm: "Remove",
+                danger: true,
+            }))
         )
             return;
         await safeEvalTS("removeLocLibCampaign", selectedCampaign.name);
@@ -667,7 +670,7 @@ const LocalisedLibraryTool = () => {
     };
 
     const handleRemoveComponent = async (component: Component) => {
-        if (!(await confirmDialog(`Remove "${component.label}" from this territory's library?`))) return;
+        if (!(await confirmDialog({ title: `Remove ${component.label} from the library?`, body: "The file stays on disk.", confirm: "Remove" }))) return;
         await safeEvalTS("removeLocLibComponent", component.campaign, component.territory, component.label, component.path);
         const all: Component[] = (await safeEvalTS("loadLocLibComponents")) || [];
         setComponents(all);
@@ -676,9 +679,11 @@ const LocalisedLibraryTool = () => {
     const handleRemoveFolder = async (folderName: string) => {
         if (!selectedCampaign || !selectedTerritory) return;
         if (
-            !(await confirmDialog(
-                `Remove the "${folderName}" folder?\n\nComponents inside it aren't deleted -- they'll fall back to being grouped by file type.`
-            ))
+            !(await confirmDialog({
+                title: `Remove the ${folderName} folder?`,
+                body: "Its components stay, grouped by file type again.",
+                confirm: "Remove",
+            }))
         )
             return;
         await safeEvalTS("removeLocLibFolder", selectedCampaign.name, selectedTerritory, folderName);
@@ -757,13 +762,14 @@ const LocalisedLibraryTool = () => {
             await alertDialog("Select or create a campaign first.");
             return;
         }
-        const scopeLabel = selectedTerritory ? `the "${selectedTerritory}" territory` : `every territory under "${selectedCampaign.name}"`;
         if (
-            !(await confirmDialog(
-                `Scan ${scopeLabel} for a "Support_Motion" or "Motion_Components" folder, and auto-add every file found inside as a component?\n\n` +
-                    "Where that folder holds a folder per creative, each file is filed under its creative.\n\n" +
-                    "Files already in the library are skipped, so this is safe to re-run later as new territories come online."
-            ))
+            !(await confirmDialog({
+                title: selectedTerritory
+                    ? `Find the ${displayTerritory(selectedTerritory)} motion?`
+                    : `Find the motion in every ${selectedCampaign.name} territory?`,
+                body: "Adds everything in each Support_Motion or Motion_Components folder, filed by creative. Files already here are skipped.",
+                confirm: "Find",
+            }))
         )
             return;
 
@@ -1028,10 +1034,11 @@ const LocalisedLibraryTool = () => {
         }
 
         const folderName = folder.split(/[\\/]/).pop();
-        const proceed = await confirmDialog(
-            `This will open, update, and SAVE ${preview.count} project file${preview.count === 1 ? "" : "s"} in "${folderName}" with the ${selectedPaths.size} selected component${selectedPaths.size === 1 ? "" : "s"}.\n\n` +
-                "This modifies those files on disk and can't be undone. It will also temporarily replace whatever project you currently have open here — save any unsaved work in it first.\n\nContinue?"
-        );
+        const proceed = await confirmDialog({
+            title: `Import into ${preview.count} project${preview.count === 1 ? "" : "s"} in ${folderName}?`,
+            body: `Adds ${selectedPaths.size} component${selectedPaths.size === 1 ? "" : "s"} and saves each file, with no undo. Save your open project first: it gets replaced.`,
+            confirm: "Import and save",
+        });
         if (!proceed) return;
 
         setBatchBusy(true);

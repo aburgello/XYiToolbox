@@ -286,8 +286,8 @@ const TeamDroplet: React.FC = () => {
         const isOwnerReclaim = machineOwner !== "" && profile.name === machineOwner;
         const ok = await confirmDialog(
             isOwnerReclaim
-                ? `Load ${profile.name}'s setup from the team folder and reload the panel?`
-                : `Apply "${profile.name}"'s setup on this machine? The current setup is backed up automatically. Restore it any time from this Team menu.`
+                ? { title: `Load ${profile.name}'s setup?`, body: "From the team folder. The panel reloads.", confirm: "Load" }
+                : { title: `Use ${profile.name}'s setup here?`, body: "This machine's setup is backed up first. Restore it from the Team menu.", confirm: "Use setup" }
         );
         if (!ok) return;
         setBusy(true);
@@ -311,7 +311,12 @@ const TeamDroplet: React.FC = () => {
     };
 
     const deleteProfile = async (profile: ProfileInfo) => {
-        const ok = await confirmDialog(`Delete "${profile.name}"'s saved setup for the whole team? (Removes only the snapshot, their folder stays, and nobody's live setup changes.)`);
+        const ok = await confirmDialog({
+            title: `Delete ${profile.name}'s saved setup?`,
+            body: "Only the snapshot on the team folder. Nobody's live setup changes.",
+            confirm: "Delete",
+            danger: true,
+        });
         if (!ok) return;
         try {
             const result = await evalTS("teamDeleteProfile", profile.name);

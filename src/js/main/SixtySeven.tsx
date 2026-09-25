@@ -210,9 +210,12 @@ export const SixtySevenHost: React.FC = () => {
 
     const removeNote = async (n: Note) => {
         if (!n._entryId) return;
-        const ok = await confirmDialog(
-            "Delete this pitfall for the whole team?\n\n“" + n.text + "”\n\nThere is no undo."
-        );
+        const ok = await confirmDialog({
+            title: "Delete this pitfall for everyone?",
+            body: "“" + n.text + "”",
+            confirm: "Delete",
+            danger: true,
+        });
         if (!ok) return;
         const r = (await evalTSSafe("workflowDeleteNote", n._entryId, n.id)) as { success: boolean };
         if (r && r.success) await load();

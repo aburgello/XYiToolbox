@@ -63,7 +63,7 @@ const UsefulFoldersTool = () => {
     };
 
     const removeFolder = async (index: number, label: string) => {
-        if (!(await confirmDialog(`Remove "${label}" from Useful Folders?`))) return;
+        if (!(await confirmDialog({ title: `Remove ${label} from Useful Folders?`, confirm: "Remove" }))) return;
         await evalTS("removeUsefulFolder", index);
         reload();
     };

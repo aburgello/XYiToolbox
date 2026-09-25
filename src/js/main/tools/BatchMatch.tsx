@@ -218,11 +218,12 @@ const BatchMatchTool = () => {
 
     const apply = async () => {
         if (!selectedIds.length) { setStatus({ text: "Nothing selected to apply.", type: "error" }); return; }
-        const ok = await confirmDialog(
-            `Write ${selectedIds.length} value(s) across ${new Set(changeRows.filter((r) => checked[r.id] !== false).map((r) => r.file)).size} project file(s)?\n\n` +
-            `This edits those .aep files on disk and cannot be undone from here. Any file whose name still carries an “OV” master token is copied first and only the copy is edited.\n\n` +
-            `After Effects can only hold one project open, so your current project is closed to run the batch. AE will ask whether to save it first.`
-        );
+        const fileCount = new Set(changeRows.filter((r) => checked[r.id] !== false).map((r) => r.file)).size;
+        const ok = await confirmDialog({
+            title: `Write ${selectedIds.length} value${selectedIds.length === 1 ? "" : "s"} into ${fileCount} project${fileCount === 1 ? "" : "s"}?`,
+            body: "Edits the files on disk, with no undo. OV masters are copied first. Your open project closes to run it.",
+            confirm: "Write",
+        });
         if (!ok) return;
 
         setBusy(true);

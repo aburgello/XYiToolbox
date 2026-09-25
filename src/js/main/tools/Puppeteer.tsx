@@ -161,11 +161,11 @@ const PuppeteerTool = () => {
         if (!layer) return;
         const ok = await confirmDialog(
             keyframes
-                ? "Bake every frame of the rig into keyframes on the pins, then drop the expressions?"
-                : "Freeze the pins at their current position and drop the expressions?"
+                ? { title: "Bake the rig into keyframes?", body: "Every frame is keyed on the pins, then the expressions come off.", confirm: "Bake" }
+                : { title: "Freeze the pins where they are?", body: "The expressions come off.", confirm: "Freeze" }
         );
         if (!ok) return;
-        const removeControls = await confirmDialog("Delete the control nulls this tool made?");
+        const removeControls = await confirmDialog({ title: "Delete the control nulls too?", confirm: "Delete", cancel: "Keep them" });
         setBusy(true);
         const r = await call<{ success: boolean; error?: string; baked?: number; keysWritten?: number; controlsRemoved?: number }>(
             "puppetBake",

@@ -916,7 +916,7 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
 
     const handleRemoveCampaign = async () => {
         if (!selectedCampaign) return;
-        if (!(await confirmDialog(`Remove campaign "${selectedCampaign.name}" from the OV Library?\n\nThis only removes it from this list. Nothing on disk is touched.`))) return;
+        if (!(await confirmDialog({ title: `Remove ${selectedCampaign.name} from OV Library?`, body: "Only from this list. Nothing on disk is touched.", confirm: "Remove", danger: true }))) return;
         await safeEvalTS("removeCampaign", selectedCampaign.name);
         setSelectedCampaign(null);
         await refreshCampaigns();
@@ -987,7 +987,7 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
     };
     const handleClearCampaignBanner = async () => {
         if (!selectedCampaign) return;
-        if (!(await confirmDialog(`Reset "${selectedCampaign.name}" back to its automatic banner?`))) return;
+        if (!(await confirmDialog({ title: `Use ${selectedCampaign.name}'s automatic banner?`, confirm: "Reset" }))) return;
         await safeEvalTS("clearCampaignBanner", selectedCampaign.name);
         setCampaignBanner("");
     };
@@ -1005,7 +1005,7 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
     };
     const handleClearCustomThumbnail = async (creativeName: string) => {
         if (!selectedCampaign) return;
-        if (!(await confirmDialog(`Reset "${creativeName}" back to its auto-detected thumbnail?`))) return;
+        if (!(await confirmDialog({ title: `Use ${creativeName}'s automatic thumbnail?`, confirm: "Reset" }))) return;
         await safeEvalTS("clearCreativeThumbnailOverride", selectedCampaign.name, creativeName);
         setThumbOverrides((prev) => {
             const next = { ...prev };

@@ -135,7 +135,7 @@ const ScriptPlayground: React.FC = () => {
     };
 
     const deleteTool = async (t: CustomToolEntry) => {
-        if (!(await confirmDialog(`Delete "${t.name}"? This can't be undone.`))) return;
+        if (!(await confirmDialog({ title: `Delete ${t.name}?`, body: "No undo.", confirm: "Delete", danger: true }))) return;
         await persistCustomTools(customTools.filter((x) => x.id !== t.id));
         if (editingToolId === t.id) setEditingToolId(null);
     };

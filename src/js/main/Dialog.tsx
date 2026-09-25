@@ -25,29 +25,108 @@ import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import "./Dialog.scss";
 
+/**
+ * What a dialog SAYS, in the shape the rest of the panel speaks: a short
+ * title that is the question, an optional line or two under it, and a button
+ * named for what it does ("Scan", "Remove", "Delete for everyone") rather than
+ * "OK". A plain string still works -- its first paragraph becomes the title
+ * when short enough to be one -- so no call site has to change to benefit.
+ */
+export interface DialogCopy {
+    title: string;
+    body?: string;
+    /** The primary button. Defaults to "OK" for an alert, "Continue" otherwise. */
+    confirm?: string;
+    cancel?: string;
+    /** Destructive: the primary button turns red. */
+    danger?: boolean;
+}
+
+type DialogText = string | DialogCopy;
+
+interface Shown {
+    title: string;
+    body: string;
+    confirm: string;
+    cancel: string;
+    danger: boolean;
+    /** The category tint of wherever the dialog was opened from. */
+    tint: string;
+}
+
 type DialogRequest =
-    | { kind: "alert"; message: string; resolve: () => void }
-    | { kind: "confirm"; message: string; resolve: (value: boolean) => void }
-    | { kind: "prompt"; message: string; defaultValue: string; resolve: (value: string | null) => void }
-    | { kind: "select"; message: string; options: string[]; defaultIndex: number; resolve: (value: number | null) => void };
+    | { kind: "alert"; shown: Shown; resolve: () => void }
+    | { kind: "confirm"; shown: Shown; resolve: (value: boolean) => void }
+    | { kind: "prompt"; shown: Shown; defaultValue: string; resolve: (value: string | null) => void }
+    | { kind: "select"; shown: Shown; options: string[]; defaultIndex: number; resolve: (value: number | null) => void };
 
 let pushRequest: ((req: DialogRequest) => void) | null = null;
 
-export function alertDialog(message: string): Promise<void> {
+/** The --cat-grad in force where the dialog was opened (custom properties
+ *  inherit, so the focused element carries its category's), else "". The
+ *  host is mounted at the shell root, outside every tinted wrapper. */
+// The element under the last mouse press. Focus alone is not enough: macOS
+// does not focus a button on click, so activeElement is often <body> -- and
+// the dialog lost its colour. Captured, so no handler can hide it.
+let lastPressed: HTMLElement | null = null;
+if (typeof document !== "undefined") {
+    document.addEventListener("mousedown", (e) => { lastPressed = e.target as HTMLElement; }, true);
+}
+
+function openerTint(): string {
+    try {
+        const focused = document.activeElement as HTMLElement | null;
+        const el = (lastPressed && document.contains(lastPressed) ? lastPressed : null)
+            || (focused && focused !== document.body ? focused : null)
+            || document.body;
+        return getComputedStyle(el).getPropertyValue("--cat-grad").trim();
+    } catch {
+        return "";
+    }
+}
+
+function toShown(text: DialogText, kind: DialogRequest["kind"]): Shown {
+    const fallbackConfirm = kind === "confirm" ? "Continue" : "OK";
+    if (typeof text !== "string") {
+        return {
+            title: text.title,
+            body: text.body || "",
+            confirm: text.confirm || fallbackConfirm,
+            cancel: text.cancel || "Cancel",
+            danger: !!text.danger,
+            tint: openerTint(),
+        };
+    }
+    // A plain string: a short first paragraph reads as the title, the rest
+    // as the body. A long one stays body only, rather than a shouting title.
+    const paras = String(text).split(/\n\s*\n/);
+    const first = paras[0].trim();
+    const titleable = first.length <= 90;
+    return {
+        title: titleable ? first : "",
+        body: titleable ? paras.slice(1).join("\n\n").trim() : String(text),
+        confirm: fallbackConfirm,
+        cancel: "Cancel",
+        danger: false,
+        tint: openerTint(),
+    };
+}
+
+export function alertDialog(message: DialogText): Promise<void> {
     return new Promise((resolve) => {
-        pushRequest?.({ kind: "alert", message, resolve });
+        pushRequest?.({ kind: "alert", shown: toShown(message, "alert"), resolve });
     });
 }
 
-export function confirmDialog(message: string): Promise<boolean> {
+export function confirmDialog(message: DialogText): Promise<boolean> {
     return new Promise((resolve) => {
-        pushRequest?.({ kind: "confirm", message, resolve });
+        pushRequest?.({ kind: "confirm", shown: toShown(message, "confirm"), resolve });
     });
 }
 
-export function promptDialog(message: string, defaultValue = ""): Promise<string | null> {
+export function promptDialog(message: DialogText, defaultValue = ""): Promise<string | null> {
     return new Promise((resolve) => {
-        pushRequest?.({ kind: "prompt", message, defaultValue, resolve });
+        pushRequest?.({ kind: "prompt", shown: toShown(message, "prompt"), defaultValue, resolve });
     });
 }
 
@@ -57,9 +136,9 @@ export function promptDialog(message: string, defaultValue = ""): Promise<string
  *  call-and-await contract as the other three, added for Toggle By Label/
  *  Comp Duration rather than repurposing promptDialog's free-text input,
  *  which would let a typo silently pick nothing. */
-export function selectDialog(message: string, options: string[], defaultIndex = 0): Promise<number | null> {
+export function selectDialog(message: DialogText, options: string[], defaultIndex = 0): Promise<number | null> {
     return new Promise((resolve) => {
-        pushRequest?.({ kind: "select", message, options, defaultIndex, resolve });
+        pushRequest?.({ kind: "select", shown: toShown(message, "select"), options, defaultIndex, resolve });
     });
 }
 
@@ -126,14 +205,16 @@ export const DialogHost = () => {
                 onClick={cancel}
             >
                 <motion.div
-                    className="dialog-card"
+                    className={"dialog-card" + (request.shown.danger ? " is-danger" : "")}
+                    style={request.shown.tint ? ({ ["--dlg-grad" as any]: request.shown.tint } as React.CSSProperties) : undefined}
                     initial={{ opacity: 0, scale: 0.95, y: 6 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.97 }}
                     transition={{ type: "spring", stiffness: 420, damping: 32 }}
                     onClick={(e) => e.stopPropagation()}
                 >
-                    <p className="dialog-message">{request.message}</p>
+                    {request.shown.title && <h3 className="dialog-title">{request.shown.title}</h3>}
+                    {request.shown.body && <p className="dialog-message">{request.shown.body}</p>}
 
                     {request.kind === "prompt" && (
                         <input
@@ -163,15 +244,15 @@ export const DialogHost = () => {
                     <div className="dialog-buttons">
                         {request.kind === "alert" ? (
                             <button className="dialog-btn-primary" onClick={dismiss} autoFocus>
-                                OK
+                                {request.shown.confirm}
                             </button>
                         ) : (
                             <>
                                 <button className="dialog-btn-secondary" onClick={cancel}>
-                                    Cancel
+                                    {request.shown.cancel}
                                 </button>
-                                <button className="dialog-btn-primary" onClick={confirmOrSubmit}>
-                                    OK
+                                <button className="dialog-btn-primary" onClick={confirmOrSubmit} autoFocus={request.kind === "confirm" && !request.shown.danger}>
+                                    {request.shown.confirm}
                                 </button>
                             </>
                         )}

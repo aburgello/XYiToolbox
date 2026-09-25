@@ -178,6 +178,10 @@ export async function launch({ root, fixturesSrc, width = 760, height = 1100, ro
                     .filter((e) => (e.textContent || "").replace(/\\s+/g, " ").includes(${JSON.stringify(text)}));
                 if (!els.length) return false;
                 els[0].scrollIntoView({ block: "center" });
+                // A real press: mousedown and mouseup around the click, since
+                // the panel reads the pressed element (e.g. a dialog's tint).
+                els[0].dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+                els[0].dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
                 els[0].click();
                 return true;
             })()`);

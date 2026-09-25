@@ -96,7 +96,7 @@ const RenderQueueManager: React.FC = () => {
     };
 
     const clearAll = async () => {
-        const ok = await confirmDialog("Clear the entire render queue?\n\nThis will remove all queued items.");
+        const ok = await confirmDialog({ title: "Clear the render queue?", body: "Every queued item is removed.", confirm: "Clear", danger: true });
         if (!ok) return;
         setBusy(true);
         try {

@@ -197,6 +197,30 @@ try {
     await page.eval(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
     await page.shot(path.join(SHOTS, "ui-library-territory.png"));
 
+    console.log("\n2b. Dialogs speak the panel's language");
+    await page.click(".ll-hero-find");
+    check(await page.waitFor(`document.querySelector(".dialog-card")`, 3000), "Find the Motion asks first");
+    check((await page.eval(text(".dialog-title"))) === "Find the Slovenia motion?", "…with a title that is the question", await page.eval(text(".dialog-title")));
+    check((await page.eval(text(".dialog-btn-primary"))) === "Find", "…and a button named for what it does", await page.eval(text(".dialog-btn-primary")));
+    check((await page.eval(text(".dialog-message"))).length < 160, "…and a body that stays short", (await page.eval(text(".dialog-message"))).length + " chars");
+    check((await page.eval(`getComputedStyle(document.querySelector(".dialog-card"), "::before").content`)) === "none", "no gradient strip across the top");
+    const dlgBg = await page.eval(`getComputedStyle(document.querySelector(".dialog-btn-primary")).backgroundImage`);
+    check(/28, 122, 118/.test(dlgBg), "…in the colour of where it was opened (Localise teal)", dlgBg.slice(0, 50));
+    await pause(500);
+    await page.shot(path.join(SHOTS, "ui-dialog.png"));
+    await page.click(".dialog-btn-secondary");
+    check(await page.waitFor(`!document.querySelector(".dialog-card")`, 2000), "Cancel closes it, nothing run");
+    await page.click(".ll-manage-btn");
+    await page.click(".ll-manage-menu button", "Remove from this machine");
+    check(await page.waitFor(`document.querySelector(".dialog-card.is-danger")`, 3000), "a destructive dialog is marked as one");
+    const dangerBg = await page.eval(`getComputedStyle(document.querySelector(".dialog-btn-primary")).backgroundImage`);
+    check(/194, 65, 65/.test(dangerBg), "…with a red primary button", dangerBg.slice(0, 50));
+    check((await page.eval(`document.activeElement && document.activeElement.classList.contains("dialog-btn-primary")`)) === false, "…and focus never starts on it");
+    await pause(500);
+    await page.shot(path.join(SHOTS, "ui-dialog-danger.png"));
+    await page.click(".dialog-btn-secondary");
+    await page.waitFor(`!document.querySelector(".dialog-card")`, 2000);
+
     console.log("\n3. Open the Library: the compact list");
     await page.click(".back-button");
     check(await page.waitFor(`document.querySelector(".ls-libcard-open")`, 6000), "back on the landing");
