@@ -892,8 +892,20 @@ no longer opens; a banner somebody chose is never overwritten. The Localised
 Library, per machine in `app.settings`, now has a per-campaign catalogue at
 `misc/loclib/<campaign>.json`: published after Find the Motion (and when this
 machine holds more than the catalogue), merged in on opening a campaign.
-**Additive both ways** -- publishing is a union, pulling only adds, neither
-removes a row or carries anyone's `folder` filing. Tagged machines only; a
+Publishing is a union and never carries anyone's `folder` filing. **Removals
+travel as a list, not by omission**: removing a component calls
+`teamLocLibRemove`, which takes it out of the catalogue and records the path;
+publishing leaves recorded paths out (so a colleague's stale copy can't bring
+it back), pulling deletes them locally, and an explicit re-add
+(`teamLocLibPublish(campaign, path)`) clears the record. Absence from the
+catalogue alone still deletes nothing.
+
+**Global Components** are a campaign's files and folders that belong to no one
+territory: stored as ordinary rows under the reserved territory `__GLOBAL__`,
+so the catalogue, the merge and the removals carry them with no second
+mechanism. A folder entry (`kind: "folder"`, the 7th settings column, written
+only when set so old libraries are byte-identical) is listed live by
+`locLibListFolder` when opened. The section is **folded by default** (per viewer, `localStorage`) so a long list never pushes the territories down, and an add unfolds it; the territory list has no search box. Tagged machines only; a
 failed read is "couldn't read", never "empty". `node
 scripts/probe-team-library.cjs` guards all of it.
 

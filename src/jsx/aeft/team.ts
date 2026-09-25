@@ -28,7 +28,7 @@ import { Result, SETTINGS_SECTION, decode } from "./shared";
 import { expressionsBankLoad, expressionsBankSave, loadCustomTools, saveCustomTools, mastersSkipFolder, creativeTokenOf, TC_COUNTRIES } from "./tools";
 import { loadCombos, saveCombos, EffectComboEntry } from "./effects";
 import { loadCampaignsRaw, saveCampaign, loadCampaignBanner, setCampaignBanner } from "./review";
-import { loadLocLibCampaigns, saveLocLibCampaign, scanTerritories, locLibComponentsOf, mergeLocLibComponents } from "./localise";
+import { loadLocLibCampaigns, saveLocLibCampaign, scanTerritories, locLibComponentsOf, mergeLocLibComponents, dropLocLibComponents } from "./localise";
 
 const TEAM_FOLDER_KEY = "TeamFolderPath";
 
@@ -4237,6 +4237,19 @@ interface LocLibCatalogueRow {
   label: string;
   path: string;
   creative?: string;
+  kind?: string;
+}
+
+/**
+ * REMOVALS TRAVEL TOO. The catalogue used to be add-only, so a component
+ * somebody removed came back on their next pull from anyone's copy -- fine for
+ * a scan result, wrong for Global Components, which people curate by hand. A
+ * removed path is recorded here: publishing leaves it out, pulling removes it
+ * locally, and adding the same path again (an explicit act) clears it.
+ */
+interface LocLibCatalogue {
+  entries: LocLibCatalogueRow[];
+  removed: string[];
 }
 
 function locLibCatalogueFile(campaign: string): File | null {
@@ -4245,7 +4258,7 @@ function locLibCatalogueFile(campaign: string): File | null {
   return new File(root.fsName + "/" + LOCLIB_DIR + "/" + safeFileStem(campaign) + ".json");
 }
 
-function readLocLibCatalogue(campaign: string): LocLibCatalogueRow[] | null {
+function readLocLibCatalogueFull(campaign: string): LocLibCatalogue | null {
   const f = locLibCatalogueFile(campaign);
   if (!f) return null;
   const content = readTextFile(f);
@@ -4253,13 +4266,35 @@ function readLocLibCatalogue(campaign: string): LocLibCatalogueRow[] | null {
   try {
     const parsed = JSON.parse(content);
     if (!parsed || parsed.type !== LOCLIB_TYPE || !(parsed.entries instanceof Array)) return null;
-    return parsed.entries as LocLibCatalogueRow[];
+    return {
+      entries: parsed.entries as LocLibCatalogueRow[],
+      removed: parsed.removed instanceof Array ? (parsed.removed as string[]) : [],
+    };
   } catch (e) {
     return null;
   }
 }
 
-export const teamLocLibPublish = (campaign: string): Result => {
+function writeLocLibCatalogue(campaign: string, owner: string, cat: LocLibCatalogue): boolean {
+  if (!ensureSharedFolder(LOCLIB_DIR)) return false;
+  const f = locLibCatalogueFile(campaign);
+  if (!f) return false;
+  const payload = {
+    type: LOCLIB_TYPE,
+    version: 1,
+    campaign: campaign,
+    summary: cat.entries.length + " components",
+    count: cat.entries.length,
+    updatedAt: new Date().toString(),
+    updatedBy: owner,
+    entries: cat.entries,
+    removed: cat.removed,
+  };
+  return writeTextFile(f, JSON.stringify(payload, null, 2));
+}
+
+/** `readded`: a path somebody just added on purpose -- clears its removal. */
+export const teamLocLibPublish = (campaign: string, readded?: string): Result => {
   try {
     if (!campaign) return { success: false, error: "No campaign." };
     if (!teamFolder()) return { success: false, error: "No team folder." };
@@ -4268,39 +4303,36 @@ export const teamLocLibPublish = (campaign: string): Result => {
     const mine = locLibComponentsOf(campaign);
     // Nothing to add: never write a catalogue out of an empty list.
     if (!mine.length) return { success: true, message: "nothing to share" };
-    const existing = readLocLibCatalogue(campaign) || [];
+    const existing = readLocLibCatalogueFull(campaign) || { entries: [], removed: [] };
+    const removed: string[] = [];
+    const isRemoved: { [p: string]: boolean } = {};
+    for (let r = 0; r < existing.removed.length; r++) {
+      const rp = String(existing.removed[r]);
+      if (readded && rp === readded) continue;
+      if (!isRemoved[rp]) { isRemoved[rp] = true; removed.push(rp); }
+    }
     const byPath: { [p: string]: number } = {};
     const out: LocLibCatalogueRow[] = [];
-    for (let i = 0; i < existing.length; i++) {
-      const r = existing[i];
-      if (!r || !r.path || byPath[r.path] !== undefined) continue;
+    for (let i = 0; i < existing.entries.length; i++) {
+      const r = existing.entries[i];
+      if (!r || !r.path || byPath[r.path] !== undefined || isRemoved[r.path]) continue;
       byPath[r.path] = out.length;
       out.push(r);
     }
     let added = 0;
     for (let j = 0; j < mine.length; j++) {
       const c = mine[j];
+      if (isRemoved[c.path]) continue;
       // No `folder`: that is one person's own filing, not the campaign's.
       const row: LocLibCatalogueRow = { campaign: c.campaign, territory: c.territory, label: c.label, path: c.path };
       if (c.creative) row.creative = c.creative;
+      if (c.kind) row.kind = c.kind;
       if (byPath[c.path] !== undefined) { out[byPath[c.path]] = row; continue; }
       byPath[c.path] = out.length;
       out.push(row);
       added++;
     }
-    if (!ensureSharedFolder(LOCLIB_DIR)) return { success: false, error: "Couldn't create the team catalogue folder." };
-    const f = locLibCatalogueFile(campaign);
-    const payload = {
-      type: LOCLIB_TYPE,
-      version: 1,
-      campaign: campaign,
-      summary: out.length + " components",
-      count: out.length,
-      updatedAt: new Date().toString(),
-      updatedBy: owner,
-      entries: out,
-    };
-    if (!f || !writeTextFile(f, JSON.stringify(payload, null, 2))) {
+    if (!writeLocLibCatalogue(campaign, owner, { entries: out, removed })) {
       return { success: false, error: "Could not write the team catalogue." };
     }
     return { success: true, message: String(added) };
@@ -4309,12 +4341,39 @@ export const teamLocLibPublish = (campaign: string): Result => {
   }
 };
 
+/** Somebody removed a component: take it out of the catalogue and record the
+ *  removal, so it leaves everyone's library rather than coming back. */
+export const teamLocLibRemove = (campaign: string, path: string): Result => {
+  try {
+    if (!campaign || !path) return { success: false, error: "No campaign or path." };
+    if (!teamFolder()) return { success: false, error: "No team folder." };
+    const owner = loadLocalSetting(MACHINE_OWNER_KEY);
+    if (!owner) return { success: false, error: "Untagged machine." };
+    const cat = readLocLibCatalogueFull(campaign);
+    // No catalogue yet: nothing shared to take it out of.
+    if (!cat) return { success: true, message: "no catalogue" };
+    const entries: LocLibCatalogueRow[] = [];
+    for (let i = 0; i < cat.entries.length; i++) if (cat.entries[i] && cat.entries[i].path !== path) entries.push(cat.entries[i]);
+    const removed = cat.removed.slice(0);
+    if (removed.indexOf(path) === -1) removed.push(path);
+    if (!writeLocLibCatalogue(campaign, owner, { entries, removed })) {
+      return { success: false, error: "Could not write the team catalogue." };
+    }
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
 export const teamLocLibPull = (campaign: string): { read: boolean; added: number; count: number } => {
   try {
-    const rows = readLocLibCatalogue(campaign);
-    if (!rows) return { read: false, added: 0, count: 0 };
+    const cat = readLocLibCatalogueFull(campaign);
+    if (!cat) return { read: false, added: 0, count: 0 };
     const own: LocLibCatalogueRow[] = [];
-    for (let i = 0; i < rows.length; i++) if (rows[i] && rows[i].campaign === campaign) own.push(rows[i]);
+    for (let i = 0; i < cat.entries.length; i++) if (cat.entries[i] && cat.entries[i].campaign === campaign) own.push(cat.entries[i]);
+    // Removals first, then additions: a path removed by somebody leaves this
+    // library too, and nothing removed is added back.
+    dropLocLibComponents(campaign, cat.removed);
     return { read: true, added: mergeLocLibComponents(own), count: own.length };
   } catch (e) {
     return { read: false, added: 0, count: 0 };

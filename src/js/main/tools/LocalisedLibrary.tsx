@@ -72,6 +72,8 @@ interface Component {
     // sits loose in Support_Motion, which is every older campaign; those
     // keep exactly the view they had. See localise.ts's LocLibComponent.
     creative?: string;
+    /** "folder" for a Global Components folder (listed live when opened). */
+    kind?: string;
 }
 
 /** Mirrors localise.ts's MakeMotionScan. */
@@ -296,7 +298,16 @@ const LocalisedLibraryTool = () => {
     // null (unsaved project, another campaign, a territory filed the old
     // way) just means no row is marked.
     const [detectedCreative, setDetectedCreative] = useState<string | null>(null);
-    const [territorySearch, setTerritorySearch] = useState("");
+    // Global Components fold away: grown to a dozen rows they would push the
+    // territories -- the page's real job -- below the fold. Remembered per
+    // viewer; closed until somebody opens it.
+    const [globalOpen, setGlobalOpenState] = useState<boolean>(() => {
+        try { return localStorage.getItem("xyi.loclib.globalOpen") === "1"; } catch { return false; }
+    });
+    const setGlobalOpen = (v: boolean) => {
+        setGlobalOpenState(v);
+        try { localStorage.setItem("xyi.loclib.globalOpen", v ? "1" : "0"); } catch { /* private window */ }
+    };
     const [countryCodes, setCountryCodes] = useState<Record<string, string>>({});
 
     // "You may be in..." -- the territory (if any) whose folder the
@@ -672,8 +683,91 @@ const LocalisedLibraryTool = () => {
     const handleRemoveComponent = async (component: Component) => {
         if (!(await confirmDialog({ title: `Remove ${component.label} from the library?`, body: "The file stays on disk.", confirm: "Remove" }))) return;
         await safeEvalTS("removeLocLibComponent", component.campaign, component.territory, component.label, component.path);
+        // Out of the team catalogue too, or the next pull brings it back.
+        void quietEvalTS("teamLocLibRemove", component.campaign, component.path);
         const all: Component[] = (await safeEvalTS("loadLocLibComponents")) || [];
         setComponents(all);
+    };
+
+    // ── Global Components ────────────────────────────────────────────────
+    // A campaign's files and folders that belong to no one territory (logo
+    // pack, fonts, the universal end card). Stored with the rest under a
+    // reserved territory, so the team catalogue carries them; a folder is
+    // listed live when opened, so what lands in it later just appears.
+    const GLOBAL = "__GLOBAL__";
+    const [openGlobalFolders, setOpenGlobalFolders] = useState<Set<string>>(new Set());
+    const [folderListings, setFolderListings] = useState<Record<string, { folders: { name: string; path: string }[]; files: { name: string; path: string }[] } | null | "loading">>({});
+
+    const handleAddGlobal = async (kind: "file" | "folder") => {
+        if (!selectedCampaign) return;
+        const picked = (await quietEvalTS("locLibPickGlobal", kind, selectedCampaign.marketsRoot)) as { paths?: string[]; error?: string } | null;
+        if (!picked) { pushToast("Couldn't open the file dialog. Is After Effects busy?", "error"); return; }
+        if (picked.error) { pushToast(`The file dialog failed: ${picked.error}`, "error"); return; }
+        const paths = picked.paths || [];
+        if (!paths.length) return; // cancelled
+        let saved = 0;
+        const failed: string[] = [];
+        for (const p of paths) {
+            const name = p.split(/[\\/]/).pop() || p;
+            const label = kind === "file" ? name.replace(/\.[^.]+$/, "") : name;
+            const res = await quietEvalTS("addLocLibGlobal", selectedCampaign.name, label, p, kind);
+            if (res && res.success) {
+                saved++;
+                // An explicit add: clears any earlier removal of the same path.
+                void quietEvalTS("teamLocLibPublish", selectedCampaign.name, p);
+            } else {
+                failed.push((res && res.error) || name);
+            }
+        }
+        const all: Component[] = (await safeEvalTS("loadLocLibComponents")) || [];
+        setComponents(all);
+        // SAID, not assumed: the first version toasted nothing and a failed add
+        // looked exactly like one that worked.
+        if (saved) { setGlobalOpen(true); pushToast(`Added ${saved} to Global Components.`, "success"); }
+        if (failed.length) pushToast(`Couldn't add ${failed.length}: ${failed[0]}`, "error");
+    };
+
+    const toggleGlobalFolder = async (path: string) => {
+        const open = openGlobalFolders.has(path);
+        setOpenGlobalFolders((prev) => {
+            const next = new Set(prev);
+            if (open) next.delete(path); else next.add(path);
+            return next;
+        });
+        if (open || folderListings[path]) return;
+        setFolderListings((m) => ({ ...m, [path]: "loading" }));
+        const listing = await quietEvalTS("locLibListFolder", path);
+        setFolderListings((m) => ({ ...m, [path]: listing || null }));
+    };
+
+    const renderFolderContents = (path: string, depth: number): React.ReactNode => {
+        const listing = folderListings[path];
+        if (listing === "loading") return <div className="ll-global-note" style={{ paddingLeft: 12 + depth * 16 }}>Reading…</div>;
+        if (!listing) return <div className="ll-global-note" style={{ paddingLeft: 12 + depth * 16 }}>Couldn't read this folder. Is the share mounted?</div>;
+        if (!listing.folders.length && !listing.files.length) return <div className="ll-global-note" style={{ paddingLeft: 12 + depth * 16 }}>Empty.</div>;
+        return (
+            <>
+                {listing.folders.map((f) => (
+                    <React.Fragment key={f.path}>
+                        <button className="ll-global-row is-sub" style={{ paddingLeft: 10 + depth * 16 }} onClick={() => toggleGlobalFolder(f.path)}>
+                            {openGlobalFolders.has(f.path) ? <ChevronDown size={13} className="ll-chevron" /> : <ChevronRight size={13} className="ll-chevron" />}
+                            <Folder size={14} className="ll-folder-icon" />
+                            <span className="ll-global-name">{f.name}</span>
+                        </button>
+                        {openGlobalFolders.has(f.path) && renderFolderContents(f.path, depth + 1)}
+                    </React.Fragment>
+                ))}
+                {listing.files.map((f) => (
+                    <div key={f.path} className="ll-global-row is-sub is-file" style={{ paddingLeft: 10 + depth * 16 }}>
+                        <span className="ll-chevron-space" />
+                        <FileBadge of={f.name} />
+                        <span className="ll-global-name">{f.name}</span>
+                        <Tooltip text="Import"><button className="ll-row-btn" onClick={() => handleImport(f.path)}><Download size={14} /></button></Tooltip>
+                        <Tooltip text="Reveal in Finder/Explorer"><button className="ll-row-btn" onClick={() => handleReveal(f.path)}><Search size={14} /></button></Tooltip>
+                    </div>
+                ))}
+            </>
+        );
     };
 
     const handleRemoveFolder = async (folderName: string) => {
@@ -1050,13 +1144,14 @@ const LocalisedLibraryTool = () => {
         }
     };
 
-    const territorySearchLower = territorySearch.trim().toLowerCase();
-    const visibleTerritories = territories.filter((t) => {
-        if (!territorySearchLower) return true;
-        return (t + (countryCodes[t] || "")).toLowerCase().indexOf(territorySearchLower) !== -1;
-    });
+    // No search box: a campaign has twenty-odd territories, read at a glance.
+    const visibleTerritories = territories;
 
     const countFor = (territory: string) => components.filter((c) => c.campaign === selectedCampaign?.name && c.territory === territory).length;
+    const globalItems = selectedCampaign
+        ? components.filter((c) => c.campaign === selectedCampaign.name && c.territory === "__GLOBAL__")
+            .sort((a, b) => (a.kind === "folder" ? 0 : 1) - (b.kind === "folder" ? 0 : 1) || a.label.localeCompare(b.label))
+        : [];
     const campaignTotal = selectedCampaign ? components.filter((c) => c.campaign === selectedCampaign.name).length : 0;
     const stockedCount = territories.filter((t) => countFor(t) > 0).length;
 
@@ -1169,7 +1264,7 @@ const LocalisedLibraryTool = () => {
             <Tooltip text={c.path}>
                 <span className="ll-comp-name">{c.label}</span>
             </Tooltip>
-            <Tooltip text="Import (read-only)">
+            <Tooltip text="Import">
                 <button className="ll-row-btn" onClick={() => handleImport(c.path)}>
                     <Download size={14} />
                 </button>
@@ -1368,26 +1463,82 @@ const LocalisedLibraryTool = () => {
                             {!selectedTerritory ? (
                                 /* ── Territories view ─────────────────────── */
                                 <>
+                                    <div className="ll-global">
+                                        <div className="ll-section-head">
+                                            <button
+                                                className={"ll-global-toggle" + (globalOpen ? " is-open" : "")}
+                                                onClick={() => setGlobalOpen(!globalOpen)}
+                                                aria-expanded={globalOpen}
+                                            >
+                                                <ChevronRight size={13} className="ll-global-caret" />
+                                                <span className="ll-section-title">Global components</span>
+                                                <span className="ll-section-count">{globalItems.length}</span>
+                                            </button>
+                                            <span className="ll-global-spacer" />
+                                            {/* One quiet Add, not two buttons always on show:
+                                                adding is occasional, browsing is the job. */}
+                                            <Droplet
+                                                panelClassName="ll-manage-panel"
+                                                trigger={({ open: addOpen, toggle }) => (
+                                                    <button className={"ll-global-add" + (addOpen ? " is-open" : "")} onClick={toggle} aria-label="Add to Global Components">
+                                                        <Plus size={13} /> Add <ChevronDown size={12} />
+                                                    </button>
+                                                )}
+                                            >
+                                                {(close) => (
+                                                    <div className="ll-manage-menu">
+                                                        <button onClick={() => { close(); void handleAddGlobal("file"); }}>
+                                                            <Plus size={13} />
+                                                            <span><strong>Files…</strong><em>One or several</em></span>
+                                                        </button>
+                                                        <button onClick={() => { close(); void handleAddGlobal("folder"); }}>
+                                                            <FolderPlus size={13} />
+                                                            <span><strong>A folder…</strong><em>Listed live, so what's added to it later shows up</em></span>
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </Droplet>
+                                        </div>
+                                        {!globalOpen ? null : globalItems.length === 0 ? (
+                                            <p className="ll-global-note">Files and folders for the whole campaign rather than one territory, like logo packs, fonts or end cards.</p>
+                                        ) : (
+                                            <div className="ll-global-list">
+                                                {globalItems.map((c) => {
+                                                    const isFolder = c.kind === "folder";
+                                                    const open = isFolder && openGlobalFolders.has(c.path);
+                                                    return (
+                                                        <React.Fragment key={c.path}>
+                                                            <div className={"ll-global-row" + (isFolder ? " is-folder" : " is-file")}>
+                                                                {isFolder ? (
+                                                                    <button className="ll-global-open" onClick={() => toggleGlobalFolder(c.path)} title={c.path}>
+                                                                        {open ? <ChevronDown size={13} className="ll-chevron" /> : <ChevronRight size={13} className="ll-chevron" />}
+                                                                        <Folder size={15} className="ll-folder-icon" />
+                                                                        <span className="ll-global-name">{c.label}</span>
+                                                                    </button>
+                                                                ) : (
+                                                                    <>
+                                                                        <span className="ll-chevron-space" />
+                                                                        <FileBadge of={c.path} />
+                                                                        {/* title, not <Tooltip>: the name has to stretch, and a
+                                                                            Tooltip wrapper can't (flex: 0 0 auto !important). */}
+                                                                        <span className="ll-global-name" title={c.path}>{c.label}</span>
+                                                                        <Tooltip text="Import"><button className="ll-row-btn" onClick={() => handleImport(c.path)}><Download size={14} /></button></Tooltip>
+                                                                    </>
+                                                                )}
+                                                                <Tooltip text="Reveal in Finder/Explorer"><button className="ll-row-btn" onClick={() => handleReveal(c.path)}><Search size={14} /></button></Tooltip>
+                                                                <Tooltip text="Remove from Global Components"><button className="ll-row-btn" onClick={() => handleRemoveComponent(c)}><X size={14} /></button></Tooltip>
+                                                            </div>
+                                                            {open && renderFolderContents(c.path, 1)}
+                                                        </React.Fragment>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+
                                     <div className="ll-section-head">
                                         <span className="ll-section-title">Territories</span>
                                         {!loadingTerritories && <span className="ll-section-count">{territories.length}</span>}
-                                    </div>
-
-                                    <div className="ll-search">
-                                        <Search size={12} />
-                                        <input
-                                            type="text"
-                                            placeholder="Find territory…"
-                                            value={territorySearch}
-                                            onChange={(e) => setTerritorySearch(e.target.value)}
-                                        />
-                                        {territorySearch && (
-                                            <Tooltip text="Clear">
-                                                <button className="ll-search-clear" onClick={() => setTerritorySearch("")}>
-                                                    <X size={12} />
-                                                </button>
-                                            </Tooltip>
-                                        )}
                                     </div>
 
                                     {/* ONE LIST, THREE KINDS OF ROW. The territory the open
@@ -1401,7 +1552,7 @@ const LocalisedLibraryTool = () => {
                                             Array.from({ length: 6 }).map((_, i) => <SkeletonTerritoryRow key={i} />)}
                                         {!loadingTerritories && visibleTerritories.length === 0 && (
                                             <div className="ll-empty">
-                                                {territories.length === 0 ? "No territory folders found under the Markets root." : "No matching territories."}
+                                                No territory folders found under the Markets root.
                                             </div>
                                         )}
                                         {!loadingTerritories &&
@@ -1534,7 +1685,7 @@ const LocalisedLibraryTool = () => {
                                                     <Tooltip text={f.path}>
                                                         <span className="ll-comp-name">{f.name}</span>
                                                     </Tooltip>
-                                                    <Tooltip text="Import (read-only)">
+                                                    <Tooltip text="Import">
                                                         <button className="ll-row-btn" onClick={() => handleImport(f.path)}>
                                                             <Download size={14} />
                                                         </button>
@@ -1749,7 +1900,7 @@ const LocalisedLibraryTool = () => {
                                                                     <Tooltip text={f.path}>
                                                                         <span className="ll-comp-name">{f.name}</span>
                                                                     </Tooltip>
-                                                                    <Tooltip text="Import (read-only)">
+                                                                    <Tooltip text="Import">
                                                                         <button className="ll-row-btn" onClick={() => handleImport(f.path)}>
                                                                             <Download size={14} />
                                                                         </button>

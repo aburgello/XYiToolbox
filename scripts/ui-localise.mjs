@@ -69,7 +69,14 @@ const FIXTURES = `{
       Slovenia: "SI", South_Africa: "ZA", Sweden: "SE", Italy: "IT", France: "FR",
   })})[t] || null,
   detectCurrentTerritory: (terrs) => terrs.indexOf("Czechia") !== -1 ? "Czechia" : null,
-  loadLocLibComponents: () => {
+  // Global Components: a little stateful store, so adding and removing show up.
+  locLibPickGlobal: (kind) => ({ paths: kind === "folder" ? ["/Volumes/paramount/SF/Brand/Logo_Pack"] : ["/Volumes/paramount/SF/Brand/SF_EndCard.aep", "/Volumes/paramount/SF/Brand/SF_Font.otf"] }),
+  addLocLibGlobal: (campaign, label, path, kind) => { (window.__globals = window.__globals || []).push({ campaign, territory: "__GLOBAL__", label, path, kind: kind === "folder" ? "folder" : undefined }); return { success: true }; },
+  removeLocLibComponent: (campaign, territory, label, path) => { window.__globals = (window.__globals || []).filter((g) => g.path !== path); return { success: true }; },
+  locLibListFolder: (path) => path.endsWith("Logo_Pack")
+    ? { folders: [{ name: "Variants", path: path + "/Variants" }], files: [{ name: "SF_Logo_RGB.ai", path: path + "/SF_Logo_RGB.ai" }, { name: "SF_Logo_White.png", path: path + "/SF_Logo_White.png" }] }
+    : { folders: [], files: [{ name: "SF_Logo_Mono.psd", path: path + "/SF_Logo_Mono.psd" }] },
+  loadLocLibComponents: () => (window.__globals || []).concat((() => {
     const counts = ${JSON.stringify({ Argentina: 8, Austria: 18, Belgium: 33, Bulgaria: 15, Chile: 40, Croatia: 29, Cyprus: 18, Czechia: 5, Hungary: 37, Indonesia: 15, Slovakia: 26, Slovenia: 42, South_Africa: 12, Sweden: 12 })};
     const out = [];
     Object.keys(counts).forEach((t) => {
@@ -79,7 +86,7 @@ const FIXTURES = `{
       }
     });
     return out;
-  },
+  })()),
 }`;
 
 let failures = 0;
@@ -220,6 +227,41 @@ try {
     await page.shot(path.join(SHOTS, "ui-dialog-danger.png"));
     await page.click(".dialog-btn-secondary");
     await page.waitFor(`!document.querySelector(".dialog-card")`, 2000);
+
+    console.log("\n2c. Global Components");
+    await page.click(".ll-back", "All territories");
+    check(await page.waitFor(`document.querySelector(".ll-global")`, 4000), "the campaign's Global Components sit above the territories");
+    check(!(await page.eval(`!!document.querySelector(".ll-search input")`)), "no territory search box: the list is short enough to read");
+    check(!(await page.eval(`!!document.querySelector(".ll-global-note, .ll-global-list")`)), "Global components start folded, so the territories lead");
+    await page.click(".ll-global-toggle");
+    check(/Files and folders for the whole campaign/.test(await page.eval(text(".ll-global-note"))), "opened while empty, it says what it is for");
+    await page.click(".ll-global-toggle");
+    check(!(await page.eval(`!!document.querySelector(".ll-global-note")`)), "…and folds again");
+    check(await page.eval(`document.querySelectorAll(".ll-global-add").length === 1 && !/Add files/.test(document.querySelector(".ll-global").innerText)`), "one quiet Add, not two buttons always on show");
+    await page.click(".ll-global-add");
+    await page.click(".ll-manage-menu button", "Files");
+    check(await page.waitFor(`document.querySelectorAll(".ll-global-row.is-file").length === 2`, 4000), "Add ▸ Files… adds several at once");
+    check(await page.waitFor(`/Added 2 to Global Components/.test(document.body.innerText)`, 3000), "…and says so");
+    check(await page.eval(`document.querySelector(".ll-global-toggle").getAttribute("aria-expanded") === "true"`), "an add unfolds the section so you see what landed");
+    await page.click(".ll-global-add");
+    await page.click(".ll-manage-menu button", "A folder");
+    check(await page.waitFor(`document.querySelector(".ll-global-row.is-folder")`, 4000), "Add folder… adds a folder");
+    const aligned = await page.eval(`(() => { const rows = [...document.querySelectorAll(".ll-global-list > .ll-global-row")]; const ends = rows.map(r => Math.round([...r.querySelectorAll(".ll-row-btn")].pop().getBoundingClientRect().right)); return ends.every(e => Math.abs(e - ends[0]) <= 1); })()`);
+    check(aligned, "every row's buttons line up at the end");
+    check((await page.eval(`[...document.querySelectorAll(".ll-global-list > .ll-global-row")].map(r => r.classList.contains("is-folder"))`))[0] === true, "folders list first");
+    await page.click(".ll-global-open", "Logo_Pack");
+    check(await page.waitFor(`document.querySelectorAll(".ll-global-row.is-sub").length === 3`, 4000), "a folder opens in place, listing what's in it", await page.eval(`document.querySelectorAll(".ll-global-row.is-sub").length`));
+    await page.click("button.ll-global-row.is-sub", "Variants");
+    check(await page.waitFor(`[...document.querySelectorAll(".ll-global-row.is-sub")].some(r => /SF_Logo_Mono/.test(r.textContent))`, 4000), "and sub-folders open the same way");
+    const published = await page.eval(`window.__calls.filter(c => c.fn === "teamLocLibPublish").map(c => c.args[1])`);
+    check(published.includes("/Volumes/paramount/SF/Brand/Logo_Pack"), "each add is published to the team, clearing any old removal", published.filter(Boolean));
+    await page.shot(path.join(SHOTS, "ui-global.png"));
+    await page.eval(`(() => { const row = [...document.querySelectorAll(".ll-global-list > .ll-global-row.is-file")].find(r => /SF_Font/.test(r.textContent)); row.querySelectorAll(".ll-row-btn")[2].click(); })()`);
+    await page.waitFor(`document.querySelector(".dialog-card")`, 2000);
+    await page.click(".dialog-btn-primary");
+    check(await page.waitFor(`document.querySelectorAll(".ll-global-row.is-file:not(.is-sub)").length === 1`, 4000), "removing takes it out");
+    const removedCalls = await page.eval(`window.__calls.filter(c => c.fn === "teamLocLibRemove").map(c => c.args[1])`);
+    check(removedCalls.includes("/Volumes/paramount/SF/Brand/SF_Font.otf"), "…for the team too, so it doesn't come back", removedCalls);
 
     console.log("\n3. Open the Library: the compact list");
     await page.click(".back-button");

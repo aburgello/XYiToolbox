@@ -785,6 +785,9 @@ interface LocLibComponent {
   // the file sits loose in Support_Motion, which is every older campaign and
   // stays exactly as it was.
   creative?: string;
+  // "folder" for a Global Components entry that is a whole folder (listed
+  // live when opened) rather than one file. Absent means a file.
+  kind?: string;
 }
 
 interface LocLibFolder {
@@ -838,6 +841,7 @@ function loadLocLibComponentsRaw(): LocLibComponent[] {
         const entry: LocLibComponent = { campaign: parts[0], territory: decode(parts[1]), label: parts[2], path: parts[3] };
         if (parts.length >= 5 && parts[4]) entry.folder = decode(parts[4]);
         if (parts.length >= 6 && parts[5]) entry.creative = decode(parts[5]);
+        if (parts.length >= 7 && parts[6]) entry.kind = parts[6];
         out.push(entry);
       }
     }
@@ -854,7 +858,10 @@ function saveLocLibComponentsRaw(arr: LocLibComponent[]): void {
     const p = String(arr[i].path).replace(/[\t\n\r]/g, " ");
     const f = String(arr[i].folder || "").replace(/[\t\n\r]/g, " ");
     const cr = String(arr[i].creative || "").replace(/[\t\n\r]/g, " ");
-    lines.push(c + "\t" + t + "\t" + l + "\t" + p + "\t" + f + "\t" + cr);
+    const k = String(arr[i].kind || "").replace(/[\t\n\r]/g, " ");
+    // A 7th column only when there is something in it, so a library with no
+    // folder entries is written byte-for-byte as before.
+    lines.push(c + "\t" + t + "\t" + l + "\t" + p + "\t" + f + "\t" + cr + (k ? "\t" + k : ""));
   }
   app.settings.saveSetting(SETTINGS_SECTION, LL_COMPONENTS_KEY, lines.join("\n"));
 }
@@ -1256,6 +1263,7 @@ export function mergeLocLibComponents(rows: LocLibComponent[]): number {
     }
     const entry: LocLibComponent = { campaign: String(r.campaign), territory: String(r.territory), label: String(r.label || ""), path: String(r.path) };
     if (r.creative) entry.creative = String(r.creative);
+    if (r.kind) entry.kind = String(r.kind);
     at[key] = all.length;
     all.push(entry);
     added++;
@@ -1264,6 +1272,109 @@ export function mergeLocLibComponents(rows: LocLibComponent[]): number {
   if (changed) saveLocLibComponentsRaw(all);
   return added;
 }
+
+/** Remove this campaign's rows at these paths (the team catalogue's
+ *  removals). Returns how many went. */
+export function dropLocLibComponents(campaign: string, paths: string[]): number {
+  if (!paths || !paths.length) return 0;
+  const gone: { [p: string]: boolean } = {};
+  for (let i = 0; i < paths.length; i++) gone[String(paths[i])] = true;
+  const all = loadLocLibComponentsRaw();
+  const kept: LocLibComponent[] = [];
+  let dropped = 0;
+  for (let j = 0; j < all.length; j++) {
+    if (all[j].campaign === campaign && gone[all[j].path]) { dropped++; continue; }
+    kept.push(all[j]);
+  }
+  if (dropped) saveLocLibComponentsRaw(kept);
+  return dropped;
+}
+
+// =============================================================================
+// GLOBAL COMPONENTS -- files and folders that belong to a campaign but to no
+// one territory (a logo pack, fonts, the universal end card). Stored with the
+// rest under a reserved territory name, so the team catalogue, the merge and
+// the removals all carry them without a second mechanism; a FOLDER entry is
+// listed live when opened, so what is added to it later simply appears.
+// =============================================================================
+export const LOCLIB_GLOBAL = "__GLOBAL__";
+
+export const addLocLibGlobal = (campaign: string, label: string, path: string, kind: string): Result => {
+  try {
+    if (!campaign || !path) return { success: false, error: "No campaign or path." };
+    const all = loadLocLibComponentsRaw();
+    for (let i = 0; i < all.length; i++) {
+      // Already GLOBAL is a no-op; the same file under a territory is not --
+      // matching on path alone answered "already there" and saved nothing.
+      if (all[i].campaign === campaign && all[i].territory === LOCLIB_GLOBAL && all[i].path === path) return { success: true, message: "already there" };
+    }
+    const entry: LocLibComponent = { campaign, territory: LOCLIB_GLOBAL, label: label || decode(String(new File(path).name)), path };
+    if (kind === "folder") entry.kind = "folder";
+    all.push(entry);
+    saveLocLibComponentsRaw(all);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/** Pick files (several at once) or one folder, starting in the campaign's
+ *  Markets folder. `paths` is [] on cancel; `error` says why when the dialog
+ *  itself failed -- the first version returned [] for both, and a failure
+ *  read exactly like a cancel.
+ *
+ *  Folder.openDlg (not File.openDlg) is what starts a FILE dialog in a folder,
+ *  and the filter is null, not undefined. With multiSelect the answer is an
+ *  array-like host object that `instanceof Array` cannot be trusted on, so it
+ *  is read by index. */
+export const locLibPickGlobal = (kind: string, startPath: string): { paths: string[]; error?: string } => {
+  try {
+    const start = startPath ? new Folder(startPath) : null;
+    const usable = !!(start && start.exists);
+    if (kind === "folder") {
+      const f = usable ? (start as Folder).selectDlg("Pick a folder to add to Global Components") : Folder.selectDialog("Pick a folder to add to Global Components");
+      return { paths: f ? [String((f as Folder).fsName)] : [] };
+    }
+    let picked: any = null;
+    if (usable) picked = (start as any).openDlg("Pick files to add to Global Components", null, true);
+    else picked = File.openDialog("Pick files to add to Global Components", null as any, true);
+    if (!picked) return { paths: [] };
+    const out: string[] = [];
+    if (typeof picked.length === "number" && typeof picked.fsName === "undefined") {
+      for (let i = 0; i < picked.length; i++) if (picked[i] && picked[i].fsName) out.push(String(picked[i].fsName));
+    } else if (picked.fsName) {
+      out.push(String(picked.fsName));
+    }
+    return { paths: out };
+  } catch (e) {
+    return { paths: [], error: String(e) };
+  }
+};
+
+/** One level of a folder, for a Global Components folder opened in the
+ *  Library: sub-folders and files, dot- and underscore-files left out (the
+ *  scan rule everywhere else). null when it can't be read. */
+export const locLibListFolder = (path: string): { folders: { name: string; path: string }[]; files: { name: string; path: string }[] } | null => {
+  try {
+    const items = new Folder(path).getFiles();
+    if (!items) return null;
+    const folders: { name: string; path: string }[] = [];
+    const files: { name: string; path: string }[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i] as any;
+      const name = decode(String(it.name));
+      if (name.charAt(0) === "." || name.charAt(0) === "_") continue;
+      // Duck-typed: a Folder is what can list itself.
+      if (typeof it.getFiles === "function") folders.push({ name, path: String(it.fsName) });
+      else files.push({ name, path: String(it.fsName) });
+    }
+    folders.sort((a, b) => (a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1));
+    files.sort((a, b) => (a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1));
+    return { folders, files };
+  } catch (e) {
+    return null;
+  }
+};
 
 export const addLocLibComponent = (campaign: string, territory: string, label: string, path: string, folder?: string, creative?: string): Result => {
   try {

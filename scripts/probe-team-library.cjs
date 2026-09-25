@@ -219,5 +219,50 @@ machine('Antonio');
 r = aeft.teamLocLibPublish('Empty Campaign');
 say(r.success && !has(TEAM + '/misc/loclib/empty-campaign.json'), 'an empty list never becomes a catalogue', r.message);
 
+console.log('\n8. Global Components, and removals that travel');
+reset(); machine('Antonio');
+const LOGO = '/Volumes/paramount/SF/Brand/Logo_Pack';
+const FONT = '/Volumes/paramount/SF/Brand/SF_Font.otf';
+aeft.addLocLibGlobal(SF, 'Logo_Pack', LOGO, 'folder');
+aeft.addLocLibGlobal(SF, 'SF_Font', FONT, 'file');
+r = aeft.addLocLibGlobal(SF, 'SF_Font', FONT, 'file');
+say(r.message === 'already there', 'adding the same path twice keeps one', r.message);
+aeft.teamLocLibPublish(SF);
+say(cat().entries.filter((e) => e.territory === '__GLOBAL__').length === 2, 'globals travel in the catalogue');
+say(cat().entries.filter((e) => e.path === LOGO)[0].kind === 'folder', '…a folder still marked as one');
+machine('Maria');
+aeft.teamLocLibPull(SF);
+const mariaGlobals = () => aeft.loadLocLibComponents().filter((c) => c.territory === '__GLOBAL__');
+say(mariaGlobals().length === 2 && mariaGlobals().filter((c) => c.path === LOGO)[0].kind === 'folder', 'a colleague gets them, folder and all');
+// Antonio removes the font.
+machine('Antonio');
+aeft.removeLocLibComponent(SF, '__GLOBAL__', 'SF_Font', FONT);
+r = aeft.teamLocLibRemove(SF, FONT);
+say(r.success && !cat().entries.some((e) => e.path === FONT) && cat().removed.indexOf(FONT) !== -1, 'removing takes it out of the catalogue and records it', JSON.stringify(cat().removed));
+// Maria still has it locally; her next publish must not put it back...
+machine('Maria');
+aeft.teamLocLibPublish(SF);
+say(!cat().entries.some((e) => e.path === FONT), 'a colleague’s publish doesn’t bring a removed file back');
+// ...and her next pull takes it out of hers.
+aeft.teamLocLibPull(SF);
+say(!mariaGlobals().some((c) => c.path === FONT), 'and her pull removes it from her library');
+say(mariaGlobals().some((c) => c.path === LOGO), 'leaving everything else');
+// Re-adding on purpose clears the removal.
+machine('Antonio');
+aeft.addLocLibGlobal(SF, 'SF_Font', FONT, 'file');
+aeft.teamLocLibPublish(SF, FONT);
+say(cat().entries.some((e) => e.path === FONT) && cat().removed.indexOf(FONT) === -1, 'adding it again on purpose brings it back for everyone');
+machine('');
+r = aeft.teamLocLibRemove(SF, LOGO);
+say(!r.success && cat().entries.some((e) => e.path === LOGO), 'an untagged machine can’t remove for the team', r.error);
+
+console.log('\n9. folder listing');
+reset(); machine('Antonio');
+dirs['/Volumes/p/Pack'] = true; dirs['/Volumes/p/Pack/Variants'] = true; dirs['/Volumes/p/Pack/_Old'] = true;
+files['/Volumes/p/Pack/b.ai'] = 'x'; files['/Volumes/p/Pack/A.png'] = 'x'; files['/Volumes/p/Pack/.DS_Store'] = 'x';
+const listing = aeft.locLibListFolder('/Volumes/p/Pack');
+say(JSON.stringify(listing.folders.map((f) => f.name)) === '["Variants"]', 'sub-folders listed, _ folders left out', JSON.stringify(listing.folders.map((f) => f.name)));
+say(JSON.stringify(listing.files.map((f) => f.name)) === '["A.png","b.ai"]', 'files sorted, dot-files left out', JSON.stringify(listing.files.map((f) => f.name)));
+
 console.log(fails ? `\n${fails} FAILED` : '\nCLEAN — banners reach the team as a copy anyone can open, and a colleague opens to a full library.');
 process.exit(fails ? 1 : 0);
