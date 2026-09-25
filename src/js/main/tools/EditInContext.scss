@@ -1,430 +1,425 @@
-// Edit In Context (EditInContext.tsx). Accents key off `--ov-accent`, the
-// token themes.ts sets, so this follows the user's chosen theme.
-
+// =============================================================================
+// Edit In Context
+// -----------------------------------------------------------------------------
+// In the panel's language: a path of names, a hairline list, and an editor
+// whose controls look like what they do -- a direction pad with the step at its
+// centre, and − step + for scale.
+//
+// EVERY RULE IS SCOPED UNDER .eic-tool. The tool lives inside .form-tool, whose
+// generic `button` rules (0,1,1) and their hover (0,3,1) outranked the old
+// top-level `.eic-*` classes -- which is why every control rendered as the same
+// black box. Hover/active are re-declared with :not(:disabled) for the same
+// reason, and against index.scss's global blue.
+// =============================================================================
 .eic-tool {
-    .eic-hint {
-        color: #999;
-        margin: 0 0 10px;
-        line-height: 1.5;
-        max-width: 460px;
-        font-size: 11.5px;
-    }
-}
+    gap: 12px;
 
-// ── breadcrumb bar ───────────────────────────────────────────────────────────
-.eic-bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 8px;
-    border: 1px solid #2f2f2f;
-    border-radius: 6px;
-    background: rgba(0, 0, 0, 0.18);
-    margin-bottom: 8px;
-}
-
-.eic-crumbs {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 2px;
-    flex: 1;
-    min-width: 0;
-}
-
-.eic-crumb {
-    padding: 2px 6px;
-    border: 0;
-    border-radius: 4px;
-    background: none;
-    color: #9aa5a8;
-    font-size: 11px;
-    cursor: pointer;
-    max-width: 160px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-
-    &:hover { color: #fff; background: rgba(255, 255, 255, 0.06); }
-
-    // The level currently being listed.
-    &--on { color: var(--ov-accent, #5eead4); font-weight: 700; }
-}
-
-.eic-crumb-sep { color: #4d585b; flex-shrink: 0; }
-
-.eic-refresh {
-    flex-shrink: 0;
-    display: inline-flex;
-    padding: 3px;
-    border: 0;
-    border-radius: 4px;
-    background: none;
-    color: #6f7d81;
-    cursor: pointer;
-
-    &:hover { color: #fff; }
-}
-
-// ── layer list ───────────────────────────────────────────────────────────────
-// Capped and self-scrolling: a busy comp would otherwise push the editor below
-// the fold, and the editor is the one thing that has to stay on screen.
-.eic-layers {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    max-height: 240px;
-    overflow-y: auto;
-    margin-bottom: 10px;
-}
-
-.eic-layer-row {
-    display: flex;
-    align-items: stretch;
-    gap: 3px;
-
-    // Moving WITH the target: marked, but never mistaken for it -- the
-    // editor's figures belong to the target alone.
-    &--also .eic-layer-main {
-        border-color: rgba(45, 212, 191, 0.45);
-        background: rgba(255, 255, 255, 0.03);
+    // ── Where you are ───────────────────────────────────────────────────────
+    .eic-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
     }
 
-    // The layer currently loaded into the editor below.
-    &--on .eic-layer-main {
-        border-color: var(--ov-accent, #2dd4bf);
-        background: rgba(255, 255, 255, 0.05);
+    .eic-crumbs {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        overflow: hidden;
     }
-}
 
-.eic-layer-main {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 5px 8px;
-    border: 1px solid #262626;
-    border-radius: 5px;
-    background: #171717;
-    color: #dbe4e6;
-    font-size: 11.5px;
-    text-align: left;
-    cursor: pointer;
+    .eic-crumb {
+        min-width: 0;
+        flex: 0 1 auto;
+        padding: 4px 6px;
+        border: none;
+        border-radius: 6px;
+        background: none;
+        color: #8fa3a0;
+        font-size: 12.5px;
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
 
-    &:hover:not(:disabled) { border-color: #3d4a4d; background: #1c1c1c; }
-    &:disabled { opacity: 0.4; cursor: default; }
-}
+        &:hover:not(:disabled), &:active:not(:disabled) {
+            background: rgba(255, 255, 255, 0.05);
+            color: #fff;
+            border: none;
+            box-shadow: none;
+            transform: none;
+        }
 
-.eic-layer-idx {
-    flex-shrink: 0;
-    min-width: 16px;
-    color: #5f6c70;
-    font-size: 10px;
-    font-variant-numeric: tabular-nums;
-}
-
-.eic-layer-name {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.eic-tag {
-    flex-shrink: 0;
-    padding: 1px 5px;
-    border-radius: 3px;
-    background: rgba(255, 255, 255, 0.07);
-    color: #8e9a9e;
-    font-size: var(--t-micro);
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-}
-
-// Drill-in is a SEPARATE hit area from "edit this layer" -- a nested precomp is
-// legitimately both a thing you transform and a thing you look inside, and
-// guessing which one a click meant would be wrong half the time. Labelled, not
-// icon-only: at a glance it has to read as "go in here".
-.eic-drill {
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 0 9px;
-    border: 1px solid rgba(45, 212, 191, 0.35);
-    border-radius: 5px;
-    background: rgba(45, 212, 191, 0.07);
-    color: var(--ov-accent, #5eead4);
-    font-size: 10px;
-    font-weight: 700;
-    cursor: pointer;
-
-    &:hover {
-        border-color: var(--ov-accent, #2dd4bf);
-        background: rgba(45, 212, 191, 0.14);
-        color: #fff;
+        &--on { color: #fff; font-weight: 700; }
     }
-}
 
-// TOP-LEVEL DOORWAY ROW. At the root only precomps are listed and their only
-// job is to be entered, so the whole row is one big obvious target rather than
-// a name plus a small button -- there's no second action to disambiguate from.
-.eic-door {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    width: 100%;
-    padding: 9px 11px;
-    border: 1px solid rgba(45, 212, 191, 0.3);
-    border-radius: 6px;
-    background: rgba(45, 212, 191, 0.05);
-    color: #e6eef0;
-    font-size: 12.5px;
-    text-align: left;
-    cursor: pointer;
+    .eic-crumb-sep { flex-shrink: 0; color: #4d5b5a; }
 
-    &:hover {
-        border-color: var(--ov-accent, #2dd4bf);
-        background: rgba(45, 212, 191, 0.12);
+    .eic-refresh {
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        padding: 0;
+        border: none;
+        border-radius: 7px;
+        background: none;
+        color: #8fa3a0;
 
-        .eic-door-go { color: #fff; }
+        &:hover:not(:disabled), &:active:not(:disabled) {
+            background: rgba(255, 255, 255, 0.06);
+            color: #fff;
+            border: none;
+            box-shadow: none;
+            transform: none;
+        }
     }
-}
 
-.eic-door-icon {
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    border-radius: 6px;
-    background: rgba(45, 212, 191, 0.14);
-    color: var(--ov-accent, #5eead4);
-}
+    .eic-empty { margin: 4px 2px; font-size: 12px; color: #8a9a98; }
 
-.eic-door-name {
-    flex: 1;
-    min-width: 0;
-    font-weight: 600;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
+    // ── The list ────────────────────────────────────────────────────────────
+    // Hairline rows, as in the Localised Library: the row lights on hover, the
+    // selected one is lit teal, ⌘-added ones a quieter tint.
+    .eic-layers {
+        display: flex;
+        flex-direction: column;
+        max-height: 300px;
+        overflow-y: auto;
+        border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
 
-.eic-door-go {
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.4px;
-    text-transform: uppercase;
-    color: var(--ov-accent, #5eead4);
-}
+    .eic-layer-row {
+        display: flex;
+        align-items: stretch;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 
-.eic-empty {
-    margin: 6px 0;
-    font-size: 11px;
-    color: #6f7d81;
-}
+        // The category's own colour for the mark, a neutral fill under it --
+        // this tool lives in Tools (pink), not Localise.
+        &--on { background: rgba(255, 255, 255, 0.07); box-shadow: inset 2px 0 0 var(--cat-border, #2dd4bf); }
+        &--also { background: rgba(255, 255, 255, 0.035); box-shadow: inset 2px 0 0 var(--cat-edge, rgba(45, 212, 191, 0.5)); }
+    }
 
-// ── the editor ───────────────────────────────────────────────────────────────
-.eic-editor {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 10px 11px;
-    border: 1px solid var(--ov-accent, #2dd4bf);
-    border-radius: 7px;
-    background: rgba(255, 255, 255, 0.03);
-}
+    .eic-layer-main {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 10px;
+        border: none;
+        border-radius: 0;
+        background: none;
+        color: #e4ecea;
+        font-size: 12.5px;
+        text-align: left;
 
-.eic-editor-head {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    flex-wrap: wrap;
-}
+        &:hover:not(:disabled), &:active:not(:disabled) {
+            background: rgba(255, 255, 255, 0.04);
+            border: none;
+            box-shadow: none;
+            transform: none;
+        }
 
-.eic-editor-title { font-size: 13px; font-weight: 700; color: #fff; }
-.eic-editor-sub { font-size: 10.5px; color: #7f8f93; }
+        &:disabled { color: #5d6a68; cursor: default; }
+    }
 
-.eic-locked {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    padding: 1px 5px;
-    border-radius: 3px;
-    background: rgba(251, 146, 60, 0.16);
-    color: #fb923c;
-    font-size: 9px;
-    font-weight: 700;
-}
+    .eic-layer-idx {
+        flex-shrink: 0;
+        width: 18px;
+        text-align: right;
+        font-size: 10.5px;
+        color: #62716f;
+        font-variant-numeric: tabular-nums;
+    }
 
-.eic-readout {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px 12px;
-    font-size: 10.5px;
-    color: #7f8f93;
-    font-variant-numeric: tabular-nums;
+    .eic-layer-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .eic-layer-kind { flex-shrink: 0; color: #62716f; }
 
-    b { color: #cbd5d7; font-weight: 600; }
-}
+    .eic-drill {
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        padding: 0;
+        border: none;
+        border-radius: 0;
+        background: none;
+        color: #7f9491;
 
-// The "what it looks like upstairs" number -- the one the artist is actually
-// judging by eye -- gets the accent.
-.eic-readout-root b { color: var(--ov-accent, #5eead4); }
+        &:hover:not(:disabled), &:active:not(:disabled) {
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--cat-icon, #5eead4);
+            border: none;
+            box-shadow: none;
+            transform: none;
+        }
+    }
 
+    .eic-door {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        padding: 9px 10px;
+        border: none;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 0;
+        background: none;
+        color: #e4ecea;
+        font-size: 12.5px;
+        text-align: left;
 
-.eic-group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
+        &:hover:not(:disabled), &:active:not(:disabled) {
+            background: rgba(255, 255, 255, 0.04);
+            border: none;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            box-shadow: none;
+            transform: none;
+            .eic-door-go { color: var(--cat-icon, #5eead4); }
+        }
+    }
 
-// The label row doubles as the group's step control -- each property is in a
-// different unit, so the number lives next to the buttons it governs rather
-// than in one shared field that can only be right for one of them.
-.eic-group-label {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: var(--t-micro);
-    font-weight: 700;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    color: var(--ov-accent, #5eead4);
-    opacity: 0.85;
+    .eic-door-icon { flex-shrink: 0; color: var(--cat-icon, #5eead4); }
+    .eic-door-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .eic-door-go { flex-shrink: 0; color: #62716f; }
 
-    em {
-        font-style: normal;
+    // ── The editor ──────────────────────────────────────────────────────────
+    .eic-editor {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 14px;
+        border: 1px solid var(--cat-edge, rgba(45, 212, 191, 0.5));
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.025);
+    }
+
+    .eic-editor-head {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .eic-editor-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .eic-editor-title { font-size: 15px; font-weight: 700; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .eic-editor-sub { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: #8fa3a0; min-width: 0; }
+
+    .eic-locked {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        color: #f0b86a;
         font-weight: 600;
-        letter-spacing: 0.3px;
-        color: #6f7d81;
     }
-}
 
-.eic-step-in {
-    margin-left: auto;
-    width: 46px;
-    background: #1f1f1f;
-    border: 1px solid #3a3a3a;
-    color: #ddd;
-    border-radius: 4px;
-    padding: 2px 5px;
-    font-size: 11px;
-    text-align: right;
-    letter-spacing: 0;
-    box-sizing: border-box;
+    .eic-multi,
+    .eic-select {
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        min-height: 28px;
+        padding: 0 10px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 7px;
+        background: none;
+        color: #cfd8d6;
+        font-size: 11.5px;
+        font-weight: 600;
 
-    &:focus { outline: none; border-color: var(--ov-accent, #2dd4bf); }
-}
-
-.eic-pad {
-    display: flex;
-    gap: 4px;
-    position: relative;
-}
-
-// ARMED STATE. Claiming the arrow keys takes them away from AE, so it has to be
-// visible at a glance whether the panel currently owns them -- an invisible
-// mode that silently changes what your keyboard does would be worse than no
-// keyboard support at all.
-.eic-pad--armable {
-    padding: 3px;
-    margin: -3px;
-    border: 1px solid transparent;
-    border-radius: 7px;
-}
-
-.eic-pad--armed {
-    border-color: var(--ov-accent, #2dd4bf);
-    background: rgba(45, 212, 191, 0.06);
-}
-
-// Must stay genuinely focusable: display:none / visibility:hidden cannot hold
-// focus, and focus is what actually gets keystrokes delivered in AE.
-.eic-keygrab {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    border: 0;
-    opacity: 0;
-    pointer-events: none;
-}
-
-// An explicit toggle, not a hidden click-the-pad gesture. Claiming the arrows
-// takes them away from AE, so both arming and the current state have to be
-// obvious -- and the previous version armed on a gesture that could never work,
-// because clicking an arrow moved focus to that button and disarmed it.
-.eic-armbtn {
-    align-self: flex-start;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 4px 9px;
-    border: 1px solid #33403f;
-    border-radius: 5px;
-    background: #161e20;
-    color: #8e9a9e;
-    font-size: 10px;
-    cursor: pointer;
-
-    &:hover:not(:disabled) { border-color: var(--ov-accent, #2dd4bf); color: #fff; }
-    &:disabled { opacity: 0.35; cursor: default; }
-
-    &--on {
-        border-color: var(--ov-accent, #2dd4bf);
-        background: rgba(45, 212, 191, 0.12);
-        color: var(--ov-accent, #5eead4);
-        font-weight: 700;
+        &:hover:not(:disabled), &:active:not(:disabled) {
+            background: rgba(255, 255, 255, 0.06);
+            border-color: rgba(255, 255, 255, 0.3);
+            color: #fff;
+            box-shadow: none;
+            transform: none;
+        }
     }
+
+    .eic-multi { border-color: var(--cat-edge, rgba(45, 212, 191, 0.5)); color: var(--cat-icon, #5eead4); }
+
+    .eic-readout {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 14px;
+        font-size: 12px;
+        color: #8fa3a0;
+
+        b { color: #fff; font-weight: 600; font-variant-numeric: tabular-nums; }
+    }
+
+    .eic-readout-root b { color: var(--cat-icon, #5eead4); }
+
+    .eic-controls {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+    }
+
+    .eic-group {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+        min-width: 0;
+    }
+
+    .eic-group-label {
+        font-size: 11px;
+        font-weight: 650;
+        color: #cfd8d6;
+
+        em { font-style: normal; font-weight: 500; color: #f0b86a; }
+    }
+
+    // The direction pad: a cross on a 3×3 grid, the step at its centre. Armed
+    // (arrow keys claimed), the pad is ringed -- the keys are this pad's now.
+    .eic-dpad {
+        position: relative;
+        display: grid;
+        grid-template-columns: repeat(3, 44px);
+        grid-template-rows: repeat(3, 38px);
+        gap: 4px;
+        padding: 4px;
+        border: 1px solid transparent;
+        border-radius: 12px;
+
+        &--armed {
+            border-color: var(--cat-border, #2dd4bf);
+            background: rgba(255, 255, 255, 0.04);
+        }
+    }
+
+    .eic-dpad-up { grid-column: 2; grid-row: 1; }
+    .eic-dpad-left { grid-column: 1; grid-row: 2; }
+    .eic-dpad-step { grid-column: 2; grid-row: 2; }
+    .eic-dpad-right { grid-column: 3; grid-row: 2; }
+    .eic-dpad-down { grid-column: 2; grid-row: 3; }
+
+    .eic-dpad > span { display: flex; }
+
+    .eic-nudge {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 38px;
+        width: 100%;
+        padding: 0;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 9px;
+        background: rgba(255, 255, 255, 0.05);
+        color: #e4ecea;
+
+        &:hover:not(:disabled), &:active:not(:disabled) {
+            background: var(--cat-grad, #2c7a72);
+            border-color: transparent;
+            color: #fff;
+            box-shadow: none;
+            transform: none;
+        }
+
+        &:active:not(:disabled) { filter: brightness(1.15); }
+        &:disabled { opacity: 0.35; cursor: default; }
+    }
+
+    // The step field, inside the pad or between − and +: a number and its unit.
+    .eic-dpad-step,
+    .eic-scale-step {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        border-radius: 9px;
+        background: rgba(0, 0, 0, 0.25);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        cursor: text;
+
+        em { font-style: normal; font-size: 10px; color: #7f9491; }
+    }
+
+    // Sized to its value inline (ch), and centred with its unit as a pair --
+    // a fixed 30px box with right-aligned text pushed "2" against "px".
+    .eic-step-in {
+        min-width: 1ch;
+        max-width: 5ch;
+        padding: 0;
+        border: none;
+        background: none;
+        color: #fff;
+        font-size: 13px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        text-align: center;
+
+        &:focus { outline: none; }
+    }
+
+    .eic-scale {
+        display: grid;
+        grid-template-columns: 44px 64px 44px;
+        grid-template-rows: 38px;
+        gap: 4px;
+        padding: 4px 0;
+    }
+
+    // Must stay genuinely focusable: display:none / visibility:hidden cannot
+    // hold focus, and focus is what actually gets keystrokes delivered in AE.
+    .eic-keygrab {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        border: 0;
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    // An explicit toggle, not a gesture. Claiming the arrows takes them away
+    // from AE, so arming and the current state both have to be obvious.
+    .eic-armbtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 28px;
+        padding: 0 10px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 7px;
+        background: none;
+        color: #b7c4c2;
+        font-size: 11.5px;
+
+        &:hover:not(:disabled), &:active:not(:disabled) {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.3);
+            color: #fff;
+            box-shadow: none;
+            transform: none;
+        }
+
+        &:disabled { opacity: 0.35; cursor: default; }
+
+        &--on,
+        &--on:hover:not(:disabled) {
+            border-color: var(--cat-border, #2dd4bf);
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--cat-icon, #5eead4);
+            font-weight: 650;
+        }
+    }
+
+    .eic-rootspace { display: inline-flex; align-self: flex-start; }
 }
 
-.eic-nudge {
-    flex: 1;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 7px 0;
-    border: 1px solid #33403f;
-    border-radius: 5px;
-    background: #161e20;
-    color: #cbd6d8;
-    cursor: pointer;
-    // No transition: a hold-to-repeat button firing every 100ms with a
-    // transition on it reads as smeared rather than responsive.
-
-    &:hover:not(:disabled) { border-color: var(--ov-accent, #2dd4bf); color: #fff; }
-    &:active:not(:disabled) { background: #1d2729; }
-    &:disabled { opacity: 0.35; cursor: default; }
-}
-
-// The count of layers moving with the target, and the way to drop them.
-.eic-multi {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    margin-left: 6px;
-    padding: 1px 6px;
-    border: 1px solid var(--ov-accent, #2dd4bf);
-    border-radius: 9px;
-    // index.scss's global button:hover/:active paints any button blue, so both
-    // states are re-declared.
-    background: rgba(45, 212, 191, 0.14);
-    color: #cfeee9;
-    font-size: 9.5px;
-    cursor: pointer;
-
-    &:hover,
-    &:active { background: rgba(45, 212, 191, 0.24); }
+// A docked panel: pad over scale rather than side by side.
+@media (max-width: 460px) {
+    .eic-tool .eic-controls { grid-template-columns: minmax(0, 1fr); }
 }

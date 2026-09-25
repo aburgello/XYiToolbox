@@ -444,33 +444,47 @@ const EditInContextTool = () => {
     // because that's the stuff you can't otherwise reach without navigating.
     const visible = atRoot ? layers.filter((l) => l.isPrecomp) : layers;
 
+    // A comp name is long ("SF_INTL_Trio_DOOH_Odiseja_1665x675px_10s_SI_V01");
+    // the crumbs show what tells two apart -- the site and size -- and keep the
+    // whole name for the tooltip.
+    const shortComp = (n: string) => {
+        const m = String(n || "").match(/_([A-Za-z0-9]+)_(\d{3,}x\d{3,})(?:px)?_/);
+        return m ? m[1] + " " + m[2] : n;
+    };
+    const rootName = trail[0]?.compName || "";
+
     return (
         <div className="form-tool eic-tool">
-            <p className="eic-hint">
-                Stay in the comp you're looking at and reach <strong>down</strong> into a precomp.
-            </p>
-
+            {/* WHERE YOU ARE, as a path of names -- boxed chips cut the root's
+                name off after a dozen characters, which is the one part that
+                said which comp this is. */}
             <div className="eic-bar">
                 <div className="eic-crumbs">
                     {trail.map((c, i) => (
                         <React.Fragment key={c.compId + "-" + i}>
-                            {i > 0 && <ChevronRight size={11} className="eic-crumb-sep" />}
+                            {i > 0 && <ChevronRight size={12} className="eic-crumb-sep" />}
+                            {/* A title, not <Tooltip>: its wrapper is fixed-width
+                                (flex: 0 0 auto !important), and a crumb has to
+                                shrink -- wrapped, every name was cut short. */}
                             <button
                                 className={"eic-crumb" + (i === trail.length - 1 ? " eic-crumb--on" : "")}
                                 onClick={() => goTo(i)}
+                                title={c.compName}
                             >
-                                {c.compName}
+                                {i === 0 ? shortComp(c.compName) : c.compName}
                             </button>
                         </React.Fragment>
                     ))}
                 </div>
-                <button className="eic-refresh" title="Reload from the active comp" onClick={loadRoot}>
-                    {loading ? <Loader2 size={12} className="spin" /> : <RefreshCw size={12} />}
-                </button>
+                <Tooltip text="Reload from the active comp">
+                    <button className="eic-refresh" onClick={loadRoot} aria-label="Reload from the active comp">
+                        {loading ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />}
+                    </button>
+                </Tooltip>
             </div>
 
             {!rootId && !loading && (
-                <p className="eic-empty">Open a comp in After Effects, then hit refresh.</p>
+                <p className="eic-empty">Open a comp in After Effects, then reload.</p>
             )}
 
             {rootId && (
@@ -483,7 +497,7 @@ const EditInContextTool = () => {
                         editable, since that's the stuff you can't reach. */}
                     {atRoot && visible.length === 0 && (
                         <p className="eic-empty">
-                            No precomps in <strong>{trail[0]?.compName}</strong> — this tool edits layers that live inside one.
+                            No precomps in <strong>{rootName}</strong>. This tool edits layers inside one.
                         </p>
                     )}
                     {!atRoot && visible.length === 0 && <p className="eic-empty">This precomp has no layers.</p>}
@@ -501,9 +515,9 @@ const EditInContextTool = () => {
                         if (atRoot) {
                             return (
                                 <button className="eic-door" key={l.index} onClick={() => drill(l)}>
-                                    <span className="eic-door-icon"><Layers size={14} /></span>
+                                    <Layers size={14} className="eic-door-icon" />
                                     <span className="eic-door-name">{l.name}</span>
-                                    <span className="eic-door-go">Open <ChevronRight size={12} /></span>
+                                    <ChevronRight size={14} className="eic-door-go" />
                                 </button>
                             );
                         }
@@ -520,16 +534,21 @@ const EditInContextTool = () => {
                                     onClick={(e) => pick(l, e.metaKey || e.ctrlKey)}
                                     disabled={!l.transformable}
                                     title={l.transformable
-                                        ? "Edit this layer's transform — ⌘/Ctrl-click to move it with the selected one"
+                                        ? "Edit this layer's transform. ⌘/Ctrl-click to move it with the selected one."
                                         : "No transform to edit"}
                                 >
                                     <span className="eic-layer-idx">{l.index}</span>
                                     <span className="eic-layer-name">{l.name}</span>
+                                    {l.isPrecomp && <Layers size={12} className="eic-layer-kind" aria-label="precomp" />}
                                 </button>
+                                {/* Into a precomp: a quiet chevron at the row's end,
+                                    not a second big button beside every row. */}
                                 {l.isPrecomp && (
-                                    <button className="eic-drill" title={`Look inside ${l.name}`} onClick={() => drill(l)}>
-                                        <Layers size={12} /> Inside
-                                    </button>
+                                    <Tooltip text={`Look inside ${l.name}`} delay={300}>
+                                        <button className="eic-drill" onClick={() => drill(l)} aria-label={`Look inside ${l.name}`}>
+                                            <ChevronRight size={15} />
+                                        </button>
+                                    </Tooltip>
                                 )}
                             </div>
                         );
@@ -540,100 +559,121 @@ const EditInContextTool = () => {
             {target && (
                 <div className="eic-editor">
                     <div className="eic-editor-head">
-                        <span className="eic-editor-title">{target.layerName}</span>
-                        <span className="eic-editor-sub">in {target.compName}</span>
+                        <span className="eic-editor-text">
+                            <span className="eic-editor-title">{target.layerName}</span>
+                            <span className="eic-editor-sub">
+                                in {target.compName}
+                                {target.locked && <span className="eic-locked"><Lock size={10} /> locked</span>}
+                            </span>
+                        </span>
                         {/* WHOSE NUMBERS ARE ON SCREEN. With several selected the
                             readout below is still ONE layer's — six layers have six
                             positions — so the count says how many are actually
                             moving, and the sentence says what scale does to them. */}
                         {alsoPaths.length > 0 && (
-                            <Tooltip text={`Every nudge moves all ${alsoPaths.length + 1}, in one undo step. Scale changes each layer by the same amount about its own anchor — it is not a group scale about a common centre. The figures below are ${target.layerName}'s.`}>
-                                <button
-                                    type="button"
-                                    className="eic-multi"
-                                    onClick={() => setAlsoPaths([])}
-                                    aria-label="Clear the extra layers"
-                                >
-                                    +{alsoPaths.length} more <X size={9} />
+                            <Tooltip text={`Every nudge moves all ${alsoPaths.length + 1}, in one undo step. Scale changes each about its own anchor, not about a common centre. The figures are ${target.layerName}'s.`}>
+                                <button type="button" className="eic-multi" onClick={() => setAlsoPaths([])} aria-label="Clear the extra layers">
+                                    +{alsoPaths.length} more <X size={10} />
                                 </button>
                             </Tooltip>
                         )}
-                        {target.locked && <span className="eic-locked"><Lock size={10} /> locked</span>}
+                        <button type="button" className="eic-select" onClick={reveal}>
+                            <Crosshair size={13} /> Select in AE
+                        </button>
                     </div>
-
-                    {!atRoot && (
-                        <CheckboxToggle
-                            checked={rootSpace}
-                            onChange={setRootSpace}
-                            label={`Nudge in ${trail[0].compName} pixels`}
-                        />
-                    )}
 
                     <div className="eic-readout">
-                        <span>pos <b>{fmt2(target.position)}</b></span>
-                        <span>scale <b>{fmt2(target.scale)}</b></span>
-                        {!atRoot && <span className="eic-readout-root">looks like <b>{fmt2(target.rootScale)}</b> in {trail[0].compName}</span>}
+                        <span>Position <b>{fmt2(target.position)}</b></span>
+                        <span>Scale <b>{fmt2(target.scale)}</b></span>
+                        {!atRoot && (
+                            <Tooltip text={`How big it is drawn in ${rootName}, through every precomp above it.`}>
+                                <span className="eic-readout-root">looks like <b>{fmt2(target.rootScale)}</b> on top</span>
+                            </Tooltip>
+                        )}
                     </div>
 
-                    <div className="eic-group">
-                        <span className="eic-group-label">
-                            Position{target.positionKeyed ? " · animated" : ""}
-                            <input className="eic-step-in" type="text" value={stepPos} onChange={(e) => setStepPos(e.target.value)} title="Step in pixels" />
-                            <em>px</em>
-                        </span>
-                        <div className={"eic-pad eic-pad--armable" + (armed ? " eic-pad--armed" : "")}>
-                            {/* Genuinely focusable and genuinely invisible: display:none
-                                and visibility:hidden cannot hold focus, which is the
-                                whole mechanism. */}
-                            <input
-                                ref={keyGrabRef}
-                                className="eic-keygrab"
-                                aria-label="Arrow-key nudge"
-                                readOnly
-                                onFocus={claimArrows}
-                                onBlur={releaseArrows}
-                                onKeyDown={(e) => {
-                                    const step = amount(stepPos, e.shiftKey);
-                                    if (e.key === "ArrowLeft") { e.preventDefault(); nudge("position", -step, 0); }
-                                    else if (e.key === "ArrowRight") { e.preventDefault(); nudge("position", step, 0); }
-                                    else if (e.key === "ArrowUp") { e.preventDefault(); nudge("position", 0, -step); }
-                                    else if (e.key === "ArrowDown") { e.preventDefault(); nudge("position", 0, step); }
-                                }}
-                            />
-                            <NudgeButton title="Left" disabled={target.locked} onStep={(s) => nudge("position", -amount(stepPos, s), 0)}><ArrowLeft size={14} /></NudgeButton>
-                            <NudgeButton title="Up" disabled={target.locked} onStep={(s) => nudge("position", 0, -amount(stepPos, s))}><ArrowUp size={14} /></NudgeButton>
-                            <NudgeButton title="Down" disabled={target.locked} onStep={(s) => nudge("position", 0, amount(stepPos, s))}><ArrowDown size={14} /></NudgeButton>
-                            <NudgeButton title="Right" disabled={target.locked} onStep={(s) => nudge("position", amount(stepPos, s), 0)}><ArrowRight size={14} /></NudgeButton>
+                    <div className="eic-controls">
+                        {/* POSITION: a pad, the step size at its centre. */}
+                        <div className="eic-group">
+                            <span className="eic-group-label">Position{target.positionKeyed ? <em> · animated</em> : null}</span>
+                            <div className={"eic-dpad" + (armed ? " eic-dpad--armed" : "")}>
+                                {/* Genuinely focusable and genuinely invisible: display:none
+                                    and visibility:hidden cannot hold focus, which is the
+                                    whole mechanism. */}
+                                <input
+                                    ref={keyGrabRef}
+                                    className="eic-keygrab"
+                                    aria-label="Arrow-key nudge"
+                                    readOnly
+                                    onFocus={claimArrows}
+                                    onBlur={releaseArrows}
+                                    onKeyDown={(e) => {
+                                        const step = amount(stepPos, e.shiftKey);
+                                        if (e.key === "ArrowLeft") { e.preventDefault(); nudge("position", -step, 0); }
+                                        else if (e.key === "ArrowRight") { e.preventDefault(); nudge("position", step, 0); }
+                                        else if (e.key === "ArrowUp") { e.preventDefault(); nudge("position", 0, -step); }
+                                        else if (e.key === "ArrowDown") { e.preventDefault(); nudge("position", 0, step); }
+                                    }}
+                                />
+                                <span className="eic-dpad-up"><NudgeButton title="Up" disabled={target.locked} onStep={(s) => nudge("position", 0, -amount(stepPos, s))}><ArrowUp size={15} /></NudgeButton></span>
+                                <span className="eic-dpad-left"><NudgeButton title="Left" disabled={target.locked} onStep={(s) => nudge("position", -amount(stepPos, s), 0)}><ArrowLeft size={15} /></NudgeButton></span>
+                                <label className="eic-dpad-step" title="Step in pixels (Shift: ×10)">
+                                    <input className="eic-step-in" type="text" value={stepPos} onChange={(e) => setStepPos(e.target.value)} aria-label="Position step in pixels" style={{ width: `${Math.max(1, stepPos.length) + 0.4}ch` }} />
+                                    <em>px</em>
+                                </label>
+                                <span className="eic-dpad-right"><NudgeButton title="Right" disabled={target.locked} onStep={(s) => nudge("position", amount(stepPos, s), 0)}><ArrowRight size={15} /></NudgeButton></span>
+                                <span className="eic-dpad-down"><NudgeButton title="Down" disabled={target.locked} onStep={(s) => nudge("position", 0, amount(stepPos, s))}><ArrowDown size={15} /></NudgeButton></span>
+                            </div>
+                            <button
+                                type="button"
+                                className={"eic-armbtn" + (armed ? " eic-armbtn--on" : "")}
+                                disabled={target.locked}
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => { if (armed) { keyGrabRef.current?.blur(); } else { keyGrabRef.current?.focus(); } }}
+                            >
+                                <Keyboard size={12} />
+                                {armed ? "Arrow keys on. Press to give them back to AE" : "Use arrow keys"}
+                            </button>
                         </div>
-                        <button
-                            type="button"
-                            className={"eic-armbtn" + (armed ? " eic-armbtn--on" : "")}
-                            disabled={target.locked}
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => { if (armed) { keyGrabRef.current?.blur(); } else { keyGrabRef.current?.focus(); } }}
-                        >
-                            <Keyboard size={11} />
-                            {armed ? "Arrow keys ON — AE won't get them until you turn this off" : "Use arrow keys"}
-                        </button>
-                    </div>
 
-                    <div className="eic-group">
-                        <span className="eic-group-label">
-                            Scale{target.scaleKeyed ? " · animated" : ""}
-                            <input className="eic-step-in" type="text" value={stepScale} onChange={(e) => setStepScale(e.target.value)} title="Step in percent" />
-                            <em>%</em>
-                        </span>
-                        <div className="eic-pad">
-                            <NudgeButton title="Smaller" disabled={target.locked} onStep={(s) => nudge("scale", -amount(stepScale, s), -amount(stepScale, s))}><Minus size={14} /></NudgeButton>
-                            <NudgeButton title="Bigger" disabled={target.locked} onStep={(s) => nudge("scale", amount(stepScale, s), amount(stepScale, s))}><Plus size={14} /></NudgeButton>
+                        {/* SCALE: − step + */}
+                        <div className="eic-group">
+                            <span className="eic-group-label">Scale{target.scaleKeyed ? <em> · animated</em> : null}</span>
+                            <div className="eic-scale">
+                                <NudgeButton title="Smaller" disabled={target.locked} onStep={(s) => nudge("scale", -amount(stepScale, s), -amount(stepScale, s))}><Minus size={15} /></NudgeButton>
+                                <label className="eic-scale-step" title="Step in percent (Shift: ×10)">
+                                    <input className="eic-step-in" type="text" value={stepScale} onChange={(e) => setStepScale(e.target.value)} aria-label="Scale step in percent" style={{ width: `${Math.max(1, stepScale.length) + 0.4}ch` }} />
+                                    <em>%</em>
+                                </label>
+                                <NudgeButton title="Bigger" disabled={target.locked} onStep={(s) => nudge("scale", amount(stepScale, s), amount(stepScale, s))}><Plus size={15} /></NudgeButton>
+                            </div>
                         </div>
                     </div>
 
-                    <div className="button-row">
-                        <button onClick={reveal}>
-                            <Crosshair size={13} /> Select it in AE
-                        </button>
-                    </div>
+                    {/* BOTH controls answer to this, so it sits under both. With
+                        it on, a step is what you SEE in the top comp: the tool
+                        converts through every precomp above (scale, rotation,
+                        flips) -- so at a 25% precomp, 2 px on screen is 8 px
+                        inside, and → still goes right on screen. The tooltip
+                        says it with this layer's own numbers. */}
+                    {!atRoot && (() => {
+                        const factor = target.scale && target.rootScale && target.scale[0]
+                            ? target.rootScale[0] / target.scale[0] : 1;
+                        const pct = Math.round(factor * 1000) / 10;
+                        const step = parseFloat(stepPos) || 1;
+                        const inside = factor ? Math.round((step / factor) * 100) / 100 : step;
+                        const onScreen = Math.round(step * factor * 100) / 100;
+                        const tip = Math.abs(factor - 1) < 0.001
+                            ? `${target.compName} isn't scaled here, so both give the same result. On, the arrows still follow the screen if it's rotated.`
+                            : `${target.compName} is drawn at ${pct}% here. On: ${step} px moves it ${step} px on screen (${inside} px inside), and the arrows follow the screen. Off: ${step} px inside, ${onScreen} px on screen.`;
+                        return (
+                            <Tooltip text={tip}>
+                                <span className="eic-rootspace">
+                                    <CheckboxToggle checked={rootSpace} onChange={setRootSpace} label="Steps match what you see on screen" />
+                                </span>
+                            </Tooltip>
+                        );
+                    })()}
                 </div>
             )}
 
