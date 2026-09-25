@@ -49,7 +49,12 @@ async function quiet<T>(name: string, ...args: any[]): Promise<T | null> {
 }
 
 async function loadStock(c: LocaliserCampaignInfo): Promise<Stock | null> {
-    const terrs = await quiet<string[]>("scanTerritories", c.marketsRoot);
+    // The team's catalogue merged in first, so a colleague's card shows the
+    // campaign's library, not an empty one waiting for their own scan.
+    const [terrs] = await Promise.all([
+        quiet<string[]>("scanTerritories", c.marketsRoot),
+        quiet("teamLocLibPull", c.name),
+    ]);
     if (!terrs || terrs.length === 0) return null;
     const [comps, here, codes] = await Promise.all([
         quiet<{ campaign: string; territory: string }[]>("loadLocLibComponents"),

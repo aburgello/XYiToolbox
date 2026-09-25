@@ -1224,6 +1224,47 @@ export const detectCurrentLocLibCampaign = (): string | null => {
 
 export const loadLocLibComponents = (): LocLibComponent[] => loadLocLibComponentsRaw();
 
+/** One campaign's rows, for the team catalogue (team.ts). */
+export function locLibComponentsOf(campaign: string): LocLibComponent[] {
+  const out: LocLibComponent[] = [];
+  const all = loadLocLibComponentsRaw();
+  for (let i = 0; i < all.length; i++) if (all[i].campaign === campaign) out.push(all[i]);
+  return out;
+}
+
+/**
+ * ADD rows this machine doesn't have -- never remove, never overwrite. Keyed
+ * by campaign + path. A row already here keeps its own `folder` (somebody's
+ * personal filing) and only gains a `creative` it was missing. Returns how
+ * many rows were added, so the caller can say whether anything arrived.
+ */
+export function mergeLocLibComponents(rows: LocLibComponent[]): number {
+  if (!rows || !rows.length) return 0;
+  const all = loadLocLibComponentsRaw();
+  const at: { [key: string]: number } = {};
+  for (let i = 0; i < all.length; i++) at[all[i].campaign + "\n" + all[i].path] = i;
+  let added = 0;
+  let changed = false;
+  for (let j = 0; j < rows.length; j++) {
+    const r = rows[j];
+    if (!r || !r.campaign || !r.path || !r.territory) continue;
+    const key = r.campaign + "\n" + r.path;
+    if (at[key] !== undefined) {
+      const mine = all[at[key]];
+      if (!mine.creative && r.creative) { mine.creative = r.creative; changed = true; }
+      continue;
+    }
+    const entry: LocLibComponent = { campaign: String(r.campaign), territory: String(r.territory), label: String(r.label || ""), path: String(r.path) };
+    if (r.creative) entry.creative = String(r.creative);
+    at[key] = all.length;
+    all.push(entry);
+    added++;
+    changed = true;
+  }
+  if (changed) saveLocLibComponentsRaw(all);
+  return added;
+}
+
 export const addLocLibComponent = (campaign: string, territory: string, label: string, path: string, folder?: string, creative?: string): Result => {
   try {
     const all = loadLocLibComponentsRaw();

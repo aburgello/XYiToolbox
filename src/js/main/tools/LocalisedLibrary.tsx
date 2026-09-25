@@ -545,7 +545,16 @@ const LocalisedLibraryTool = () => {
             return;
         }
         try {
-            const terrs: string[] = (await safeEvalTS("scanTerritories", camp.marketsRoot)) || [];
+            // THE TEAM'S CATALOGUE FIRST: one file on the team folder with
+            // every row somebody's Find the Motion has found for this
+            // campaign, merged in (only ever adding). Without it a colleague
+            // opened an empty library and waited out a scan of every
+            // territory. Quiet: no team folder or no catalogue yet is normal.
+            const [terrsRaw, pulled] = await Promise.all([
+                safeEvalTS("scanTerritories", camp.marketsRoot),
+                quietEvalTS("teamLocLibPull", camp.name) as Promise<{ read: boolean; added: number; count: number } | null>,
+            ]);
+            const terrs: string[] = terrsRaw || [];
             const [allComponents, allFolders] = await Promise.all([
                 (safeEvalTS("loadLocLibComponents") as Promise<Component[]>).then((v) => v || []),
                 (quietEvalTS("loadLocLibFolders") as Promise<CustomFolder[]>).then((v) => v || []),
@@ -553,6 +562,15 @@ const LocalisedLibraryTool = () => {
             setTerritories(terrs);
             setComponents(allComponents);
             setCustomFolders(allFolders);
+            // SEED THE TEAM'S CATALOGUE from a library filled before it
+            // existed: when this machine holds more of the campaign than the
+            // catalogue does, publish (a union -- never removes). Otherwise a
+            // full library stays private until its owner next runs Find the
+            // Motion. Only when the pull actually READ, or found nothing yet.
+            const mineCount = allComponents.filter((c) => c.campaign === camp.name).length;
+            if (pulled && mineCount > (pulled.read ? pulled.count : 0)) {
+                void quietEvalTS("teamLocLibPublish", camp.name);
+            }
             const wanted = pendingTerritoryRef.current;
             pendingTerritoryRef.current = null;
             if (wanted && terrs.indexOf(wanted) !== -1) setSelectedTerritory(wanted);
@@ -758,6 +776,9 @@ const LocalisedLibraryTool = () => {
                 selectedTerritory || undefined
             );
             if (result && result.success) {
+                // Share what this run found, so colleagues open this campaign
+                // to a full library instead of running the same scan.
+                void quietEvalTS("teamLocLibPublish", selectedCampaign.name);
                 const all: Component[] = (await safeEvalTS("loadLocLibComponents")) || [];
                 setComponents(all);
                 const noMatchCount = (result.territoriesWithNoMatch || []).length;

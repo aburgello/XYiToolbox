@@ -28,7 +28,7 @@ import { Result, SETTINGS_SECTION, decode } from "./shared";
 import { expressionsBankLoad, expressionsBankSave, loadCustomTools, saveCustomTools, mastersSkipFolder, creativeTokenOf, TC_COUNTRIES } from "./tools";
 import { loadCombos, saveCombos, EffectComboEntry } from "./effects";
 import { loadCampaignsRaw, saveCampaign, loadCampaignBanner, setCampaignBanner } from "./review";
-import { loadLocLibCampaigns, saveLocLibCampaign, scanTerritories } from "./localise";
+import { loadLocLibCampaigns, saveLocLibCampaign, scanTerritories, locLibComponentsOf, mergeLocLibComponents } from "./localise";
 
 const TEAM_FOLDER_KEY = "TeamFolderPath";
 
@@ -1644,6 +1644,7 @@ export const teamSyncShared = (): SyncResult => {
     // already refuses a duplicate name, so this only ever ADDS new ones --
     // it never overwrites a local campaign's path).
     let newCampaigns = 0;
+    const bannersToPublish: { name: string; path: string }[] = [];
     const sharedCampaigns = readSharedFile<SharedCampaign>(SHARED_CAMPAIGNS_FILE, SHARED_CAMPAIGNS_TYPE);
     if (sharedCampaigns && sharedCampaigns.length > 0) {
       const localCamps = loadCampaignsRaw();
@@ -1663,8 +1664,19 @@ export const teamSyncShared = (): SyncResult => {
         // campaign identity rather than personal preference, so it should
         // reach people who added the campaign by hand before it was shared
         // -- but it must never overwrite a banner someone chose themselves.
-        if (camp.banner && loadCampaignBanner(camp.name) === "") {
+        const localBanner = loadCampaignBanner(camp.name);
+        // A local banner only this person's own old Desktop path, which the
+        // team's copy has since replaced, is not "a banner someone chose": it
+        // is the broken one that travelled before banners were copied.
+        const localIsStranded = localBanner !== "" && isPersonalPath(localBanner) && !readableFile(localBanner);
+        if (camp.banner && !isPersonalPath(camp.banner) && (localBanner === "" || localIsStranded)) {
           setCampaignBanner(camp.name, camp.banner);
+        }
+        // FILL THE TEAM'S GAP from here: shared without a banner, or with one
+        // that only opens on somebody's own machine, while this machine has a
+        // banner pinned. Filling a blank, never repointing a chosen one.
+        if ((!camp.banner || isPersonalPath(camp.banner)) && localBanner !== "" && readableFile(localBanner)) {
+          bannersToPublish.push({ name: camp.name, path: localBanner });
         }
         if (names[camp.name.toLowerCase()]) continue;
         const r = saveCampaign(camp.name, camp.mastersRoot);
@@ -1673,6 +1685,12 @@ export const teamSyncShared = (): SyncResult => {
           newCampaigns++;
         }
       }
+    }
+    // After the pull, so this machine's own list is settled first. Each is a
+    // read-modify-write of the shared file; teamPublishCampaignBanner refuses
+    // from an untagged machine and never writes over a file it couldn't read.
+    for (let bp = 0; bp < bannersToPublish.length; bp++) {
+      teamPublishCampaignBanner(bannersToPublish[bp].name, bannersToPublish[bp].path);
     }
 
     // Localise campaigns (LocLibCampaigns -- Localised Library / CSV
@@ -1836,7 +1854,7 @@ function shareFillMessage(name: string, addedMasters: boolean, addedMarkets: boo
   return 'Updated the banner for "' + name + '".';
 }
 
-export const teamShareCampaign = (campaignJson: string): Result => {
+const teamShareCampaignInner = (campaignJson: string): Result => {
   try {
     if (!teamFolder()) return { success: false, error: "Team folder not set -- set it in the Team menu on the home screen first." };
     let entry: SharedCampaign | null = null;
@@ -1925,7 +1943,7 @@ export const teamShareCampaign = (campaignJson: string): Result => {
 // re-sharing is how you fill in a missing half, not how you overwrite the
 // path the team already agreed on. Someone whose local path genuinely differs
 // should say so out loud, not silently move everyone.
-export const teamShareLocCampaign = (campaignJson: string): Result => {
+const teamShareLocCampaignInner = (campaignJson: string): Result => {
   try {
     if (!teamFolder()) return { success: false, error: "Team folder not set -- set it in the Team menu on the home screen first." };
     let entry: { name?: string; marketsRoot?: string; mastersRoot?: string } | null = null;
@@ -4105,4 +4123,232 @@ export const tutorialsList = (): TutorialsResult => {
     // share means no tutorials, not a broken panel.
     return { success: true, available: false, files: [], error: e.toString() };
   }
+};
+
+
+// =============================================================================
+// CAMPAIGN BANNERS, SHARED.
+//
+// A banner reached colleagues only through OV Library's Share button, and
+// only if it was pinned BEFORE the campaign was first shared: pinning never
+// published it, and sharing from CSV Localiser always sent none. So Street
+// Fighter went to the team without one and every colleague's Localise page
+// showed a blank. And the banner that did travel (Forgotten Island's) was a
+// file on one person's Desktop -- a path nobody else can open.
+//
+// So publishing COPIES the image into the team folder (misc/banners/) and
+// shares that path, and happens on pin, on share, and -- to fill the gaps
+// already out there -- on sync, for any shared campaign whose banner is
+// missing or only lives in somebody's home folder. Tagged machines only.
+// =============================================================================
+const BANNER_DIR = MISC_DIR + "/banners";
+
+/** A path under a person's home folder is readable on their machine only. */
+function isPersonalPath(p: string): boolean {
+  return /^\/Users\//.test(String(p || "")) || /^[A-Za-z]:\\Users\\/.test(String(p || ""));
+}
+
+/** Opens, or it isn't usable -- the only test trusted on the NAS. */
+function readableFile(p: string): boolean {
+  try {
+    const f = new File(p);
+    if (!f.open("r")) return false;
+    f.close();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function safeFileStem(name: string): string {
+  return String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "campaign";
+}
+
+/** Copy a banner into the team folder; "" when that failed. */
+function copyBannerToTeam(name: string, localPath: string): string {
+  const folder = ensureSharedFolder(BANNER_DIR);
+  if (!folder) return "";
+  if (String(localPath).indexOf(folder.fsName) === 0) return String(localPath); // already there
+  const src = new File(localPath);
+  const dot = String(src.name).lastIndexOf(".");
+  const ext = dot > 0 ? String(src.name).slice(dot).toLowerCase() : ".jpg";
+  const dest = new File(folder.fsName + "/" + safeFileStem(name) + ext);
+  try {
+    // Attempt the copy rather than asking .exists first (CLAUDE.md: never
+    // gate a team-folder file operation on .exists).
+    return src.copy(dest.fsName) ? String(dest.fsName) : "";
+  } catch (e) {
+    return "";
+  }
+}
+
+export const teamPublishCampaignBanner = (name: string, localPath: string): Result => {
+  try {
+    if (!name || !localPath) return { success: false, error: "No campaign or banner." };
+    if (!teamFolder()) return { success: false, error: "No team folder." };
+    if (!loadLocalSetting(MACHINE_OWNER_KEY)) return { success: false, error: "Untagged machine." };
+    const shared = readSharedFile<SharedCampaign>(SHARED_CAMPAIGNS_FILE, SHARED_CAMPAIGNS_TYPE);
+    // Couldn't read the file: say so, never write over it from nothing.
+    if (!shared) return { success: false, error: "Couldn't read the shared campaigns." };
+    let entry: SharedCampaign | null = null;
+    for (let i = 0; i < shared.length; i++) {
+      if (shared[i] && String(shared[i].name).toLowerCase() === String(name).toLowerCase()) { entry = shared[i]; break; }
+    }
+    // Not shared yet: nothing to attach it to. The share will carry it.
+    if (!entry) return { success: true, message: "not shared" };
+    const teamPath = copyBannerToTeam(name, localPath);
+    // A copy that failed still beats a personal path if the original is on
+    // the NAS; a personal path that couldn't be copied is not published.
+    const publishPath = teamPath || (isPersonalPath(localPath) ? "" : String(localPath));
+    if (!publishPath) return { success: false, error: "Couldn't copy the banner to the team folder." };
+    if (entry.banner === publishPath) return { success: true, message: "unchanged" };
+    entry.banner = publishPath;
+    if (!writeSharedFile(SHARED_CAMPAIGNS_FILE, SHARED_CAMPAIGNS_TYPE, shared)) {
+      return { success: false, error: "Could not write to the team folder." };
+    }
+    return { success: true, message: publishPath };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+// =============================================================================
+// LOCALISED LIBRARY, SHARED -- a catalogue per campaign.
+//
+// Each machine kept its own library in app.settings, filled by its own Find
+// the Motion: a scan of every territory's folders on the NAS. So a colleague
+// opening Street Fighter saw an empty library and had to wait out a full scan
+// for rows this machine already had. Now every Find the Motion also writes the
+// campaign's rows to misc/loclib/<campaign>.json, and opening a campaign reads
+// that one file and MERGES it in. The same idea as the masters index: remember
+// the paths once, read them instead of walking the tree.
+//
+// Additive both ways: publishing is a union with what is already there (two
+// people scanning different territories must not erase each other), and
+// pulling only adds rows -- never removes, never touches somebody's own
+// folder filing. A failed read is "couldn't read", never "empty".
+// =============================================================================
+const LOCLIB_DIR = MISC_DIR + "/loclib";
+const LOCLIB_TYPE = "xyi-loclib-catalogue";
+
+interface LocLibCatalogueRow {
+  campaign: string;
+  territory: string;
+  label: string;
+  path: string;
+  creative?: string;
+}
+
+function locLibCatalogueFile(campaign: string): File | null {
+  const root = teamFolder();
+  if (!root) return null;
+  return new File(root.fsName + "/" + LOCLIB_DIR + "/" + safeFileStem(campaign) + ".json");
+}
+
+function readLocLibCatalogue(campaign: string): LocLibCatalogueRow[] | null {
+  const f = locLibCatalogueFile(campaign);
+  if (!f) return null;
+  const content = readTextFile(f);
+  if (!content) return null;
+  try {
+    const parsed = JSON.parse(content);
+    if (!parsed || parsed.type !== LOCLIB_TYPE || !(parsed.entries instanceof Array)) return null;
+    return parsed.entries as LocLibCatalogueRow[];
+  } catch (e) {
+    return null;
+  }
+}
+
+export const teamLocLibPublish = (campaign: string): Result => {
+  try {
+    if (!campaign) return { success: false, error: "No campaign." };
+    if (!teamFolder()) return { success: false, error: "No team folder." };
+    const owner = loadLocalSetting(MACHINE_OWNER_KEY);
+    if (!owner) return { success: false, error: "Untagged machine." };
+    const mine = locLibComponentsOf(campaign);
+    // Nothing to add: never write a catalogue out of an empty list.
+    if (!mine.length) return { success: true, message: "nothing to share" };
+    const existing = readLocLibCatalogue(campaign) || [];
+    const byPath: { [p: string]: number } = {};
+    const out: LocLibCatalogueRow[] = [];
+    for (let i = 0; i < existing.length; i++) {
+      const r = existing[i];
+      if (!r || !r.path || byPath[r.path] !== undefined) continue;
+      byPath[r.path] = out.length;
+      out.push(r);
+    }
+    let added = 0;
+    for (let j = 0; j < mine.length; j++) {
+      const c = mine[j];
+      // No `folder`: that is one person's own filing, not the campaign's.
+      const row: LocLibCatalogueRow = { campaign: c.campaign, territory: c.territory, label: c.label, path: c.path };
+      if (c.creative) row.creative = c.creative;
+      if (byPath[c.path] !== undefined) { out[byPath[c.path]] = row; continue; }
+      byPath[c.path] = out.length;
+      out.push(row);
+      added++;
+    }
+    if (!ensureSharedFolder(LOCLIB_DIR)) return { success: false, error: "Couldn't create the team catalogue folder." };
+    const f = locLibCatalogueFile(campaign);
+    const payload = {
+      type: LOCLIB_TYPE,
+      version: 1,
+      campaign: campaign,
+      summary: out.length + " components",
+      count: out.length,
+      updatedAt: new Date().toString(),
+      updatedBy: owner,
+      entries: out,
+    };
+    if (!f || !writeTextFile(f, JSON.stringify(payload, null, 2))) {
+      return { success: false, error: "Could not write the team catalogue." };
+    }
+    return { success: true, message: String(added) };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+export const teamLocLibPull = (campaign: string): { read: boolean; added: number; count: number } => {
+  try {
+    const rows = readLocLibCatalogue(campaign);
+    if (!rows) return { read: false, added: 0, count: 0 };
+    const own: LocLibCatalogueRow[] = [];
+    for (let i = 0; i < rows.length; i++) if (rows[i] && rows[i].campaign === campaign) own.push(rows[i]);
+    return { read: true, added: mergeLocLibComponents(own), count: own.length };
+  } catch (e) {
+    return { read: false, added: 0, count: 0 };
+  }
+};
+
+/**
+ * Both Share buttons, then the banner. OV Library's used to send whatever path
+ * was pinned (a Desktop file, for Forgotten Island) and CSV Localiser's never
+ * sent one at all, so a banner reached the team only by luck of order. After
+ * any successful share -- including "already in the team library", which is
+ * exactly the case that stayed bannerless -- the pinned banner is published,
+ * copied into the team folder first.
+ */
+function publishPinnedBanner(campaignJson: string): void {
+  try {
+    const entry = JSON.parse(campaignJson || "{}");
+    const name = entry && entry.name ? String(entry.name) : "";
+    if (!name) return;
+    const pinned = loadCampaignBanner(name);
+    if (pinned) teamPublishCampaignBanner(name, pinned);
+  } catch (e) {
+    /* the share itself already succeeded; a banner is a bonus */
+  }
+}
+
+export const teamShareCampaign = (campaignJson: string): Result => {
+  const r = teamShareCampaignInner(campaignJson);
+  if (r.success) publishPinnedBanner(campaignJson);
+  return r;
+};
+
+export const teamShareLocCampaign = (campaignJson: string): Result => {
+  const r = teamShareLocCampaignInner(campaignJson);
+  if (r.success) publishPinnedBanner(campaignJson);
+  return r;
 };

@@ -967,7 +967,20 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
         const result = await safeEvalTS("setCampaignBanner", selectedCampaign.name, path);
         if (result && result.success) {
             setCampaignBanner(path);
-            pushToast("Campaign banner set. Share the campaign again to send it to the team.", "success");
+            // PUBLISHED ON PIN, copied into the team folder first, so a banner
+            // chosen from a Desktop file still opens on everyone's machine. It
+            // used to wait for somebody to press Share again, which in practice
+            // meant never. Quiet: a campaign not shared yet, an untagged
+            // machine or an unmounted share just means it travels later.
+            let told = false;
+            try {
+                const pub = (await evalTS("teamPublishCampaignBanner", selectedCampaign.name, path)) as { success?: boolean; message?: string } | undefined;
+                if (pub && pub.success && pub.message && pub.message !== "not shared") {
+                    pushToast("Campaign banner set, and shared with the team.", "success");
+                    told = true;
+                }
+            } catch { /* no bridge / no team folder */ }
+            if (!told) pushToast("Campaign banner set.", "success");
         } else if (result) {
             pushToast(result.error || "Could not set the banner.", "error");
         }

@@ -870,6 +870,23 @@ Localiser reached colleagues working in Localise and absent from Review, and
 pressing Share in OV Library afterwards did nothing but answer "already in the
 team library".
 
+**A CAMPAIGN'S BANNER AND ITS LIBRARY ARE TEAM THINGS, and travel through
+the team folder.** A banner used to reach colleagues only if OV Library's
+Share was pressed AFTER it was pinned, and could be a Desktop path nobody else
+can open. Now `teamPublishCampaignBanner` COPIES it into `misc/banners/` and
+shares that path -- on pin, after either Share (the wrappers around
+`teamShareCampaign`/`teamShareLocCampaign`), and on sync, for any shared
+campaign whose banner is missing or lives under someone's home folder. The
+pull replaces a local banner only when it is empty or a home-folder path that
+no longer opens; a banner somebody chose is never overwritten. The Localised
+Library, per machine in `app.settings`, now has a per-campaign catalogue at
+`misc/loclib/<campaign>.json`: published after Find the Motion (and when this
+machine holds more than the catalogue), merged in on opening a campaign.
+**Additive both ways** -- publishing is a union, pulling only adds, neither
+removes a row or carries anyone's `folder` filing. Tagged machines only; a
+failed read is "couldn't read", never "empty". `node
+scripts/probe-team-library.cjs` guards all of it.
+
 **`parseFilenameMeta`'s `campaign` is the CREATIVE, `siteName` is the SITE.**
 Campaign is what sits LEFT of the artwork type, site is everything right of it.
 Anything wanting the whole descriptive part wants `siteName` — the four-token
