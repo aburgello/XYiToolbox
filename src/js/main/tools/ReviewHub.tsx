@@ -111,6 +111,10 @@ interface ReviewItem {
     comparisonCompId?: number;
     comparisonEnrich?: string;
     comparisonFps?: number;
+    /** The AE project item id, so a failed compare can be retried. */
+    aeId?: number;
+    /** Why the comparison comp wasn't built, when it wasn't. */
+    comparisonError?: string;
 }
 
 interface Toast {
@@ -178,7 +182,8 @@ const ReviewRow: React.FC<{
     onRemove: () => void;
     onOpenComp: (compId: number) => void;
     onToggleDiff: (compId: number) => void;
-}> = ({ item, batchIndex, matchedMp4, isOpen, onChange, onRemove, onOpenComp, onToggleDiff }) => {
+    onRetryCompare: () => void;
+}> = ({ item, batchIndex, matchedMp4, isOpen, onChange, onRemove, onOpenComp, onToggleDiff, onRetryCompare }) => {
     const reduced = useReducedMotion();
     return (
         <motion.div
@@ -227,6 +232,23 @@ const ReviewRow: React.FC<{
                         <motion.button
                             className="rv-comp-btn"
                             onClick={() => onOpenComp(item.comparisonCompId!)}
+                            whileHover={reduced ? {} : { scale: 1.08 }}
+                            whileTap={reduced ? {} : { scale: 0.94 }}
+                        >
+                            <Columns2 size={11} />
+                            <span className="rv-comp-label">Compare</span>
+                        </motion.button>
+                    </Tooltip>
+                )}
+
+                {/* MATCHED BUT NOT BUILT: the master was found and the comp
+                    wasn't made. That row used to show no Compare button at all
+                    and no reason; now it says why and builds on press. */}
+                {matchedMp4 && !item.comparisonCompId && (
+                    <Tooltip text={item.comparisonError ? `Couldn't build the comparison: ${item.comparisonError}\nPress to try again.` : "Build the comparison comp"}>
+                        <motion.button
+                            className="rv-comp-btn rv-comp-btn--retry"
+                            onClick={onRetryCompare}
                             whileHover={reduced ? {} : { scale: 1.08 }}
                             whileTap={reduced ? {} : { scale: 0.94 }}
                         >
@@ -362,6 +384,7 @@ const ReviewSession: React.FC = () => {
                 .filter((c: any) => !items.some((i) => i.name === c.name))
                 .map((c: any, i: number) => ({
                     id: ++nextId.current,
+                    aeId: typeof c.id === "number" ? c.id : undefined,
                     name: c.name,
                     sourcePath: c.sourcePath ?? null,
                     status: "pending" as ReviewStatus,
@@ -424,6 +447,7 @@ const ReviewSession: React.FC = () => {
                         // iterates the input in order and returns results in
                         // the same order, so results[i] ↔ compMatches[i].
                         const stampByReviewId: Record<number, { compName: string; compId: number; enrich?: string; fps?: number }> = {};
+                        const errorByReviewId: Record<number, string> = {};
                         for (let ri = 0; ri < results.length && ri < compMatches.length; ri++) {
                             // Key off the comp's actual presence (compId +
                             // compName), NOT the success flag — the backend can
@@ -438,7 +462,12 @@ const ReviewSession: React.FC = () => {
                                     enrich: results[ri].enrichNotes || "",
                                     fps: results[ri].compFps,
                                 };
+                            } else {
+                                errorByReviewId[compMatches[ri].reviewId] = (results[ri] && results[ri].error) || "no comp came back";
                             }
+                        }
+                        if (Object.keys(errorByReviewId).length > 0) {
+                            setItems((prev) => prev.map((item) => errorByReviewId[item.id] ? { ...item, comparisonError: errorByReviewId[item.id] } : item));
                         }
                         if (Object.keys(stampByReviewId).length > 0) {
                             setItems((prev) => prev.map((item) => {
@@ -449,7 +478,8 @@ const ReviewSession: React.FC = () => {
                             }));
                         }
                         const succeeded = Object.keys(stampByReviewId).length;
-                        pushToast(`${fresh.length} item${fresh.length > 1 ? "s" : ""} added, ${succeeded} comparison comp${succeeded > 1 ? "s" : ""} created.`);
+                        const failedN = Object.keys(errorByReviewId).length;
+                        pushToast(`${fresh.length} item${fresh.length > 1 ? "s" : ""} added, ${succeeded} comparison comp${succeeded === 1 ? "" : "s"} created.` + (failedN ? ` ${failedN} couldn't be built. Hover their Compare for why.` : ""), failedN ? "error" : "success");
                         sfx.bop();
                     } catch {
                         pushToast(`${fresh.length} item${fresh.length > 1 ? "s" : ""} added.  Comparison comps could not be created.`);
@@ -503,6 +533,29 @@ const ReviewSession: React.FC = () => {
         if (!target.comparisonCompId) return;
         setLastOpenedCompId(target.comparisonCompId);
         await handleOpenComp(target.comparisonCompId);
+    };
+
+    // One row's comparison, again -- the same builder the batch uses.
+    const retryCompare = async (item: ReviewItem) => {
+        const mp4 = itemMatches ? itemMatches[item.name] : undefined;
+        if (!mp4 || item.aeId === undefined) {
+            pushToast("Import & Compare this item again: its project item isn't known.", "error");
+            return;
+        }
+        try {
+            const r = (await evalTS("createReviewComparison", mp4, item.aeId, item.name)) as any;
+            if (!mountedRef.current) return;
+            if (r && r.compId && r.compName) {
+                updateItem(item.id, { comparisonCompName: r.compName, comparisonCompId: r.compId, comparisonEnrich: r.enrichNotes || "", comparisonFps: r.compFps, comparisonError: undefined });
+                pushToast("Comparison comp built.");
+            } else {
+                const why = (r && r.error) || "no comp came back";
+                updateItem(item.id, { comparisonError: why });
+                pushToast(`Couldn't build it: ${why}`, "error");
+            }
+        } catch {
+            pushToast("No CEP bridge. Open inside After Effects.", "error");
+        }
     };
 
     const handleToggleDiff = async (compId: number) => {
@@ -708,6 +761,7 @@ const ReviewSession: React.FC = () => {
                                     onRemove={() => removeItem(item.id)}
                                     onOpenComp={handleOpenComp}
                                     onToggleDiff={handleToggleDiff}
+                                    onRetryCompare={() => void retryCompare(item)}
                                 />
                             );
                         })}

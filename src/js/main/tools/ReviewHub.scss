@@ -582,6 +582,13 @@
     // Comparison comp chip — clickable pill that re-opens the auto-created
     // side-by-side comp in AE's viewer.  Only visible on rows that had a
     // matching .mp4 and had a comp created during import.
+    // A matched row whose comp wasn't built: same button, amber, press to retry.
+    .rv-comp-btn.rv-comp-btn--retry {
+        background: rgba(251, 191, 36, 0.1);
+        border-color: rgba(251, 191, 36, 0.35);
+        color: #fbbf24;
+    }
+
     .rv-comp-btn {
         display: flex;
         align-items: center;

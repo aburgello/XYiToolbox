@@ -759,7 +759,8 @@ export const reviewMatchToMaster = (mastersRoot: string, itemsJson: string): Res
 // source file's contents. ---
 export const importFile = (filePath: string): Result => {
   const f = new File(filePath);
-  if (!f.exists) return { success: false, error: "File no longer exists:\n" + filePath };
+  // No File.exists gate: it answers false for files plainly on the NAS
+  // (CLAUDE.md). The import is the test.
   try {
     app.project.importFile(new ImportOptions(f));
     return { success: true };
@@ -770,7 +771,7 @@ export const importFile = (filePath: string): Result => {
 
 export const revealFile = (filePath: string): Result => {
   const f = new File(filePath);
-  if (!f.exists) return { success: false, error: "File no longer exists:\n" + filePath };
+  // No File.exists gate (NAS): `open` on a folder that isn't there does nothing.
   const p = f.parent.fsName;
   if ($.os.indexOf("Windows") !== -1) {
     system.callSystem('explorer "' + p + '"');
@@ -781,8 +782,7 @@ export const revealFile = (filePath: string): Result => {
 };
 
 export const playFile = (filePath: string): Result => {
-  const f = new File(filePath);
-  if (!f.exists) return { success: false, error: "File no longer exists:\n" + filePath };
+  // No File.exists gate (NAS): it refused to play renders that were there.
   if ($.os.indexOf("Windows") !== -1) {
     system.callSystem('start "" "' + filePath + '"');
   } else {
@@ -835,7 +835,7 @@ export const createComparisonComp = (renderPath: string, width: number, height: 
     }
 
     const f = new File(renderPath);
-    if (!f.exists) return { success: false, error: "Render file no longer exists:\n" + renderPath };
+    // No File.exists gate: the import below is the test (NAS -- CLAUDE.md).
 
     app.beginUndoGroup("OV Library: Create Comparison Comp");
 
@@ -1026,6 +1026,10 @@ export function frontcardOffset(localDur: number, masterDur: number, fps: number
 }
 
 export const createReviewComparison = (mp4Path: string, localItemId: number, localItemName: string): ReviewComparisonResult => {
+  // WHICH STEP FAILED, in the error: AE's own message ("property is hidden")
+  // names no property, and four rows of one batch failed with it while the
+  // rest of the batch, same master, same codec, built fine.
+  var step = "starting";
   try {
     // 1. Find the local item in the project.
     const localItem = app.project.itemByID(localItemId);
@@ -1035,17 +1039,36 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     if (!(localItem instanceof CompItem) && !(localItem instanceof FootageItem)) {
       return { success: false, error: "\"" + localItemName + "\" is not a comp or footage item." };
     }
+    // A render AE CAN'T SEE INTO. Imported, listed, and no picture: a layer
+    // made from it has its Transform hidden, so the first setValue failed
+    // with AE's "property or a parent property is hidden" -- which reads as
+    // this tool's bug and is really the file's. Measured on a Denmark batch:
+    // the four that failed were exactly the four with a blank Media Duration.
+    var li: any = localItem;
+    if (li.footageMissing === true) {
+      return { success: false, error: "The render is offline in this project. Relink or re-import it." };
+    }
+    if (li.hasVideo === false) {
+      return { success: false, error: "After Effects can't read the picture in this render (no video, blank Media Duration). Re-render it, or check it opens in QuickTime, then re-import." };
+    }
 
     // 2. Import the master .mp4 — read-only, same safety rule as every other
     //    import in this codebase.
+    // NO File.exists GATE. It answers false for files plainly on the NAS,
+    // and not even consistently: one 1080x1920 master built comps for four
+    // Denmark rows and "no longer existed" for two others, which then showed
+    // no Compare button at all. The import is the test, and its error says why.
     const f = new File(mp4Path);
-    if (!f.exists) return { success: false, error: "Master render no longer exists:\n" + mp4Path };
 
     var masterFootage: AVItem;
     try {
       masterFootage = app.project.importFile(new ImportOptions(f)) as AVItem;
     } catch (impErr) {
       return { success: false, error: "Could not import master render: " + impErr.toString() };
+    }
+    if ((masterFootage as any).hasVideo === false) {
+      try { masterFootage.remove(); } catch (eRm) {}
+      return { success: false, error: "After Effects can't read the picture in the master render " + decodeURI(String(f.name)) + "." };
     }
     // Auto-file the imported OV master into an "OV" project folder so a
     // review session doesn't scatter every master render loose in the root.
@@ -1092,6 +1115,7 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
 
     app.beginUndoGroup("Review: Compare \"" + localItemName + "\"");
 
+    step = "creating the comp (" + compW + "x" + compH + ", " + dur + "s)";
     var comp = app.project.items.addComp(finalName, compW, compH, 1, dur, fps);
     // Auto-file the comparison comp into a "Comparison" project folder so
     // review sessions don't clutter the root with every Compare_* comp.
@@ -1102,6 +1126,7 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     // 5. Place master on the LEFT half -- starting after the local's
     //    frontcard, so the two halves show the same moment (frontcardOffset).
     var offset = frontcardOffset(localItem.duration || 0, masterFootage.duration || 0, fps);
+    step = "placing the master";
     var masterLayer = comp.layers.add(masterFootage);
     fitLayerIntoBox(masterLayer, halfW, compH, halfW / 2, compH / 2);
     masterLayer.name = "MASTER (.mp4)";
@@ -1110,8 +1135,10 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     }
 
     // 6. Place local render on the RIGHT half.
+    step = "placing the local render";
     var localLayer = comp.layers.add(localItem);
     fitLayerIntoBox(localLayer, halfW, compH, halfW + halfW / 2, compH / 2);
+    step = "after placing both";
     localLayer.name = "LOCAL (imported render)";
 
     // 7-10. The enrichment block — divider, labels, difference matte,
@@ -1226,8 +1253,8 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     app.endUndoGroup();
     return { success: true, compName: finalName, compId: comp.id, compFps: fps, enrichNotes: enrichNotes.join(" | ") };
   } catch (e) {
-    app.endUndoGroup();
-    return { success: false, error: e.toString() };
+    try { app.endUndoGroup(); } catch (eU) {}
+    return { success: false, error: e.toString() + " -- while " + step + ((e as any).line ? " (line " + (e as any).line + ")" : "") };
   }
 };
 

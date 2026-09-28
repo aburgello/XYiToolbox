@@ -1365,7 +1365,10 @@ that late in `createReviewComparison` (Review, 67's compare icon) and OV
 Library's `createComparisonComp`, with a marker, the work area and the playhead
 there. 67's drop-in moves its guide clip AND its timed markers by the same
 amount, taking the master's length from the comp's own name when no clip is
-added. Review's selection loader also skips `…_OV` masters and `Compare_`
+added. A Review row whose master matched but whose comp was not built shows an
+amber **Compare** that retries and says why on hover -- it used to show
+nothing. `createReviewComparison` no longer gates on `File.exists` (it refused
+the same master for two rows and accepted it for four). Review's selection loader also skips `…_OV` masters and `Compare_`
 comps: AE leaves an import selected, so a second Import & Compare reviewed the
 masters.
 

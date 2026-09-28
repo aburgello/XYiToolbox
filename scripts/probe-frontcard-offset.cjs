@@ -111,6 +111,13 @@ r = aeft.createReviewComparison('/masters/FID_INTL_Trio_DOOH_1920x1080px_10s_OV.
 const c2 = project.itemByID(r.compId);
 check(c2._layers.find((l) => /^MASTER/.test(l.name)).startTime === 0 && c2._markers.length === 0 && !c2.displayStartTime, 'a local with no frontcard is left exactly as before');
 
+// A render AE can't see into (blank Media Duration): said plainly, no comp.
+const blind = new FootageItem({ id: nextId++, name: 'FID_INTL_PortalToParadise_DOOH_TheJewel_1152x1920px_10s_DK_V01.mov', width: 1152, height: 1920, duration: 0, frameRate: 25, hasVideo: false, parentFolder: root });
+items.push(blind);
+const nComps = items.filter((x) => x instanceof CompItem).length;
+r = aeft.createReviewComparison('/masters/FID_INTL_PortalToParadise_DOOH_1080x1920px_10s_OV.mp4', blind.id, blind.name);
+check(!r.success && /can't read the picture/.test(r.error) && items.filter((x) => x instanceof CompItem).length === nComps, "a render with no readable video is named as the problem, and no half-built comp is left", r.error);
+
 // OV Library's own Compare, from the Project-panel selection.
 project.selection = [local];
 r = aeft.createComparisonComp('/masters/FID_INTL_PortalToParadise_DOOH_1440x1080px_10s_OV.mp4', 1440, 1080);
