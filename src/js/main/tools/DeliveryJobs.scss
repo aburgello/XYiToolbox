@@ -1,0 +1,269 @@
+// Ready to deliver -- the Localise jobs strip's language, in Deliver's tint.
+// Every button is scoped under .dj with its own hover/active: index.scss's
+// global button:hover paints anything unscoped blue.
+.dj {
+    position: relative;
+    z-index: 1;
+    // Same inset as .dh-action-bar above it.
+    margin: 4px 0 8px;
+    padding: 0 14px;
+    min-width: 0;
+
+    button { font-family: inherit; }
+}
+
+.dj-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.dj-label {
+    flex-shrink: 1;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 650;
+    color: #fff;
+    white-space: nowrap;
+
+    svg { flex-shrink: 0; color: var(--cat-icon, #fb923c); }
+}
+
+.dj-shared {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 500;
+    color: #a8998c;
+
+    &::before { content: "·"; margin-right: 6px; color: #6b625b; }
+}
+
+.dj-spacer { flex: 1 1 auto; }
+
+.dj-sample {
+    flex-shrink: 0;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: rgba(250, 204, 21, 0.14);
+    color: #facc15;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+// Wrapped, not a sideways scroller -- see the TSX.
+.dj-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 7px;
+}
+
+.dj .dj-chip {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px 4px 8px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.05);
+    color: #e8e2dc;
+    font-size: 12px;
+    white-space: nowrap;
+    cursor: pointer;
+
+    svg { color: #9a8f86; }
+
+    &:hover, &:active { background: rgba(255, 255, 255, 0.09); border-color: rgba(255, 255, 255, 0.16); }
+    &.is-open, &.is-open:hover {
+        border-color: var(--cat-border, #fb923c);
+        background: rgba(251, 146, 60, 0.12);
+        svg { color: var(--cat-icon, #fb923c); }
+    }
+}
+
+.dj .dj-chip.is-done { border-color: rgba(74, 222, 128, 0.35); }
+
+// What's left after an import: one line, the next step, a way to dismiss.
+.dj-done {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 6px 6px 6px 10px;
+    border-radius: 9px;
+    background: rgba(74, 222, 128, 0.07);
+    border: 1px solid rgba(74, 222, 128, 0.2);
+    min-width: 0;
+
+    > svg { flex-shrink: 0; color: #4ade80; }
+}
+
+.dj-done-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 12px;
+    color: #d6e9dc;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    strong { color: #fff; font-weight: 650; }
+}
+
+.dj .dj-dismiss {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    color: #9a8f86;
+    cursor: pointer;
+
+    &:hover, &:active { background: rgba(255, 255, 255, 0.07); color: #fff; }
+}
+
+.dj-flag { font-size: 13px; line-height: 1; }
+.dj-name { font-weight: 650; }
+.dj-count {
+    min-width: 16px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #cfc4ba;
+    font-size: 10.5px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.dj .dj-refresh {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    border-radius: 7px;
+    background: none;
+    color: #9a8f86;
+    cursor: pointer;
+
+    &:hover:not(:disabled), &:active:not(:disabled) { background: rgba(255, 255, 255, 0.06); color: #fff; }
+}
+
+// The folder, as Finder would show it: hairline rows, nothing boxed.
+.dj-panel {
+    margin-top: 8px;
+    padding: 8px 10px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.dj-folder + .dj-folder { margin-top: 10px; }
+
+.dj-folder-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 2px 2px 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    min-width: 0;
+}
+.dj-folder-name { font-size: 12.5px; font-weight: 650; color: #fff; }
+.dj-folder-where { font-size: 11px; color: #9a8f86; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.dj-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 5px 2px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+
+    &.is-other .dj-file { color: #8a8079; }
+}
+
+.dj-file {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: #e8e2dc;
+}
+
+.dj-tag {
+    flex-shrink: 0;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #9a8f86;
+    font-size: 10px;
+}
+
+.dj-note {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 4px 2px;
+    font-size: 11.5px;
+    color: #a8998c;
+
+    &.is-bad { color: #fca5a5; }
+    &.is-warn { color: #fbbf24; }
+}
+
+.dj-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.dj .dj-import,
+.dj .dj-deliver {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+
+    &:disabled { opacity: 0.5; cursor: default; }
+}
+
+.dj .dj-import {
+    border: 1px solid var(--cat-border, #fb923c);
+    background: rgba(251, 146, 60, 0.16);
+    color: #fff;
+
+    &:hover:not(:disabled), &:active:not(:disabled) { background: rgba(251, 146, 60, 0.26); }
+}
+
+.dj .dj-deliver {
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: none;
+    color: #e8e2dc;
+
+    svg { color: var(--cat-icon, #fb923c); }
+    &:hover:not(:disabled), &:active:not(:disabled) { background: rgba(255, 255, 255, 0.07); }
+}

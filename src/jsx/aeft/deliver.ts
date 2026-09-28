@@ -4,8 +4,8 @@
 // is now a thin barrel -- see its header comment for context.
 // =============================================================================
 import { Result, decode } from "./shared";
-import { TS_TERRITORIES, parseFilenameMeta } from "./tools";
-import { getTerritoryCountryCode } from "./localise";
+import { TS_TERRITORIES, parseFilenameMeta, territoryCheck } from "./tools";
+import { getTerritoryCountryCode, loadLocLibCampaigns } from "./localise";
 
 
 
@@ -994,6 +994,227 @@ export const renderWatchSnapshot = (): RenderWatchResult => {
     }
     return { success: true, items: items };
   } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+
+// =============================================================================
+// READY TO DELIVER -- a Wrike job in "Prep for delivery", mirrored off disk.
+//
+// A delivery starts with the batch's MOVs, which live at
+// <Markets>/<Territory>/Renders/<Batch_NN>/…_V01.mov and used to be fetched
+// from Finder. The job's subtasks ARE those deliverables' names (without the
+// version, and not always in the same case: Wrike's `…_LEDKELETI_…` is the
+// disk's `…_Ledkeleti_…`), so the pairing is the subtask name against the
+// file's stem with its `_Vnn` and extension off, upper-cased, and EXACT --
+// the same discipline as the CSV "already built" matcher: a wrong pair
+// delivers another screen's film, an unmatched row costs one tick.
+//
+// WHICH CAMPAIGN is not asked: every saved Localised Library campaign's
+// Markets root is tried for the job's territory, and only folders that
+// actually hold a match come back. `_` folders (_Archive, _Delivery, _mp4,
+// _Old) are skipped like every other scan. The territory is resolved through
+// territoryCheck, exact code then exact name, never fuzzily.
+//
+// The WHOLE folder is returned, matched or not, because the point is to see
+// it as Finder would -- an unmatched file is shown, unticked.
+//
+// Arguments arrive as ONE JSON STRING (the bridge rule).
+// =============================================================================
+export interface DeliveryRenderFile {
+  path: string;
+  name: string;
+  key: string;
+  version: number;
+  /** A subtask of the job names this deliverable. */
+  matched: boolean;
+  /** The highest version of its deliverable in this folder. */
+  latest: boolean;
+}
+
+export interface DeliveryRenderFolder {
+  campaign: string;
+  territory: string;
+  /** Relative to the territory's Renders folder, e.g. "Batch_02". */
+  label: string;
+  path: string;
+  files: DeliveryRenderFile[];
+}
+
+interface DeliveryRendersResult extends Result {
+  folders?: DeliveryRenderFolder[];
+  /** Subtask names with no render in any folder found. */
+  missing?: string[];
+  /** The territory folder was found in no campaign. */
+  noTerritory?: boolean;
+}
+
+/** Deliverable identity: stem, no extension, no trailing _Vnn, upper-case. */
+export function deliveryRenderKey(name: string): string {
+  let s = String(name || "");
+  const dot = s.lastIndexOf(".");
+  if (dot > 0 && s.length - dot <= 5) s = s.slice(0, dot);
+  s = s.replace(/_[Vv]\d+$/, "");
+  return s.toUpperCase();
+}
+
+function deliveryRenderVersion(name: string): number {
+  const m = /_[Vv](\d+)(\.[^.]*)?$/.exec(String(name || ""));
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+function deliveryChildFolderNamed(parent: Folder, wanted: string): Folder | null {
+  let items: any[] = [];
+  try { items = parent.getFiles() || []; } catch (e) { return null; }
+  const want = wanted.toLowerCase();
+  for (let i = 0; i < items.length; i++) {
+    if (items[i] instanceof Folder && decode(String(items[i].name)).toLowerCase() === want) return items[i] as Folder;
+  }
+  return null;
+}
+
+/** Every folder under `root` (itself included) holding .mov files, `_` skipped. */
+function deliveryCollectMovFolders(root: Folder, rel: string, depth: number, out: { folder: Folder; rel: string; movs: File[] }[]) {
+  let items: any[] = [];
+  try { items = root.getFiles() || []; } catch (e) { return; }
+  const movs: File[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    const nm = decode(String(it.name));
+    if (it instanceof Folder) {
+      if (nm.charAt(0) === "_" || depth >= 3) continue;
+      deliveryCollectMovFolders(it as Folder, rel ? rel + "/" + nm : nm, depth + 1, out);
+    } else if (/\.mov$/i.test(nm)) {
+      movs.push(it as File);
+    }
+  }
+  if (movs.length) out.push({ folder: root, rel: rel, movs: movs });
+}
+
+export const deliveryFindRenders = (argsJson: string): DeliveryRendersResult => {
+  try {
+    let args: { code?: string; names?: string[] };
+    try { args = JSON.parse(argsJson); } catch (e) { return { success: false, error: "Could not read the job." }; }
+    const want = territoryCheck(String(args.code || ""));
+    if (!want) return { success: false, error: "The job names no territory this panel knows." };
+    const names = args.names || [];
+    const wanted: { [k: string]: string } = {};
+    for (let i = 0; i < names.length; i++) wanted[deliveryRenderKey(names[i])] = names[i];
+
+    const found: { [k: string]: boolean } = {};
+    const folders: DeliveryRenderFolder[] = [];
+    let sawTerritory = false;
+    const camps = loadLocLibCampaigns() || [];
+    for (let c = 0; c < camps.length; c++) {
+      const rootPath = camps[c].marketsRoot;
+      if (!rootPath) continue;
+      const root = new Folder(rootPath);
+      // .exists on a DIRECTORY -- the one case it can be trusted on the NAS.
+      if (!root.exists) continue;
+      let terrs: any[] = [];
+      try { terrs = root.getFiles() || []; } catch (e) { continue; }
+      for (let t = 0; t < terrs.length; t++) {
+        if (!(terrs[t] instanceof Folder)) continue;
+        const tName = decode(String(terrs[t].name));
+        if (tName.charAt(0) === "_" || territoryCheck(tName) !== want) continue;
+        sawTerritory = true;
+        const renders = deliveryChildFolderNamed(terrs[t] as Folder, "Renders");
+        if (!renders) continue;
+        const groups: { folder: Folder; rel: string; movs: File[] }[] = [];
+        deliveryCollectMovFolders(renders, "", 0, groups);
+        for (let g = 0; g < groups.length; g++) {
+          const files: DeliveryRenderFile[] = [];
+          const best: { [k: string]: number } = {};
+          let hits = 0;
+          for (let m = 0; m < groups[g].movs.length; m++) {
+            const nm = decode(String(groups[g].movs[m].name));
+            const key = deliveryRenderKey(nm);
+            const ver = deliveryRenderVersion(nm);
+            const matched = wanted.hasOwnProperty(key);
+            if (matched) { hits++; found[key] = true; }
+            if (!best.hasOwnProperty(key) || ver > best[key]) best[key] = ver;
+            files.push({ path: String(groups[g].movs[m].fsName), name: nm, key: key, version: ver, matched: matched, latest: false });
+          }
+          if (hits === 0) continue; // another job's batch
+          for (let f = 0; f < files.length; f++) files[f].latest = files[f].version === best[files[f].key];
+          files.sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });
+          folders.push({ campaign: camps[c].name, territory: tName, label: groups[g].rel || "Renders", path: String(groups[g].folder.fsName), files: files });
+        }
+      }
+    }
+    const missing: string[] = [];
+    for (const k in wanted) if (wanted.hasOwnProperty(k) && !found[k]) missing.push(wanted[k]);
+    return { success: true, folders: folders, missing: missing, noTerritory: !sawTerritory };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/**
+ * Import the picked MOVs (read-only, like every import here) into a project
+ * folder named after the batch, and SELECT them -- Delivery works on the
+ * Project panel's selection, so the next press is the one that makes comps.
+ * Idempotent by path: a MOV already in the project is selected, not imported
+ * a second time. A file that won't open is reported, never guessed around
+ * (no .exists on the share -- the import is the test).
+ */
+export const deliveryImportRenders = (argsJson: string): Result & { imported?: number; reused?: number; failed?: string[]; itemIds?: number[] } => {
+  let undoOpen = false;
+  try {
+    let args: { paths?: string[]; folder?: string };
+    try { args = JSON.parse(argsJson); } catch (e) { return { success: false, error: "Could not read the file list." }; }
+    const paths = args.paths || [];
+    if (!paths.length) return { success: false, error: "Nothing picked." };
+    const proj = app.project;
+
+    const byPath: { [p: string]: any } = {};
+    for (let i = 1; i <= proj.numItems; i++) {
+      const it: any = proj.item(i);
+      if (it && it.file && typeof it.mainSource !== "undefined") {
+        try { byPath[String(it.file.fsName)] = it; } catch (e) { /* no file */ }
+      }
+    }
+
+    app.beginUndoGroup("Import renders for delivery");
+    undoOpen = true;
+    const folderName = String(args.folder || "Renders");
+    let bin: any = null;
+    for (let i = 1; i <= proj.numItems; i++) {
+      const it: any = proj.item(i);
+      // Root-level only: app.project.item(i) is FLAT, and an imported
+      // project's own folder of the same name is not this one.
+      if (it && typeof it.numItems === "number" && it.name === folderName && it.parentFolder && it.parentFolder.parentFolder == null) { bin = it; break; }
+    }
+    if (!bin) bin = proj.items.addFolder(folderName);
+
+    let imported = 0;
+    let reused = 0;
+    const failed: string[] = [];
+    const picked: any[] = [];
+    for (let i = 0; i < paths.length; i++) {
+      const p = String(paths[i]);
+      if (byPath[p]) { picked.push(byPath[p]); reused++; continue; }
+      try {
+        const item: any = proj.importFile(new ImportOptions(new File(p)));
+        item.parentFolder = bin;
+        picked.push(item);
+        imported++;
+      } catch (eImp) {
+        failed.push(decode(String(new File(p).name)));
+      }
+    }
+    for (let i = 1; i <= proj.numItems; i++) {
+      try { (proj.item(i) as any).selected = false; } catch (e) { /* not selectable */ }
+    }
+    const itemIds: number[] = [];
+    for (let i = 0; i < picked.length; i++) { picked[i].selected = true; itemIds.push(picked[i].id); }
+    app.endUndoGroup();
+    undoOpen = false;
+    if (!picked.length) return { success: false, error: "None of them would import.", failed: failed };
+    return { success: true, imported: imported, reused: reused, failed: failed, itemIds: itemIds };
+  } catch (e) {
+    if (undoOpen) { try { app.endUndoGroup(); } catch (e2) {} }
     return { success: false, error: e.toString() };
   }
 };

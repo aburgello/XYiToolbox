@@ -413,7 +413,11 @@ try {
         check(await p2.eval(`!!document.querySelector(".ajm-note--warn .ajm-link")`), "…with a way to open the job in Wrike");
         check((await p2.eval(`document.querySelectorAll(".ajm table tbody tr, .ajm-row").length`)) >= 1, "…and still lists the one that did arrive");
         await p2.shot(path.join(SHOTS, "ui-unnamed-subtasks.png"));
-        check(!p2.blocked.some((u) => /refresh=1/.test(u)) && !(await p2.eval(`performance.getEntriesByType("resource").some(e => /refresh=1/.test(e.name))`)), "no live Wrike refresh was asked for");
+        // Opening revalidates with ONE live read (fetchJobsFresh), throttled
+        // panel-wide -- never one per surface, and it must not cost names.
+        const lives = await p2.eval(`performance.getEntriesByType("resource").filter(e => /refresh=1/.test(e.name)).length`);
+        check(lives <= 1, "at most one live Wrike read on open, however many surfaces ask", lives);
+        check(/4 more subtasks/.test(await p2.eval(text(".ajm-note--warn"))) && (await p2.eval(`document.querySelectorAll(".ajm table tbody tr, .ajm-row").length`)) >= 1, "…and the name that arrived is still there after it");
         check(p2.errors.length === 0, "no page errors", p2.errors.slice(0, 5));
     } finally {
         await p2.close();

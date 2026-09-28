@@ -3,8 +3,7 @@
 // =============================================================================
 import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence, useAnimate, useReducedMotion } from "motion/react";
-import { Truck, Package, ListPlus, Trash2, ChevronsDown, Send, AlertCircle, AlertTriangle, Check, X, Volume2, VolumeX, Folder, FileText, RotateCcw, ExternalLink } from "lucide-react";
-import TutorialIcon from "../TutorialIcon";
+import { Truck, ListPlus, Trash2, ChevronsDown, Send, AlertCircle, AlertTriangle, Check, X, Volume2, VolumeX, Folder, FileText, RotateCcw, ExternalLink } from "lucide-react";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import { evalTS } from "../../lib/utils/bolt";
 import { sfx } from "../../lib/utils/sfx";
@@ -13,6 +12,7 @@ import { child_process } from "../../lib/cep/node";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
 import Droplet from "../Droplet";
+import DeliveryJobs from "./DeliveryJobs";
 import "../shared.scss";
 import "./DeliveryHub.scss";
 
@@ -566,7 +566,6 @@ const DeliveryHubTool = () => {
     const [bulkFps, setBulkFps] = useState("");
     const [checkError, setCheckError] = useState<string | null>(null);
     const [checkBusy, setCheckBusy] = useState(false);
-    const [log, setLog] = useState("");
     const [batchKey, setBatchKey] = useState(0);
     const nextRowId = useRef(0);
 
@@ -832,7 +831,6 @@ const DeliveryHubTool = () => {
             );
             if (result === undefined) throw new Error("no bridge");
             if (result.success) {
-                setLog(result.log || "");
                 // ONLY WHAT ACTUALLY WENT IN. Every row used to be ticked the
                 // moment this returned, so a comp the host refused to queue --
                 // no .MOV and an unsaved project, i.e. anything Bespoke built --
@@ -844,7 +842,7 @@ const DeliveryHubTool = () => {
                     setCheckError(
                         (refused.length === 1 ? refused[0] + " was" : refused.length + " comps were") +
                         " NOT queued. Nowhere to write to. Save the project inside the campaign, " +
-                        "then queue again. See the log below."
+                        "then queue again."
                     );
                     pushToast("Queued, except " + refused.length + " with no output path.");
                 } else {
@@ -888,16 +886,8 @@ const DeliveryHubTool = () => {
             <div className="dh-content-inner">
             {/* ── Action bar ─────────────────────────────────────── */}
             <div className="dh-action-bar">
-                {/* THE HUB'S FRONT DOOR FOR A TUTORIAL. Every other tool hangs
-                    this off the title glyph in ToolScreen's content header, but
-                    the two hubs carry their own chrome and that header is
-                    suppressed for them -- so a clip named Deliver.mp4 had
-                    nowhere to be played from. Package, not Truck: the Delivery
-                    button 6px to its right already has a truck, and two of them
-                    in one bar reads as a duplicated control. */}
-                <TutorialIcon toolId="delivery-hub" toolLabel="Deliver" className="dh-hub-icon">
-                    <Package size={16} />
-                </TutorialIcon>
+                {/* No hub glyph: the Package (and its tutorial door) was removed
+                    on request -- the Delivery button leads the bar. */}
                 <DeliveryButton busy={deliveryBusy} onClick={runDelivery} />
 
                 {watchingCount > 0 && (
@@ -963,7 +953,7 @@ const DeliveryHubTool = () => {
                             <button
                                 className="dh-icon-btn"
                                 disabled={checkBusy}
-                                onClick={() => { setRows([]); setLog(""); setCheckError(null); setBatchKey((k) => k + 1); }}
+                                onClick={() => { setRows([]); setCheckError(null); setBatchKey((k) => k + 1); }}
                             >
                                 <Trash2 size={14} />
                             </button>
@@ -971,6 +961,9 @@ const DeliveryHubTool = () => {
                     )}
                 </AnimatePresence>
             </div>
+
+            {/* Wrike jobs in Prep for delivery, and their renders off disk. */}
+            <DeliveryJobs pushToast={(t, type) => pushToast(t, type)} onDeliver={runDelivery} />
 
             {/* ── Bulk edit bar ─────────────────────────────────────
                 Field order here MATCHES the row order below (MB, fps, ≤ Mbps).
@@ -1386,7 +1379,9 @@ const DeliveryHubTool = () => {
                     </motion.div>
                 )}
             </AnimatePresence>
-            {log && <pre className="dh-log">{log}</pre>}
+            {/* No queue log: it filled the page after every render and pushed
+                everything else out of reach. The rows' Queued/NOT queued state
+                and the error line above say what the log did. */}
 
             {/* ── Toasts ─────────────────────────────────────────── */}
             <div className="dh-toast-stack">

@@ -21,7 +21,7 @@
 import React, { useEffect, useState } from "react";
 import { Briefcase, RefreshCw } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
-import { fetchJobs, parseJobTitle, jobReadiness, territoryFlag, type WrikeJob } from "../lib/jobsFeed";
+import { fetchJobs, fetchJobsFresh, parseJobTitle, jobReadiness, territoryFlag, type WrikeJob } from "../lib/jobsFeed";
 import ActiveJobModal from "../ActiveJobModal";
 
 interface Props {
@@ -50,15 +50,18 @@ const LocaliseJobsStrip: React.FC<Props> = ({ hereCode, onSent }) => {
         // a live Wrike refresh: that is the one path that loses subtask names
         // (ActiveJobModal has the measurement), which would make the strip's
         // own button the way jobs lose their rows.
-        const res = await fetchJobs(owner, live);
-        const listFor = res.viewingAs || owner;
-        setWho(listFor);
-        setMock(res.mock);
-        setJobs(res.jobs.filter((j) =>
-            j.assignee === listFor
-            && (j.subtaskCount ?? 0) > 0
-            && jobReadiness(j.status) !== "done"
-            && (j.subtasksDone ?? 0) < (j.subtaskCount ?? 0)));
+        const apply = (res: Awaited<ReturnType<typeof fetchJobs>>) => {
+            const listFor = res.viewingAs || owner;
+            setWho(listFor);
+            setMock(res.mock);
+            setJobs(res.jobs.filter((j) =>
+                j.assignee === listFor
+                && (j.subtaskCount ?? 0) > 0
+                && jobReadiness(j.status) !== "done"
+                && (j.subtasksDone ?? 0) < (j.subtaskCount ?? 0)));
+        };
+        // On open: the cache now, a live read behind it (fetchJobsFresh).
+        apply(live ? await fetchJobs(owner, true) : await fetchJobsFresh(owner, apply));
     };
 
     useEffect(() => { void load(false); }, []);

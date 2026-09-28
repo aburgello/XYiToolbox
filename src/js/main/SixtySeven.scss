@@ -262,6 +262,26 @@
     &:disabled { opacity: 0.5; cursor: default; }
 }
 
+// Compare and its DIFF toggle: icons beside Add to comp, same outline family.
+.s67-icon {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 6px;
+    background: none;
+    color: #cfeee9;
+    cursor: pointer;
+
+    &:hover:not(:disabled),
+    &:active:not(:disabled) { background: rgba(45, 212, 191, 0.16); border-color: var(--cat-border, #2dd4bf); }
+    &:disabled { opacity: 0.5; cursor: default; }
+}
+
 .s67-dropped {
     margin: 4px 0 0;
     padding: 6px 7px;

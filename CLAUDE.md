@@ -471,9 +471,10 @@ where you are**: the territory comes from the card's detection (`onHere`), never
 a second lookup, and the batch only when the open project's path really is
 `<Territory>/AE/<Batch_*>/…`. The campaign banner washes behind it. CSV
 Localiser's scan list pins the same territory first (`hereTerritory`).
-**Your Wrike jobs sit on the page too** (`LocaliseJobsStrip.tsx`), one line of
-chips under the header, the open project's territory lit. A chip opens the same
-`ActiveJobModal` as the home card; sending bumps CSV Localiser's
+**Your Wrike jobs sit on the page too** (`LocaliseJobsStrip.tsx`), chips under the
+header that **wrap, never scroll sideways** (AE gives a mouse no horizontal
+wheel, so a chip past the edge was unreachable; Deliver's strip follows suit), the open project's territory lit. A chip opens the same
+`ActiveJobModal` as the home card. **Every jobs surface opens fresh**: `fetchJobsFresh` shows the feed's cache at once and revalidates with ONE live Wrike read, throttled panel-wide to one per 2 minutes and shared by whoever asks; a failed live read puts the previous cache back (never the sample list over real rows) and names the cache had are filled back by subtask id. Sending bumps CSV Localiser's
 `handoffTick`, because that tool is already mounted and takes a staged batch
 only on mount otherwise. No strip at all when untagged, empty or finished. The Library's own
 territory list pins the open project's territory first rather than repeating it
@@ -640,9 +641,9 @@ nobody records one.
   "the affordance only exists when the clip does" means for an icon inside a
   button. Review's goes in the
   `.rh-tab-row` wrapper BESIDE `.rh-tab-bar`, never inside it — that bar's
-  highlight is `width: 50%` sliding between exactly two children. Delivery's
-  leads `.dh-action-bar` with a `Package`, not the registry's `Truck`, which
-  the Delivery button beside it already has.
+  highlight is `width: 50%` sliding between exactly two children. Delivery has
+  **no** tutorial icon: its `Package` glyph was removed on request (2026-09-28),
+  so a `Deliver.mp4` has nowhere to play from until one is put back.
 - **A MODE can be a subject in its own right** (`lib/tutorialSubject.ts`), and
   Bespoke is the only tool that needs it — three builds sharing a door and
   nothing else. The header icon stays mounted after a mode is picked, so it is
@@ -1011,6 +1012,23 @@ because a bare 950 is an ordinary MB figure. `2GB` had the same hole inverted
 off the token (`cellNumbers` already does) and use THAT; keep the `\b` tests
 only for spelled-out forms (`800 kilobytes`), which carry no unit token.
 
+**Deliver shows your Wrike jobs in "Prep for delivery" and mirrors their
+renders** (`tools/DeliveryJobs.tsx`, `deliveryFindRenders`/`deliveryImportRenders`
+in `deliver.ts`). The job's territory is resolved through `territoryCheck`
+(exact) against every Localised Library campaign's Markets root; its
+`Renders/` is walked with `_` folders skipped, and only folders holding at
+least one of the job's deliverables come back -- the WHOLE folder, so it reads
+as Finder would. The pairing is the subtask name against the file's stem with
+`_Vnn` and extension off, upper-cased, **exact** (Wrike writes `LEDKELETI`,
+the disk `Ledkeleti`); the latest version is ticked, anything else is shown
+unticked. Import is read-only, into a root-level bin named `<Territory> <Batch>`,
+idempotent by path, and SELECTS the items, because Delivery works on the
+selection -- the page's own Delivery then makes the comps. Only subtasks in
+Prep for delivery are asked for when the feed says so. The feed only carries
+the tagged machine's own jobs on the Today/Tomorrow boards, so a job outside
+those simply isn't offered. `node scripts/probe-delivery-renders.cjs` and
+`node scripts/ui-deliver-jobs.mjs` guard it.
+
 **Delivery's spec autofill counts DISAGREEING rows, not rows.** A sheet listing
 the same deliverable twice is normal — Norway's PRE sheet carries PlayAdshel
 1080x1920 10s and PlayBillboard 1920x1080 10s twice each, all four saying
@@ -1302,6 +1320,12 @@ scope its button styles under its own root: `.form-tool button` (0,1,1) and its
 hover (0,3,1) outrank a bare `.tool-*` class, which is how every Edit In Context
 control ended up the same black box.
 
+`node scripts/probe-darken.cjs` (after `yarn build`) drives Darken's pool over
+a stubbed parented, scaled layer. **A pool is sized to where the layer is
+DRAWN**: its `sourceRectAtTime` corners through `toComp()` on a temporary null
+(`darkenLayerBoxInComp`), never its Position/Scale values, which ignore the
+anchor, rotation and every parent and put the pool off frame.
+
 `node scripts/probe-job-titles.cjs` (no build needed) drives
 `parseJobTitle` over dashed and dashless Wrike titles. The batch is read only
 from the word "Batch": it becomes an output folder, so a trailing number is
@@ -1516,7 +1540,10 @@ the layer is a **guide layer**, so a forgotten reference can never render into
 a deliverable, and both the layer (`67 · `) and the markers (`67: `) carry a
 prefix, so a second press replaces what the first left and **somebody else's
 markers on the same comp are never touched**. A note past the comp's end is
-clamped to the last frame rather than dropped.
+clamped to the last frame rather than dropped. Beside it, a **compare icon** builds Review's
+side-by-side comp for the comp you are in (`createReviewComparison`, the same
+builder, never a second one) and a second press reopens it rather than
+stacking `Compare_…_2`; the DIFF toggle appears once one exists.
 
 **Two boards for one creative are MERGED, never deduplicated silently.**
 `workflowMergeEntries` (the board's ⋯ menu) appends the source's notes by id,

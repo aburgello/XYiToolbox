@@ -25,6 +25,8 @@ import { loadCampaignsRaw, scanRendersForCreative, RenderEntry } from "./review"
 export interface SixtySevenContext extends Result {
   /** What the comp's own name says. */
   compName?: string;
+  /** The comp's item id -- what Review's comparison builder takes. */
+  compId?: number;
   creative?: string;
   size?: string;
   duration?: string;
@@ -194,6 +196,7 @@ export const sixtySevenContext = (): SixtySevenContext => {
     return {
       success: true,
       compName: comp.name,
+      compId: comp.id,
       creative: creative,
       size: size,
       duration: duration,

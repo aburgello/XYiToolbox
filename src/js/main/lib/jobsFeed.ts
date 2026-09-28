@@ -69,6 +69,8 @@ export interface WrikeSubtask {
 // Custom Wrike statuses that mean "this can be localised now" -- a studio
 // decision, not a guess. Everything outside the list is shown but never sent.
 export const LOCALISABLE_STATUSES = /^(backlog|motion|save\s*png)$/i;
+/** Rendered and waiting to be delivered: the Deliver page offers these. */
+export const DELIVERABLE_STATUSES = /^prep\s*(for\s*)?deliver/i;
 /** Finished for real -- struck through rather than merely held back. */
 export const FINISHED_STATUSES = /^(delivered|completed?|done|published)$/i;
 
@@ -429,9 +431,85 @@ export function refreshJobs(member: string): Promise<JobsFeedResult> {
     return fetchJobs(member, true, true);
 }
 
+// --- fresh on open -----------------------------------------------------
+// The cached feed is only as current as the last time somebody had the Motion
+// board open in TimeHub, so every surface opened on stale jobs and the refresh
+// button was the only way to the truth. Opening now shows the cache at once
+// and REVALIDATES behind it with a live read.
+//
+// THROTTLED PANEL-WIDE: one live read per LIVE_MIN_GAP_MS whichever surface
+// asks (home card, Localise, Deliver), and concurrent askers share the one in
+// flight -- so hopping between pages costs Wrike nothing extra.
+//
+// A FAILED LIVE READ NEVER REPLACES GOOD ROWS (the team-state rule): if it
+// comes back as the sample list, the previous cache is put back and nobody is
+// told anything changed. And a live read that names FEWER subtasks than the
+// cache did has the missing names filled back from the cache by id -- the
+// live path is the one that has lost names before (ActiveJobModal's note).
+const LIVE_MIN_GAP_MS = 2 * 60 * 1000;
+let lastLiveAt = 0;
+let liveInFlight: Promise<JobsFeedResult | null> | null = null;
+
+function keepKnownNames(fresh: JobsFeedResult, prev: JobsFeedResult | null): JobsFeedResult {
+    if (!prev || prev.mock) return fresh;
+    const known: Record<string, string> = {};
+    prev.jobs.forEach((j) => (j.subtasks || []).forEach((st) => { if (st.name) known[st.id] = st.name; }));
+    fresh.jobs.forEach((j) => {
+        if (!j.subtasks) return;
+        j.subtasks.forEach((st) => { if (!st.name && known[st.id]) st.name = known[st.id]; });
+    });
+    return fresh;
+}
+
+/**
+ * The cached jobs now, and -- at most once per LIVE_MIN_GAP_MS -- a live read
+ * handed to `onFresh` when it lands. `onFresh` is never called with a failed
+ * or sample read.
+ */
+export async function fetchJobsFresh(member: string, onFresh: (res: JobsFeedResult) => void): Promise<JobsFeedResult> {
+    const first = await fetchJobs(member);
+    if (first.mock && first.error) return first; // unreachable: don't hammer it
+    const due = Date.now() - lastLiveAt >= LIVE_MIN_GAP_MS;
+    if (due && !liveInFlight) {
+        lastLiveAt = Date.now();
+        const before = cache;
+        liveInFlight = fetchJobs(member, true, true).then((res) => {
+            if (res.mock) {
+                cache = before;
+                cacheMember = member;
+                return null;
+            }
+            cache = keepKnownNames(res, before);
+            return cache;
+        }).finally(() => { liveInFlight = null; });
+    }
+    if (liveInFlight) {
+        void liveInFlight.then((res) => { if (res) onFresh(res); });
+    }
+    return first;
+}
+
 // Splits "FID - IT - ARTWALL GALLERIA - Batch 2" into its parts. The title is a
 // human convention, so every part is optional and a title that doesn't match
 // still lists -- it just shows fewer chips.
+/**
+ * The words every title starts with ("SF Motion Outdoor"), when there are two
+ * or more titles and they share any -- so a strip can say it once and let each
+ * chip carry only what differs ("SI 2", "CO 1"). Whole words only.
+ */
+export function commonTitlePrefix(titles: string[]): string {
+    if (titles.length < 2) return "";
+    const split = titles.map((t) => t.trim().split(/\s+/));
+    const out: string[] = [];
+    for (let i = 0; ; i++) {
+        const w = split[0][i];
+        // Never swallow a whole title: every chip must keep a word.
+        if (!w || split.some((ws) => ws[i] !== w || ws.length <= i + 1)) break;
+        out.push(w);
+    }
+    return out.join(" ");
+}
+
 export function parseJobTitle(title: string): { film: string; territory: string; name: string; batch: string } {
     const parts = title.split(/\s+-\s+/).map((p) => p.trim());
     // TITLES WITHOUT DASHES. Real boards also write "SF Motion Outdoor LV" and

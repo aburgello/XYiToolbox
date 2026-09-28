@@ -25,7 +25,7 @@ import { Briefcase, ChevronDown, ChevronRight, MapPin, RefreshCw, Users, Check }
 import Droplet from "./Droplet";
 import { evalTS } from "../lib/utils/bolt";
 import Tooltip from "./Tooltip";
-import { fetchJobs, refreshJobs, saveJobsFeedConfig, loadJobsFeedConfig, parseJobTitle, jobReadiness, territoryFlag, statusTint, type WrikeJob } from "./lib/jobsFeed";
+import { fetchJobs, fetchJobsFresh, refreshJobs, saveJobsFeedConfig, loadJobsFeedConfig, parseJobTitle, jobReadiness, territoryFlag, statusTint, type WrikeJob } from "./lib/jobsFeed";
 import ActiveJobModal from "./ActiveJobModal";
 
 interface ActiveJob {
@@ -234,13 +234,16 @@ export const ActiveJobs: React.FC<Props> = ({ onOpen }) => {
             } catch (e) {
                 /* nothing saved yet */
             }
-            const res = await fetchJobs(who);
-            if (cancelled) return;
-            setJobs(res.jobs);
-            setJobsMock(res.mock);
-            setJobsError(res.error);
-            setViewingAs(res.viewingAs);
-            setImpersonating(res.impersonating);
+            const apply = (res: Awaited<ReturnType<typeof fetchJobs>>) => {
+                if (cancelled) return;
+                setJobs(res.jobs);
+                setJobsMock(res.mock);
+                setJobsError(res.error);
+                setViewingAs(res.viewingAs);
+                setImpersonating(res.impersonating);
+            };
+            // The cache now, a live Wrike read behind it (fetchJobsFresh).
+            apply(await fetchJobsFresh(who, apply));
         })();
         return () => { cancelled = true; };
     }, []);

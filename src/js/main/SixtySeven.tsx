@@ -18,7 +18,7 @@
 // =============================================================================
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, MapPin, Plus, Film, AlertCircle, Loader2, Layers, Trash2, TimerOff } from "lucide-react";
+import { X, MapPin, Plus, Film, AlertCircle, Loader2, Layers, Trash2, TimerOff, Columns2, Contrast } from "lucide-react";
 import { toFileUrl } from "./lib/fileUrl";
 import { pickPreviewRender } from "./lib/renderPreview";
 import { evalTS } from "../lib/utils/bolt";
@@ -33,6 +33,7 @@ interface Ctx {
     creativeFolder?: string;
     error?: string;
     compName?: string;
+    compId?: number;
     creative?: string;
     size?: string;
     duration?: string;
@@ -93,6 +94,10 @@ export const SixtySevenHost: React.FC = () => {
     const [saving, setSaving] = useState(false);
     const [dropping, setDropping] = useState(false);
     const [dropped, setDropped] = useState("");
+    const [comparing, setComparing] = useState(false);
+    /** The comparison comp built this session, keyed by the comp it compares,
+     *  so a second press opens it instead of stacking Compare_…_2. */
+    const [compare, setCompare] = useState<{ forComp: number; compId: number } | null>(null);
     const videoRef = useRef<HTMLVideoElement | null>(null);
 
     useEffect(() => {
@@ -197,6 +202,41 @@ export const SixtySevenHost: React.FC = () => {
         }
     };
 
+    /**
+     * REVIEW'S COMPARE, pointed at the comp you are in: the master render and
+     * your comp side by side, with a DIFF layer between them. Same builder as
+     * Review (createReviewComparison), so the two can never make different
+     * comps. The master is imported read-only into an OV folder.
+     */
+    const openCompare = async () => {
+        if (!ctx || !ctx.compId || !render) return;
+        setComparing(true);
+        try {
+            if (compare && compare.forComp === ctx.compId) {
+                const f = (await evalTSSafe("focusReviewComp", compare.compId)) as { success: boolean } | null;
+                if (f && f.success) return;
+                // Deleted since: build it again.
+            }
+            const r = (await evalTSSafe("createReviewComparison", render.path, ctx.compId, ctx.compName || "")) as
+                { success: boolean; error?: string; compId?: number; compName?: string } | null;
+            if (r && r.compId) {
+                setCompare({ forComp: ctx.compId, compId: r.compId });
+                await evalTSSafe("focusReviewComp", r.compId);
+                setDropped(`Opened ${r.compName || "the comparison comp"}: the master on one side, your comp on the other.`);
+            } else {
+                setDropped((r && r.error) || "Couldn't build the comparison.");
+            }
+        } finally {
+            setComparing(false);
+        }
+    };
+
+    const toggleDiff = async () => {
+        if (!compare) return;
+        const r = (await evalTSSafe("reviewToggleDiff", compare.compId)) as { success: boolean; visible?: boolean; error?: string } | null;
+        if (r) setDropped(r.success ? (r.visible ? "Difference view on." : "Difference view off.") : (r.error || "Couldn't toggle the difference view."));
+    };
+
     /** Move a note's time to where the clip is, or take the time off. */
     const setNoteTime = async (n: Note, at: number | null) => {
         const r = (await evalTSSafe(
@@ -283,6 +323,20 @@ export const SixtySevenHost: React.FC = () => {
                             <button type="button" className="s67-drop" disabled={dropping} onClick={dropIn}>
                                 <Layers size={12} />
                                 <span>{dropping ? "Adding…" : "Add to comp"}</span>
+                            </button>
+                        </Tooltip>
+                    )}
+                    {ctx && ctx.success && render && ctx.compId ? (
+                        <Tooltip text={compare && compare.forComp === ctx.compId ? "Open the comparison comp again" : "Compare with the master: side by side in a new comp, like Review"}>
+                            <button type="button" className="s67-icon" disabled={comparing} onClick={openCompare} aria-label="Compare with the master">
+                                {comparing ? <Loader2 size={13} /> : <Columns2 size={13} />}
+                            </button>
+                        </Tooltip>
+                    ) : null}
+                    {compare && ctx && compare.forComp === ctx.compId && (
+                        <Tooltip text="Toggle the DIFF (difference) layer">
+                            <button type="button" className="s67-icon" onClick={toggleDiff} aria-label="Toggle the difference layer">
+                                <Contrast size={13} />
                             </button>
                         </Tooltip>
                     )}

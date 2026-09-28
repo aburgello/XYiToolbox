@@ -9703,6 +9703,60 @@ function darkenEllipse(cx: number, cy: number, rx: number, ry: number): Shape {
   return s;
 }
 
+/**
+ * WHERE A LAYER IS DRAWN, in comp space: the bounding box of its
+ * sourceRectAtTime corners run through toComp().
+ *
+ * The pool used to centre on the layer's Position value and size itself off
+ * its own Scale -- which ignores the anchor point (a rect whose content isn't
+ * centred on it), rotation, and the whole parent chain. A CTA parented under a
+ * scaled, moved null came out as a pool a comp-width away from it, often off
+ * frame entirely. ExtendScript has no toComp, so a temporary null asks an
+ * expression, once per corner, and is removed (with its footage item, which a
+ * removed null otherwise leaves in the project) in a finally.
+ *
+ * Null when it can't be measured (a camera, a light, expressions off); the
+ * caller then falls back to the comp's centre rather than guessing.
+ */
+function darkenLayerBoxInComp(comp: CompItem, layer: Layer): { x0: number; y0: number; x1: number; y1: number } | null {
+  if (typeof (layer as any).sourceRectAtTime !== "function") return null;
+  let probe: AVLayer | null = null;
+  let probeSource: any = null;
+  try {
+    const t = comp.time;
+    const r = (layer as AVLayer).sourceRectAtTime(t, false);
+    if (!r || !(r.width > 0) || !(r.height > 0)) return null;
+    probe = comp.layers.addNull();
+    probeSource = probe.source;
+    // Read the index AFTER adding the null: it went on top and pushed
+    // everything down by one.
+    const idx = layer.index;
+    const corners = [
+      [r.left, r.top], [r.left + r.width, r.top],
+      [r.left, r.top + r.height], [r.left + r.width, r.top + r.height],
+    ];
+    const pos = probe.transform.position;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let i = 0; i < corners.length; i++) {
+      pos.expression = "var p = thisComp.layer(" + idx + ").toComp([" + corners[i][0] + ", " + corners[i][1] + ", 0]); [p[0], p[1]];";
+      const v = pos.valueAtTime(t, false) as number[];
+      // Checked AFTER the read: an expression is only evaluated on demand.
+      if (!pos.expressionEnabled || pos.expressionError) return null;
+      if (!v || typeof v[0] !== "number" || isNaN(v[0]) || isNaN(v[1])) return null;
+      if (v[0] < x0) x0 = v[0];
+      if (v[0] > x1) x1 = v[0];
+      if (v[1] < y0) y0 = v[1];
+      if (v[1] > y1) y1 = v[1];
+    }
+    return { x0: x0, y0: y0, x1: x1, y1: y1 };
+  } catch (e) {
+    return null;
+  } finally {
+    try { if (probe) probe.remove(); } catch (e2) { /* already gone */ }
+    try { if (probeSource && probeSource.usedIn && probeSource.usedIn.length === 0) probeSource.remove(); } catch (e3) { /* shared */ }
+  }
+}
+
 export const generateDarken = (style: string, opacityPct: number, featherPx: number, coveragePct: number): Result => {
   try {
     const comp = app.project.activeItem;
@@ -9718,6 +9772,8 @@ export const generateDarken = (style: string, opacityPct: number, featherPx: num
     const anchorLayer = sel.length > 0 ? (sel[0] as AVLayer) : null;
 
     app.beginUndoGroup("Generate Darken");
+
+    const anchorBox = anchorLayer && style === "pool" ? darkenLayerBoxInComp(comp, anchorLayer) : null;
 
     const flat = style === "flat";
     // Oversize so the mask feather never meets the layer edge. Flat needs no
@@ -9744,20 +9800,15 @@ export const generateDarken = (style: string, opacityPct: number, featherPx: num
         let cy = comp.height / 2;
         let rx = comp.width / 4;
         let ry = comp.height / 4;
-        if (anchorLayer) {
-          try {
-            const pos = (anchorLayer.property("Position") as Property).value as number[];
-            const sc = (anchorLayer.property("Scale") as Property).value as number[];
-            const r = anchorLayer.sourceRectAtTime(comp.time, false);
-            // Approximate: assumes the layer is unparented and unrotated. The
-            // generous feather padding absorbs the error in practice.
-            cx = pos[0];
-            cy = pos[1];
-            rx = Math.abs(r.width * (sc[0] / 100)) / 2 + feather * 0.75 + 40;
-            ry = Math.abs(r.height * (sc[1] / 100)) / 2 + feather * 0.75 + 40;
-          } catch (e) {
-            // Fall through to the comp-centred default above.
-          }
+        // Measured where the layer is DRAWN (anchor, rotation and parents
+        // included) -- see darkenLayerBoxInComp. The box is taken before the
+        // solid exists, so the probe's index shuffle can't touch it.
+        const box = anchorBox;
+        if (box) {
+          cx = (box.x0 + box.x1) / 2;
+          cy = (box.y0 + box.y1) / 2;
+          rx = (box.x1 - box.x0) / 2 + feather * 0.75 + 40;
+          ry = (box.y1 - box.y0) / 2 + feather * 0.75 + 40;
         }
         shape = darkenEllipse(cx + pad, cy + pad, rx, ry);
       } else {
