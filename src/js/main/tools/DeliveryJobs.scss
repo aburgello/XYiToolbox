@@ -4,9 +4,13 @@
 .dj {
     position: relative;
     z-index: 1;
-    // Same inset as .dh-action-bar above it.
-    margin: 4px 0 8px;
-    padding: 0 14px;
+    // ITS OWN BAND, closed by the same hairline as .dh-action-bar: the bulk
+    // MB/fps/Mbps bar below belongs to the comps list, and with no line
+    // between them the two read as one block.
+    margin: 0;
+    padding: 10px 14px 12px;
+    border-bottom: 1px solid var(--surface-divider, #272727);
+    background: rgba(255, 255, 255, 0.015);
     min-width: 0;
 
     button { font-family: inherit; }
@@ -194,7 +198,48 @@
     padding: 5px 2px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 
-    &.is-other .dj-file { color: #8a8079; }
+    &.is-other // A later version of the row above, hung off it so the pair reads as one.
+.dj-row.is-version {
+    padding-left: 14px;
+    border-bottom-color: rgba(255, 255, 255, 0.04);
+    box-shadow: inset 2px 0 0 rgba(255, 255, 255, 0.1);
+}
+.dj-row.is-bad .dj-file { color: #b88a8a; text-decoration: line-through rgba(248, 113, 113, 0.5); }
+
+// Finder's own label colours.
+.dj-dot {
+    flex-shrink: 0;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+
+    &.is-green { background: #4ade80; }
+    &.is-orange { background: #fb923c; }
+    &.is-red { background: #f87171; }
+    &.is-yellow { background: #facc15; }
+    &.is-blue { background: #60a5fa; }
+    &.is-purple { background: #c084fc; }
+    &.is-gray { background: #9ca3af; }
+}
+
+.dj .dj-play {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    color: #9a8f86;
+    cursor: pointer;
+
+    &:hover, &:active { background: rgba(255, 255, 255, 0.07); color: var(--cat-icon, #fb923c); }
+}
+
+.dj-file { color: #8a8079; }
 }
 
 .dj-file {
@@ -214,6 +259,34 @@
     background: rgba(255, 255, 255, 0.06);
     color: #9a8f86;
     font-size: 10px;
+}
+
+.dj-tag.is-warn { background: rgba(251, 191, 36, 0.12); color: #fbbf24; }
+
+.dj-missing { margin-top: 8px; }
+.dj-missing-row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    min-width: 0;
+    padding: 3px 2px 3px 10px;
+    font-size: 11.5px;
+}
+.dj-missing-name {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #e8e2dc;
+}
+.dj-missing-why {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #fbbf24;
 }
 
 .dj-note {

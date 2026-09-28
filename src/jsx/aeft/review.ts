@@ -4,7 +4,7 @@
 // now a thin barrel -- see its header comment for context.
 // =============================================================================
 import { Result, SETTINGS_SECTION, decode } from "./shared";
-import { getMastersIndex, pickBestMasterFromIndex, mastersSkipFolder, mastersCanon } from "./tools";
+import { getMastersIndex, pickBestMasterFromIndex, mastersSkipFolder, mastersCanon, parseFilenameMeta, MasterIndexEntry } from "./tools";
 
 
 
@@ -630,6 +630,18 @@ interface ReviewMatchEntry {
   masterStem: string | null;
 }
 
+/** True when every master's path carries this token (canonicalised the way
+ *  the scorer compares), so matching on it would accept all of them. */
+function reviewTokenInEveryMaster(index: MasterIndexEntry[], token: string, cache: { [k: string]: boolean }): boolean {
+  var c = mastersCanon(token);
+  if (!c) return true;
+  if (cache.hasOwnProperty(c)) return cache[c];
+  var all = index.length > 1;
+  for (var i = 0; all && i < index.length; i++) if (index[i].canonPath.indexOf(c) === -1) all = false;
+  cache[c] = all;
+  return all;
+}
+
 export const reviewMatchToMaster = (mastersRoot: string, itemsJson: string): Result & { items?: ReviewMatchEntry[] } => {
   try {
     var items: { name: string; sourcePath: string | null }[] = JSON.parse(itemsJson);
@@ -653,6 +665,7 @@ export const reviewMatchToMaster = (mastersRoot: string, itemsJson: string): Res
     //    try each filename token as a campaign, and score through the
     //    existing pickBestMasterFromIndex.
     var out: ReviewMatchEntry[] = [];
+    var tokenCache: { [k: string]: boolean } = {};
 
     for (var ii = 0; ii < items.length; ii++) {
       var item = items[ii];
@@ -688,12 +701,23 @@ export const reviewMatchToMaster = (mastersRoot: string, itemsJson: string): Res
       // territory code.  pickBestMasterFromIndex matches campaign as a
       // substring of the master's canonPath, so whichever token is the
       // real creative name will hit and the rest will miss harmlessly.
+      // THE CREATIVE FIRST, as parsed -- the same field every other caller of
+      // the scorer passes. This loop used to start at the FIRST token, which
+      // is the film title (`FID`), and the scorer accepts a creative as a
+      // substring anywhere in a master's path: `FID` is in every Forgotten
+      // Island master, so the first try always "matched", the closest ASPECT
+      // won, and a whole PortalToParadise batch came back paired with
+      // InternationalPayoff.
+      var creative = parseFilenameMeta(stem).campaign || "";
       var tokens = stem.split("_");
+      var candidates: string[] = [];
+      if (creative) candidates.push(creative);
+      for (var ci = 0; ci < tokens.length; ci++) if (tokens[ci] !== creative) candidates.push(tokens[ci]);
       var mp4Path: string | null = null;
       var masterStem: string | null = null;
 
-      for (var ti = 0; ti < tokens.length; ti++) {
-        var token = tokens[ti];
+      for (var ti = 0; ti < candidates.length; ti++) {
+        var token = candidates[ti];
         // Skip tokens that can't possibly be a creative name.
         if (!token) continue;
         if (/^\d+$/.test(token)) continue;                          // all digits
@@ -703,6 +727,9 @@ export const reviewMatchToMaster = (mastersRoot: string, itemsJson: string): Res
         if (token === "OV") continue;                                // master suffix
         if (token === "DGTL" || token === "INTL" || token === "DOM") continue;  // fixed convention tokens
         if (token === "DOOH" || token === "DFOH" || token === "DINTH" || token === "FOH") continue;  // artwork types
+        // A word EVERY master carries tells them apart not at all (the film
+        // title, INTL): skip it rather than let it match the lot.
+        if (reviewTokenInEveryMaster(index, token, tokenCache)) continue;
 
         var match = pickBestMasterFromIndex(index, token, size, duration);
         if (match) {
@@ -832,9 +859,21 @@ export const createComparisonComp = (renderPath: string, width: number, height: 
     const rightLayer = comp.layers.add(selectedItem);
     fitLayerIntoBox(rightLayer, width, height, width + width / 2, height / 2);
 
-    // Left half: the freshly-imported OV render.
+    // Left half: the freshly-imported OV render -- after the local's
+    // frontcard, when it has one (frontcardOffset), so both show one beat.
     const leftLayer = comp.layers.add(ovFootage);
     fitLayerIntoBox(leftLayer, width, height, width / 2, height / 2);
+    const offset = frontcardOffset(selectedItem.duration || 0, ovFootage.duration || 0, frameRate);
+    if (offset > 0) {
+      try {
+        leftLayer.startTime = offset;
+        comp.displayStartTime = -offset;
+        comp.markerProperty.setValueAtTime(offset, new MarkerValue("Frontcard ends · master starts"));
+        comp.workAreaStart = offset;
+        comp.workAreaDuration = Math.max(1 / frameRate, duration - offset);
+        comp.time = offset;
+      } catch (eOff) { /* the comp is still usable unaligned */ }
+    }
 
     comp.openInViewer();
     app.endUndoGroup();
@@ -855,10 +894,20 @@ interface ReviewLoadResult extends Result {
   items?: { id: number; name: string; sourcePath: string | null; duration: number; frameRate: number }[];
 }
 
+/** A master render (OV token last, before any extension) or a comparison
+ *  comp this tool built. Read off the FILE's name where there is one. */
+export function reviewIsOwnByProduct(name: string, sourcePath: string | null): boolean {
+  if (/^Compare_/.test(String(name || ""))) return true;
+  var base = String(sourcePath || name || "");
+  base = base.substring(Math.max(base.lastIndexOf("/"), base.lastIndexOf("\\")) + 1).replace(/\.[^.]+$/, "");
+  return /_OV\d*$/i.test(base);
+}
+
 export const reviewLoadSelectedItems = (): ReviewLoadResult => {
   try {
     const sel = app.project.selection;
     const items: ReviewLoadResult["items"] = [];
+    var skipped = 0;
 
     for (var i = 0; i < sel.length; i++) {
       var item = sel[i];
@@ -895,11 +944,20 @@ export const reviewLoadSelectedItems = (): ReviewLoadResult => {
         continue;
       }
 
+      // NOT THE REVIEW'S OWN BY-PRODUCTS. Compare imports each master render
+      // into the project, and AE leaves an import SELECTED -- so the next
+      // Import & Compare took eleven master .mp4s in as eleven rows to
+      // review. A master (`…_OV.mp4`, `…_OV1`) and a Compare_ comp are never
+      // what is under review; they are what it is compared against.
+      if (reviewIsOwnByProduct(name, sourcePath)) { skipped++; continue; }
+
       items.push({ id: item.id, name: name, sourcePath: sourcePath, duration: duration, frameRate: frameRate });
     }
 
     if (items.length === 0) {
-      return { success: false, error: "Select one or more comps or footage items in the Project panel first." };
+      return { success: false, error: skipped
+        ? "Only master renders and comparison comps are selected. Select the localised renders to review."
+        : "Select one or more comps or footage items in the Project panel first." };
     }
     return { success: true, items: items };
   } catch (e) {
@@ -946,6 +1004,25 @@ interface ReviewComparisonResult extends Result {
   // lets the UI (and a debugging session) see which enrichment steps actually
   // ran on the real AE install instead of failing silently.
   enrichNotes?: string;
+}
+
+/**
+ * THE FRONTCARD OFFSET. A localised render carries the frontcard at its START
+ * (5s is usual) and the master does not, so side by side at the same comp
+ * time they show different moments and the frame counters -- identical,
+ * because they read comp time -- line up nothing. When the local is longer,
+ * the extra is taken as frontcard and the master starts that much later, so
+ * both halves show the same beat at the same frame.
+ *
+ * Under half a second is left alone: that is rounding between two renders,
+ * not a frontcard, and shifting by it would misalign what already lines up.
+ * Snapped to whole frames of `fps`.
+ */
+export function frontcardOffset(localDur: number, masterDur: number, fps: number): number {
+  var d = (Number(localDur) || 0) - (Number(masterDur) || 0);
+  if (!(d >= 0.5)) return 0;
+  var f = fps > 0 ? fps : 25;
+  return Math.round(d * f) / f;
 }
 
 export const createReviewComparison = (mp4Path: string, localItemId: number, localItemName: string): ReviewComparisonResult => {
@@ -1022,10 +1099,15 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
       comp.parentFolder = reviewFindOrCreateFolder("Comparison");
     } catch (eFolder) { /* folder move is best-effort — never fail the comp */ }
 
-    // 5. Place master on the LEFT half.
+    // 5. Place master on the LEFT half -- starting after the local's
+    //    frontcard, so the two halves show the same moment (frontcardOffset).
+    var offset = frontcardOffset(localItem.duration || 0, masterFootage.duration || 0, fps);
     var masterLayer = comp.layers.add(masterFootage);
     fitLayerIntoBox(masterLayer, halfW, compH, halfW / 2, compH / 2);
     masterLayer.name = "MASTER (.mp4)";
+    if (offset > 0) {
+      try { masterLayer.startTime = offset; } catch (eOff) { /* stays at 0 */ }
+    }
 
     // 6. Place local render on the RIGHT half.
     var localLayer = comp.layers.add(localItem);
@@ -1093,17 +1175,47 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
         if (!effectsGroup) return false;
         var tc = (effectsGroup as any).addProperty("ADBE Timecode");
         if (!tc) return false;
-        // Display Format: 1 = Timecode, 2 = Frames (the user's "2nd option").
-        try { tc.property("Display Format")!.setValue(2); } catch (eDF) { /* older AE naming */ }
-        try { tc.property("Timecode Source")!.setValue(2); } catch (eTS) { /* default is fine */ }
-        try { tc.property("Starting Frame")!.setValue(0); } catch (eSF) { /* default */ }
-        try { tc.property("Text Size")!.setValue(tcSize); } catch (eSZ) { /* default */ }
-        try { tc.property("Opacity")!.setValue(100); } catch (eOp) { /* default */ }
-        return true;
+        // BY MATCHNAME, measured in AE 26.2 (display names drift between
+        // releases -- CLAUDE.md). This used to ask for "Timecode Source",
+        // which does not exist: the real one is "Time Source", so every
+        // counter silently stayed on its default, LAYER SOURCE, and each
+        // half counted its own file -- the local always ahead by its
+        // frontcard (292 against the master's 172, 120 frames = 5s).
+        //   -0002 Display Format: 1 Timecode, 2 Frames
+        //   -0009 Time Source:    1 Layer Source, 2 Composition, 3 Custom
+        // COMPOSITION on both, so the two halves always read one number; the
+        // comp's own start is moved back by the frontcard below, so that
+        // number is the MASTER's frame and the frontcard reads negative.
+        // (Rendered and read back: comp start -5s, Composition source reads
+        // 47 at 7s and -61 inside the card.)
+        try { tc.property("ADBE Timecode-0002")!.setValue(2); } catch (eDF) { /* stays timecode */ }
+        var sourced = false;
+        try { tc.property("ADBE Timecode-0009")!.setValue(2); sourced = true; } catch (eTS) { /* stays layer source */ }
+        try { tc.property("ADBE Timecode-0006")!.setValue(tcSize); } catch (eSZ) { /* default */ }
+        try { tc.property("ADBE Timecode-0012")!.setValue(100); } catch (eOp) { /* default */ }
+        return sourced;
       } catch (eTc) { return false; }
     };
     enrichNotes.push("tc-master:" + (addTimecode(masterLayer) ? "ok" : "FAIL"));
     enrichNotes.push("tc-local:" + (addTimecode(localLayer) ? "ok" : "FAIL"));
+
+    // Where the comparison starts: a marker at the end of the frontcard, the
+    // work area from there, and the playhead parked on it -- so pressing play
+    // plays the part the two renders share.
+    if (offset > 0) {
+      try {
+        // The comp's timeline -- and so both counters -- read 0 on the
+        // master's first frame; the frontcard runs negative before it.
+        try { comp.displayStartTime = -offset; } catch (eStart) { enrichNotes.push("start:refused"); }
+        comp.markerProperty.setValueAtTime(offset, new MarkerValue("Frontcard ends · master starts"));
+        comp.workAreaStart = offset;
+        comp.workAreaDuration = Math.max(1 / fps, dur - offset);
+        comp.time = offset;
+        enrichNotes.push("frontcard:" + offset.toFixed(2) + "s");
+      } catch (eWa) {
+        enrichNotes.push("frontcard:shifted, no marker " + eWa.toString());
+      }
+    }
 
     // Don't auto-open — avoids an immediate frame-buffer allocation in AE
     // (this comp is three full layers: master, local, difference matte).

@@ -52,6 +52,9 @@ const b2 = [
     'SF_INTL_Trio_DOOH_Somethingelse_1920x1080px_10s_HU_V01.mov',
 ];
 b2.forEach((n) => put(HU + '/Batch_02/' + n));
+// A higher-res render IS the deliverable (Slovenia's 400x800 was one).
+put(HU + '/Batch_02/SF_INTL_Trio_DOOH_Ledlurdy_600x1600px_10s_HU_V01_DOUBLE_RES.mov');
+put(HU + '/Batch_02/SF_INTL_Trio_DOOH_Ledallee_1080x810px_15s_HU_V02_QUAD_RES.mov');
 put(HU + '/Batch_02/_Old/SF_INTL_Trio_DOOH_Led_1920x1080px_15s_HU_V01.mov');
 put(HU + '/Batch_02/_mp4/SF_INTL_Trio_DOOH_Led_1920x1080px_15s_HU_V01.mov');
 put(HU + '/Batch_01/SF_INTL_Trio_DOOH_Westend_1920x1080px_15s_HU_V01.mov');
@@ -118,11 +121,19 @@ const folders = r.folders || [];
 check(folders.length === 1 && folders[0].label === 'Batch_02', 'only the folder holding this job comes back (not Batch_01, not _Old/_mp4)', folders.map((f) => f.label));
 const fo = folders[0] || { files: [] };
 check(fo.territory === 'Hungary' && fo.campaign === 'Street Fighter', 'labelled with its territory and campaign', [fo.territory, fo.campaign]);
-check(fo.files.length === 8, 'the whole folder is mirrored, matched or not', fo.files.length);
+check(fo.files.length === 10, 'the whole folder is mirrored, matched or not', fo.files.length);
 const ticked = fo.files.filter((f) => f.matched && f.latest).map((f) => f.name);
 check(ticked.length === 6, 'all six subtasks pair exactly, whatever the case', ticked.length);
 check(ticked.indexOf('SF_INTL_Trio_DOOH_Ledshopmark_1120x704px_10s_HU_V02.mov') !== -1 && ticked.indexOf('SF_INTL_Trio_DOOH_Ledshopmark_1120x704px_10s_HU_V01.mov') === -1, 'the latest version is the one ticked');
 check(fo.files.some((f) => /Somethingelse/.test(f.name) && !f.matched), "another job's render is shown, unmatched");
+const lurdy = fo.files.filter((f) => /Ledlurdy/.test(f.name));
+check(lurdy.length === 2 && lurdy.every((f) => f.matched), 'a _DOUBLE_RES render pairs with its subtask', lurdy.map((f) => f.name));
+check(lurdy[1] && lurdy[1].variant === 'DOUBLE_RES' && lurdy[1].latest && !lurdy[0].latest, '…and outranks the plain render at the same version', lurdy.map((f) => [f.variant, f.latest]));
+const allee = fo.files.filter((f) => /Ledallee/.test(f.name));
+check(allee.length === 2 && allee[1].variant === 'QUAD_RES' && allee[1].version === 2 && allee[1].latest, '_V02_QUAD_RES reads as version 2, a QUAD_RES, the newest', allee.map((f) => [f.version, f.variant, f.latest]));
+const order = fo.files.map((f) => f.name);
+const shop = order.map((n, i) => (/Ledshopmark/.test(n) ? i : -1)).filter((i) => i >= 0);
+check(shop.length === 2 && shop[1] === shop[0] + 1 && /V01/.test(order[shop[0]]) && /V02/.test(order[shop[1]]), 'V01 and V02 of one deliverable sit side by side, oldest first', shop);
 check(!(r.missing || []).length, 'nothing missing', r.missing);
 check(!reads.some((p) => /\/_/.test(p.slice(SF.length))), 'no `_` folder was ever opened', reads.filter((p) => /\/_/.test(p.slice(SF.length))));
 

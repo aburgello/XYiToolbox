@@ -172,6 +172,15 @@ so this whole class of bug is structurally invisible in browser preview.
   layer's width (1/PI — the width IS the circumference) and leaves the height
   untouched. Numbers like these come from rendering a frame and reading it
   back, never from reasoning.
+- **The Timecode effect, measured in AE 26.2:** `ADBE Timecode-0002` Display
+  Format (1 Timecode, 2 Frames), `-0009` **Time Source** (1 Layer Source,
+  2 Composition, 3 Custom), `-0006` Text Size, `-0012` Opacity. Review asked
+  for "Timecode Source", which does not exist, so its counters silently stayed
+  on Layer Source for months. Composition time follows a NEGATIVE
+  `displayStartTime` (-5s reads -61 inside the card, rendered and read back),
+  which is how a compare's counters read the master's own frame. And never
+  read `.value` on a `NO_VALUE`/`CUSTOM_VALUE` property (the effect's
+  "Custom" group): AE raises a modal and aborts the script, cleanup included.
 - **Never walk a property tree upward via `propertyGroup(1)` in a collector** —
   it returns the PARENT and blows up exponentially. This froze AE solid once.
 - Return `{success, error}` shapes; never throw across the bridge.
@@ -1026,7 +1035,22 @@ idempotent by path, and SELECTS the items, because Delivery works on the
 selection -- the page's own Delivery then makes the comps. Only subtasks in
 Prep for delivery are asked for when the feed says so. The feed only carries
 the tagged machine's own jobs on the Today/Tomorrow boards, so a job outside
-those simply isn't offered. `node scripts/probe-delivery-renders.cjs` and
+those simply isn't offered. **One version per deliverable, and the Finder colour picks it**
+(`lib/finderLabels.ts`): green/orange is good, red is bad, read via CEP Node's
+`xattr` (FinderInfo byte 9, else the user-tags plist; ExtendScript cannot see
+either). Default is the newest good version, else the newest not red, else
+none; ticking one version unticks its siblings. ▶ opens a MOV in QuickTime via
+`open`, off the bridge. **`_Vnn_DOUBLE_RES`/`_TRIPLE_RES`/`_QUAD_RES` ARE the deliverable**, not a
+variant to warn about: Delivery scales to the size in the name. They rank
+above the plain render at the same version. Versions of one deliverable are
+listed together, oldest first (host sort, repeated in the panel so a folder
+listing's order never decides it), and the highest is the default pick.
+**Near misses are HINTS, never pairings** (`nearMisses`): a file one token
+off a subtask (Slovenia's `…_10s_SI` rendered as `…_15s_SI_V01`), a variant
+after the version (`…_V01_DOUBLE_RES`), or a subtask in another status
+(`Revised in Wrike`) is labelled and left unticked; every missing subtask is
+listed with its near render. Never loosen the exact match to absorb them --
+the length difference is exactly the mistake worth catching. `node scripts/probe-delivery-renders.cjs` and
 `node scripts/ui-deliver-jobs.mjs` guard it.
 
 **Delivery's spec autofill counts DISAGREEING rows, not rows.** A sheet listing
@@ -1330,6 +1354,28 @@ anchor, rotation and every parent and put the pool off frame.
 `parseJobTitle` over dashed and dashless Wrike titles. The batch is read only
 from the word "Batch": it becomes an output folder, so a trailing number is
 never guessed at.
+
+`node scripts/probe-frontcard-offset.cjs` (after `yarn build`) guards the
+**frontcard offset in every compare**: a localised render opens with its
+frontcard (5s usual) and the master does not, so side by side at one comp time
+they showed different beats and the frame counters (comp time) matched
+nothing. `frontcardOffset` (`review.ts`) takes a local longer than its master
+by half a second or more as frontcard, snapped to frames; the master starts
+that late in `createReviewComparison` (Review, 67's compare icon) and OV
+Library's `createComparisonComp`, with a marker, the work area and the playhead
+there. 67's drop-in moves its guide clip AND its timed markers by the same
+amount, taking the master's length from the comp's own name when no clip is
+added. Review's selection loader also skips `…_OV` masters and `Compare_`
+comps: AE leaves an import selected, so a second Import & Compare reviewed the
+masters.
+
+`node scripts/probe-review-match.cjs` (after `yarn build`) drives Review
+Session's `reviewMatchToMaster` over a stubbed Forgotten Island tree. **Pass the
+scorer the CREATIVE, never every token in turn**: the matcher started at the
+first token, the film title `FID`, which every master carries, so the first try
+always "matched" and the closest aspect won -- a whole Denmark PortalToParadise
+batch paired with InternationalPayoff. It now tries `parseFilenameMeta`'s
+creative first and skips any token every master carries.
 
 `node scripts/probe-campaign-rename.cjs` (after `yarn build`) drives
 `campaignRename` over a stubbed folder pair on BOTH naming conventions. Run it

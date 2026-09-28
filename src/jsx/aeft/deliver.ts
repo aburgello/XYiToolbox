@@ -1027,6 +1027,8 @@ export interface DeliveryRenderFile {
   name: string;
   key: string;
   version: number;
+  /** "DOUBLE_RES" / "QUAD_RES" for a higher-res render, else "". */
+  variant: string;
   /** A subtask of the job names this deliverable. */
   matched: boolean;
   /** The highest version of its deliverable in this folder. */
@@ -1050,18 +1052,44 @@ interface DeliveryRendersResult extends Result {
   noTerritory?: boolean;
 }
 
-/** Deliverable identity: stem, no extension, no trailing _Vnn, upper-case. */
-export function deliveryRenderKey(name: string): string {
+/** A higher-resolution render of the same deliverable, after its version:
+ *  `…_V01_DOUBLE_RES.mov`. Delivery scales to the size in the NAME, so these
+ *  deliver exactly as the plain render does -- they are the deliverable, not
+ *  a near miss (Slovenia's 400x800 was reported missing with one on disk). */
+const DELIVERY_RES_SUFFIX = /_[Vv](\d+)_((?:DOUBLE|TRIPLE|QUAD)_RES)$/i;
+
+function deliveryStem(name: string): string {
   let s = String(name || "");
   const dot = s.lastIndexOf(".");
   if (dot > 0 && s.length - dot <= 5) s = s.slice(0, dot);
-  s = s.replace(/_[Vv]\d+$/, "");
+  return s;
+}
+
+/** Deliverable identity: stem, no extension, no trailing _Vnn (or
+ *  _Vnn_DOUBLE_RES / _QUAD_RES), upper-case. */
+export function deliveryRenderKey(name: string): string {
+  let s = deliveryStem(name);
+  s = s.replace(DELIVERY_RES_SUFFIX, "").replace(/_[Vv]\d+$/, "");
   return s.toUpperCase();
 }
 
 function deliveryRenderVersion(name: string): number {
-  const m = /_[Vv](\d+)(\.[^.]*)?$/.exec(String(name || ""));
+  const s = deliveryStem(name);
+  const m = DELIVERY_RES_SUFFIX.exec(s) || /_[Vv](\d+)$/.exec(s);
   return m ? parseInt(m[1], 10) : 0;
+}
+
+/** "DOUBLE_RES" / "QUAD_RES", or "" for a plain render. */
+export function deliveryRenderVariant(name: string): string {
+  const m = DELIVERY_RES_SUFFIX.exec(deliveryStem(name));
+  return m ? m[2].toUpperCase() : "";
+}
+
+/** Order within a deliverable: version first; at one version a res variant
+ *  outranks the plain render, since it was made because the plain one wasn't
+ *  good enough. */
+function deliveryRenderRank(name: string): number {
+  return deliveryRenderVersion(name) * 10 + (deliveryRenderVariant(name) ? 1 : 0);
 }
 
 function deliveryChildFolderNamed(parent: Folder, wanted: string): Folder | null {
@@ -1131,14 +1159,20 @@ export const deliveryFindRenders = (argsJson: string): DeliveryRendersResult => 
             const nm = decode(String(groups[g].movs[m].name));
             const key = deliveryRenderKey(nm);
             const ver = deliveryRenderVersion(nm);
+            const rank = deliveryRenderRank(nm);
             const matched = wanted.hasOwnProperty(key);
             if (matched) { hits++; found[key] = true; }
-            if (!best.hasOwnProperty(key) || ver > best[key]) best[key] = ver;
-            files.push({ path: String(groups[g].movs[m].fsName), name: nm, key: key, version: ver, matched: matched, latest: false });
+            if (!best.hasOwnProperty(key) || rank > best[key]) best[key] = rank;
+            files.push({ path: String(groups[g].movs[m].fsName), name: nm, key: key, version: ver, variant: deliveryRenderVariant(nm), matched: matched, latest: false });
           }
           if (hits === 0) continue; // another job's batch
-          for (let f = 0; f < files.length; f++) files[f].latest = files[f].version === best[files[f].key];
-          files.sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });
+          for (let f = 0; f < files.length; f++) files[f].latest = deliveryRenderRank(files[f].name) === best[files[f].key];
+          // GROUPED: every version of a deliverable together, oldest first, so
+          // V01 and V02 sit side by side and the newest is the last of them.
+          files.sort(function (a, b) {
+            if (a.key !== b.key) return a.key < b.key ? -1 : 1;
+            return deliveryRenderRank(a.name) - deliveryRenderRank(b.name);
+          });
           folders.push({ campaign: camps[c].name, territory: tName, label: groups[g].rel || "Renders", path: String(groups[g].folder.fsName), files: files });
         }
       }

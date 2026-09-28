@@ -20,7 +20,7 @@
 // =============================================================================
 import { Result } from "./shared";
 import { parseFilenameMeta, getMastersIndex, pickBestMasterFromIndex, firstSizeToken } from "./tools";
-import { loadCampaignsRaw, scanRendersForCreative, RenderEntry } from "./review";
+import { loadCampaignsRaw, scanRendersForCreative, RenderEntry, frontcardOffset } from "./review";
 
 export interface SixtySevenContext extends Result {
   /** What the comp's own name says. */
@@ -220,6 +220,8 @@ const MARKER_PREFIX = "67: ";
 
 export interface SixtySevenDropResult extends Result {
   markers?: number;
+  /** Seconds of frontcard the master and markers were moved past. */
+  offset?: number;
   clipAdded?: boolean;
   compName?: string;
 }
@@ -263,6 +265,9 @@ export const sixtySevenDropIn = (renderPath: string, notesJson: string): SixtySe
 
     // --- the clip -----------------------------------------------------------
     let clipAdded = false;
+    // Seconds of frontcard before the master's first frame (0 without one).
+    // The notes are timed on the MASTER, so their markers move with it.
+    let offset = 0;
     if (renderPath) {
       // Anything this tool left last time goes first, so pressing twice does
       // not build a stack of the same clip.
@@ -299,8 +304,21 @@ export const sixtySevenDropIn = (renderPath: string, notesJson: string): SixtySe
         scale.setValue([fit, fit]);
         const pos = layer.property("ADBE Transform Group").property("ADBE Position") as Property;
         pos.setValue([comp.width / 2, comp.height / 2]);
+        // After the FRONTCARD, when this comp carries one: the _V01 wrapper
+        // is the master's length plus the card, and a master laid from 0
+        // runs 5s ahead of the picture it is meant to be checked against.
+        offset = frontcardOffset(comp.duration, (footage as any).duration || 0, comp.frameRate);
+        if (offset > 0) layer.startTime = offset;
         clipAdded = true;
       }
+    }
+
+    // No clip to measure against: the deliverable's own name says how long
+    // the master is ("…_10s_…"), and anything this comp runs past that is
+    // frontcard -- so the markers still land on the master's beats.
+    if (!clipAdded) {
+      const secs = parseFloat(String(parseFilenameMeta(comp.name).duration || "").replace(/[^0-9.]/g, ""));
+      if (secs > 0) offset = frontcardOffset(comp.duration, secs, comp.frameRate);
     }
 
     // --- the markers --------------------------------------------------------
@@ -319,7 +337,7 @@ export const sixtySevenDropIn = (renderPath: string, notesJson: string): SixtySe
       if (isNaN(at) || at < 0) continue;
       // Past the end of the comp is a marker nobody can see; clamped rather
       // than dropped, because the note still applies to the last frame.
-      const t = at > comp.duration ? comp.duration : at;
+      const t = at + offset > comp.duration ? comp.duration : at + offset;
       mp.setValueAtTime(t, new MarkerValue(MARKER_PREFIX + String(notes[n].text || "")));
       added++;
     }
@@ -335,7 +353,8 @@ export const sixtySevenDropIn = (renderPath: string, notesJson: string): SixtySe
       clipAdded: clipAdded,
       markers: added,
       compName: comp.name,
-      message: (clipAdded ? "Clip added as a guide layer" : "No clip added")
+      offset: offset,
+      message: (clipAdded ? "Clip added as a guide layer" + (offset > 0 ? " after the " + offset.toFixed(1).replace(/\.0$/, "") + "s frontcard" : "") : "No clip added")
         + (added > 0 ? ", " + added + " marker" + (added === 1 ? "" : "s") + " on the comp." : "."),
     } as SixtySevenDropResult;
   } catch (e) {

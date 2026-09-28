@@ -399,6 +399,10 @@
     // ~15 rows, so vertical space is plentiful and each row gets room to
     // breathe instead of being a cramped single line.
     .rv-row {
+        // NEVER SHRINK: .rv-list is a flex column that scrolls, and a flex
+        // item shrinks by default -- so past a screenful the rows were
+        // crushed to fit instead of the list scrolling.
+        flex-shrink: 0;
         border-radius: 6px;
         border: 1px solid var(--surface-divider, #2a2a2a);
         background: var(--surface-0, #1f1f1f);

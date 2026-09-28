@@ -91,7 +91,18 @@ function bridgeSource(fixturesSrc) {
   posix.posix = posix;
   const EMPTY = { existsSync: false, readdirSync: [], readFileSync: "", constants: {} };
   const inert = new Proxy({}, { get: (t, k) => (k === "constants" ? {} : (k in EMPTY ? () => EMPTY[k] : () => undefined)) });
-  const mods = { path: posix, fs: inert };
+  // child_process: INERT too -- it runs nothing. execFile answers from
+  // window.__fakeXattr[path] (hex FinderInfo) when a test sets it, and spawn
+  // only records into window.__spawned.
+  const cp = {
+    execFile: (cmd, args, opts, cb) => {
+      const path = args[args.length - 1];
+      const hex = (window.__fakeXattr || {})[path];
+      setTimeout(() => (hex && args[1] === "com.apple.FinderInfo" ? cb(null, hex) : cb(new Error("no attr"), "")), 0);
+    },
+    spawn: (cmd, args) => { (window.__spawned = window.__spawned || []).push([cmd].concat(args)); return { unref() {} }; },
+  };
+  const mods = { path: posix, fs: inert, child_process: cp };
   window.cep = window.cep || { fs: {}, process: {}, encoding: {}, util: {} };
   // Only the Node modules the panel's CEP layer asks for. Anything else must
   // fail like a missing module: bundled libraries probe for \`require\` and
