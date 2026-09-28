@@ -211,5 +211,17 @@ say(r7.items[0].action === 'no-match', 'a NUMBERED slot never borrows another nu
 r7 = aeft.mcItApplyToOpenProject(oneSlot(OVPNG.replace('.png', '.jpg')), LV + '_V01.aep', [new File(`${LVD}/ARTWORK_ONLY/${LV}_ARTWORK_1.jpg`)], true, undefined, '');
 say(r7.items[0].action === 'no-match', 'an ARTWORK_ONLY extra is never the lone answer', r7.items[0].reason);
 
+// 8. A deliverable with NO site whose exports carry one (Street Fighter UA:
+// "SF_INTL_Trio_DOOH_480x336px_10s_UA" against "..._Trio_DOOH_MotionPoster_480x336px_...").
+const UA = 'SF_INTL_Trio_DOOH_480x336px_10s_UA';
+const UAD = '/b/JPG_PNG/' + UA;
+const UASITE = 'SF_INTL_Trio_DOOH_MotionPoster_480x336px_10s_UA';
+let r8 = aeft.mcItApplyToOpenProject(oneSlot(OVPNG), UA + '_V01.aep', [new File(`${UAD}/${UASITE}.png`)], true, undefined, '');
+say(r8.items[0].action === 'replaced' && decodeURI(r8.items[0].newName) === UASITE + '.png', 'site-less deliverable takes its one sited export', r8.items[0].action + ' ' + (r8.items[0].newName || r8.items[0].reason));
+r8 = aeft.mcItApplyToOpenProject(oneSlot(OVPNG), UA + '_V01.aep', [new File(`${UAD}/${UASITE}.png`), new File(`${UAD}/${UASITE.replace('MotionPoster', 'Adshel')}.png`)], true, undefined, '');
+say(r8.items[0].action === 'no-match', 'two sites at one size stay a no-match', r8.items[0].reason);
+r8 = aeft.mcItApplyToOpenProject(oneSlot(OVPNG), UA + '_V01.aep', [new File(`${UAD}/${UASITE}.png`), new File(`${UAD}/${UA}.png`)], true, undefined, '');
+say(decodeURI(r8.items[0].newName || '') === UA + '.png', 'an exact identity still wins outright', r8.items[0].newName);
+
 console.log(fails === 0 ? '\nCLEAN — each project gets its own images, once.' : '\n' + fails + ' FAILED');
 process.exit(fails ? 1 : 0);

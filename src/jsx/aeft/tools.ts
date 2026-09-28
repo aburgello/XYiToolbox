@@ -3610,6 +3610,35 @@ export function mcItApplyToOpenProject(
         // Candidates that passed everything except being numbered where the
         // original is not -- see the single-candidate fallback below.
         const numberedOnly: File[] = [];
+
+        // A DELIVERABLE WITH NO SITE, EXPORTS WITH ONE. Street Fighter's
+        // "SF_INTL_Trio_DOOH_480x336px_10s_UA" has its mech exports named
+        // "SF_INTL_Trio_DOOH_MotionPoster_480x336px_..._UA", so the exact
+        // identity test below read TRIO against TRIO_MOTIONPOSTER and refused
+        // every file. Only when the deliverable carries NO site, NOTHING at its
+        // size and type carries its exact identity, and exactly ONE sited
+        // identity of the same creative does, is that one taken. Two sites at
+        // one size stay a no-match -- that is two deliverables, not a guess.
+        let aepIdentity = mcItNormaliseIdentity(parsedAEP.firstOne);
+        if (aepIdentity !== "" && aepIdentity === mcItCreativeOf(parsedAEP.firstOne)) {
+          let exactSeen = false;
+          const sitedSeen: string[] = [];
+          for (let q = 0; q < imageFiles.length; q++) {
+            const qExt = mcItGetExt(imageFiles[q].name);
+            let qSame = qExt === originalExt;
+            const qOrigJpg = originalExt === "jpg" || originalExt === "jpeg";
+            const qCandJpg = qExt === "jpg" || qExt === "jpeg";
+            if (!qSame) qSame = qOrigJpg && qCandJpg;
+            if (!qSame) continue;
+            const qParsed = mcItParseFilename(imageFiles[q].name);
+            if (qParsed.thirdOne !== parsedAEP.thirdOne) continue;
+            const qIdentity = mcItNormaliseIdentity(qParsed.firstOne);
+            if (qIdentity === aepIdentity) { exactSeen = true; break; }
+            if (mcItCreativeOf(qParsed.firstOne) === aepIdentity && sitedSeen.indexOf(qIdentity) === -1) sitedSeen.push(qIdentity);
+          }
+          if (!exactSeen && sitedSeen.length === 1) aepIdentity = sitedSeen[0];
+        }
+
         for (let k = 0; k < imageFiles.length; k++) {
           const candidate = imageFiles[k];
           const candidateExt = mcItGetExt(candidate.name);
@@ -3648,7 +3677,7 @@ export function mcItApplyToOpenProject(
           // extracts, so this is an exact comparison of the thing that
           // identifies a deliverable, not another guess on top of the guessing.
           const candCreative = mcItNormaliseIdentity(parsedCandidate.firstOne);
-          const aepCreative = mcItNormaliseIdentity(parsedAEP.firstOne);
+          const aepCreative = aepIdentity;
           if (creativesSeen.join(",").indexOf(parsedCandidate.firstOne) === -1) {
             creativesSeen.push(parsedCandidate.firstOne);
           }
