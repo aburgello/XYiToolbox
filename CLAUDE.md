@@ -508,6 +508,17 @@ their category AT REST (icon well, `--cat-wash`, faint oversized mark) --
 `--cat-wash` is the resting tint, `--cat-glow` stays hover-only.
 `node scripts/ui-home.mjs`.
 
+**Make Comp from Elements** (`comps-from-footage`, Toolset, Organise) makes
+one comp per selected footage item at the footage's own size, a picked frame
+rate and length, named after the decoded file, filed into a root-level folder.
+It began as a Script Playground tool whose folder logic never worked: it found
+the root-level folder with `===` on AE objects. Host-side it keeps the rules
+that script broke: footage by duck-type (`mainSource`, no layers) never the
+translated `typeName`, root as `parentFolder.parentFolder == null`. The button
+opens a droplet (rates, lengths, custom, folder) that reads the selection
+live and remembers the last choice; ⌘K's run uses that choice.
+`node scripts/probe-comps-from-footage.cjs`.
+
 **Adding a tool** = `tools/X.tsx` + `X.scss` + ExtendScript in
 `src/jsx/aeft/*.ts` + one entry in **`toolRegistry.tsx`'s `TOOLS`**. A NEW
 `src/jsx/aeft` file also needs its `export *` line in `aeft.ts`, or the bridge

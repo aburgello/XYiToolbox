@@ -898,3 +898,96 @@
 }
 // A folded group with nothing starred is just its heading: close the gap.
 .toolset-grid .action-group.is-folded .action-group-divider { margin-bottom: 9px; }
+
+// ── Make Comp from Elements ─────────────────────────────────────────────────
+// Scoped under .droplet-cff: the droplet is portaled, and a bare button here
+// would be repainted by index.scss's global button:hover.
+.droplet-cff {
+    width: 264px;
+
+    .cff { display: flex; flex-direction: column; }
+    .cff-sel {
+        margin: 0 0 10px;
+        padding: 7px 9px;
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.05);
+        font-size: 11.5px;
+        font-weight: 600;
+        color: #e8e8e8;
+        line-height: 1.35;
+
+        span { font-weight: 500; color: #9a9a9a; }
+        em { font-style: normal; font-weight: 500; color: #8a8a8a; }
+        &.is-empty { color: #fbbf24; font-weight: 500; }
+    }
+    .cff-label {
+        margin: 2px 0 5px;
+        font-size: 9.5px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #8a8a8a;
+    }
+    // Even columns, so a lone chip never stretches across a row.
+    .cff-chips {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 4px;
+        margin-bottom: 6px;
+
+        &.cff-chips--six { grid-template-columns: repeat(6, 1fr); }
+
+        button {
+            min-width: 0;
+            padding: 5px 6px;
+            border-radius: 5px;
+            border: 1px solid var(--surface-border, #444);
+            background: var(--surface-1, #2a2a2a);
+            color: #ddd;
+            font-size: 11px;
+            font-variant-numeric: tabular-nums;
+            cursor: pointer;
+
+            &:hover, &:active { background: #353535; border-color: #5a5a5a; }
+            &.is-on, &.is-on:hover { background: var(--ov-accent, #3a5a8a); border-color: var(--ov-accent, #3a5a8a); color: #fff; font-weight: 600; }
+        }
+    }
+    .cff-custom {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 10px;
+
+        span { font-size: 11px; color: #8a8a8a; }
+    }
+    .cff-custom input, .cff-folder {
+        box-sizing: border-box;
+        min-width: 0;
+        padding: 5px 7px;
+        border-radius: 5px;
+        border: 1px solid var(--surface-border, #444);
+        background: var(--surface-0, #1e1e1e);
+        color: #eee;
+        font-size: 11.5px;
+        font-variant-numeric: tabular-nums;
+
+        &:focus { outline: none; border-color: var(--ov-accent, #5eead4); }
+    }
+    .cff-custom input { width: 80px; -moz-appearance: textfield; }
+    .cff-custom input::-webkit-outer-spin-button,
+    .cff-custom input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .cff-folder { width: 100%; margin-bottom: 12px; }
+    .cff-make {
+        height: 32px;
+        border-radius: 6px;
+        border: 1px solid var(--ov-accent, #5eead4);
+        background: var(--ov-accent, #5eead4);
+        color: #0b0b0b;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+
+        &:hover:not(:disabled), &:active:not(:disabled) { background: var(--ov-accent, #5eead4); filter: brightness(1.1); }
+        &:disabled { opacity: 0.4; cursor: default; }
+    }
+}

@@ -21,6 +21,8 @@ const FIXTURES = `{
   loadStarredToolsetActions: () => ["cheeky-t-check", "turk-it"],
   loadFoldedToolsetGroups: () => [],
   saveFoldedToolsetGroups: (ids) => { window.__folded = ids; return { success: true }; },
+  compsFromFootageSelection: () => ({ success: true, count: 3, ignored: 1, sizes: ["1920x1080", "1080x1920"] }),
+  makeCompsFromFootage: (fps, sec, folder) => { window.__cff = [fps, sec, folder]; return { success: true, made: 3, message: "3 comps at " + fps + "fps, " + sec + "s, in '" + folder + "'." }; },
   saveHomeLayout: (tokens) => { window.__savedLayout = tokens; window.__saves = (window.__saves || 0) + 1; return { success: true }; },
 }`;
 
@@ -119,6 +121,27 @@ try {
     await pause(300);
     check(!(await page.eval(`!!${orgBefore}.querySelector(".action-grid")`)) && /0 of/.test(await page.eval(`${orgBefore}.querySelector(".action-group-count")?.innerText || ""`)), "a group with nothing starred folds to just its heading");
     await page.shot(path.join(SHOTS, "ui-home-folded.png"));
+
+    console.log("\n5. Make Comp from Elements");
+    // Section 4 left Organise folded, and nothing in it is starred.
+    await page.eval(`${orgBefore}.querySelector(".action-group-fold").click()`);
+    await pause(300);
+    await page.eval(`document.querySelector('.toolset-grid button[data-action-id="comps-from-footage"]').click()`);
+    check(await page.waitFor(`/3 footage items/.test(document.querySelector(".cff-sel")?.innerText || "")`, 3000), "the picker says what's selected", await page.eval(`document.querySelector(".cff-sel")?.innerText`));
+    check(/1 not footage/.test(await page.eval(`document.querySelector(".cff-sel")?.innerText || ""`)), "…and what it's leaving out");
+    check((await page.eval(`document.querySelector(".cff-chips button.is-on")?.innerText`)) === "25", "25fps by default");
+    await page.eval(`[...document.querySelectorAll(".cff-chips button")].find(b => b.innerText === "23.976").click()`);
+    await page.eval(`[...document.querySelectorAll(".cff-chips button")].find(b => b.innerText === "15s").click()`);
+    await pause(150);
+    check((await page.eval(`document.querySelector(".cff-make")?.innerText`)) === "Make 3 comps", "the button says how many it will make");
+    await page.shot(path.join(SHOTS, "ui-cff.png"));
+    await page.click(".cff-make");
+    await pause(300);
+    check(JSON.stringify(await page.eval(`window.__cff`)) === JSON.stringify([23.976, 15, "Comps"]), "it makes them at the picked rate and length", await page.eval(`window.__cff`));
+    check(await page.waitFor(`/3 comps at 23.976fps, 15s/.test(document.body.innerText)`, 2000), "and the toast says what was made");
+    await page.eval(`document.querySelector('.toolset-grid button[data-action-id="comps-from-footage"]').click()`);
+    await page.waitFor(`!!document.querySelector(".cff-chips button.is-on")`, 3000);
+    check((await page.eval(`[...document.querySelectorAll(".cff-chips button.is-on")].map(b => b.innerText).join()`)) === "23.976,15s", "and the next press opens on the last choice");
 
     console.log("");
     check(page.errors.length === 0, "no page errors", page.errors.slice(0, 5));

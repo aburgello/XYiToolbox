@@ -2704,6 +2704,113 @@ export const toggleLayersByLabel = (labelIndex: number): Result => {
 // =============================================================================
 const COMP_DURATION_BONUS_REGEX = /_v0\d*|_v(?!\d)/i;
 
+// =============================================================================
+// Make Comp from Elements -- one comp per selected footage item, at the
+// footage's own pixel size, a chosen frame rate and length, named after the
+// file (extension dropped), filed into a root-level folder.
+//
+// Started as a Script Playground tool; built in so the frame rate and length
+// are picked in the panel rather than edited into the code. The rules it keeps:
+//   - FOOTAGE is recognised by duck-typing (a mainSource, no layers), never by
+//     typeName, which AE translates in a non-English install.
+//   - The folder is found at ROOT as "my parent has no parent" -- never === on
+//     AE objects, which are a fresh wrapper on every access (CLAUDE.md), and
+//     which is how the script version never found or made its folder.
+//   - Names are decoded (File.name is URI-encoded; an accent became %CC%88).
+// =============================================================================
+function cffIsFootage(it: any): boolean {
+  return !!it && typeof it.mainSource !== "undefined" && typeof it.numLayers === "undefined" && it.width > 0 && it.height > 0;
+}
+
+function cffBaseName(name: string): string {
+  let base = String(name || "");
+  try { base = decodeURI(base); } catch (e) { /* already plain */ }
+  return base.replace(/\.[A-Za-z0-9]{1,5}$/, "");
+}
+
+/** What the panel's picker shows before anything is made. */
+export const compsFromFootageSelection = (): Result & { count?: number; ignored?: number; first?: string; sizes?: string[] } => {
+  try {
+    const sel = app.project.selection;
+    let count = 0;
+    let ignored = 0;
+    let first = "";
+    const sizes: string[] = [];
+    for (let i = 0; i < sel.length; i++) {
+      const it: any = sel[i];
+      if (!cffIsFootage(it)) { ignored++; continue; }
+      count++;
+      if (!first) first = cffBaseName(it.name);
+      const sz = it.width + "x" + it.height;
+      if (sizes.indexOf(sz) === -1) sizes.push(sz);
+    }
+    return { success: true, count: count, ignored: ignored, first: first, sizes: sizes };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+export const makeCompsFromFootage = (fps: number, seconds: number, folderName: string): Result & { made?: number; skipped?: string[] } => {
+  let undoOpen = false;
+  try {
+    const rate = Number(fps);
+    const dur = Number(seconds);
+    if (!(rate >= 1 && rate <= 999)) return { success: false, error: "Pick a frame rate between 1 and 999." };
+    if (!(dur > 0 && dur <= 10800)) return { success: false, error: "Pick a length up to 10800 seconds (3 hours)." };
+    // Becomes a folder NAME: nothing a path or AE would choke on.
+    const folder = String(folderName || "").replace(/[\/\\:*?"<>|\t\r\n]+/g, " ").replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "");
+
+    const sel = app.project.selection;
+    const items: any[] = [];
+    for (let s = 0; s < sel.length; s++) if (cffIsFootage(sel[s])) items.push(sel[s]);
+    if (items.length === 0) return { success: false, error: "Select one or more footage items in the Project panel first." };
+
+    app.beginUndoGroup("Make Comp from Elements");
+    undoOpen = true;
+
+    let parent: any = null;
+    if (folder !== "") {
+      for (let f = 1; f <= app.project.numItems; f++) {
+        const cand: any = app.project.item(f);
+        if (typeof cand.numItems !== "number" || cand.name !== folder) continue;
+        if (cand.parentFolder && cand.parentFolder.parentFolder == null) { parent = cand; break; }
+      }
+      if (!parent) parent = app.project.items.addFolder(folder);
+    }
+
+    let made = 0;
+    const skipped: string[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      try {
+        const comp = app.project.items.addComp(cffBaseName(item.name), item.width, item.height, item.pixelAspect || 1, dur, rate);
+        if (parent) comp.parentFolder = parent;
+        // A still fills the comp; a movie is cut to it, never left running on.
+        const layer = comp.layers.add(item);
+        if (layer.outPoint > dur) layer.outPoint = dur;
+        made++;
+      } catch (eOne) {
+        skipped.push(cffBaseName(item.name) + ": " + eOne.toString());
+      }
+    }
+
+    app.endUndoGroup();
+    undoOpen = false;
+    const rateText = String(Math.round(rate * 1000) / 1000);
+    return {
+      success: made > 0,
+      made: made,
+      skipped: skipped,
+      message: made + " comp" + (made === 1 ? "" : "s") + " at " + rateText + "fps, " + dur + "s" + (parent ? ", in \"" + folder + "\"" : "") + "." +
+        (skipped.length ? " Skipped " + skipped.length + ": " + skipped[0] : ""),
+      error: made > 0 ? undefined : "None could be made. " + (skipped[0] || ""),
+    } as Result & { made?: number; skipped?: string[] };
+  } catch (e) {
+    if (undoOpen) { try { app.endUndoGroup(); } catch (e2) {} }
+    return { success: false, error: e.toString() };
+  }
+};
+
 export const setCompDuration = (seconds: number): Result => {
   try {
     const comp = app.project.activeItem;

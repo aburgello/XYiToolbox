@@ -62,6 +62,7 @@ import {
     ToggleLeft,
     Moon,
     Timer,
+    Clapperboard,
     Ban,
     Minus,
     Plus,
@@ -636,6 +637,23 @@ export const ACTIONS: ActionEntry[] = [
         successText: () => "Comp duration updated.",
     },
     {
+        // Built in from the Script Playground tool of the same name. The
+        // Toolset button opens CompsFromFootageDropletBody to pick the frame
+        // rate and length; this run() is the no-questions path (⌘K, a
+        // workflow link) and uses whatever was last picked there.
+        id: "comps-from-footage",
+        label: "Make Comp from Elements",
+        description: "One comp per selected footage item, at its own size, with the frame rate and length you pick.",
+        icon: Clapperboard,
+        group: "organise",
+        safety: "undoable",
+        run: () => {
+            const c = loadCffChoice();
+            return evalTSSafe("makeCompsFromFootage", c.fps, c.seconds, c.folder);
+        },
+        successText: (r) => r.message || "Comps made.",
+    },
+    {
         id: "pre-flight",
         label: "Pre-Flight",
         description: "Checks the project for missing footage, effects and fonts before handover.",
@@ -852,6 +870,105 @@ const CompDurationDropletBody: React.FC<{ close: () => void; onResult: (result: 
                 </button>
             )}
         </>
+    );
+};
+
+// ── Make Comp from Elements ────────────────────────────────────────────────
+// The last choice is a per-viewer convenience (browser storage, guarded): the
+// next press opens on it, and ⌘K's no-questions run uses it.
+interface CffChoice { fps: number; seconds: number; folder: string }
+const CFF_KEY = "xyi.compsFromFootage";
+const CFF_DEFAULT: CffChoice = { fps: 25, seconds: 10, folder: "Comps" };
+function loadCffChoice(): CffChoice {
+    try {
+        const c = JSON.parse(localStorage.getItem(CFF_KEY) || "null");
+        if (c && c.fps > 0 && c.seconds > 0 && typeof c.folder === "string") return c;
+    } catch { /* private window */ }
+    return CFF_DEFAULT;
+}
+function saveCffChoice(c: CffChoice) {
+    try { localStorage.setItem(CFF_KEY, JSON.stringify(c)); } catch { /* private window */ }
+}
+const CFF_RATES = [23.976, 24, 25, 29.97, 30, 50, 60];
+const CFF_SECONDS = [5, 6, 10, 15, 20, 30];
+
+const CompsFromFootageDropletBody: React.FC<{ close: () => void; onResult: (result: ActionResult | null | undefined) => void }> = ({ close, onResult }) => {
+    const start = loadCffChoice();
+    const [fps, setFps] = useState(String(start.fps));
+    const [seconds, setSeconds] = useState(String(start.seconds));
+    const [folder, setFolder] = useState(start.folder);
+    const [sel, setSel] = useState<{ count: number; ignored: number; sizes: string[] } | null>(null);
+    const [busy, setBusy] = useState(false);
+
+    // What's selected in the Project panel right now -- read on open and
+    // again every second while open, so selecting footage with the panel
+    // open updates the count.
+    useEffect(() => {
+        let dead = false;
+        const read = async () => {
+            try {
+                const r = (await evalTS("compsFromFootageSelection")) as any;
+                if (!dead && r && r.success) setSel({ count: r.count || 0, ignored: r.ignored || 0, sizes: r.sizes || [] });
+            } catch { /* preview */ }
+        };
+        void read();
+        const t = setInterval(read, 1000);
+        return () => { dead = true; clearInterval(t); };
+    }, []);
+
+    const fpsN = parseFloat(fps);
+    const secN = parseFloat(seconds);
+    const valid = fpsN >= 1 && fpsN <= 999 && secN > 0 && secN <= 10800;
+    const count = sel ? sel.count : 0;
+
+    const make = async () => {
+        if (!valid || busy) return;
+        setBusy(true);
+        const choice = { fps: fpsN, seconds: secN, folder: folder.trim() };
+        saveCffChoice(choice);
+        close();
+        onResult(await evalTSSafe("makeCompsFromFootage", choice.fps, choice.seconds, choice.folder));
+    };
+
+    return (
+        <div className="cff">
+            <p className="droplet-title">Make comps from footage</p>
+            <p className={"cff-sel" + (count ? "" : " is-empty")}>
+                {sel === null ? "Reading the selection…"
+                    : count === 0 ? "Select footage in the Project panel."
+                    : <>{count} footage item{count === 1 ? "" : "s"}{sel.sizes.length ? <span> · {sel.sizes.slice(0, 3).join(", ")}{sel.sizes.length > 3 ? "…" : ""}</span> : null}</>}
+                {sel && sel.ignored > 0 && <em> · {sel.ignored} not footage, left out</em>}
+            </p>
+
+            <label className="cff-label" htmlFor="cff-fps">Frame rate</label>
+            <div className="cff-chips">
+                {CFF_RATES.map((r) => (
+                    <button key={r} type="button" className={parseFloat(fps) === r ? "is-on" : ""} onClick={() => setFps(String(r))}>{r}</button>
+                ))}
+            </div>
+            <div className="cff-custom">
+                <input id="cff-fps" type="number" min={1} max={999} step="any" value={fps} onChange={(e) => setFps(e.target.value)} />
+                <span>fps</span>
+            </div>
+
+            <label className="cff-label" htmlFor="cff-sec">Length</label>
+            <div className="cff-chips cff-chips--six">
+                {CFF_SECONDS.map((n) => (
+                    <button key={n} type="button" className={parseFloat(seconds) === n ? "is-on" : ""} onClick={() => setSeconds(String(n))}>{n}s</button>
+                ))}
+            </div>
+            <div className="cff-custom">
+                <input id="cff-sec" type="number" min={1} max={10800} step="any" value={seconds} onChange={(e) => setSeconds(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void make(); }} />
+                <span>seconds</span>
+            </div>
+
+            <label className="cff-label" htmlFor="cff-folder">Into folder</label>
+            <input id="cff-folder" className="cff-folder" type="text" value={folder} placeholder="Project root" onChange={(e) => setFolder(e.target.value)} />
+
+            <button type="button" className="cff-make" disabled={!valid || count === 0 || busy} onClick={() => void make()}>
+                {count ? `Make ${count} comp${count === 1 ? "" : "s"}` : "Make comps"}
+            </button>
+        </div>
     );
 };
 
@@ -1840,10 +1957,11 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void; focusAction
                                         </motion.button>
                                     );
 
-                                    if (action.id === "toggle-by-label" || action.id === "comp-duration" || action.id === "quick-fx-recent") {
+                                    if (action.id === "toggle-by-label" || action.id === "comp-duration" || action.id === "quick-fx-recent" || action.id === "comps-from-footage") {
                                         const panelClassName =
                                             action.id === "toggle-by-label" ? "droplet-swatches" :
                                             action.id === "comp-duration" ? "droplet-duration" :
+                                            action.id === "comps-from-footage" ? "droplet-cff" :
                                             "droplet-quick-fx";
                                         return (
                                             <Droplet
@@ -1863,6 +1981,11 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void; focusAction
                                                         />
                                                     ) : action.id === "comp-duration" ? (
                                                         <CompDurationDropletBody
+                                                            close={close}
+                                                            onResult={(r) => reportResult(r, action.successText)}
+                                                        />
+                                                    ) : action.id === "comps-from-footage" ? (
+                                                        <CompsFromFootageDropletBody
                                                             close={close}
                                                             onResult={(r) => reportResult(r, action.successText)}
                                                         />
