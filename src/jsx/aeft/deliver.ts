@@ -121,11 +121,10 @@ export const delivery = (): DeliveryResult => {
 //      deeper than that, the created Renders subfolder will be named
 //      after the wrong (too-deep) folder.
 //   2. "The active comp" (app.project.activeItem) is the one meant to be
-//      queued -- there's no "Main" folder / selection-based picker here
-//      the way some other tools use, since this is a single-click action
-//      with no picker UI. If a project's real deliverable comp is never
-//      the active one when this gets clicked, this will queue the wrong
-//      comp.
+//      queued -- UNLESS two or more comps are selected in the Project
+//      panel, in which case every one of them is queued, each exactly as a
+//      single press would (renderMeTargets). One selected comp still means
+//      the active comp, so a stray highlight never changes a single press.
 // =============================================================================
 function llIsRendersFolderName(name: string): boolean {
   const norm = String(name).toLowerCase().replace(/[_\s]+/g, "");
@@ -214,13 +213,138 @@ interface RenderMeResult extends Result {
   message?: string; // the Renders batch folder path, on success -- shown in the button's toast
 }
 
+/** Queue ONE comp: AE's default output into the batch folder, plus the MP4
+ *  output into its _mp4. Returns the MP4 note ("" when all went to plan). */
+function renderMeQueueOne(comp: CompItem, batchFolder: Folder): string {
+  // Row 1: AE's own default output module, redirected into the batch
+  // folder -- unchanged from before.
+  const rqItem = app.project.renderQueue.items.add(comp);
+  const om = rqItem.outputModule(1);
+  // Keep AE's own extension (and any image-sequence pattern) but ALWAYS
+  // name the file after the comp -- see renderMeOutputFileName() for why
+  // trusting `om.file.name` wholesale produced an unrelated old project's
+  // filename here.
+  const defaultFileName = renderMeOutputFileName(om.file ? decode(om.file.name) : null, comp.name);
+  om.file = new File(batchFolder.fsName + "/" + defaultFileName);
+
+  // Second output: the studio's standard H264_16MBPS_MOS delivery
+  // preset, output into a "_mp4" subfolder of that same batch folder.
+  //
+  // **Stacks onto the SAME render-queue row** (added at direct
+  // request, to match AE's own "Composition > Add Output Module" look
+  // -- one comp, two Output Module sub-rows -- instead of a second
+  // separate queued item). **CONFIRMED WORKING in a real AE session**
+  // (two Output Modules under one queued row, as intended), but it's
+  // still not a documented/officially-supported scripting operation,
+  // so the verify-then-fallback structure below stays: `RenderQueueItem
+  // .outputModules` is READ-ONLY from script (its own doc comment says
+  // it "does not provide any additional functionality" beyond index
+  // lookup) -- there is no `.add()`. The only way to add a second
+  // Output Module at all is the `Add Output Module` menu command
+  // (numeric id 2154, see the comment on the `executeCommand` call
+  // below for why it's a literal and not the typed const enum), which
+  // operates on whatever's SELECTED in the Render Queue panel -- a
+  // state this script cannot directly set (no `RenderQueueItem
+  // .selected` property exists). This relies on AE's own tendency to
+  // leave a just-added render-queue item as the selected one -- true
+  // in the confirmed real-world test, but still not a documented
+  // guarantee -- and is verified AFTER the fact
+  // (`rqItem.numOutputModules` actually grew) before trusting the
+  // result regardless, so a future AE version/edge case that breaks
+  // this assumption degrades gracefully to the always-reliable
+  // fallback (a second separate queued row) instead of leaving the MP4
+  // output half-configured. **Known accepted risk, unchanged by the
+  // real-world confirmation**: if some OTHER render-queue item happened
+  // to be the selected one, the menu command still fires and adds a
+  // stray, unconfigured Output Module to THAT item -- a harmless but
+  // real side effect this fallback can't detect or undo, since there's
+  // no way to know which item the command actually targeted.
+  let mp4Note = "";
+  const mp4Folder = renderMeEnsureMp4Folder(batchFolder);
+  if (mp4Folder) {
+    let omMp4: OutputModule | null = null;
+    try {
+      app.project.renderQueue.showWindow(true);
+      const beforeCount = rqItem.numOutputModules;
+      // Literal 2154, not `_CommandID.AddOutputModule` -- that's a
+      // `const enum` (types-for-adobe/AfterEffects), which only exists
+      // at compile time and needs the REAL tsc to inline it as a
+      // number. This project's actual build (vite-cep-plugin, via
+      // esbuild) strips/transpiles this file WITHOUT running tsc at
+      // all, and esbuild has a documented limitation: it can't inline
+      // a const enum declared in a separate .d.ts file, so it leaves
+      // the reference as a plain runtime property access on an object
+      // that was never emitted anywhere -- `_CommandID.AddOutputModule`
+      // would throw "_CommandID is not defined" the instant this ran
+      // in real AE. Confirmed by grepping the actual compiled
+      // dist/cep/jsx/index.js output, not assumed. AE's own
+      // `KeyframeInterpolationType`/`CloseOptions` etc. used elsewhere
+      // in this codebase are safe because those are plain `declare
+      // enum` (no `const`), which ARE real runtime objects AE itself
+      // provides -- `_CommandID` is the one exception, since AE has no
+      // actual runtime object for menu command IDs, only numbers.
+      app.executeCommand(2154 /* Composition > Add Output Module */);
+      if (rqItem.numOutputModules > beforeCount) {
+        omMp4 = rqItem.outputModule(rqItem.numOutputModules);
+      }
+    } catch (e) {
+      omMp4 = null;
+    }
+
+    if (!omMp4) {
+      const rqItemMp4 = app.project.renderQueue.items.add(comp);
+      omMp4 = rqItemMp4.outputModule(1);
+    }
+
+    // Same applyTemplate()-then-explicit-filename pattern as
+    // deliveryChecklistQueue() above -- applying a template doesn't
+    // reliably rename the output file's own extension on its own, so
+    // ".mp4" is set explicitly here rather than trusted to follow from
+    // the template. A missing template (not installed/renamed on this
+    // machine -- see CLAUDE.md's Output Module Template caveat)
+    // doesn't abort the whole action; the output still queues with
+    // AE's default settings and the toast says so, matching how a
+    // template miss is handled everywhere else in this file rather
+    // than failing the batch.
+    try {
+      omMp4.applyTemplate(RENDER_ME_MP4_TEMPLATE);
+    } catch (e) {
+      mp4Note = " (\"" + RENDER_ME_MP4_TEMPLATE + "\" template not found -- MP4 output queued with default settings, apply manually)";
+    }
+    omMp4.file = new File(mp4Folder.fsName + "/" + comp.name + ".mp4");
+  } else {
+    mp4Note = ' (could not create "_mp4" folder -- MP4 output not queued)';
+  }
+  return mp4Note;
+}
+
+/** The comps to queue: every comp selected in the Project panel when there
+ *  are TWO or more, else the active comp exactly as before -- so a single
+ *  press on one open comp never changes meaning because something else
+ *  happens to be highlighted in the Project panel. Duck-typed (numLayers),
+ *  never `instanceof` a host class. */
+function renderMeTargets(): CompItem[] {
+  const picked: CompItem[] = [];
+  try {
+    const sel = app.project.selection || [];
+    for (let i = 0; i < sel.length; i++) {
+      const it: any = sel[i];
+      if (it && typeof it.numLayers === "number" && it.layers) picked.push(it as CompItem);
+    }
+  } catch (e) { /* no selection */ }
+  if (picked.length >= 2) return picked;
+  const active: any = app.project.activeItem;
+  if (active && typeof active.numLayers === "number" && active.layers) return [active as CompItem];
+  return picked;
+}
+
 export const renderMe = (): RenderMeResult => {
   try {
     const projFile = app.project.file;
     if (!projFile) return { success: false, error: "Save your After Effects project first -- RenderMe! needs a saved file path to find the Renders folder." };
 
-    const comp = app.project.activeItem;
-    if (!(comp instanceof CompItem)) return { success: false, error: "Select or open a composition first." };
+    const comps = renderMeTargets();
+    if (comps.length === 0) return { success: false, error: "Select or open a composition first." };
 
     const rendersFolder = llFindRendersFolder(projFile);
     if (!rendersFolder) {
@@ -236,110 +360,17 @@ export const renderMe = (): RenderMeResult => {
     }
 
     app.beginUndoGroup("RenderMe!");
-
-    // Row 1: AE's own default output module, redirected into the batch
-    // folder -- unchanged from before.
-    const rqItem = app.project.renderQueue.items.add(comp);
-    const om = rqItem.outputModule(1);
-    // Keep AE's own extension (and any image-sequence pattern) but ALWAYS
-    // name the file after the comp -- see renderMeOutputFileName() for why
-    // trusting `om.file.name` wholesale produced an unrelated old project's
-    // filename here.
-    const defaultFileName = renderMeOutputFileName(om.file ? decode(om.file.name) : null, comp.name);
-    om.file = new File(batchFolder.fsName + "/" + defaultFileName);
-
-    // Second output: the studio's standard H264_16MBPS_MOS delivery
-    // preset, output into a "_mp4" subfolder of that same batch folder.
-    //
-    // **Stacks onto the SAME render-queue row** (added at direct
-    // request, to match AE's own "Composition > Add Output Module" look
-    // -- one comp, two Output Module sub-rows -- instead of a second
-    // separate queued item). **CONFIRMED WORKING in a real AE session**
-    // (two Output Modules under one queued row, as intended), but it's
-    // still not a documented/officially-supported scripting operation,
-    // so the verify-then-fallback structure below stays: `RenderQueueItem
-    // .outputModules` is READ-ONLY from script (its own doc comment says
-    // it "does not provide any additional functionality" beyond index
-    // lookup) -- there is no `.add()`. The only way to add a second
-    // Output Module at all is the `Add Output Module` menu command
-    // (numeric id 2154, see the comment on the `executeCommand` call
-    // below for why it's a literal and not the typed const enum), which
-    // operates on whatever's SELECTED in the Render Queue panel -- a
-    // state this script cannot directly set (no `RenderQueueItem
-    // .selected` property exists). This relies on AE's own tendency to
-    // leave a just-added render-queue item as the selected one -- true
-    // in the confirmed real-world test, but still not a documented
-    // guarantee -- and is verified AFTER the fact
-    // (`rqItem.numOutputModules` actually grew) before trusting the
-    // result regardless, so a future AE version/edge case that breaks
-    // this assumption degrades gracefully to the always-reliable
-    // fallback (a second separate queued row) instead of leaving the MP4
-    // output half-configured. **Known accepted risk, unchanged by the
-    // real-world confirmation**: if some OTHER render-queue item happened
-    // to be the selected one, the menu command still fires and adds a
-    // stray, unconfigured Output Module to THAT item -- a harmless but
-    // real side effect this fallback can't detect or undo, since there's
-    // no way to know which item the command actually targeted.
-    let mp4Note = "";
-    const mp4Folder = renderMeEnsureMp4Folder(batchFolder);
-    if (mp4Folder) {
-      let omMp4: OutputModule | null = null;
-      try {
-        app.project.renderQueue.showWindow(true);
-        const beforeCount = rqItem.numOutputModules;
-        // Literal 2154, not `_CommandID.AddOutputModule` -- that's a
-        // `const enum` (types-for-adobe/AfterEffects), which only exists
-        // at compile time and needs the REAL tsc to inline it as a
-        // number. This project's actual build (vite-cep-plugin, via
-        // esbuild) strips/transpiles this file WITHOUT running tsc at
-        // all, and esbuild has a documented limitation: it can't inline
-        // a const enum declared in a separate .d.ts file, so it leaves
-        // the reference as a plain runtime property access on an object
-        // that was never emitted anywhere -- `_CommandID.AddOutputModule`
-        // would throw "_CommandID is not defined" the instant this ran
-        // in real AE. Confirmed by grepping the actual compiled
-        // dist/cep/jsx/index.js output, not assumed. AE's own
-        // `KeyframeInterpolationType`/`CloseOptions` etc. used elsewhere
-        // in this codebase are safe because those are plain `declare
-        // enum` (no `const`), which ARE real runtime objects AE itself
-        // provides -- `_CommandID` is the one exception, since AE has no
-        // actual runtime object for menu command IDs, only numbers.
-        app.executeCommand(2154 /* Composition > Add Output Module */);
-        if (rqItem.numOutputModules > beforeCount) {
-          omMp4 = rqItem.outputModule(rqItem.numOutputModules);
-        }
-      } catch (e) {
-        omMp4 = null;
-      }
-
-      if (!omMp4) {
-        const rqItemMp4 = app.project.renderQueue.items.add(comp);
-        omMp4 = rqItemMp4.outputModule(1);
-      }
-
-      // Same applyTemplate()-then-explicit-filename pattern as
-      // deliveryChecklistQueue() above -- applying a template doesn't
-      // reliably rename the output file's own extension on its own, so
-      // ".mp4" is set explicitly here rather than trusted to follow from
-      // the template. A missing template (not installed/renamed on this
-      // machine -- see CLAUDE.md's Output Module Template caveat)
-      // doesn't abort the whole action; the output still queues with
-      // AE's default settings and the toast says so, matching how a
-      // template miss is handled everywhere else in this file rather
-      // than failing the batch.
-      try {
-        omMp4.applyTemplate(RENDER_ME_MP4_TEMPLATE);
-      } catch (e) {
-        mp4Note = " (\"" + RENDER_ME_MP4_TEMPLATE + "\" template not found -- MP4 output queued with default settings, apply manually)";
-      }
-      omMp4.file = new File(mp4Folder.fsName + "/" + comp.name + ".mp4");
-    } else {
-      mp4Note = ' (could not create "_mp4" folder -- MP4 output not queued)';
+    // One note per distinct problem, not per comp: a missing MP4 template
+    // is the same news for every comp in the batch.
+    const notes: string[] = [];
+    for (let c = 0; c < comps.length; c++) {
+      const note = renderMeQueueOne(comps[c], batchFolder);
+      if (note && notes.indexOf(note) === -1) notes.push(note);
     }
-
     app.endUndoGroup();
 
-    return { success: true, message: batchFolder.fsName + mp4Note };
+    const count = comps.length > 1 ? comps.length + " comps · " : "";
+    return { success: true, message: count + batchFolder.fsName + notes.join("") };
   } catch (e) {
     app.endUndoGroup();
     return { success: false, error: e.toString() };

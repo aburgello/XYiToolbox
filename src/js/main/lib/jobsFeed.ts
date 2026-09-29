@@ -71,6 +71,12 @@ export interface WrikeSubtask {
 export const LOCALISABLE_STATUSES = /^(backlog|motion|save\s*png)$/i;
 /** Rendered and waiting to be delivered: the Deliver page offers these. */
 export const DELIVERABLE_STATUSES = /^prep\s*(for\s*)?deliver/i;
+/** Amends asked for and still being made: Review lists them as a reminder. */
+export const AMEND_STATUSES = /^to\s*amend/i;
+/** The amend is made and re-rendered: Review offers the new version. */
+export const REVISED_STATUSES = /^revised/i;
+/** Being made: Review lists these to show which have reached Renders yet. */
+export const IN_MOTION_STATUSES = /^(motion|backlog)$/i;
 /** Finished for real -- struck through rather than merely held back. */
 export const FINISHED_STATUSES = /^(delivered|completed?|done|published)$/i;
 

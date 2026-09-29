@@ -1376,6 +1376,33 @@ the same master for two rows and accepted it for four). Review's selection loade
 comps: AE leaves an import selected, so a second Import & Compare reviewed the
 masters.
 
+`node scripts/ui-review-jobs.mjs` (after `yarn build:web`) clicks through
+Review Session's **Your jobs** strip (`tools/ReviewJobs.tsx`): Deliver's
+`deliveryFindRenders`/`deliveryImportRenders`, asked about **To amend** and
+**Motion/Backlog** subtasks instead of Prep for delivery (`deliverableNames`/
+`isDeliverable` take the status regex; Deliver's default is unchanged). Only
+subtasks the feed actually labels count, with no every-subtask fallback.
+**Revised is the review signal** (the studio's status after an amend is made):
+its new version is ticked, and a Revised one still at V01 is flagged, never
+ticked. **To amend is still being made**, so it is listed as a reminder and
+never ticked, even with a V02 on disk. A Motion/Backlog subtask with no render is the
+reminder half ("Not rendered yet"). The import lands in Deliver's own
+`<Territory> <Batch>` bin and then runs the session's Import & Compare, so the
+sections sort it exactly as a hand import would.
+
+`node scripts/probe-review-sections.cjs` (after `yarn build`) guards Review
+Session's **sections**: vs Master, Amends and Pre vs Post. The two new
+references are found ON DISK beside the render (`reviewFindCounterparts`), by
+FILENAME: an amend is the nearest lower `_Vnn` of the same name, beside it or
+in `_Old`; a PRE twin is the POST name with its whole `Post` token removed, in
+any sibling batch folder (Chile's are `Batch_02` and `Batch_2_POST`, so never
+pair on folder names), version ignored, `_DOUBLE_RES`/`_QUAD_RES` required to
+match. One comp per item at import, against its most specific reference;
+the others build on press. **Only a master compare gets the frontcard
+offset** — a V01 or a PRE render carries its own card. References land in a
+`Review References` bin that the next Import skips, the same trap as masters
+left selected.
+
 `node scripts/probe-review-match.cjs` (after `yarn build`) drives Review
 Session's `reviewMatchToMaster` over a stubbed Forgotten Island tree. **Pass the
 scorer the CREATIVE, never every token in turn**: the matcher started at the
