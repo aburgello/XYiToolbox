@@ -115,10 +115,37 @@ try {
     check(cmp && cmp.length === 2 && cmp.every((c) => c.kind === "master" && /_OV[.]mp4$/.test(c.mp4Path)), "every render is compared against its master at import, the V02 included", cmp && cmp.map((c) => [c.localItemName, c.kind]));
     check(cmp && cmp.some((c) => /InMotion/.test(c.localItemName) && c.repeat === 2), "a duration multiple carries its x2 to the builder", cmp && cmp.map((c) => c.repeat));
     check(await page.waitFor(`document.querySelectorAll(".rv-row").length === 2`, 3000), "both land in the session");
-    const pills = await page.eval(`[...document.querySelectorAll(".rv-section")].map(p => p.innerText.replace(/\\s+/g, " ").trim())`);
+    const pills = await page.eval(`[...document.querySelectorAll(".rv-sections-bar .seg-option")].map(p => p.innerText.replace(/\\s+/g, " ").trim())`);
     check(pills.length === 2 && /^vs Master 2$/.test(pills[0]) && /^Amends 1$/.test(pills[1]), "no All: vs Master leads and holds both, Amends beside it", pills);
     check((await page.eval(`[...document.querySelectorAll(".rv-row-repeat")].map(e => e.innerText)`)).join() === "×2", "the x2 row says so");
-    await page.click(".rv-section", "Amends");
+    // THE BAND, THE ROWS, THE PASS.
+    check(/Street Fighter/.test(await page.eval(`document.querySelector(".rv-head-name")?.innerText || ""`)), "the band names the campaign");
+    check(/0 of 2/.test(await page.eval(`document.querySelector(".rv-progress-text")?.innerText || ""`)), "and how far through the session is");
+    check((await page.eval(`document.querySelectorAll(".rv-group-head").length`)) === 1 && /Chile · Batch_02/i.test(await page.eval(`document.querySelector(".rv-group-head")?.innerText || ""`)), "rows sit under their batch", await page.eval(`document.querySelector(".rv-group-head")?.innerText`));
+    // The master paths here don't exist, so each thumb falls back to its empty
+    // box -- what's checked is that every row has one, fed its master's path.
+    check((await page.eval(`document.querySelectorAll(".rv-row .rv-thumb").length`)) === 2, "each row carries its master's thumbnail");
+    check(/^AmendDone$/.test(await page.eval(`document.querySelector(".rv-row-site")?.innerText || ""`)) && (await page.eval(`[...document.querySelector(".rv-row").querySelectorAll(".rv-tag")].map(t => t.innerText).join()`)) === "672x432,10s,V02", "a row reads as its site, with size, length and version as tags");
+    // The pass: a click arms the keys, A approves, R to amend opens the note.
+    await page.click(".rv-row .rv-row-site");
+    await pause(150);
+    check(await page.eval(`document.activeElement && document.activeElement.classList.contains("rv-keygrab")`) && /approve/.test(await page.eval(`document.querySelector(".rv-keys")?.innerText || ""`)), "clicking a row arms the keyboard, and the key hints show");
+    const key = (k) => page.eval(`document.querySelector(".rv-keygrab").dispatchEvent(new KeyboardEvent("keydown", { key: ${JSON.stringify(k)}, bubbles: true }))`);
+    await key("a");
+    await pause(150);
+    check(await page.eval(`document.querySelector(".rv-row").classList.contains("rv-row--approved")`), "A approves the row in focus");
+    check(/1 of 2/.test(await page.eval(`document.querySelector(".rv-progress-text")?.innerText || ""`)), "and the band counts it");
+    await key("ArrowDown");
+    await pause(150);
+    check(await page.eval(`document.querySelectorAll(".rv-row")[1].classList.contains("rv-row--focus")`), "Down moves to the next row, and opens its comparison");
+    await key("r");
+    await pause(300);
+    check(await page.eval(`document.querySelectorAll(".rv-row")[1].classList.contains("rv-row--amend") && !!document.querySelectorAll(".rv-row")[1].querySelector(".rv-note-input")`), "R marks it to amend and opens the note");
+    check(await page.eval(`document.activeElement && document.activeElement.classList.contains("rv-note-input")`), "…with the caret in it");
+    await page.eval(`(() => { const t = document.querySelector(".rv-note-input"); const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set; set.call(t, "logo clips at 0:04"); t.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+    check(await page.waitFor(`/1 amend for Wrike/.test(document.querySelector(".rv-wrike-header")?.innerText || "")`, 2000), "a noted amend appears in the Wrike footer");
+    await page.shot(path.join(SHOTS, "ui-review-session.png"));
+    await page.eval(`[...document.querySelectorAll(".rv-sections-bar .seg-option")].find(b => /Amends/.test(b.innerText)).click()`);
     await pause(300);
     const amendRow = await page.eval(`[...document.querySelectorAll(".rv-row")].map(r => r.innerText.replace(/\\s+/g, " "))`);
     check(amendRow.length === 1 && /vs previous/.test(amendRow[0]) && /AmendDone/.test(amendRow[0]), "and Amends still shows the V02 against its V01", amendRow);

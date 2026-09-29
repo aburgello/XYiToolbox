@@ -873,3 +873,316 @@
 
     &:hover { color: #aaa; background: rgba(255,255,255,0.05); }
 }
+
+// =============================================================================
+// Review Session, 2026-09-29: one band, grouped hairline rows, the pass by keys.
+// Scoped under .rv-session so it wins over the rules above on specificity
+// rather than on file order.
+// =============================================================================
+.review-hub .rv-session {
+    // ── The band ─────────────────────────────────────────────────────────────
+    .rv-head {
+        position: relative;
+        flex-shrink: 0;
+        padding: 14px 14px 12px;
+        border-bottom: 1px solid var(--surface-divider, #272727);
+        overflow: hidden;
+    }
+
+    // The campaign's banner, washed behind the band like Localise's header.
+    .rv-head-wash {
+        position: absolute;
+        inset: 0;
+        background-size: cover;
+        background-position: center 30%;
+        opacity: 0.22;
+        -webkit-mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.35) 55%, transparent 100%);
+        pointer-events: none;
+    }
+
+    .rv-head-top, .rv-progress, .rv-jobs { position: relative; z-index: 1; }
+
+    .rv-head-top {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+    }
+
+    .rv-head-title {
+        flex: 1 1 auto;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+    }
+    .rv-head-kicker {
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--cat-icon, #c4b5fd);
+        opacity: 0.85;
+    }
+    .rv-head-name {
+        font-size: 19px;
+        font-weight: 700;
+        color: #fff;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .rv-head-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+    // How far through: approved green, to amend amber, the rest the track.
+    .rv-progress {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 12px;
+        min-width: 0;
+    }
+    .rv-progress-bar {
+        flex: 0 0 38%;
+        display: flex;
+        height: 6px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        overflow: hidden;
+    }
+    .rv-progress-seg { height: 100%; transition: width 0.35s cubic-bezier(0.22, 1, 0.36, 1); }
+    .rv-progress-seg--approved { background: #4ade80; }
+    .rv-progress-seg--amend { background: #fbbf24; }
+    .rv-progress-text {
+        min-width: 0;
+        font-size: 11.5px;
+        color: #9a9a9a;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+
+        strong { color: #eee; font-weight: 650; }
+        em { font-style: normal; }
+    }
+    .rv-progress-amend { color: #fbbf24; }
+
+    // Your jobs, as a line inside the band -- not a box of its own.
+    .rv-jobs.dj {
+        margin: 12px 0 0;
+        padding: 0;
+        border: none;
+        background: none;
+    }
+
+    // ── Sections and the pass ────────────────────────────────────────────────
+    .rv-sections-bar {
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 14px 4px;
+        min-width: 0;
+    }
+    .rv-sections-solo { font-size: 12px; font-weight: 600; color: #cfcfcf; }
+    .rv-keys {
+        min-width: 0;
+        font-size: 10.5px;
+        color: #5c5c5c;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+
+        kbd {
+            display: inline-block;
+            min-width: 15px;
+            margin: 0 2px 0 5px;
+            padding: 0 4px;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 10px;
+            line-height: 15px;
+            text-align: center;
+            color: #ddd;
+        }
+        kbd:first-child { margin-left: 0; }
+    }
+    .rv-keys--armed { color: #a3a3a3; }
+
+    .rv-step-btn {
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        padding: 0;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 6px;
+        background: none;
+        color: #aaa;
+        cursor: pointer;
+
+        &:hover, &:active { background: rgba(255, 255, 255, 0.06); color: #fff; }
+    }
+
+    // ── The list: groups of hairline rows ────────────────────────────────────
+    .rv-list {
+        position: relative;
+        padding: 6px 14px 14px;
+        gap: 0;
+    }
+    .rv-keygrab {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        border: 0;
+        opacity: 0;
+        pointer-events: none;
+    }
+    .rv-groups { display: flex; flex-direction: column; gap: 14px; }
+    .rv-group { display: flex; flex-direction: column; }
+    .rv-group-head {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        padding: 0 4px 6px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+        font-size: 11px;
+        font-weight: 650;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        color: #bdbdbd;
+    }
+    .rv-group-count { font-weight: 500; color: #666; }
+
+    .rv-row {
+        border: none;
+        border-radius: 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        background: none;
+        box-shadow: none;
+        overflow: visible;
+
+        &:hover { background: rgba(255, 255, 255, 0.025); border-color: rgba(255, 255, 255, 0.05); }
+        &.rv-row--focus { background: rgba(168, 85, 247, 0.08); }
+        // The comparison open in AE right now: a bar at the left edge.
+        &.rv-row--open { box-shadow: inset 2px 0 0 #a855f7; border-color: rgba(255, 255, 255, 0.05); }
+    }
+
+    .rv-row-main {
+        gap: 10px;
+        padding: 8px 6px;
+
+        > span:first-child { flex: initial; }
+    }
+
+    // Status: a dot that cycles pending -> approved -> to amend.
+    .rv-dot {
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        padding: 0;
+        border-radius: 50%;
+        border: 1.5px solid #4a4a4a;
+        background: none;
+        color: #111;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+
+        &:hover { border-color: #8a8a8a; background: rgba(255, 255, 255, 0.04); }
+        &:active { transform: scale(0.9); }
+        &.rv-dot--approved { border-color: #4ade80; background: #4ade80; }
+        &.rv-dot--approved:hover { background: #4ade80; }
+        &.rv-dot--amend { border-color: #fbbf24; background: #fbbf24; }
+        &.rv-dot--amend:hover { background: #fbbf24; }
+    }
+
+    // The master's poster frame, OV Library's own.
+    .rv-thumb {
+        flex-shrink: 0;
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 64px;
+        height: 36px;
+        border-radius: 5px;
+        background: #0c0c0c;
+        overflow: hidden;
+        color: #3a3a3a;
+
+        video { width: 100%; height: 100%; object-fit: contain; display: block; }
+    }
+    .rv-thumb--empty { border: 1px dashed rgba(255, 255, 255, 0.08); background: none; }
+
+    .rv-row-name-block {
+        flex: 1 1 auto;
+        min-width: 0;
+        cursor: pointer;
+        gap: 3px;
+    }
+    .rv-row-line1 {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+    }
+    .rv-row-site {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 13px;
+        font-weight: 650;
+        color: #eee;
+    }
+    .rv-tag {
+        flex-shrink: 0;
+        padding: 0 5px;
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.06);
+        color: #9a9a9a;
+        font-size: 10px;
+        line-height: 16px;
+        font-variant-numeric: tabular-nums;
+    }
+
+    // One action, the rest on hover.
+    .rv-row-actions {
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        gap: 2px;
+    }
+    .rv-act {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        padding: 0;
+        border: none;
+        border-radius: 6px;
+        background: none;
+        color: #777;
+        cursor: pointer;
+
+        &:hover, &:active { background: rgba(255, 255, 255, 0.07); color: #fff; }
+    }
+    .rv-act--on { color: #fbbf24; }
+    .rv-act--hover { opacity: 0; transition: opacity 0.12s ease; }
+    .rv-row:hover .rv-act--hover, .rv-row--focus .rv-act--hover { opacity: 1; }
+    .rv-row-actions .rv-comp-btn { margin-left: 6px; }
+
+    .rv-note-area { padding: 0 6px 10px 100px; }
+
+    // ── Amends for Wrike: the footer ─────────────────────────────────────────
+    .rv-wrike-header span { display: inline-flex; align-items: center; gap: 6px; color: #fbbf24; }
+}

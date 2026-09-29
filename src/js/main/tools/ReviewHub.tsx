@@ -32,13 +32,16 @@ import {
     Columns2,
     Layers,
 } from "lucide-react";
-import { evalTS } from "../../lib/utils/bolt";
+import { evalTS, csi } from "../../lib/utils/bolt";
 import { sfx } from "../../lib/utils/sfx";
 import { usePersistentState } from "../../lib/utils/usePersistentState";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
 import TutorialIcon from "../TutorialIcon";
 import ReviewJobs from "./ReviewJobs";
+import SegmentedToggle from "../SegmentedToggle";
+import { usePosterFrame } from "../lib/renderPreview";
+import { toFileUrl } from "../lib/fileUrl";
 import "../shared.scss";
 import "./ReviewHub.scss";
 
@@ -191,46 +194,7 @@ interface Toast {
 }
 
 // ---------------------------------------------------------------------------
-// Status toggle — three-state pill: pending → approved → amend → pending
-// Keyboard accessible: Enter / Space cycles through.
-// ---------------------------------------------------------------------------
-const StatusToggle: React.FC<{ status: ReviewStatus; onChange: (s: ReviewStatus) => void; onAmend?: () => void; onLeaveAmend?: () => void }> = ({ status, onChange, onAmend, onLeaveAmend }) => {
-    const reduced = useReducedMotion();
-    const cycle: ReviewStatus[] = ["pending", "amend", "approved"];
-    const next = () => {
-        const newStatus = cycle[(cycle.indexOf(status) + 1) % cycle.length];
-        onChange(newStatus);
-        if (newStatus === "amend") onAmend?.();
-        if (status === "amend" && newStatus !== "amend") onLeaveAmend?.();
-    };
-    return (
-        <motion.button
-            className={`rv-status rv-status--${status}`}
-            onClick={next}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); next(); } }}
-            whileHover={reduced ? {} : { scale: 1.06 }}
-            whileTap={reduced ? {} : { scale: 0.93 }}
-        >
-            <AnimatePresence mode="wait" initial={false}>
-                <motion.span
-                    key={status}
-                    initial={{ opacity: 0, y: reduced ? 0 : -6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: reduced ? 0 : 6 }}
-                    transition={{ duration: 0.14 }}
-                    style={{ display: "flex", alignItems: "center", gap: 4 }}
-                >
-                    {status === "approved" && <><CheckCircle2 size={11} /> Approved</>}
-                    {status === "amend"    && <><AlertTriangle size={11} /> To Amend</>}
-                    {status === "pending"  && <>— Pending</>}
-                </motion.span>
-            </AnimatePresence>
-        </motion.button>
-    );
-};
-
-// ---------------------------------------------------------------------------
-// Single review row
+// The row's parts
 // ---------------------------------------------------------------------------
 // Shorten a full master path to just its filename (no folder, no extension)
 // for the "vs <master>" second line in each row.
@@ -240,6 +204,82 @@ function masterDisplayName(masterPath: string): string {
     return dot === -1 ? seg : seg.substring(0, dot);
 }
 
+/** A render name read for a person: the SITE in bold, then size, length,
+ *  version and any _DOUBLE_RES as small tags -- the prefix every row shares
+ *  (SF_INTL_Trio_DOOH) and the territory (the group header says it) dropped. */
+export function rowNameParts(fullName: string): { site: string; tags: string[] } {
+    const stem = truncateNameAtArtwork(fullName).replace(/\.[A-Za-z0-9]{2,4}$/, "");
+    const toks = stem.split("_");
+    const site: string[] = [];
+    const tags: string[] = [];
+    for (let i = 0; i < toks.length; i++) {
+        const t = toks[i];
+        if (!t) continue;
+        if (/^\d{2,5}x\d{2,5}(px)?$/i.test(t)) { tags.push(t.replace(/px$/i, "")); continue; }
+        if (/^\d+(s|sec)$/i.test(t)) { tags.push(t.replace(/sec$/i, "s")); continue; }
+        if (/^V\d{1,3}$/i.test(t)) { tags.push(t.toUpperCase()); continue; }
+        if (/^(DOUBLE|TRIPLE|QUAD)$/i.test(t) && /^RES$/i.test(toks[i + 1] || "")) { tags.push(t.toLowerCase() + " res"); i++; continue; }
+        if (/^[A-Z]{2}$/.test(t) && i > 0) continue; // territory: in the group header
+        site.push(t);
+    }
+    return { site: site.join(" ") || stem, tags };
+}
+
+/** Which batch a render came from, off its path: ".../Chile/Renders/Batch_02/x.mov"
+ *  is "Chile · Batch_02". Rows group under it, so a session spanning two
+ *  batches reads as two lists rather than one long one. */
+export function rowGroupOf(sourcePath: string | null): string {
+    const parts = String(sourcePath || "").split(/[\\/]/).filter(Boolean);
+    for (let i = parts.length - 2; i > 0; i--) {
+        if (/^(renders|ae)$/i.test(parts[i])) {
+            const territory = parts[i - 1].replace(/_/g, " ");
+            const batch = i + 1 < parts.length - 1 ? parts[i + 1] : "";
+            return batch && !/^_/.test(batch) ? territory + " · " + batch : territory;
+        }
+    }
+    return "Imported";
+}
+
+/** The master's poster frame, as OV Library shows it, playing on hover. Only
+ *  the MASTER: the local renders are ProRes MOVs Chromium cannot decode. */
+const MasterThumb: React.FC<{ path: string | null | undefined }> = ({ path }) => {
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const [failed, setFailed] = useState(false);
+    const poster = usePosterFrame(videoRef, () => {});
+    const playable = !!path && /\.(mp4|m4v|webm)$/i.test(path) && !failed;
+    return (
+        <span
+            className={"rv-thumb" + (playable ? "" : " rv-thumb--empty")}
+            onMouseEnter={() => { const v = videoRef.current; if (v) { v.currentTime = 0; v.play().catch(() => {}); } }}
+            onMouseLeave={() => poster.restToPoster()}
+        >
+            {playable ? (
+                <video
+                    ref={videoRef}
+                    src={toFileUrl(path as string)}
+                    muted
+                    loop
+                    playsInline
+                    preload="metadata"
+                    onLoadedMetadata={poster.onLoadedMetadata}
+                    onSeeked={poster.onSeeked}
+                    onLoadedData={poster.onLoadedData}
+                    onError={() => setFailed(true)}
+                />
+            ) : (
+                <Film size={13} />
+            )}
+        </span>
+    );
+};
+
+const STATUS_NEXT: Record<ReviewStatus, ReviewStatus> = { pending: "approved", approved: "amend", amend: "pending" };
+const STATUS_WORD: Record<ReviewStatus, string> = { pending: "Pending", approved: "Approved", amend: "To amend" };
+
+// ---------------------------------------------------------------------------
+// Single review row -- one action (the row opens its comparison), status as a
+// dot at the left edge, the rest on hover.
+// ---------------------------------------------------------------------------
 const ReviewRow: React.FC<{
     item: ReviewItem;
     batchIndex: number;
@@ -247,141 +287,112 @@ const ReviewRow: React.FC<{
     comp: CompStamp;
     matchedMp4: string | null;
     isOpen: boolean;
+    focused: boolean;
+    noteRef?: React.RefObject<HTMLTextAreaElement | null>;
+    onFocusRow: () => void;
     onChange: (patch: Partial<ReviewItem>) => void;
     onRemove: () => void;
     onOpenComp: (compId: number) => void;
     onToggleDiff: (compId: number) => void;
     onRetryCompare: () => void;
-}> = ({ item, batchIndex, kind, comp, matchedMp4, isOpen, onChange, onRemove, onOpenComp, onToggleDiff, onRetryCompare }) => {
+}> = ({ item, batchIndex, kind, comp, matchedMp4, isOpen, focused, noteRef, onFocusRow, onChange, onRemove, onOpenComp, onToggleDiff, onRetryCompare }) => {
     const reduced = useReducedMotion();
+    const { site, tags } = rowNameParts(item.name);
+    const refLabel = kind === "amend" ? "vs previous" : kind === "prepost" ? `vs PRE${item.preFolder ? " · " + item.preFolder : ""}` : "vs";
+    const setStatus = (next: ReviewStatus) => {
+        onChange({ status: next, ...(next === "amend" ? { noteOpen: true } : item.status === "amend" ? { noteOpen: false } : {}) });
+    };
+    // The row IS the button: open the comparison, or build it when the master
+    // matched and the comp wasn't made.
+    const openOrBuild = () => {
+        onFocusRow();
+        if (comp.compId) onOpenComp(comp.compId);
+        else if (matchedMp4) onRetryCompare();
+    };
     return (
         <motion.div
-            className={`rv-row rv-row--${item.status}${isOpen ? " rv-row--open" : ""}`}
-            initial={{ opacity: 0, x: -10, y: -4 }}
-            animate={{ opacity: 1, x: 0, y: 0 }}
-            transition={{ duration: 0.25, delay: reduced ? 0 : batchIndex * 0.06, ease: [0.22, 1, 0.36, 1] }}
-            layout
+            className={`rv-row rv-row--${item.status}${isOpen ? " rv-row--open" : ""}${focused ? " rv-row--focus" : ""}`}
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.22, delay: reduced ? 0 : Math.min(batchIndex, 12) * 0.04, ease: [0.22, 1, 0.36, 1] }}
         >
             <div className="rv-row-main">
-                {/* Name block — truncated local name on line one, and the
-                    master it's paired against on line two so the pairing is
-                    visible at a glance instead of on hover.  The green film
-                    icon sits right beside the master name — it plays that
-                    master in the OS player, so it lives where the master is
-                    shown, not out in the action row. */}
-                <span className="rv-row-name-block">
-                    <Tooltip text={item.name}>
-                        <span className="rv-row-name">{truncateNameAtArtwork(item.name)}</span>
-                    </Tooltip>
-                    {matchedMp4 && (
+                <button
+                    type="button"
+                    className={`rv-dot rv-dot--${item.status}`}
+                    title={`${STATUS_WORD[item.status]} · press to mark ${STATUS_WORD[STATUS_NEXT[item.status]].toLowerCase()}`}
+                    aria-label={STATUS_WORD[item.status]}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={(e) => { e.stopPropagation(); onFocusRow(); setStatus(STATUS_NEXT[item.status]); }}
+                >
+                    {item.status === "approved" ? <CheckCircle2 size={12} /> : item.status === "amend" ? <AlertTriangle size={11} /> : null}
+                </button>
+
+                <MasterThumb path={item.masterPath || (kind === "master" ? matchedMp4 : null)} />
+
+                <span className="rv-row-name-block" onMouseDown={(e) => e.preventDefault()} onClick={openOrBuild} title={item.name}>
+                    <span className="rv-row-line1">
+                        <span className="rv-row-site">{site}</span>
+                        {tags.map((t) => <span key={t} className="rv-tag">{t}</span>)}
+                    </span>
+                    {matchedMp4 ? (
                         <span className="rv-row-master" title={matchedMp4}>
-                            <span className="rv-row-master-label">
-                                {kind === "amend" ? "vs previous" : kind === "prepost" ? `vs PRE${item.preFolder ? " · " + item.preFolder : ""}` : "vs"}
-                            </span>
+                            <span className="rv-row-master-label">{refLabel}</span>
                             <span className="rv-row-master-name">{kind === "master" ? masterDisplayName(matchedMp4) : truncateNameAtArtwork(masterDisplayName(matchedMp4))}</span>
                             {kind === "master" && (item.masterRepeat || 1) > 1 && (
                                 <span className="rv-row-repeat" title={`A ${item.masterRepeat}× duration multiple: this master plays ${item.masterRepeat} times end to end`}>×{item.masterRepeat}</span>
                             )}
-                            <Tooltip text={`Play ${kind === "master" ? "master" : kind === "amend" ? "previous version" : "PRE render"}: ${matchedMp4}`}>
-                                <motion.button
-                                    className="rv-mp4-match"
-                                    onClick={async () => {
-                                        try { await evalTS("playFile", matchedMp4); }
-                                        catch { /* no bridge — ignore */ }
-                                    }}
-                                    whileHover={reduced ? {} : { scale: 1.2 }}
-                                    whileTap={reduced ? {} : { scale: 0.9 }}
-                                >
-                                    <Film size={10} />
-                                </motion.button>
-                            </Tooltip>
                         </span>
-                    )}
-                    {/* In vs Master with nothing to compare against: said, not
-                        left as a blank line under the name. */}
-                    {!matchedMp4 && kind === "master" && (
+                    ) : kind === "master" ? (
                         <span className="rv-row-master rv-row-master--none" title="No master render matched this deliverable's creative, size and length. With no campaign picked in OV Library, nothing can match.">
                             no master found
                         </span>
-                    )}
+                    ) : null}
                 </span>
 
-                {/* Comparison comp — auto-created side-by-side QC comp.
-                    Click to open in AE's viewer. */}
-                {comp.compName && comp.compId && (
-                    <Tooltip text={comp.enrich ? `${comp.compName}\n${comp.enrich}` : `Open "${comp.compName}" in AE viewer`}>
-                        <motion.button
-                            className="rv-comp-btn"
-                            onClick={() => onOpenComp(comp.compId!)}
-                            whileHover={reduced ? {} : { scale: 1.08 }}
-                            whileTap={reduced ? {} : { scale: 0.94 }}
+                <span className="rv-row-actions">
+                    {matchedMp4 && (
+                        <Tooltip text={`Play ${kind === "master" ? "master" : kind === "amend" ? "previous version" : "PRE render"} in its own player`}>
+                            <button className="rv-act rv-act--hover" onMouseDown={(e) => e.preventDefault()} onClick={async () => { try { await evalTS("playFile", matchedMp4); } catch { /* no bridge */ } }}>
+                                <Film size={12} />
+                            </button>
+                        </Tooltip>
+                    )}
+                    {comp.compId && (
+                        <Tooltip text="Toggle the DIFF (difference) layer · D">
+                            <button className="rv-act rv-act--hover" onMouseDown={(e) => e.preventDefault()} onClick={() => onToggleDiff(comp.compId!)}>
+                                <Layers size={12} />
+                            </button>
+                        </Tooltip>
+                    )}
+                    <Tooltip text={item.note ? "Note" : "Add a note"}>
+                        <button
+                            className={"rv-act" + (item.note || item.noteOpen ? " rv-act--on" : " rv-act--hover")}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => onChange({ noteOpen: !item.noteOpen })}
                         >
-                            <Columns2 size={11} />
-                            <span className="rv-comp-label">Compare</span>
-                        </motion.button>
+                            <Pencil size={11} />
+                        </button>
                     </Tooltip>
-                )}
-
-                {/* MATCHED BUT NOT BUILT: the master was found and the comp
-                    wasn't made. That row used to show no Compare button at all
-                    and no reason; now it says why and builds on press. */}
-                {matchedMp4 && !comp.compId && (
-                    <Tooltip text={comp.error ? `Couldn't build the comparison: ${comp.error}\nPress to try again.` : "Build the comparison comp"}>
-                        <motion.button
-                            className="rv-comp-btn rv-comp-btn--retry"
-                            onClick={onRetryCompare}
-                            whileHover={reduced ? {} : { scale: 1.08 }}
-                            whileTap={reduced ? {} : { scale: 0.94 }}
-                        >
-                            <Columns2 size={11} />
-                            <span className="rv-comp-label">Compare</span>
-                        </motion.button>
+                    <Tooltip text="Remove from session">
+                        <button className="rv-act rv-act--hover" onMouseDown={(e) => e.preventDefault()} onClick={onRemove}>
+                            <X size={12} />
+                        </button>
                     </Tooltip>
-                )}
-
-                {/* Diff toggle — flips the DIFF layer's visibility in the
-                    comparison comp from the panel, so the artist doesn't have
-                    to hunt the timeline checkbox. */}
-                {comp.compId && (
-                    <Tooltip text="Toggle the DIFF (difference) layer">
-                        <motion.button
-                            className="rv-diff-btn"
-                            onClick={() => onToggleDiff(comp.compId!)}
-                            whileHover={reduced ? {} : { scale: 1.1 }}
-                            whileTap={reduced ? {} : { scale: 0.92 }}
-                        >
-                            <Layers size={11} />
-                        </motion.button>
-                    </Tooltip>
-                )}
-
-                {/* Status toggle */}
-                <StatusToggle status={item.status} onChange={(s) => onChange({ status: s })} onAmend={() => onChange({ noteOpen: true })} onLeaveAmend={() => onChange({ noteOpen: false })} />
-
-                {/* Note toggle */}
-                <Tooltip text={item.noteOpen ? "Collapse note" : "Add / view note"}>
-                    <motion.button
-                        className={item.noteOpen || item.note ? "rv-note-btn rv-note-btn--active" : "rv-note-btn"}
-                        onClick={() => onChange({ noteOpen: !item.noteOpen })}
-                        whileHover={reduced ? {} : { scale: 1.08 }}
-                        whileTap={reduced ? {} : { scale: 0.92 }}
-                    >
-                        {item.noteOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                        <Pencil size={11} />
-                    </motion.button>
-                </Tooltip>
-
-                {/* Remove */}
-                <Tooltip text="Remove from session">
-                    <motion.button
-                        className="rv-remove-btn"
-                        onClick={onRemove}
-                        whileHover={reduced ? {} : { scale: 1.1 }}
-                        whileTap={reduced ? {} : { scale: 0.9 }}
-                    >
-                        <X size={12} />
-                    </motion.button>
-                </Tooltip>
+                    {comp.compId ? (
+                        <Tooltip text={comp.enrich ? `${comp.compName}\n${comp.enrich}` : `Open "${comp.compName}" in AE · Enter`}>
+                            <button className="rv-comp-btn" onMouseDown={(e) => e.preventDefault()} onClick={openOrBuild}>
+                                <Columns2 size={11} /><span className="rv-comp-label">Compare</span>
+                            </button>
+                        </Tooltip>
+                    ) : matchedMp4 ? (
+                        <Tooltip text={comp.error ? `Couldn't build the comparison: ${comp.error}\nPress to try again.` : "Build the comparison comp"}>
+                            <button className="rv-comp-btn rv-comp-btn--retry" onMouseDown={(e) => e.preventDefault()} onClick={openOrBuild}>
+                                <Columns2 size={11} /><span className="rv-comp-label">Compare</span>
+                            </button>
+                        </Tooltip>
+                    ) : null}
+                </span>
             </div>
 
             <AnimatePresence initial={false}>
@@ -395,12 +406,12 @@ const ReviewRow: React.FC<{
                         style={{ overflow: "hidden" }}
                     >
                         <textarea
+                            ref={noteRef as React.RefObject<HTMLTextAreaElement>}
                             className="rv-note-input"
                             placeholder="Note for the animator…"
                             value={item.note}
                             rows={2}
                             onChange={(e) => onChange({ note: e.target.value })}
-                            autoFocus
                         />
                     </motion.div>
                 )}
@@ -746,74 +757,142 @@ const ReviewSession: React.FC = () => {
         }
     };
 
+    // --- the review pass, by keyboard -------------------------------------
+    // Opt-in like Edit In Context's arrows: clicking a row arms it (a focused,
+    // invisible input is what receives keys in macOS AE, and
+    // registerKeyEventsInterest routes them), clicking away hands AE its keys
+    // back. Up/Down move AND open that row's comparison, so a batch is a run
+    // of key presses: A approve, R to amend (the note opens), D the DIFF.
+    const keyGrabRef = useRef<HTMLInputElement>(null);
+    const noteRef = useRef<HTMLTextAreaElement>(null);
+    const [armed, setArmed] = useState(false);
+    const [focusId, setFocusId] = useState<number | null>(null);
+    const KEY_INTEREST = JSON.stringify([38, 40, 13, 65, 68, 82, 80].map((keyCode) => ({ keyCode })));
+    const claimKeys = () => { try { csi.registerKeyEventsInterest(KEY_INTEREST); } catch { /* preview */ } setArmed(true); };
+    const releaseKeys = () => { try { csi.registerKeyEventsInterest("[]"); } catch { /* nothing */ } setArmed(false); };
+    useEffect(() => () => { try { csi.registerKeyEventsInterest("[]"); } catch { /* nothing */ } }, []);
+    // Armed HERE as well as on the input's focus event: a programmatic focus
+    // is not guaranteed to dispatch one (it doesn't in a page without window
+    // focus), and the claim is idempotent.
+    const armOn = (id: number) => {
+        setFocusId(id);
+        try { keyGrabRef.current?.focus(); } catch { /* */ }
+        if (!armed) claimKeys();
+    };
+
+    const openRow = (v: { item: ReviewItem; kind: CompareKind } | undefined) => {
+        if (!v) return;
+        const c = compOf(v.item, v.kind);
+        if (c.compId) void handleOpenComp(c.compId);
+    };
+    const onReviewKey = (e: React.KeyboardEvent) => {
+        const idx = visible.findIndex((v) => v.item.id === focusId);
+        const cur = idx >= 0 ? visible[idx] : undefined;
+        const k = e.key.toLowerCase();
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            if (visible.length === 0) return;
+            const next = visible[idx < 0 ? 0 : Math.max(0, Math.min(visible.length - 1, idx + (e.key === "ArrowDown" ? 1 : -1)))];
+            setFocusId(next.item.id);
+            openRow(next);
+            requestAnimationFrame(() => document.querySelector(".rv-row--focus")?.scrollIntoView({ block: "nearest" }));
+            return;
+        }
+        if (!cur) return;
+        if (e.key === "Enter") { e.preventDefault(); openRow(cur); }
+        else if (k === "a") { e.preventDefault(); updateItem(cur.item.id, { status: "approved", noteOpen: cur.item.status === "amend" ? false : cur.item.noteOpen }); }
+        else if (k === "p") { e.preventDefault(); updateItem(cur.item.id, { status: "pending" }); }
+        else if (k === "r") {
+            e.preventDefault();
+            updateItem(cur.item.id, { status: "amend", noteOpen: true });
+            // Straight into the note: that is what To amend is for.
+            setTimeout(() => noteRef.current?.focus(), 60);
+        } else if (k === "d") {
+            e.preventDefault();
+            const c = compOf(cur.item, cur.kind);
+            if (c.compId) void handleToggleDiff(c.compId);
+        }
+    };
+
+    // --- the header's campaign banner -------------------------------------
+    const [banner, setBanner] = useState("");
+    useEffect(() => {
+        let dead = false;
+        setBanner("");
+        if (!campaign) return;
+        (async () => {
+            try {
+                const b = (await evalTS("loadCampaignBanner", campaign.name)) as unknown as string;
+                if (!dead && typeof b === "string") setBanner(b);
+            } catch { /* no banner */ }
+        })();
+        return () => { dead = true; };
+    }, [campaign]);
+
+    const reviewed = approvedCount + amendCount;
+    const pct = (n: number) => (items.length ? (n / items.length) * 100 : 0);
+    // Rows grouped by batch, in session order.
+    const groups: { label: string; rows: typeof visible }[] = [];
+    for (const v of visible) {
+        const label = rowGroupOf(v.item.sourcePath);
+        let g = groups.find((x) => x.label === label);
+        if (!g) { g = { label, rows: [] }; groups.push(g); }
+        g.rows.push(v);
+    }
+
     return (
         <div className="rv-session">
-            {/* Toolbar */}
-            <div className="rv-toolbar">
-                <Tooltip text={campaign ? "Import selected items and auto-create comparison comps for any with a matching master .mp4" : "Import items currently selected in the Project panel"}>
-                    <motion.button
-                        className="rv-load-btn"
-                        onClick={loadComps}
-                        whileHover={reduced ? {} : { scale: 1.03 }}
-                        whileTap={reduced ? {} : { scale: 0.97 }}
-                    >
-                        <ListPlus size={14} /> {campaign ? "Import & Compare" : "Import Selected"}
-                    </motion.button>
-                </Tooltip>
-
-                {/* Prev / Next — step through the session's comparison comps
-                    without returning to the list between each one. */}
-                {visible.some((v) => compOf(v.item, v.kind).compId) && (
-                    <>
-                        <Tooltip text="Previous comparison comp">
+            {/* ONE BAND: where you are, how far through, where the work comes
+                from -- instead of a toolbar, a jobs box and a pill row, each in
+                its own visual language. */}
+            <div className="rv-head">
+                {banner && <div className="rv-head-wash" style={{ backgroundImage: `url("${toFileUrl(banner)}")` }} aria-hidden="true" />}
+                <div className="rv-head-top">
+                    <div className="rv-head-title">
+                        <span className="rv-head-kicker">Review Session</span>
+                        <span className="rv-head-name">{campaign ? campaign.name : "No campaign"}</span>
+                    </div>
+                    <div className="rv-head-actions">
+                        <Tooltip text={campaign ? "Import what's selected in the Project panel and compare each against its master" : "Import what's selected in the Project panel. Pick a campaign in OV Library to pair masters."}>
                             <motion.button
-                                className="rv-step-btn"
-                                onClick={() => handleStepComp(-1)}
-                                whileHover={reduced ? {} : { scale: 1.05 }}
-                                whileTap={reduced ? {} : { scale: 0.95 }}
+                                className="rv-load-btn"
+                                onClick={loadComps}
+                                whileHover={reduced ? {} : { scale: 1.03 }}
+                                whileTap={reduced ? {} : { scale: 0.97 }}
                             >
-                                <ChevronLeft size={13} />
+                                <ListPlus size={14} /> {campaign ? "Import & Compare" : "Import Selected"}
                             </motion.button>
                         </Tooltip>
-                        <Tooltip text="Next comparison comp">
+                        <Tooltip text="Clear session">
                             <motion.button
-                                className="rv-step-btn"
-                                onClick={() => handleStepComp(1)}
-                                whileHover={reduced ? {} : { scale: 1.05 }}
-                                whileTap={reduced ? {} : { scale: 0.95 }}
+                                className="rv-icon-btn"
+                                onClick={clearAll}
+                                disabled={items.length === 0}
+                                whileHover={reduced ? {} : { scale: 1.08 }}
+                                whileTap={reduced ? {} : { scale: 0.94 }}
                             >
-                                <ChevronRight size={13} />
+                                <Trash2 size={14} />
                             </motion.button>
                         </Tooltip>
-                    </>
-                )}
-
-                <div className="rv-bar-spacer" />
+                    </div>
+                </div>
 
                 {items.length > 0 && (
-                    <div className="rv-summary">
-                        {approvedCount > 0 && <span className="rv-count rv-count--approved"><CheckCircle2 size={10} /> {approvedCount}</span>}
-                        {amendCount > 0    && <span className="rv-count rv-count--amend"><AlertTriangle size={10} /> {amendCount}</span>}
-                        {pendingCount > 0  && <span className="rv-count rv-count--pending">— {pendingCount}</span>}
-                        {campaign && matchedCount > 0 && (
-                            <Tooltip text={`${matchedCount} of ${items.length} matched to .mp4 renders in this campaign`}>
-                                <span className="rv-count rv-count--mp4"><Film size={10} /> {matchedCount}</span>
-                            </Tooltip>
-                        )}
+                    <div className="rv-progress">
+                        <div className="rv-progress-bar" aria-hidden="true">
+                            <span className="rv-progress-seg rv-progress-seg--approved" style={{ width: pct(approvedCount) + "%" }} />
+                            <span className="rv-progress-seg rv-progress-seg--amend" style={{ width: pct(amendCount) + "%" }} />
+                        </div>
+                        <span className="rv-progress-text">
+                            <strong>{reviewed} of {items.length}</strong> reviewed
+                            {amendCount > 0 && <> · <em className="rv-progress-amend">{amendCount} to amend</em></>}
+                            {campaign && <> · {matchedCount} with a master</>}
+                        </span>
                     </div>
                 )}
 
-                <Tooltip text="Clear session">
-                    <motion.button
-                        className="rv-icon-btn"
-                        onClick={clearAll}
-                        disabled={items.length === 0}
-                        whileHover={reduced ? {} : { scale: 1.08 }}
-                        whileTap={reduced ? {} : { scale: 0.94 }}
-                    >
-                        <Trash2 size={14} />
-                    </motion.button>
-                </Tooltip>
+                {/* Wrike jobs in Revised / To amend / Motion / Backlog. */}
+                <ReviewJobs pushToast={pushToast} onImported={loadComps} />
             </div>
 
             {/* Error */}
@@ -833,83 +912,110 @@ const ReviewSession: React.FC = () => {
                 )}
             </AnimatePresence>
 
-            {/* Wrike jobs in To amend / Motion / Backlog, with their renders. */}
-            <ReviewJobs pushToast={pushToast} onImported={loadComps} />
-
-            {/* Sections -- vs Master / Amends / Pre vs Post. */}
-            {hasOtherKinds && (
-                <div className="rv-sections">
-                    {SECTIONS.map((sec) => {
-                        const n = sectionCount(sec.id);
-                        if (sec.id !== "master" && n === 0) return null;
-                        return (
-                            <Tooltip key={sec.id} text={sec.tip}>
-                                <button
-                                    className={activeSection === sec.id ? "rv-section rv-section--on" : "rv-section"}
-                                    onClick={() => { if (sec.id !== activeSection) sfx.menu(); setSection(sec.id); }}
-                                >
-                                    {sec.label}
-                                    <span className="rv-section-count">{n}</span>
-                                </button>
+            {/* Sections as one control, with the pass controls beside them. */}
+            {items.length > 0 && (
+                <div className="rv-sections-bar">
+                    {hasOtherKinds ? (
+                        <SegmentedToggle
+                            name="review-sections"
+                            value={activeSection}
+                            onChange={(v) => { if (v !== activeSection) sfx.menu(); setSection(v as Section); }}
+                            options={SECTIONS.filter((sec) => sec.id === "master" || sectionCount(sec.id) > 0)
+                                .map((sec) => ({ value: sec.id, label: `${sec.label} ${sectionCount(sec.id)}` }))}
+                        />
+                    ) : (
+                        <span className="rv-sections-solo">vs Master</span>
+                    )}
+                    <span className="rv-bar-spacer" />
+                    <span className={"rv-keys" + (armed ? " rv-keys--armed" : "")}>
+                        {armed
+                            ? <><kbd>↑</kbd><kbd>↓</kbd> move <kbd>A</kbd> approve <kbd>R</kbd> amend <kbd>D</kbd> diff</>
+                            : "Click a row to review by keyboard"}
+                    </span>
+                    {visible.some((v) => compOf(v.item, v.kind).compId) && (
+                        <>
+                            <Tooltip text="Previous comparison comp">
+                                <button className="rv-step-btn" onClick={() => handleStepComp(-1)}><ChevronLeft size={13} /></button>
                             </Tooltip>
-                        );
-                    })}
+                            <Tooltip text="Next comparison comp">
+                                <button className="rv-step-btn" onClick={() => handleStepComp(1)}><ChevronRight size={13} /></button>
+                            </Tooltip>
+                        </>
+                    )}
                 </div>
             )}
 
             {/* Row list */}
             <div className="rv-list">
+                {/* Genuinely focusable and invisible: it receives the keys. */}
+                <input
+                    ref={keyGrabRef}
+                    className="rv-keygrab"
+                    aria-label="Review by keyboard"
+                    readOnly
+                    onFocus={claimKeys}
+                    onBlur={releaseKeys}
+                    onKeyDown={onReviewKey}
+                />
                 {items.length === 0 ? (
                     <div className="rv-empty">
-                        <motion.div
-                            animate={reduced ? {} : { y: [0, -5, 0] }}
-                            transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
-                        >
-                            <MessageSquareDiff size={22} />
-                        </motion.div>
-                        <span>Select items in the Project panel, then Import</span>
+                        <MessageSquareDiff size={22} />
+                        <span>Select renders in the Project panel, then Import</span>
                         {campaign ? (
-                            <span className="rv-empty-hint">Imported items will be matched to master renders in "{campaign.name}" using campaign, size, duration, and aspect ratio</span>
+                            <span className="rv-empty-hint">Each is compared against its master in "{campaign.name}" by creative, size and length.</span>
                         ) : (
-                            <span className="rv-empty-hint">Select a campaign in the OV Library tab to auto-match master renders</span>
+                            <span className="rv-empty-hint">Pick a campaign in the OV Library tab to pair masters.</span>
                         )}
                     </div>
                 ) : (
-                    <div key={batchKey} className="rv-list">
-                        {visible.map(({ item, index: i, kind }) => {
-                            const matchedMp4 = refPathOf(item, kind, itemMatches);
-                            const comp = compOf(item, kind);
-                            const isOpen = comp.compId != null && comp.compId === lastOpenedCompId;
-                            return (
-                                <ReviewRow
-                                    key={`${item.id}-${batchKey}`}
-                                    item={item}
-                                    batchIndex={i - item.batchOffset}
-                                    kind={kind}
-                                    comp={comp}
-                                    matchedMp4={matchedMp4}
-                                    isOpen={isOpen}
-                                    onChange={(patch) => updateItem(item.id, patch)}
-                                    onRemove={() => removeItem(item.id)}
-                                    onOpenComp={handleOpenComp}
-                                    onToggleDiff={handleToggleDiff}
-                                    onRetryCompare={() => void retryCompare(item, kind)}
-                                />
-                            );
-                        })}
+                    <div key={batchKey} className="rv-groups">
+                        {groups.map((g) => (
+                            <div key={g.label} className="rv-group">
+                                {groups.length > 1 || g.label !== "Imported" ? (
+                                    <div className="rv-group-head">
+                                        <span>{g.label}</span>
+                                        <span className="rv-group-count">{g.rows.length}</span>
+                                    </div>
+                                ) : null}
+                                {g.rows.map(({ item, index: i, kind }) => {
+                                    const matchedMp4 = refPathOf(item, kind, itemMatches);
+                                    const comp = compOf(item, kind);
+                                    const isOpen = comp.compId != null && comp.compId === lastOpenedCompId;
+                                    const focused = armed && focusId === item.id;
+                                    return (
+                                        <ReviewRow
+                                            key={`${item.id}-${batchKey}`}
+                                            item={item}
+                                            batchIndex={i - item.batchOffset}
+                                            kind={kind}
+                                            comp={comp}
+                                            matchedMp4={matchedMp4}
+                                            isOpen={isOpen}
+                                            focused={focused}
+                                            noteRef={focusId === item.id ? noteRef : undefined}
+                                            onFocusRow={() => armOn(item.id)}
+                                            onChange={(patch) => updateItem(item.id, patch)}
+                                            onRemove={() => removeItem(item.id)}
+                                            onOpenComp={handleOpenComp}
+                                            onToggleDiff={handleToggleDiff}
+                                            onRetryCompare={() => void retryCompare(item, kind)}
+                                        />
+                                    );
+                                })}
+                            </div>
+                        ))}
                     </div>
                 )}
             </div>
 
-            {/* Wrike-format export -- only shown once there's something to
-                paste, right below the list per direct request. */}
+            {/* Amends to send: only once something is marked to amend. */}
             {amendWithNotes.length > 0 && (
                 <div className="rv-wrike-box">
                     <div className="rv-wrike-header">
-                        <span>Wrike Format ({amendWithNotes.length})</span>
-                        <Tooltip text="Copy to clipboard">
+                        <span><AlertTriangle size={12} /> {amendWithNotes.length} amend{amendWithNotes.length === 1 ? "" : "s"} for Wrike</span>
+                        <Tooltip text="Copy to clipboard, in the director's paste-into-Wrike format">
                             <button className="rv-wrike-copy" onClick={copyWrikeText}>
-                                <Copy size={12} /> Copy
+                                <Copy size={12} /> Copy for Wrike
                             </button>
                         </Tooltip>
                     </div>
