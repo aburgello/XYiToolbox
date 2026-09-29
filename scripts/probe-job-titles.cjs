@@ -28,9 +28,13 @@ const cases = [
     ["SF Motion Outdoor CO 4", { territory: "CO", name: "SF Motion Outdoor", batch: "Batch 4" }],
     ["SF Motion Outdoor CO 5", { territory: "CO", batch: "Batch 5" }],
     ["SF Motion Outdoor PL 3", { territory: "PL", batch: "Batch 3" }],
-    // B1 is batch 1, and the word between stays in the name.
-    ["SF Motion Outdoor CL POST B1", { territory: "CL", name: "SF Motion Outdoor POST", batch: "Batch 1" }],
-    ["SF Motion Outdoor CL POST B12", { territory: "CL", batch: "Batch 12" }],
+    // B1 is batch 1, and POST belongs to the batch: its own folder.
+    ["SF Motion Outdoor CL POST B1", { territory: "CL", name: "SF Motion Outdoor", batch: "Batch 1 POST" }],
+    ["SF Motion Outdoor CL POST B12", { territory: "CL", batch: "Batch 12 POST" }],
+    ["SF Motion Outdoor CL POST", { territory: "CL", batch: "Batch 1 POST" }],
+    ["SF Motion Outdoor CL B2 POST", { territory: "CL", batch: "Batch 2 POST" }],
+    // Any other word after the territory stays in the name.
+    ["SF Motion Outdoor CL EXTRA 3", { territory: "CL", name: "SF Motion Outdoor EXTRA", batch: "Batch 3" }],
     // No number: the first batch, Batch 1 (studio decision).
     ["SF Motion Outdoor TW", { territory: "TW", name: "SF Motion Outdoor", batch: "Batch 1" }],
     ["SF Motion Outdoor GR", { territory: "GR", batch: "Batch 1" }],

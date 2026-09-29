@@ -1357,7 +1357,13 @@ on 2026-09-28, when Wrike titles drifted to "SF Motion Outdoor CO 4" and
 "… CL POST B1" -- from a bare number or B-number AFTER the territory. Never
 from anywhere else in a title. No number after the territory means **Batch 1**
 ("SF Motion Outdoor TW" is TW's Batch_01), same studio decision. Other words
-after the territory ("POST") stay in the name.
+after the territory stay in the name -- except **POST, which belongs to the
+batch**: "CL POST B1" is `Batch_01_POST`, its own folder beside the PRE one.
+The number right after "Batch" is padded wherever it sits (`padBatch`, and
+`csvLocPadBatchNumber` host-side), and a run REUSES an existing folder that
+matches loosely -- case, separators, leading zeros -- before making one
+(`csvLocExistingBatchFolder`), so Chile's real `Batch_2_POST` is never
+shadowed by a padded `Batch_02_POST` twin. `node scripts/probe-batch-folders.cjs`.
 
 `node scripts/probe-frontcard-offset.cjs` (after `yarn build`) guards the
 **frontcard offset in every compare**: a localised render opens with its

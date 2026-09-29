@@ -547,14 +547,19 @@ export function parseJobTitle(title: string): { film: string; territory: string;
                 if (!batch && m) { batch = "Batch " + parseInt(m[1], 10); continue; }
                 extras.push(w);
             }
+            // POST IS PART OF THE BATCH, not the name: a POST batch is its own
+            // folder beside the PRE one (Chile's is Batch_2_POST on disk), so
+            // "CL POST B1" is Batch 1 POST -> Batch_01_POST.
+            const post = extras.some((w) => /^post$/i.test(w));
+            const rest = extras.filter((w) => !/^post$/i.test(w));
             return {
                 film: words[0],
                 territory: words[ti],
-                name: words.slice(0, ti).concat(extras).join(" "),
+                name: words.slice(0, ti).concat(rest).join(" "),
                 // NO NUMBER IS BATCH 1 (studio decision, same day): a job's first
                 // batch is the one nobody numbered -- "SF Motion Outdoor TW" is
                 // TW's Batch_01, the same folder the builder already fell back to.
-                batch: batch || "Batch 1",
+                batch: (batch || "Batch 1") + (post ? " POST" : ""),
             };
         }
     }

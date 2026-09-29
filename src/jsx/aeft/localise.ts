@@ -3959,7 +3959,35 @@ function csvLocFindExistingBuild(outputFolder: Folder, wantedName: string): stri
 // already there is left untouched, only a LONE trailing digit gets padded.
 // A batch already double-digit-or-more ("Batch_10", "Batch_100") is left
 // alone, same for one with no trailing digit at all.
-function csvLocPadBatchNumber(name: string): string {
+/**
+ * AN EXISTING FOLDER BY ANOTHER SPELLING IS THIS BATCH. Padding made
+ * "Batch_02" beside a real "Batch_2", and would make "Batch_02_POST" beside
+ * Chile's "Batch_2_POST": two folders, the run's files in the new one and the
+ * artist's in the old. Same loose rule as the panel's resolveBatchFolder --
+ * case, separators and leading zeros ignored. Null when nothing matches, and
+ * only then is a folder made.
+ */
+export function csvLocExistingBatchFolder(aeFolder: Folder, batchName: string): Folder | null {
+  const loose = function (n: string): string {
+    return String(n).toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/(^|\D)0+(\d)/g, "$1$2");
+  };
+  const want = loose(batchName);
+  try {
+    const kids = aeFolder.getFiles();
+    for (let k = 0; k < kids.length; k++) {
+      if (!(kids[k] instanceof Folder)) continue;
+      if (loose(decode(String(kids[k].name))) === want) return kids[k] as Folder;
+    }
+  } catch (eKids) { /* unreadable: nothing matches */ }
+  return null;
+}
+
+// Same rule as the panel's padBatch: the number right after "Batch" is padded
+// wherever it sits (Batch_1_POST -> Batch_01_POST); otherwise the trailing one.
+export function csvLocPadBatchNumber(name: string): string {
+  if (/^batch[_\s-]*\d+/i.test(name)) {
+    return name.replace(/^(batch[_\s-]*)(\d+)/i, function (_m: string, p: string, d: string) { return p + (d.length === 1 ? "0" + d : d); });
+  }
   return name.replace(/(\d+)$/, (digits) => (digits.length === 1 ? "0" + digits : digits));
 }
 
@@ -4440,7 +4468,8 @@ export const csvLocaliserRun = (
       const aeFolder = new Folder(sourceFolderObj.fsName + "/AE");
       if (!aeFolder.exists) aeFolder.create();
       if (batchName !== "") {
-        outputFolder = new Folder(aeFolder.fsName + "/" + batchName);
+        const existingBatch = csvLocExistingBatchFolder(aeFolder, batchName);
+        outputFolder = existingBatch || new Folder(aeFolder.fsName + "/" + batchName);
         if (!outputFolder.exists) outputFolder.create();
       } else {
         outputFolder = aeFolder;

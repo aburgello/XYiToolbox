@@ -483,8 +483,10 @@ function resolveBatchFolder(sourceFolder: string, batch: string): string {
     } catch (e) {
         // not there under that spelling — fall through to the loose match
     }
-    // "Batch_2"/"batch 02"/"BATCH2" all reduce to "BATCH2".
-    const loose = (s: string) => canonName(s).replace(/0+(\d)$/, "$1");
+    // "Batch_2"/"batch 02"/"BATCH2" all reduce to "BATCH2" -- and a leading
+    // zero anywhere goes, so Batch_02_POST finds Chile's Batch_2_POST rather
+    // than making a second POST folder beside it.
+    const loose = (s: string) => canonName(s).replace(/(^|\D)0+(\d)/g, "$1$2");
     const want = loose(batch);
     try {
         for (const child of fs.readdirSync(aeDir)) {
@@ -598,7 +600,12 @@ function csvResultToLocGenReport(res: {
 
 // csvLocaliserRun writes to <Source Folder>/AE/<paddedBatch> and pads a lone
 // trailing digit (Batch_1 -> Batch_01), so mirror that to find the folder.
-const padBatch = (batch: string) => batch.replace(/(\d+)$/, (d) => (d.length === 1 ? "0" + d : d));
+// The number right after "Batch" is padded wherever it sits, so a POST batch
+// (Batch_1_POST) is Batch_01_POST like its PRE twin is Batch_01; a name with
+// no "Batch" in front keeps the old rule, its trailing number.
+const padBatch = (batch: string) => (/^batch[_\s-]*\d+/i.test(batch)
+    ? batch.replace(/^(batch[_\s-]*)(\d+)/i, (_m, p: string, d: string) => p + (d.length === 1 ? "0" + d : d))
+    : batch.replace(/(\d+)$/, (d) => (d.length === 1 ? "0" + d : d)));
 
 /** Last path segment, for the collapsed summary. Handles both separators and a
  *  trailing slash; returns "" rather than a stray separator. */
