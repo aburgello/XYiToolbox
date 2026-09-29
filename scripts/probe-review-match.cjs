@@ -29,6 +29,8 @@ const masters = [
     'PortalToParadise/FID_INTL_PortalToParadise_DOOH_1080x1920px_10s_OV',
     'PortalToParadise/FID_INTL_PortalToParadise_DOOH_1920x960px_10s_OV',
     'Trio/FID_INTL_Trio_DOOH_1920x1080px_10s_OV',
+    'Trio/FID_INTL_Trio_DOOH_1920x1080px_15s_OV',
+    'Trio/FID_INTL_Trio_DOOH_1080x1920px_10s_OV',
 ];
 masters.forEach((m) => {
     addFile(ROOT + '/AE/' + m + '.aep');
@@ -83,6 +85,15 @@ check(/1920x1080/.test(got[2]) && /1080x1920/.test(got[1]), '…and the closest 
 // break a name the fallback loop used to answer.
 const t = aeft.reviewMatchToMaster(ROOT, JSON.stringify([{ name: 'x.mov', sourcePath: '/x/FID_INTL_Trio_DOOH_Somewhere_1920x1080px_10s_NO_V01.mov' }]));
 check(t.items && /_trio_/.test(t.items[0].masterStem || ''), 'a Trio deliverable still pairs with Trio', t.items && t.items[0].masterStem);
+
+// A 20s deliverable of a creative whose masters are 10s and 15s (Peru's
+// RealPlaza batch): the 10s master, played twice -- not nothing.
+const tw = aeft.reviewMatchToMaster(ROOT, JSON.stringify([{ name: 'x.mov', sourcePath: '/x/FID_INTL_Trio_DOOH_RealPlazaSalaverry_1632x1248px_20s_PE_V01.mov' }]));
+check(tw.items && /_trio_dooh_1920x1080px_10s_ov$/.test(tw.items[0].masterStem || '') && tw.items[0].repeat === 2, 'a 20s Trio pairs with the 10s master, x2', tw.items && tw.items[0]);
+const ex = aeft.reviewMatchToMaster(ROOT, JSON.stringify([{ name: 'x.mov', sourcePath: '/x/FID_INTL_Trio_DOOH_Plaza_1920x1080px_15s_PE_V01.mov' }]));
+check(ex.items && /_15s_ov$/.test(ex.items[0].masterStem || '') && !ex.items[0].repeat, 'a length that has a master is never a multiple', ex.items && ex.items[0]);
+const odd = aeft.reviewMatchToMaster(ROOT, JSON.stringify([{ name: 'x.mov', sourcePath: '/x/FID_INTL_Trio_DOOH_Plaza_1920x1080px_25s_PE_V01.mov' }]));
+check(odd.items && !odd.items[0].masterStem, 'a length no master divides pairs with nothing', odd.items && odd.items[0]);
 
 // A creative no master has: no pairing at all, rather than the film title
 // matching everything.

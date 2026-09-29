@@ -39,6 +39,12 @@ const FIXTURES = `{
   reviewFindCounterparts: (json) => ({ success: true, items: JSON.parse(json).map((it) => /AmendDone.*V02/.test(it.name)
       ? { name: it.name, amendPath: "${B2}${P}AmendDone_672x432px_10s_CL_V01.mov", amendName: "${P}AmendDone_672x432px_10s_CL_V01.mov" }
       : { name: it.name }) }),
+  // A campaign, so masters pair too (Review takes it from the OV Library tab).
+  loadCampaigns: () => [{ name: "Street Fighter", mastersRoot: "/Volumes/paramount/SF_Masters" }],
+  loadLastCampaign: () => "Street Fighter",
+  reviewMatchToMaster: (root, json) => ({ success: true, items: JSON.parse(json).map((it) => ({ name: it.name, sourcePath: it.sourcePath,
+      mp4Path: "/Volumes/paramount/SF_Masters/Support/Motion_Components/_MP4/SF_INTL_Trio_DOOH_1920x1080px_10s_OV.mp4", masterStem: "x",
+      repeat: /InMotion/.test(it.name) ? 2 : undefined })) }),
   createReviewComparisons: (json) => { window.__compared = JSON.parse(json); return { success: true, results: window.__compared.map((m, i) => ({ success: true, compId: 900 + i, compName: "Compare_" + i })) }; },
 }`;
 
@@ -104,10 +110,18 @@ try {
     const imp = await page.eval(`window.__imported`);
     check(imp && imp.paths.length === 2 && imp.folder === "Chile Batch_02", "imports the two ticked into Deliver's Chile Batch_02 bin", imp);
     const cmp = await page.eval(`window.__compared`);
-    check(cmp && cmp.length === 1 && cmp[0].kind === "amend" && /AmendDone.*V01/.test(cmp[0].mp4Path), "the V02 is compared against its V01 (Amends); the V01 in motion has no master without a campaign", cmp);
+    // MASTER FIRST, for every row: a V02 is still a deliverable to check
+    // against the OV -- its V01 is an extra section, not a replacement.
+    check(cmp && cmp.length === 2 && cmp.every((c) => c.kind === "master" && /_OV[.]mp4$/.test(c.mp4Path)), "every render is compared against its master at import, the V02 included", cmp && cmp.map((c) => [c.localItemName, c.kind]));
+    check(cmp && cmp.some((c) => /InMotion/.test(c.localItemName) && c.repeat === 2), "a duration multiple carries its x2 to the builder", cmp && cmp.map((c) => c.repeat));
     check(await page.waitFor(`document.querySelectorAll(".rv-row").length === 2`, 3000), "both land in the session");
     const pills = await page.eval(`[...document.querySelectorAll(".rv-section")].map(p => p.innerText.replace(/\\s+/g, " ").trim())`);
-    check(pills.some((p) => /^Amends 1$/.test(p)), "and the Amends section appears", pills);
+    check(pills.some((p) => /^Amends 1$/.test(p)) && pills.some((p) => /^vs Master 2$/.test(p)), "Amends appears beside vs Master, which holds both", pills);
+    check((await page.eval(`[...document.querySelectorAll(".rv-row-repeat")].map(e => e.innerText)`)).join() === "×2", "the x2 row says so");
+    await page.click(".rv-section", "Amends");
+    await pause(300);
+    const amendRow = await page.eval(`[...document.querySelectorAll(".rv-row")].map(r => r.innerText.replace(/\\s+/g, " "))`);
+    check(amendRow.length === 1 && /vs previous/.test(amendRow[0]) && /AmendDone/.test(amendRow[0]), "and Amends still shows the V02 against its V01", amendRow);
     await page.shot(path.join(SHOTS, "ui-review-jobs.png"));
 
     console.log("");

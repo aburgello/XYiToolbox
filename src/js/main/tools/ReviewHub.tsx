@@ -121,6 +121,8 @@ interface ReviewItem {
     /** The master render this item matched, kept on the item so a reloaded
      *  session still knows it. */
     masterPath?: string;
+    /** >1 when the master is a shorter cut played that many times (20s = 10s x2). */
+    masterRepeat?: number;
     /** An earlier version of this deliverable (V01 for a V02), off disk. */
     amendPath?: string;
     amendName?: string;
@@ -151,10 +153,13 @@ const SECTIONS: { id: Section; label: string; tip: string }[] = [
     { id: "prepost", label: "Pre vs Post", tip: "A POST render against its PRE batch twin: the same name without the Post token, in a sibling batch folder" },
 ];
 
-/** Where an item lands when imported: the most specific reference it has. A
- *  POST render with a PRE twin is being checked against PRE; a V02 against
- *  its V01; everything else against the master. */
+/** Where an item lands when imported: its MASTER whenever it has one. A V02
+ *  is still a deliverable to check against the OV, and the studio did not
+ *  want that to stop being the default the moment a V01 exists -- Amends and
+ *  Pre vs Post are extra sections, not a replacement. Without a master, the
+ *  most specific reference it does have. */
 function primaryKind(item: ReviewItem): CompareKind {
+    if (item.masterPath) return "master";
     if (item.prePath) return "prepost";
     if (item.amendPath) return "amend";
     return "master";
@@ -275,6 +280,9 @@ const ReviewRow: React.FC<{
                                 {kind === "amend" ? "vs previous" : kind === "prepost" ? `vs PRE${item.preFolder ? " · " + item.preFolder : ""}` : "vs"}
                             </span>
                             <span className="rv-row-master-name">{kind === "master" ? masterDisplayName(matchedMp4) : truncateNameAtArtwork(masterDisplayName(matchedMp4))}</span>
+                            {kind === "master" && (item.masterRepeat || 1) > 1 && (
+                                <span className="rv-row-repeat" title={`A ${item.masterRepeat}× duration multiple: this master plays ${item.masterRepeat} times end to end`}>×{item.masterRepeat}</span>
+                            )}
                             <Tooltip text={`Play ${kind === "master" ? "master" : kind === "amend" ? "previous version" : "PRE render"}: ${matchedMp4}`}>
                                 <motion.button
                                     className="rv-mp4-match"
@@ -484,6 +492,7 @@ const ReviewSession: React.FC = () => {
                 // No references found: the items still review against masters.
             }
             let matchedMp4s: Record<string, string> = {};
+            const repeats: Record<string, number> = {};
             if (campaign) {
                 try {
                     const matchResult = await evalTS("reviewMatchToMaster", campaign.mastersRoot, lookupPayload);
@@ -491,6 +500,7 @@ const ReviewSession: React.FC = () => {
                     const matchedItems: any[] = (matchResult as any)?.items || [];
                     for (const mi of matchedItems) {
                         if (mi.mp4Path) matchedMp4s[mi.name] = mi.mp4Path;
+                        if (mi.mp4Path && mi.repeat > 1) repeats[mi.name] = mi.repeat;
                     }
                     setItemMatches((prev) => ({ ...(prev || {}), ...matchedMp4s }));
                 } catch {
@@ -500,7 +510,7 @@ const ReviewSession: React.FC = () => {
             const enriched = fresh.map((item) => ({
                 ...item,
                 ...(refsById[item.id] || {}),
-                ...(matchedMp4s[item.name] ? { masterPath: matchedMp4s[item.name] } : {}),
+                ...(matchedMp4s[item.name] ? { masterPath: matchedMp4s[item.name], masterRepeat: repeats[item.name] } : {}),
             }));
             setItems((prev) => prev.map((item) => {
                 const e = enriched.find((x) => x.id === item.id);
@@ -511,14 +521,14 @@ const ReviewSession: React.FC = () => {
             //    imported for (primaryKind). The other sections build theirs on
             //    press, so an import doesn't make three comps per render.
             const allBridgeItems: any[] = result.items || [];
-            const compMatches: { mp4Path: string; localItemId: number; localItemName: string; reviewId: number; kind: CompareKind }[] = [];
+            const compMatches: { mp4Path: string; localItemId: number; localItemName: string; reviewId: number; kind: CompareKind; repeat?: number }[] = [];
             for (const reviewItem of enriched) {
                 const kind = primaryKind(reviewItem);
                 const refPath = refPathOf(reviewItem, kind, matchedMp4s);
                 if (!refPath) continue;
                 const bridgeEntry = allBridgeItems.find((c: any) => c.name === reviewItem.name);
                 if (!bridgeEntry) continue;
-                compMatches.push({ mp4Path: refPath, localItemId: bridgeEntry.id, localItemName: reviewItem.name, reviewId: reviewItem.id, kind });
+                compMatches.push({ mp4Path: refPath, localItemId: bridgeEntry.id, localItemName: reviewItem.name, reviewId: reviewItem.id, kind, repeat: kind === "master" ? reviewItem.masterRepeat : undefined });
             }
             const amendN = enriched.filter((i) => primaryKind(i) === "amend").length;
             const preN = enriched.filter((i) => primaryKind(i) === "prepost").length;
@@ -610,7 +620,7 @@ const ReviewSession: React.FC = () => {
             return;
         }
         try {
-            const r = (await evalTS("createReviewComparison", mp4, item.aeId, item.name, kind)) as any;
+            const r = (await evalTS("createReviewComparison", mp4, item.aeId, item.name, kind, kind === "master" ? (item.masterRepeat || 1) : 1)) as any;
             if (!mountedRef.current) return;
             if (r && r.compId && r.compName) {
                 updateItem(item.id, compPatch(item, kind, { compName: r.compName, compId: r.compId, enrich: r.enrichNotes || "", fps: r.compFps }));

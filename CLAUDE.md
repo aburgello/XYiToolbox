@@ -1409,6 +1409,18 @@ offset** — a V01 or a PRE render carries its own card. References land in a
 `Review References` bin that the next Import skips, the same trap as masters
 left selected.
 
+**Review compares every row against its MASTER first.** Amends (V02 vs V01)
+and Pre vs Post are extra sections, never a replacement: a V02 is still a
+deliverable to check against the OV, and the studio does not want that to stop
+being the default because a V01 exists (`primaryKind`). **A length no master
+has is a duration multiple**: Street Fighter's Trio masters are 10s and 15s
+only, so every 20s Trio row (Peru's RealPlaza) paired with nothing.
+`reviewMatchToMaster` falls back to `multipleMasterOptions` -- the helper CSV
+Localiser builds those deliverables with -- on the PARSED creative only, fewest
+repeats first, and the compare lays the master end to end that many times
+after the frontcard (the offset counts the repeated length, or a 20s + 5s card
+would read as a 15s card). The row shows `×2`.
+
 `node scripts/probe-review-match.cjs` (after `yarn build`) drives Review
 Session's `reviewMatchToMaster` over a stubbed Forgotten Island tree. **Pass the
 scorer the CREATIVE, never every token in turn**: the matcher started at the

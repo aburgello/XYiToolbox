@@ -4,7 +4,7 @@
 // now a thin barrel -- see its header comment for context.
 // =============================================================================
 import { Result, SETTINGS_SECTION, decode } from "./shared";
-import { getMastersIndex, pickBestMasterFromIndex, mastersSkipFolder, mastersCanon, parseFilenameMeta, MasterIndexEntry } from "./tools";
+import { getMastersIndex, pickBestMasterFromIndex, mastersSkipFolder, mastersCanon, parseFilenameMeta, MasterIndexEntry, multipleMasterOptions, MAX_DURATION_MULTIPLE } from "./tools";
 
 
 
@@ -628,6 +628,9 @@ interface ReviewMatchEntry {
   sourcePath: string | null;
   mp4Path: string | null;
   masterStem: string | null;
+  /** >1 when the master is a SHORTER cut played this many times (a 20s
+   *  deliverable of a creative whose masters are 10s and 15s). */
+  repeat?: number;
 }
 
 /** True when every master's path carries this token (canonicalised the way
@@ -746,7 +749,22 @@ export const reviewMatchToMaster = (mastersRoot: string, itemsJson: string): Res
         }
       }
 
-      out.push({ name: item.name, sourcePath: item.sourcePath, mp4Path: mp4Path, masterStem: masterStem });
+      // A DURATION MULTIPLE when no master has this length: Street Fighter's
+      // Trio masters are 10s and 15s only, so every 20s Trio deliverable
+      // (Peru's RealPlaza batch) paired with nothing. The same helper CSV
+      // Localiser builds those deliverables with, on the PARSED creative only
+      // -- never the token loop, which is what paired FID with everything.
+      // Fewest repeats first: 20s is the 10s twice, not the 5s four times.
+      var repeat = 1;
+      if (!mp4Path && creative && size && duration) {
+        var opts = multipleMasterOptions(index, creative, size, duration, MAX_DURATION_MULTIPLE);
+        for (var oi = 0; oi < opts.length && !mp4Path; oi++) {
+          var mStem = opts[oi].entry.name.replace(/\.aep$/i, "").toLowerCase();
+          if (renderMap[mStem]) { mp4Path = renderMap[mStem]; masterStem = mStem; repeat = opts[oi].factor; }
+        }
+      }
+
+      out.push({ name: item.name, sourcePath: item.sourcePath, mp4Path: mp4Path, masterStem: masterStem, repeat: repeat > 1 ? repeat : undefined });
     }
 
     return { success: true, items: out };
@@ -1040,7 +1058,9 @@ export type ReviewCompareKind = "master" | "amend" | "prepost";
  *  selected, exactly the trap reviewIsOwnByProduct handles for masters. */
 export const REVIEW_REFERENCE_FOLDER = "Review References";
 
-export const createReviewComparison = (mp4Path: string, localItemId: number, localItemName: string, kind?: string): ReviewComparisonResult => {
+export const createReviewComparison = (mp4Path: string, localItemId: number, localItemName: string, kind?: string, repeat?: number): ReviewComparisonResult => {
+  // A master played `times` times end to end (a 20s deliverable of a 10s cut).
+  var times = kind && kind !== "master" ? 1 : Math.max(1, Math.min(MAX_DURATION_MULTIPLE, Math.floor(Number(repeat) || 1)));
   var isMaster = !kind || kind === "master";
   var refLabel = kind === "amend" ? "BEFORE" : kind === "prepost" ? "PRE" : "MASTER";
   // WHICH STEP FAILED, in the error: AE's own message ("property is hidden")
@@ -1110,7 +1130,7 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     var compH = Math.round(srcH * scaleFactor);
     var halfW = Math.round(compW / 2);
     var fps = masterFootage.frameRate > 0 ? masterFootage.frameRate : 25;
-    var dur = Math.max(masterFootage.duration || 0, localItem.duration || 0) || 10;
+    var dur = Math.max((masterFootage.duration || 0) * times, localItem.duration || 0) || 10;
 
     // 4. Create the comparison comp.
     var stem = localItemName.replace(/_[Vv]\d+$/, "").replace(/[\\\/:*?"<>|]/g, "-");
@@ -1145,7 +1165,7 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     // ONLY AGAINST A MASTER. An earlier version or a PRE twin opens with its
     // own frontcard, so the two already line up at 0; a length difference
     // between them is a real change to review, not a card to skip.
-    var offset = isMaster ? frontcardOffset(localItem.duration || 0, masterFootage.duration || 0, fps) : 0;
+    var offset = isMaster ? frontcardOffset(localItem.duration || 0, (masterFootage.duration || 0) * times, fps) : 0;
     step = "placing the master";
     var masterLayer = comp.layers.add(masterFootage);
     fitLayerIntoBox(masterLayer, halfW, compH, halfW / 2, compH / 2);
@@ -1153,6 +1173,7 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     if (offset > 0) {
       try { masterLayer.startTime = offset; } catch (eOff) { /* stays at 0 */ }
     }
+
 
     // 6. Place local render on the RIGHT half.
     step = "placing the local render";
@@ -1245,6 +1266,20 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     };
     enrichNotes.push("tc-master:" + (addTimecode(masterLayer) ? "ok" : "FAIL"));
     enrichNotes.push("tc-local:" + (addTimecode(localLayer) ? "ok" : "FAIL"));
+
+    // The repeats, end to end after the first, so the master half plays the
+    // whole deliverable -- and the DIFF lines up for all of it, not the first
+    // pass only. Made AFTER the counter, so every pass carries it.
+    if (times > 1) {
+      step = "repeating the master";
+      var mDur = masterFootage.duration || 0;
+      for (var rp = 1; rp < times && mDur > 0; rp++) {
+        var again = masterLayer.duplicate() as AVLayer;
+        again.startTime = offset + rp * mDur;
+        again.name = "MASTER (.mp4) x" + (rp + 1);
+      }
+      enrichNotes.push("repeat:" + times);
+    }
 
     // Where the comparison starts: a marker at the end of the frontcard, the
     // work area from there, and the playhead parked on it -- so pressing play
@@ -1342,7 +1377,7 @@ export const reviewJumpComp = (compId: number, frame: number): Result => {
 // trip for all the comparison comps at once rather than one per item.
 // matchesJson: '[{"mp4Path":"...","localItemId":1,"localItemName":"..."}, ...]'
 export const createReviewComparisons = (matchesJson: string): ReviewComparisonResult & { results?: ReviewComparisonResult[] } => {
-  var matches: { mp4Path: string; localItemId: number; localItemName: string; kind?: string }[];
+  var matches: { mp4Path: string; localItemId: number; localItemName: string; kind?: string; repeat?: number }[];
   try {
     matches = JSON.parse(matchesJson);
   } catch (eParse) {
@@ -1355,7 +1390,7 @@ export const createReviewComparisons = (matchesJson: string): ReviewComparisonRe
   var results: ReviewComparisonResult[] = [];
   for (var i = 0; i < matches.length; i++) {
     var m = matches[i];
-    results.push(createReviewComparison(m.mp4Path, m.localItemId, m.localItemName, m.kind));
+    results.push(createReviewComparison(m.mp4Path, m.localItemId, m.localItemName, m.kind, m.repeat));
   }
   return { success: true, results: results };
 };

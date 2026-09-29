@@ -45,7 +45,8 @@ function makeComp(name, w, h, par, dur, fps) {
     };
     c._markers = markers;
     const addLayer = (source) => {
-        const l = { source, name: source ? source.name : 'Null', startTime: 0, inPoint: 0, enabled: true, video: true, property: () => prop(), moveToBeginning() {}, remove() { layers.splice(layers.indexOf(l), 1); } };
+        const l = { source, name: source ? source.name : 'Null', startTime: 0, inPoint: 0, enabled: true, video: true, property: () => prop(), moveToBeginning() {}, remove() { layers.splice(layers.indexOf(l), 1); },
+            duplicate() { const d = addLayer(source); d.name = l.name; d.startTime = l.startTime; return d; } };
         layers.unshift(l);
         return l;
     };
@@ -117,6 +118,15 @@ items.push(blind);
 const nComps = items.filter((x) => x instanceof CompItem).length;
 r = aeft.createReviewComparison('/masters/FID_INTL_PortalToParadise_DOOH_1080x1920px_10s_OV.mp4', blind.id, blind.name);
 check(!r.success && /can't read the picture/.test(r.error) && items.filter((x) => x instanceof CompItem).length === nComps, "a render with no readable video is named as the problem, and no half-built comp is left", r.error);
+
+// A 20s deliverable (25s with its card) against a 10s master played twice.
+const twenty = new FootageItem({ id: nextId++, name: 'SF_INTL_Trio_DOOH_RealPlazaSalaverry_1632x1248px_20s_PE_V01.mov', width: 1632, height: 1248, duration: 25, frameRate: 25, parentFolder: root });
+items.push(twenty);
+r = aeft.createReviewComparison('/masters/SF_INTL_Trio_DOOH_1920x1080px_10s_OV.mp4', twenty.id, twenty.name, 'master', 2);
+const c4 = project.itemByID(r.compId);
+const passes = c4 ? c4._layers.filter((l) => /^MASTER/.test(l.name)).map((l) => l.startTime).sort((a, b) => a - b) : [];
+check(r.success && passes.length === 2 && passes[0] === 5 && passes[1] === 15, 'a x2 master plays twice, end to end, after the 5s card (not a 15s "card")', passes);
+check(c4 && c4.duration === 25 && c4.displayStartTime === -5 && /repeat:2/.test(r.enrichNotes), 'the comp covers the whole deliverable', c4 && [c4.duration, c4.displayStartTime, r.enrichNotes]);
 
 // OV Library's own Compare, from the Project-panel selection.
 project.selection = [local];
