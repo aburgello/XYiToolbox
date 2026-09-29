@@ -950,6 +950,11 @@ export const reviewLoadSelectedItems = (): ReviewLoadResult => {
       // review. A master (`…_OV.mp4`, `…_OV1`) and a Compare_ comp are never
       // what is under review; they are what it is compared against.
       if (reviewIsOwnByProduct(name, sourcePath)) { skipped++; continue; }
+      // An earlier version or PRE twin a comparison imported: filed under
+      // REVIEW_REFERENCE_FOLDER, and never itself under review.
+      try {
+        if (item.parentFolder && item.parentFolder.name === REVIEW_REFERENCE_FOLDER) { skipped++; continue; }
+      } catch (ePF) { /* no parent */ }
 
       items.push({ id: item.id, name: name, sourcePath: sourcePath, duration: duration, frameRate: frameRate });
     }
@@ -1025,7 +1030,19 @@ export function frontcardOffset(localDur: number, masterDur: number, fps: number
   return Math.round(d * f) / f;
 }
 
-export const createReviewComparison = (mp4Path: string, localItemId: number, localItemName: string): ReviewComparisonResult => {
+/** What the left half of a comparison is. "master" is the OV render (the
+ *  default, and the only kind with a frontcard offset); "amend" is an earlier
+ *  version of the same deliverable; "prepost" is its PRE-batch twin. */
+export type ReviewCompareKind = "master" | "amend" | "prepost";
+
+/** The folder a comparison's reference file is filed in, so the next Import &
+ *  Compare can tell it apart from what is under review -- AE leaves an import
+ *  selected, exactly the trap reviewIsOwnByProduct handles for masters. */
+export const REVIEW_REFERENCE_FOLDER = "Review References";
+
+export const createReviewComparison = (mp4Path: string, localItemId: number, localItemName: string, kind?: string): ReviewComparisonResult => {
+  var isMaster = !kind || kind === "master";
+  var refLabel = kind === "amend" ? "BEFORE" : kind === "prepost" ? "PRE" : "MASTER";
   // WHICH STEP FAILED, in the error: AE's own message ("property is hidden")
   // names no property, and four rows of one batch failed with it while the
   // rest of the batch, same master, same codec, built fine.
@@ -1073,7 +1090,7 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     // Auto-file the imported OV master into an "OV" project folder so a
     // review session doesn't scatter every master render loose in the root.
     try {
-      masterFootage.parentFolder = reviewFindOrCreateFolder("OV");
+      masterFootage.parentFolder = reviewFindOrCreateFolder(isMaster ? "OV" : REVIEW_REFERENCE_FOLDER);
     } catch (eFolder) { /* folder move is best-effort — never fail the import */ }
 
     // 3. Determine comp dimensions from the master's source.  Capped at a
@@ -1097,7 +1114,7 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
 
     // 4. Create the comparison comp.
     var stem = localItemName.replace(/_[Vv]\d+$/, "").replace(/[\\\/:*?"<>|]/g, "-");
-    var compName = "Compare_" + stem;
+    var compName = "Compare_" + stem + (kind === "amend" ? "_AMEND" : kind === "prepost" ? "_PRE_POST" : "");
     // Deduplicate: if a comp with that name already exists, append _2, _3, …
     var finalName = compName;
     var dupIdx = 1;
@@ -1125,11 +1142,14 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
 
     // 5. Place master on the LEFT half -- starting after the local's
     //    frontcard, so the two halves show the same moment (frontcardOffset).
-    var offset = frontcardOffset(localItem.duration || 0, masterFootage.duration || 0, fps);
+    // ONLY AGAINST A MASTER. An earlier version or a PRE twin opens with its
+    // own frontcard, so the two already line up at 0; a length difference
+    // between them is a real change to review, not a card to skip.
+    var offset = isMaster ? frontcardOffset(localItem.duration || 0, masterFootage.duration || 0, fps) : 0;
     step = "placing the master";
     var masterLayer = comp.layers.add(masterFootage);
     fitLayerIntoBox(masterLayer, halfW, compH, halfW / 2, compH / 2);
-    masterLayer.name = "MASTER (.mp4)";
+    masterLayer.name = isMaster ? "MASTER (.mp4)" : refLabel + " (" + decodeURI(String(f.name)) + ")";
     if (offset > 0) {
       try { masterLayer.startTime = offset; } catch (eOff) { /* stays at 0 */ }
     }
@@ -1139,7 +1159,7 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     var localLayer = comp.layers.add(localItem);
     fitLayerIntoBox(localLayer, halfW, compH, halfW + halfW / 2, compH / 2);
     step = "after placing both";
-    localLayer.name = "LOCAL (imported render)";
+    localLayer.name = kind === "amend" ? "AFTER (imported render)" : kind === "prepost" ? "POST (imported render)" : "LOCAL (imported render)";
 
     // 7-10. The enrichment block — divider, labels, difference matte,
     //       timecode overlay.  EACH step is independently guarded so one
@@ -1322,7 +1342,7 @@ export const reviewJumpComp = (compId: number, frame: number): Result => {
 // trip for all the comparison comps at once rather than one per item.
 // matchesJson: '[{"mp4Path":"...","localItemId":1,"localItemName":"..."}, ...]'
 export const createReviewComparisons = (matchesJson: string): ReviewComparisonResult & { results?: ReviewComparisonResult[] } => {
-  var matches: { mp4Path: string; localItemId: number; localItemName: string }[];
+  var matches: { mp4Path: string; localItemId: number; localItemName: string; kind?: string }[];
   try {
     matches = JSON.parse(matchesJson);
   } catch (eParse) {
@@ -1335,9 +1355,173 @@ export const createReviewComparisons = (matchesJson: string): ReviewComparisonRe
   var results: ReviewComparisonResult[] = [];
   for (var i = 0; i < matches.length; i++) {
     var m = matches[i];
-    results.push(createReviewComparison(m.mp4Path, m.localItemId, m.localItemName));
+    results.push(createReviewComparison(m.mp4Path, m.localItemId, m.localItemName, m.kind));
   }
   return { success: true, results: results };
+};
+
+// -- Review Session: what else a render can be compared against -------------
+//
+// Two references besides the master, both found ON DISK beside the render:
+//
+//   AMEND   -- an earlier version of the same deliverable. "..._CL_V02.mov" is
+//              compared against "..._CL_V01.mov" in its own folder or that
+//              folder's _Old. The nearest lower version wins (V03 takes V02).
+//   PREPOST -- a POST render's PRE twin. POST batches carry a whole "Post"
+//              token ("..._1248x416px_Post_10s_CL_V01.mov") and are otherwise
+//              named as the PRE render, so the twin is the same name with that
+//              token removed, in a SIBLING batch folder. Paired by FILENAME,
+//              never by folder name: Chile's PRE batch is "Batch_02" and its
+//              POST is "Batch_2_POST", so no folder rule would have found it.
+//              The version is ignored (PRE may be at V02 and POST at V01) and
+//              the highest PRE version wins; a _DOUBLE_RES/_QUAD_RES suffix
+//              must match, since it is part of what the deliverable is.
+//
+// No File.exists / getFiles(mask) -- the NAS rules. getFiles() with no mask
+// and names compared after decoding.
+
+interface ReviewNameParts {
+  /** Everything before the _Vnn token, decoded, upper-cased. */
+  head: string;
+  version: number;
+  /** Whatever follows the version ("_DOUBLE_RES"), upper-cased. */
+  tail: string;
+  ext: string;
+}
+
+/** A render name split around its version token, or null without one. */
+export function reviewSplitVersion(fileName: string): ReviewNameParts | null {
+  var n = String(fileName || "");
+  try { n = decodeURI(n); } catch (eD) { /* already plain */ }
+  var dot = n.lastIndexOf(".");
+  var ext = dot === -1 ? "" : n.substring(dot + 1).toLowerCase();
+  var stem = dot === -1 ? n : n.substring(0, dot);
+  var toks = stem.split("_");
+  for (var i = toks.length - 1; i >= 0; i--) {
+    var m = /^[Vv](\d{1,3})$/.exec(toks[i]);
+    if (!m) continue;
+    return {
+      head: toks.slice(0, i).join("_").toUpperCase(),
+      version: parseInt(m[1], 10),
+      tail: toks.slice(i + 1).join("_").toUpperCase(),
+      ext: ext,
+    };
+  }
+  return null;
+}
+
+/** The PRE name's head for a POST head: the whole "Post" token removed, or ""
+ *  when there is no such token. Whole-token only -- a site called
+ *  "PostOffice" is not a POST render. */
+export function reviewPreHeadOf(head: string): string {
+  var toks = String(head || "").split("_");
+  var out: string[] = [];
+  var found = false;
+  for (var i = 0; i < toks.length; i++) {
+    if (!found && toks[i].toUpperCase() === "POST") { found = true; continue; }
+    out.push(toks[i]);
+  }
+  return found ? out.join("_") : "";
+}
+
+function reviewIsVideoExt(ext: string): boolean {
+  return ext === "mov" || ext === "mp4";
+}
+
+function reviewListFiles(folder: Folder): File[] {
+  var out: File[] = [];
+  try {
+    var all = folder.getFiles();
+    for (var i = 0; i < all.length; i++) if (all[i] instanceof File) out.push(all[i] as File);
+  } catch (e) { /* unreadable: nothing */ }
+  return out;
+}
+
+function reviewListFolders(folder: Folder): Folder[] {
+  var out: Folder[] = [];
+  try {
+    var all = folder.getFiles();
+    for (var i = 0; i < all.length; i++) if (all[i] instanceof Folder) out.push(all[i] as Folder);
+  } catch (e) { /* unreadable: nothing */ }
+  return out;
+}
+
+function reviewDecodedName(f: File | Folder): string {
+  var n = String(f.name || "");
+  try { n = decodeURI(n); } catch (eD) {}
+  return n;
+}
+
+export interface ReviewCounterpart {
+  name: string;
+  amendPath?: string;
+  amendName?: string;
+  prePath?: string;
+  preName?: string;
+  /** The PRE file's folder, for the row's "vs PRE · Batch_02". */
+  preFolder?: string;
+}
+
+export const reviewFindCounterparts = (itemsJson: string): Result & { items?: ReviewCounterpart[] } => {
+  var list: { name: string; sourcePath: string | null }[];
+  try { list = JSON.parse(itemsJson); } catch (eP) { return { success: false, error: "Could not read the item list." }; }
+  var out: ReviewCounterpart[] = [];
+  for (var i = 0; i < list.length; i++) {
+    var entry: ReviewCounterpart = { name: list[i].name };
+    out.push(entry);
+    var sp = list[i].sourcePath;
+    if (!sp) continue;
+    var file = new File(sp);
+    var me = reviewSplitVersion(file.name);
+    if (!me || !reviewIsVideoExt(me.ext)) continue;
+    var own = file.parent;
+    if (!own) continue;
+
+    // AMEND: the nearest lower version, here or in _Old.
+    var places: Folder[] = [own];
+    var subs = reviewListFolders(own);
+    for (var s = 0; s < subs.length; s++) {
+      if (reviewDecodedName(subs[s]).toUpperCase() === "_OLD") places.push(subs[s]);
+    }
+    var bestV = 0;
+    for (var p = 0; p < places.length; p++) {
+      var files = reviewListFiles(places[p]);
+      for (var f = 0; f < files.length; f++) {
+        var o = reviewSplitVersion(files[f].name);
+        if (!o || !reviewIsVideoExt(o.ext)) continue;
+        if (o.head !== me.head || o.tail !== me.tail) continue;
+        if (o.version >= me.version || o.version <= bestV) continue;
+        bestV = o.version;
+        entry.amendPath = files[f].fsName;
+        entry.amendName = reviewDecodedName(files[f]);
+      }
+    }
+
+    // PREPOST: a POST render's twin in a sibling batch folder.
+    var preHead = reviewPreHeadOf(me.head);
+    var batchParent = own.parent;
+    if (preHead === "" || !batchParent) continue;
+    var siblings = reviewListFolders(batchParent);
+    var bestPre = 0;
+    for (var b = 0; b < siblings.length; b++) {
+      var sib = siblings[b];
+      var sibName = reviewDecodedName(sib);
+      if (sibName.charAt(0) === "_") continue;
+      if (sib.fsName === own.fsName) continue;
+      var sibFiles = reviewListFiles(sib);
+      for (var k = 0; k < sibFiles.length; k++) {
+        var q = reviewSplitVersion(sibFiles[k].name);
+        if (!q || !reviewIsVideoExt(q.ext)) continue;
+        if (q.head !== preHead || q.tail !== me.tail) continue;
+        if (q.version <= bestPre) continue;
+        bestPre = q.version;
+        entry.prePath = sibFiles[k].fsName;
+        entry.preName = reviewDecodedName(sibFiles[k]);
+        entry.preFolder = sibName;
+      }
+    }
+  }
+  return { success: true, items: out };
 };
 
 /**

@@ -1372,6 +1372,19 @@ the same master for two rows and accepted it for four). Review's selection loade
 comps: AE leaves an import selected, so a second Import & Compare reviewed the
 masters.
 
+`node scripts/probe-review-sections.cjs` (after `yarn build`) guards Review
+Session's **sections**: vs Master, Amends and Pre vs Post. The two new
+references are found ON DISK beside the render (`reviewFindCounterparts`), by
+FILENAME: an amend is the nearest lower `_Vnn` of the same name, beside it or
+in `_Old`; a PRE twin is the POST name with its whole `Post` token removed, in
+any sibling batch folder (Chile's are `Batch_02` and `Batch_2_POST`, so never
+pair on folder names), version ignored, `_DOUBLE_RES`/`_QUAD_RES` required to
+match. One comp per item at import, against its most specific reference;
+the others build on press. **Only a master compare gets the frontcard
+offset** — a V01 or a PRE render carries its own card. References land in a
+`Review References` bin that the next Import skips, the same trap as masters
+left selected.
+
 `node scripts/probe-review-match.cjs` (after `yarn build`) drives Review
 Session's `reviewMatchToMaster` over a stubbed Forgotten Island tree. **Pass the
 scorer the CREATIVE, never every token in turn**: the matcher started at the

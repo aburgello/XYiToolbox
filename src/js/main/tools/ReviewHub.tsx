@@ -115,6 +115,68 @@ interface ReviewItem {
     aeId?: number;
     /** Why the comparison comp wasn't built, when it wasn't. */
     comparisonError?: string;
+    // The fields above are the MASTER comparison (kept as they were, so a
+    // saved session still loads). The other two kinds live here.
+    /** The master render this item matched, kept on the item so a reloaded
+     *  session still knows it. */
+    masterPath?: string;
+    /** An earlier version of this deliverable (V01 for a V02), off disk. */
+    amendPath?: string;
+    amendName?: string;
+    /** A POST render's PRE twin, off disk. */
+    prePath?: string;
+    preName?: string;
+    preFolder?: string;
+    altComps?: { amend?: CompStamp; prepost?: CompStamp };
+}
+
+/** What a row is compared against. "master" is the OV render; "amend" the
+ *  previous version; "prepost" the PRE batch's render of the same site. */
+type CompareKind = "master" | "amend" | "prepost";
+type Section = "all" | CompareKind;
+
+interface CompStamp {
+    compName?: string;
+    compId?: number;
+    enrich?: string;
+    fps?: number;
+    error?: string;
+}
+
+const SECTIONS: { id: Section; label: string; tip: string }[] = [
+    { id: "all",     label: "All",         tip: "Every item, each against the reference it was imported for" },
+    { id: "master",  label: "vs Master",   tip: "Against the campaign's OV master render" },
+    { id: "amend",   label: "Amends",      tip: "Against the previous version of the same deliverable (V01 for a V02), found beside it or in its _Old" },
+    { id: "prepost", label: "Pre vs Post", tip: "A POST render against its PRE batch twin: the same name without the Post token, in a sibling batch folder" },
+];
+
+/** Where an item lands when imported: the most specific reference it has. A
+ *  POST render with a PRE twin is being checked against PRE; a V02 against
+ *  its V01; everything else against the master. */
+function primaryKind(item: ReviewItem): CompareKind {
+    if (item.prePath) return "prepost";
+    if (item.amendPath) return "amend";
+    return "master";
+}
+
+function refPathOf(item: ReviewItem, kind: CompareKind, matches: Record<string, string> | null): string | null {
+    if (kind === "amend") return item.amendPath || null;
+    if (kind === "prepost") return item.prePath || null;
+    return item.masterPath || (matches && matches[item.name]) || null;
+}
+
+function compOf(item: ReviewItem, kind: CompareKind): CompStamp {
+    if (kind === "master") {
+        return { compName: item.comparisonCompName, compId: item.comparisonCompId, enrich: item.comparisonEnrich, fps: item.comparisonFps, error: item.comparisonError };
+    }
+    return (item.altComps && item.altComps[kind]) || {};
+}
+
+function compPatch(item: ReviewItem, kind: CompareKind, stamp: CompStamp): Partial<ReviewItem> {
+    if (kind === "master") {
+        return { comparisonCompName: stamp.compName, comparisonCompId: stamp.compId, comparisonEnrich: stamp.enrich, comparisonFps: stamp.fps, comparisonError: stamp.error };
+    }
+    return { altComps: { ...(item.altComps || {}), [kind]: stamp } };
 }
 
 interface Toast {
@@ -176,6 +238,8 @@ function masterDisplayName(masterPath: string): string {
 const ReviewRow: React.FC<{
     item: ReviewItem;
     batchIndex: number;
+    kind: CompareKind;
+    comp: CompStamp;
     matchedMp4: string | null;
     isOpen: boolean;
     onChange: (patch: Partial<ReviewItem>) => void;
@@ -183,7 +247,7 @@ const ReviewRow: React.FC<{
     onOpenComp: (compId: number) => void;
     onToggleDiff: (compId: number) => void;
     onRetryCompare: () => void;
-}> = ({ item, batchIndex, matchedMp4, isOpen, onChange, onRemove, onOpenComp, onToggleDiff, onRetryCompare }) => {
+}> = ({ item, batchIndex, kind, comp, matchedMp4, isOpen, onChange, onRemove, onOpenComp, onToggleDiff, onRetryCompare }) => {
     const reduced = useReducedMotion();
     return (
         <motion.div
@@ -206,9 +270,11 @@ const ReviewRow: React.FC<{
                     </Tooltip>
                     {matchedMp4 && (
                         <span className="rv-row-master" title={matchedMp4}>
-                            <span className="rv-row-master-label">vs</span>
-                            <span className="rv-row-master-name">{masterDisplayName(matchedMp4)}</span>
-                            <Tooltip text={`Play master: ${matchedMp4}`}>
+                            <span className="rv-row-master-label">
+                                {kind === "amend" ? "vs previous" : kind === "prepost" ? `vs PRE${item.preFolder ? " · " + item.preFolder : ""}` : "vs"}
+                            </span>
+                            <span className="rv-row-master-name">{kind === "master" ? masterDisplayName(matchedMp4) : truncateNameAtArtwork(masterDisplayName(matchedMp4))}</span>
+                            <Tooltip text={`Play ${kind === "master" ? "master" : kind === "amend" ? "previous version" : "PRE render"}: ${matchedMp4}`}>
                                 <motion.button
                                     className="rv-mp4-match"
                                     onClick={async () => {
@@ -227,11 +293,11 @@ const ReviewRow: React.FC<{
 
                 {/* Comparison comp — auto-created side-by-side QC comp.
                     Click to open in AE's viewer. */}
-                {item.comparisonCompName && item.comparisonCompId && (
-                    <Tooltip text={item.comparisonEnrich ? `${item.comparisonCompName}\n${item.comparisonEnrich}` : `Open "${item.comparisonCompName}" in AE viewer`}>
+                {comp.compName && comp.compId && (
+                    <Tooltip text={comp.enrich ? `${comp.compName}\n${comp.enrich}` : `Open "${comp.compName}" in AE viewer`}>
                         <motion.button
                             className="rv-comp-btn"
-                            onClick={() => onOpenComp(item.comparisonCompId!)}
+                            onClick={() => onOpenComp(comp.compId!)}
                             whileHover={reduced ? {} : { scale: 1.08 }}
                             whileTap={reduced ? {} : { scale: 0.94 }}
                         >
@@ -244,8 +310,8 @@ const ReviewRow: React.FC<{
                 {/* MATCHED BUT NOT BUILT: the master was found and the comp
                     wasn't made. That row used to show no Compare button at all
                     and no reason; now it says why and builds on press. */}
-                {matchedMp4 && !item.comparisonCompId && (
-                    <Tooltip text={item.comparisonError ? `Couldn't build the comparison: ${item.comparisonError}\nPress to try again.` : "Build the comparison comp"}>
+                {matchedMp4 && !comp.compId && (
+                    <Tooltip text={comp.error ? `Couldn't build the comparison: ${comp.error}\nPress to try again.` : "Build the comparison comp"}>
                         <motion.button
                             className="rv-comp-btn rv-comp-btn--retry"
                             onClick={onRetryCompare}
@@ -261,11 +327,11 @@ const ReviewRow: React.FC<{
                 {/* Diff toggle — flips the DIFF layer's visibility in the
                     comparison comp from the panel, so the artist doesn't have
                     to hunt the timeline checkbox. */}
-                {item.comparisonCompId && (
+                {comp.compId && (
                     <Tooltip text="Toggle the DIFF (difference) layer">
                         <motion.button
                             className="rv-diff-btn"
-                            onClick={() => onToggleDiff(item.comparisonCompId!)}
+                            onClick={() => onToggleDiff(comp.compId!)}
                             whileHover={reduced ? {} : { scale: 1.1 }}
                             whileTap={reduced ? {} : { scale: 0.92 }}
                         >
@@ -346,6 +412,7 @@ const ReviewSession: React.FC = () => {
     // buildMastersIndex + pickBestMasterFromIndex pipeline (campaign +
     // size + duration + aspect-ratio scoring).
     const [itemMatches, setItemMatches] = useState<Record<string, string> | null>(null);
+    const [section, setSection] = usePersistentState<Section>("review-section", "all");
     const toastId = useRef(0);
     const nextId = useRef(items.reduce((max, i) => Math.max(max, i.id), 0));
     // Mounted guard — flipped to false on unmount so async operations
@@ -396,102 +463,101 @@ const ReviewSession: React.FC = () => {
             setBatchKey((k) => k + 1);
             if (fresh.length === 0) { pushToast("No new items to add.", "error"); return; }
 
-            // 2. If a campaign is active, match every imported item against
-            //    the campaign's master .mp4 renders using the Localise
-            //    section's proven buildMastersIndex + pickBestMasterFromIndex
-            //    pipeline — campaign + size + duration + aspect-ratio scoring.
-            //    Items without a match just stay as plain review rows.
+            // 2. What each item can be compared against. The previous version
+            //    and a PRE twin are found on disk beside the render and need no
+            //    campaign; the master needs one.
+            const lookupPayload = JSON.stringify(fresh.map((item) => ({ name: item.name, sourcePath: item.sourcePath })));
+            const refsById: Record<number, Partial<ReviewItem>> = {};
+            try {
+                const cp = (await evalTS("reviewFindCounterparts", lookupPayload)) as any;
+                if (!mountedRef.current) return;
+                const rows: any[] = (cp && cp.items) || [];
+                for (let ri = 0; ri < rows.length && ri < fresh.length; ri++) {
+                    const r = rows[ri];
+                    const patch: Partial<ReviewItem> = {};
+                    if (r.amendPath) { patch.amendPath = r.amendPath; patch.amendName = r.amendName; }
+                    if (r.prePath) { patch.prePath = r.prePath; patch.preName = r.preName; patch.preFolder = r.preFolder; }
+                    refsById[fresh[ri].id] = patch;
+                }
+            } catch {
+                // No references found: the items still review against masters.
+            }
+            let matchedMp4s: Record<string, string> = {};
             if (campaign) {
-                // Build the payload for the backend: each item's name and
-                // source path so the matcher can extract tokens from the
-                // filename.
-                const matchPayload = fresh.map((item) => ({ name: item.name, sourcePath: item.sourcePath }));
-                let matchedMp4s: Record<string, string> = {};
                 try {
-                    const matchResult = await evalTS("reviewMatchToMaster", campaign.mastersRoot, JSON.stringify(matchPayload));
+                    const matchResult = await evalTS("reviewMatchToMaster", campaign.mastersRoot, lookupPayload);
                     if (!mountedRef.current) return;
                     const matchedItems: any[] = (matchResult as any)?.items || [];
                     for (const mi of matchedItems) {
                         if (mi.mp4Path) matchedMp4s[mi.name] = mi.mp4Path;
                     }
-                    setItemMatches(matchedMp4s);
+                    setItemMatches((prev) => ({ ...(prev || {}), ...matchedMp4s }));
                 } catch {
-                    // Matching failed — items are still imported, just without
-                    // matches.  Don't abort the import.
+                    // Matching failed: items are still imported, without masters.
                 }
+            }
+            const enriched = fresh.map((item) => ({
+                ...item,
+                ...(refsById[item.id] || {}),
+                ...(matchedMp4s[item.name] ? { masterPath: matchedMp4s[item.name] } : {}),
+            }));
+            setItems((prev) => prev.map((item) => {
+                const e = enriched.find((x) => x.id === item.id);
+                return e ? e : item;
+            }));
 
-                // 3. For every matched item, auto-create enriched comparison
-                //    comps.  The AE item ids from the bridge result are paired
-                //    with the matched .mp4 paths.
-                const allBridgeItems: any[] = result.items || [];
-                const compMatches: { mp4Path: string; localItemId: number; localItemName: string; reviewId: number }[] = [];
-                for (const reviewItem of fresh) {
-                    const mp4Path = matchedMp4s[reviewItem.name];
-                    if (!mp4Path) continue;
-                    const bridgeEntry = allBridgeItems.find((c: any) => c.name === reviewItem.name);
-                    if (!bridgeEntry) continue;
-                    compMatches.push({
-                        mp4Path,
-                        localItemId: bridgeEntry.id,
-                        localItemName: reviewItem.name,
-                        reviewId: reviewItem.id,
-                    });
-                }
+            // 3. Build ONE comparison per item: against the reference it was
+            //    imported for (primaryKind). The other sections build theirs on
+            //    press, so an import doesn't make three comps per render.
+            const allBridgeItems: any[] = result.items || [];
+            const compMatches: { mp4Path: string; localItemId: number; localItemName: string; reviewId: number; kind: CompareKind }[] = [];
+            for (const reviewItem of enriched) {
+                const kind = primaryKind(reviewItem);
+                const refPath = refPathOf(reviewItem, kind, matchedMp4s);
+                if (!refPath) continue;
+                const bridgeEntry = allBridgeItems.find((c: any) => c.name === reviewItem.name);
+                if (!bridgeEntry) continue;
+                compMatches.push({ mp4Path: refPath, localItemId: bridgeEntry.id, localItemName: reviewItem.name, reviewId: reviewItem.id, kind });
+            }
+            const amendN = enriched.filter((i) => primaryKind(i) === "amend").length;
+            const preN = enriched.filter((i) => primaryKind(i) === "prepost").length;
+            const sorted = (amendN || preN)
+                ? ` (${[amendN ? `${amendN} amend${amendN === 1 ? "" : "s"}` : "", preN ? `${preN} pre vs post` : ""].filter(Boolean).join(", ")})`
+                : "";
 
-                if (compMatches.length > 0) {
-                    try {
-                        const compResult = await evalTS("createReviewComparisons", JSON.stringify(compMatches));
-                        if (!mountedRef.current) return;
-                        const results: any[] = (compResult as any)?.results || [];
-                        // Zip results with compMatches by index — the backend
-                        // iterates the input in order and returns results in
-                        // the same order, so results[i] ↔ compMatches[i].
-                        const stampByReviewId: Record<number, { compName: string; compId: number; enrich?: string; fps?: number }> = {};
-                        const errorByReviewId: Record<number, string> = {};
-                        for (let ri = 0; ri < results.length && ri < compMatches.length; ri++) {
-                            // Key off the comp's actual presence (compId +
-                            // compName), NOT the success flag — the backend can
-                            // create the comp and still report a non-success if
-                            // an enrichment step hiccuped.  If the comp exists,
-                            // the row should get its purple chip so it's
-                            // openable.
-                            if (results[ri] && results[ri].compId && results[ri].compName) {
-                                stampByReviewId[compMatches[ri].reviewId] = {
-                                    compName: results[ri].compName,
-                                    compId: results[ri].compId,
-                                    enrich: results[ri].enrichNotes || "",
-                                    fps: results[ri].compFps,
-                                };
-                            } else {
-                                errorByReviewId[compMatches[ri].reviewId] = (results[ri] && results[ri].error) || "no comp came back";
-                            }
+            if (compMatches.length > 0) {
+                try {
+                    const compResult = await evalTS("createReviewComparisons", JSON.stringify(compMatches));
+                    if (!mountedRef.current) return;
+                    const results: any[] = (compResult as any)?.results || [];
+                    // results[i] <-> compMatches[i]: the backend keeps the order.
+                    // Keyed off the comp's presence, not the success flag: a comp
+                    // that exists is openable even if an enrichment step failed.
+                    const stampById: Record<number, { kind: CompareKind; stamp: CompStamp }> = {};
+                    let succeeded = 0;
+                    let failedN = 0;
+                    for (let ri = 0; ri < results.length && ri < compMatches.length; ri++) {
+                        const r = results[ri];
+                        const m = compMatches[ri];
+                        if (r && r.compId && r.compName) {
+                            stampById[m.reviewId] = { kind: m.kind, stamp: { compName: r.compName, compId: r.compId, enrich: r.enrichNotes || "", fps: r.compFps } };
+                            succeeded++;
+                        } else {
+                            stampById[m.reviewId] = { kind: m.kind, stamp: { error: (r && r.error) || "no comp came back" } };
+                            failedN++;
                         }
-                        if (Object.keys(errorByReviewId).length > 0) {
-                            setItems((prev) => prev.map((item) => errorByReviewId[item.id] ? { ...item, comparisonError: errorByReviewId[item.id] } : item));
-                        }
-                        if (Object.keys(stampByReviewId).length > 0) {
-                            setItems((prev) => prev.map((item) => {
-                                const stamp = stampByReviewId[item.id];
-                                return stamp
-                                    ? { ...item, comparisonCompName: stamp.compName, comparisonCompId: stamp.compId, comparisonEnrich: stamp.enrich, comparisonFps: stamp.fps }
-                                    : item;
-                            }));
-                        }
-                        const succeeded = Object.keys(stampByReviewId).length;
-                        const failedN = Object.keys(errorByReviewId).length;
-                        pushToast(`${fresh.length} item${fresh.length > 1 ? "s" : ""} added, ${succeeded} comparison comp${succeeded === 1 ? "" : "s"} created.` + (failedN ? ` ${failedN} couldn't be built. Hover their Compare for why.` : ""), failedN ? "error" : "success");
-                        sfx.bop();
-                    } catch {
-                        pushToast(`${fresh.length} item${fresh.length > 1 ? "s" : ""} added.  Comparison comps could not be created.`);
                     }
-                } else {
-                    const matchCount = Object.keys(matchedMp4s).length;
-                    if (matchCount > 0) {
-                        pushToast(`${fresh.length} item${fresh.length > 1 ? "s" : ""} added, ${matchCount} matched to master renders (but comp creation skipped).`);
-                    } else {
-                        pushToast(`${fresh.length} item${fresh.length > 1 ? "s" : ""} added (no matching master renders found in this campaign).`);
-                    }
+                    setItems((prev) => prev.map((item) => {
+                        const st = stampById[item.id];
+                        return st ? { ...item, ...compPatch(item, st.kind, st.stamp) } : item;
+                    }));
+                    pushToast(`${fresh.length} item${fresh.length > 1 ? "s" : ""} added${sorted}, ${succeeded} comparison comp${succeeded === 1 ? "" : "s"} created.` + (failedN ? ` ${failedN} couldn't be built. Hover their Compare for why.` : ""), failedN ? "error" : "success");
+                    sfx.bop();
+                } catch {
+                    pushToast(`${fresh.length} item${fresh.length > 1 ? "s" : ""} added${sorted}.  Comparison comps could not be created.`);
                 }
+            } else if (campaign) {
+                pushToast(`${fresh.length} item${fresh.length > 1 ? "s" : ""} added (no matching master renders found in this campaign).`);
             } else {
                 pushToast(`${fresh.length} item${fresh.length > 1 ? "s" : ""} added.`);
                 sfx.bop();
@@ -524,33 +590,33 @@ const ReviewSession: React.FC = () => {
     // Step through the session's comparison comps: Prev/Next opens the
     // previous/next item that has a comparison comp, for the approve-
     // approve-approve review pass.
+    // Within the section on screen, against the reference each row shows.
     const handleStepComp = async (dir: 1 | -1) => {
-        const withComps = items.filter((i) => i.comparisonCompId);
-        if (withComps.length === 0) { pushToast("No comparison comps in this session.", "error"); return; }
-        const currentIndex = withComps.findIndex((i) => i.comparisonCompId === (lastOpenedCompId ?? -1));
-        const nextIndex = (currentIndex === -1 ? 0 : (currentIndex + dir + withComps.length) % withComps.length);
-        const target = withComps[nextIndex];
-        if (!target.comparisonCompId) return;
-        setLastOpenedCompId(target.comparisonCompId);
-        await handleOpenComp(target.comparisonCompId);
+        const ids: number[] = [];
+        for (const v of visible) { const c = compOf(v.item, v.kind).compId; if (c) ids.push(c); }
+        if (ids.length === 0) { pushToast("No comparison comps in this section.", "error"); return; }
+        const currentIndex = ids.indexOf(lastOpenedCompId ?? -1);
+        const nextId = ids[currentIndex === -1 ? 0 : (currentIndex + dir + ids.length) % ids.length];
+        setLastOpenedCompId(nextId);
+        await handleOpenComp(nextId);
     };
 
     // One row's comparison, again -- the same builder the batch uses.
-    const retryCompare = async (item: ReviewItem) => {
-        const mp4 = itemMatches ? itemMatches[item.name] : undefined;
+    const retryCompare = async (item: ReviewItem, kind: CompareKind) => {
+        const mp4 = refPathOf(item, kind, itemMatches);
         if (!mp4 || item.aeId === undefined) {
             pushToast("Import & Compare this item again: its project item isn't known.", "error");
             return;
         }
         try {
-            const r = (await evalTS("createReviewComparison", mp4, item.aeId, item.name)) as any;
+            const r = (await evalTS("createReviewComparison", mp4, item.aeId, item.name, kind)) as any;
             if (!mountedRef.current) return;
             if (r && r.compId && r.compName) {
-                updateItem(item.id, { comparisonCompName: r.compName, comparisonCompId: r.compId, comparisonEnrich: r.enrichNotes || "", comparisonFps: r.compFps, comparisonError: undefined });
+                updateItem(item.id, compPatch(item, kind, { compName: r.compName, compId: r.compId, enrich: r.enrichNotes || "", fps: r.compFps }));
                 pushToast("Comparison comp built.");
             } else {
                 const why = (r && r.error) || "no comp came back";
-                updateItem(item.id, { comparisonError: why });
+                updateItem(item.id, compPatch(item, kind, { ...compOf(item, kind), error: why }));
                 pushToast(`Couldn't build it: ${why}`, "error");
             }
         } catch {
@@ -572,14 +638,32 @@ const ReviewSession: React.FC = () => {
         }
     };
 
+    // The rows on screen, each with the reference it is shown against. "All"
+    // shows every item against the reference it was imported for; a section
+    // shows the items that HAVE that reference, so a POST render with a
+    // matched master is under both vs Master and Pre vs Post.
+    const kindsOf = (item: ReviewItem): CompareKind[] => {
+        const k: CompareKind[] = [];
+        if (refPathOf(item, "master", itemMatches)) k.push("master");
+        if (item.amendPath) k.push("amend");
+        if (item.prePath) k.push("prepost");
+        return k;
+    };
+    const sectionCount = (id: Section) => id === "all" ? items.length : items.filter((i) => kindsOf(i).indexOf(id as CompareKind) !== -1).length;
+    // Pills only once there is more than one kind of review in the session:
+    // a masters-only session looks exactly as it always did.
+    const hasOtherKinds = items.some((i) => i.amendPath || i.prePath);
+    const activeSection: Section = hasOtherKinds ? section : "all";
+    const visible = items
+        .map((item, index) => ({ item, index, kind: activeSection === "all" ? primaryKind(item) : (activeSection as CompareKind) }))
+        .filter((v) => activeSection === "all" || kindsOf(v.item).indexOf(v.kind) !== -1);
+
     const approvedCount = items.filter((i) => i.status === "approved").length;
     const amendCount    = items.filter((i) => i.status === "amend").length;
     const pendingCount  = items.filter((i) => i.status === "pending").length;
 
     // Count how many items have a matching .mp4 render in the active campaign.
-    const matchedCount = itemMatches
-        ? items.filter((item) => itemMatches[item.name]).length
-        : 0;
+    const matchedCount = items.filter((item) => refPathOf(item, "master", itemMatches)).length;
 
     // Wrike-format export: every "To Amend" item WITH a note, each as the
     // source .mov's full path followed by an orange-diamond-prefixed note
@@ -658,7 +742,7 @@ const ReviewSession: React.FC = () => {
 
                 {/* Prev / Next — step through the session's comparison comps
                     without returning to the list between each one. */}
-                {items.some((i) => i.comparisonCompId) && (
+                {visible.some((v) => compOf(v.item, v.kind).compId) && (
                     <>
                         <Tooltip text="Previous comparison comp">
                             <motion.button
@@ -728,6 +812,27 @@ const ReviewSession: React.FC = () => {
                 )}
             </AnimatePresence>
 
+            {/* Sections -- vs Master / Amends / Pre vs Post. */}
+            {hasOtherKinds && (
+                <div className="rv-sections">
+                    {SECTIONS.map((sec) => {
+                        const n = sectionCount(sec.id);
+                        if (sec.id !== "all" && n === 0) return null;
+                        return (
+                            <Tooltip key={sec.id} text={sec.tip}>
+                                <button
+                                    className={activeSection === sec.id ? "rv-section rv-section--on" : "rv-section"}
+                                    onClick={() => { if (sec.id !== activeSection) sfx.menu(); setSection(sec.id); }}
+                                >
+                                    {sec.label}
+                                    <span className="rv-section-count">{n}</span>
+                                </button>
+                            </Tooltip>
+                        );
+                    })}
+                </div>
+            )}
+
             {/* Row list */}
             <div className="rv-list">
                 {items.length === 0 ? (
@@ -747,21 +852,24 @@ const ReviewSession: React.FC = () => {
                     </div>
                 ) : (
                     <div key={batchKey} className="rv-list">
-                        {items.map((item, i) => {
-                            const matchedMp4 = itemMatches?.[item.name] || null;
-                            const isOpen = item.comparisonCompId != null && item.comparisonCompId === lastOpenedCompId;
+                        {visible.map(({ item, index: i, kind }) => {
+                            const matchedMp4 = refPathOf(item, kind, itemMatches);
+                            const comp = compOf(item, kind);
+                            const isOpen = comp.compId != null && comp.compId === lastOpenedCompId;
                             return (
                                 <ReviewRow
                                     key={`${item.id}-${batchKey}`}
                                     item={item}
                                     batchIndex={i - item.batchOffset}
+                                    kind={kind}
+                                    comp={comp}
                                     matchedMp4={matchedMp4}
                                     isOpen={isOpen}
                                     onChange={(patch) => updateItem(item.id, patch)}
                                     onRemove={() => removeItem(item.id)}
                                     onOpenComp={handleOpenComp}
                                     onToggleDiff={handleToggleDiff}
-                                    onRetryCompare={() => void retryCompare(item)}
+                                    onRetryCompare={() => void retryCompare(item, kind)}
                                 />
                             );
                         })}
