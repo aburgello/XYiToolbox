@@ -4,10 +4,13 @@
 // YOUR WRIKE JOBS, AS REVIEW SEES THEM. Deliver's "Ready to deliver" strip,
 // asked two different questions:
 //
-//   To amend  -- somebody asked for changes, so a new version will be rendered.
-//                Offered once the new version is on disk; a deliverable whose
-//                newest render is still V01 is listed as "not re-rendered yet",
-//                not ticked -- reviewing the old version again helps nobody.
+//   Revised   -- the amend is made and re-rendered: THIS is what to review,
+//                the new version against the one before it. A Revised subtask
+//                whose newest render is still V01 is flagged, not ticked --
+//                reviewing the old version again helps nobody.
+//   To amend  -- changes asked for, still being made. Listed as a reminder and
+//                never ticked: the studio moves a subtask to Revised when the
+//                amend is done, so a V02 sitting here may be half-finished.
 //   Motion / Backlog -- being made. The strip says which have reached Renders
 //                and offers those; the rest are listed as not rendered yet, so
 //                the job is a reminder as well as a way in.
@@ -24,22 +27,23 @@ import React, { useEffect, useState } from "react";
 import { RefreshCw, Download, Loader2, Play } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
-import { fetchJobs, fetchJobsFresh, territoryFlag, commonTitlePrefix, statusTint, AMEND_STATUSES, IN_MOTION_STATUSES, type WrikeJob } from "../lib/jobsFeed";
+import { fetchJobs, fetchJobsFresh, territoryFlag, commonTitlePrefix, statusTint, AMEND_STATUSES, REVISED_STATUSES, IN_MOTION_STATUSES, type WrikeJob } from "../lib/jobsFeed";
 import CheckboxToggle from "../CheckboxToggle";
 import FileBadge from "../FileBadge";
 import { readFinderColors, openInDefaultApp, isBadColor, type FinderColor } from "../lib/finderLabels";
 import { defaultPicks, grouped, jobTerritory, type RenderFile, type RenderFolder } from "./DeliveryJobs";
 import "./DeliveryJobs.scss";
 
-type Why = "amend" | "motion";
+type Why = "amend" | "revised" | "motion";
 
 /** The job's subtasks in each review status. Only subtasks the feed actually
  *  labels count: unlike Deliver there is no "every subtask" fallback, because
  *  a job with no status on its subtasks says nothing about what needs review. */
-function reviewNames(job: WrikeJob): { amend: string[]; motion: string[] } {
+function reviewNames(job: WrikeJob): { amend: string[]; revised: string[]; motion: string[] } {
     const subs = (job.subtasks || []).filter((s) => s.name);
     return {
         amend: subs.filter((s) => AMEND_STATUSES.test(s.customStatusName || "")).map((s) => s.name),
+        revised: subs.filter((s) => REVISED_STATUSES.test(s.customStatusName || "")).map((s) => s.name),
         motion: subs.filter((s) => IN_MOTION_STATUSES.test(s.customStatusName || "")).map((s) => s.name),
     };
 }
@@ -76,7 +80,7 @@ const ReviewJobs: React.FC<Props> = ({ pushToast, onImported }) => {
             setJobs(res.jobs.filter((j) => {
                 if (j.assignee !== listFor) return false;
                 const n = reviewNames(j);
-                return n.amend.length + n.motion.length > 0;
+                return n.amend.length + n.revised.length + n.motion.length > 0;
             }));
         };
         apply(force ? await fetchJobs(owner, true) : await fetchJobsFresh(owner, apply));
@@ -90,6 +94,7 @@ const ReviewJobs: React.FC<Props> = ({ pushToast, onImported }) => {
         const out: Record<string, Why> = {};
         n.motion.forEach((m) => { out[m.toUpperCase()] = "motion"; });
         n.amend.forEach((m) => { out[m.toUpperCase()] = "amend"; });
+        n.revised.forEach((m) => { out[m.toUpperCase()] = "revised"; });
         return out;
     };
 
@@ -102,7 +107,7 @@ const ReviewJobs: React.FC<Props> = ({ pushToast, onImported }) => {
             const n = reviewNames(job);
             const r = (await evalTSSafe("deliveryFindRenders", JSON.stringify({
                 code: jobTerritory(job),
-                names: n.amend.concat(n.motion),
+                names: n.revised.concat(n.amend, n.motion),
             }))) as any;
             if (!r || !r.success) { setFound({ folders: [], missing: [], error: (r && r.error) || "Couldn't look for the renders." }); return; }
             // Only this job's renders: Review is not a folder browser, and the
@@ -114,12 +119,14 @@ const ReviewJobs: React.FC<Props> = ({ pushToast, onImported }) => {
             const c = await readFinderColors(folders.reduce<string[]>((acc, fo) => acc.concat(fo.files.map((x) => x.path)), []));
             setColors(c);
             setFound(f);
-            // Deliver's pick (newest good, else newest not red), minus an amend
-            // still sitting at V01: that is the version the amends are ABOUT.
+            // Deliver's pick (newest good, else newest not red), minus anything
+            // still To amend (in progress) and a Revised one still at V01 (the
+            // version the amends are ABOUT).
             const why = whyByKey(job);
             const base = defaultPicks(folders, c);
             folders.forEach((fo) => fo.files.forEach((x) => {
-                if (why[x.key] === "amend" && x.latest && x.version <= 1) base.delete(x.path);
+                if (why[x.key] === "amend") base.delete(x.path);
+                if (why[x.key] === "revised" && x.version <= 1) base.delete(x.path);
             }));
             setPicked(base);
         } finally {
@@ -156,6 +163,7 @@ const ReviewJobs: React.FC<Props> = ({ pushToast, onImported }) => {
     if (jobs.length === 0) return null;
     const shared = commonTitlePrefix(jobs.map((j) => j.title));
     const amendTint = statusTint("to amend");
+    const revisedTint = statusTint("revised");
     const motionTint = statusTint("motion");
 
     return (
@@ -190,10 +198,11 @@ const ReviewJobs: React.FC<Props> = ({ pushToast, onImported }) => {
                             type="button"
                             className={"dj-chip" + (isOpen ? " is-open" : "")}
                             onClick={() => void open(job)}
-                            title={`${job.title} · ${n.amend.length} to amend · ${n.motion.length} in motion`}
+                            title={`${job.title} · ${n.revised.length} revised · ${n.amend.length} to amend · ${n.motion.length} in motion`}
                         >
                             {flag && <span className="dj-flag">{flag}</span>}
                             <span className="dj-name">{shared ? job.title.slice(shared.length).trim() : job.title}</span>
+                            {n.revised.length > 0 && <span className="dj-count" style={revisedTint} title="Revised: ready to review">{n.revised.length}</span>}
                             {n.amend.length > 0 && <span className="dj-count" style={amendTint} title="To amend">{n.amend.length}</span>}
                             {n.motion.length > 0 && <span className="dj-count" style={motionTint} title="Motion / Backlog">{n.motion.length}</span>}
                         </button>
@@ -207,11 +216,12 @@ const ReviewJobs: React.FC<Props> = ({ pushToast, onImported }) => {
                 const why = whyByKey(job);
                 const notYet = found ? found.missing.filter((m) => why[m.toUpperCase()] === "motion") : [];
                 const noNew: string[] = [];
+                const inProgress = found ? reviewNames(job).amend : [];
                 if (found) {
                     found.folders.forEach((fo) => fo.files.forEach((x) => {
-                        if (why[x.key] === "amend" && x.latest && x.version <= 1) noNew.push(x.name);
+                        if (why[x.key] === "revised" && x.latest && x.version <= 1) noNew.push(x.name);
                     }));
-                    found.missing.forEach((m) => { if (why[m.toUpperCase()] === "amend") noNew.push(m); });
+                    found.missing.forEach((m) => { if (why[m.toUpperCase()] === "revised") noNew.push(m); });
                 }
                 return (
                     <div className="dj-panel">
@@ -236,7 +246,8 @@ const ReviewJobs: React.FC<Props> = ({ pushToast, onImported }) => {
                                     const sibling = i > 0 && fo.files[i - 1].key === f.key;
                                     const kind = why[f.key];
                                     const note = isBadColor(color) ? "marked red"
-                                        : kind === "amend" ? (f.latest && f.version <= 1 ? "to amend · not re-rendered" : f.latest ? "to amend · new version" : "older")
+                                        : kind === "amend" ? (f.latest ? "to amend · in progress" : "older")
+                                        : kind === "revised" ? (f.latest && f.version <= 1 ? "revised · no new version" : f.latest ? "revised · new version" : "older")
                                         : f.latest ? "in motion" : "older";
                                     return (
                                         <div key={f.path} className={"dj-row" + (on ? " is-on" : "") + (sibling ? " is-version" : "") + (isBadColor(color) ? " is-bad" : "")}>
@@ -244,7 +255,7 @@ const ReviewJobs: React.FC<Props> = ({ pushToast, onImported }) => {
                                             <FileBadge of={f.name} />
                                             <span className="dj-file" title={f.path}>{f.name}</span>
                                             {color && <span className={"dj-dot is-" + color} title={`Marked ${color} in Finder`} />}
-                                            <span className="dj-tag" style={kind === "amend" ? amendTint : undefined}>{note}</span>
+                                            <span className="dj-tag" style={kind === "amend" ? amendTint : kind === "revised" ? revisedTint : undefined}>{note}</span>
                                             <button type="button" className="dj-play" onClick={() => openInDefaultApp(f.path)} aria-label="Play" title="Open in QuickTime">
                                                 <Play size={11} />
                                             </button>
@@ -262,8 +273,14 @@ const ReviewJobs: React.FC<Props> = ({ pushToast, onImported }) => {
                         )}
                         {found && noNew.length > 0 && (
                             <div className="dj-missing">
-                                <p className="dj-note is-warn">To amend, no new version yet ({noNew.length}):</p>
+                                <p className="dj-note is-warn">Revised in Wrike, no new version on disk ({noNew.length}):</p>
                                 {noNew.map((m) => <div key={m} className="dj-missing-row"><span className="dj-missing-name" title={m}>{m}</span></div>)}
+                            </div>
+                        )}
+                        {found && inProgress.length > 0 && (
+                            <div className="dj-missing">
+                                <p className="dj-note">Amends in progress ({inProgress.length}):</p>
+                                {inProgress.map((m) => <div key={m} className="dj-missing-row"><span className="dj-missing-name" title={m}>{m}</span></div>)}
                             </div>
                         )}
                         {found && found.folders.length > 0 && (

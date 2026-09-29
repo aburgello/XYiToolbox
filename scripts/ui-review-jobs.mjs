@@ -1,8 +1,8 @@
 // =============================================================================
 // scripts/ui-review-jobs.mjs
 // -----------------------------------------------------------------------------
-// Click-through of Review Session's "Your jobs" strip: Wrike jobs in To amend
-// and Motion/Backlog (served from a fixture, never the live feed), their
+// Click-through of Review Session's "Your jobs" strip: Wrike jobs in Revised,
+// To amend and Motion/Backlog (served from a fixture, never the live feed), their
 // renders found the way Deliver finds them, the right versions ticked, and
 // Import & Compare handing the selection to the session's own import.
 //
@@ -28,6 +28,8 @@ const FIXTURES = `{
       f("${P}AmendDone_672x432px_10s_CL_V01.mov", false, 1),
       f("${P}AmendDone_672x432px_10s_CL_V02.mov", true, 2),
       f("${P}AmendWaiting_960x2000px_10s_CL_V01.mov", true, 1),
+      f("${P}InProgress_1920x853px_10s_CL_V01.mov", false, 1),
+      f("${P}InProgress_1920x853px_10s_CL_V02.mov", true, 2),
       f("${P}InMotion_1920x768px_10s_CL_V01.mov", true, 1),
       f("${P}Unrelated_1920x1080px_10s_CL_V01.mov", true, 1),
     ].map((x) => /UNRELATED/.test(x.key) ? { ...x, matched: false } : x) }] };
@@ -42,10 +44,11 @@ const FIXTURES = `{
 
 const sub = (name, s) => ({ id: name, name, status: "Active", customStatusName: s });
 const FEED = [
-    { id: "J1", title: "SF Motion Outdoor CL 2", assignee: "Antonio", status: "Motion", updated_at: "", subtask_count: 5, subtasks_done: 0,
+    { id: "J1", title: "SF Motion Outdoor CL 2", assignee: "Antonio", status: "Motion", updated_at: "", subtask_count: 6, subtasks_done: 0,
       subtasks: [
-        sub(P + "AMENDDONE_672x432px_10s_CL", "To amend"),
-        sub(P + "AMENDWAITING_960x2000px_10s_CL", "To amend"),
+        sub(P + "AMENDDONE_672x432px_10s_CL", "Revised"),
+        sub(P + "AMENDWAITING_960x2000px_10s_CL", "Revised"),
+        sub(P + "INPROGRESS_1920x853px_10s_CL", "To amend"),
         sub(P + "INMOTION_1920x768px_10s_CL", "Motion"),
         sub(P + "NOTRENDERED_1920x864px_10s_CL", "Backlog"),
         sub(P + "SHIPPED_1248x416px_10s_CL", "Prep for delivery"),
@@ -77,21 +80,23 @@ try {
     const chips = await page.eval(`[...document.querySelectorAll(".rv-jobs .dj-chip")].map(c => c.innerText.replace(/\\s+/g, " ").trim())`);
     check(chips.length === 1 && /CL 2/.test(chips[0]), "only my job with work to review, not a Prep for delivery one or a colleague's", chips);
     const counts = await page.eval(`[...document.querySelectorAll(".rv-jobs .dj-chip .dj-count")].map(c => c.innerText)`);
-    check(counts.join(",") === "2,2", "2 to amend and 2 in motion/backlog, the delivered one not counted", counts);
+    check(counts.join(",") === "2,1,2", "2 revised, 1 to amend, 2 in motion/backlog; the delivered one not counted", counts);
 
     console.log("\n2. Its renders");
     await page.click(".rv-jobs .dj-chip");
-    check(await page.waitFor(`document.querySelectorAll(".rv-jobs .dj-row").length === 4`, 4000), "this job's four renders, not the batch's unrelated one");
+    check(await page.waitFor(`document.querySelectorAll(".rv-jobs .dj-row").length === 6`, 4000), "this job's six renders, not the batch's unrelated one");
     const asked = await page.eval(`window.__asked`);
-    check(asked && asked.code === "CL" && asked.names.length === 4, "asked for CL and the four review names", asked);
+    check(asked && asked.code === "CL" && asked.names.length === 5, "asked for CL and the five review names", asked);
     const rows = await page.eval(`[...document.querySelectorAll(".rv-jobs .dj-row")].map(r => ({ on: r.classList.contains("is-on"), t: r.innerText.replace(/\\s+/g, " ").trim() }))`);
     const on = (re) => rows.find((r) => re.test(r.t));
-    check(on(/AmendDone.*V02/)?.on && !on(/AmendDone.*V01/)?.on, "an amend with a new version: the V02 is ticked", rows.map((r) => [r.on, r.t]));
-    check(on(/AmendWaiting/) && !on(/AmendWaiting/).on && /not re-rendered/.test(on(/AmendWaiting/).t), "an amend still at V01 is not ticked, and says why");
+    check(on(/AmendDone.*V02/)?.on && !on(/AmendDone.*V01/)?.on, "Revised with a new version: the V02 is ticked", rows.map((r) => [r.on, r.t]));
+    check(on(/AmendWaiting/) && !on(/AmendWaiting/).on && /no new version/.test(on(/AmendWaiting/).t), "Revised but still at V01 is not ticked, and says why");
+    check(on(/InProgress.*V02/) && !on(/InProgress.*V02/).on && /in progress/.test(on(/InProgress.*V02/).t), "To amend is never ticked, even with a V02 on disk: it's still being made");
     check(on(/InMotion/)?.on, "a Motion subtask that has rendered is ticked");
     const notes = await page.eval(`[...document.querySelectorAll(".rv-jobs .dj-missing")].map(m => m.innerText.replace(/\\s+/g, " "))`);
     check(notes.some((n) => /Not rendered yet \(1\).*NOTRENDERED/.test(n)), "the Backlog one with no render is listed as not rendered yet", notes);
-    check(notes.some((n) => /no new version yet \(1\).*AmendWaiting/.test(n)), "the waiting amend is listed as the reminder too", notes);
+    check(notes.some((n) => /no new version on disk \(1\).*AmendWaiting/.test(n)), "the Revised one with no new render is flagged", notes);
+    check(notes.some((n) => /Amends in progress \(1\).*INPROGRESS/.test(n)), "the To amend one is listed as in progress", notes);
 
     console.log("\n3. Import & Compare");
     await page.click(".rv-jobs .dj-import");
@@ -110,5 +115,5 @@ try {
 } finally {
     await page.close();
 }
-console.log(failures ? `\n${failures} FAILED` : "\nCLEAN — Review lists my To amend and Motion jobs and imports their renders into the session.");
+console.log(failures ? `\n${failures} FAILED` : "\nCLEAN — Review lists my Revised, To amend and Motion jobs and imports their renders into the session.");
 process.exit(failures ? 1 : 0);

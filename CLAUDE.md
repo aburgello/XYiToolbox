@@ -1377,9 +1377,11 @@ Review Session's **Your jobs** strip (`tools/ReviewJobs.tsx`): Deliver's
 `deliveryFindRenders`/`deliveryImportRenders`, asked about **To amend** and
 **Motion/Backlog** subtasks instead of Prep for delivery (`deliverableNames`/
 `isDeliverable` take the status regex; Deliver's default is unchanged). Only
-subtasks the feed actually labels count, with no every-subtask fallback. An
-amend whose newest render is still V01 is **listed, never ticked**, since that is
-the version the amends are about. A Motion/Backlog subtask with no render is the
+subtasks the feed actually labels count, with no every-subtask fallback.
+**Revised is the review signal** (the studio's status after an amend is made):
+its new version is ticked, and a Revised one still at V01 is flagged, never
+ticked. **To amend is still being made**, so it is listed as a reminder and
+never ticked, even with a V02 on disk. A Motion/Backlog subtask with no render is the
 reminder half ("Not rendered yet"). The import lands in Deliver's own
 `<Territory> <Batch>` bin and then runs the session's Import & Compare, so the
 sections sort it exactly as a hand import would.
