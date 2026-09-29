@@ -1351,9 +1351,13 @@ DRAWN**: its `sourceRectAtTime` corners through `toComp()` on a temporary null
 anchor, rotation and every parent and put the pool off frame.
 
 `node scripts/probe-job-titles.cjs` (no build needed) drives
-`parseJobTitle` over dashed and dashless Wrike titles. The batch is read only
-from the word "Batch": it becomes an output folder, so a trailing number is
-never guessed at.
+`parseJobTitle` over dashed and dashless Wrike titles. The batch becomes an
+output folder, so it is read from the word "Batch N", or -- by studio decision
+on 2026-09-28, when Wrike titles drifted to "SF Motion Outdoor CO 4" and
+"… CL POST B1" -- from a bare number or B-number AFTER the territory. Never
+from anywhere else in a title. No number after the territory means **Batch 1**
+("SF Motion Outdoor TW" is TW's Batch_01), same studio decision. Other words
+after the territory ("POST") stay in the name.
 
 `node scripts/probe-frontcard-offset.cjs` (after `yarn build`) guards the
 **frontcard offset in every compare**: a localised render opens with its

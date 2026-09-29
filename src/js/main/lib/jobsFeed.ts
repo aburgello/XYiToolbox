@@ -515,9 +515,8 @@ export function parseJobTitle(title: string): { film: string; territory: string;
     // TITLES WITHOUT DASHES. Real boards also write "SF Motion Outdoor LV" and
     // "XY026305 DOOH AU 1": no separators, so the territory was never found and
     // the card showed a pin and the title twice. The territory is then the LAST
-    // two-letter capitals token (never OV); a batch only when the word "Batch"
-    // is there -- a bare trailing "2" might be a batch, and a guessed batch
-    // becomes a wrong OUTPUT FOLDER when the rows are sent to Localise.
+    // two-letter capitals token (never OV); the batch is the word "Batch N",
+    // or a bare number / B-number AFTER the territory (below).
     if (parts.length === 1) {
         const words = title.trim().split(/\s+/);
         let ti = -1;
@@ -526,11 +525,30 @@ export function parseJobTitle(title: string): { film: string; territory: string;
         }
         const batchMatch = title.match(/\bbatch\s*\d+\b/i);
         if (ti > 0) {
+            // AFTER THE TERRITORY, BY STUDIO DECISION (2026-09-28): a bare
+            // number ("SF Motion Outdoor CO 4") or a B-number ("… CL POST B1")
+            // IS the batch -- Wrike names drifted from "Batch 4" and the studio
+            // chose to read them rather than rename them. Only there: a number
+            // anywhere else in a title is not a batch. Any other word after the
+            // territory ("POST") stays in the name rather than vanishing.
+            let batch = batchMatch ? batchMatch[0].replace(/\s+/g, " ") : "";
+            const extras: string[] = [];
+            for (let i = ti + 1; i < words.length; i++) {
+                const w = words[i];
+                if (/^batch$/i.test(w) && batchMatch) { i++; continue; }
+                if (/^batch\d+$/i.test(w) && batchMatch) continue;
+                const m = /^B?(\d{1,3})$/i.exec(w);
+                if (!batch && m) { batch = "Batch " + parseInt(m[1], 10); continue; }
+                extras.push(w);
+            }
             return {
                 film: words[0],
                 territory: words[ti],
-                name: words.slice(0, ti).join(" "),
-                batch: batchMatch ? batchMatch[0] : "",
+                name: words.slice(0, ti).concat(extras).join(" "),
+                // NO NUMBER IS BATCH 1 (studio decision, same day): a job's first
+                // batch is the one nobody numbered -- "SF Motion Outdoor TW" is
+                // TW's Batch_01, the same folder the builder already fell back to.
+                batch: batch || "Batch 1",
             };
         }
     }
