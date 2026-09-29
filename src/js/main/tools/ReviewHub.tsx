@@ -136,7 +136,7 @@ interface ReviewItem {
 /** What a row is compared against. "master" is the OV render; "amend" the
  *  previous version; "prepost" the PRE batch's render of the same site. */
 type CompareKind = "master" | "amend" | "prepost";
-type Section = "all" | CompareKind;
+type Section = CompareKind;
 
 interface CompStamp {
     compName?: string;
@@ -147,8 +147,7 @@ interface CompStamp {
 }
 
 const SECTIONS: { id: Section; label: string; tip: string }[] = [
-    { id: "all",     label: "All",         tip: "Every item, each against the reference it was imported for" },
-    { id: "master",  label: "vs Master",   tip: "Against the campaign's OV master render" },
+    { id: "master",  label: "vs Master",   tip: "Every item against the campaign's OV master render" },
     { id: "amend",   label: "Amends",      tip: "Against the previous version of the same deliverable (V01 for a V02), found beside it or in its _Old" },
     { id: "prepost", label: "Pre vs Post", tip: "A POST render against its PRE batch twin: the same name without the Post token, in a sibling batch folder" },
 ];
@@ -298,6 +297,13 @@ const ReviewRow: React.FC<{
                             </Tooltip>
                         </span>
                     )}
+                    {/* In vs Master with nothing to compare against: said, not
+                        left as a blank line under the name. */}
+                    {!matchedMp4 && kind === "master" && (
+                        <span className="rv-row-master rv-row-master--none" title="No master render matched this deliverable's creative, size and length. With no campaign picked in OV Library, nothing can match.">
+                            no master found
+                        </span>
+                    )}
                 </span>
 
                 {/* Comparison comp — auto-created side-by-side QC comp.
@@ -421,7 +427,9 @@ const ReviewSession: React.FC = () => {
     // buildMastersIndex + pickBestMasterFromIndex pipeline (campaign +
     // size + duration + aspect-ratio scoring).
     const [itemMatches, setItemMatches] = useState<Record<string, string> | null>(null);
-    const [section, setSection] = usePersistentState<Section>("review-section", "all");
+    // "all" was a section until 2026-09-29; a stored one reads as vs Master.
+    const [storedSection, setSection] = usePersistentState<Section | "all">("review-section", "master");
+    const section: Section = storedSection === "all" ? "master" : storedSection;
     const toastId = useRef(0);
     const nextId = useRef(items.reduce((max, i) => Math.max(max, i.id), 0));
     // Mounted guard — flipped to false on unmount so async operations
@@ -660,14 +668,16 @@ const ReviewSession: React.FC = () => {
         if (item.prePath) k.push("prepost");
         return k;
     };
-    const sectionCount = (id: Section) => id === "all" ? items.length : items.filter((i) => kindsOf(i).indexOf(id as CompareKind) !== -1).length;
+    // vs Master is EVERY row: one with no master found still belongs in the
+    // review and says so, rather than vanishing from the only list it is in.
+    const sectionCount = (id: Section) => id === "master" ? items.length : items.filter((i) => kindsOf(i).indexOf(id) !== -1).length;
     // Pills only once there is more than one kind of review in the session:
     // a masters-only session looks exactly as it always did.
     const hasOtherKinds = items.some((i) => i.amendPath || i.prePath);
-    const activeSection: Section = hasOtherKinds ? section : "all";
+    const activeSection: Section = hasOtherKinds ? section : "master";
     const visible = items
-        .map((item, index) => ({ item, index, kind: activeSection === "all" ? primaryKind(item) : (activeSection as CompareKind) }))
-        .filter((v) => activeSection === "all" || kindsOf(v.item).indexOf(v.kind) !== -1);
+        .map((item, index) => ({ item, index, kind: activeSection }))
+        .filter((v) => v.kind === "master" || kindsOf(v.item).indexOf(v.kind) !== -1);
 
     const approvedCount = items.filter((i) => i.status === "approved").length;
     const amendCount    = items.filter((i) => i.status === "amend").length;
@@ -831,7 +841,7 @@ const ReviewSession: React.FC = () => {
                 <div className="rv-sections">
                     {SECTIONS.map((sec) => {
                         const n = sectionCount(sec.id);
-                        if (sec.id !== "all" && n === 0) return null;
+                        if (sec.id !== "master" && n === 0) return null;
                         return (
                             <Tooltip key={sec.id} text={sec.tip}>
                                 <button

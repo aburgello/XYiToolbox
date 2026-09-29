@@ -116,7 +116,7 @@ try {
     check(cmp && cmp.some((c) => /InMotion/.test(c.localItemName) && c.repeat === 2), "a duration multiple carries its x2 to the builder", cmp && cmp.map((c) => c.repeat));
     check(await page.waitFor(`document.querySelectorAll(".rv-row").length === 2`, 3000), "both land in the session");
     const pills = await page.eval(`[...document.querySelectorAll(".rv-section")].map(p => p.innerText.replace(/\\s+/g, " ").trim())`);
-    check(pills.some((p) => /^Amends 1$/.test(p)) && pills.some((p) => /^vs Master 2$/.test(p)), "Amends appears beside vs Master, which holds both", pills);
+    check(pills.length === 2 && /^vs Master 2$/.test(pills[0]) && /^Amends 1$/.test(pills[1]), "no All: vs Master leads and holds both, Amends beside it", pills);
     check((await page.eval(`[...document.querySelectorAll(".rv-row-repeat")].map(e => e.innerText)`)).join() === "×2", "the x2 row says so");
     await page.click(".rv-section", "Amends");
     await pause(300);

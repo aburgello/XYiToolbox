@@ -634,6 +634,8 @@
     // side-by-side comp in AE's viewer.  Only visible on rows that had a
     // matching .mp4 and had a comp created during import.
     // A matched row whose comp wasn't built: same button, amber, press to retry.
+    .rv-row-master--none { color: #6b6b6b; font-style: italic; }
+
     .rv-row-repeat {
         flex-shrink: 0;
         padding: 0 5px;
