@@ -235,11 +235,13 @@ export const CATEGORIES: CategoryDef[] = [
 // are otherwise the only elements that lost their identity: same colour as
 // each other, and darker than the ground they sit on. Pre-blended rather than
 // derived with color-mix(), per this project's chrome74 target.
-export const CATEGORY_COLORS: Record<string, { grad: string; border: string; glow: string; icon: string; edge: string }> = {
-    localise: { grad: "linear-gradient(135deg, #1c7a76 0%, #0f3d45 100%)", border: "#2dd4bf", glow: "rgba(45, 212, 191, 0.35)",  icon: "#5eead4", edge: "rgba(45, 212, 191, 0.5)" },
-    review:   { grad: "linear-gradient(135deg, #6842b0 0%, #2e1a52 100%)", border: "#a78bfa", glow: "rgba(167, 139, 250, 0.35)", icon: "#c4b5fd", edge: "rgba(167, 139, 250, 0.5)" },
-    deliver:  { grad: "linear-gradient(135deg, #b3661f 0%, #5c2f0e 100%)", border: "#fb923c", glow: "rgba(251, 146, 60, 0.35)",  icon: "#fdba74", edge: "rgba(251, 146, 60, 0.5)" },
-    tools:    { grad: "linear-gradient(135deg, #ad2d67 0%, #4a1530 100%)", border: "#f472b6", glow: "rgba(244, 114, 182, 0.35)", icon: "#f9a8d4", edge: "rgba(244, 114, 182, 0.5)" },
+// `wash` is the RESTING tint -- low enough to sit under text without a hover.
+// Never use `glow` for that: it is tuned for hover (CLAUDE.md).
+export const CATEGORY_COLORS: Record<string, { grad: string; border: string; glow: string; icon: string; edge: string; wash: string }> = {
+    localise: { grad: "linear-gradient(135deg, #1c7a76 0%, #0f3d45 100%)", border: "#2dd4bf", glow: "rgba(45, 212, 191, 0.35)",  icon: "#5eead4", edge: "rgba(45, 212, 191, 0.5)",  wash: "rgba(45, 212, 191, 0.1)" },
+    review:   { grad: "linear-gradient(135deg, #6842b0 0%, #2e1a52 100%)", border: "#a78bfa", glow: "rgba(167, 139, 250, 0.35)", icon: "#c4b5fd", edge: "rgba(167, 139, 250, 0.5)", wash: "rgba(167, 139, 250, 0.11)" },
+    deliver:  { grad: "linear-gradient(135deg, #b3661f 0%, #5c2f0e 100%)", border: "#fb923c", glow: "rgba(251, 146, 60, 0.35)",  icon: "#fdba74", edge: "rgba(251, 146, 60, 0.5)",  wash: "rgba(251, 146, 60, 0.1)" },
+    tools:    { grad: "linear-gradient(135deg, #ad2d67 0%, #4a1530 100%)", border: "#f472b6", glow: "rgba(244, 114, 182, 0.35)", icon: "#f9a8d4", edge: "rgba(244, 114, 182, 0.5)", wash: "rgba(244, 114, 182, 0.1)" },
 };
 
 export function categoryStyleVars(categoryId: string | undefined): React.CSSProperties {
@@ -250,6 +252,7 @@ export function categoryStyleVars(categoryId: string | undefined): React.CSSProp
         "--cat-glow":   c.glow,
         "--cat-icon":   c.icon,
         "--cat-edge":   c.edge,
+        "--cat-wash":   c.wash,
     } as React.CSSProperties;
 }
 

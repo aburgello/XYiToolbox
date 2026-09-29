@@ -151,6 +151,11 @@ const HomeMacroCards: React.FC<Props> = ({ layout, onNavigate }) => {
                             <span className="category-card-label">{category.label}</span>
                             {sig.line && layout !== "bar" && <span className="category-card-line">{sig.line}</span>}
                         </span>
+                        {/* The category's own mark, faint and oversized in the
+                            corner: the card is recognisably itself at rest. */}
+                        {layout !== "bar" && (
+                            <span className="category-card-ghost" aria-hidden="true"><Icon size={layout === "grid" ? 64 : 72} /></span>
+                        )}
                         {sig.count > 0 && (
                             <span className="category-card-count" title={`${sig.count} ${sig.countOf || ""}`.trim()}>{sig.count}</span>
                         )}

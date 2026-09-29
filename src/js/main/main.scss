@@ -496,8 +496,47 @@ textarea {
         transition: color 0.3s ease;
     }
 
+    // Space BELOW as well as above: sorted to the top, the cards otherwise
+    // sat flush on the Toolset's frame (whose legend then cut into them).
+    margin-bottom: 14px;
+
+    // ── Identity at rest ─────────────────────────────────────────────────────
+    // They were four identical grey slabs until hovered. At rest each now
+    // carries its category: the icon in a tinted well, a wash from the top
+    // left, and its mark oversized and faint in the corner. Hover is unchanged.
+    .category-card {
+        position: relative;
+        min-width: 0;
+        overflow: hidden;
+        background:
+            linear-gradient(135deg, var(--cat-wash, transparent) 0%, transparent 60%),
+            linear-gradient(180deg, var(--surface-2, #292929) 0%, var(--surface-1, #232323) 100%);
+    }
+    .category-card-icon {
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        background: var(--cat-wash, rgba(255, 255, 255, 0.05));
+        color: var(--cat-icon, #ddd);
+        flex-shrink: 0;
+    }
+    .category-card:hover .category-card-icon { background: rgba(255, 255, 255, 0.12); color: #fff; }
+    .category-card-ghost {
+        position: absolute;
+        right: -14px;
+        bottom: -18px;
+        display: flex;
+        color: var(--cat-icon, #fff);
+        opacity: 0.07;
+        pointer-events: none;
+        transition: opacity 0.3s ease;
+    }
+    .category-card:hover .category-card-ghost { opacity: 0.12; }
+    .category-card-text, .category-card-count { position: relative; z-index: 1; }
+
     // ── Live cards: a line of what's waiting, and a count ────────────────────
-    .category-card { position: relative; min-width: 0; }
     .category-card-text {
         display: flex;
         flex-direction: column;
@@ -560,6 +599,7 @@ textarea {
             padding: 8px 10px;
         }
         .category-card-count { position: static; margin-left: 2px; }
+        .category-card-icon { width: 28px; height: 28px; border-radius: 8px; }
     }
 }
 

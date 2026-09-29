@@ -82,6 +82,9 @@ try {
     check(!(await page.eval(`!!document.querySelector(".home-block")`)) && !(await page.eval(`!!document.querySelector(".active-jobs")`)), "Done: frames gone, the hidden block stays hidden");
     const after = await page.eval(`(() => { const r = (s) => document.querySelector(s)?.getBoundingClientRect().top ?? -1; return [r(".category-row"), r(".toolset-grid")]; })()`);
     check(after[0] >= 0 && after[1] > after[0], "and the cards now sit above the Toolset", after);
+    const gap = await page.eval(`Math.round(document.querySelector(".toolset-grid").getBoundingClientRect().top - document.querySelector(".category-row").getBoundingClientRect().bottom)`);
+    check(gap >= 12, "with a real gap between them, not flush", gap);
+    await page.shot(path.join(SHOTS, "ui-home-top.png"));
 
     console.log("\n3. Bar, and back");
     await page.eval(`[...document.querySelectorAll(".favorites-toggle")].find(b => b.querySelector("svg.lucide-layout-dashboard"))?.click()`);
