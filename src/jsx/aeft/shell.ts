@@ -330,6 +330,15 @@ function saveTabList(key: string, ids: string[]): Result {
   }
 }
 
+// The HOME SCREEN's own arrangement -- which blocks (Toolset, the four
+// category cards, Active Jobs) sit in which order, which are hidden, and how
+// the category cards are laid out. App-generated tokens only, so a tab list
+// is safe (never user text): block ids in order, "-<id>" for a hidden one,
+// "cards:<layout>" for the cards' layout. See lib/homeLayout.ts.
+const HOME_LAYOUT_KEY = "OVHomeLayout";
+export const loadHomeLayout = (): string[] => loadTabList(HOME_LAYOUT_KEY);
+export const saveHomeLayout = (tokens: string[]): Result => saveTabList(HOME_LAYOUT_KEY, tokens);
+
 export const loadHiddenToolsetActions = (): string[] => loadTabList(TOOLSET_HIDDEN_KEY);
 export const saveHiddenToolsetActions = (ids: string[]): Result => saveTabList(TOOLSET_HIDDEN_KEY, ids);
 

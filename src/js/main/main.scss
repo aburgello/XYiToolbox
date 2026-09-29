@@ -495,6 +495,152 @@ textarea {
         display: inline-flex;
         transition: color 0.3s ease;
     }
+
+    // ── Live cards: a line of what's waiting, and a count ────────────────────
+    .category-card { position: relative; min-width: 0; }
+    .category-card-text {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 3px;
+        min-width: 0;
+        max-width: 100%;
+    }
+    .category-card-line {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 10.5px;
+        font-weight: 500;
+        color: #8d8d8d;
+    }
+    .category-card:hover .category-card-line { color: rgba(255, 255, 255, 0.85); }
+    .category-card-count {
+        position: absolute;
+        top: 7px;
+        right: 8px;
+        min-width: 18px;
+        padding: 0 5px;
+        border-radius: 999px;
+        background: var(--cat-icon, #5eead4);
+        color: #0b0b0b;
+        font-size: 10.5px;
+        font-weight: 700;
+        line-height: 18px;
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+    }
+
+    // ── 2x2: wider cards, icon beside the text ───────────────────────────────
+    // Plain wrap rather than CSS grid's gap-with-flex hacks: two per line.
+    &.category-row--grid {
+        flex-wrap: wrap;
+
+        .category-card {
+            flex: 1 1 calc(50% - 5px);
+            flex-direction: row;
+            justify-content: flex-start;
+            gap: 12px;
+            padding: 14px 16px;
+            text-align: left;
+        }
+        .category-card-text { align-items: flex-start; }
+        .category-card-label { font-size: 13px; }
+    }
+
+    // ── Bar: one slim line of four ───────────────────────────────────────────
+    &.category-row--bar {
+        gap: 6px;
+
+        .category-card {
+            flex-direction: row;
+            justify-content: center;
+            gap: 8px;
+            padding: 8px 10px;
+        }
+        .category-card-count { position: static; margin-left: 2px; }
+    }
+}
+
+// ── Arrange mode: every block framed, with its own move / hide bar ───────────
+.home-block {
+    max-width: $content-max-width;
+    margin: 12px auto 0;
+    border: 1px dashed rgba(255, 255, 255, 0.16);
+    border-radius: 10px;
+    padding: 8px 10px 10px;
+    background: rgba(255, 255, 255, 0.015);
+
+    &.is-hidden { opacity: 0.55; padding-bottom: 8px; }
+}
+.home-block-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+.home-block-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #bdbdbd;
+}
+.home-block-spacer { flex: 1 1 auto; }
+.home-block .home-block-btn {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    background: none;
+    color: #bbb;
+    cursor: pointer;
+
+    &:hover:not(:disabled), &:active:not(:disabled) { background: rgba(255, 255, 255, 0.07); color: #fff; }
+    &:disabled { opacity: 0.3; cursor: default; }
+}
+.home-block-body > .category-row,
+.home-block-body > .toolset-grid,
+.home-block-body > .active-jobs { margin-top: 8px; }
+.home-arrange-foot {
+    max-width: $content-max-width;
+    margin: 12px auto 0;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+
+    button {
+        height: 30px;
+        padding: 0 14px;
+        border-radius: 7px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+    .home-block-reset {
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: none;
+        color: #bbb;
+
+        &:hover, &:active { background: rgba(255, 255, 255, 0.06); color: #fff; }
+    }
+    .home-block-done {
+        border: 1px solid var(--ov-accent, #5eead4);
+        background: var(--ov-accent, #5eead4);
+        color: #0b0b0b;
+
+        &:hover, &:active { background: var(--ov-accent, #5eead4); filter: brightness(1.1); }
+    }
 }
 
 // Full-width launch button below the category row -- takes you to the

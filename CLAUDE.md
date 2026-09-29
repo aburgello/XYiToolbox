@@ -489,6 +489,19 @@ only on mount otherwise. No strip at all when untagged, empty or finished. The L
 territory list pins the open project's territory first rather than repeating it
 in a banner, and folds empty territories into one line.
 
+**The home screen is three blocks the artist arranges** (Toolset, the four
+category cards, Active Jobs). Arrange mode is the layout button beside search:
+move up/down, hide, and the cards' layout -- a row of four, 2×2, or a slim bar.
+Stored per machine as app-generated tokens in `OVHomeLayout` (in
+`PROFILE_KEYS`; `lib/homeLayout.ts`), and a block the saved order doesn't know
+is APPENDED, never lost. **The category cards are live** (`HomeMacroCards.tsx`):
+Localise shows where the open project sits and your jobs ready to localise,
+Review your Revised subtasks, Deliver your Prep for delivery batches, Tools the
+tool you last picked in its rail (browser storage, a per-viewer convenience)
+and opens it. All from the jobs feed and the project path the panel already
+reads; the feed's SAMPLE jobs are never counted, and an untagged machine sees
+the plain labels. `node scripts/ui-home.mjs`.
+
 **Adding a tool** = `tools/X.tsx` + `X.scss` + ExtendScript in
 `src/jsx/aeft/*.ts` + one entry in **`toolRegistry.tsx`'s `TOOLS`**. A NEW
 `src/jsx/aeft` file also needs its `export *` line in `aeft.ts`, or the bridge

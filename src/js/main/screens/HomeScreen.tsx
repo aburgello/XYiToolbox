@@ -16,6 +16,11 @@ import {
     FolderPlus,
     Pencil,
     Route,
+    LayoutDashboard,
+    ArrowUp,
+    ArrowDown,
+    Eye,
+    EyeOff,
 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { isWorkflowBubbleEnabled, toggleWorkflowBubbleEnabled, subscribeToBubble } from "../lib/workflowBubble";
@@ -37,6 +42,9 @@ import Tooltip from "../Tooltip";
 import TimeTrackerDroplet from "../TimeTrackerDroplet";
 import TeamDroplet from "../TeamDroplet";
 import ActiveJobs from "../ActiveJobs";
+import HomeMacroCards from "./HomeMacroCards";
+import SegmentedToggle from "../SegmentedToggle";
+import { DEFAULT_HOME_LAYOUT, HOME_BLOCKS, loadHomeLayout, saveHomeLayout, type HomeBlockId, type HomeLayout, type CardsLayout } from "../lib/homeLayout";
 import { sfx } from "../../lib/utils/sfx";
 import logo from "../../assets/xyi-logo.png";
 import easterEggGif from "../../assets/easter-egg.gif";
@@ -56,6 +64,25 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate, focusAction }) => {
     // Favourites group Toolset renders further down this same screen.
     const { favoriteIds, toggleFavorite, boxOpen, toggleFavoritesBox } = useFavorites(TOOLS);
     const [foldersOpen, setFoldersOpen] = useState(false);
+    // THE PAGE'S OWN ARRANGEMENT: which blocks, in which order, the cards'
+    // layout. Arrange mode is the Toolset's edit mode one level up.
+    const [layout, setLayout] = useState<HomeLayout>(DEFAULT_HOME_LAYOUT);
+    const [arranging, setArranging] = useState(false);
+    useEffect(() => { void loadHomeLayout().then(setLayout); }, []);
+    const changeLayout = (next: HomeLayout) => { setLayout(next); saveHomeLayout(next); };
+    const moveBlock = (id: HomeBlockId, dir: -1 | 1) => {
+        const order = layout.order.slice();
+        const i = order.indexOf(id);
+        const j = i + dir;
+        if (i < 0 || j < 0 || j >= order.length) return;
+        order[i] = order[j];
+        order[j] = id;
+        changeLayout({ ...layout, order });
+    };
+    const toggleBlock = (id: HomeBlockId) => {
+        const hidden = layout.hidden.indexOf(id) !== -1 ? layout.hidden.filter((x) => x !== id) : layout.hidden.concat([id]);
+        changeLayout({ ...layout, hidden });
+    };
     // Mirrored from workflowBubble, and SUBSCRIBED rather than read once: the
     // bubble's own X and its launcher change the shared state too, so a button
     // that only read it at mount would sit lit up over a bubble somebody had
@@ -351,6 +378,15 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate, focusAction }) => {
                                     <Star size={14} fill={boxOpen ? "currentColor" : "none"} />
                                 </button>
                             </Tooltip>
+                            <Tooltip text={arranging ? "Done arranging" : "Arrange the home screen"}>
+                                <button
+                                    className={arranging ? "favorites-toggle active" : "favorites-toggle"}
+                                    onClick={() => setArranging((v) => !v)}
+                                    aria-pressed={arranging}
+                                >
+                                    <LayoutDashboard size={14} />
+                                </button>
+                            </Tooltip>
                             <Tooltip text="Useful Folders">
                                 <button
                                     className={foldersOpen ? "favorites-toggle active" : "favorites-toggle"}
@@ -463,59 +499,49 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate, focusAction }) => {
                         </AnimatePresence>
                     </div>
 
-                    <ToolsetTool onNavigate={onNavigate} focusAction={focusAction} />
-
-                    <div className="category-row">
-                        {CATEGORIES.map((category, index) => {
-                            const Icon = category.icon;
-                            return (
-                                <motion.button
-                                    key={category.id}
-                                    className="category-card"
-                                    style={categoryStyleVars(category.id)}
-                                    variants={categoryLift}
-                                    initial={{ opacity: 0, y: 10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    whileHover="hover"
-                                    transition={{ type: "spring", stiffness: 300, damping: 24, delay: index * 0.06 } as Transition}
-                                    whileTap={{ scale: 0.96 }}
-                                    onHoverStart={() => {
-                                        if (category.id === "deliver") prefetchTool("delivery-hub");
-                                        else if (category.id === "review") prefetchTool("review-hub");
-                                        else if (category.id === "localise") prefetchTool("campaign-localiser");
-                                        else if (category.id === "tools") prefetchTool("random-layers");
-                                    }}
-                                    onClick={() => {
-                                        sfx.click();
-                                        // Deliver is deliberately NOT a master-detail category --
-                                        // it's a single bespoke one-stop page (DeliveryHub, id
-                                        // "delivery-hub") that already contains everything that
-                                        // category needs (Delivery, frame rate, the bitrate
-                                        // checklist), so clicking the card skips the tool-list
-                                        // screen entirely and goes straight there. The other three
-                                        // categories are unaffected -- this is the only special case.
-                                        if (category.id === "deliver") {
-                                            onNavigate({ type: "tool", toolId: "delivery-hub", backTo: { type: "home" } });
-                                        } else if (category.id === "review") {
-                                            onNavigate({ type: "tool", toolId: "review-hub", backTo: { type: "home" } });
-                                        } else {
-                                            onNavigate({ type: "category", categoryId: category.id });
-                                        }
-                                    }}
-                                >
-                                    <motion.span variants={iconWiggle} className="category-card-icon">
-                                        <Icon size={22} />
-                                    </motion.span>
-                                    {category.label}
-                                </motion.button>
-                            );
-                        })}
-                    </div>
-
-                    {/* Full width, directly under the four category cards. Renders
-                        nothing at all until a specs scan has been done, so a fresh
-                        machine's home screen is unchanged. */}
-                    <ActiveJobs onOpen={() => onNavigate({ type: "category", categoryId: "localise" })} />
+                    {/* THE BLOCKS, in the order this machine chose. Arrange mode
+                        (the layout button by search) moves and hides them and
+                        picks the category cards' layout. */}
+                    {layout.order.map((id, idx) => {
+                        const hidden = layout.hidden.indexOf(id) !== -1;
+                        if (hidden && !arranging) return null;
+                        const block =
+                            id === "toolset" ? <ToolsetTool onNavigate={onNavigate} focusAction={focusAction} />
+                            : id === "cards" ? <HomeMacroCards layout={layout.cards} onNavigate={onNavigate} />
+                            // Full width, under whatever sits above it. Renders
+                            // nothing until a specs scan or the feed has jobs.
+                            : <ActiveJobs onOpen={() => onNavigate({ type: "category", categoryId: "localise" })} />;
+                        if (!arranging) return <React.Fragment key={id}>{block}</React.Fragment>;
+                        const meta = HOME_BLOCKS.find((b) => b.id === id);
+                        return (
+                            <div key={id} className={"home-block is-arranging" + (hidden ? " is-hidden" : "")}>
+                                <div className="home-block-bar">
+                                    <span className="home-block-name">{meta ? meta.label : id}</span>
+                                    {id === "cards" && !hidden && (
+                                        <SegmentedToggle
+                                            name="home-cards-layout"
+                                            value={layout.cards}
+                                            onChange={(v) => changeLayout({ ...layout, cards: v as CardsLayout })}
+                                            options={[{ value: "row", label: "Row" }, { value: "grid", label: "2×2" }, { value: "bar", label: "Bar" }]}
+                                        />
+                                    )}
+                                    <span className="home-block-spacer" />
+                                    <button className="home-block-btn" disabled={idx === 0} onClick={() => moveBlock(id, -1)} aria-label="Move up" title="Move up"><ArrowUp size={13} /></button>
+                                    <button className="home-block-btn" disabled={idx === layout.order.length - 1} onClick={() => moveBlock(id, 1)} aria-label="Move down" title="Move down"><ArrowDown size={13} /></button>
+                                    <button className="home-block-btn" onClick={() => toggleBlock(id)} aria-label={hidden ? "Show" : "Hide"} title={hidden ? "Show on the home screen" : "Hide from the home screen"}>
+                                        {hidden ? <EyeOff size={13} /> : <Eye size={13} />}
+                                    </button>
+                                </div>
+                                {!hidden && <div className="home-block-body">{block}</div>}
+                            </div>
+                        );
+                    })}
+                    {arranging && (
+                        <div className="home-arrange-foot">
+                            <button className="home-block-reset" onClick={() => changeLayout(DEFAULT_HOME_LAYOUT)}>Reset to default</button>
+                            <button className="home-block-done" onClick={() => setArranging(false)}>Done</button>
+                        </div>
+                    )}
 
                 </div>
             </div>

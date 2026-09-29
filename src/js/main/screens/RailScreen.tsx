@@ -69,6 +69,7 @@ import { sfx } from "../../lib/utils/sfx";
 import "../shared.scss";
 import "./RailScreen.scss";
 import HomeButton from "../HomeButton";
+import { recordToolOpened } from "../lib/homeLayout";
 
 export interface RailStage {
     id: string;
@@ -282,6 +283,12 @@ export const RailScreen: React.FC<Props> = ({
     // open normally via direct search/⌘K/a deep link, it just doesn't show
     // as a row here.
     const selectedTool = ordered.find((t) => t.id === selectedId);
+
+    // Remembered for the home screen's category card ("last: Edit In
+    // Context") -- only a tool somebody picked, never the rail's default.
+    useEffect(() => {
+        if (selectedToolId) recordToolOpened(categoryId, selectedToolId);
+    }, [categoryId, selectedToolId]);
 
     // Direction for the content swap: down the rail = forward.
     const prevToolIdRef = useRef(selectedId);
