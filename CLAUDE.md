@@ -1372,6 +1372,18 @@ the same master for two rows and accepted it for four). Review's selection loade
 comps: AE leaves an import selected, so a second Import & Compare reviewed the
 masters.
 
+`node scripts/ui-review-jobs.mjs` (after `yarn build:web`) clicks through
+Review Session's **Your jobs** strip (`tools/ReviewJobs.tsx`): Deliver's
+`deliveryFindRenders`/`deliveryImportRenders`, asked about **To amend** and
+**Motion/Backlog** subtasks instead of Prep for delivery (`deliverableNames`/
+`isDeliverable` take the status regex; Deliver's default is unchanged). Only
+subtasks the feed actually labels count, with no every-subtask fallback. An
+amend whose newest render is still V01 is **listed, never ticked**, since that is
+the version the amends are about. A Motion/Backlog subtask with no render is the
+reminder half ("Not rendered yet"). The import lands in Deliver's own
+`<Territory> <Batch>` bin and then runs the session's Import & Compare, so the
+sections sort it exactly as a hand import would.
+
 `node scripts/probe-review-sections.cjs` (after `yarn build`) guards Review
 Session's **sections**: vs Master, Amends and Pre vs Post. The two new
 references are found ON DISK beside the render (`reviewFindCounterparts`), by

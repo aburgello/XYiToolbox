@@ -38,6 +38,7 @@ import { usePersistentState } from "../../lib/utils/usePersistentState";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
 import TutorialIcon from "../TutorialIcon";
+import ReviewJobs from "./ReviewJobs";
 import "../shared.scss";
 import "./ReviewHub.scss";
 
@@ -811,6 +812,9 @@ const ReviewSession: React.FC = () => {
                     </motion.div>
                 )}
             </AnimatePresence>
+
+            {/* Wrike jobs in To amend / Motion / Backlog, with their renders. */}
+            <ReviewJobs pushToast={pushToast} onImported={loadComps} />
 
             {/* Sections -- vs Master / Amends / Pre vs Post. */}
             {hasOtherKinds && (

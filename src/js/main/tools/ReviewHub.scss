@@ -291,6 +291,12 @@
     // Review sections -- vs Master / Amends / Pre vs Post. Pills in the
     // orientation-chip language OV Library already uses. Buttons re-declare
     // :hover/:active because index.scss's global button states paint over them.
+    // Deliver's jobs strip, inset to the session's own gutter.
+    .rv-jobs {
+        margin: 8px 14px 0;
+        flex-shrink: 0;
+    }
+
     .rv-sections {
         display: flex;
         flex-wrap: wrap;

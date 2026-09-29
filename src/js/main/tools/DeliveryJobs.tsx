@@ -26,14 +26,14 @@ import FileBadge from "../FileBadge";
 import { readFinderColors, openInDefaultApp, isGoodColor, isBadColor, type FinderColor } from "../lib/finderLabels";
 import "./DeliveryJobs.scss";
 
-interface RenderFile { path: string; name: string; key: string; version: number; variant?: string; matched: boolean; latest: boolean }
+export interface RenderFile { path: string; name: string; key: string; version: number; variant?: string; matched: boolean; latest: boolean }
 
 /** Version first, a res variant above the plain render at the same version --
  *  the host's own order (deliveryRenderRank), repeated so the list never
  *  depends on the order a folder listing came back in. */
 const rankOf = (f: RenderFile) => f.version * 10 + (f.variant ? 1 : 0);
-const grouped = (files: RenderFile[]) => files.slice().sort((a, b) => (a.key !== b.key ? (a.key < b.key ? -1 : 1) : rankOf(a) - rankOf(b)));
-interface RenderFolder { campaign: string; territory: string; label: string; path: string; files: RenderFile[] }
+export const grouped = (files: RenderFile[]) => files.slice().sort((a, b) => (a.key !== b.key ? (a.key < b.key ? -1 : 1) : rankOf(a) - rankOf(b)));
+export interface RenderFolder { campaign: string; territory: string; label: string; path: string; files: RenderFile[] }
 interface Found { folders: RenderFolder[]; missing: string[]; noTerritory?: boolean; error?: string }
 
 /**
@@ -113,16 +113,17 @@ interface Props {
 }
 
 /** The subtasks this delivery is about: those in Prep for delivery when the
- *  feed says, every named one when it doesn't. */
-export function deliverableNames(job: WrikeJob): string[] {
+ *  feed says, every named one when it doesn't. `statuses` lets Review ask the
+ *  same question of "To amend" and "Motion" -- one rule, two pages. */
+export function deliverableNames(job: WrikeJob, statuses: RegExp = DELIVERABLE_STATUSES): string[] {
     const subs = (job.subtasks || []).filter((s) => s.name);
-    const flagged = subs.filter((s) => DELIVERABLE_STATUSES.test(s.customStatusName || ""));
+    const flagged = subs.filter((s) => statuses.test(s.customStatusName || ""));
     return (flagged.length ? flagged : subs).map((s) => s.name);
 }
 
-export function isDeliverable(job: WrikeJob): boolean {
-    if (DELIVERABLE_STATUSES.test(job.status || "")) return true;
-    return (job.subtasks || []).some((s) => DELIVERABLE_STATUSES.test(s.customStatusName || ""));
+export function isDeliverable(job: WrikeJob, statuses: RegExp = DELIVERABLE_STATUSES): boolean {
+    if (statuses.test(job.status || "")) return true;
+    return (job.subtasks || []).some((s) => statuses.test(s.customStatusName || ""));
 }
 
 /** Territory off the title, else the last two-letter token of a subtask name. */
