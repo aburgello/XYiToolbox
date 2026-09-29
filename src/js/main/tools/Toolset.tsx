@@ -404,7 +404,7 @@ export const ACTIONS: ActionEntry[] = [
     {
         id: "render-me",
         label: "RenderMe!",
-        description: "Queues the active comp into this project's Renders folder, in a matching batch folder.",
+        description: "Queues the active comp, or every comp selected in the Project panel, into this project's Renders folder, in a matching batch folder.",
         icon: Film,
         group: "organise",
         safety: "additive",
