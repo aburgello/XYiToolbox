@@ -27,7 +27,8 @@ const project = {
         addComp(name, w, h, par, dur, fps) {
             const layers = [];
             const c = { id: nextId++, name, width: w, height: h, pixelAspect: par, duration: dur, frameRate: fps, numLayers: 0, parentFolder: wrap(rootRaw),
-                layers: { add(src) { const l = { source: src, outPoint: src.duration > 0 ? src.duration : dur }; layers.push(l); c.numLayers = layers.length; return l; } }, _layers: layers };
+                layers: { add(src) { const l = { source: src, outPoint: src.duration > 0 ? src.duration : dur, scale: [100, 100],
+                    property: () => ({ property: () => ({ setValue: (v) => { l.scale = v; } }) }) }; layers.push(l); c.numLayers = layers.length; return l; } }, _layers: layers };
             items.push(c);
             return c;
         },
@@ -82,6 +83,30 @@ check(r3.success && items.slice(-2).every((x) => x.parentFolder.name === 'Root')
 check(!aeft.makeCompsFromFootage(0, 10, 'Comps').success && !aeft.makeCompsFromFootage(25, 0, 'Comps').success, 'a 0fps or 0s request is refused');
 project.selection = [wrap(aComp)];
 check(!aeft.makeCompsFromFootage(25, 10, 'Comps').success, 'no footage selected: refused, nothing made');
+
+// Taiwan's mech exports: NAMED 400x2400, the pixels 833x5000 (about 2x).
+const tw1 = footage('SF_INTL_Trio_DINTH_ShowtimeCinemasTPEDomeLEDLEFT_400x2400px_30s_TW.jpg', 833, 5000, 0);
+const tw2 = footage('SF_INTL_Trio_DINTH_ShowtimeCinemasTPEDomeLEDRIGHT_400x2400px_30s_TW.jpg', 833, 5000, 0);
+project.selection = [wrap(tw1), wrap(tw2)];
+const s2 = aeft.compsFromFootageSelection();
+check(s2.differs === 2 && s2.nameSizes.join() === '400x2400' && s2.sizes.join() === '833x5000', 'the picker sees the name and the pixels disagree', s2);
+let k = items.length;
+let r4 = aeft.makeCompsFromFootage(25, 30, 'Comps', 'name');
+let made4 = items.slice(k).filter((x) => x._layers);
+check(r4.success && made4.every((c) => c.width === 400 && c.height === 2400), 'sized from the name: 400x2400 comps', made4.map((c) => c.width + 'x' + c.height));
+const sc = made4[0]._layers[0].scale[0];
+check(Math.abs(sc - 48) < 0.05 && made4[0]._layers[0].scale[0] === made4[0]._layers[0].scale[1], 'the footage scaled to fit, uniformly (833x5000 into 400x2400 = 48%)', made4[0]._layers[0].scale);
+check(/2 sized from the name/.test(r4.message), 'and the message says so', r4.message);
+k = items.length;
+aeft.makeCompsFromFootage(25, 30, 'Comps', 'file');
+const made5 = items.slice(k).filter((x) => x._layers);
+check(made5.every((c) => c.width === 833 && c.height === 5000 && c._layers[0].scale[0] === 100), "sized from the file: the file's own pixels, unscaled");
+const grid = footage('FID_INTL_TVSpot_DOOH_Hoyts3x3_1920x1080_30s_NZ.png', 3840, 2160, 0);
+project.selection = [wrap(grid)];
+k = items.length;
+aeft.makeCompsFromFootage(25, 30, 'Comps', 'name');
+const g = items.slice(k).filter((x) => x._layers)[0];
+check(g && g.width === 1920 && g.height === 1080, "a site's grid (Hoyts3x3) is never read as the size", g && [g.width, g.height]);
 
 console.log(fails ? `\n${fails} FAILED` : '\nCLEAN — one comp per footage item, filed where it should be.');
 process.exit(fails ? 1 : 0);

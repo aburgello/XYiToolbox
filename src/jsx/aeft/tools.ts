@@ -2728,14 +2728,28 @@ function cffBaseName(name: string): string {
   return base.replace(/\.[A-Za-z0-9]{1,5}$/, "");
 }
 
-/** What the panel's picker shows before anything is made. */
-export const compsFromFootageSelection = (): Result & { count?: number; ignored?: number; first?: string; sizes?: string[] } => {
+/** The size a NAME carries ("…_400x2400px_…"), or null. The strict half of
+ *  firstSizeToken only -- a delimited token of three digits a side -- so a
+ *  site's grid ("Hoyts3x3") or a ratio ("9x16") is never read as a size. */
+function cffNameSize(name: string): { w: number; h: number } | null {
+  let n = String(name || "");
+  try { n = decodeURI(n); } catch (e) { /* plain */ }
+  const m = n.match(/(?:^|_)(\d{3,})x(\d{3,})(?:px)?(?=_|\.|$)/i);
+  return m ? { w: parseInt(m[1], 10), h: parseInt(m[2], 10) } : null;
+}
+
+/** What the panel's picker shows before anything is made. `differs` counts
+ *  items whose NAME says one size and whose pixels are another -- mech
+ *  exports come out at 2x ("…_400x2400px_…" as an 833x5000 JPG). */
+export const compsFromFootageSelection = (): Result & { count?: number; ignored?: number; first?: string; sizes?: string[]; nameSizes?: string[]; differs?: number } => {
   try {
     const sel = app.project.selection;
     let count = 0;
     let ignored = 0;
+    let differs = 0;
     let first = "";
     const sizes: string[] = [];
+    const nameSizes: string[] = [];
     for (let i = 0; i < sel.length; i++) {
       const it: any = sel[i];
       if (!cffIsFootage(it)) { ignored++; continue; }
@@ -2743,14 +2757,23 @@ export const compsFromFootageSelection = (): Result & { count?: number; ignored?
       if (!first) first = cffBaseName(it.name);
       const sz = it.width + "x" + it.height;
       if (sizes.indexOf(sz) === -1) sizes.push(sz);
+      const ns = cffNameSize(it.name);
+      if (ns) {
+        const nsz = ns.w + "x" + ns.h;
+        if (nameSizes.indexOf(nsz) === -1) nameSizes.push(nsz);
+        if (ns.w !== it.width || ns.h !== it.height) differs++;
+      }
     }
-    return { success: true, count: count, ignored: ignored, first: first, sizes: sizes };
+    return { success: true, count: count, ignored: ignored, first: first, sizes: sizes, nameSizes: nameSizes, differs: differs };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
 };
 
-export const makeCompsFromFootage = (fps: number, seconds: number, folderName: string): Result & { made?: number; skipped?: string[] } => {
+// sizeFrom "name": a comp at the size its NAME carries, the footage scaled to
+// fit inside it (contain, centred) -- what a deliverable-named export wants.
+// "file" (or a name with no size): the footage's own pixels, as before.
+export const makeCompsFromFootage = (fps: number, seconds: number, folderName: string, sizeFrom?: string): Result & { made?: number; skipped?: string[] } => {
   let undoOpen = false;
   try {
     const rate = Number(fps);
@@ -2779,15 +2802,26 @@ export const makeCompsFromFootage = (fps: number, seconds: number, folderName: s
     }
 
     let made = 0;
+    let scaled = 0;
     const skipped: string[] = [];
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       try {
-        const comp = app.project.items.addComp(cffBaseName(item.name), item.width, item.height, item.pixelAspect || 1, dur, rate);
+        const ns = sizeFrom === "name" ? cffNameSize(item.name) : null;
+        const cw = ns ? ns.w : item.width;
+        const ch = ns ? ns.h : item.height;
+        const comp = app.project.items.addComp(cffBaseName(item.name), cw, ch, ns ? 1 : (item.pixelAspect || 1), dur, rate);
         if (parent) comp.parentFolder = parent;
         // A still fills the comp; a movie is cut to it, never left running on.
         const layer = comp.layers.add(item);
         if (layer.outPoint > dur) layer.outPoint = dur;
+        if (ns && (ns.w !== item.width || ns.h !== item.height)) {
+          // Fit inside, centred. A new layer already sits at the comp's centre.
+          const pw = item.width * (item.pixelAspect || 1);
+          const k = Math.min(cw / pw, ch / item.height) * 100;
+          (layer.property("ADBE Transform Group").property("ADBE Scale") as Property).setValue([k, k]);
+          scaled++;
+        }
         made++;
       } catch (eOne) {
         skipped.push(cffBaseName(item.name) + ": " + eOne.toString());
@@ -2802,6 +2836,7 @@ export const makeCompsFromFootage = (fps: number, seconds: number, folderName: s
       made: made,
       skipped: skipped,
       message: made + " comp" + (made === 1 ? "" : "s") + " at " + rateText + "fps, " + dur + "s" + (parent ? ", in \"" + folder + "\"" : "") + "." +
+        (scaled ? " " + scaled + " sized from the name, footage scaled to fit." : "") +
         (skipped.length ? " Skipped " + skipped.length + ": " + skipped[0] : ""),
       error: made > 0 ? undefined : "None could be made. " + (skipped[0] || ""),
     } as Result & { made?: number; skipped?: string[] };

@@ -649,7 +649,7 @@ export const ACTIONS: ActionEntry[] = [
         safety: "undoable",
         run: () => {
             const c = loadCffChoice();
-            return evalTSSafe("makeCompsFromFootage", c.fps, c.seconds, c.folder);
+            return evalTSSafe("makeCompsFromFootage", c.fps, c.seconds, c.folder, c.sizeFrom || "name");
         },
         successText: (r) => r.message || "Comps made.",
     },
@@ -876,13 +876,13 @@ const CompDurationDropletBody: React.FC<{ close: () => void; onResult: (result: 
 // ── Make Comp from Elements ────────────────────────────────────────────────
 // The last choice is a per-viewer convenience (browser storage, guarded): the
 // next press opens on it, and ⌘K's no-questions run uses it.
-interface CffChoice { fps: number; seconds: number; folder: string }
+interface CffChoice { fps: number; seconds: number; folder: string; sizeFrom?: "name" | "file" }
 const CFF_KEY = "xyi.compsFromFootage";
-const CFF_DEFAULT: CffChoice = { fps: 25, seconds: 10, folder: "Comps" };
+const CFF_DEFAULT: CffChoice = { fps: 25, seconds: 10, folder: "Comps", sizeFrom: "name" };
 function loadCffChoice(): CffChoice {
     try {
         const c = JSON.parse(localStorage.getItem(CFF_KEY) || "null");
-        if (c && c.fps > 0 && c.seconds > 0 && typeof c.folder === "string") return c;
+        if (c && c.fps > 0 && c.seconds > 0 && typeof c.folder === "string") return { sizeFrom: "name", ...c };
     } catch { /* private window */ }
     return CFF_DEFAULT;
 }
@@ -892,12 +892,39 @@ function saveCffChoice(c: CffChoice) {
 const CFF_RATES = [23.976, 24, 25, 29.97, 30, 50, 60];
 const CFF_SECONDS = [5, 6, 10, 15, 20, 30];
 
+/** A row of presets and an "Other" that opens a field -- the field only
+ *  exists when it says something the chips don't. */
+const CffPicker: React.FC<{ id: string; presets: number[]; unit: string; value: string; onChange: (v: string) => void; onEnter?: () => void; format?: (n: number) => string }> = ({ id, presets, unit, value, onChange, onEnter, format }) => {
+    const n = parseFloat(value);
+    const isPreset = presets.indexOf(n) !== -1;
+    const [other, setOther] = useState(!isPreset);
+    return (
+        <>
+            <div className={"cff-chips" + (presets.length + 1 === 7 ? " cff-chips--row" : "")}>
+                {presets.map((p) => (
+                    <button key={p} type="button" className={!other && n === p ? "is-on" : ""} onClick={() => { setOther(false); onChange(String(p)); }}>
+                        {format ? format(p) : p}
+                    </button>
+                ))}
+                <button type="button" className={other ? "is-on" : ""} onClick={() => setOther(true)}>Other</button>
+            </div>
+            {other && (
+                <div className="cff-custom">
+                    <input id={id} type="number" autoFocus min={1} step="any" value={value} onChange={(e) => onChange(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && onEnter) onEnter(); }} />
+                    <span>{unit}</span>
+                </div>
+            )}
+        </>
+    );
+};
+
 const CompsFromFootageDropletBody: React.FC<{ close: () => void; onResult: (result: ActionResult | null | undefined) => void }> = ({ close, onResult }) => {
     const start = loadCffChoice();
     const [fps, setFps] = useState(String(start.fps));
     const [seconds, setSeconds] = useState(String(start.seconds));
     const [folder, setFolder] = useState(start.folder);
-    const [sel, setSel] = useState<{ count: number; ignored: number; sizes: string[] } | null>(null);
+    const [sizeFrom, setSizeFrom] = useState<"name" | "file">(start.sizeFrom || "name");
+    const [sel, setSel] = useState<{ count: number; ignored: number; sizes: string[]; nameSizes: string[]; differs: number } | null>(null);
     const [busy, setBusy] = useState(false);
 
     // What's selected in the Project panel right now -- read on open and
@@ -908,7 +935,7 @@ const CompsFromFootageDropletBody: React.FC<{ close: () => void; onResult: (resu
         const read = async () => {
             try {
                 const r = (await evalTS("compsFromFootageSelection")) as any;
-                if (!dead && r && r.success) setSel({ count: r.count || 0, ignored: r.ignored || 0, sizes: r.sizes || [] });
+                if (!dead && r && r.success) setSel({ count: r.count || 0, ignored: r.ignored || 0, sizes: r.sizes || [], nameSizes: r.nameSizes || [], differs: r.differs || 0 });
             } catch { /* preview */ }
         };
         void read();
@@ -920,47 +947,54 @@ const CompsFromFootageDropletBody: React.FC<{ close: () => void; onResult: (resu
     const secN = parseFloat(seconds);
     const valid = fpsN >= 1 && fpsN <= 999 && secN > 0 && secN <= 10800;
     const count = sel ? sel.count : 0;
+    // Only a question when the NAMES and the PIXELS disagree (mech exports
+    // come out at 2x: "…_400x2400px_…" as an 833x5000 JPG).
+    const asksSize = !!sel && sel.differs > 0;
+    const list = (xs: string[]) => xs.slice(0, 2).join(", ") + (xs.length > 2 ? "…" : "");
 
     const make = async () => {
-        if (!valid || busy) return;
+        if (!valid || busy || count === 0) return;
         setBusy(true);
-        const choice = { fps: fpsN, seconds: secN, folder: folder.trim() };
+        const choice: CffChoice = { fps: fpsN, seconds: secN, folder: folder.trim(), sizeFrom };
         saveCffChoice(choice);
         close();
-        onResult(await evalTSSafe("makeCompsFromFootage", choice.fps, choice.seconds, choice.folder));
+        onResult(await evalTSSafe("makeCompsFromFootage", choice.fps, choice.seconds, choice.folder, asksSize ? sizeFrom : "file"));
     };
 
     return (
         <div className="cff">
-            <p className="droplet-title">Make comps from footage</p>
-            <p className={"cff-sel" + (count ? "" : " is-empty")}>
+            <div className="cff-head">
+                <Clapperboard size={14} />
+                <span>Make comps from footage</span>
+            </div>
+            <div className={"cff-sel" + (count ? "" : " is-empty")}>
                 {sel === null ? "Reading the selection…"
                     : count === 0 ? "Select footage in the Project panel."
-                    : <>{count} footage item{count === 1 ? "" : "s"}{sel.sizes.length ? <span> · {sel.sizes.slice(0, 3).join(", ")}{sel.sizes.length > 3 ? "…" : ""}</span> : null}</>}
-                {sel && sel.ignored > 0 && <em> · {sel.ignored} not footage, left out</em>}
-            </p>
+                    : <><strong>{count} footage item{count === 1 ? "" : "s"}</strong>{!asksSize && sel.sizes.length ? <span> · {list(sel.sizes)}</span> : null}</>}
+                {sel && sel.ignored > 0 && <em>{sel.ignored} not footage, left out</em>}
+            </div>
+
+            {asksSize && sel && (
+                <>
+                    <span className="cff-label">Comp size</span>
+                    <div className="cff-sizes">
+                        <button type="button" className={sizeFrom === "name" ? "is-on" : ""} onClick={() => setSizeFrom("name")}>
+                            <strong>{list(sel.nameSizes)}</strong>
+                            <span>from the name, footage fitted</span>
+                        </button>
+                        <button type="button" className={sizeFrom === "file" ? "is-on" : ""} onClick={() => setSizeFrom("file")}>
+                            <strong>{list(sel.sizes)}</strong>
+                            <span>the file's own pixels</span>
+                        </button>
+                    </div>
+                </>
+            )}
 
             <label className="cff-label" htmlFor="cff-fps">Frame rate</label>
-            <div className="cff-chips">
-                {CFF_RATES.map((r) => (
-                    <button key={r} type="button" className={parseFloat(fps) === r ? "is-on" : ""} onClick={() => setFps(String(r))}>{r}</button>
-                ))}
-            </div>
-            <div className="cff-custom">
-                <input id="cff-fps" type="number" min={1} max={999} step="any" value={fps} onChange={(e) => setFps(e.target.value)} />
-                <span>fps</span>
-            </div>
+            <CffPicker id="cff-fps" presets={CFF_RATES} unit="fps" value={fps} onChange={setFps} />
 
             <label className="cff-label" htmlFor="cff-sec">Length</label>
-            <div className="cff-chips cff-chips--six">
-                {CFF_SECONDS.map((n) => (
-                    <button key={n} type="button" className={parseFloat(seconds) === n ? "is-on" : ""} onClick={() => setSeconds(String(n))}>{n}s</button>
-                ))}
-            </div>
-            <div className="cff-custom">
-                <input id="cff-sec" type="number" min={1} max={10800} step="any" value={seconds} onChange={(e) => setSeconds(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void make(); }} />
-                <span>seconds</span>
-            </div>
+            <CffPicker id="cff-sec" presets={CFF_SECONDS} unit="seconds" value={seconds} onChange={setSeconds} onEnter={() => void make()} format={(n) => n + "s"} />
 
             <label className="cff-label" htmlFor="cff-folder">Into folder</label>
             <input id="cff-folder" className="cff-folder" type="text" value={folder} placeholder="Project root" onChange={(e) => setFolder(e.target.value)} />

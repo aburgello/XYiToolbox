@@ -516,7 +516,11 @@ the root-level folder with `===` on AE objects. Host-side it keeps the rules
 that script broke: footage by duck-type (`mainSource`, no layers) never the
 translated `typeName`, root as `parentFolder.parentFolder == null`. The button
 opens a droplet (rates, lengths, custom, folder) that reads the selection
-live and remembers the last choice; ⌘K's run uses that choice.
+live and remembers the last choice; ⌘K's run uses that choice. **A name's size and the pixels can
+disagree** -- mech exports come out at ~2x (`…_400x2400px_…` is an 833×5000
+JPG) -- and then the droplet asks: the NAME's size with the footage fitted
+(default), or the file's own pixels. The name is read only as a delimited
+three-digits-a-side token, so a site's grid (`Hoyts3x3`) is never a size.
 `node scripts/probe-comps-from-footage.cjs`.
 
 **Adding a tool** = `tools/X.tsx` + `X.scss` + ExtendScript in

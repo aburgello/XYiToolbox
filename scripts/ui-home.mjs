@@ -21,8 +21,8 @@ const FIXTURES = `{
   loadStarredToolsetActions: () => ["cheeky-t-check", "turk-it"],
   loadFoldedToolsetGroups: () => [],
   saveFoldedToolsetGroups: (ids) => { window.__folded = ids; return { success: true }; },
-  compsFromFootageSelection: () => ({ success: true, count: 3, ignored: 1, sizes: ["1920x1080", "1080x1920"] }),
-  makeCompsFromFootage: (fps, sec, folder) => { window.__cff = [fps, sec, folder]; return { success: true, made: 3, message: "3 comps at " + fps + "fps, " + sec + "s, in '" + folder + "'." }; },
+  compsFromFootageSelection: () => ({ success: true, count: 3, ignored: 1, sizes: ["833x5000"], nameSizes: ["400x2400"], differs: 3 }),
+  makeCompsFromFootage: (fps, sec, folder, sizeFrom) => { window.__cff = [fps, sec, folder, sizeFrom]; return { success: true, made: 3, message: "3 comps at " + fps + "fps, " + sec + "s, in '" + folder + "'." }; },
   saveHomeLayout: (tokens) => { window.__savedLayout = tokens; window.__saves = (window.__saves || 0) + 1; return { success: true }; },
 }`;
 
@@ -128,6 +128,9 @@ try {
     await pause(300);
     await page.eval(`document.querySelector('.toolset-grid button[data-action-id="comps-from-footage"]').click()`);
     check(await page.waitFor(`/3 footage items/.test(document.querySelector(".cff-sel")?.innerText || "")`, 3000), "the picker says what's selected", await page.eval(`document.querySelector(".cff-sel")?.innerText`));
+    const sizes = await page.eval(`[...document.querySelectorAll(".cff-sizes button")].map(b => (b.classList.contains("is-on") ? "*" : "") + b.innerText.replace(/\\s+/g, " "))`);
+    check(sizes.length === 2 && /^\*400x2400 from the name/.test(sizes[0]) && /833x5000 the file/.test(sizes[1]), "names and pixels disagree: it asks, defaulting to the name's size", sizes);
+    check(!(await page.eval(`!!document.querySelector(".cff-custom")`)), "no custom field until Other is picked");
     check(/1 not footage/.test(await page.eval(`document.querySelector(".cff-sel")?.innerText || ""`)), "…and what it's leaving out");
     check((await page.eval(`document.querySelector(".cff-chips button.is-on")?.innerText`)) === "25", "25fps by default");
     await page.eval(`[...document.querySelectorAll(".cff-chips button")].find(b => b.innerText === "23.976").click()`);
@@ -137,11 +140,17 @@ try {
     await page.shot(path.join(SHOTS, "ui-cff.png"));
     await page.click(".cff-make");
     await pause(300);
-    check(JSON.stringify(await page.eval(`window.__cff`)) === JSON.stringify([23.976, 15, "Comps"]), "it makes them at the picked rate and length", await page.eval(`window.__cff`));
+    check(JSON.stringify(await page.eval(`window.__cff`)) === JSON.stringify([23.976, 15, "Comps", "name"]), "it makes them at the picked rate and length, sized from the name", await page.eval(`window.__cff`));
     check(await page.waitFor(`/3 comps at 23.976fps, 15s/.test(document.body.innerText)`, 2000), "and the toast says what was made");
     await page.eval(`document.querySelector('.toolset-grid button[data-action-id="comps-from-footage"]').click()`);
     await page.waitFor(`!!document.querySelector(".cff-chips button.is-on")`, 3000);
     check((await page.eval(`[...document.querySelectorAll(".cff-chips button.is-on")].map(b => b.innerText).join()`)) === "23.976,15s", "and the next press opens on the last choice");
+    await page.eval(`[...document.querySelectorAll(".cff-chips button")].find(b => b.innerText === "Other").click()`);
+    await pause(150);
+    check(await page.eval(`!!document.querySelector(".cff-custom input")`), "Other opens a field for any rate");
+    const cols = await page.eval(`[...document.querySelectorAll(".cff-chips")].map(g => new Set([...g.children].map(b => Math.round(b.getBoundingClientRect().top))).size)`);
+    check(cols[0] === 2 && cols[1] === 1, "rates on two even rows, lengths on one", cols);
+    await page.shot(path.join(SHOTS, "ui-cff.png"));
 
     console.log("");
     check(page.errors.length === 0, "no page errors", page.errors.slice(0, 5));

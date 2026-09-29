@@ -901,93 +901,140 @@
 
 // ── Make Comp from Elements ─────────────────────────────────────────────────
 // Scoped under .droplet-cff: the droplet is portaled, and a bare button here
-// would be repainted by index.scss's global button:hover.
+// would be repainted by index.scss's global button:hover. ONE accent for the
+// whole panel -- selected chips and the Make button alike -- rather than the
+// dull fallback blue a portaled panel got from an undefined --ov-accent.
 .droplet-cff {
-    width: 264px;
+    --cff-accent: #5eead4;
+    --cff-accent-soft: rgba(94, 234, 212, 0.14);
+    --cff-accent-ink: #ccfbf1;
+    width: 272px;
 
     .cff { display: flex; flex-direction: column; }
+    .cff-head {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        margin-bottom: 10px;
+        font-size: 13px;
+        font-weight: 700;
+        color: #f2f2f2;
+
+        svg { color: var(--cff-accent); }
+    }
     .cff-sel {
-        margin: 0 0 10px;
-        padding: 7px 9px;
-        border-radius: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        margin: 0 0 12px;
+        padding: 8px 10px;
+        border-radius: 7px;
         background: rgba(255, 255, 255, 0.05);
         font-size: 11.5px;
-        font-weight: 600;
-        color: #e8e8e8;
+        color: #9a9a9a;
         line-height: 1.35;
 
-        span { font-weight: 500; color: #9a9a9a; }
-        em { font-style: normal; font-weight: 500; color: #8a8a8a; }
-        &.is-empty { color: #fbbf24; font-weight: 500; }
+        strong { font-weight: 650; color: #f0f0f0; }
+        em { font-style: normal; font-size: 10.5px; color: #7d7d7d; }
+        &.is-empty { color: #fbbf24; }
     }
     .cff-label {
-        margin: 2px 0 5px;
+        margin: 0 0 6px;
         font-size: 9.5px;
         font-weight: 700;
         letter-spacing: 0.08em;
         text-transform: uppercase;
         color: #8a8a8a;
     }
-    // Even columns, so a lone chip never stretches across a row.
+
+    // Presets on even columns, so a lone chip never stretches across a row.
     .cff-chips {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
         gap: 4px;
-        margin-bottom: 6px;
+        margin-bottom: 12px;
 
-        &.cff-chips--six { grid-template-columns: repeat(6, 1fr); }
+        &.cff-chips--row { grid-template-columns: repeat(7, 1fr); }
+    }
+    .cff-chips button, .cff-sizes button {
+        min-width: 0;
+        padding: 6px 2px;
+        border-radius: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.03);
+        color: #cfcfcf;
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+        cursor: pointer;
+        transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 
-        button {
-            min-width: 0;
-            padding: 5px 6px;
-            border-radius: 5px;
-            border: 1px solid var(--surface-border, #444);
-            background: var(--surface-1, #2a2a2a);
-            color: #ddd;
-            font-size: 11px;
-            font-variant-numeric: tabular-nums;
-            cursor: pointer;
-
-            &:hover, &:active { background: #353535; border-color: #5a5a5a; }
-            &.is-on, &.is-on:hover { background: var(--ov-accent, #3a5a8a); border-color: var(--ov-accent, #3a5a8a); color: #fff; font-weight: 600; }
+        &:hover, &:active { background: rgba(255, 255, 255, 0.07); border-color: rgba(255, 255, 255, 0.2); color: #fff; }
+        &.is-on, &.is-on:hover {
+            background: var(--cff-accent-soft);
+            border-color: var(--cff-accent);
+            color: var(--cff-accent-ink);
+            font-weight: 650;
         }
     }
+    .cff-chips--row button { font-size: 10.5px; }
+
+    // Name vs file: two described choices, only when they disagree.
+    .cff-sizes {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+        margin-bottom: 12px;
+
+        button {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 2px;
+            padding: 7px 9px;
+            text-align: left;
+
+            strong { font-size: 12px; font-weight: 700; }
+            span { font-size: 10px; font-weight: 500; color: #8a8a8a; line-height: 1.25; }
+        }
+        button.is-on span { color: var(--cff-accent-ink); opacity: 0.75; }
+    }
+
     .cff-custom {
         display: flex;
         align-items: center;
         gap: 6px;
-        margin-bottom: 10px;
+        margin: -6px 0 12px;
 
         span { font-size: 11px; color: #8a8a8a; }
     }
     .cff-custom input, .cff-folder {
         box-sizing: border-box;
         min-width: 0;
-        padding: 5px 7px;
-        border-radius: 5px;
-        border: 1px solid var(--surface-border, #444);
-        background: var(--surface-0, #1e1e1e);
+        padding: 6px 8px;
+        border-radius: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(0, 0, 0, 0.25);
         color: #eee;
         font-size: 11.5px;
         font-variant-numeric: tabular-nums;
 
-        &:focus { outline: none; border-color: var(--ov-accent, #5eead4); }
+        &:focus { outline: none; border-color: var(--cff-accent); }
     }
-    .cff-custom input { width: 80px; -moz-appearance: textfield; }
+    .cff-custom input { width: 84px; -moz-appearance: textfield; }
     .cff-custom input::-webkit-outer-spin-button,
     .cff-custom input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-    .cff-folder { width: 100%; margin-bottom: 12px; }
+    .cff-folder { width: 100%; margin-bottom: 14px; }
     .cff-make {
-        height: 32px;
-        border-radius: 6px;
-        border: 1px solid var(--ov-accent, #5eead4);
-        background: var(--ov-accent, #5eead4);
-        color: #0b0b0b;
-        font-size: 12px;
+        height: 34px;
+        border-radius: 7px;
+        border: 1px solid var(--cff-accent);
+        background: var(--cff-accent);
+        color: #062421;
+        font-size: 12.5px;
         font-weight: 700;
         cursor: pointer;
 
-        &:hover:not(:disabled), &:active:not(:disabled) { background: var(--ov-accent, #5eead4); filter: brightness(1.1); }
-        &:disabled { opacity: 0.4; cursor: default; }
+        &:hover:not(:disabled), &:active:not(:disabled) { background: var(--cff-accent); filter: brightness(1.08); }
+        &:disabled { opacity: 0.35; cursor: default; }
     }
 }
