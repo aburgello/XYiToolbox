@@ -18,6 +18,9 @@ const FIXTURES = `{
   teamGetMachineState: () => ({ owner: "Antonio", tag: "Antonio" }),
   timesheetActiveFile: () => ({ success: true, hasFile: true, path: "/Volumes/paramount/SF/XY026205_Markets/Chile/AE/Batch_02/SF_INTL_Trio_DOOH_X_1920x1080px_10s_CL_V01.aep", name: "x.aep", folderName: "Batch_02" }),
   loadHomeLayout: () => window.__savedLayout || [],
+  loadStarredToolsetActions: () => ["cheeky-t-check", "turk-it"],
+  loadFoldedToolsetGroups: () => [],
+  saveFoldedToolsetGroups: (ids) => { window.__folded = ids; return { success: true }; },
   saveHomeLayout: (tokens) => { window.__savedLayout = tokens; window.__saves = (window.__saves || 0) + 1; return { success: true }; },
 }`;
 
@@ -98,6 +101,24 @@ try {
     check(JSON.stringify(await page.eval(`window.__savedLayout`)) === JSON.stringify(["toolset", "cards", "jobs", "cards:row"]), "Reset puts the default back", await page.eval(`window.__savedLayout`));
     const sideways = await page.eval(`document.documentElement.scrollWidth - document.documentElement.clientWidth`);
     check(sideways <= 0, "no sideways scroll", sideways);
+
+    console.log("\n4. Folding groups");
+    const qc = `[...document.querySelectorAll(".toolset-grid .action-group")].find(g => /QC/i.test(g.querySelector(".action-group-label")?.innerText || ""))`;
+    const before = await page.eval(`${qc}.querySelectorAll(".action-grid button").length`);
+    await page.eval(`${qc}.querySelector(".action-group-fold").click()`);
+    await pause(300);
+    const shown = await page.eval(`[...${qc}.querySelectorAll(".action-grid button")].map(b => b.innerText.trim())`);
+    check(shown.length === 2 && shown.indexOf("Cheeky T") !== -1 && shown.indexOf("Turk It") !== -1, "a folded group keeps only its starred tools", shown);
+    check(await page.eval(`${qc}.querySelector(".action-group-count")?.innerText`) === "2 of " + before, "and says how many it's showing", await page.eval(`${qc}.querySelector(".action-group-count")?.innerText`));
+    check(JSON.stringify(await page.eval(`window.__folded`)) === JSON.stringify(["qc"]), "the fold is remembered", await page.eval(`window.__folded`));
+    await page.eval(`${qc}.querySelector(".action-group-fold").click()`);
+    await pause(300);
+    check((await page.eval(`${qc}.querySelectorAll(".action-grid button").length`)) === before && !(await page.eval(`!!${qc}.querySelector(".action-group-count")`)), "unfolding brings every tool back");
+    const orgBefore = `[...document.querySelectorAll(".toolset-grid .action-group")].find(g => /Organise/i.test(g.querySelector(".action-group-label")?.innerText || ""))`;
+    await page.eval(`${orgBefore}.querySelector(".action-group-fold").click()`);
+    await pause(300);
+    check(!(await page.eval(`!!${orgBefore}.querySelector(".action-grid")`)) && /0 of/.test(await page.eval(`${orgBefore}.querySelector(".action-group-count")?.innerText || ""`)), "a group with nothing starred folds to just its heading");
+    await page.shot(path.join(SHOTS, "ui-home-folded.png"));
 
     console.log("");
     check(page.errors.length === 0, "no page errors", page.errors.slice(0, 5));

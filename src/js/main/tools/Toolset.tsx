@@ -71,6 +71,7 @@ import {
     LayoutTemplate,
     Sparkles,
     Star,
+    ChevronDown,
 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { showMcItReport, type McReport } from "../McItReportModal";
@@ -1377,6 +1378,8 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void; focusAction
                 if (Array.isArray(p)) setPinned(p as string[]);
                 const s = await evalTS("loadStarredToolsetActions" as any);
                 if (Array.isArray(s)) setStarred(s as string[]);
+                const f = await evalTS("loadFoldedToolsetGroups" as any);
+                if (Array.isArray(f)) setFolded(f as string[]);
             } catch {
                 /* no bridge (preview) -- defaults are correct */
             }
@@ -1414,6 +1417,16 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void; focusAction
     // Unlike hide, this applies uniformly to every kind of tile (fixed
     // ACTIONS entry, pinned link, custom button) -- it's just a visual flag
     // keyed by grid id, with nothing type-specific to reason about.
+    // FOLDING GROUPS: a folded group shows only its starred tools, so the
+    // ones reached for all day stay in view and the rest are one click away.
+    // Nothing is folded until somebody folds it.
+    const [folded, setFolded] = useState<string[]>([]);
+    const toggleFolded = (groupId: string) => {
+        const next = folded.indexOf(groupId) !== -1 ? folded.filter((x) => x !== groupId) : [...folded, groupId];
+        setFolded(next);
+        evalTS("saveFoldedToolsetGroups" as any, next).catch(() => { /* preview */ });
+    };
+
     const toggleStarred = (id: string) => {
         const next = starredSet.has(id) ? starred.filter((x) => x !== id) : [...starred, id];
         setStarred(next);
@@ -1758,8 +1771,14 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void; focusAction
                 {GROUPS.map((group, groupIndex) => {
                     const groupActions = orderedActionsForGroup(group.id);
                     // Normal mode hides hidden actions outright.
-                    const visibleActions = groupActions.filter((a) => !hiddenSet.has(a.id));
-                    if (visibleActions.length === 0) return null;
+                    const shownActions = groupActions.filter((a) => !hiddenSet.has(a.id));
+                    if (shownActions.length === 0) return null;
+                    const isFolded = folded.indexOf(group.id) !== -1;
+                    // Folded: the starred ones, plus anything a workflow step
+                    // is pointing at right now -- a marked card must be visible.
+                    const visibleActions = isFolded
+                        ? shownActions.filter((a) => starredSet.has(a.id) || marked === a.id)
+                        : shownActions;
                     // One accent per group (not per button) -- reinforces which
                     // cluster a button belongs to at a glance, on top of the
                     // section label itself.
@@ -1770,10 +1789,23 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void; focusAction
                         // wrapper so it inherits down to BOTH the buttons AND
                         // the group label -- the label's coloured dot (::before
                         // in the scss) reads --btn-border from here.
-                        <div className="action-group" key={group.id} style={btnStyle}>
+                        <div className={"action-group" + (isFolded ? " is-folded" : "")} key={group.id} style={btnStyle}>
                             <div className="action-group-divider">
-                                <h3 className="action-group-label">{groupLabelOf(group.id)}</h3>
+                                <button
+                                    type="button"
+                                    className="action-group-fold"
+                                    aria-expanded={!isFolded}
+                                    title={isFolded ? "Show every tool in this group" : "Fold to its starred tools"}
+                                    onClick={() => toggleFolded(group.id)}
+                                >
+                                    <ChevronDown size={11} className="action-group-caret" />
+                                    <h3 className="action-group-label">{groupLabelOf(group.id)}</h3>
+                                    {isFolded && (
+                                        <span className="action-group-count">{visibleActions.length} of {shownActions.length}</span>
+                                    )}
+                                </button>
                             </div>
+                            {visibleActions.length > 0 && (
                             <div className="action-grid justify-center mx-auto">
                                 {visibleActions.map((action) => {
                                     const Icon = action.icon;
@@ -1853,6 +1885,7 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void; focusAction
                                     );
                                 })}
                             </div>
+                            )}
                         </div>
                     );
                     })}

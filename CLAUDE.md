@@ -500,7 +500,13 @@ Review your Revised subtasks, Deliver your Prep for delivery batches, Tools the
 tool you last picked in its rail (browser storage, a per-viewer convenience)
 and opens it. All from the jobs feed and the project path the panel already
 reads; the feed's SAMPLE jobs are never counted, and an untagged machine sees
-the plain labels. `node scripts/ui-home.mjs`.
+the plain labels. **Toolset groups fold** from their heading: a folded group
+shows only its STARRED tools (plus any card a workflow step is marking) and
+reads "3 of 10"; nothing is folded until somebody folds it; edit mode ignores
+it. Stored in `OVToolsetFolded` (group ids; in `PROFILE_KEYS`). The cards carry
+their category AT REST (icon well, `--cat-wash`, faint oversized mark) --
+`--cat-wash` is the resting tint, `--cat-glow` stays hover-only.
+`node scripts/ui-home.mjs`.
 
 **Adding a tool** = `tools/X.tsx` + `X.scss` + ExtendScript in
 `src/jsx/aeft/*.ts` + one entry in **`toolRegistry.tsx`'s `TOOLS`**. A NEW

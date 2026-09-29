@@ -356,6 +356,12 @@ export const saveToolsetLabels = (flatPairs: string[]): Result => saveTabList(TO
 export const loadPinnedToolsetLinks = (): string[] => loadTabList(TOOLSET_PINNED_KEY);
 export const savePinnedToolsetLinks = (ids: string[]): Result => saveTabList(TOOLSET_PINNED_KEY, ids);
 
+// Group ids FOLDED on the home screen: a folded group shows only its starred
+// tools. App-generated ids, so a tab list is safe.
+const TOOLSET_FOLDED_KEY = "OVToolsetFolded";
+export const loadFoldedToolsetGroups = (): string[] => loadTabList(TOOLSET_FOLDED_KEY);
+export const saveFoldedToolsetGroups = (ids: string[]): Result => saveTabList(TOOLSET_FOLDED_KEY, ids);
+
 export const loadStarredToolsetActions = (): string[] => loadTabList(TOOLSET_STARRED_KEY);
 export const saveStarredToolsetActions = (ids: string[]): Result => saveTabList(TOOLSET_STARRED_KEY, ids);
 

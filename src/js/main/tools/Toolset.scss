@@ -861,3 +861,40 @@
 @media (prefers-reduced-motion: reduce) {
     .action-grid button.is-marked { animation: none; }
 }
+
+// ── Folding groups ──────────────────────────────────────────────────────────
+// The group's heading is the fold: caret, label, and "3 of 10" once folded.
+// The button carries the legend's background mask (the divider line runs
+// behind it), and its hover is re-declared because index.scss paints any
+// bare button blue.
+.toolset-grid .action-group-fold {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin: 0;
+    padding: 0 8px 0 0;
+    border: none;
+    border-radius: 0;
+    background: var(--ov-bg, #1e1e1e);
+    color: #777;
+    cursor: pointer;
+    font: inherit;
+
+    .action-group-label { background: none; padding-right: 0; cursor: inherit; }
+    .action-group-caret { color: #666; transition: transform 0.18s ease, color 0.15s ease; }
+
+    &:hover, &:active { background: var(--ov-bg, #1e1e1e); }
+    &:hover .action-group-caret, &:hover .action-group-label { color: #cfcfcf; }
+    &:focus-visible { outline: 1px solid var(--btn-border, #5eead4); outline-offset: 2px; }
+}
+.toolset-grid .action-group.is-folded .action-group-caret { transform: rotate(-90deg); }
+.toolset-grid .action-group-count {
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: #5f5f5f;
+    font-variant-numeric: tabular-nums;
+}
+// A folded group with nothing starred is just its heading: close the gap.
+.toolset-grid .action-group.is-folded .action-group-divider { margin-bottom: 9px; }

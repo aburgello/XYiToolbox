@@ -144,6 +144,7 @@ const PROFILE_KEYS: string[] = [
   "OVToolsetLabels",
   "OVToolsetPinned",
   "OVToolsetStarred",
+  "OVToolsetFolded",
   "OVHomeLayout",
   "OVRailHidden",
   "OVRailStage",
