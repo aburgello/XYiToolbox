@@ -126,22 +126,18 @@ try {
     // box -- what's checked is that every row has one, fed its master's path.
     check((await page.eval(`document.querySelectorAll(".rv-row .rv-thumb").length`)) === 2, "each row carries its master's thumbnail");
     check(/^AmendDone$/.test(await page.eval(`document.querySelector(".rv-row-site")?.innerText || ""`)) && (await page.eval(`[...document.querySelector(".rv-row").querySelectorAll(".rv-tag")].map(t => t.innerText).join()`)) === "672x432,10s,V02", "a row reads as its site, with size, length and version as tags");
-    // The pass: a click arms the keys, A approves, R to amend opens the note.
-    await page.click(".rv-row .rv-row-site");
+    // Status by the dot: pending -> approved -> to amend (which opens the note).
+    await page.click(".rv-row .rv-dot");
     await pause(150);
-    check(await page.eval(`document.activeElement && document.activeElement.classList.contains("rv-keygrab")`) && /approve/.test(await page.eval(`document.querySelector(".rv-keys")?.innerText || ""`)), "clicking a row arms the keyboard, and the key hints show");
-    const key = (k) => page.eval(`document.querySelector(".rv-keygrab").dispatchEvent(new KeyboardEvent("keydown", { key: ${JSON.stringify(k)}, bubbles: true }))`);
-    await key("a");
-    await pause(150);
-    check(await page.eval(`document.querySelector(".rv-row").classList.contains("rv-row--approved")`), "A approves the row in focus");
+    check(await page.eval(`document.querySelector(".rv-row").classList.contains("rv-row--approved")`), "the dot approves");
     check(/1 of 2/.test(await page.eval(`document.querySelector(".rv-progress-text")?.innerText || ""`)), "and the band counts it");
-    await key("ArrowDown");
-    await pause(150);
-    check(await page.eval(`document.querySelectorAll(".rv-row")[1].classList.contains("rv-row--focus")`), "Down moves to the next row, and opens its comparison");
-    await key("r");
+    check(!(await page.eval(`!!document.querySelector(".rv-keygrab, .rv-keys")`)), "no keyboard pass: nothing takes AE's keys");
+    await page.eval(`document.querySelectorAll(".rv-row .rv-dot")[1].click()`);
+    await pause(100);
+    await page.eval(`document.querySelectorAll(".rv-row .rv-dot")[1].click()`);
     await pause(300);
-    check(await page.eval(`document.querySelectorAll(".rv-row")[1].classList.contains("rv-row--amend") && !!document.querySelectorAll(".rv-row")[1].querySelector(".rv-note-input")`), "R marks it to amend and opens the note");
-    check(await page.eval(`document.activeElement && document.activeElement.classList.contains("rv-note-input")`), "…with the caret in it");
+    check(await page.eval(`document.querySelectorAll(".rv-row")[1].classList.contains("rv-row--amend") && !!document.querySelectorAll(".rv-row")[1].querySelector(".rv-note-input")`), "to amend opens the note");
+    check((await page.eval(`document.querySelector(".rv-note-input")?.placeholder`)) === "Note for the motioner…", "addressed to the motioner");
     await page.eval(`(() => { const t = document.querySelector(".rv-note-input"); const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set; set.call(t, "logo clips at 0:04"); t.dispatchEvent(new Event("input", { bubbles: true })); })()`);
     check(await page.waitFor(`/1 amend for Wrike/.test(document.querySelector(".rv-wrike-header")?.innerText || "")`, 2000), "a noted amend appears in the Wrike footer");
     await page.shot(path.join(SHOTS, "ui-review-session.png"));

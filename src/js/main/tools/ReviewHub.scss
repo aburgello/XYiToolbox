@@ -875,7 +875,7 @@
 }
 
 // =============================================================================
-// Review Session, 2026-09-29: one band, grouped hairline rows, the pass by keys.
+// Review Session, 2026-09-29: one band, grouped hairline rows.
 // Scoped under .rv-session so it wins over the rules above on specificity
 // rather than on file order.
 // =============================================================================
@@ -984,31 +984,6 @@
         min-width: 0;
     }
     .rv-sections-solo { font-size: 12px; font-weight: 600; color: #cfcfcf; }
-    .rv-keys {
-        min-width: 0;
-        font-size: 10.5px;
-        color: #5c5c5c;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-
-        kbd {
-            display: inline-block;
-            min-width: 15px;
-            margin: 0 2px 0 5px;
-            padding: 0 4px;
-            border: 1px solid rgba(255, 255, 255, 0.14);
-            border-radius: 4px;
-            font-family: inherit;
-            font-size: 10px;
-            line-height: 15px;
-            text-align: center;
-            color: #ddd;
-        }
-        kbd:first-child { margin-left: 0; }
-    }
-    .rv-keys--armed { color: #a3a3a3; }
-
     .rv-step-btn {
         flex-shrink: 0;
         display: flex;
@@ -1031,17 +1006,6 @@
         position: relative;
         padding: 6px 14px 14px;
         gap: 0;
-    }
-    .rv-keygrab {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 1px;
-        height: 1px;
-        padding: 0;
-        border: 0;
-        opacity: 0;
-        pointer-events: none;
     }
     .rv-groups { display: flex; flex-direction: column; gap: 14px; }
     .rv-group { display: flex; flex-direction: column; }
@@ -1068,7 +1032,6 @@
         overflow: visible;
 
         &:hover { background: rgba(255, 255, 255, 0.025); border-color: rgba(255, 255, 255, 0.05); }
-        &.rv-row--focus { background: rgba(168, 85, 247, 0.08); }
         // The comparison open in AE right now: a bar at the left edge.
         &.rv-row--open { box-shadow: inset 2px 0 0 #a855f7; border-color: rgba(255, 255, 255, 0.05); }
     }
@@ -1178,7 +1141,7 @@
     }
     .rv-act--on { color: #fbbf24; }
     .rv-act--hover { opacity: 0; transition: opacity 0.12s ease; }
-    .rv-row:hover .rv-act--hover, .rv-row--focus .rv-act--hover { opacity: 1; }
+    .rv-row:hover .rv-act--hover { opacity: 1; }
     .rv-row-actions .rv-comp-btn { margin-left: 6px; }
 
     .rv-note-area { padding: 0 6px 10px 100px; }

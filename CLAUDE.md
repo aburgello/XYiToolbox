@@ -1409,22 +1409,19 @@ offset** — a V01 or a PRE render carries its own card. References land in a
 `Review References` bin that the next Import skips, the same trap as masters
 left selected.
 
-**Review Session is one band, grouped rows and a keyboard pass** (2026-09-29).
-The band carries the campaign (banner washed behind), a progress bar
-(approved / to amend / the rest) replacing the old icon counters, Import &
-Compare, and Your jobs as a line inside it. Sections are a `SegmentedToggle`
-(`name="review-sections"`). Rows group under the batch read off the source path
-(`rowGroupOf`: `…/Chile/Renders/Batch_02/x.mov` → "Chile · Batch_02") and read
-as the SITE with size, length, version and RES as tags (`rowNameParts`). Each
-row carries its **master's poster frame** (OV Library's `usePosterFrame`, the
-master only -- local renders are ProRes MOVs Chromium cannot decode), status is
-a dot that cycles, and the row itself opens its comparison; the rest shows on
-hover. **The keyboard is opt-in, like Edit In Context's arrows**: clicking a row
-focuses an invisible input and claims ↑ ↓ Enter A R P D via
-`registerKeyEventsInterest`; blur hands them back to AE. ↑/↓ also open that
-row's comp, R marks to amend and puts the caret in the note. Arm in the click
-handler as well as `onFocus` -- a programmatic focus does not always dispatch
-a focus event. The Wrike text is a footer that appears once an amend has a note.
+**Review Session is one band and grouped rows** (2026-09-29). The band carries
+the campaign (banner washed behind), a progress bar (approved / to amend / the
+rest) replacing the old icon counters, Import & Compare, and Your jobs as a
+line inside it. Sections are a `SegmentedToggle` (`name="review-sections"`).
+Rows group under the batch read off the source path (`rowGroupOf`:
+`…/Chile/Renders/Batch_02/x.mov` → "Chile · Batch_02") and read as the SITE
+with size, length, version and RES as tags (`rowNameParts`). Each row carries
+its **master's poster frame** (OV Library's `usePosterFrame`, the master only --
+local renders are ProRes MOVs Chromium cannot decode), status is a dot that
+cycles, and the row itself opens its comparison; the rest shows on hover.
+**No keyboard pass, by studio decision**: one was built and removed the same
+day -- opening a comp takes focus from the panel, and nobody wanted a panel
+claiming AE's keys. The Wrike text is a footer once an amend has a note.
 **Review compares every row against its MASTER first.** Amends (V02 vs V01)
 and Pre vs Post are extra sections, never a replacement: a V02 is still a
 deliverable to check against the OV, and the studio does not want that to stop

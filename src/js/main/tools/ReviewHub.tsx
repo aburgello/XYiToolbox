@@ -32,7 +32,7 @@ import {
     Columns2,
     Layers,
 } from "lucide-react";
-import { evalTS, csi } from "../../lib/utils/bolt";
+import { evalTS } from "../../lib/utils/bolt";
 import { sfx } from "../../lib/utils/sfx";
 import { usePersistentState } from "../../lib/utils/usePersistentState";
 import StatusIcon from "../StatusIcon";
@@ -287,15 +287,12 @@ const ReviewRow: React.FC<{
     comp: CompStamp;
     matchedMp4: string | null;
     isOpen: boolean;
-    focused: boolean;
-    noteRef?: React.RefObject<HTMLTextAreaElement | null>;
-    onFocusRow: () => void;
     onChange: (patch: Partial<ReviewItem>) => void;
     onRemove: () => void;
     onOpenComp: (compId: number) => void;
     onToggleDiff: (compId: number) => void;
     onRetryCompare: () => void;
-}> = ({ item, batchIndex, kind, comp, matchedMp4, isOpen, focused, noteRef, onFocusRow, onChange, onRemove, onOpenComp, onToggleDiff, onRetryCompare }) => {
+}> = ({ item, batchIndex, kind, comp, matchedMp4, isOpen, onChange, onRemove, onOpenComp, onToggleDiff, onRetryCompare }) => {
     const reduced = useReducedMotion();
     const { site, tags } = rowNameParts(item.name);
     const refLabel = kind === "amend" ? "vs previous" : kind === "prepost" ? `vs PRE${item.preFolder ? " · " + item.preFolder : ""}` : "vs";
@@ -305,13 +302,12 @@ const ReviewRow: React.FC<{
     // The row IS the button: open the comparison, or build it when the master
     // matched and the comp wasn't made.
     const openOrBuild = () => {
-        onFocusRow();
         if (comp.compId) onOpenComp(comp.compId);
         else if (matchedMp4) onRetryCompare();
     };
     return (
         <motion.div
-            className={`rv-row rv-row--${item.status}${isOpen ? " rv-row--open" : ""}${focused ? " rv-row--focus" : ""}`}
+            className={`rv-row rv-row--${item.status}${isOpen ? " rv-row--open" : ""}`}
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.22, delay: reduced ? 0 : Math.min(batchIndex, 12) * 0.04, ease: [0.22, 1, 0.36, 1] }}
@@ -322,15 +318,15 @@ const ReviewRow: React.FC<{
                     className={`rv-dot rv-dot--${item.status}`}
                     title={`${STATUS_WORD[item.status]} · press to mark ${STATUS_WORD[STATUS_NEXT[item.status]].toLowerCase()}`}
                     aria-label={STATUS_WORD[item.status]}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={(e) => { e.stopPropagation(); onFocusRow(); setStatus(STATUS_NEXT[item.status]); }}
+                   
+                    onClick={(e) => { e.stopPropagation(); setStatus(STATUS_NEXT[item.status]); }}
                 >
                     {item.status === "approved" ? <CheckCircle2 size={12} /> : item.status === "amend" ? <AlertTriangle size={11} /> : null}
                 </button>
 
                 <MasterThumb path={item.masterPath || (kind === "master" ? matchedMp4 : null)} />
 
-                <span className="rv-row-name-block" onMouseDown={(e) => e.preventDefault()} onClick={openOrBuild} title={item.name}>
+                <span className="rv-row-name-block" onClick={openOrBuild} title={item.name}>
                     <span className="rv-row-line1">
                         <span className="rv-row-site">{site}</span>
                         {tags.map((t) => <span key={t} className="rv-tag">{t}</span>)}
@@ -353,14 +349,14 @@ const ReviewRow: React.FC<{
                 <span className="rv-row-actions">
                     {matchedMp4 && (
                         <Tooltip text={`Play ${kind === "master" ? "master" : kind === "amend" ? "previous version" : "PRE render"} in its own player`}>
-                            <button className="rv-act rv-act--hover" onMouseDown={(e) => e.preventDefault()} onClick={async () => { try { await evalTS("playFile", matchedMp4); } catch { /* no bridge */ } }}>
+                            <button className="rv-act rv-act--hover" onClick={async () => { try { await evalTS("playFile", matchedMp4); } catch { /* no bridge */ } }}>
                                 <Film size={12} />
                             </button>
                         </Tooltip>
                     )}
                     {comp.compId && (
-                        <Tooltip text="Toggle the DIFF (difference) layer · D">
-                            <button className="rv-act rv-act--hover" onMouseDown={(e) => e.preventDefault()} onClick={() => onToggleDiff(comp.compId!)}>
+                        <Tooltip text="Toggle the DIFF (difference) layer">
+                            <button className="rv-act rv-act--hover" onClick={() => onToggleDiff(comp.compId!)}>
                                 <Layers size={12} />
                             </button>
                         </Tooltip>
@@ -368,26 +364,26 @@ const ReviewRow: React.FC<{
                     <Tooltip text={item.note ? "Note" : "Add a note"}>
                         <button
                             className={"rv-act" + (item.note || item.noteOpen ? " rv-act--on" : " rv-act--hover")}
-                            onMouseDown={(e) => e.preventDefault()}
+                           
                             onClick={() => onChange({ noteOpen: !item.noteOpen })}
                         >
                             <Pencil size={11} />
                         </button>
                     </Tooltip>
                     <Tooltip text="Remove from session">
-                        <button className="rv-act rv-act--hover" onMouseDown={(e) => e.preventDefault()} onClick={onRemove}>
+                        <button className="rv-act rv-act--hover" onClick={onRemove}>
                             <X size={12} />
                         </button>
                     </Tooltip>
                     {comp.compId ? (
-                        <Tooltip text={comp.enrich ? `${comp.compName}\n${comp.enrich}` : `Open "${comp.compName}" in AE · Enter`}>
-                            <button className="rv-comp-btn" onMouseDown={(e) => e.preventDefault()} onClick={openOrBuild}>
+                        <Tooltip text={comp.enrich ? `${comp.compName}\n${comp.enrich}` : `Open "${comp.compName}" in AE`}>
+                            <button className="rv-comp-btn" onClick={openOrBuild}>
                                 <Columns2 size={11} /><span className="rv-comp-label">Compare</span>
                             </button>
                         </Tooltip>
                     ) : matchedMp4 ? (
                         <Tooltip text={comp.error ? `Couldn't build the comparison: ${comp.error}\nPress to try again.` : "Build the comparison comp"}>
-                            <button className="rv-comp-btn rv-comp-btn--retry" onMouseDown={(e) => e.preventDefault()} onClick={openOrBuild}>
+                            <button className="rv-comp-btn rv-comp-btn--retry" onClick={openOrBuild}>
                                 <Columns2 size={11} /><span className="rv-comp-label">Compare</span>
                             </button>
                         </Tooltip>
@@ -406,9 +402,8 @@ const ReviewRow: React.FC<{
                         style={{ overflow: "hidden" }}
                     >
                         <textarea
-                            ref={noteRef as React.RefObject<HTMLTextAreaElement>}
                             className="rv-note-input"
-                            placeholder="Note for the animator…"
+                            placeholder="Note for the motioner…"
                             value={item.note}
                             rows={2}
                             onChange={(e) => onChange({ note: e.target.value })}
@@ -757,63 +752,6 @@ const ReviewSession: React.FC = () => {
         }
     };
 
-    // --- the review pass, by keyboard -------------------------------------
-    // Opt-in like Edit In Context's arrows: clicking a row arms it (a focused,
-    // invisible input is what receives keys in macOS AE, and
-    // registerKeyEventsInterest routes them), clicking away hands AE its keys
-    // back. Up/Down move AND open that row's comparison, so a batch is a run
-    // of key presses: A approve, R to amend (the note opens), D the DIFF.
-    const keyGrabRef = useRef<HTMLInputElement>(null);
-    const noteRef = useRef<HTMLTextAreaElement>(null);
-    const [armed, setArmed] = useState(false);
-    const [focusId, setFocusId] = useState<number | null>(null);
-    const KEY_INTEREST = JSON.stringify([38, 40, 13, 65, 68, 82, 80].map((keyCode) => ({ keyCode })));
-    const claimKeys = () => { try { csi.registerKeyEventsInterest(KEY_INTEREST); } catch { /* preview */ } setArmed(true); };
-    const releaseKeys = () => { try { csi.registerKeyEventsInterest("[]"); } catch { /* nothing */ } setArmed(false); };
-    useEffect(() => () => { try { csi.registerKeyEventsInterest("[]"); } catch { /* nothing */ } }, []);
-    // Armed HERE as well as on the input's focus event: a programmatic focus
-    // is not guaranteed to dispatch one (it doesn't in a page without window
-    // focus), and the claim is idempotent.
-    const armOn = (id: number) => {
-        setFocusId(id);
-        try { keyGrabRef.current?.focus(); } catch { /* */ }
-        if (!armed) claimKeys();
-    };
-
-    const openRow = (v: { item: ReviewItem; kind: CompareKind } | undefined) => {
-        if (!v) return;
-        const c = compOf(v.item, v.kind);
-        if (c.compId) void handleOpenComp(c.compId);
-    };
-    const onReviewKey = (e: React.KeyboardEvent) => {
-        const idx = visible.findIndex((v) => v.item.id === focusId);
-        const cur = idx >= 0 ? visible[idx] : undefined;
-        const k = e.key.toLowerCase();
-        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-            e.preventDefault();
-            if (visible.length === 0) return;
-            const next = visible[idx < 0 ? 0 : Math.max(0, Math.min(visible.length - 1, idx + (e.key === "ArrowDown" ? 1 : -1)))];
-            setFocusId(next.item.id);
-            openRow(next);
-            requestAnimationFrame(() => document.querySelector(".rv-row--focus")?.scrollIntoView({ block: "nearest" }));
-            return;
-        }
-        if (!cur) return;
-        if (e.key === "Enter") { e.preventDefault(); openRow(cur); }
-        else if (k === "a") { e.preventDefault(); updateItem(cur.item.id, { status: "approved", noteOpen: cur.item.status === "amend" ? false : cur.item.noteOpen }); }
-        else if (k === "p") { e.preventDefault(); updateItem(cur.item.id, { status: "pending" }); }
-        else if (k === "r") {
-            e.preventDefault();
-            updateItem(cur.item.id, { status: "amend", noteOpen: true });
-            // Straight into the note: that is what To amend is for.
-            setTimeout(() => noteRef.current?.focus(), 60);
-        } else if (k === "d") {
-            e.preventDefault();
-            const c = compOf(cur.item, cur.kind);
-            if (c.compId) void handleToggleDiff(c.compId);
-        }
-    };
-
     // --- the header's campaign banner -------------------------------------
     const [banner, setBanner] = useState("");
     useEffect(() => {
@@ -927,11 +865,6 @@ const ReviewSession: React.FC = () => {
                         <span className="rv-sections-solo">vs Master</span>
                     )}
                     <span className="rv-bar-spacer" />
-                    <span className={"rv-keys" + (armed ? " rv-keys--armed" : "")}>
-                        {armed
-                            ? <><kbd>↑</kbd><kbd>↓</kbd> move <kbd>A</kbd> approve <kbd>R</kbd> amend <kbd>D</kbd> diff</>
-                            : "Click a row to review by keyboard"}
-                    </span>
                     {visible.some((v) => compOf(v.item, v.kind).compId) && (
                         <>
                             <Tooltip text="Previous comparison comp">
@@ -947,16 +880,6 @@ const ReviewSession: React.FC = () => {
 
             {/* Row list */}
             <div className="rv-list">
-                {/* Genuinely focusable and invisible: it receives the keys. */}
-                <input
-                    ref={keyGrabRef}
-                    className="rv-keygrab"
-                    aria-label="Review by keyboard"
-                    readOnly
-                    onFocus={claimKeys}
-                    onBlur={releaseKeys}
-                    onKeyDown={onReviewKey}
-                />
                 {items.length === 0 ? (
                     <div className="rv-empty">
                         <MessageSquareDiff size={22} />
@@ -981,7 +904,6 @@ const ReviewSession: React.FC = () => {
                                     const matchedMp4 = refPathOf(item, kind, itemMatches);
                                     const comp = compOf(item, kind);
                                     const isOpen = comp.compId != null && comp.compId === lastOpenedCompId;
-                                    const focused = armed && focusId === item.id;
                                     return (
                                         <ReviewRow
                                             key={`${item.id}-${batchKey}`}
@@ -991,9 +913,6 @@ const ReviewSession: React.FC = () => {
                                             comp={comp}
                                             matchedMp4={matchedMp4}
                                             isOpen={isOpen}
-                                            focused={focused}
-                                            noteRef={focusId === item.id ? noteRef : undefined}
-                                            onFocusRow={() => armOn(item.id)}
                                             onChange={(patch) => updateItem(item.id, patch)}
                                             onRemove={() => removeItem(item.id)}
                                             onOpenComp={handleOpenComp}
