@@ -236,7 +236,7 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
             const list = Object.keys(kinds).map((k) => `${kinds[k]} ${k}${kinds[k] === 1 ? "" : k.endsWith("s") ? "" : "s"}`).join(", ");
             const ok = await confirmDialog({
                 title: `Rename ${plan.length} file${plan.length === 1 ? "" : "s"} to Wrike's name?`,
-                body: `${list}: ${r.claimed.name} becomes ${r.wrike.name}. Versions and suffixes stay. The comp inside keeps its old name until you open the project -- the tracker offers to fix it then.`,
+                body: `${list}:\n${r.claimed.name}\n→ ${r.wrike.name}\n\nVersions and suffixes stay. The artwork isn't touched. The comp inside keeps its old name until you open the project — the tracker offers to fix it then.`,
                 confirm: "Rename",
             });
             if (!ok) return;

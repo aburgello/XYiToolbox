@@ -42,6 +42,10 @@
 }
 
 .dialog-title {
+    // A filename is one unbreakable word (underscores, no spaces): let it
+    // wrap mid-word rather than push past the card. (`anywhere` is Cr80.)
+    overflow-wrap: break-word;
+    word-break: break-word;
     margin: 0 0 6px;
     font-size: 15px;
     font-weight: 700;
@@ -52,6 +56,10 @@
 }
 
 .dialog-message {
+    // A filename is one unbreakable word (underscores, no spaces): let it
+    // wrap mid-word rather than push past the card. (`anywhere` is Cr80.)
+    overflow-wrap: break-word;
+    word-break: break-word;
     margin: 0 0 14px;
     line-height: 1.5;
     color: #a9b6b4;

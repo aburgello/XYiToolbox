@@ -144,6 +144,8 @@ try {
     await page.eval(`[...document.querySelectorAll(".bt-rows > .bt-row")[2].querySelectorAll(".bt-act")].find(b => /Rename/.test(b.textContent)).click()`);
     check(await page.waitFor(`/Rename 3 files to Wrike/.test(document.querySelector(".dialog-title")?.innerText || "")`, 4000), "the rename asks first, counting what moves");
     check(await page.eval(`window.__renames.length === 1 && window.__renames[0].apply === false`), "…having only planned so far");
+    const fits = await page.eval(`(() => { const m = document.querySelector(".dialog-message"), c = document.querySelector(".dialog-card"); return { over: m.scrollWidth - m.clientWidth, right: m.getBoundingClientRect().right - c.getBoundingClientRect().right }; })()`);
+    check(fits.over <= 0 && fits.right <= 0, "…and a long filename wraps inside the dialog", fits);
     await page.click(".dialog-btn-primary", "Rename");
     await page.waitFor(`(window.__renames || []).length === 2`, 4000);
     const ren = await page.eval(`window.__renames[1]`);
