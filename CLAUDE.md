@@ -492,6 +492,16 @@ where you are**: the territory comes from the card's detection (`onHere`), never
 a second lookup, and the batch only when the open project's path really is
 `<Territory>/AE/<Batch_*>/…`. The campaign banner washes behind it. CSV
 Localiser's scan list pins the same territory first (`hereTerritory`).
+**The Tracker is the landing's THIRD PANE** (beside Big Guy Localiser and
+Trott & Batch), not a card in the tools grid -- it is where a batch is looked at
+before and after either half runs. The last pane used is remembered per viewer
+(`xyi.localise.pane`, browser storage). **A job chip opens the Tracker on that
+job's batch** (`openJob` tick, so a second press still lands); the job window
+(`ActiveJobModal`: unnamed subtasks, whole-job Send) is the tracker's **Job
+details** button, and the strip hides on that pane since the tracker carries
+its own chips. Below 560px the inactive tabs are icon-only. `batch-tracker`
+keeps its registry entry for ⌘K but has no `TOOLS_ROW` card -- the one
+deliberate exception to the Localise-tool rule below.
 **Your Wrike jobs sit on the page too** (`LocaliseJobsStrip.tsx`), chips under the
 header that **wrap, never scroll sideways** (AE gives a mouse no horizontal
 wheel, so a chip past the edge was unreachable; Deliver's strip follows suit), the open project's territory lit. A chip opens the same

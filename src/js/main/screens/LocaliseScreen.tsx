@@ -25,6 +25,7 @@ import { territoryFlag } from "../lib/jobsFeed";
 import { toFileUrl } from "../lib/fileUrl";
 import { setPendingLibraryCampaign } from "../lib/localiseHandoff";
 import CampaignLocaliserTool from "../tools/CampaignLocaliser";
+import BatchTrackerTool from "../tools/BatchTracker";
 import { sfx } from "../../lib/utils/sfx";
 import "./LocaliseScreen.scss";
 import HomeButton from "../HomeButton";
@@ -50,11 +51,27 @@ interface UtilityEntry {
 // the two campaign-localisation tools flattened that distinction. It's now
 // pulled out into its own prominent hero above the surface (opens full-width),
 // so it reads as its own first-class destination rather than a middle tab.
-type Pane = "csv" | "batch";
+//
+// THE TRACKER IS THE THIRD PANE (2026-09-30), not a card in the tools grid:
+// it is where a batch is looked at before and after either half runs, and the
+// Wrike job chips under the header open it on their batch. The last pane used
+// is remembered per viewer (browser storage -- a convenience, so it degrades
+// to Big Guy Localiser when storage is unavailable).
+type Pane = "csv" | "batch" | "tracker";
 const PANES: { id: Pane; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
-    { id: "csv",   label: "Big Guy Localiser", icon: FileSpreadsheet },
-    { id: "batch", label: "Trott & Batch", icon: Rabbit },
+    { id: "csv",     label: "Big Guy Localiser", icon: FileSpreadsheet },
+    { id: "batch",   label: "Trott & Batch", icon: Rabbit },
+    { id: "tracker", label: "Tracker", icon: ListChecks },
 ];
+const PANE_KEY = "xyi.localise.pane";
+function savedPane(): Pane {
+    try {
+        const v = window.localStorage.getItem(PANE_KEY);
+        return v === "batch" || v === "tracker" ? v : "csv";
+    } catch {
+        return "csv";
+    }
+}
 
 // ONE flat list of tools. Previously this was split into a numbered
 // "Localisation Workflow" strip with -> arrows plus a separate utilities
@@ -73,7 +90,6 @@ const TOOLS_ROW: (UtilityEntry & { run?: string })[] = [
     // NEXT TO Check, because it is the same kind of question -- "is this
     // deliverable right?" -- asked of the artwork rather than the comp.
     // FIRST in Check: the whole batch at once, before any one deliverable.
-    { id: "batch-tracker",     label: "Batch Tracker",  icon: ListChecks },
     { id: "artwork-check",     label: "Artwork Check",  icon: FileSearch },
     { id: "check",             label: "Check",          icon: ClipboardCheck },
     { id: "name-audit",        label: "Naming Audit",   icon: ScanSearch },
@@ -92,7 +108,7 @@ const OWN_HEADER_IDS = ["localised-library"];
 const TOOL_GROUPS: { name: string; ids: string[] }[] = [
     { name: "Prepare",      ids: ["pdf-to-csv", "name-generator", "edit-generator", "generate-cue-sheet"] },
     { name: "Swap & build", ids: ["ov-swap", "jpeg-loc", "aep-thief", "bespoke"] },
-    { name: "Check",        ids: ["batch-tracker", "artwork-check", "check", "name-audit", "cheeky-dt"] },
+    { name: "Check",        ids: ["artwork-check", "check", "name-audit", "cheeky-dt"] },
 ];
 
 /** Placeholder furniture for a tool that hasn't mounted yet. Bounded by the
@@ -136,7 +152,19 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
     // only content is that same button.
     const [runningId, setRunningId] = useState<string | null>(null);
     const [runStatus, setRunStatus] = useState<{ type: "success" | "error"; text: string } | null>(null);
-    const [pane, setPane] = useState<Pane>("csv");
+    const [pane, setPaneState] = useState<Pane>(savedPane);
+    const setPane = useCallback((p: Pane) => {
+        setPaneState(p);
+        try { window.localStorage.setItem(PANE_KEY, p); } catch { /* storage off: not remembered */ }
+    }, []);
+    /** A job chip pressed: the tracker opens on that job's batch. The tick
+     *  lets the same chip be pressed twice. */
+    const [trackerJob, setTrackerJob] = useState<{ id: string; tick: number } | null>(null);
+    const openTrackerOn = useCallback((jobId: string) => {
+        sfx.click();
+        setTrackerJob((prev) => ({ id: jobId, tick: (prev ? prev.tick : 0) + 1 }));
+        setPane("tracker");
+    }, [setPane]);
 
     // THE CAMPAIGN THE LIBRARY CARD NAMES, reported up by CSV Localiser so the
     // two can never disagree.
@@ -406,6 +434,8 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
                                         role="tab"
                                         aria-selected={pane === id}
                                         className={pane === id ? "ls-pane-tab active" : "ls-pane-tab"}
+                                        title={label}
+                                        aria-label={label}
                                         onClick={() => { sfx.click(); setPane(id); }}
                                     >
                                         <Icon size={13} />
@@ -414,7 +444,8 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
                                 ))}
                             </div>
                         </div>
-                        <LocaliseJobsStrip hereCode={here ? here.code : undefined} onSent={onJobSent} />
+                        {/* The tracker carries its own job chips, with progress. */}
+                        {pane !== "tracker" && <LocaliseJobsStrip hereCode={here ? here.code : undefined} onSent={onJobSent} onOpenJob={(j) => openTrackerOn(j.id)} />}
                         {/* Trott & Batch has no campaign card to sit beside, so
                             the Library leads the pane on its own. */}
                         {pane === "batch" && <div className="ls-libcard-solo">{libraryCard}</div>}
@@ -434,6 +465,7 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
                                 />
                             )}
                             {pane === "batch" && <CampaignLocaliserTool />}
+                            {pane === "tracker" && <BatchTrackerTool onSelectTool={handleSelect} openJob={trackerJob} />}
                         </div>
                     </div>
 

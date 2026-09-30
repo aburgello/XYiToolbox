@@ -467,7 +467,7 @@ export const TOOLS: ToolEntry[] = [
         icon: ListChecks,
         Component: BatchTrackerTool,
         description: "One batch, lined up by deliverable: art, project, render, delivered and Wrike, with names that disagree flagged.",
-        actions: ["Other…", "Art", "AE", "Renders", "Delivered", "Specs", "Open in AE", "Build it", "Deliver", "Rename to match Wrike", "Rename comp"],
+        actions: ["Other…", "Art", "AE", "Renders", "Delivered", "Specs", "Open in AE", "Build it", "Deliver", "Rename to match Wrike", "Rename comp", "Job details"],
         // Read-only throughout: it lists folders and opens Finder.
         actionSafety: { "Art": "read", "AE": "read", "Renders": "read", "Delivered": "read", "Specs": "read" },
     },

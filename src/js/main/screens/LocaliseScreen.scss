@@ -513,6 +513,15 @@ $ls-shift: cubic-bezier(0.22, 1, 0.36, 1);    // colour, border, shadow
     }
 }
 
+// THREE panes don't fit beside the title on a docked panel ("Trac" at 420px):
+// there, the tabs you are NOT on show their icon alone (the label is their
+// tooltip) and the active one keeps its word. Plain @media, not @container.
+.ls-main-head { flex-wrap: wrap; }
+@media (max-width: 560px) {
+    .ls-pane-tab:not(.active) { padding: 6px 10px; }
+    .ls-pane-tab:not(.active) span { display: none; }
+}
+
 // Groups the two campaign-localisation panes under one clear identity, so the
 // toggle reads as "two views of one job" rather than a flat list of tools.
 .ls-section-caption {
@@ -644,6 +653,11 @@ $ls-shift: cubic-bezier(0.22, 1, 0.36, 1);    // colour, border, shadow
 }
 
 .ls-libcard-solo { margin-bottom: 12px; }
+
+// The tracker as a pane: the surface owns the inset and the page scrolls, so
+// the tool gives up its own padding and scroll box (it keeps them when it is
+// opened as a page of its own).
+.ls-main-surface > .bt { padding: 0; height: auto; overflow: visible; }
 
 // ── The Library card ────────────────────────────────────────────────────────
 // Blue-teal, where everything else on the page is teal: a different KIND of

@@ -67,7 +67,7 @@
 // read as broken.
 // =============================================================================
 import React, { useEffect, useRef, useState } from "react";
-import { Image as ImageIcon, FileBox, Film, PackageCheck, FileText, RefreshCw, Loader2, AlertTriangle, MapPin, Search, ChevronRight, Check, HardDrive, FolderOpen, Hammer, Truck, PenLine, ArrowUpRight, Play, MessageSquare } from "lucide-react";
+import { Image as ImageIcon, FileBox, Film, PackageCheck, FileText, RefreshCw, Loader2, AlertTriangle, MapPin, Search, ChevronRight, Check, HardDrive, FolderOpen, Hammer, Truck, PenLine, ArrowUpRight, Play, MessageSquare, Info } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import Dropdown from "../Dropdown";
@@ -78,6 +78,7 @@ import { confirmDialog } from "../Dialog";
 import { parseAmends, amendKey, type AmendNote, type ParsedAmends } from "../lib/amendNotes";
 import type { JobComment } from "../lib/jobsFeed";
 import VideoOverlay from "../VideoOverlay";
+import ActiveJobModal from "../ActiveJobModal";
 import { usePosterFrame } from "../lib/renderPreview";
 import { toFileUrl } from "../lib/fileUrl";
 import type { ToolProps } from "../toolRegistry";
@@ -181,7 +182,13 @@ const whenOf = (iso: string) => {
 
 const stem = (p: string) => (p.split(/[\\/]/).pop() || p).replace(/\.[^.]+$/, "").replace(/_V\d+$/i, "").toUpperCase();
 
-const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
+interface Props extends ToolProps {
+    /** From the Localise page's job chips: open on this job's batch. The tick
+     *  changes on every press, so pressing the same chip again still lands. */
+    openJob?: { id: string; tick: number } | null;
+}
+
+const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
     const [territoryPath, setTerritoryPath] = useState("");
     const [territory, setTerritory] = useState("");
     const [batches, setBatches] = useState<string[]>([]);
@@ -207,6 +214,10 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
     const [sums, setSums] = useState<Record<string, JobSummary>>({});
     const [jobsBusy, setJobsBusy] = useState(false);
     const [playing, setPlaying] = useState<{ path: string; title: string } | null>(null);
+    /** The Wrike job window (ActiveJobModal): names Wrike didn't send, and the
+     *  whole-job Send to Localise, one press from the batch it belongs to. */
+    const [detailsJob, setDetailsJob] = useState<WrikeJob | null>(null);
+    const wantTickDone = useRef(0);
     /** The latest Wrike comment of each To amend job on screen, split. */
     const [comments, setComments] = useState<Record<string, { comment: JobComment | null; parsed: ParsedAmends; error?: string }>>({});
     const [showFullComment, setShowFullComment] = useState(false);
@@ -243,7 +254,9 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
             const res = await fetchJobs(owner);
             if (res.mock) return none;
             const out: { name: string; status: string }[] = [];
-            const mine = res.jobs.filter((j: WrikeJob) => jobTerritory(j) === code && loose(parseJobTitle(j.title).batch.replace(/\s*POST$/i, "")) === loose(b.replace(/_?POST$/i, "")));
+            // jobBatch, not the title's raw batch: a title with no number is Batch 1
+            // (studio decision), and the raw "" matched no batch at all.
+            const mine = res.jobs.filter((j: WrikeJob) => jobTerritory(j) === code && loose(jobBatch(j).replace(/_?POST$/i, "")) === loose(b.replace(/_?POST$/i, "")));
             mine.forEach((j) => (j.subtasks || []).forEach((st) => { if (st.name) out.push({ name: st.name, status: st.customStatusName || st.status || "" }); }));
             return { subs: out, jobs: mine };
         } catch {
@@ -363,6 +376,19 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
         setBatch(at.batch);
         setMsg(null);
     };
+    // A chip on the Localise page asked for this job: open it once it's located.
+    useEffect(() => {
+        if (!wantJob || wantJob.tick === wantTickDone.current) return;
+        const j = myJobs.find((x) => x.id === wantJob.id);
+        if (!j || !located[j.id]) {
+            // Still reading your jobs: this runs again when they land.
+            if (!jobsBusy && myJobs.length && j) { wantTickDone.current = wantJob.tick; openJob(j); }
+            return;
+        }
+        wantTickDone.current = wantJob.tick;
+        openJob(j);
+    }, [wantJob && wantJob.tick, located, myJobs, jobsBusy]);
+
     const isOpenJob = (j: WrikeJob) => {
         const at = located[j.id];
         return !!at && at.territoryPath === territoryPath && loose(at.batch) === loose(batch);
@@ -702,6 +728,11 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
                         <Link icon={<Film size={13} />} label="Renders" path={scan.folders.renders} folder />
                         <Link icon={<PackageCheck size={13} />} label="Delivered" path={scan.folders.delivered[0]} folder />
                         <Link icon={<FileText size={13} />} label="Specs" path={scan.folders.specs} folder />
+                        {jobs.map((j) => (
+                            <button key={j.id} type="button" className="bt-link" onClick={() => setDetailsJob(j)} title={`${j.title}: every subtask, and Send to Localise`}>
+                                <Info size={13} /><span>{jobs.length > 1 ? `${jobLabel(j)} details` : "Job details"}</span>
+                            </button>
+                        ))}
                     </div>
                     {openRow && (
                         <div className="bt-links bt-links--here">
@@ -775,6 +806,17 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
                         )}
                     </div>
                 </>
+            )}
+            {detailsJob && (
+                <ActiveJobModal
+                    job={detailsJob}
+                    onClose={() => setDetailsJob(null)}
+                    onOpenLocaliser={() => {
+                        setDetailsJob(null);
+                        if (onSelectTool) onSelectTool("");
+                        else setMsg({ text: "Staged for Build a Batch -- open Localise to see it." });
+                    }}
+                />
             )}
             {playing && <VideoOverlay path={playing.path} title={playing.title} onClose={() => setPlaying(null)} errorHint="The preview in _mp4 couldn't be played. It may still be rendering, or have moved." />}
             {busy && !scan && <p className="bt-note"><Loader2 size={13} className="spin" /> Reading the batch…</p>}

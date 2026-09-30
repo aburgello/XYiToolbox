@@ -63,6 +63,11 @@ const FIXTURES = `{
       "Argentina", "Austria", "Belgium", "Bulgaria", "Chile", "Colombia", "Croatia", "Cyprus", "Czechia", "Denmark",
       "Greece", "Hungary", "Indonesia", "Latvia", "Poland", "Slovakia", "Slovenia", "South_Africa", "Sweden",
   ])} : ["Italy", "France"],
+  // The Tracker pane: nothing open in a batch, and only Indonesia on disk.
+  trackerContext: () => ({ success: true }),
+  trackerCompCheck: () => ({ success: true, comps: [] }),
+  trackerLocate: (json) => ({ success: true, jobs: JSON.parse(json).filter((j) => j.code === "ID").map((j) => ({ id: j.id, territoryPath: "/Volumes/paramount/SF/XY026205_Markets/Indonesia", territory: "Indonesia", batch: "Batch_01", batches: ["Batch_01"] })) }),
+  trackerScan: (json) => { window.__trackerScan = JSON.parse(json); return { success: true, territory: "Indonesia", batch: "Batch_01", folders: { art: "", aep: "", renders: "", delivered: [], specs: "" }, rows: [] }; },
   getTerritoryCountryCode: (t) => (${JSON.stringify({
       Argentina: "AR", Austria: "AT", Belgium: "BE", Bulgaria: "BG", Chile: "CL", Colombia: "CO", Croatia: "HR", Cyprus: "CY",
       Czechia: "CZ", Denmark: "DK", Greece: "GR", Hungary: "HU", Indonesia: "ID", Latvia: "LV", Poland: "PL", Slovakia: "SK",
@@ -124,7 +129,7 @@ try {
     check((await page.eval(text(".ls-libcard-line"))).indexOf("310 components across 14 of 19") === 0, "the card says what is behind it", await page.eval(text(".ls-libcard-line")));
     const openBg = await page.eval(`getComputedStyle(document.querySelector(".ls-libcard-open")).backgroundColor`);
     check(openBg === "rgb(230, 244, 247)", "the Open button is the one light button (not repainted by .form-tool button)", openBg);
-    check((await page.eval(count(".ls-tool-group"))) === 3 && (await page.eval(count(".ls-tool-group .ls-grid-item"))) === 13, "tools: three groups, thirteen tools");
+    check((await page.eval(count(".ls-tool-group"))) === 3 && (await page.eval(count(".ls-tool-group .ls-grid-item"))) === 12, "tools: three groups, twelve tools (the Tracker is a pane, not a card)");
     check(!(await page.eval(`!!document.querySelector(".specs-camp-banner") && getComputedStyle(document.querySelector(".specs-camp-banner")).display !== "none"`)), "no banner pinned: no empty banner block");
     check(await page.waitFor(`/Czechia/.test(document.querySelector(".ls-page-heading .ls-page-title")?.innerText || "")`, 4000), "the header says where you are", await page.eval(text(".ls-page-heading")));
     check((await page.eval(text(".ls-page-batch"))) === "· Batch_01", "…including the open project's batch", await page.eval(text(".ls-page-batch")));
@@ -388,18 +393,18 @@ try {
     check(chips.length === 2 && chips.some((c) => /TW/.test(c)) && chips.some((c) => /IT/.test(c)), "open jobs only (the finished SE job is left out)", chips);
     check(await page.eval(`!!document.querySelector(".ls-jobs-sample")`), "the feed's sample list is marked SAMPLE");
     check(!(await page.eval(`!!document.querySelector(".ls-jobs-label")`)) && !/Your jobs/.test(await page.eval(text(".ls-jobs"))), "no 'Your jobs' label taking a chip's worth of the row");
-    await page.click(".ls-jobs-chip", "TW");
-    check(await page.waitFor(`document.querySelector(".ajm-kicker")`, 4000), "a chip opens the job window");
-    check(/TW · Batch 1/.test(await page.eval(text(".ajm-kicker"))), "…leading with where: territory and batch", await page.eval(text(".ajm-kicker")));
-    check((await page.eval(text(".ajm-title"))) === "DINTH", "…then the job's name");
-    const sendBg = await page.eval(`getComputedStyle(document.querySelector(".ajm-btn--primary")).backgroundImage`);
-    check(/gradient/.test(sendBg), "…and its Send button wears Localise's teal, not the theme accent", sendBg.slice(0, 40));
-    await page.waitFor(`[...document.querySelectorAll(".ajm-btn--primary")].some(b => /Send/.test(b.textContent) && !b.disabled)`, 6000);
-    await page.click(".ajm-btn--primary", "Send");
-    check(await page.waitFor(`document.querySelector(".specs-handoff")`, 6000), "Send fills Build a Batch without leaving the page");
-    check(await page.eval(`!!document.querySelector(".ls-jobs")`) && !(await page.eval(`!!document.querySelector(".active-jobs-toggle")`)), "…still on Localise, not bounced home");
-    check((await page.eval(`document.querySelectorAll(".specs-build-rows .specs-build-row:not(.specs-build-row--head)").length`)) === 3, "…with the job's three rows");
     await page.shot(path.join(SHOTS, "ui-jobs-strip.png"));
+    await page.click(".ls-jobs-chip", "TW");
+    check(await page.waitFor(`/Tracker/.test(document.querySelector(".ls-pane-tab.active")?.innerText || "") && !!document.querySelector(".ls-main-surface > .bt")`, 4000), "a job chip opens the Tracker pane (the job window is a press further in)");
+    check(!(await page.eval(`!!document.querySelector(".ls-jobs")`)), "…where the tracker's own job chips stand in for the strip");
+    check(await page.eval(`getComputedStyle(document.querySelector(".ls-main-surface > .bt")).paddingTop === "0px"`), "…and the surface, not the tool, owns the inset");
+    await page.click(".home-button");
+    await page.waitFor(`[...document.querySelectorAll("button.category-card")].some(b => /Localise/.test(b.textContent))`, 6000);
+    await page.click("button.category-card", "Localise");
+    check(await page.waitFor(`/Tracker/.test(document.querySelector(".ls-pane-tab.active")?.innerText || "")`, 6000), "the last pane used is where Localise opens next time");
+    await page.click(".ls-pane-tab", "Big Guy");
+    check(await page.waitFor(`!!document.querySelector(".ls-jobs") && !!document.querySelector(".ls-libcard-row")`, 6000), "back on Big Guy Localiser, the strip returns");
+
 
     console.log("");
     check(page.errors.length === 0, "no page errors", page.errors.slice(0, 5));
@@ -431,7 +436,12 @@ try {
         check(await p2.waitFor(`document.querySelectorAll(".ls-jobs-chip").length === 1`, 6000), "the strip shows the real feed's job", await p2.eval(text(".ls-jobs")));
         check(!(await p2.eval(`!!document.querySelector(".ls-jobs-sample")`)), "…not marked SAMPLE");
         await p2.click(".ls-jobs-chip", "ID");
-        check(await p2.waitFor(`document.querySelector(".ajm-note--warn")`, 6000), "the job window says names are missing");
+        check(await p2.waitFor(`/Indonesia/.test(document.querySelector(".bt-title")?.innerText || "") && !!window.__trackerScan`, 6000), "the chip opens the Tracker on that job's batch (no number in the title: Batch 1)");
+        const asked = await p2.eval(`window.__trackerScan`);
+        check(asked && asked.wrike.length === 1 && /MRTLCD/.test(asked.wrike[0].name), "…with the job's subtasks (a title with no batch number is Batch_01's)", asked);
+        await p2.waitFor(`[...document.querySelectorAll(".bt-link")].some(b => /Job details/.test(b.textContent))`, 6000);
+        await p2.click(".bt-link", "Job details");
+        check(await p2.waitFor(`document.querySelector(".ajm-note--warn")`, 6000), "Job details opens the job window, which says names are missing");
         check(/4 more subtasks/.test(await p2.eval(text(".ajm-note--warn"))), "…how many", await p2.eval(text(".ajm-note--warn")));
         check(await p2.eval(`!!document.querySelector(".ajm-note--warn .ajm-link")`), "…with a way to open the job in Wrike");
         check((await p2.eval(`document.querySelectorAll(".ajm table tbody tr, .ajm-row").length`)) >= 1, "…and still lists the one that did arrive");

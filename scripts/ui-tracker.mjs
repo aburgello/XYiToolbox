@@ -99,8 +99,8 @@ try {
     await page.goto();
     await page.waitFor(`[...document.querySelectorAll("button.category-card")].some(b => /Localise/.test(b.textContent))`, 10000);
     await page.click("button.category-card", "Localise");
-    await page.waitFor(`[...document.querySelectorAll(".ls-grid-item")].some(b => /Batch Tracker/.test(b.textContent))`, 8000);
-    await page.click(".ls-grid-item", "Batch Tracker");
+    await page.waitFor(`[...document.querySelectorAll(".ls-pane-tab")].some(b => /Tracker/.test(b.textContent))`, 8000);
+    await page.click(".ls-pane-tab", "Tracker");
     check(await page.waitFor(`document.querySelectorAll(".bt-row").length === 4`, 8000), "the tracker opens on the open project's batch");
     check(/Norway/.test(await page.eval(`document.querySelector(".bt-title")?.innerText`)), "…naming the territory");
     await page.waitFor(`!!window.__peruScan`, 8000);
@@ -202,12 +202,28 @@ try {
     await page.shot(path.join(SHOTS, "ui-tracker.png"));
     await page.resize(420, 420);
     await pause(200);
-    const scroll = await page.eval(`(() => { const el = document.querySelector(".bt"); const before = el.scrollTop; el.scrollTop = 9999; const moved = el.scrollTop > before; el.scrollTop = 0; return { moved, h: el.clientHeight, sh: el.scrollHeight, overflow: getComputedStyle(el).overflowY }; })()`);
-    check(scroll.moved && scroll.overflow === "auto", "on a short panel the tracker scrolls", scroll);
+    // As a Localise pane the PAGE scrolls (the tracker gives its scroll box
+    // up there): find what scrolls above it, and reach the last row with it.
+    const scroll = await page.eval(`(() => {
+        let el = document.querySelector(".bt");
+        while (el && !(/(auto|scroll)/.test(getComputedStyle(el).overflowY) && el.scrollHeight > el.clientHeight)) el = el.parentElement;
+        if (!el) return { found: false };
+        const before = el.scrollTop;
+        const rows = document.querySelectorAll(".bt-rows > .bt-row, .bt-rows > .bt-extra");
+        rows[rows.length - 1].scrollIntoView({ block: "end" });
+        const last = rows[rows.length - 1].getBoundingClientRect();
+        const box = el.getBoundingClientRect();
+        const reached = last.bottom <= box.bottom + 1 && last.top >= box.top - 1;
+        const moved = el.scrollTop > before; el.scrollTop = 0;
+        return { found: true, moved, reached, cls: el.className };
+    })()`);
+    check(scroll.found && scroll.moved && scroll.reached, "on a short panel the page scrolls to the tracker's last row", scroll);
     const squashed = await page.eval(`[...document.querySelectorAll(".bt > *")].some(e => e.scrollHeight > e.clientHeight + 1 && getComputedStyle(e).overflowY === "visible")`);
     check(!squashed, "…and nothing inside is squashed to fit");
     await page.resize(420, 1100);
     await pause(200);
+    const tabs = await page.eval(`[...document.querySelectorAll(".ls-pane-tab")].map(t => ({ right: Math.round(t.getBoundingClientRect().right), label: getComputedStyle(t.querySelector("span")).display !== "none" }))`);
+    check(tabs.length === 3 && tabs.every((t) => t.right <= 420) && tabs.filter((t) => t.label).length === 1, "at 420px all three pane tabs fit, the active one keeping its label", tabs);
     const sideways = await page.eval(`document.documentElement.scrollWidth - document.documentElement.clientWidth`);
     check(sideways <= 0, "no sideways scroll on a docked panel", sideways);
     await page.shot(path.join(SHOTS, "ui-tracker-narrow.png"));
@@ -255,7 +271,7 @@ try {
     check(await page.waitFor(`!!document.querySelector(".ls-pane-tab") && !document.querySelector(".bt")`, 8000), "…which goes back to the Localise landing");
     check(await page.waitFor(`/1 row from SF Motion Outdoor NO 2/.test(document.body.innerText)`, 6000), "…where Build a Batch has the one subtask staged");
 
-    await page.click(".ls-grid-item", "Batch Tracker");
+    await page.click(".ls-pane-tab", "Tracker");
     await page.waitFor(`document.querySelectorAll(".bt-row").length === 4`, 8000);
     await page.eval(`document.querySelectorAll(".bt-rows > .bt-row")[0].querySelector(".bt-row-top").click()`);
     await pause(100);
@@ -268,8 +284,8 @@ try {
     await page.goto();
     await page.waitFor(`[...document.querySelectorAll("button.category-card")].some(b => /Localise/.test(b.textContent))`, 10000);
     await page.click("button.category-card", "Localise");
-    await page.waitFor(`[...document.querySelectorAll(".ls-grid-item")].some(b => /Batch Tracker/.test(b.textContent))`, 8000);
-    await page.click(".ls-grid-item", "Batch Tracker");
+    await page.waitFor(`[...document.querySelectorAll(".ls-pane-tab")].some(b => /Tracker/.test(b.textContent))`, 8000);
+    await page.click(".ls-pane-tab", "Tracker");
     check(await page.waitFor(`document.querySelectorAll(".bt-job").length === 2 && !!window.__peruScan`, 8000), "every Wrike job assigned to you is a chip");
     const locd = await page.eval(`window.__located`);
     check(locd.length === 2 && locd[0].code === "NO" && locd[0].batch === "Batch_2" && locd[0].prefix === "SF" && locd[1].batch === "Batch_1", "…located by territory, batch and film prefix", locd);
@@ -285,9 +301,9 @@ try {
     await page.eval(`window.__noCtx = true`);
     await page.waitFor(`[...document.querySelectorAll("button.category-card")].some(b => /Localise/.test(b.textContent))`, 10000);
     await page.click("button.category-card", "Localise");
-    await page.waitFor(`[...document.querySelectorAll(".ls-grid-item")].some(b => /Batch Tracker/.test(b.textContent))`, 8000);
+    await page.waitFor(`[...document.querySelectorAll(".ls-pane-tab")].some(b => /Tracker/.test(b.textContent))`, 8000);
     await page.eval(`window.__noCtx = true`);
-    await page.click(".ls-grid-item", "Batch Tracker");
+    await page.click(".ls-pane-tab", "Tracker");
     check(await page.waitFor(`document.querySelectorAll(".bt-jobs.is-overview .bt-job").length === 2 && /3\\/4 built/.test(document.querySelector(".bt-jobs.is-overview").innerText)`, 8000), "with no batch open, your jobs are listed with their counts");
     check(/Pick a job/.test(await page.eval(`document.querySelector(".bt-title").innerText`)), "…under 'Pick a job'");
     await page.shot(path.join(SHOTS, "ui-tracker-jobs.png"));

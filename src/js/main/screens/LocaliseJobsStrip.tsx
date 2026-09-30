@@ -29,9 +29,12 @@ interface Props {
     hereCode?: string;
     /** A job's rows have been staged: take them into Build a Batch now. */
     onSent: () => void;
+    /** When given, a chip opens THIS (the tracker, on the job's batch) rather
+     *  than the job window; the window is one press further, in the tracker. */
+    onOpenJob?: (job: WrikeJob) => void;
 }
 
-const LocaliseJobsStrip: React.FC<Props> = ({ hereCode, onSent }) => {
+const LocaliseJobsStrip: React.FC<Props> = ({ hereCode, onSent, onOpenJob }) => {
     const [jobs, setJobs] = useState<WrikeJob[]>([]);
     const [mock, setMock] = useState(false);
     const [who, setWho] = useState("");
@@ -92,7 +95,8 @@ const LocaliseJobsStrip: React.FC<Props> = ({ hereCode, onSent }) => {
                             key={job.id}
                             type="button"
                             className={"ls-jobs-chip" + (isHere ? " is-here" : "")}
-                            onClick={() => setOpenJob(job)}
+                            onClick={() => (onOpenJob ? onOpenJob(job) : setOpenJob(job))}
+                            title={onOpenJob ? "Open this batch in the Tracker" : undefined}
                         >
                             {flag && <span className="ls-jobs-flag">{flag}</span>}
                             <span className="ls-jobs-terr">{parts.territory || parts.name || job.title}</span>
