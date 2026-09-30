@@ -26,7 +26,7 @@
 // With no job in the feed it falls back to everything on disk.
 // =============================================================================
 import React, { useEffect, useState } from "react";
-import { FolderOpen, Image as ImageIcon, FileBox, Film, PackageCheck, FileText, RefreshCw, Loader2, AlertTriangle, MapPin, Search, ChevronRight, Check, HardDrive } from "lucide-react";
+import { Image as ImageIcon, FileBox, Film, PackageCheck, FileText, RefreshCw, Loader2, AlertTriangle, MapPin, Search, ChevronRight, Check, HardDrive } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import Dropdown from "../Dropdown";
@@ -290,7 +290,6 @@ const BatchTracker: React.FC = () => {
                 </>
             )}
             {busy && !scan && <p className="bt-note"><Loader2 size={13} className="spin" /> Reading the batch…</p>}
-            <p className="bt-foot"><FolderOpen size={11} /> Read-only: it lists folders and opens Finder, nothing else.</p>
         </div>
     );
 };
