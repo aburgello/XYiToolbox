@@ -62,7 +62,7 @@ import { Image as ImageIcon, FileBox, Film, PackageCheck, FileText, RefreshCw, L
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import Dropdown from "../Dropdown";
-import { fetchJobs, fetchJobsFresh, jobReadiness, territoryFlag, parseJobTitle, statusTint, DELIVERABLE_STATUSES, AMEND_STATUSES, type WrikeJob } from "../lib/jobsFeed";
+import { fetchJobs, fetchJobsFresh, fetchJobsLive, jobReadiness, territoryFlag, parseJobTitle, statusTint, DELIVERABLE_STATUSES, AMEND_STATUSES, type WrikeJob } from "../lib/jobsFeed";
 import { loadJobRows, stageBatchFromJob, classifyRows } from "../lib/jobRows";
 import { navigateToTool } from "../lib/navigation";
 import { confirmDialog } from "../Dialog";
@@ -257,6 +257,31 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
     useEffect(() => { if (ready && territoryPath && batch) void run(); }, [ready, territoryPath, batch]);
 
     // YOUR JOBS: listed, located on disk, then summarised one at a time.
+    const locateAndSummarise = async (list: WrikeJob[]) => {
+        if (!list.length) return;
+        const loc = (await evalTS("trackerLocate", JSON.stringify(list.map((j) => ({
+            id: j.id, code: jobTerritory(j), batch: jobBatch(j), prefix: (subsOf(j)[0].name.split("_")[0] || "").toUpperCase(),
+        }))))) as any;
+        // An engine error here used to vanish, leaving every chip "not found".
+        if (!loc || !loc.success) setMsg({ text: `Couldn't look for your jobs' folders: ${(loc && loc.error) || "no answer from AE"}`, bad: true });
+        const map: Record<string, Located> = {};
+        ((loc && loc.jobs) || []).forEach((x: Located) => { map[x.id] = x; });
+        setLocated(map);
+        for (const j of list) {
+            const at = map[j.id];
+            if (!at) continue;
+            try {
+                const r = (await evalTS("trackerScan", JSON.stringify({ territoryPath: at.territoryPath, batch: at.batch, wrike: subsOf(j) }))) as any;
+                if (r && r.success) setSums((prev) => ({ ...prev, [j.id]: summarise(r.rows || []) }));
+            } catch { /* one job's folder unreadable: its chip just shows no bar */ }
+        }
+    };
+
+    /** Bumped whenever a LIVE Wrike read lands (on open or from refresh): the
+     *  batch on screen is re-read so its rows carry the new statuses. The rows
+     *  used to keep whatever the snapshot said while the chips moved on --
+     *  "Prep for delivery" beside a Wrike that said Delivered. */
+    const [freshTick, setFreshTick] = useState(0);
     const loadJobs = async (live: boolean) => {
         setJobsBusy(true);
         try {
@@ -271,31 +296,27 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
                 const who = res.viewingAs || owner;
                 return res.jobs.filter((j) => j.assignee === who && (j.subtaskCount ?? 0) > 0 && jobReadiness(j.status) !== "done" && subsOf(j).length > 0);
             };
-            const res = live ? await fetchJobs(owner, true) : await fetchJobsFresh(owner, (r) => setMyJobs(pick(r)));
+            // Refresh: Wrike, live, now. Open: the snapshot at once and a live
+            // read behind it (throttled panel-wide), which re-reads on landing.
+            const res = live
+                ? await fetchJobsLive(owner)
+                : await fetchJobsFresh(owner, (r) => {
+                    const fresh = pick(r);
+                    setMyJobs(fresh);
+                    setFreshTick((t) => t + 1);
+                    void locateAndSummarise(fresh);
+                });
             const list = pick(res);
             setMyJobs(list);
-            if (!list.length) return;
-            const loc = (await evalTS("trackerLocate", JSON.stringify(list.map((j) => ({
-                id: j.id, code: jobTerritory(j), batch: jobBatch(j), prefix: (subsOf(j)[0].name.split("_")[0] || "").toUpperCase(),
-            }))))) as any;
-            // An engine error here used to vanish, leaving every chip "not found".
-            if (!loc || !loc.success) setMsg({ text: `Couldn't look for your jobs' folders: ${(loc && loc.error) || "no answer from AE"}`, bad: true });
-            const map: Record<string, Located> = {};
-            ((loc && loc.jobs) || []).forEach((x: Located) => { map[x.id] = x; });
-            setLocated(map);
-            for (const j of list) {
-                const at = map[j.id];
-                if (!at) continue;
-                try {
-                    const r = (await evalTS("trackerScan", JSON.stringify({ territoryPath: at.territoryPath, batch: at.batch, wrike: subsOf(j) }))) as any;
-                    if (r && r.success) setSums((prev) => ({ ...prev, [j.id]: summarise(r.rows || []) }));
-                } catch { /* one job's folder unreadable: its chip just shows no bar */ }
-            }
+            if (live) setFreshTick((t) => t + 1);
+            await locateAndSummarise(list);
         } finally {
             setJobsBusy(false);
         }
     };
     useEffect(() => { if (ready) void loadJobs(false); }, [ready]);
+    // Fresh Wrike statuses landed: re-read the batch on screen with them.
+    useEffect(() => { if (freshTick && territoryPath && batch) void run(); }, [freshTick]);
 
     const openJob = (j: WrikeJob) => {
         const at = located[j.id];
@@ -581,7 +602,7 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
                 <button type="button" className="bt-btn" onClick={() => void pick()} title="Pick a territory, or a batch in its AE folder">
                     <Search size={13} /> Other…
                 </button>
-                <button type="button" className="bt-btn bt-icon" disabled={busy || jobsBusy} onClick={() => { if (batch) void run(); void loadJobs(true); }} aria-label="Refresh" title="Read the folders and your Wrike jobs again">
+                <button type="button" className="bt-btn bt-icon" disabled={busy || jobsBusy} onClick={() => void loadJobs(true)} aria-label="Refresh" title="Read Wrike live and the folders again">
                     <RefreshCw size={13} className={busy || jobsBusy ? "spin" : ""} />
                 </button>
             </div>

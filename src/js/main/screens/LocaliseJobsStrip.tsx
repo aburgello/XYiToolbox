@@ -21,7 +21,7 @@
 import React, { useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
-import { fetchJobs, fetchJobsFresh, parseJobTitle, jobReadiness, territoryFlag, type WrikeJob } from "../lib/jobsFeed";
+import { fetchJobs, fetchJobsFresh, fetchJobsLive, parseJobTitle, jobReadiness, territoryFlag, type WrikeJob } from "../lib/jobsFeed";
 import ActiveJobModal from "../ActiveJobModal";
 
 interface Props {
@@ -46,10 +46,10 @@ const LocaliseJobsStrip: React.FC<Props> = ({ hereCode, onSent }) => {
         } catch { /* untagged or no bridge */ }
         if (!owner) { setWho(""); setJobs([]); return; }
         // fetchJobs is cached per member, so this costs nothing when the home
-        // card already asked. Refresh re-reads the FEED'S CACHE (force), never
-        // a live Wrike refresh: that is the one path that loses subtask names
-        // (ActiveJobModal has the measurement), which would make the strip's
-        // own button the way jobs lose their rows.
+        // card already asked. Refresh reads Wrike LIVE (fetchJobsLive): the
+        // feed's snapshot is what made refresh look like it did nothing. The
+        // live path is the one that has lost subtask names (ActiveJobModal has
+        // the measurement), so fetchJobsLive fills them back by id.
         const apply = (res: Awaited<ReturnType<typeof fetchJobs>>) => {
             const listFor = res.viewingAs || owner;
             setWho(listFor);
@@ -61,7 +61,7 @@ const LocaliseJobsStrip: React.FC<Props> = ({ hereCode, onSent }) => {
                 && (j.subtasksDone ?? 0) < (j.subtaskCount ?? 0)));
         };
         // On open: the cache now, a live read behind it (fetchJobsFresh).
-        apply(live ? await fetchJobs(owner, true) : await fetchJobsFresh(owner, apply));
+        apply(live ? await fetchJobsLive(owner) : await fetchJobsFresh(owner, apply));
     };
 
     useEffect(() => { void load(false); }, []);

@@ -27,7 +27,7 @@ import React, { useEffect, useState } from "react";
 import { RefreshCw, Download, Loader2, Play } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
-import { fetchJobs, fetchJobsFresh, territoryFlag, commonTitlePrefix, statusTint, AMEND_STATUSES, REVISED_STATUSES, IN_MOTION_STATUSES, type WrikeJob } from "../lib/jobsFeed";
+import { fetchJobs, fetchJobsFresh, fetchJobsLive, territoryFlag, commonTitlePrefix, statusTint, AMEND_STATUSES, REVISED_STATUSES, IN_MOTION_STATUSES, type WrikeJob } from "../lib/jobsFeed";
 import CheckboxToggle from "../CheckboxToggle";
 import FileBadge from "../FileBadge";
 import { readFinderColors, openInDefaultApp, isBadColor, type FinderColor } from "../lib/finderLabels";
@@ -83,7 +83,7 @@ const ReviewJobs: React.FC<Props> = ({ pushToast, onImported }) => {
                 return n.amend.length + n.revised.length + n.motion.length > 0;
             }));
         };
-        apply(force ? await fetchJobs(owner, true) : await fetchJobsFresh(owner, apply));
+        apply(force ? await fetchJobsLive(owner) : await fetchJobsFresh(owner, apply));
     };
 
     useEffect(() => { void load(false); }, []);

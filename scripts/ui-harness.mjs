@@ -116,7 +116,7 @@ function bridgeSource(fixturesSrc) {
 })();`;
 }
 
-// `routes`: { "<url substring>": <JSON body> } -- requests matching one are
+// `routes`: { "<url substring>": <JSON body> | (url) => <JSON body> } -- requests matching one are
 // ANSWERED with that body instead of blocked, so a test can stand in for the
 // jobs feed (or any HTTP source) without reaching the real one.
 export async function launch({ root, fixturesSrc, width = 760, height = 1100, routes = {} }) {
@@ -151,7 +151,10 @@ export async function launch({ root, fixturesSrc, width = 760, height = 1100, ro
                     { name: "Access-Control-Allow-Origin", value: "*" },
                     { name: "Access-Control-Allow-Headers", value: "*" },
                 ];
-                const body = Buffer.from(d.params.request.method === "OPTIONS" ? "" : JSON.stringify(routes[hit])).toString("base64");
+                // A route may be a FUNCTION of the URL, so a test can answer a
+                // live read (refresh=1) differently from the snapshot.
+                const answer = typeof routes[hit] === "function" ? routes[hit](url) : routes[hit];
+                const body = Buffer.from(d.params.request.method === "OPTIONS" ? "" : JSON.stringify(answer)).toString("base64");
                 send("Fetch.fulfillRequest", { requestId: d.params.requestId, responseCode: 200, responseHeaders: headers, body });
                 return;
             }

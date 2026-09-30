@@ -434,7 +434,7 @@ export async function fetchJobs(member: string, force = false, live = false): Pr
 /** The refresh button: bypasses the panel's own cache AND asks the feed to
  *  read Wrike live rather than its Supabase snapshot. */
 export function refreshJobs(member: string): Promise<JobsFeedResult> {
-    return fetchJobs(member, true, true);
+    return fetchJobsLive(member);
 }
 
 // --- fresh on open -----------------------------------------------------
@@ -493,6 +493,33 @@ export async function fetchJobsFresh(member: string, onFresh: (res: JobsFeedResu
         void liveInFlight.then((res) => { if (res) onFresh(res); });
     }
     return first;
+}
+
+/**
+ * A REFRESH BUTTON'S READ: Wrike, live, now -- not the feed's snapshot, and not
+ * throttled (a person pressed it). Every refresh button used to re-read the
+ * SNAPSHOT (`fetchJobs(member, true)`), because the live path once lost
+ * subtask names; so pressing refresh could never show a status changed in
+ * Wrike since the last live read, and people learned the button did nothing.
+ * The safety nets fetchJobsFresh has are kept: a failed read puts the previous
+ * rows back, and names a live read drops are filled back by subtask id. Shares
+ * a live read already in flight rather than starting a second.
+ */
+export async function fetchJobsLive(member: string): Promise<JobsFeedResult> {
+    if (liveInFlight) {
+        const res = await liveInFlight;
+        if (res) return res;
+    }
+    const before = cache && cacheMember === member ? cache : null;
+    lastLiveAt = Date.now();
+    const res = await fetchJobs(member, true, true);
+    if (res.mock && before && !before.mock) {
+        cache = before;
+        cacheMember = member;
+        return before;
+    }
+    cache = keepKnownNames(res, before);
+    return cache;
 }
 
 // Splits "FID - IT - ARTWALL GALLERIA - Batch 2" into its parts. The title is a

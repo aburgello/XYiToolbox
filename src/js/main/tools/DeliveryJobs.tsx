@@ -20,7 +20,7 @@ import React, { useEffect, useState } from "react";
 import { RefreshCw, Download, Loader2, Truck, Check, X, Play } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
-import { fetchJobs, fetchJobsFresh, parseJobTitle, territoryFlag, commonTitlePrefix, DELIVERABLE_STATUSES, type WrikeJob } from "../lib/jobsFeed";
+import { fetchJobs, fetchJobsFresh, fetchJobsLive, parseJobTitle, territoryFlag, commonTitlePrefix, DELIVERABLE_STATUSES, type WrikeJob } from "../lib/jobsFeed";
 import CheckboxToggle from "../CheckboxToggle";
 import FileBadge from "../FileBadge";
 import { readFinderColors, openInDefaultApp, isGoodColor, isBadColor, type FinderColor } from "../lib/finderLabels";
@@ -170,7 +170,7 @@ const DeliveryJobs: React.FC<Props> = ({ pushToast, onDeliver }) => {
         };
         // Refresh button: the cache re-read. On open: the cache, then a live
         // read behind it (throttled panel-wide -- see fetchJobsFresh).
-        apply(force ? await fetchJobs(owner, true) : await fetchJobsFresh(owner, apply));
+        apply(force ? await fetchJobsLive(owner) : await fetchJobsFresh(owner, apply));
     };
 
     useEffect(() => { void load(false); }, []);

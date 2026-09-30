@@ -30,7 +30,10 @@ const FIXTURES = `{
       folders: { art: "", aep: "${PE}/AE/Batch_01", renders: "", delivered: [], specs: "" },
       rows: [{ key: "P", name: "${P}RealPlaza_1920x1080px_20s_PE", wrike: { name: "${P}RealPlaza_1920x1080px_20s_PE", status: "Backlog" },
         aep: { name: "${P}RealPlaza_1920x1080px_20s_PE_V01.aep", path: "${PE}/AE/Batch_01/p.aep", version: 1, versions: 1 } }] }; }
-    window.__scan = q; return { success: true, territory: "Norway", batch: "Batch_02",
+    window.__scan = q;
+    // Like the real one, a row's Wrike status is whatever the scan was SENT.
+    const echo = (out) => { out.rows.forEach((r) => { if (!r.wrike) return; const w = (q.wrike || []).find((x) => x.name === r.wrike.name); if (w) r.wrike.status = w.status; }); return out; };
+    return echo({ success: true, territory: "Norway", batch: "Batch_02",
     folders: { art: "${T}/JPG_PNG/Batch_2", aep: "${T}/AE/Batch_02", renders: "${T}/Renders/Batch_02", delivered: ["${T}/Renders/Batch_02/_Delivery"], specs: "${T}/Masters/Specs" },
     rows: [
       { key: "A", name: "${P}NfkinoPOST_345x496px_30s_NO", art: { path: "${T}/JPG_PNG/Batch_2/${P}NfkinoPOST_345x496px_30s_NO", files: 2 },
@@ -48,7 +51,7 @@ const FIXTURES = `{
         claimed: { name: "SF_INTL_Trio_POST_DOOH_1920x1080px_30s_NO", why: "same words, another order" } },
       { key: "E", name: "${P}Kiwi_1920x1080px_15s_NO", wrike: { name: "${P}Kiwi_1920x1080px_15s_NO", status: "Backlog" } },
       { key: "C", name: "SF_INTL_Characters_DOOH_Digital MetroPOST_1080x1920px_10s_NO", art: { path: "${T}/JPG_PNG/Batch_2/c", files: 1 } },
-    ] }; },
+    ] }); },
   trackerCompCheck: () => ({ success: true, comps: window.__stale || [] }),
   trackerRenameComp: () => { window.__stale = []; window.__compRenamed = true; return { success: true, renamed: 1 }; },
   trackerRename: (json) => { const a = JSON.parse(json); (window.__renames = window.__renames || []).push(a);
@@ -71,7 +74,12 @@ let failures = 0;
 const check = (ok, msg, extra) => { if (!ok) failures++; console.log((ok ? "  ok    " : "  FAIL  ") + msg + (extra !== undefined ? "   " + (typeof extra === "string" ? extra : JSON.stringify(extra)) : "")); };
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const page = await launch({ root: ROOT, fixturesSrc: FIXTURES, routes: { "api/panel/jobs": FEED } });
+// The feed answers a LIVE read (refresh=1) with Wrike as it is now, and
+// anything else with the snapshot -- the difference the tracker kept hiding.
+// `liveKiwi` is what Wrike says about the Kiwi subtask right now.
+let liveKiwi = "Motion";
+const liveFeed = () => FEED.map((j) => ({ ...j, subtasks: j.subtasks.map((st) => (/Kiwi/.test(st.name) ? { ...st, customStatusName: liveKiwi } : st)) }));
+const page = await launch({ root: ROOT, fixturesSrc: FIXTURES, routes: { "api/panel/jobs": (url) => (/refresh=1/.test(url) ? liveFeed() : FEED) } });
 try {
     await page.goto();
     await page.waitFor(`[...document.querySelectorAll("button.category-card")].some(b => /Localise/.test(b.textContent))`, 10000);
@@ -254,6 +262,15 @@ try {
     await page.click(".bt-job", "NO 2");
     check(await page.waitFor(`/Norway/.test(document.querySelector(".bt-title").innerText) && document.querySelectorAll(".bt-rows > .bt-row").length === 4`, 6000), "…and one press opens a job");
     check(await page.eval(`!document.querySelector(".bt-jobs.is-overview") && !!document.querySelector(".bt-jobs")`), "…the list folding into the chip strip");
+
+    console.log("\n9. Wrike as it is now, not as the snapshot had it");
+    const pillOf = (re) => page.eval(`(() => { const r = [...document.querySelectorAll(".bt-rows > .bt-row")].find(x => ${re}.test(x.querySelector(".bt-name").innerText)); return r && r.querySelector(".bt-wrike") ? r.querySelector(".bt-wrike").innerText.trim() : ""; })()`);
+    check(await page.waitFor(`[...document.querySelectorAll(".bt-rows > .bt-row")].some(x => /Kiwi/.test(x.innerText) && /Motion/.test(x.querySelector(".bt-wrike")?.innerText || ""))`, 8000),
+        "the live read on open reaches the ROWS, not just the chips (snapshot said Backlog)", await pillOf("/Kiwi/"));
+    liveKiwi = "Revised";
+    await page.click(".bt-head .bt-icon", "");
+    check(await page.waitFor(`[...document.querySelectorAll(".bt-rows > .bt-row")].some(x => /Kiwi/.test(x.innerText) && /Revised/.test(x.querySelector(".bt-wrike")?.innerText || ""))`, 8000),
+        "refresh reads Wrike live and the rows follow", await pillOf("/Kiwi/"));
 
     console.log("");
     check(page.errors.length === 0, "no page errors", page.errors.slice(0, 5));

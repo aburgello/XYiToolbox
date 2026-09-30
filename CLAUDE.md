@@ -495,7 +495,7 @@ Localiser's scan list pins the same territory first (`hereTerritory`).
 **Your Wrike jobs sit on the page too** (`LocaliseJobsStrip.tsx`), chips under the
 header that **wrap, never scroll sideways** (AE gives a mouse no horizontal
 wheel, so a chip past the edge was unreachable; Deliver's strip follows suit), the open project's territory lit. A chip opens the same
-`ActiveJobModal` as the home card. **Every jobs surface opens fresh**: `fetchJobsFresh` shows the feed's cache at once and revalidates with ONE live Wrike read, throttled panel-wide to one per 2 minutes and shared by whoever asks; a failed live read puts the previous cache back (never the sample list over real rows) and names the cache had are filled back by subtask id. Sending bumps CSV Localiser's
+`ActiveJobModal` as the home card. **Every jobs surface opens fresh**: `fetchJobsFresh` shows the feed's cache at once and revalidates with ONE live Wrike read, throttled panel-wide to one per 2 minutes and shared by whoever asks; a failed live read puts the previous cache back (never the sample list over real rows) and names the cache had are filled back by subtask id. **Every refresh button reads Wrike LIVE** (`fetchJobsLive`: unthrottled, same two safety nets) -- they used to re-read the feed's snapshot, which is why pressing refresh never showed a status changed in Wrike. Batch Tracker re-reads its ROWS when any live read lands (`freshTick`), or the chips move on while the rows keep the snapshot's status. Sending bumps CSV Localiser's
 `handoffTick`, because that tool is already mounted and takes a staged batch
 only on mount otherwise. No strip at all when untagged, empty or finished. The Library's own
 territory list pins the open project's territory first rather than repeating it
