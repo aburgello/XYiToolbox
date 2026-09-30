@@ -964,6 +964,13 @@ The open project's row is an outlined card, never an edge bar.
   the tag and a territory's code once a session; keeps its last view in
   module scope so a tab switch draws at once; and leaves open rows open
   across a rescan of the same batch. The refresh tooltip shows the timings.
+- **Don't re-check what was just checked**: Localise remembers the Tracker
+  tab, so every visit mounted it, and each mount re-read everything in AE's
+  one-at-a-time main-thread engine (the whole panel, and AE's UI, wait
+  behind it). A batch scanned in the last 2 min with the same Wrike statuses
+  isn't asked again; chips aren't re-summarised within 5 min unless the jobs
+  or their statuses changed; a job's folder is looked for once a session.
+  Refresh forces all of it, and so does the tracker's own rename.
 `node scripts/probe-tracker.cjs` (the stub refuses every write but the
 rename's) and `node scripts/ui-tracker.mjs` guard it.
 

@@ -266,6 +266,7 @@ try {
     await page.resize(420, 1000); await pause(200);
     await page.shot(path.join(SHOTS, "ui-tracker-actions.png"));
     check(/Renamed 3/.test(await page.eval(`document.querySelector(".bt-msg").innerText`)), "…says what it did, and reads the batch again");
+    check(await page.eval(`!!(window.__scan && window.__scan.force)`), "…a REAL read after a rename, never the scan from before it");
     await page.eval(`window.__stale = ["SF_INTL_Characters_DOOH_Post_old_V01"]`);
     await openRow(1);
     await pause(100);
@@ -345,7 +346,7 @@ try {
     await pause(1500);
     const again = await page.eval(`window.__calls.map(c => c.fn)`);
     check(!again.includes("teamGetMachineState") && !again.includes("getTerritoryCountryCode"), "…and the machine's tag and the country code aren't asked again this session", again);
-    check(again.filter((f) => f === "trackerScan").length <= 1, "…the batch is re-checked once behind it", again.filter((f) => /tracker/.test(f)));
+    check(!again.some((f) => /^tracker(Scan|ScanMany|Locate)$/.test(f)), "…and nothing checked minutes ago is checked again: no scan, no folder hunt, no chips", again.filter((f) => /tracker/.test(f)));
     check(again.filter((f) => f === "trackerContext").length === 1, "…and where the open project sits is asked once, not twice", again.filter((f) => f === "trackerContext").length);
     await openRowAt(page, 1);
     await page.click(".bt-head .bt-icon", "");

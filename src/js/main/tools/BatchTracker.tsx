@@ -211,7 +211,26 @@ const memo: {
     myJobs: WrikeJob[];
     located: Record<string, Located>;
     sums: Record<string, JobSummary>;
-} = { owner: null, codes: {}, view: null, scans: {}, myJobs: [], located: {}, sums: {} };
+    /** When each batch was last scanned, and with which Wrike statuses. */
+    scanAt: Record<string, number>;
+    scanSig: Record<string, string>;
+    /** Job ids already looked for on disk (found or not): folders don't move. */
+    lookedUp: Record<string, boolean>;
+    /** When the chips were last summarised, and for which jobs and statuses. */
+    sumsAt: number;
+    sumsSig: string;
+} = { owner: null, codes: {}, view: null, scans: {}, myJobs: [], located: {}, sums: {}, scanAt: {}, scanSig: {}, lookedUp: {}, sumsAt: 0, sumsSig: "" };
+/** DON'T RE-CHECK WHAT WAS JUST CHECKED (2026-09-30). Localise remembers the
+ *  Tracker as the last tab, so every visit mounted it, and every mount redid
+ *  the batch, the jobs' folders and every chip -- in AE's one-at-a-time,
+ *  main-thread engine, where the rest of the panel (and AE's own UI) waits
+ *  behind it. A batch read in the last SCAN_FRESH_MS isn't read again, the
+ *  chips aren't re-summarised within CHIPS_FRESH_MS unless the jobs or their
+ *  statuses changed, and a job's folder is looked for once a session.
+ *  Refresh always reads everything. */
+const SCAN_FRESH_MS = 2 * 60 * 1000;
+const CHIPS_FRESH_MS = 5 * 60 * 1000;
+const subsSig = (subs: { name: string; status: string }[]) => subs.map((x) => x.name + "=" + x.status).sort().join("|");
 const viewKey = (tp: string, b: string) => tp + "|" + loose(b);
 
 interface Props extends ToolProps {
@@ -333,11 +352,24 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
 
     const run = async (tp = territoryPath, b = batch, terr = territory) => {
         if (!tp || !b) return;
-        setBusy(true);
-        setError("");
         const key = viewKey(tp, b);
         const force = forceNext.current;
         forceNext.current = false;
+        // Scanned moments ago with the same Wrike statuses: show that, ask AE
+        // nothing. (A different batch's recent scan is shown the same way.)
+        if (!force && memo.scans[key] && Date.now() - (memo.scanAt[key] || 0) < SCAN_FRESH_MS) {
+            const peek = await wrikeFor(terr, b, true);
+            if (!peek.missing && subsSig(peek.subs) === memo.scanSig[key]) {
+                const m = memo.scans[key];
+                setScan(m.scan); setColors(m.colors); setComments(m.comments); setJobs(m.jobs);
+                if (shownKey.current !== key) { setOpen({}); setShowExtra(false); shownKey.current = key; }
+                memo.view = { territoryPath: tp, territory: terr, batches, batch: b };
+                if (firstScan.current) firstScan.current.resolve();
+                return;
+            }
+        }
+        setBusy(true);
+        setError("");
         try {
             // Draw from the feed already in memory; with none, draw from the
             // disk alone and merge Wrike in when it lands (a re-merge lists
@@ -416,6 +448,8 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
             setColors(cols);
             memo.view = { territoryPath: tp, territory: terr, batches, batch: b };
             memo.scans[key] = { scan: { territory: r.territory, batch: r.batch, folders: r.folders, rows: r.rows || [] }, colors: cols, comments: next, jobs: w.jobs };
+            memo.scanAt[key] = Date.now();
+            memo.scanSig[key] = subsSig(w.subs);
         } finally {
             setBusy(false);
             if (firstScan.current) firstScan.current.resolve();
@@ -427,15 +461,23 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
     // YOUR JOBS: listed, located on disk, then summarised one at a time.
     const locateAndSummarise = async (list: WrikeJob[], force = false) => {
         if (!list.length) return;
+        // The same jobs with the same statuses, summarised minutes ago: done.
+        const sig = list.map((j) => j.id + ":" + subsSig(subsOf(j))).sort().join(";");
+        if (!force && sig === memo.sumsSig && Date.now() - memo.sumsAt < CHIPS_FRESH_MS) return;
         // The batch on screen first: the chips never queue in front of it.
         if (firstScan.current) await Promise.race([firstScan.current.done, new Promise((r) => setTimeout(r, 15000))]);
-        const loc = (await evalTS("trackerLocate", JSON.stringify(list.map((j) => ({
-            id: j.id, code: jobTerritory(j), batch: jobBatch(j), prefix: (subsOf(j)[0].name.split("_")[0] || "").toUpperCase(),
-        }))))) as any;
-        // An engine error here used to vanish, leaving every chip "not found".
-        if (!loc || !loc.success) setMsg({ text: `Couldn't look for your jobs' folders: ${(loc && loc.error) || "no answer from AE"}`, bad: true });
-        const map: Record<string, Located> = {};
-        ((loc && loc.jobs) || []).forEach((x: Located) => { map[x.id] = x; });
+        // Folders don't move: look for a job once a session (refresh: again).
+        const toFind = list.filter((j) => force || !memo.lookedUp[j.id]);
+        const map: Record<string, Located> = force ? {} : { ...memo.located };
+        if (toFind.length) {
+            const loc = (await evalTS("trackerLocate", JSON.stringify(toFind.map((j) => ({
+                id: j.id, code: jobTerritory(j), batch: jobBatch(j), prefix: (subsOf(j)[0].name.split("_")[0] || "").toUpperCase(),
+            }))))) as any;
+            // An engine error here used to vanish, leaving every chip "not found".
+            if (!loc || !loc.success) setMsg({ text: `Couldn't look for your jobs' folders: ${(loc && loc.error) || "no answer from AE"}`, bad: true });
+            else toFind.forEach((j) => { memo.lookedUp[j.id] = true; });
+            ((loc && loc.jobs) || []).forEach((x: Located) => { map[x.id] = x; });
+        }
         setLocated(map);
         memo.located = map;
         // Every chip in ONE trip to AE, reusing the listings it keeps.
@@ -450,6 +492,7 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
                 if (r && r.success) got[id] = summarise(r.rows || []);
             });
             setSums((prev) => { const next = { ...prev, ...got }; memo.sums = next; return next; });
+            if (many && many.success) { memo.sumsAt = Date.now(); memo.sumsSig = sig; }
         } catch { /* a folder unreadable: its chip just shows no bar */ }
         setTiming((t) => ({ ...t, chips: performance.now() - t0 }));
     };
@@ -637,6 +680,9 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
             const res = (await evalTSSafe("trackerRename", JSON.stringify({ ...req, apply: true }))) as any;
             if (!res || !res.success) { setMsg({ text: (res && res.error) || "Couldn't rename.", bad: true }); }
             else setMsg({ text: `Renamed ${res.renamed}. Open it in AE to rename the comp to match.` });
+            // The disk just changed under this batch: a real read, not the
+            // two-minute-old scan the freshness rule would otherwise show.
+            forceNext.current = true;
             await run();
         } finally { setActing(""); }
     };
