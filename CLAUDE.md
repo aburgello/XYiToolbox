@@ -1406,6 +1406,15 @@ DRAWN**: its `sourceRectAtTime` corners through `toComp()` on a temporary null
 (`darkenLayerBoxInComp`), never its Position/Scale values, which ignore the
 anchor, rotation and every parent and put the pool off frame.
 
+`node scripts/probe-territory-folders.cjs` (after `yarn build`) holds
+`territoryCheck` to every Markets folder on the share. **A folder spelling the
+country list doesn't use goes in `TC_ALIASES`, pointing at the CODE** so it
+resolves to exactly what the code does (Turkiye/Türkiye→TR, Czechia→CZ,
+Korea→KR); accents are folded first. Street Fighter's `Turkiye` resolved to
+nothing, so Deliver never opened its Renders; `Korea` resolved to NORTH Korea
+through the substring guard. Add the next one there, never by loosening the
+substring test.
+
 `node scripts/probe-job-titles.cjs` (no build needed) drives
 `parseJobTitle` over dashed and dashless Wrike titles. The batch becomes an
 output folder, so it is read from the word "Batch N", or -- by studio decision

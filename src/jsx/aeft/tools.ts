@@ -1015,8 +1015,32 @@ export const TC_COUNTRIES: { name: string; code: string }[] = [
 
 /** Lowercase, and treat _ - and spaces as the same separator on BOTH sides. */
 function tcNormalise(s: string): string {
-  return String(s).toLowerCase().replace(/[_\-\s]+/g, " ").replace(/^ +/, "").replace(/ +$/, "");
+  let out = String(s).toLowerCase();
+  // Accents folded, so "Türkiye" and "Turkiye" are one spelling. A short
+  // table rather than NFD: ExtendScript has no String.prototype.normalize.
+  const fold: { [c: string]: string } = { "ü": "u", "ö": "o", "ä": "a", "é": "e", "è": "e", "ç": "c", "ñ": "n", "å": "a", "ø": "o", "í": "i", "ó": "o", "á": "a", "ş": "s", "ğ": "g", "ı": "i" };
+  let folded = "";
+  for (let i = 0; i < out.length; i++) folded += fold[out.charAt(i)] || out.charAt(i);
+  out = folded;
+  return out.replace(/[_\-\s]+/g, " ").replace(/^ +/, "").replace(/ +$/, "");
 }
+
+// FOLDER NAMES THE LIST DOESN'T SPELL, each pointing at its CODE so it
+// resolves to exactly the name the code does -- two spellings that returned
+// different names would fail every "same country?" comparison. All seen on
+// the share's Markets folders:
+//   Turkiye -- the list says Turkey, and "turkiye" is in no name at all, so
+//              Street Fighter's Turkey batch was never found (Deliver said
+//              "no renders" beside a folder holding them).
+//   Czechia -- the list says Czech Republic; same silent miss.
+//   Korea   -- WORSE than a miss: four letters passes the substring guard and
+//              hit "Korea (Democratic People's Republic of)" first -- North
+//              Korea, not KR.
+const TC_ALIASES: { [folded: string]: string } = {
+  "turkiye": "TR",
+  "czechia": "CZ",
+  "korea": "KR",
+};
 
 // Exported so CSV Localiser can canonicalise a Wrike territory code and a
 // markets FOLDER NAME through the same resolver, rather than inventing a second
@@ -1042,6 +1066,7 @@ export function territoryCheck(input: string): string | null {
   for (let i = 0; i < TC_COUNTRIES.length; i++) {
     if (tcNormalise(TC_COUNTRIES[i].code) === want) return TC_COUNTRIES[i].name;
   }
+  if (TC_ALIASES.hasOwnProperty(want)) return territoryCheck(TC_ALIASES[want]);
   for (let i = 0; i < TC_COUNTRIES.length; i++) {
     if (tcNormalise(TC_COUNTRIES[i].name) === want) return TC_COUNTRIES[i].name;
   }
