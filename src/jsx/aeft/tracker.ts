@@ -292,12 +292,20 @@ export const trackerScan = (argsJson: string): TrackerResult => {
       }
     }
 
-    // JPG_PNG: the artwork, one subfolder per deliverable.
+    // JPG_PNG: the artwork, one subfolder per deliverable -- under a batch
+    // folder, or, in territories with NO batch level (Street Fighter INT:
+    // Panama's JPG_PNG/<deliverable>/ beside AE/Batch_01, 2026-09-30), straight
+    // under JPG_PNG. That root holds EVERY batch's art, so its folders are only
+    // ATTACHED to deliverables this batch already has (from AE or Wrike, after
+    // those are read below) and never add rows -- the same structural rule as
+    // MC It!'s mcItDeriveImageFolder, which already handled this layout; the
+    // tracker called every one of Panama's rows "no artwork".
     const jp = trChild(terr, "JPG_PNG");
     const jpBatch = jp ? trBatchIn(jp, batch) : null;
-    if (jpBatch) {
-      folders.art = String(jpBatch.fsName);
-      const kids = trKids(jpBatch);
+    const artAt = jpBatch || jp;
+    const rootArt: { [k: string]: { path: string; files: number } } = {};
+    if (artAt) {
+      const kids = trKids(artAt);
       for (let i = 0; i < kids.length; i++) {
         if (!trIsFolder(kids[i])) continue;
         const nm = decode(String(kids[i].name));
@@ -305,9 +313,11 @@ export const trackerScan = (argsJson: string): TrackerResult => {
         let count = 0;
         const inner = trKids(kids[i] as Folder);
         for (let j = 0; j < inner.length; j++) if (!trIsFolder(inner[j]) && /\.(png|jpe?g|tiff?)$/i.test(decode(String(inner[j].name)))) count++;
-        const r = row(trackerKey(nm), nm);
-        r.art = { path: String(kids[i].fsName), files: count };
+        const art = { path: String(kids[i].fsName), files: count };
+        if (jpBatch) row(trackerKey(nm), nm).art = art;
+        else rootArt[trackerKey(nm)] = art;
       }
+      if (jpBatch) folders.art = String(jpBatch.fsName);
     }
 
     // Renders: the MOVs, and what was delivered.
@@ -379,6 +389,16 @@ export const trackerScan = (argsJson: string): TrackerResult => {
       const r = row(trackerKey(wr[i].name), wr[i].name);
       r.wrike = { name: wr[i].name, status: String(wr[i].status || "") };
     }
+
+    // No batch level under JPG_PNG: attach the root's art to this batch's own
+    // deliverables, and point the Art link at JPG_PNG only when any attached.
+    let rootHits = 0;
+    for (const k in rootArt) {
+      if (!rootArt.hasOwnProperty(k) || !rows[k]) continue;
+      rows[k].art = rootArt[k];
+      rootHits++;
+    }
+    if (rootHits && jp) folders.art = String(jp.fsName);
 
     // CLAIMS: a Wrike subtask with nothing on disk takes the ONE disk row that
     // is the same deliverable spelled another way (trSameDeliverable) -- and

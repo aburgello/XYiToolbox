@@ -203,5 +203,27 @@ check(J('J3') && J('J3').batch === 'Batch_9' && J('J3').territoryPath === T, "a 
 check(!J('J4'), 'a territory no campaign holds is left out, not guessed');
 check(!(loc.jobs || []).some((x) => /_Archive|Norway2/.test(x.territoryPath)), 'never an _ folder, never a folder that is not a country');
 
+// ---------------------------------------------------------------------------
+console.log('\nNo batch level under JPG_PNG (Panama, 2026-09-30)');
+const PA = '/Volumes/paramount/SF/Markets/Panama';
+const TD = 'SF_INTL_Trio_DOOH_TotemsDigitales_1080x1920px_10s_PA';
+put(`${PA}/AE/Batch_01/${TD}_V01.aep`);
+put(`${PA}/AE/Batch_01/SF_INTL_Trio_DOOH_MupiDigital_320x448px_10s_PA_V01.aep`);
+put(`${PA}/JPG_PNG/${TD}/${TD}.jpg`);
+put(`${PA}/JPG_PNG/${TD}/${TD}1.png`);
+put(`${PA}/JPG_PNG/${TD}/${TD}.csv`);
+put(`${PA}/JPG_PNG/${TD}/ARTWORK_ONLY/${TD}_ARTWORK_1.jpg`);
+put(`${PA}/JPG_PNG/SF_INTL_Trio_DOOH_SomeOtherBatch_1920x1080px_15s_PA/x.jpg`);
+put(`${PA}/JPG_PNG/_Old/${TD}/old.jpg`);
+put(`${PA}/JPG_PNG/SF_INTL_Trio_DOOH_WrikeOnly_640x480px_10s_PA/w.png`);
+const pa = a.trackerScan(JSON.stringify({ territoryPath: PA, batch: 'Batch_01', wrike: [{ name: 'SF_INTL_Trio_DOOH_WrikeOnly_640x480px_10s_PA', status: 'Backlog' }] }));
+const pr = (re) => pa.rows.find((x) => re.test(x.name));
+const td = pr(/TotemsDigitales/);
+check(td && td.art && td.art.files === 2 && /JPG_PNG\/SF_INTL_Trio_DOOH_TotemsDigitales/.test(td.art.path), "the deliverable's folder straight under JPG_PNG is its art (two images; the csv doesn't count)", td && td.art);
+check(!pr(/SomeOtherBatch/), "another batch's art in the same JPG_PNG adds no row here");
+check(pr(/WrikeOnly/) && pr(/WrikeOnly/).art, "a subtask with no project yet still finds its art there");
+check(!pr(/MupiDigital/).art, "a project with no folder there still says so");
+check(pa.folders.art === `${PA}/JPG_PNG`, 'the Art link opens JPG_PNG itself', pa.folders.art);
+
 console.log(fails ? `\n${fails} FAILED` : '\nCLEAN — one batch, lined up by deliverable; the scan only reads, the rename refuses before it moves.');
 process.exit(fails ? 1 : 0);

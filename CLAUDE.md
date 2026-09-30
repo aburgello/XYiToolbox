@@ -900,6 +900,10 @@ The open project's row is an outlined card, never an edge bar.
   `fresh=1` from refresh), plain text only. `node scripts/probe-amend-notes.mjs`
   splits the real Norway comment; TimeHub's `tests/panelComment.test.mjs`
   guards the route.
+- **No batch level under JPG_PNG** (Panama: `JPG_PNG/<deliverable>/` beside
+  `AE/Batch_01`): the root's folders are ATTACHED to deliverables this batch
+  already has (AE or Wrike) and never add rows -- the root holds every batch's
+  art. Same rule as MC It!'s `mcItDeriveImageFolder`, which always handled it.
 - **Previews come from `Renders/<Batch>/_mp4`** (the studio renders a
   web-playable mp4 per deliverable there; the MOVs are ProRes Chromium can't
   play). Newest version per deliverable, only for deliverables the batch
