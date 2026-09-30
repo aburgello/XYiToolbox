@@ -616,10 +616,12 @@ before the palette saw it; `claimPaletteKey()` (main.tsx) registers it
 the whole set, so a tool must never call it directly: `setToolKeys(json)` to
 claim, `setToolKeys(null)` to release, and ⌘K survives both. No registration
 reaches a panel while AE's own windows have focus -- that is CEP; the search
-button is the way in then. **A double-tap of Ctrl opens it too**: two taps of Ctrl ALONE,
+button is the way in then. **A double-tap of SHIFT opens it too**: two taps of Shift ALONE,
 each under 300ms, the second within 350ms, nothing between (another key or a
-click cancels -- a single tap would fire on every aborted shortcut and
-Ctrl-click). A lone Control is claimed alongside ⌘K (macOS 59/62, Windows 17). **The palette's empty state is Recent / Most used
+click cancels, so typing capitals never fires it). **Not Control**: macOS
+Dictation can be set to "Press Control key twice" and fired alongside it;
+neither OS uses a double Shift (Sticky Keys is five). A lone Shift is claimed
+alongside ⌘K (macOS 56/60, Windows 16). **The palette's empty state is Recent / Most used
 / Favorites** from `lib/toolUsage.ts` (per viewer, browser storage; keys
 `tool:`/`action:`/`custompage:`, recorded where things are USED -- main.tsx
 screen changes, LocaliseScreen picks, Toolset and palette runs). Most used

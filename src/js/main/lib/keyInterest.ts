@@ -1,7 +1,7 @@
 // =============================================================================
 // src/js/main/lib/keyInterest.ts
 // -----------------------------------------------------------------------------
-// WHICH KEYS AE HANDS THE PANEL instead of keeping (⌘K, and a lone Control
+// WHICH KEYS AE HANDS THE PANEL instead of keeping (⌘K, and a lone Shift
 // for the palette's double-tap). ⌘K is AE's own
 // Composition Settings, so while the panel has focus AE took it before the
 // palette ever saw it; the panel now claims it (Ctrl+K on Windows) for as long
@@ -21,14 +21,15 @@ const isMac = () => {
     try { return /^Mac/i.test(navigator.platform); } catch { return true; }
 };
 
-/** ⌘K / Ctrl+K (macOS virtual key 40 is K; Windows/HTML 75), and Control
- *  pressed ALONE for the double-tap (macOS 59 left, 62 right; Windows 17) --
- *  claimed with and without the ctrl flag, since hosts report a lone
- *  modifier either way. */
+/** ⌘K / Ctrl+K (macOS virtual key 40 is K; Windows/HTML 75), and Shift
+ *  pressed ALONE for the double-tap (macOS 56 left, 60 right; Windows 16) --
+ *  claimed with and without the shift flag, since hosts report a lone
+ *  modifier either way. Shift, not Control: macOS Dictation can be set to
+ *  "Press Control key twice", and would fire alongside the palette. */
 function paletteKeys(): Record<string, unknown>[] {
-    const ctrl = isMac() ? [59, 62] : [17];
+    const shift = isMac() ? [56, 60] : [16];
     const lone: Record<string, unknown>[] = [];
-    ctrl.forEach((k) => { lone.push({ keyCode: k, ctrlKey: true }); lone.push({ keyCode: k, ctrlKey: false }); });
+    shift.forEach((k) => { lone.push({ keyCode: k, shiftKey: true }); lone.push({ keyCode: k, shiftKey: false }); });
     return (isMac() ? [{ keyCode: 40, metaKey: true }] : [{ keyCode: 75, ctrlKey: true }] as Record<string, unknown>[]).concat(lone);
 }
 
