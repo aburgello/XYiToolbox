@@ -43,12 +43,18 @@
 // and with none open the chips ARE the page. Scanned once on open and on
 // refresh, one job at a time; never polled.
 //
+// PREVIEWS: the studio renders a web-playable mp4 per deliverable into the
+// batch's _mp4 (the MOVs are ProRes, which Chromium can't decode). An opened
+// row shows its poster frame, playing on hover, and a press opens the ONE
+// player (VideoOverlay); the folded row has a play button beside it. A preview
+// older than the newest render says so. Never counted as delivered.
+//
 // "Wrike looks behind" (rendered, Wrike still Backlog/Motion) is a HINT, not a
 // problem: the panel can't write to Wrike, and a row that is fine must not
 // read as broken.
 // =============================================================================
-import React, { useEffect, useState } from "react";
-import { Image as ImageIcon, FileBox, Film, PackageCheck, FileText, RefreshCw, Loader2, AlertTriangle, MapPin, Search, ChevronRight, Check, HardDrive, FolderOpen, Hammer, Truck, PenLine, ArrowUpRight } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { Image as ImageIcon, FileBox, Film, PackageCheck, FileText, RefreshCw, Loader2, AlertTriangle, MapPin, Search, ChevronRight, Check, HardDrive, FolderOpen, Hammer, Truck, PenLine, ArrowUpRight, Play } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import Dropdown from "../Dropdown";
@@ -56,6 +62,9 @@ import { fetchJobs, fetchJobsFresh, jobReadiness, territoryFlag, parseJobTitle, 
 import { loadJobRows, stageBatchFromJob, classifyRows } from "../lib/jobRows";
 import { navigateToTool } from "../lib/navigation";
 import { confirmDialog } from "../Dialog";
+import VideoOverlay from "../VideoOverlay";
+import { usePosterFrame } from "../lib/renderPreview";
+import { toFileUrl } from "../lib/fileUrl";
 import type { ToolProps } from "../toolRegistry";
 import { jobTerritory, setPendingDeliverJob } from "./DeliveryJobs";
 import { readFinderColors, revealInFinder, type FinderColor } from "../lib/finderLabels";
@@ -68,6 +77,8 @@ interface Row {
     aep?: { name: string; path: string; version: number; versions: number };
     render?: { name: string; path: string; version: number; versions: number; all: string[] };
     delivered?: { name: string; path: string };
+    /** The web-playable preview in _mp4 -- never a delivery. */
+    preview?: { name: string; path: string; version: number };
     wrike?: { name: string; status: string };
     near?: { stage: string; name: string; why: string }[];
     /** Wrike's subtask, found on disk under another name (tracker.ts). */
@@ -118,6 +129,28 @@ const jobLabel = (j: WrikeJob) => {
     return [p.territory || p.name || j.title, n, /POST/i.test(p.batch) ? "POST" : ""].filter(Boolean).join(" ");
 };
 
+/** A preview older than the newest render: the one on screen isn't current. */
+export const previewStale = (r: Row): boolean => !!(r.preview && r.render && r.render.version > r.preview.version);
+
+/** The preview's poster frame, as OV Library and Review show one, playing on
+ *  hover; a press opens the player. */
+const PreviewThumb: React.FC<{ path: string; label: string; onOpen: () => void }> = ({ path, label, onOpen }) => {
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const [failed, setFailed] = useState(false);
+    const poster = usePosterFrame(videoRef, () => {});
+    return (
+        <button type="button" className={"bt-thumb" + (failed ? " is-failed" : "")} onClick={onOpen} title={`Play ${label}`}
+            onMouseEnter={() => { const v = videoRef.current; if (v && !failed) { v.currentTime = 0; v.play().catch(() => {}); } }}
+            onMouseLeave={() => poster.restToPoster()}>
+            {!failed && (
+                <video ref={videoRef} src={toFileUrl(path)} muted loop playsInline preload="metadata"
+                    onLoadedMetadata={poster.onLoadedMetadata} onSeeked={poster.onSeeked} onLoadedData={poster.onLoadedData} onError={() => setFailed(true)} />
+            )}
+            <span className="bt-thumb-play"><Play size={12} /></span>
+        </button>
+    );
+};
+
 const stem = (p: string) => (p.split(/[\\/]/).pop() || p).replace(/\.[^.]+$/, "").replace(/_V\d+$/i, "").toUpperCase();
 
 const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
@@ -145,6 +178,7 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
     const [located, setLocated] = useState<Record<string, Located>>({});
     const [sums, setSums] = useState<Record<string, JobSummary>>({});
     const [jobsBusy, setJobsBusy] = useState(false);
+    const [playing, setPlaying] = useState<{ path: string; title: string } | null>(null);
 
     // Where the open project sits decides the first view.
     useEffect(() => {
@@ -439,6 +473,7 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
         const pip = (on: boolean, bad = false) => <i className={"bt-pip" + (on ? " is-on" : "") + (bad ? " is-bad" : "")} />;
         return (
             <div key={r.key} className={"bt-row" + (isHere ? " is-here" : "") + (problems.length ? " has-issue" : "") + (isOpen ? " is-open" : "") + (isExtra ? " is-extra" : "")}>
+                <div className="bt-row-head">
                 <button type="button" className="bt-row-top" onClick={() => toggle(r.key)} aria-expanded={isOpen}>
                     <ChevronRight size={13} className="bt-chev" />
                     {isHere && <MapPin size={12} className="bt-here-pin" aria-label="Open in AE" />}
@@ -456,8 +491,20 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
                         </span>
                     )}
                 </button>
+                {r.preview && (
+                    <button type="button" className={"bt-play" + (previewStale(r) ? " is-stale" : "")} aria-label="Play the preview"
+                        title={`Play ${r.preview.name}${previewStale(r) ? " (older than the newest render)" : ""}`}
+                        onClick={() => setPlaying({ path: r.preview!.path, title: r.preview!.name })}>
+                        <Play size={11} />
+                    </button>
+                )}
+                </div>
                 {isOpen && (
                     <div className="bt-detail">
+                        <div className="bt-detail-top">
+                        {r.preview && (
+                            <PreviewThumb path={r.preview.path} label={r.preview.name} onOpen={() => setPlaying({ path: r.preview!.path, title: r.preview!.name })} />
+                        )}
                         <div className="bt-stages">
                             <Dot on={!!r.art} label="Art" folder path={r.art?.path} title={r.art ? `${r.art.files} image${r.art.files === 1 ? "" : "s"} in JPG_PNG` : "No JPG_PNG folder with this name"} />
                             <Dot on={!!r.aep} label="Built" path={r.aep?.path} title={r.aep ? r.aep.name : "No project with this name in AE"} extra={r.aep && r.aep.version ? <em>V{String(r.aep.version).padStart(2, "0")}</em> : null} />
@@ -466,6 +513,10 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
                                 extra={r.render ? <em>V{String(r.render.version).padStart(2, "0")}{c ? <i className={"bt-fc is-" + c} /> : null}</em> : null} />
                             <Dot on={!!r.delivered} label="Delivered" path={r.delivered?.path} title={r.delivered ? r.delivered.name : "Not in _Delivery yet"} />
                         </div>
+                        </div>
+                        {previewStale(r) && (
+                            <p className="bt-hint"><Play size={11} /> <span>The preview is V{String(r.preview!.version).padStart(2, "0")}; the newest render is V{String(r.render!.version).padStart(2, "0")}.</span></p>
+                        )}
                         {problems.length === 0 && <p className="bt-fine"><Check size={11} /> Nothing to look at.</p>}
                         {problems.map((t, i) => (
                             <p key={i} className="bt-near"><AlertTriangle size={11} /> <span>{t}</span></p>
@@ -594,6 +645,7 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
                     </div>
                 </>
             )}
+            {playing && <VideoOverlay path={playing.path} title={playing.title} onClose={() => setPlaying(null)} errorHint="The preview in _mp4 couldn't be played. It may still be rendering, or have moved." />}
             {busy && !scan && <p className="bt-note"><Loader2 size={13} className="spin" /> Reading the batch…</p>}
         </div>
     );

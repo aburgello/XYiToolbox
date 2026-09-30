@@ -95,6 +95,8 @@ export interface TrackerRow {
   aep?: TrFile & { versions: number };
   render?: TrFile & { versions: number; all: string[] };
   delivered?: { name: string; path: string };
+  /** The web-playable preview in Renders/<Batch>/_mp4 -- NEVER a delivery. */
+  preview?: TrFile;
   wrike?: { name: string; status: string };
   /** A name in another stage that NEARLY matches this one -- never joined. */
   near?: { stage: string; name: string; why: string }[];
@@ -312,6 +314,7 @@ export const trackerScan = (argsJson: string): TrackerResult => {
     const rd = trChild(terr, "Renders");
     const rdBatch = rd ? trBatchIn(rd, batch) : null;
     const deliveredIn: Folder[] = [];
+    const previewIn: Folder[] = [];
     if (rdBatch) {
       folders.renders = String(rdBatch.fsName);
       const kids = trKids(rdBatch);
@@ -319,6 +322,7 @@ export const trackerScan = (argsJson: string): TrackerResult => {
         const nm = decode(String(kids[i].name));
         if (trIsFolder(kids[i])) {
           if (nm.toLowerCase() === "_delivery") deliveredIn.push(kids[i] as Folder);
+          else if (nm.toLowerCase() === "_mp4") previewIn.push(kids[i] as Folder);
           continue;
         }
         if (!/\.mov$/i.test(nm) || nm.charAt(0) === "_") continue;
@@ -353,6 +357,22 @@ export const trackerScan = (argsJson: string): TrackerResult => {
       }
     }
 
+    // Previews: the studio renders a web-playable mp4 per deliverable into the
+    // batch's _mp4 (2026-09-30). Only for deliverables this batch knows, the
+    // newest version kept. Shown and played, never counted as delivered.
+    for (let d = 0; d < previewIn.length; d++) {
+      const kids = trKids(previewIn[d]);
+      for (let i = 0; i < kids.length; i++) {
+        if (trIsFolder(kids[i])) continue;
+        const nm = decode(String(kids[i].name));
+        if (!/\.(mp4|m4v)$/i.test(nm) || nm.charAt(0) === "_" || nm.charAt(0) === ".") continue;
+        const r = rows[trackerKey(nm)];
+        if (!r) continue;
+        const v = trVersion(nm);
+        if (!r.preview || v > r.preview.version) r.preview = { name: nm, path: String(kids[i].fsName), version: v };
+      }
+    }
+
     // Wrike: the subtasks, if the panel sent them.
     const wr = args.wrike || [];
     for (let i = 0; i < wr.length; i++) {
@@ -384,7 +404,7 @@ export const trackerScan = (argsJson: string): TrackerResult => {
       if (c.length !== 1 || claimed[c[0]]) continue;
       if (candidates(c[0], wrikeOnly).length !== 1) continue;
       const w = rows[wk], d = rows[c[0]];
-      w.art = d.art; w.aep = d.aep; w.render = d.render; w.delivered = d.delivered;
+      w.art = d.art; w.aep = d.aep; w.render = d.render; w.delivered = d.delivered; w.preview = d.preview;
       w.claimed = { name: d.name, why: trSameDeliverable(wk, c[0]) };
       claimed[c[0]] = true;
     }

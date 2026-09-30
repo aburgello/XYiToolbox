@@ -36,7 +36,8 @@ const FIXTURES = `{
       { key: "A", name: "${P}NfkinoPOST_345x496px_30s_NO", art: { path: "${T}/JPG_PNG/Batch_2/${P}NfkinoPOST_345x496px_30s_NO", files: 2 },
         aep: { name: "${P}NfkinoPOST_345x496px_30s_NO_V01.aep", path: "${T}/AE/Batch_02/${P}NfkinoPOST_345x496px_30s_NO_V01.aep", version: 1, versions: 1 },
         render: { name: "${P}NfkinoPOST_345x496px_30s_NO_V02.mov", path: "${T}/Renders/Batch_02/${P}NfkinoPOST_345x496px_30s_NO_V02.mov", version: 2, versions: 2, all: [] },
-        delivered: { name: "x.mp4", path: "${T}/Renders/Batch_02/_Delivery/x.mp4" }, wrike: { name: "${P}NFKINOPOST_345x496px_30s_NO", status: "Prep for delivery" } },
+        delivered: { name: "x.mp4", path: "${T}/Renders/Batch_02/_Delivery/x.mp4" },
+        preview: { name: "${P}NfkinoPOST_345x496px_30s_NO_V01.mp4", path: "${T}/Renders/Batch_02/_mp4/${P}NfkinoPOST_345x496px_30s_NO_V01.mp4", version: 1 }, wrike: { name: "${P}NFKINOPOST_345x496px_30s_NO", status: "Prep for delivery" } },
       { key: "B", name: "SF_INTL_Characters_DOOH_Post_1080x1920px_30s_NO",
         aep: { name: "SF_INTL_Characters_DOOH_Post_1080x1920px_30s_NO_V01.aep", path: "${T}/AE/Batch_02/c.aep", version: 1, versions: 1 },
         wrike: { name: "SF_INTL_Characters_DOOH_Post_1080x1920px_30s_NO", status: "Motion" },
@@ -113,6 +114,23 @@ try {
     await page.click(".bt-extra", "on disk");
     await pause(100);
     check(await page.eval(`[...document.querySelectorAll(".bt-row.is-extra .bt-name")].some(e => /MetroPOST/.test(e.innerText))`), "…which opens to show it");
+
+    console.log("\n3b. Previews");
+    check(await page.eval(`!!document.querySelectorAll(".bt-rows > .bt-row")[0].querySelector(".bt-play") && !document.querySelectorAll(".bt-rows > .bt-row")[1].querySelector(".bt-play")`), "a row with a preview in _mp4 has a play button; one without has none");
+    check(await page.eval(`document.querySelectorAll(".bt-rows > .bt-row")[0].querySelector(".bt-play").classList.contains("is-stale")`), "…marked when the preview is older than the newest render");
+    // Headless Chrome can't load a file:// video, so the thumb falls back to its
+    // empty state -- the thumb itself is what's checked.
+    check(await page.eval(`!!document.querySelectorAll(".bt-rows > .bt-row")[0].querySelector(".bt-thumb")`), "an opened row shows the preview's poster frame");
+    check(await page.eval(`getComputedStyle(document.querySelectorAll(".bt-rows > .bt-row")[0].querySelector(".bt-chev")).transform !== "none" && getComputedStyle(document.querySelectorAll(".bt-rows > .bt-row")[3].querySelector(".bt-chev")).transform === "none"`), "an open row's chevron turns; a folded one's doesn't");
+    check(/The preview is V01; the newest render is V02/.test(await page.eval(`document.querySelectorAll(".bt-rows > .bt-row")[0].innerText`)), "…and says it's older than the render");
+    await page.eval(`document.querySelectorAll(".bt-rows > .bt-row")[0].querySelector(".bt-play").click()`);
+    check(await page.waitFor(`/NfkinoPOST_345x496px_30s_NO_V01\\.mp4/.test(document.querySelector(".video-player-title")?.innerText || "")`, 4000), "play opens the panel's player on the _mp4 preview");
+    await page.eval(`document.querySelector(".video-player-close").click()`);
+    check(await page.waitFor(`!document.querySelector(".video-player-overlay")`, 4000), "…and closes");
+    await page.eval(`document.querySelectorAll(".bt-rows > .bt-row")[0].querySelector(".bt-thumb").click()`);
+    check(await page.waitFor(`!!document.querySelector(".video-player-overlay")`, 4000), "the poster frame opens it too");
+    await page.eval(`document.querySelector(".video-player-close").click()`);
+    await page.waitFor(`!document.querySelector(".video-player-overlay")`, 4000);
 
     console.log("\n4. Where is it");
     await page.eval(`window.__spawned = []`);

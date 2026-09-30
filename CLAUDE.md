@@ -885,6 +885,11 @@ The open project's row is an outlined card, never an edge bar.
   with the job's film prefix (`SF_`) — never simply the first walked. Chips are
   scanned once on open and on refresh, one job at a time; never polled. The
   page's own scan updates its job's chip, so the two can't disagree.
+- **Previews come from `Renders/<Batch>/_mp4`** (the studio renders a
+  web-playable mp4 per deliverable there; the MOVs are ProRes Chromium can't
+  play). Newest version per deliverable, only for deliverables the batch
+  knows, played in the ONE `VideoOverlay`, poster frame via `usePosterFrame`.
+  Never counted as delivered; a preview older than the newest render is a hint.
 - "Wrike looks behind" (rendered, Wrike still Backlog/Motion) is a blue HINT,
   never a problem — the panel can't write to Wrike.
 `node scripts/probe-tracker.cjs` (the stub refuses every write but the

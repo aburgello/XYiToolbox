@@ -95,7 +95,7 @@
         &:hover .bt-name { color: #fff; }
     }
     .bt-chev { flex-shrink: 0; color: #6f7c7a; transition: transform 0.15s ease; }
-    .is-open > .bt-row-top .bt-chev, .bt-extra.is-open .bt-chev { transform: rotate(90deg); }
+    .is-open > .bt-row-head .bt-chev, .bt-extra.is-open .bt-chev { transform: rotate(90deg); }
     .bt-pips { display: inline-flex; gap: 3px; flex-shrink: 0; }
     .bt-pip { width: 6px; height: 6px; border-radius: 50%; border: 1.5px solid #4a5654; box-sizing: border-box; }
     .bt-pip.is-on { border-color: var(--cat-icon, #5eead4); background: var(--cat-icon, #5eead4); }
@@ -156,6 +156,33 @@
         span { min-width: 0; }
         strong { font-weight: 600; color: #fde68a; word-break: break-word; }
         svg { flex-shrink: 0; margin-top: 2px; }
+    }
+
+    // The row's line and its play button, side by side (a button can't hold one).
+    .bt-row-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .bt-row-head .bt-row-top { flex: 1 1 auto; }
+    .bt-play {
+        display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+        width: 22px; height: 22px; padding: 0; border-radius: 50%;
+        border: 1px solid rgba(94, 234, 212, 0.35); background: rgba(94, 234, 212, 0.08); color: var(--cat-icon, #5eead4); cursor: pointer;
+        svg { margin-left: 1px; }
+        &:hover, &:active { background: rgba(94, 234, 212, 0.2); border-color: rgba(94, 234, 212, 0.7); color: #fff; }
+        &.is-stale { border-color: rgba(147, 197, 253, 0.4); background: rgba(147, 197, 253, 0.08); color: #93c5fd; }
+    }
+    .bt-detail-top { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+    .bt-detail-top .bt-stages { flex: 1 1 auto; min-width: 0; }
+    // A poster frame at a fixed 16:9 (aspect-ratio is Cr88); the video fits inside.
+    .bt-thumb {
+        position: relative; flex-shrink: 0; width: 112px; height: 63px; padding: 0; overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 6px; background: #0b0f0f; cursor: pointer;
+        video { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: contain; }
+        &:hover, &:active { background: #0b0f0f; border-color: rgba(94, 234, 212, 0.6); }
+        &.is-failed { background: rgba(255, 255, 255, 0.03); }
+    }
+    .bt-thumb-play {
+        position: absolute; right: 5px; bottom: 5px; display: inline-flex; align-items: center; justify-content: center;
+        width: 18px; height: 18px; border-radius: 50%; background: rgba(0, 0, 0, 0.6); color: #fff;
+        svg { margin-left: 1px; }
     }
 
     .bt-hint {
