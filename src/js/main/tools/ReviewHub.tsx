@@ -329,7 +329,7 @@ const ReviewRow: React.FC<{
                 <span className="rv-row-name-block" onClick={openOrBuild} title={item.name}>
                     <span className="rv-row-line1">
                         <span className="rv-row-site">{site}</span>
-                        {tags.map((t) => <span key={t} className="rv-tag">{t}</span>)}
+                        {tags.map((t) => <span key={t} className={"rv-tag" + (/^\d+x\d+$/.test(t) ? " rv-tag--size" : "")}>{t}</span>)}
                     </span>
                     {matchedMp4 ? (
                         <span className="rv-row-master" title={matchedMp4}>
@@ -347,34 +347,46 @@ const ReviewRow: React.FC<{
                 </span>
 
                 <span className="rv-row-actions">
-                    {matchedMp4 && (
-                        <Tooltip text={`Play ${kind === "master" ? "master" : kind === "amend" ? "previous version" : "PRE render"} in its own player`}>
-                            <button className="rv-act rv-act--hover" onClick={async () => { try { await evalTS("playFile", matchedMp4); } catch { /* no bridge */ } }}>
-                                <Film size={12} />
+                    {/* Hover-only, and FLOATING over the end of the name rather
+                        than reserving four buttons of width while invisible --
+                        on a docked panel that reserve is what pushed Compare
+                        off the row. */}
+                    <span className="rv-hover-acts">
+                        {matchedMp4 && (
+                            <Tooltip text={`Play ${kind === "master" ? "master" : kind === "amend" ? "previous version" : "PRE render"} in its own player`}>
+                                <button className="rv-act" onClick={async () => { try { await evalTS("playFile", matchedMp4); } catch { /* no bridge */ } }}>
+                                    <Film size={12} />
+                                </button>
+                            </Tooltip>
+                        )}
+                        {comp.compId && (
+                            <Tooltip text="Toggle the DIFF (difference) layer">
+                                <button className="rv-act" onClick={() => onToggleDiff(comp.compId!)}>
+                                    <Layers size={12} />
+                                </button>
+                            </Tooltip>
+                        )}
+                        {!item.note && !item.noteOpen && (
+                            <Tooltip text="Add a note">
+                                <button className="rv-act" onClick={() => onChange({ noteOpen: true })}>
+                                    <Pencil size={11} />
+                                </button>
+                            </Tooltip>
+                        )}
+                        <Tooltip text="Remove from session">
+                            <button className="rv-act" onClick={onRemove}>
+                                <X size={12} />
+                            </button>
+                        </Tooltip>
+                    </span>
+                    {/* A note that exists stays in view: it's content, not a control. */}
+                    {(item.note || item.noteOpen) && (
+                        <Tooltip text="Note">
+                            <button className="rv-act rv-act--on" onClick={() => onChange({ noteOpen: !item.noteOpen })}>
+                                <Pencil size={11} />
                             </button>
                         </Tooltip>
                     )}
-                    {comp.compId && (
-                        <Tooltip text="Toggle the DIFF (difference) layer">
-                            <button className="rv-act rv-act--hover" onClick={() => onToggleDiff(comp.compId!)}>
-                                <Layers size={12} />
-                            </button>
-                        </Tooltip>
-                    )}
-                    <Tooltip text={item.note ? "Note" : "Add a note"}>
-                        <button
-                            className={"rv-act" + (item.note || item.noteOpen ? " rv-act--on" : " rv-act--hover")}
-                           
-                            onClick={() => onChange({ noteOpen: !item.noteOpen })}
-                        >
-                            <Pencil size={11} />
-                        </button>
-                    </Tooltip>
-                    <Tooltip text="Remove from session">
-                        <button className="rv-act rv-act--hover" onClick={onRemove}>
-                            <X size={12} />
-                        </button>
-                    </Tooltip>
                     {comp.compId ? (
                         <Tooltip text={comp.enrich ? `${comp.compName}\n${comp.enrich}` : `Open "${comp.compName}" in AE`}>
                             <button className="rv-comp-btn" onClick={openOrBuild}>

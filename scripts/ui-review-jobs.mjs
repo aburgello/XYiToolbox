@@ -140,6 +140,16 @@ try {
     check((await page.eval(`document.querySelector(".rv-note-input")?.placeholder`)) === "Note for the motioner…", "addressed to the motioner");
     await page.eval(`(() => { const t = document.querySelector(".rv-note-input"); const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set; set.call(t, "logo clips at 0:04"); t.dispatchEvent(new Event("input", { bubbles: true })); })()`);
     check(await page.waitFor(`/1 amend for Wrike/.test(document.querySelector(".rv-wrike-header")?.innerText || "")`, 2000), "a noted amend appears in the Wrike footer");
+    // A DOCKED PANEL: every row's Compare still inside the row.
+    await page.resize(420, 1100);
+    await pause(300);
+    const fits = await page.eval(`[...document.querySelectorAll(".rv-row")].map(r => { const row = r.getBoundingClientRect(); const b = r.querySelector(".rv-comp-btn"); if (!b) return "no button"; const c = b.getBoundingClientRect(); return c.right <= row.right + 1 && c.left >= row.left ? "ok" : Math.round(c.right - row.right) + "px out"; })`);
+    check(fits.length > 0 && fits.every((f) => f === "ok"), "at 420px every Compare stays inside its row", fits);
+    const sideways = await page.eval(`(() => { const l = document.querySelector(".rv-session"); return l.scrollWidth - l.clientWidth; })()`);
+    check(sideways <= 0, "and nothing scrolls sideways", sideways);
+    await page.shot(path.join(SHOTS, "ui-review-narrow.png"));
+    await page.resize(760, 1100);
+    await pause(200);
     await page.shot(path.join(SHOTS, "ui-review-session.png"));
     await page.eval(`[...document.querySelectorAll(".rv-sections-bar .seg-option")].find(b => /Amends/.test(b.innerText)).click()`);
     await pause(300);

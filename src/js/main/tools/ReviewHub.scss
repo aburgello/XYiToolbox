@@ -1140,9 +1140,45 @@
         &:hover, &:active { background: rgba(255, 255, 255, 0.07); color: #fff; }
     }
     .rv-act--on { color: #fbbf24; }
-    .rv-act--hover { opacity: 0; transition: opacity 0.12s ease; }
-    .rv-row:hover .rv-act--hover { opacity: 1; }
+    .rv-row-actions { position: relative; }
     .rv-row-actions .rv-comp-btn { margin-left: 6px; }
+
+    // Floating over the end of the name on hover, faded in from the row's
+    // own ground -- no width of their own, so a docked panel keeps Compare.
+    .rv-hover-acts {
+        position: absolute;
+        right: 100%;
+        top: 50%;
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        margin-top: -12px;
+        padding-left: 22px;
+        background: linear-gradient(90deg, rgba(34, 34, 34, 0) 0, #222 22px);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.12s ease;
+    }
+    .rv-row:hover .rv-hover-acts { opacity: 1; pointer-events: auto; }
+
+    // NAME SHRINKS, ACTIONS DON'T. An older rule above makes every span in
+    // .rv-row-main flex-shrink:0 and outranks a bare class, so the name block
+    // is re-allowed to shrink here at higher specificity. Without it the
+    // site name held its width and pushed Compare off a narrow panel.
+    .rv-row-main > .rv-row-name-block { flex: 1 1 auto; min-width: 0; }
+    .rv-row-main > .rv-row-actions,
+    .rv-row-main > .rv-thumb,
+    .rv-row-main > .rv-dot { flex-shrink: 0; }
+    .rv-row-line1 { overflow: hidden; }
+    .rv-row-site { flex: 0 1 auto; }
+
+    // A docked panel: the size tag goes (the master line says it), the thumb
+    // shrinks, Compare keeps its word.
+    @media (max-width: 520px) {
+        .rv-tag--size { display: none; }
+        .rv-thumb { width: 48px; height: 28px; }
+        .rv-row-main { gap: 8px; }
+    }
 
     .rv-note-area { padding: 0 6px 10px 100px; }
 
