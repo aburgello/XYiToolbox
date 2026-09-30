@@ -82,7 +82,7 @@ const FIXTURES = `{
     Object.keys(counts).forEach((t) => {
       for (let i = 0; i < counts[t]; i++) {
         const ext = ["aep", "ai", "psd", "png"][i % 4];
-        out.push({ campaign: "Street Fighter", territory: t, label: "SF_Trio_" + t + "_" + i, path: "/Volumes/paramount/SF/XY026205_Markets/" + t + "/Support_Motion/SF_Trio_" + i + "." + ext });
+        out.push({ campaign: "Street Fighter", territory: t, label: "SF_Trio_" + t + "_" + i + (i % 5 === 0 ? "_POST" : ""), path: "/Volumes/paramount/SF/XY026205_Markets/" + t + "/Support_Motion/SF_Trio_" + i + "." + ext });
       }
     });
     return out;
@@ -203,6 +203,28 @@ try {
     check(llItems.indexOf("Add a campaign…") !== -1 && llItems.indexOf("Remove from this machine") !== -1, "the Library's Manage menu: add, remove", llItems);
     await page.eval(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
     await page.shot(path.join(SHOTS, "ui-library-territory.png"));
+
+    console.log("\n2a. Search inside a territory");
+    const typeIn = (v) => page.eval(`(() => { const i = document.querySelector(".ll-lib-search input"); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set; set.call(i, ${JSON.stringify(v)}); i.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+    check(await page.eval(`!!document.querySelector(".ll-lib-search input")`), "the territory has a search box");
+    await typeIn("post");
+    await pause(200);
+    check(/^9 files match/.test(await page.eval(text(".ll-search-summary"))), "'post' finds every POST file in Slovenia, across its folders", await page.eval(text(".ll-search-summary")));
+    check((await page.eval(`document.querySelectorAll(".ll-search-results .ll-comp-row").length`)) === 9 && !(await page.eval(`!!document.querySelector(".ll-creative-list, .ll-folders-scroll > .ll-folder-list")`)), "…shown as results in place of the tree");
+    check((await page.eval(`getComputedStyle(document.querySelector(".ll-jpgpng-section")).display`)) === "none", "…with the live JPG_PNG browse out of the way");
+    await typeIn("post 1");
+    await pause(200);
+    check(/^2 files match/.test(await page.eval(text(".ll-search-summary"))), "words are ANDed: 'post 1' narrows it", await page.eval(text(".ll-search-summary")));
+    await page.click(".ll-search-selectall");
+    await pause(100);
+    check((await page.eval(`document.querySelectorAll(".ll-search-results .ll-comp-row.selected").length`)) === 2, "Select all selects the matches, for a batch import");
+    const ends = await page.eval(`[...document.querySelectorAll(".ll-search-results .ll-comp-row")].map(r => { const btns = r.querySelectorAll(".ll-row-btn"); return Math.round(r.getBoundingClientRect().right - btns[btns.length - 1].getBoundingClientRect().right); })`);
+    check(ends.every((d) => d >= 0 && d < 20), "each row's buttons sit at its end, not after the name", ends);
+    await page.shot(path.join(SHOTS, "ui-library-search.png"));
+    await page.click(".ll-search-selectall");
+    await page.eval(`document.querySelector(".ll-lib-search input").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+    await pause(200);
+    check(!(await page.eval(`!!document.querySelector(".ll-search-results")`)) && (await page.eval(`document.querySelector(".ll-lib-search input").value`)) === "", "Escape clears it and the tree comes back");
 
     console.log("\n2b. Dialogs speak the panel's language");
     await page.click(".ll-hero-find");
@@ -365,6 +387,7 @@ try {
     const chips = await page.eval(`[...document.querySelectorAll(".ls-jobs-chip")].map(b => b.innerText.replace(/\\s+/g, " ").trim())`);
     check(chips.length === 2 && chips.some((c) => /TW/.test(c)) && chips.some((c) => /IT/.test(c)), "open jobs only (the finished SE job is left out)", chips);
     check(await page.eval(`!!document.querySelector(".ls-jobs-sample")`), "the feed's sample list is marked SAMPLE");
+    check(!(await page.eval(`!!document.querySelector(".ls-jobs-label")`)) && !/Your jobs/.test(await page.eval(text(".ls-jobs"))), "no 'Your jobs' label taking a chip's worth of the row");
     await page.click(".ls-jobs-chip", "TW");
     check(await page.waitFor(`document.querySelector(".ajm-kicker")`, 4000), "a chip opens the job window");
     check(/TW · Batch 1/.test(await page.eval(text(".ajm-kicker"))), "…leading with where: territory and batch", await page.eval(text(".ajm-kicker")));

@@ -1249,6 +1249,18 @@ const LocalisedLibraryTool = () => {
         // render, and a raw dependency would re-ask the bridge on each one.
     }, [selectedTerritory, mockMode, creativesForTerritory.join("\u0000")]);
 
+    // SEARCH INSIDE A TERRITORY: every creative and every folder at once, so
+    // "POST" answers "which of this market's files are POST ones" without
+    // opening each branch. Words are ANDed, case ignored, matched against the
+    // file's own name (not its folder, which the result says anyway).
+    const [libQuery, setLibQuery] = useState("");
+    useEffect(() => { setLibQuery(""); }, [selectedTerritory]);
+    const libWords = libQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const libHits = libWords.length === 0 ? [] : componentsForTerritory.filter((c) => {
+        const hay = (c.label + " " + (c.path.split(/[\\/]/).pop() || "")).toLowerCase();
+        return libWords.every((w) => hay.indexOf(w) !== -1);
+    });
+
     // One component, wherever it is drawn. Extracted when the folder page
     // became an expanded branch -- the row is identical in both, and two
     // copies of five tooltipped buttons is exactly the kind of pair that
@@ -1261,9 +1273,10 @@ const LocalisedLibraryTool = () => {
                 </button>
             </Tooltip>
             <FileBadge of={c.path} />
-            <Tooltip text={c.path}>
-                <span className="ll-comp-name">{c.label}</span>
-            </Tooltip>
+            {/* title, not <Tooltip>: the name has to stretch so the buttons
+                line up at the row's end, and a Tooltip wrapper can't
+                (flex: 0 0 auto !important -- CLAUDE.md). */}
+            <span className="ll-comp-name" title={c.path}>{c.label}</span>
             <Tooltip text="Import">
                 <button className="ll-row-btn" onClick={() => handleImport(c.path)}>
                     <Download size={14} />
@@ -1281,6 +1294,42 @@ const LocalisedLibraryTool = () => {
             </Tooltip>
         </div>
     );
+
+    // The search's answer, grouped by where each file sits in the tree.
+    const renderSearchResults = () => {
+        const groups: { key: string; label: string; rows: Component[] }[] = [];
+        for (const c of libHits) {
+            const bucket = folderForComponent(c);
+            const label = (c.creative ? c.creative + " · " : "") + bucket;
+            let g = groups.find((x) => x.key === label);
+            if (!g) { g = { key: label, label, rows: [] }; groups.push(g); }
+            g.rows.push(c);
+        }
+        const allSelected = libHits.length > 0 && libHits.every((c) => selectedPaths.has(c.path));
+        return (
+            <div className="ll-search-results">
+                <div className="ll-search-summary">
+                    <span>
+                        {libHits.length === 0
+                            ? <>Nothing in {displayTerritory(selectedTerritory || "")} matches “{libQuery.trim()}”.</>
+                            : <><strong>{libHits.length}</strong> file{libHits.length === 1 ? "" : "s"} match “{libQuery.trim()}”</>}
+                    </span>
+                    {libHits.length > 0 && (
+                        <button className="ll-search-selectall" onClick={() => toggleSelectAllPaths(libHits.map((c) => c.path))}>
+                            {allSelected ? <CheckSquare size={13} /> : <Square size={13} />}
+                            {allSelected ? "Deselect all" : "Select all"}
+                        </button>
+                    )}
+                </div>
+                {groups.map((g) => (
+                    <div key={g.key} className="ll-search-group">
+                        <div className="ll-creative-caption">{g.label} <span className="ll-search-n">{g.rows.length}</span></div>
+                        <div className="ll-comp-list">{g.rows.map(renderComponentRow)}</div>
+                    </div>
+                ))}
+            </div>
+        );
+    };
 
     // One bucket and, when open, its components. `creative` is "" for the
     // buckets of files loose in Support_Motion.
@@ -1762,7 +1811,26 @@ const LocalisedLibraryTool = () => {
                                         made it greedily fill all available height and push
                                         JPG_PNG out of view entirely. Only THIS wrapper
                                         scrolls; everything inside is plain block content. */}
+                                    {componentsForTerritory.length > 0 && (
+                                        <div className="ll-search ll-lib-search">
+                                            <Search size={12} />
+                                            <input
+                                                type="text"
+                                                placeholder={`Search ${displayTerritory(selectedTerritory)}'s files…`}
+                                                value={libQuery}
+                                                onChange={(e) => setLibQuery(e.target.value)}
+                                                onKeyDown={(e) => { if (e.key === "Escape") setLibQuery(""); }}
+                                            />
+                                            {libQuery && (
+                                                <button className="ll-search-clear" onClick={() => setLibQuery("")} aria-label="Clear search">
+                                                    <X size={12} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+
                                     <div className="ll-folders-scroll">
+                                        {libWords.length > 0 ? renderSearchResults() : (<>
                                         {/* THE CREATIVE FOLDERS AS THEY REALLY SIT, above
                                             the file-type buckets rather than dissolved into
                                             them -- and only on a tree that has them, so a
@@ -1837,6 +1905,7 @@ const LocalisedLibraryTool = () => {
                                             )}
                                             {looseFolderNames.map((f) => renderFolderBranch("", f))}
                                         </div>
+                                        </>)}
 
                                         {/* JPG_PNG: deliberately a separate, collapsed-by-default
                                             section below the regular folder list, not another
@@ -1845,7 +1914,7 @@ const LocalisedLibraryTool = () => {
                                             not persisted library data like everything above it.
                                             See localise.ts's scanJpgPngBatches() header comment
                                             for why this was split out of Auto-Populate. */}
-                                        <div className="ll-jpgpng-section">
+                                        <div className="ll-jpgpng-section" hidden={libWords.length > 0}>
                                             <div className="ll-jpgpng-caption">Live folder browse</div>
                                             <button className="ll-jpgpng-toggle" onClick={handleToggleJpgPngSection}>
                                                 <span className="ll-jpgpng-icon-badge"><Image size={13} /></span>

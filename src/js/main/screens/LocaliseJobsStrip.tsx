@@ -19,7 +19,7 @@
 // reached) is shown marked SAMPLE, exactly as the home card marks it.
 // =============================================================================
 import React, { useEffect, useState } from "react";
-import { Briefcase, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { fetchJobs, fetchJobsFresh, parseJobTitle, jobReadiness, territoryFlag, type WrikeJob } from "../lib/jobsFeed";
 import ActiveJobModal from "../ActiveJobModal";
@@ -77,10 +77,10 @@ const LocaliseJobsStrip: React.FC<Props> = ({ hereCode, onSent }) => {
 
     return (
         <div className="ls-jobs">
-            <span className="ls-jobs-label">
-                <Briefcase size={13} /> Your jobs
-                {mock && <span className="ls-jobs-sample">SAMPLE</span>}
-            </span>
+            {/* No "Your jobs" label: the chips say what they are, and the
+                label was taking a chip's worth of the row. SAMPLE stays --
+                invented jobs must never look like real ones. */}
+            {mock && <span className="ls-jobs-sample">SAMPLE</span>}
             <div className="ls-jobs-chips">
                 {ordered.map((job) => {
                     const parts = parseJobTitle(job.title);

@@ -1696,3 +1696,39 @@
     // in front of it.
     .ll-chevron-space { flex: 0 0 13px; }
 }
+
+// ── Search inside a territory ───────────────────────────────────────────────
+.localised-library {
+    .ll-lib-search { margin: 0 0 10px; }
+    .ll-jpgpng-section[hidden] { display: none !important; }
+
+    .ll-search-results { display: flex; flex-direction: column; gap: 12px; }
+    .ll-search-summary {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 4px;
+        font-size: 12px;
+        color: #9aa9a7;
+
+        strong { color: #fff; font-weight: 650; }
+        > span { flex: 1 1 auto; min-width: 0; }
+    }
+    .ll-search-selectall {
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 3px 8px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 6px;
+        background: none;
+        color: #cfd8d6;
+        font-size: 11px;
+        cursor: pointer;
+
+        &:hover, &:active { background: rgba(255, 255, 255, 0.06); color: #fff; }
+    }
+    .ll-search-group .ll-creative-caption { display: flex; align-items: baseline; gap: 6px; }
+    .ll-search-n { font-weight: 500; color: #6f807e; letter-spacing: 0; }
+}

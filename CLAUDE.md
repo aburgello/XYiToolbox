@@ -800,6 +800,13 @@ Auto-Populate is the migration path: an already-present row is **backfilled**
 rather than skipped, and the count is reported separately, or a run that sorted
 a whole territory reads as a no-op.
 
+**A territory has its own search** (the territory LIST does not -- it is
+short enough to read). It covers every creative and folder at once, words
+ANDed against the file's name, so "POST" lists a market's POST files wherever
+they are filed; results replace the tree, grouped "creative · folder", with a
+Select all that ADDS to the selection like every other. The live JPG_PNG
+browse is hidden while searching -- it is not library data.
+
 **Below a territory, the library EXPANDS — it does not navigate.** Creatives
 and their file-type buckets open in place, several at once, because the real
 question is usually "which of these two has it" and a page swap makes that a
