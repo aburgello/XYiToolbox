@@ -212,7 +212,15 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
         }
     };
 
+    // "" means THE LANDING, with a staged batch to pick up: Batch Tracker's
+    // Build it stages rows the way Active Jobs does and comes back here.
     const handleSelect = (toolId: string) => {
+        if (!toolId) {
+            setLocalToolId(null);
+            if (parentToolId) onSelectTool("");
+            onJobSent();
+            return;
+        }
         setLocalToolId(toolId);
     };
 

@@ -1212,7 +1212,9 @@ export const deliveryFindRenders = (argsJson: string): DeliveryRendersResult => 
     for (const k in wanted) if (wanted.hasOwnProperty(k) && !found[k]) missing.push(wanted[k]);
     return { success: true, folders: folders, missing: missing, noTerritory: !sawTerritory };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    // The line (of the built bundle) says where: an engine-only error like
+    // "Object of type Function found…" names no culprit on its own.
+    return { success: false, error: e.toString() + (e.line ? " (line " + e.line + ")" : "") };
   }
 };
 

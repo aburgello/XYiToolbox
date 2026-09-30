@@ -27,6 +27,7 @@
 // (Batch_2 never matches Batch_2_POST).
 // =============================================================================
 import { Result, decode } from "./shared";
+import { ownProjectFolder } from "./tools";
 
 function trLoose(n: string): string {
   return String(n).toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/(^|\D)0+(\d)/g, "$1$2");
@@ -96,6 +97,10 @@ export interface TrackerRow {
   wrike?: { name: string; status: string };
   /** A name in another stage that NEARLY matches this one -- never joined. */
   near?: { stage: string; name: string; why: string }[];
+  /** A Wrike subtask whose files are on disk under another name -- see
+   *  trSameDeliverable. The stages above are that disk row's; `name` is how
+   *  the disk spells it, so the panel can offer to rename it to Wrike's. */
+  claimed?: { name: string; why: string };
 }
 
 interface TrackerResult extends Result {
@@ -136,6 +141,40 @@ function trNearWhy(a: string, b: string): string {
     const la = (a.match(/_(\d+)S(?:EC)?(?:_|$)/) || [])[1], lb = (b.match(/_(\d+)S(?:EC)?(?:_|$)/) || [])[1];
     return "same size, named differently" + (la && lb && la !== lb ? " (and " + la + "s vs " + lb + "s)" : "");
   }
+  return "";
+}
+
+/**
+ * THE SAME DELIVERABLE, SPELLED TWO WAYS -- Wrike's subtask against a file on
+ * disk. Only two shapes, both measured on Norway's POST batch:
+ *
+ *   the same words in another order   Trio_DOOH_POST  vs  Trio_POST_DOOH
+ *   one word that contains the other  DOOH_POST       vs  DOOH_DigitalMetroPOST
+ *
+ * Size, length and market are never the word that differs (a size or length
+ * apart is a different deliverable, which the near misses already say), and a
+ * contained word must be three letters or more. The caller adds the rule that
+ * makes this safe: it is used only when it is the ONE answer both ways.
+ */
+function trSameDeliverable(a: string, b: string): string {
+  if (a === b) return "";
+  const ta = a.split("_"), tb = b.split("_");
+  if (ta.length !== tb.length) return "";
+  const sa = ta.slice().sort().join("_"), sb = tb.slice().sort().join("_");
+  if (sa === sb) return "same words, another order";
+  let at = -1;
+  for (let i = 0; i < ta.length; i++) {
+    if (ta[i] === tb[i]) continue;
+    if (at !== -1) return "";
+    at = i;
+  }
+  if (at === -1) return "";
+  const x = ta[at], y = tb[at];
+  const fixed = /^\d+X\d+(PX)?$|^\d+S(EC)?$|^[A-Z]{2}$/;
+  if (fixed.test(x) || fixed.test(y)) return "";
+  const short = x.length <= y.length ? x : y, long = x.length <= y.length ? y : x;
+  if (short.length < 3) return "";
+  if (long.indexOf(short) === 0 || long.lastIndexOf(short) === long.length - short.length) return y + " vs " + x;
   return "";
 }
 
@@ -317,6 +356,36 @@ export const trackerScan = (argsJson: string): TrackerResult => {
       r.wrike = { name: wr[i].name, status: String(wr[i].status || "") };
     }
 
+    // CLAIMS: a Wrike subtask with nothing on disk takes the ONE disk row that
+    // is the same deliverable spelled another way (trSameDeliverable) -- and
+    // only when that disk row answers to no other subtask either. It is shown
+    // as a problem with a rename, never as fine: Deliver and Review pair on
+    // the exact name and will not find it until it is renamed.
+    const hasDisk = (r: TrackerRow) => !!(r.art || r.aep || r.render || r.delivered);
+    const wrikeOnly: string[] = [], diskOnly: string[] = [];
+    for (let i = 0; i < order.length; i++) {
+      const r = rows[order[i]];
+      if (r.wrike && !hasDisk(r)) wrikeOnly.push(order[i]);
+      else if (!r.wrike && hasDisk(r)) diskOnly.push(order[i]);
+    }
+    const candidates = (k: string, pool: string[]) => {
+      const out: string[] = [];
+      for (let i = 0; i < pool.length; i++) if (trSameDeliverable(k, pool[i])) out.push(pool[i]);
+      return out;
+    };
+    const claimed: { [k: string]: boolean } = {};
+    for (let i = 0; i < wrikeOnly.length; i++) {
+      const wk = wrikeOnly[i];
+      const c = candidates(wk, diskOnly);
+      if (c.length !== 1 || claimed[c[0]]) continue;
+      if (candidates(c[0], wrikeOnly).length !== 1) continue;
+      const w = rows[wk], d = rows[c[0]];
+      w.art = d.art; w.aep = d.aep; w.render = d.render; w.delivered = d.delivered;
+      w.claimed = { name: d.name, why: trSameDeliverable(wk, c[0]) };
+      claimed[c[0]] = true;
+    }
+    for (let i = order.length - 1; i >= 0; i--) if (claimed[order[i]]) { delete rows[order[i]]; order.splice(i, 1); }
+
     // NEAR MISSES: a row missing a stage whose neighbour HAS that stage under a
     // name one token away. Reported on both, joined on neither.
     const stages: { id: string; has: (r: TrackerRow) => boolean; label: string }[] = [
@@ -350,6 +419,148 @@ export const trackerScan = (argsJson: string): TrackerResult => {
     const out: TrackerRow[] = [];
     for (let i = 0; i < order.length; i++) out.push(rows[order[i]]);
     return { success: true, territory: decode(String(terr.name)), batch: batch, folders: folders, rows: out };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/**
+ * RENAME A DELIVERABLE'S FILES TO WRIKE'S NAME -- the tracker's one write.
+ * `argsJson`: { territoryPath, batch, from, to, apply }. `from` is the stem as
+ * the disk spells it, `to` the Wrike subtask. With apply false it only says
+ * what it would do; the panel shows that in the confirm.
+ *
+ * What moves: every .aep version in AE/<Batch>, every .mov version in
+ * Renders/<Batch>, and the JPG_PNG/<Batch> subfolder with the images in it
+ * named after it. Only files whose own name starts with `from` -- the tail
+ * (_V02, _DOUBLE_RES, _ARTWORK_1, the extension) is kept exactly. Nothing in
+ * _Delivery, _Old or any `_` folder, never a name carrying an OV token (a
+ * master is never renamed), and never inside a project: the comp keeps its
+ * name until trackerRenameComp is run in it.
+ *
+ * ALL OR NOTHING UP FRONT: it refuses before touching anything when a new
+ * name is already taken (read from the folder listing, never .exists on the
+ * NAS) or when one of the projects is the one open in AE.
+ */
+export const trackerRename = (argsJson: string): Result & { plan?: { from: string; to: string; kind: string }[]; renamed?: number; failed?: string[] } => {
+  try {
+    let args: { territoryPath?: string; batch?: string; from?: string; to?: string; apply?: boolean };
+    try { args = JSON.parse(argsJson); } catch (e) { return { success: false, error: "Could not read the request." }; }
+    const from = String(args.from || ""), to = String(args.to || "");
+    if (!from || !to) return { success: false, error: "Nothing to rename." };
+    if (/[\\/:*?"<>|]/.test(to) || to.charAt(0) === "." || to.charAt(0) === "_") return { success: false, error: "Wrike's name can't be a filename: " + to };
+    if (/(^|[_\s])OV([_\s.]|$)/i.test(from) || /(^|[_\s])OV([_\s.]|$)/i.test(to)) return { success: false, error: "That's an OV name -- masters are never renamed." };
+    const terr = new Folder(String(args.territoryPath || ""));
+    if (!terr.exists) return { success: false, error: "That territory folder isn't reachable." };
+    const batch = String(args.batch || "");
+    const fromU = from.toUpperCase();
+    const startsWith = (nm: string) => nm.length > from.length ? nm.substring(0, from.length).toUpperCase() === fromU && /^[_. ]/.test(nm.charAt(from.length)) : nm.toUpperCase() === fromU;
+    type Step = { item: any; parent: Folder; from: string; to: string; kind: string; order: number };
+    const steps: Step[] = [];
+    const add = (parent: Folder, item: any, kind: string, order: number) => {
+      const nm = decode(String(item.name));
+      if (!startsWith(nm)) return;
+      steps.push({ item: item, parent: parent, from: nm, to: to + nm.substring(from.length), kind: kind, order: order });
+    };
+    const inBatch = (tree: string): Folder | null => { const t = trChild(terr, tree); return t ? trBatchIn(t, batch) : null; };
+
+    const ae = inBatch("AE");
+    if (ae) { const k = trKids(ae); for (let i = 0; i < k.length; i++) if (!trIsFolder(k[i]) && /\.aep$/i.test(decode(String(k[i].name)))) add(ae, k[i], "project", 1); }
+    const rd = inBatch("Renders");
+    if (rd) { const k = trKids(rd); for (let i = 0; i < k.length; i++) if (!trIsFolder(k[i]) && /\.mov$/i.test(decode(String(k[i].name)))) add(rd, k[i], "render", 1); }
+    const jp = inBatch("JPG_PNG");
+    if (jp) {
+      const k = trKids(jp);
+      for (let i = 0; i < k.length; i++) {
+        if (!trIsFolder(k[i]) || !startsWith(decode(String(k[i].name)))) continue;
+        const inner = trKids(k[i] as Folder);
+        // The images first: their paths change when the folder does.
+        for (let j = 0; j < inner.length; j++) if (!trIsFolder(inner[j])) add(k[i] as Folder, inner[j], "image", 1);
+        add(jp, k[i], "art folder", 2);
+      }
+    }
+    if (!steps.length) return { success: false, error: "Found nothing named " + from + " in this batch." };
+
+    // Refusals, before anything moves.
+    const open = app.project && app.project.file ? String(app.project.file.fsName) : "";
+    for (let i = 0; i < steps.length; i++) {
+      if (open && String(steps[i].item.fsName) === open) return { success: false, error: steps[i].from + " is open in AE. Close it, then rename." };
+      const kids = trKids(steps[i].parent);
+      for (let j = 0; j < kids.length; j++) {
+        if (decode(String(kids[j].name)).toUpperCase() === steps[i].to.toUpperCase() && steps[i].to.toUpperCase() !== steps[i].from.toUpperCase()) {
+          return { success: false, error: steps[i].to + " already exists -- nothing was renamed." };
+        }
+      }
+    }
+    const plan: { from: string; to: string; kind: string }[] = [];
+    for (let i = 0; i < steps.length; i++) plan.push({ from: steps[i].from, to: steps[i].to, kind: steps[i].kind });
+    if (!args.apply) return { success: true, plan: plan };
+
+    let renamed = 0;
+    const failed: string[] = [];
+    for (let pass = 1; pass <= 2; pass++) {
+      for (let i = 0; i < steps.length; i++) {
+        if (steps[i].order !== pass) continue;
+        let ok = false;
+        try { ok = !!steps[i].item.rename(steps[i].to); } catch (e) { ok = false; }
+        if (ok) renamed++; else failed.push(steps[i].from);
+      }
+    }
+    return { success: failed.length === 0, plan: plan, renamed: renamed, failed: failed, error: failed.length ? "Couldn't rename " + failed.length + ": " + failed[0] : undefined };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/** The open project's deliverable comp, if its name no longer matches the
+ *  file's -- which is what a rename leaves behind. Comps in the project's OWN
+ *  root-level Main folder only (never an imported project's). */
+export const trackerCompCheck = (): Result & { comps?: string[]; want?: string } => {
+  try {
+    const f = app.project && app.project.file;
+    if (!f) return { success: true };
+    const main = ownProjectFolder(app.project, "Main");
+    if (!main) return { success: true };
+    const want = trackerKey(decode(String(f.name)));
+    const comps: string[] = [];
+    for (let i = 1; i <= main.numItems; i++) {
+      const it: any = main.item(i);
+      if (typeof it.layers === "undefined") continue;
+      if (trackerKey(String(it.name)) !== want) comps.push(String(it.name));
+    }
+    return { success: true, comps: comps, want: decode(String(f.name)).replace(/\.aep$/i, "").replace(/_[Vv]\d+$/, "") };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/** Renames the open project's deliverable comps to the file's name, keeping
+ *  each comp's own version and _DOUBLE_RES tail. Not saved: that is the
+ *  artist's press, and Ctrl+Z undoes it. */
+export const trackerRenameComp = (): Result & { renamed?: number } => {
+  try {
+    const f = app.project && app.project.file;
+    if (!f) return { success: false, error: "Save this project once first." };
+    const main = ownProjectFolder(app.project, "Main");
+    if (!main) return { success: false, error: "This project has no Main folder." };
+    const stemName = decode(String(f.name)).replace(/\.aep$/i, "").replace(/_[Vv]\d+$/, "");
+    const want = trackerKey(stemName);
+    let n = 0;
+    app.beginUndoGroup("Rename comp to match file");
+    try {
+      for (let i = 1; i <= main.numItems; i++) {
+        const it: any = main.item(i);
+        if (typeof it.layers === "undefined") continue;
+        const cur = String(it.name);
+        if (trackerKey(cur) === want) continue;
+        const tail = (/(_[Vv]\d+)?(_(DOUBLE|TRIPLE|QUAD)_RES)?$/i.exec(cur) || [""])[0];
+        it.name = stemName + tail;
+        n++;
+      }
+    } finally {
+      app.endUndoGroup();
+    }
+    return { success: true, renamed: n };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

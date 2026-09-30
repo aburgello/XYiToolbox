@@ -24,14 +24,33 @@
 // words. What sits on disk but is not in Wrike folds into one line at the
 // bottom: usually a misnamed file, which the near misses already point at.
 // With no job in the feed it falls back to everything on disk.
+//
+// EACH PROBLEM CARRIES ITS WAY OUT, as a button on the opened row, and all but
+// one hand off to the tool that already owns the job rather than redoing it:
+//   Open in AE      -- openLocalisedProject (copy-first on an OV name).
+//   Build it        -- stages the subtask for Build a Batch, exactly as Active
+//                      Jobs does, and goes back to the Localise landing; the
+//                      builder keeps every guard (skip-existing and the rest).
+//   Deliver         -- opens Deliver on this job's renders (take-once handoff).
+//   Rename to match -- the ONE write: a Wrike subtask whose files are on disk
+//                      under another name (tracker.ts's claims) is renamed to
+//                      Wrike's name, after a confirm listing what moves. The
+//                      comp inside is renamed when that project is open.
+// "Wrike looks behind" (rendered, Wrike still Backlog/Motion) is a HINT, not a
+// problem: the panel can't write to Wrike, and a row that is fine must not
+// read as broken.
 // =============================================================================
 import React, { useEffect, useState } from "react";
-import { Image as ImageIcon, FileBox, Film, PackageCheck, FileText, RefreshCw, Loader2, AlertTriangle, MapPin, Search, ChevronRight, Check, HardDrive } from "lucide-react";
+import { Image as ImageIcon, FileBox, Film, PackageCheck, FileText, RefreshCw, Loader2, AlertTriangle, MapPin, Search, ChevronRight, Check, HardDrive, FolderOpen, Hammer, Truck, PenLine, ArrowUpRight } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import Dropdown from "../Dropdown";
-import { fetchJobs, parseJobTitle, statusTint, type WrikeJob } from "../lib/jobsFeed";
-import { jobTerritory } from "./DeliveryJobs";
+import { fetchJobs, parseJobTitle, statusTint, DELIVERABLE_STATUSES, type WrikeJob } from "../lib/jobsFeed";
+import { loadJobRows, stageBatchFromJob, classifyRows } from "../lib/jobRows";
+import { navigateToTool } from "../lib/navigation";
+import { confirmDialog } from "../Dialog";
+import type { ToolProps } from "../toolRegistry";
+import { jobTerritory, setPendingDeliverJob } from "./DeliveryJobs";
 import { readFinderColors, revealInFinder, type FinderColor } from "../lib/finderLabels";
 import "./BatchTracker.scss";
 
@@ -44,6 +63,8 @@ interface Row {
     delivered?: { name: string; path: string };
     wrike?: { name: string; status: string };
     near?: { stage: string; name: string; why: string }[];
+    /** Wrike's subtask, found on disk under another name (tracker.ts). */
+    claimed?: { name: string; why: string };
 }
 interface Scan { territory: string; batch: string; folders: { art: string; aep: string; renders: string; delivered: string[]; specs: string }; rows: Row[] }
 
@@ -54,6 +75,7 @@ export function rowIssues(r: Row, color: string): string[] {
     const out: string[] = [];
     const near = r.near || [];
     const nearOn = (label: RegExp) => near.some((n) => label.test(n.stage));
+    if (r.claimed) out.push(`On disk it's named ${r.claimed.name} (${r.claimed.why}). Deliver and Review pair on the exact name, so they won't find it until it's renamed.`);
     for (const n of near) out.push(`The ${n.stage} is named ${n.name}: ${n.why}.`);
     if (!r.art && !nearOn(/^art/)) out.push("No artwork folder in JPG_PNG.");
     if (!r.aep && !nearOn(/^project/)) out.push("No project in AE.");
@@ -62,9 +84,12 @@ export function rowIssues(r: Row, color: string): string[] {
     return out;
 }
 
+/** Rendered, and Wrike still at a status from before rendering. A hint only. */
+export const wrikeBehind = (r: Row): boolean => !!(r.render && r.wrike && /^(backlog|motion)$/i.test(r.wrike.status.trim()));
+
 const stem = (p: string) => (p.split(/[\\/]/).pop() || p).replace(/\.[^.]+$/, "").replace(/_V\d+$/i, "").toUpperCase();
 
-const BatchTracker: React.FC = () => {
+const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
     const [territoryPath, setTerritoryPath] = useState("");
     const [territory, setTerritory] = useState("");
     const [batches, setBatches] = useState<string[]>([]);
@@ -78,6 +103,12 @@ const BatchTracker: React.FC = () => {
     const [ready, setReady] = useState(false);
     const [open, setOpen] = useState<Record<string, boolean>>({});
     const [showExtra, setShowExtra] = useState(false);
+    /** The batch's Wrike jobs, kept for the hand-offs (Build it, Deliver). */
+    const [jobs, setJobs] = useState<WrikeJob[]>([]);
+    const [msg, setMsg] = useState<{ text: string; bad?: boolean } | null>(null);
+    const [acting, setActing] = useState("");
+    /** Comps in the open project still carrying a name its file no longer has. */
+    const [staleComps, setStaleComps] = useState<string[]>([]);
 
     // Where the open project sits decides the first view.
     useEffect(() => {
@@ -98,21 +129,22 @@ const BatchTracker: React.FC = () => {
 
     // The Wrike subtasks of THIS territory's job for THIS batch, if the feed
     // has one: same code, same batch number (a title with none is batch 1).
-    const wrikeFor = async (terr: string, b: string): Promise<{ name: string; status: string }[]> => {
+    const wrikeFor = async (terr: string, b: string): Promise<{ subs: { name: string; status: string }[]; jobs: WrikeJob[] }> => {
+        const none = { subs: [], jobs: [] };
         try {
             const state = (await evalTS("teamGetMachineState")) as { owner?: string } | undefined;
             const owner = (state && state.owner) || "";
-            if (!owner) return [];
+            if (!owner) return none;
             const code = String((await evalTS("getTerritoryCountryCode", terr)) || "").toUpperCase();
-            if (!code) return [];
+            if (!code) return none;
             const res = await fetchJobs(owner);
-            if (res.mock) return [];
+            if (res.mock) return none;
             const out: { name: string; status: string }[] = [];
-            res.jobs.filter((j: WrikeJob) => jobTerritory(j) === code && loose(parseJobTitle(j.title).batch.replace(/\s*POST$/i, "")) === loose(b.replace(/_?POST$/i, "")))
-                .forEach((j) => (j.subtasks || []).forEach((st) => { if (st.name) out.push({ name: st.name, status: st.customStatusName || st.status || "" }); }));
-            return out;
+            const mine = res.jobs.filter((j: WrikeJob) => jobTerritory(j) === code && loose(parseJobTitle(j.title).batch.replace(/\s*POST$/i, "")) === loose(b.replace(/_?POST$/i, "")));
+            mine.forEach((j) => (j.subtasks || []).forEach((st) => { if (st.name) out.push({ name: st.name, status: st.customStatusName || st.status || "" }); }));
+            return { subs: out, jobs: mine };
         } catch {
-            return [];
+            return none;
         }
     };
 
@@ -121,8 +153,9 @@ const BatchTracker: React.FC = () => {
         setBusy(true);
         setError("");
         try {
-            const wrike = await wrikeFor(terr, b);
-            const r = (await evalTSSafe("trackerScan", JSON.stringify({ territoryPath: tp, batch: b, wrike }))) as any;
+            const w = await wrikeFor(terr, b);
+            setJobs(w.jobs);
+            const r = (await evalTSSafe("trackerScan", JSON.stringify({ territoryPath: tp, batch: b, wrike: w.subs }))) as any;
             if (!r || !r.success) { setError((r && r.error) || "Couldn't read the batch."); return; }
             setScan({ territory: r.territory, batch: r.batch, folders: r.folders, rows: r.rows || [] });
             setOpen({});
@@ -136,6 +169,93 @@ const BatchTracker: React.FC = () => {
     };
 
     useEffect(() => { if (ready && territoryPath && batch) void run(); }, [ready, territoryPath, batch]);
+
+    // Which project is open, and whether its comp still has an old name.
+    const refreshHere = async () => {
+        try {
+            const c = (await evalTS("trackerContext")) as any;
+            setOpenProject((c && c.projectPath) || "");
+            const cc = (await evalTS("trackerCompCheck")) as any;
+            setStaleComps((cc && cc.success && cc.comps) || []);
+        } catch { /* preview */ }
+    };
+    useEffect(() => { if (ready) void refreshHere(); }, [ready]);
+
+    const jobOf = (r: Row): WrikeJob | undefined =>
+        r.wrike ? jobs.find((j) => (j.subtasks || []).some((st) => st.name === r.wrike!.name)) : undefined;
+
+    const openInAE = async (r: Row) => {
+        if (!r.aep) return;
+        setActing("open:" + r.key);
+        try {
+            const res = (await evalTSSafe("openLocalisedProject", r.aep.path)) as any;
+            if (!res || !res.success) { setMsg({ text: (res && res.error) || "Couldn't open it.", bad: true }); return; }
+            await refreshHere();
+        } finally { setActing(""); }
+    };
+
+    /** Stage these subtasks for Build a Batch, exactly as Active Jobs does,
+     *  and go back to the Localise landing where the builder picks them up. */
+    const build = async (targets: Row[]) => {
+        const job = targets.length ? jobOf(targets[0]) : undefined;
+        if (!job) { setMsg({ text: "No Wrike job to build from.", bad: true }); return; }
+        setActing("build");
+        try {
+            const names = new Set(targets.filter((t) => jobOf(t) === job).map((t) => t.wrike!.name));
+            const rows = (await loadJobRows(job)).filter((x) => names.has(x.name));
+            const { sendable } = classifyRows(rows);
+            if (!sendable.length) {
+                const why = rows[0] && rows[0].missing.length ? `its name is missing ${rows[0].missing.join(", ")}` : "its Wrike status isn't one Localise builds from";
+                setMsg({ text: `Nothing to build: ${why}.`, bad: true });
+                return;
+            }
+            stageBatchFromJob(job, sendable);
+            if (onSelectTool) onSelectTool("");
+            else setMsg({ text: `${sendable.length} staged for Build a Batch -- open Localise to see them.` });
+        } finally { setActing(""); }
+    };
+
+    const deliver = (r: Row) => {
+        const job = jobOf(r);
+        if (!job) return;
+        setPendingDeliverJob(job.id);
+        const nav = navigateToTool("delivery-hub");
+        if (!nav.ok) setMsg({ text: nav.reason || "Couldn't open Deliver.", bad: true });
+    };
+
+    const rename = async (r: Row) => {
+        if (!r.claimed || !r.wrike || !scan) return;
+        const req = { territoryPath, batch, from: r.claimed.name, to: r.wrike.name };
+        setActing("rename:" + r.key);
+        try {
+            const dry = (await evalTSSafe("trackerRename", JSON.stringify({ ...req, apply: false }))) as any;
+            if (!dry || !dry.success) { setMsg({ text: (dry && dry.error) || "Couldn't plan the rename.", bad: true }); return; }
+            const plan = dry.plan as { from: string; to: string; kind: string }[];
+            const kinds: Record<string, number> = {};
+            plan.forEach((x) => { kinds[x.kind] = (kinds[x.kind] || 0) + 1; });
+            const list = Object.keys(kinds).map((k) => `${kinds[k]} ${k}${kinds[k] === 1 ? "" : k.endsWith("s") ? "" : "s"}`).join(", ");
+            const ok = await confirmDialog({
+                title: `Rename ${plan.length} file${plan.length === 1 ? "" : "s"} to Wrike's name?`,
+                body: `${list}: ${r.claimed.name} becomes ${r.wrike.name}. Versions and suffixes stay. The comp inside keeps its old name until you open the project -- the tracker offers to fix it then.`,
+                confirm: "Rename",
+            });
+            if (!ok) return;
+            const res = (await evalTSSafe("trackerRename", JSON.stringify({ ...req, apply: true }))) as any;
+            if (!res || !res.success) { setMsg({ text: (res && res.error) || "Couldn't rename.", bad: true }); }
+            else setMsg({ text: `Renamed ${res.renamed}. Open it in AE to rename the comp to match.` });
+            await run();
+        } finally { setActing(""); }
+    };
+
+    const renameComp = async () => {
+        setActing("comp");
+        try {
+            const res = (await evalTSSafe("trackerRenameComp")) as any;
+            if (!res || !res.success) { setMsg({ text: (res && res.error) || "Couldn't rename the comp.", bad: true }); return; }
+            setMsg({ text: `Renamed ${res.renamed} comp${res.renamed === 1 ? "" : "s"} to match the file. Save when you're ready (Ctrl+Z undoes it).` });
+            await refreshHere();
+        } finally { setActing(""); }
+    };
 
     const pick = async () => {
         const r = (await evalTS("trackerPickFolder")) as any;
@@ -160,6 +280,8 @@ const BatchTracker: React.FC = () => {
     const openStem = openProject ? stem(openProject) : "";
     const openRow = all.find((r) => r.aep && stem(r.aep.path) === openStem);
     const toggle = (k: string) => setOpen((o) => ({ ...o, [k]: !o[k] }));
+    const toBuild = rows.filter((r) => r.wrike && !r.aep && !r.claimed && jobOf(r));
+    const behindCount = count(wrikeBehind);
 
     const Link: React.FC<{ icon: React.ReactNode; label: string; path?: string; folder?: boolean }> = ({ icon, label, path, folder }) => (
         <button type="button" className="bt-link" disabled={!path} title={path || `No ${label.toLowerCase()} for this batch`} onClick={() => path && revealInFinder(path, !!folder)}>
@@ -195,7 +317,10 @@ const BatchTracker: React.FC = () => {
                         ? <span className="bt-issues" title={problems.join("\n")}><AlertTriangle size={11} />{problems.length}</span>
                         : <span className="bt-ok" title="Nothing to look at"><Check size={12} /></span>}
                     {r.wrike && (
-                        <span className="bt-wrike" style={{ color: statusTint(r.wrike.status).color, background: statusTint(r.wrike.status).background }} title="Wrike">{r.wrike.status || "Wrike"}</span>
+                        <span className={"bt-wrike" + (wrikeBehind(r) ? " is-behind" : "")} style={{ color: statusTint(r.wrike.status).color, background: statusTint(r.wrike.status).background }}
+                            title={wrikeBehind(r) ? `Rendered, but Wrike still says ${r.wrike.status}` : "Wrike"}>
+                            {wrikeBehind(r) && <ArrowUpRight size={10} />}{r.wrike.status || "Wrike"}
+                        </span>
                     )}
                 </button>
                 {isOpen && (
@@ -212,6 +337,29 @@ const BatchTracker: React.FC = () => {
                         {problems.map((t, i) => (
                             <p key={i} className="bt-near"><AlertTriangle size={11} /> <span>{t}</span></p>
                         ))}
+                        {wrikeBehind(r) && (
+                            <p className="bt-hint"><ArrowUpRight size={11} /> <span>Rendered V{String(r.render!.version).padStart(2, "0")}, but Wrike still says {r.wrike!.status}.</span></p>
+                        )}
+                        {(() => {
+                            const acts: React.ReactNode[] = [];
+                            if (r.claimed && r.wrike) acts.push(
+                                <button key="rn" type="button" className="bt-act is-primary" disabled={!!acting} onClick={() => void rename(r)}>
+                                    {acting === "rename:" + r.key ? <Loader2 size={12} className="spin" /> : <PenLine size={12} />} Rename to match Wrike
+                                </button>);
+                            if (r.aep && !isHere) acts.push(
+                                <button key="op" type="button" className="bt-act" disabled={!!acting} onClick={() => void openInAE(r)}>
+                                    {acting === "open:" + r.key ? <Loader2 size={12} className="spin" /> : <FolderOpen size={12} />} Open in AE
+                                </button>);
+                            if (r.wrike && !r.aep && !r.claimed && jobOf(r)) acts.push(
+                                <button key="bd" type="button" className="bt-act is-primary" disabled={!!acting} onClick={() => void build([r])}>
+                                    <Hammer size={12} /> Build it
+                                </button>);
+                            if (r.render && r.wrike && DELIVERABLE_STATUSES.test(r.wrike.status) && jobOf(r)) acts.push(
+                                <button key="dl" type="button" className="bt-act is-primary" disabled={!!acting} onClick={() => deliver(r)}>
+                                    <Truck size={12} /> Deliver
+                                </button>);
+                            return acts.length ? <div className="bt-acts">{acts}</div> : null;
+                        })()}
                     </div>
                 )}
             </div>
@@ -259,6 +407,16 @@ const BatchTracker: React.FC = () => {
                             <Link icon={<Film size={13} />} label="Its render" path={openRow.render?.path} />
                         </div>
                     )}
+                    {staleComps.length > 0 && (
+                        <div className="bt-stale">
+                            <AlertTriangle size={12} />
+                            <span>The open project's comp is still called <strong>{staleComps[0]}</strong>{staleComps.length > 1 ? ` (+${staleComps.length - 1})` : ""}.</span>
+                            <button type="button" className="bt-act is-primary" disabled={!!acting} onClick={() => void renameComp()}>
+                                {acting === "comp" ? <Loader2 size={12} className="spin" /> : <PenLine size={12} />} Rename comp
+                            </button>
+                        </div>
+                    )}
+                    {msg && <p className={"bt-msg" + (msg.bad ? " is-bad" : "")} onClick={() => setMsg(null)} title="Dismiss">{msg.text}</p>}
 
                     <div className="bt-summary">
                         <span><strong>{rows.length}</strong> {fromWrike ? `in Wrike` : `on disk`}</span>
@@ -266,7 +424,13 @@ const BatchTracker: React.FC = () => {
                         <span className="bt-count">{count((r) => !!r.aep)} built</span>
                         <span className="bt-count">{count((r) => !!r.render)} rendered</span>
                         <span className="bt-count">{count((r) => !!r.delivered)} delivered</span>
+                        {behindCount > 0 && <span className="bt-count is-behind" title="Rendered, but Wrike still says Backlog or Motion"><ArrowUpRight size={10} /> {behindCount} ahead of Wrike</span>}
                         <span className="bt-spacer" />
+                        {toBuild.length > 1 && (
+                            <button type="button" className="bt-btn" disabled={!!acting} onClick={() => void build(toBuild)} title="Stage every subtask with no project for Build a Batch">
+                                <Hammer size={12} /> Build {toBuild.length}
+                            </button>
+                        )}
                         <button type="button" className={"bt-btn" + (onlyIssues ? " is-on" : "")} onClick={() => setOnlyIssues(!onlyIssues)}>
                             <AlertTriangle size={12} /> {count(issue)} to look at
                         </button>

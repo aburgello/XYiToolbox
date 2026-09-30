@@ -830,21 +830,43 @@ runs, so `Portal_To_Paradise` answers to `PortalToParadise`). It is deliberately
 not `suggestJpgPngMatch`, whose substring branch fires on `Trio` inside
 `Triology`; names under three characters are refused as evidence.
 
-**Batch Tracker lines ONE batch up by deliverable and writes NOTHING.**
+**Batch Tracker lines ONE batch up by deliverable, and writes ONE thing.**
 (`tracker.ts`, `tools/BatchTracker.tsx`) Four places — `JPG_PNG` art, the
-`AE` project, the `Renders` MOV, `_Delivery` (never `_mp4`: previews) — plus the Wrike subtask,
-keyed by `trackerKey` (upper-cased, extension, `_Vnn`, `_DOUBLE/TRIPLE/QUAD_RES`
-and ratio tokens off). Its links only ever spawn `open`/`open -R`. Two rules:
-batches pair LOOSELY (`Batch_02` is `Batch_2`, but a `_POST` batch is its own),
-and a near miss is **flagged, never joined** — and only between ORPHANS, rows
-each holding a stage the other lacks, or every sibling size in a batch would
-be "nearly" every other. **Wrike leads**: when the batch has a job in the
-feed its subtasks ARE the list (they are what gets delivered), each row folded
-to a line of pips and a problem count until opened; files not in Wrike fold
-into one "on disk, not in Wrike" line; no job falls back to everything on
-disk. The open project's row is an outlined card, never an edge bar.
-`node scripts/probe-tracker.cjs` (stub throws on any
-write) and `node scripts/ui-tracker.mjs` guard it.
+`AE` project, the `Renders` MOV, `_Delivery` (never `_mp4`: previews) — plus
+the Wrike subtask, keyed by `trackerKey` (upper-cased, extension, `_Vnn`,
+`_DOUBLE/TRIPLE/QUAD_RES` and ratio tokens off). Batches pair LOOSELY
+(`Batch_02` is `Batch_2`, but a `_POST` batch is its own). **Wrike leads**:
+when the batch has a job in the feed its subtasks ARE the list, each row
+folded to pips and a problem count until opened; files not in Wrike fold into
+one "on disk, not in Wrike" line; no job falls back to everything on disk.
+The open project's row is an outlined card, never an edge bar.
+- **A near miss is flagged, never joined** — and only between ORPHANS (rows
+  each holding a stage the other lacks), or every sibling size would be
+  "nearly" every other.
+- **One exception, a CLAIM**: a subtask with nothing on disk takes a disk
+  orphan that is the same deliverable spelled another way
+  (`trSameDeliverable`: the same words reordered, `Trio_POST_DOOH`; or one
+  word containing the other, `POST` ⊂ `DigitalMetroPOST`; never a size, length
+  or market word) — and ONLY when it is the one candidate BOTH ways. It shows
+  as a problem, never as fine: Deliver and Review pair exactly and won't find it.
+- **Every problem hands off to the tool that owns the fix**: Open in AE
+  (`openLocalisedProject`, copy-first on OV), Build it (`stageBatchFromJob`,
+  then `onSelectTool("")` = LocaliseScreen's landing, which bumps the
+  handoff), Deliver (`setPendingDeliverJob`, take-once, then
+  `navigateToTool("delivery-hub")`). Build is never offered on a claimed row —
+  it is built, just misnamed, and building would make a twin.
+- **The one write is Rename to match Wrike** (`trackerRename`): dry run first,
+  a confirm counting what moves, disk → Wrike's name, every `.aep`/`.mov`
+  version and the art folder with its images, tails kept (`_V02`,
+  `_ARTWORK_1`). It refuses BEFORE anything moves on a taken name (read from
+  the listing, never `.exists`), on the project open in AE, and on any OV
+  name; `_` folders are never touched. The comp inside is renamed separately,
+  when that project is open (`trackerCompCheck`/`trackerRenameComp`, own
+  root-level `Main` only, unsaved, Ctrl+Z).
+- "Wrike looks behind" (rendered, Wrike still Backlog/Motion) is a blue HINT,
+  never a problem — the panel can't write to Wrike.
+`node scripts/probe-tracker.cjs` (the stub refuses every write but the
+rename's) and `node scripts/ui-tracker.mjs` guard it.
 
 **Folders starting with `_` are excluded from every scan.** The one exception is
 Naming Audit, which skips only `Auto-Save`/`_Archive`/`_Old`/`_DEV`.

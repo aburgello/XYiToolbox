@@ -137,6 +137,11 @@ export function jobTerritory(job: WrikeJob): string {
     return "";
 }
 
+/** TAKE-ONCE: a job another page (Batch Tracker's Deliver) wants opened when
+ *  this list next loads. Same discipline as localiseHandoff's pending batch. */
+let pendingJobId: string | null = null;
+export function setPendingDeliverJob(id: string | null): void { pendingJobId = id; }
+
 const DeliveryJobs: React.FC<Props> = ({ pushToast, onDeliver }) => {
     const [jobs, setJobs] = useState<WrikeJob[]>([]);
     const [mock, setMock] = useState(false);
@@ -169,6 +174,13 @@ const DeliveryJobs: React.FC<Props> = ({ pushToast, onDeliver }) => {
     };
 
     useEffect(() => { void load(false); }, []);
+    useEffect(() => {
+        if (!pendingJobId) return;
+        const job = jobs.find((j) => j.id === pendingJobId);
+        if (!job) return;
+        pendingJobId = null;
+        void open(job);
+    }, [jobs]);
 
     const open = async (job: WrikeJob) => {
         if (openId === job.id) { setOpenId(null); return; }
