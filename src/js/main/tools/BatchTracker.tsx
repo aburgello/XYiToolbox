@@ -53,19 +53,30 @@
 // most likely to open next, so it's one press from the list rather than open
 // row, then Open in AE. The open project's own row says it's open instead.
 //
+// A JOB IN TO AMEND brings its latest Wrike comment (fetchJobComment, one
+// Wrike call, cached). Amends are written on the PARENT task, per deliverable
+// -- filenames, then the note -- so lib/amendNotes.ts splits it and each note
+// lands on the row it names, matched through the disk's own spelling too (a
+// comment naming Trio_POST_DOOH finds the row Wrike calls Trio_DOOH_POST).
+// Those rows count as to amend and get the Amend press; a note on a version
+// older than the newest render says a newer one exists since. What sits under
+// no filename ("The others are approved") shows once, for the job.
+//
 // "Wrike looks behind" (rendered, Wrike still Backlog/Motion) is a HINT, not a
 // problem: the panel can't write to Wrike, and a row that is fine must not
 // read as broken.
 // =============================================================================
 import React, { useEffect, useRef, useState } from "react";
-import { Image as ImageIcon, FileBox, Film, PackageCheck, FileText, RefreshCw, Loader2, AlertTriangle, MapPin, Search, ChevronRight, Check, HardDrive, FolderOpen, Hammer, Truck, PenLine, ArrowUpRight, Play } from "lucide-react";
+import { Image as ImageIcon, FileBox, Film, PackageCheck, FileText, RefreshCw, Loader2, AlertTriangle, MapPin, Search, ChevronRight, Check, HardDrive, FolderOpen, Hammer, Truck, PenLine, ArrowUpRight, Play, MessageSquare } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import Dropdown from "../Dropdown";
-import { fetchJobs, fetchJobsFresh, fetchJobsLive, jobReadiness, territoryFlag, parseJobTitle, statusTint, DELIVERABLE_STATUSES, AMEND_STATUSES, type WrikeJob } from "../lib/jobsFeed";
+import { fetchJobs, fetchJobsFresh, fetchJobsLive, fetchJobComment, jobReadiness, territoryFlag, parseJobTitle, statusTint, DELIVERABLE_STATUSES, AMEND_STATUSES, type WrikeJob } from "../lib/jobsFeed";
 import { loadJobRows, stageBatchFromJob, classifyRows } from "../lib/jobRows";
 import { navigateToTool } from "../lib/navigation";
 import { confirmDialog } from "../Dialog";
+import { parseAmends, amendKey, type AmendNote, type ParsedAmends } from "../lib/amendNotes";
+import type { JobComment } from "../lib/jobsFeed";
 import VideoOverlay from "../VideoOverlay";
 import { usePosterFrame } from "../lib/renderPreview";
 import { toFileUrl } from "../lib/fileUrl";
@@ -158,6 +169,16 @@ const PreviewThumb: React.FC<{ path: string; label: string; onOpen: () => void }
     );
 };
 
+/** "12:45" today, "29 Sep" before. */
+const whenOf = (iso: string) => {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    const now = new Date();
+    return d.toDateString() === now.toDateString()
+        ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+        : d.toLocaleDateString([], { day: "numeric", month: "short" });
+};
+
 const stem = (p: string) => (p.split(/[\\/]/).pop() || p).replace(/\.[^.]+$/, "").replace(/_V\d+$/i, "").toUpperCase();
 
 const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
@@ -186,6 +207,11 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
     const [sums, setSums] = useState<Record<string, JobSummary>>({});
     const [jobsBusy, setJobsBusy] = useState(false);
     const [playing, setPlaying] = useState<{ path: string; title: string } | null>(null);
+    /** The latest Wrike comment of each To amend job on screen, split. */
+    const [comments, setComments] = useState<Record<string, { comment: JobComment | null; parsed: ParsedAmends; error?: string }>>({});
+    const [showFullComment, setShowFullComment] = useState(false);
+    /** Set by the refresh button: the next comment read goes to Wrike. */
+    const freshComments = useRef(false);
 
     // Where the open project sits decides the first view.
     useEffect(() => {
@@ -235,6 +261,16 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
             const r = (await evalTSSafe("trackerScan", JSON.stringify({ territoryPath: tp, batch: b, wrike: w.subs }))) as any;
             if (!r || !r.success) { setError((r && r.error) || "Couldn't read the batch."); return; }
             setScan({ territory: r.territory, batch: r.batch, folders: r.folders, rows: r.rows || [] });
+            // The amends: only for jobs Wrike has as To amend, one read each.
+            const fresh = freshComments.current;
+            freshComments.current = false;
+            const next: Record<string, { comment: JobComment | null; parsed: ParsedAmends; error?: string }> = {};
+            for (const j of w.jobs) {
+                if (!AMEND_STATUSES.test(String(j.status || "").trim())) continue;
+                const c = await fetchJobComment(j.id, fresh);
+                next[j.id] = { comment: c.comment, parsed: parseAmends(c.comment ? c.comment.text : ""), error: c.error };
+            }
+            setComments(next);
             // The page's own scan is fresher than the chip's: keep them agreeing.
             if (w.jobs.length) setSums((prev) => {
                 const next = { ...prev };
@@ -308,7 +344,7 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
                 });
             const list = pick(res);
             setMyJobs(list);
-            if (live) setFreshTick((t) => t + 1);
+            if (live) { freshComments.current = true; setFreshTick((t) => t + 1); }
             await locateAndSummarise(list);
         } finally {
             setJobsBusy(false);
@@ -475,9 +511,30 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
     const openStem = openProject ? stem(openProject) : "";
     const openRow = all.find((r) => r.aep && stem(r.aep.path) === openStem);
     const toggle = (k: string) => setOpen((o) => ({ ...o, [k]: !o[k] }));
+    /** A row's notes from its job's amend comment -- matched on Wrike's name
+     *  AND the disk's (a comment names the file, which may not be Wrike's). */
+    const amendsFor = (r: Row): AmendNote[] => {
+        const keys = [r.key, r.claimed && amendKey(r.claimed.name), r.aep && amendKey(r.aep.name), r.render && amendKey(r.render.name)].filter(Boolean) as string[];
+        const out: AmendNote[] = [];
+        const seen = new Set<string>();
+        Object.keys(comments).forEach((id) => {
+            const byKey = comments[id].parsed.byKey;
+            for (const k of keys) for (const n of byKey[k] || []) {
+                if (seen.has(n.text)) continue;
+                seen.add(n.text);
+                out.push(n);
+            }
+        });
+        return out;
+    };
+    // A note on a version OLDER than the newest render has likely been done:
+    // it still shows on the row, but doesn't make the row "to amend".
+    const openAmends = (r: Row) => amendsFor(r).filter((n) => !(r.render && n.version && r.render.version > n.version));
+    const isAmend = (r: Row) => toAmend(r) || openAmends(r).length > 0;
+    const shownComments = Object.keys(comments).map((id) => ({ id, ...comments[id] })).filter((c) => c.comment || c.error);
     const toBuild = rows.filter((r) => r.wrike && !r.aep && !r.claimed && jobOf(r));
     const behindCount = count(wrikeBehind);
-    const amendCount = count(toAmend);
+    const amendCount = count(isAmend);
 
     const Link: React.FC<{ icon: React.ReactNode; label: string; path?: string; folder?: boolean }> = ({ icon, label, path, folder }) => (
         <button type="button" className="bt-link" disabled={!path} title={path || `No ${label.toLowerCase()} for this batch`} onClick={() => path && revealInFinder(path, !!folder)}>
@@ -515,14 +572,14 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
                         : <span className="bt-ok" title="Nothing to look at"><Check size={12} /></span>}
                     {/* An amend with a project shows the Amend press instead of the
                         pill: both say To amend, and a docked panel can't spare it. */}
-                    {r.wrike && !(toAmend(r) && r.aep) && (
+                    {r.wrike && !(isAmend(r) && r.aep) && (
                         <span className={"bt-wrike" + (wrikeBehind(r) ? " is-behind" : "")} style={{ color: statusTint(r.wrike.status).color, background: statusTint(r.wrike.status).background }}
                             title={wrikeBehind(r) ? `Rendered, but Wrike still says ${r.wrike.status}` : "Wrike"}>
                             {wrikeBehind(r) && <ArrowUpRight size={10} />}{r.wrike.status || "Wrike"}
                         </span>
                     )}
                 </button>
-                {toAmend(r) && r.aep && (isHere
+                {isAmend(r) && r.aep && (isHere
                     ? <span className="bt-amend is-here" title="This project is open in AE">Open</span>
                     : (
                         <button type="button" className="bt-amend" disabled={!!acting} onClick={() => void openInAE(r)} title={`Open ${r.aep.name} to amend it`}>
@@ -559,6 +616,22 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
                         {problems.map((t, i) => (
                             <p key={i} className="bt-near"><AlertTriangle size={11} /> <span>{t}</span></p>
                         ))}
+                        {(() => {
+                            const notes = amendsFor(r);
+                            if (!notes.length) return null;
+                            const reviewed = Math.max(...notes.map((n) => n.version));
+                            const newer = !!(r.render && reviewed && r.render.version > reviewed);
+                            const c = shownComments.find((x) => x.comment)?.comment;
+                            return (
+                                <div className="bt-amends">
+                                    <span className="bt-amends-head">
+                                        <MessageSquare size={11} /> Amends{c && c.author ? ` · ${c.author}` : ""}{c && c.date ? ` · ${whenOf(c.date)}` : ""}{reviewed ? ` · on V${String(reviewed).padStart(2, "0")}` : ""}
+                                    </span>
+                                    {notes.map((n, i) => <p key={i} className="bt-amend-note">{n.text}</p>)}
+                                    {newer && <span className="bt-amends-newer">V{String(r.render!.version).padStart(2, "0")} rendered since — may already be done.</span>}
+                                </div>
+                            );
+                        })()}
                         {wrikeBehind(r) && (
                             <p className="bt-hint"><ArrowUpRight size={11} /> <span>Rendered V{String(r.render!.version).padStart(2, "0")}, but Wrike still says {r.wrike!.status}.</span></p>
                         )}
@@ -569,8 +642,8 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
                                     {acting === "rename:" + r.key ? <Loader2 size={12} className="spin" /> : <PenLine size={12} />} Rename to match Wrike
                                 </button>);
                             if (r.aep && !isHere) acts.push(
-                                <button key="op" type="button" className={"bt-act" + (toAmend(r) ? " is-primary" : "")} disabled={!!acting} onClick={() => void openInAE(r)}>
-                                    {acting === "open:" + r.key ? <Loader2 size={12} className="spin" /> : <FolderOpen size={12} />} {toAmend(r) ? "Open to amend" : "Open in AE"}
+                                <button key="op" type="button" className={"bt-act" + (isAmend(r) ? " is-primary" : "")} disabled={!!acting} onClick={() => void openInAE(r)}>
+                                    {acting === "open:" + r.key ? <Loader2 size={12} className="spin" /> : <FolderOpen size={12} />} {isAmend(r) ? "Open to amend" : "Open in AE"}
                                 </button>);
                             if (r.wrike && !r.aep && !r.claimed && jobOf(r)) acts.push(
                                 <button key="bd" type="button" className="bt-act is-primary" disabled={!!acting} onClick={() => void build([r])}>
@@ -667,6 +740,25 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
                         </button>
                     </div>
 
+                    {shownComments.map((c) => (
+                        <div key={c.id} className="bt-comment">
+                            <span className="bt-comment-head">
+                                <MessageSquare size={12} /> Latest in Wrike{c.comment && c.comment.author ? ` · ${c.comment.author}` : ""}{c.comment && c.comment.date ? ` · ${whenOf(c.comment.date)}` : ""}
+                                {c.comment && (
+                                    <button type="button" className="bt-comment-toggle" onClick={() => setShowFullComment(!showFullComment)}>
+                                        {showFullComment ? "Hide" : "Full comment"}
+                                    </button>
+                                )}
+                            </span>
+                            {c.error && !c.comment && <span className="bt-comment-err">{c.error}</span>}
+                            {c.comment && Object.keys(c.parsed.byKey).length > 0 && (
+                                <span className="bt-comment-sum">{Object.keys(c.parsed.byKey).length} deliverable{Object.keys(c.parsed.byKey).length === 1 ? "" : "s"} with amends, shown on their rows.</span>
+                            )}
+                            {c.parsed.general.map((g, i) => <p key={i} className="bt-comment-general">{g}</p>)}
+                            {c.comment && !Object.keys(c.parsed.byKey).length && !c.parsed.general.length && <p className="bt-comment-general">{c.comment.text}</p>}
+                            {showFullComment && c.comment && <p className="bt-comment-full">{c.comment.text}</p>}
+                        </div>
+                    ))}
                     <div className="bt-rows">
                         {!fromWrike && all.length > 0 && <p className="bt-note">No Wrike job for this batch in your feed, so this is everything on disk.</p>}
                         {shown.length === 0 && <p className="bt-note">{onlyIssues ? "Nothing to look at in this batch." : "Nothing in this batch yet."}</p>}

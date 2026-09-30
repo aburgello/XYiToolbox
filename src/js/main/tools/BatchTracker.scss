@@ -196,6 +196,32 @@
         svg { margin-left: 1px; }
     }
 
+    // A job's latest Wrike comment, and each row's share of it. Plain text,
+    // wrapping (filenames are one long word).
+    .bt-comment {
+        display: flex; flex-direction: column; gap: 5px; padding: 9px 11px;
+        border: 1px solid rgba(251, 146, 60, 0.3); border-radius: 8px; background: rgba(251, 146, 60, 0.05);
+        font-size: 11.5px; color: #d6dedc; overflow-wrap: break-word; word-break: break-word;
+    }
+    .bt-comment-head { display: flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.03em; color: #fdba74; svg { flex-shrink: 0; } }
+    .bt-comment-toggle {
+        margin-left: auto; padding: 0 8px; height: 20px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.14);
+        background: none; color: #c7d1cf; font-size: 10.5px; font-weight: 600; cursor: pointer;
+        &:hover, &:active { background: rgba(255, 255, 255, 0.08); color: #fff; }
+    }
+    .bt-comment-sum { color: #9aa7a5; font-size: 11px; }
+    .bt-comment-err { color: #9aa7a5; font-size: 11px; }
+    .bt-comment-general { margin: 0; color: #e3eae8; }
+    .bt-comment-full { margin: 2px 0 0; padding-top: 6px; border-top: 1px solid rgba(255, 255, 255, 0.08); white-space: pre-wrap; color: #b9c4c2; font-size: 11px; }
+    .bt-amends {
+        display: flex; flex-direction: column; gap: 3px; padding: 7px 10px;
+        border-left: 2px solid rgba(251, 146, 60, 0.6); border-radius: 0 6px 6px 0; background: rgba(251, 146, 60, 0.07);
+        overflow-wrap: break-word; word-break: break-word;
+    }
+    .bt-amends-head { display: flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 700; color: #fdba74; svg { flex-shrink: 0; } }
+    .bt-amend-note { margin: 0; font-size: 12px; line-height: 1.4; color: #fff4e8; white-space: pre-wrap; }
+    .bt-amends-newer { font-size: 10.5px; color: #93c5fd; }
+
     .bt-hint {
         display: flex; align-items: flex-start; gap: 6px; margin: 0; font-size: 11px; line-height: 1.4; color: #93c5fd;
         svg { flex-shrink: 0; margin-top: 2px; }

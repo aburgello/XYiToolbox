@@ -888,6 +888,18 @@ The open project's row is an outlined card, never an edge bar.
 - **To amend puts "Amend" on the folded line** (opens the project; the open
   project's row says "Open" instead), in place of the status pill, and the
   opened row's button reads "Open to amend" as the primary action.
+- **A To amend job brings its latest Wrike comment**, split per deliverable.
+  The studio writes amends on the PARENT task, never the subtasks: filenames,
+  then the note (`lib/amendNotes.ts`: a run of filenames is a group, the text
+  under it its notes; a blank line ends a group only once it has notes; text
+  under no filename is said once for the job). Notes land on rows through the
+  DISK's spelling too (`claimed`, aep, render names), since reviewers name the
+  file. A note on a version older than the newest render still shows, with
+  "rendered since", but doesn't make the row to amend. Read through TimeHub's
+  Worker (`/api/panel/comment`, one Wrike call, cached 3 min there and here,
+  `fresh=1` from refresh), plain text only. `node scripts/probe-amend-notes.mjs`
+  splits the real Norway comment; TimeHub's `tests/panelComment.test.mjs`
+  guards the route.
 - **Previews come from `Renders/<Batch>/_mp4`** (the studio renders a
   web-playable mp4 per deliverable there; the MOVs are ProRes Chromium can't
   play). Newest version per deliverable, only for deliverables the batch
@@ -1485,6 +1497,7 @@ substring test.
 
 `node scripts/probe-tracker.cjs` (after `yarn build`) and
 `node scripts/ui-tracker.mjs` (after `yarn build:web`) guard the Batch Tracker.
+`node scripts/probe-amend-notes.mjs` (no build needed) splits a real amend comment.
 
 `node scripts/probe-job-titles.cjs` (no build needed) drives
 `parseJobTitle` over dashed and dashless Wrike titles. The batch becomes an

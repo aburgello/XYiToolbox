@@ -522,6 +522,46 @@ export async function fetchJobsLive(member: string): Promise<JobsFeedResult> {
     return cache;
 }
 
+// --- a job's latest Wrike comment ----------------------------------------
+// Amends are written on the PARENT task as one comment: deliverable filenames,
+// each followed by its note (lib/amendNotes.ts splits it). The Worker route
+// (/api/panel/comment, beside /api/panel/jobs) costs one Wrike call and keeps
+// the answer three minutes; this keeps it the same three minutes per panel so
+// re-rendering the tracker never asks twice. `fresh` (the refresh button)
+// skips both. Never throws: no feed, no route yet, or no network is `null`
+// with a reason, and the tracker simply shows no notes.
+export interface JobComment { text: string; author: string; date: string }
+export interface JobCommentResult { comment: JobComment | null; error?: string }
+const COMMENT_TTL_MS = 3 * 60 * 1000;
+const commentCache: Record<string, { at: number; res: JobCommentResult }> = {};
+
+export async function fetchJobComment(taskId: string, fresh = false): Promise<JobCommentResult> {
+    const hit = commentCache[taskId];
+    if (!fresh && hit && Date.now() - hit.at < COMMENT_TTL_MS) return hit.res;
+    const cfg = await loadJobsFeedConfig();
+    if (!cfg) return { comment: null, error: "No jobs feed configured." };
+    // Same Worker, sibling route: whatever path the jobs URL ends in, swap it.
+    const base = cfg.url.replace(/\/api\/panel\/jobs[^]*$/, "");
+    if (base === cfg.url) return { comment: null, error: "The jobs feed URL isn't the panel route." };
+    try {
+        const res = await fetch(`${base}/api/panel/comment?task=${encodeURIComponent(taskId)}${fresh ? "&fresh=1" : ""}`, {
+            method: "GET",
+            headers: { "X-Panel-Key": cfg.key },
+            credentials: "omit",
+        });
+        if (!res.ok) return { comment: null, error: res.status === 404 ? "The comment route isn't deployed yet." : `Comment lookup returned ${res.status}.` };
+        const data = await res.json();
+        const c = data && data.comment;
+        const out: JobCommentResult = {
+            comment: c && typeof c.text === "string" ? { text: String(c.text), author: String(c.author || ""), date: String(c.date || "") } : null,
+        };
+        commentCache[taskId] = { at: Date.now(), res: out };
+        return out;
+    } catch {
+        return { comment: null, error: "Couldn't reach the jobs feed." };
+    }
+}
+
 // Splits "FID - IT - ARTWALL GALLERIA - Batch 2" into its parts. The title is a
 // human convention, so every part is optional and a title that doesn't match
 // still lists -- it just shows fewer chips.

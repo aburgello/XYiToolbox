@@ -60,7 +60,7 @@ const FIXTURES = `{
   deliveryFindRenders: (json) => { window.__deliverAsked = JSON.parse(json); return { success: true, folders: [], missing: [] }; },
   parseDeliverableNames: (json) => JSON.parse(json).map((n) => ({ success: true, filmTitle: "SF", artworkType: "DOOH", campaign: "Trio", territory: "NO", duration: "15sec", site: "Kiwi" })),
 }`;
-const FEED = [{ id: "J1", title: "SF Motion Outdoor NO 2", assignee: "Antonio", status: "Prep for delivery", updated_at: "", subtask_count: 1, subtasks_done: 0,
+const FEED = [{ id: "J1", title: "SF Motion Outdoor NO 2", assignee: "Antonio", status: "To amend", updated_at: "", subtask_count: 1, subtasks_done: 0,
     subtasks: [
         { id: "s", name: `${P}NFKINOPOST_345x496px_30s_NO`, status: "Active", customStatusName: "Prep for delivery" },
         { id: "s2", name: "SF_INTL_Characters_DOOH_Post_1080x1920px_30s_NO", status: "Active", customStatusName: "To amend" },
@@ -79,7 +79,22 @@ const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 // `liveKiwi` is what Wrike says about the Kiwi subtask right now.
 let liveKiwi = "Motion";
 const liveFeed = () => FEED.map((j) => ({ ...j, subtasks: j.subtasks.map((st) => (/Kiwi/.test(st.name) ? { ...st, customStatusName: liveKiwi } : st)) }));
-const page = await launch({ root: ROOT, fixturesSrc: FIXTURES, routes: { "api/panel/jobs": (url) => (/refresh=1/.test(url) ? liveFeed() : FEED) } });
+// The job's latest Wrike comment, shaped like Michael's on NO 2: filenames
+// (one as the DISK spells it), then the note; a line under no filename.
+const COMMENT = { task: "J1", count: 3, comment: { author: "Michael Sills", date: new Date().toISOString(), text: [
+    "SF_INTL_Trio_POST_DOOH_1920x1080px_30s_NO_V01.mov",
+    "🔶 The paramount logo is cut off at the top",
+    "",
+    `${P}NfkinoPOST_345x496px_30s_NO_V01.mov`,
+    "🔶On the MC please move the TT and date to the right",
+    "",
+    "✅ The others are approved",
+].join("\n") } };
+let commentAsks = [];
+const page = await launch({ root: ROOT, fixturesSrc: FIXTURES, routes: {
+    "api/panel/comment": (url) => { commentAsks.push(url); return /task=J1/.test(url) ? COMMENT : { comment: null, count: 0 }; },
+    "api/panel/jobs": (url) => (/refresh=1/.test(url) ? liveFeed() : FEED),
+} });
 try {
     await page.goto();
     await page.waitFor(`[...document.querySelectorAll("button.category-card")].some(b => /Localise/.test(b.textContent))`, 10000);
@@ -141,13 +156,30 @@ try {
     await page.waitFor(`!document.querySelector(".video-player-overlay")`, 4000);
 
     console.log("\n3c. To amend");
-    check(/1 to amend/.test(await page.eval(`document.querySelector(".bt-summary").innerText`)), "the summary counts what Wrike has back as To amend");
+    check(/2 to amend/.test(await page.eval(`document.querySelector(".bt-summary").innerText`)), "the summary counts the To amend subtask and the row the comment names on its newest version", await page.eval(`document.querySelector(".bt-summary").innerText`));
     const amendBtns = await page.eval(`[...document.querySelectorAll(".bt-rows > .bt-row")].map(r => r.querySelector(".bt-row-head .bt-amend")?.innerText.trim() || "")`);
-    check(amendBtns[1] === "Amend" && amendBtns.filter(Boolean).length === 1, "a To amend subtask with a project gets Amend on its folded line, and only it", amendBtns);
+    check(amendBtns.join("|") === "|Amend|Amend||", "rows with open amends get Amend on their folded line; a note on an older version than the render does not", amendBtns);
     check(await page.eval(`!document.querySelectorAll(".bt-rows > .bt-row")[1].querySelector(".bt-wrike")`), "…in place of the status pill, which would say the same thing");
     await page.eval(`document.querySelectorAll(".bt-rows > .bt-row")[1].querySelector(".bt-row-head .bt-amend").click()`);
     check(await page.waitFor(`window.__opened === "${T}/AE/Batch_02/c.aep"`, 4000), "…which opens that project, without opening the row");
     await page.eval(`window.__opened = null`);
+
+    console.log("\n3d. The amends, from the job's latest Wrike comment");
+    check(commentAsks.length >= 1 && commentAsks.every((u) => /task=J1/.test(u)), "only the To amend job's comment is asked for", commentAsks.map((u) => u.replace(/^.*\?/, "")));
+    const card = await page.eval(`document.querySelector(".bt-comment")?.innerText || ""`);
+    check(/Latest in Wrike · Michael Sills/.test(card) && /2 deliverables with amends/.test(card) && /The others are approved/.test(card) && !/paramount/.test(card), "the job's card names the reviewer, counts the deliverables and says the general line once", card);
+    await page.eval(`document.querySelectorAll(".bt-rows > .bt-row")[2].querySelector(".bt-row-top").click()`);
+    await pause(100);
+    const dNotes = await page.eval(`document.querySelectorAll(".bt-rows > .bt-row")[2].querySelector(".bt-amends")?.innerText || ""`);
+    check(/The paramount logo is cut off at the top/.test(dNotes) && /on V01/.test(dNotes), "the note written against the DISK's name lands on the row Wrike names differently", dNotes);
+    const aNotes = await page.eval(`document.querySelectorAll(".bt-rows > .bt-row")[0].querySelector(".bt-amends")?.innerText || ""`);
+    check(/move the TT and date to the right/.test(aNotes) && /V02 rendered since/.test(aNotes), "a note on V01 with a V02 rendered since says so", aNotes);
+    check(await page.eval(`!document.querySelectorAll(".bt-rows > .bt-row")[3].querySelector(".bt-amends")`), "a row the comment doesn't name shows no amends");
+    await page.click(".bt-comment-toggle", "Full comment");
+    check(await page.waitFor(`/SF_INTL_Trio_POST_DOOH/.test(document.querySelector(".bt-comment-full")?.innerText || "")`, 3000), "the full comment is one press away, as plain text");
+    await page.click(".bt-comment-toggle", "Hide");
+    await page.eval(`document.querySelectorAll(".bt-rows > .bt-row")[2].querySelector(".bt-row-top").click()`);
+    await pause(100);
 
     console.log("\n4. Where is it");
     await page.eval(`window.__spawned = []`);
@@ -187,7 +219,7 @@ try {
     const d = (await rowText(2)).replace(/\s+/g, " ");
     check(/On disk it's named SF_INTL_Trio_POST_DOOH_1920x1080px_30s_NO \(same words, another order\)/.test(d), "a subtask found under another name says so", d);
     check(/Rendered V01, but Wrike still says Backlog/.test(d) && /1 ahead of Wrike/.test(await page.eval(`document.querySelector(".bt-summary").innerText`)), "…and that Wrike looks behind, as a hint");
-    check(/Rename to match Wrike/.test(d) && /Open in AE/.test(d) && !/Build it/.test(d), "…offering Rename and Open, never Build (it's built, just misnamed)", d);
+    check(/Rename to match Wrike/.test(d) && /Open to amend/.test(d) && !/Build it/.test(d), "…offering Rename and Open, never Build (it's built, just misnamed)", d);
     await page.eval(`[...document.querySelectorAll(".bt-rows > .bt-row")[2].querySelectorAll(".bt-act")].find(b => /Rename/.test(b.textContent)).click()`);
     check(await page.waitFor(`/Rename 3 files to Wrike/.test(document.querySelector(".dialog-title")?.innerText || "")`, 4000), "the rename asks first, counting what moves");
     check(await page.eval(`window.__renames.length === 1 && window.__renames[0].apply === false`), "…having only planned so far");
