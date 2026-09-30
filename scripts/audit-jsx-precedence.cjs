@@ -1,7 +1,8 @@
 // =============================================================================
 // scripts/audit-jsx-precedence.cjs
 // -----------------------------------------------------------------------------
-// Guards two ExtendScript parser/engine bugs, both of which survive
+// Guards three ExtendScript parser/engine bugs (the third, a bare "/" in a
+// regex character class, is rule 3 in auditFile()); the first two both of which survive
 // parenthesised source because the emitter strips redundant parens:
 //
 //   1. logical precedence (below) -- broke MC It! in July 2026
@@ -100,6 +101,19 @@ function auditFile(file) {
     ) {
       hits.push({ node, rule: "nested ternary" });
     }
+    // Rule 3: a bare "/" inside a regex CHARACTER CLASS (`/[\\/:]/`).
+    //
+    // Standard JS allows it; ExtendScript's parser ends the literal at the
+    // first unescaped "/", class or not, and the whole bundle fails to parse
+    // -- "SyntaxError: Expected: )" on every panel open (2026-09-30, one line
+    // of trackerRename). Escape it: `[\\\/]`.
+    if (node.type === "RegExpLiteral") {
+      const pat = node.pattern;
+      for (let i = 0; i < pat.length; i++) {
+        if (pat[i] === "\\") { i++; continue; }
+        if (pat[i] === "/") { hits.push({ node, rule: "bare / in regex" }); break; }
+      }
+    }
     for (const key of Object.keys(node)) {
       if (key === "loc") continue;
       const v = node[key];
@@ -124,7 +138,7 @@ let total = 0;
 for (const t of targets) total += auditFile(t);
 
 if (total === 0) {
-  console.log("CLEAN — no ExtendScript-unsafe `|| ... &&` or nested-ternary expressions in " + targets.length + " file(s).");
+  console.log("CLEAN — no ExtendScript-unsafe `|| ... &&`, nested-ternary or bare-/ regex expressions in " + targets.length + " file(s).");
 } else {
   console.log(
     total +

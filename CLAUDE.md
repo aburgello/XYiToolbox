@@ -99,6 +99,11 @@ so this whole class of bug is structurally invisible in browser preview.
 - **Never `.match()` a file or folder name** — the argument compiles as a regex
   and real names contain `(`, `+`, `[`. Use `.indexOf(...) !== -1`.
   *(Live violation: `locIt`'s `combinationExists` in `tools.ts`.)*
+- **Escape `/` inside a regex character class** (`/[\\\/:]/`, never
+  `/[\\/:]/`). Chrome allows the bare one; ExtendScript ends the literal
+  there and the WHOLE bundle fails to parse — "SyntaxError: Expected: )" on
+  every panel open, and every bridge call answering nonsense until it is
+  fixed (2026-09-30). `audit-jsx-precedence.cjs` rule 3 gates it.
 - **Never `instanceof <AE host class>`** — duck-type on the method you're about
   to call, e.g. `typeof layer.sourceRectAtTime === "function"`.
 - **Never identify an AE DOM object with `===`** — two accesses return different
@@ -857,8 +862,9 @@ The open project's row is an outlined card, never an edge bar.
   it is built, just misnamed, and building would make a twin.
 - **The one write is Rename to match Wrike** (`trackerRename`): dry run first,
   a confirm counting what moves, disk → Wrike's name, every `.aep`/`.mov`
-  version and the art folder with its images, tails kept (`_V02`,
-  `_ARTWORK_1`). It refuses BEFORE anything moves on a taken name (read from
+  version, tails kept (`_V02`, `_DOUBLE_RES`). **Never JPG_PNG** — the
+  artwork is the mech team's and the studio doesn't touch it (2026-09-30);
+  art named differently stays a near miss. It refuses BEFORE anything moves on a taken name (read from
   the listing, never `.exists`), on the project open in AE, and on any OV
   name; `_` folders are never touched. The comp inside is renamed separately,
   when that project is open (`trackerCompCheck`/`trackerRenameComp`, own

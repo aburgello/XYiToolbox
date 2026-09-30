@@ -114,6 +114,9 @@ interface TrackerResult extends Result {
 function trNearWhy(a: string, b: string): string {
   const ta = a.split("_");
   const tb = b.split("_");
+  // The same words in another order (Trio_POST_DOOH vs Trio_DOOH_POST): what
+  // the art keeps after the project and render are renamed to Wrike's name.
+  if (ta.length === tb.length && ta.slice().sort().join("_") === tb.slice().sort().join("_")) return "same words, another order";
   if (ta.length === tb.length) {
     let at = -1;
     for (let i = 0; i < ta.length; i++) {
@@ -430,10 +433,12 @@ export const trackerScan = (argsJson: string): TrackerResult => {
  * the disk spells it, `to` the Wrike subtask. With apply false it only says
  * what it would do; the panel shows that in the confirm.
  *
- * What moves: every .aep version in AE/<Batch>, every .mov version in
- * Renders/<Batch>, and the JPG_PNG/<Batch> subfolder with the images in it
- * named after it. Only files whose own name starts with `from` -- the tail
- * (_V02, _DOUBLE_RES, _ARTWORK_1, the extension) is kept exactly. Nothing in
+ * What moves: every .aep version in AE/<Batch> and every .mov version in
+ * Renders/<Batch>. NEVER JPG_PNG: the artwork is the mech team's, and the
+ * studio doesn't touch it (decided 2026-09-30) -- a pairing that disagrees
+ * with the art stays a near miss for a person to raise. Only files whose own
+ * name starts with `from` -- the tail (_V02, _DOUBLE_RES, the extension) is
+ * kept exactly. Nothing in
  * _Delivery, _Old or any `_` folder, never a name carrying an OV token (a
  * master is never renamed), and never inside a project: the comp keeps its
  * name until trackerRenameComp is run in it.
@@ -448,7 +453,10 @@ export const trackerRename = (argsJson: string): Result & { plan?: { from: strin
     try { args = JSON.parse(argsJson); } catch (e) { return { success: false, error: "Could not read the request." }; }
     const from = String(args.from || ""), to = String(args.to || "");
     if (!from || !to) return { success: false, error: "Nothing to rename." };
-    if (/[\\/:*?"<>|]/.test(to) || to.charAt(0) === "." || to.charAt(0) === "_") return { success: false, error: "Wrike's name can't be a filename: " + to };
+    // "/" escaped even inside the class: ExtendScript ends a regex literal at
+    // the first bare "/", class or not, and the whole bundle then fails to
+    // parse (a SyntaxError on every panel open).
+    if (/[\\\/:*?"<>|]/.test(to) || to.charAt(0) === "." || to.charAt(0) === "_") return { success: false, error: "Wrike's name can't be a filename: " + to };
     if (/(^|[_\s])OV([_\s.]|$)/i.test(from) || /(^|[_\s])OV([_\s.]|$)/i.test(to)) return { success: false, error: "That's an OV name -- masters are never renamed." };
     const terr = new Folder(String(args.territoryPath || ""));
     if (!terr.exists) return { success: false, error: "That territory folder isn't reachable." };
@@ -468,17 +476,6 @@ export const trackerRename = (argsJson: string): Result & { plan?: { from: strin
     if (ae) { const k = trKids(ae); for (let i = 0; i < k.length; i++) if (!trIsFolder(k[i]) && /\.aep$/i.test(decode(String(k[i].name)))) add(ae, k[i], "project", 1); }
     const rd = inBatch("Renders");
     if (rd) { const k = trKids(rd); for (let i = 0; i < k.length; i++) if (!trIsFolder(k[i]) && /\.mov$/i.test(decode(String(k[i].name)))) add(rd, k[i], "render", 1); }
-    const jp = inBatch("JPG_PNG");
-    if (jp) {
-      const k = trKids(jp);
-      for (let i = 0; i < k.length; i++) {
-        if (!trIsFolder(k[i]) || !startsWith(decode(String(k[i].name)))) continue;
-        const inner = trKids(k[i] as Folder);
-        // The images first: their paths change when the folder does.
-        for (let j = 0; j < inner.length; j++) if (!trIsFolder(inner[j])) add(k[i] as Folder, inner[j], "image", 1);
-        add(jp, k[i], "art folder", 2);
-      }
-    }
     if (!steps.length) return { success: false, error: "Found nothing named " + from + " in this batch." };
 
     // Refusals, before anything moves.
@@ -498,13 +495,10 @@ export const trackerRename = (argsJson: string): Result & { plan?: { from: strin
 
     let renamed = 0;
     const failed: string[] = [];
-    for (let pass = 1; pass <= 2; pass++) {
-      for (let i = 0; i < steps.length; i++) {
-        if (steps[i].order !== pass) continue;
-        let ok = false;
-        try { ok = !!steps[i].item.rename(steps[i].to); } catch (e) { ok = false; }
-        if (ok) renamed++; else failed.push(steps[i].from);
-      }
+    for (let i = 0; i < steps.length; i++) {
+      let ok = false;
+      try { ok = !!steps[i].item.rename(steps[i].to); } catch (e) { ok = false; }
+      if (ok) renamed++; else failed.push(steps[i].from);
     }
     return { success: failed.length === 0, plan: plan, renamed: renamed, failed: failed, error: failed.length ? "Couldn't rename " + failed.length + ": " + failed[0] : undefined };
   } catch (e) {
