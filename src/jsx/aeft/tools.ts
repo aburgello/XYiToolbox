@@ -4505,6 +4505,37 @@ interface SsMatch {
   cand: SupportSwapCandidate;
   fromToken: string;
   toToken: string;
+  /** The candidate is the _POST version of the file (see ssIsPostDeliverable). */
+  post?: boolean;
+}
+
+/**
+ * IS THIS DELIVERABLE A POST ONE? Norway's POST batch names its projects
+ * "…_DOOH_NfkinoPOST_…", "…_OdeonPOST_…" and "…_DOOH_Post_…": POST as a word
+ * of its own, or glued in CAPITALS onto the end of the site. Only the capitals
+ * count when glued -- a site called "Lamppost" is not a POST deliverable.
+ */
+export function ssIsPostDeliverable(aepName: string): boolean {
+  let stem = String(aepName || "");
+  try { stem = decodeURI(stem); } catch (e) { /* plain */ }
+  const dot = stem.lastIndexOf(".");
+  if (dot > 0) stem = stem.substring(0, dot);
+  const toks = stem.split(/[_ ]+/);
+  for (let i = 0; i < toks.length; i++) {
+    const t = toks[i];
+    if (t.toUpperCase() === "POST") return true;
+    if (t.length > 4 && t.substring(t.length - 4) === "POST" && /[a-z]/.test(t.substring(0, t.length - 4))) return true;
+  }
+  return false;
+}
+
+/** The filename with a trailing "_POST" (before the extension) taken off, or
+ *  "" when it has none -- "SF_Trio_Date_White_NO_RGB_POST.ai" is the POST
+ *  version of "SF_Trio_Date_White_NO_RGB.ai". */
+function ssPostTwinOf(name: string): string {
+  const n = String(name);
+  const m = /^(.*)_POST(\.[^.]+)$/i.exec(n);
+  return m ? m[1] + m[2] : "";
 }
 
 interface SsMatches {
@@ -4525,15 +4556,29 @@ interface SsMatches {
  * Every candidate that differs from `name` by exactly one MARKET-SHAPED token,
  * sorted by what that difference means.
  */
-function ssMatchesFor(name: string, cands: SupportSwapCandidate[]): SsMatches {
+function ssMatchesFor(name: string, cands: SupportSwapCandidate[], post?: boolean): SsMatches {
   const live: SsMatch[] = [];
   const ov: SsMatch[] = [];
   const foreign: SsMatch[] = [];
   let same = false;
   const nameTokens = ssTokens(name);
   for (let i = 0; i < cands.length; i++) {
-    const candName = decode(cands[i].file.name);
+    let candName = decode(cands[i].file.name);
     if (candName.toLowerCase() === name.toLowerCase()) { same = true; continue; }
+    // THE _POST VERSION OF A FILE. Never a candidate for a PRE deliverable.
+    // For a POST one it is compared with its "_POST" taken off, so the market
+    // rule below applies unchanged -- and when that leaves the SAME name the
+    // project already uses (already swapped to "_NO_RGB" before the batch
+    // became POST), it is the upgrade to its POST version.
+    const twin = ssPostTwinOf(candName);
+    if (twin) {
+      if (!post) continue;
+      if (twin.toLowerCase() === name.toLowerCase()) {
+        live.push({ cand: cands[i], fromToken: "", toToken: "POST", post: true });
+        continue;
+      }
+      candName = twin;
+    }
     const at = ssOneTokenDiff(name, candName);
     if (at === -1) continue;
     const from = nameTokens[at];
@@ -4541,12 +4586,20 @@ function ssMatchesFor(name: string, cands: SupportSwapCandidate[]): SsMatches {
     // Both ends must look like a market code, or "one token differs" catches
     // 2L/1L, Cyan/Mono and PRE/POST as though they were localisations.
     if (!ssIsMarketToken(from) || !ssIsMarketToken(to)) continue;
-    const m: SsMatch = { cand: cands[i], fromToken: from, toToken: to };
+    const m: SsMatch = { cand: cands[i], fromToken: from, toToken: to, post: !!twin };
     // Never swap TOWARDS the master. A territory part-way through
     // localisation holds both, and offering the OV would undo work.
     if (ssIsOvToken(to)) ov.push(m);
     else if (ssIsOvToken(from)) live.push(m);
     else foreign.push(m);
+  }
+  // A POST deliverable takes the POST version wherever one exists, and the
+  // ordinary version otherwise (logos and taglines have no POST version --
+  // only the dates change).
+  if (post) {
+    const postOnes: SsMatch[] = [];
+    for (let k = 0; k < live.length; k++) if (live[k].post) postOnes.push(live[k]);
+    if (postOnes.length > 0) return { live: postOnes, ov: ov, foreign: foreign, same: false };
   }
   return { live: live, ov: ov, foreign: foreign, same: same };
 }
@@ -4628,6 +4681,7 @@ export function ssApplyToOpenProject(
     projReport.skipped = "No .ai/.psd footage in this project.";
     return projReport;
   }
+  const post = ssIsPostDeliverable(aepName);
 
   for (let i = 0; i < found.length; i++) {
     const fi = found[i].item;
@@ -4649,7 +4703,7 @@ export function ssApplyToOpenProject(
       continue;
     }
 
-    const m = ssMatchesFor(name, cands);
+    const m = ssMatchesFor(name, cands, post);
 
     if (m.live.length === 0) {
       if (m.same && !ssHasOvToken(name)) {
@@ -4728,10 +4782,12 @@ export function ssApplyToOpenProject(
     }
 
     if (!dryRun) { fi.replace(pick.cand.file); $.sleep(200); }
-    projReport.items.push({
+    const done: McItItemReport = {
       folder: folderName, name: name, action: "replaced", key: key,
       newName: decode(pick.cand.file.name),
-    });
+    };
+    if (pick.post) done.reason = "The POST version, for a POST deliverable.";
+    projReport.items.push(done);
   }
 
   return projReport;

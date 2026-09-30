@@ -1127,6 +1127,14 @@ tokens and is correctly not a candidate.
   one. `from` must be OV: a market→market pair (an `_FR_` file in an IT
   project) is **offered as a fixable no-match**, never applied — it is either a
   mistake or a deliberate borrow and nothing here can tell which.
+- **A POST deliverable takes the `_POST` version** (`ssIsPostDeliverable`:
+  POST as its own word, or glued in CAPITALS to the site -- `NfkinoPOST`,
+  never `Lamppost`). Norway's `Date/` holds `…_NO_RGB.ai` and `…_NO_RGB_POST.ai`,
+  and the one-token rule could never offer the second. A `_POST` candidate is
+  compared with its `_POST` taken off, so the market rule is unchanged; a
+  PRE deliverable never sees one; where no POST version exists (taglines,
+  logos) the ordinary one is taken; and a POST project already swapped to the
+  PRE date is UPGRADED to its POST twin. `node scripts/probe-support-swap-post.cjs`.
 - A file already present under the identical name is reported as
   "already the version in this market's Masters/Support" — worded to cover
   BOTH already-localised and shared-across-markets, because one market's tree
