@@ -49,6 +49,10 @@
 // player (VideoOverlay); the folded row has a play button beside it. A preview
 // older than the newest render says so. Never counted as delivered.
 //
+// TO AMEND puts "Amend" on the folded line: an amend is the subtask you're
+// most likely to open next, so it's one press from the list rather than open
+// row, then Open in AE. The open project's own row says it's open instead.
+//
 // "Wrike looks behind" (rendered, Wrike still Backlog/Motion) is a HINT, not a
 // problem: the panel can't write to Wrike, and a row that is fine must not
 // read as broken.
@@ -58,7 +62,7 @@ import { Image as ImageIcon, FileBox, Film, PackageCheck, FileText, RefreshCw, L
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import Dropdown from "../Dropdown";
-import { fetchJobs, fetchJobsFresh, jobReadiness, territoryFlag, parseJobTitle, statusTint, DELIVERABLE_STATUSES, type WrikeJob } from "../lib/jobsFeed";
+import { fetchJobs, fetchJobsFresh, jobReadiness, territoryFlag, parseJobTitle, statusTint, DELIVERABLE_STATUSES, AMEND_STATUSES, type WrikeJob } from "../lib/jobsFeed";
 import { loadJobRows, stageBatchFromJob, classifyRows } from "../lib/jobRows";
 import { navigateToTool } from "../lib/navigation";
 import { confirmDialog } from "../Dialog";
@@ -128,6 +132,9 @@ const jobLabel = (j: WrikeJob) => {
     const n = (p.batch.match(/\d+/) || ["1"])[0].replace(/^0+(?=\d)/, "");
     return [p.territory || p.name || j.title, n, /POST/i.test(p.batch) ? "POST" : ""].filter(Boolean).join(" ");
 };
+
+/** Wrike asks for changes to this one. */
+export const toAmend = (r: Row): boolean => !!(r.wrike && AMEND_STATUSES.test(r.wrike.status.trim()));
 
 /** A preview older than the newest render: the one on screen isn't current. */
 export const previewStale = (r: Row): boolean => !!(r.preview && r.render && r.render.version > r.preview.version);
@@ -449,6 +456,7 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
     const toggle = (k: string) => setOpen((o) => ({ ...o, [k]: !o[k] }));
     const toBuild = rows.filter((r) => r.wrike && !r.aep && !r.claimed && jobOf(r));
     const behindCount = count(wrikeBehind);
+    const amendCount = count(toAmend);
 
     const Link: React.FC<{ icon: React.ReactNode; label: string; path?: string; folder?: boolean }> = ({ icon, label, path, folder }) => (
         <button type="button" className="bt-link" disabled={!path} title={path || `No ${label.toLowerCase()} for this batch`} onClick={() => path && revealInFinder(path, !!folder)}>
@@ -484,13 +492,22 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
                     {problems.length > 0
                         ? <span className="bt-issues" title={problems.join("\n")}><AlertTriangle size={11} />{problems.length}</span>
                         : <span className="bt-ok" title="Nothing to look at"><Check size={12} /></span>}
-                    {r.wrike && (
+                    {/* An amend with a project shows the Amend press instead of the
+                        pill: both say To amend, and a docked panel can't spare it. */}
+                    {r.wrike && !(toAmend(r) && r.aep) && (
                         <span className={"bt-wrike" + (wrikeBehind(r) ? " is-behind" : "")} style={{ color: statusTint(r.wrike.status).color, background: statusTint(r.wrike.status).background }}
                             title={wrikeBehind(r) ? `Rendered, but Wrike still says ${r.wrike.status}` : "Wrike"}>
                             {wrikeBehind(r) && <ArrowUpRight size={10} />}{r.wrike.status || "Wrike"}
                         </span>
                     )}
                 </button>
+                {toAmend(r) && r.aep && (isHere
+                    ? <span className="bt-amend is-here" title="This project is open in AE">Open</span>
+                    : (
+                        <button type="button" className="bt-amend" disabled={!!acting} onClick={() => void openInAE(r)} title={`Open ${r.aep.name} to amend it`}>
+                            {acting === "open:" + r.key ? <Loader2 size={11} className="spin" /> : <FolderOpen size={11} />} Amend
+                        </button>
+                    ))}
                 {r.preview && (
                     <button type="button" className={"bt-play" + (previewStale(r) ? " is-stale" : "")} aria-label="Play the preview"
                         title={`Play ${r.preview.name}${previewStale(r) ? " (older than the newest render)" : ""}`}
@@ -531,8 +548,8 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
                                     {acting === "rename:" + r.key ? <Loader2 size={12} className="spin" /> : <PenLine size={12} />} Rename to match Wrike
                                 </button>);
                             if (r.aep && !isHere) acts.push(
-                                <button key="op" type="button" className="bt-act" disabled={!!acting} onClick={() => void openInAE(r)}>
-                                    {acting === "open:" + r.key ? <Loader2 size={12} className="spin" /> : <FolderOpen size={12} />} Open in AE
+                                <button key="op" type="button" className={"bt-act" + (toAmend(r) ? " is-primary" : "")} disabled={!!acting} onClick={() => void openInAE(r)}>
+                                    {acting === "open:" + r.key ? <Loader2 size={12} className="spin" /> : <FolderOpen size={12} />} {toAmend(r) ? "Open to amend" : "Open in AE"}
                                 </button>);
                             if (r.wrike && !r.aep && !r.claimed && jobOf(r)) acts.push(
                                 <button key="bd" type="button" className="bt-act is-primary" disabled={!!acting} onClick={() => void build([r])}>
@@ -616,6 +633,7 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
                         <span className="bt-count">{count((r) => !!r.aep)} built</span>
                         <span className="bt-count">{count((r) => !!r.render)} rendered</span>
                         <span className="bt-count">{count((r) => !!r.delivered)} delivered</span>
+                        {amendCount > 0 && <span className="bt-count is-amend" title="Subtasks Wrike has back as To amend">{amendCount} to amend</span>}
                         {behindCount > 0 && <span className="bt-count is-behind" title="Rendered, but Wrike still says Backlog or Motion"><ArrowUpRight size={10} /> {behindCount} ahead of Wrike</span>}
                         <span className="bt-spacer" />
                         {toBuild.length > 1 && (

@@ -885,6 +885,9 @@ The open project's row is an outlined card, never an edge bar.
   with the job's film prefix (`SF_`) — never simply the first walked. Chips are
   scanned once on open and on refresh, one job at a time; never polled. The
   page's own scan updates its job's chip, so the two can't disagree.
+- **To amend puts "Amend" on the folded line** (opens the project; the open
+  project's row says "Open" instead), in place of the status pill, and the
+  opened row's button reads "Open to amend" as the primary action.
 - **Previews come from `Renders/<Batch>/_mp4`** (the studio renders a
   web-playable mp4 per deliverable there; the MOVs are ProRes Chromium can't
   play). Newest version per deliverable, only for deliverables the batch

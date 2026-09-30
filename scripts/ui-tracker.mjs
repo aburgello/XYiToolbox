@@ -40,7 +40,7 @@ const FIXTURES = `{
         preview: { name: "${P}NfkinoPOST_345x496px_30s_NO_V01.mp4", path: "${T}/Renders/Batch_02/_mp4/${P}NfkinoPOST_345x496px_30s_NO_V01.mp4", version: 1 }, wrike: { name: "${P}NFKINOPOST_345x496px_30s_NO", status: "Prep for delivery" } },
       { key: "B", name: "SF_INTL_Characters_DOOH_Post_1080x1920px_30s_NO",
         aep: { name: "SF_INTL_Characters_DOOH_Post_1080x1920px_30s_NO_V01.aep", path: "${T}/AE/Batch_02/c.aep", version: 1, versions: 1 },
-        wrike: { name: "SF_INTL_Characters_DOOH_Post_1080x1920px_30s_NO", status: "Motion" },
+        wrike: { name: "SF_INTL_Characters_DOOH_Post_1080x1920px_30s_NO", status: "To amend" },
         near: [{ stage: "art (JPG_PNG)", name: "SF_INTL_Characters_DOOH_Digital MetroPOST_1080x1920px_10s_NO", why: "same size, named differently (and 30s vs 10s)" }] },
       { key: "D", name: "SF_INTL_Trio_DOOH_POST_1920x1080px_30s_NO", wrike: { name: "SF_INTL_Trio_DOOH_POST_1920x1080px_30s_NO", status: "Backlog" },
         aep: { name: "SF_INTL_Trio_POST_DOOH_1920x1080px_30s_NO_V01.aep", path: "${T}/AE/Batch_02/d.aep", version: 1, versions: 1 },
@@ -60,7 +60,7 @@ const FIXTURES = `{
 const FEED = [{ id: "J1", title: "SF Motion Outdoor NO 2", assignee: "Antonio", status: "Prep for delivery", updated_at: "", subtask_count: 1, subtasks_done: 0,
     subtasks: [
         { id: "s", name: `${P}NFKINOPOST_345x496px_30s_NO`, status: "Active", customStatusName: "Prep for delivery" },
-        { id: "s2", name: "SF_INTL_Characters_DOOH_Post_1080x1920px_30s_NO", status: "Active", customStatusName: "Motion" },
+        { id: "s2", name: "SF_INTL_Characters_DOOH_Post_1080x1920px_30s_NO", status: "Active", customStatusName: "To amend" },
         { id: "s3", name: "SF_INTL_Trio_DOOH_POST_1920x1080px_30s_NO", status: "Active", customStatusName: "Backlog" },
         { id: "s4", name: `${P}Kiwi_1920x1080px_15s_NO`, status: "Active", customStatusName: "Backlog" },
     ] },
@@ -132,6 +132,15 @@ try {
     await page.eval(`document.querySelector(".video-player-close").click()`);
     await page.waitFor(`!document.querySelector(".video-player-overlay")`, 4000);
 
+    console.log("\n3c. To amend");
+    check(/1 to amend/.test(await page.eval(`document.querySelector(".bt-summary").innerText`)), "the summary counts what Wrike has back as To amend");
+    const amendBtns = await page.eval(`[...document.querySelectorAll(".bt-rows > .bt-row")].map(r => r.querySelector(".bt-row-head .bt-amend")?.innerText.trim() || "")`);
+    check(amendBtns[1] === "Amend" && amendBtns.filter(Boolean).length === 1, "a To amend subtask with a project gets Amend on its folded line, and only it", amendBtns);
+    check(await page.eval(`!document.querySelectorAll(".bt-rows > .bt-row")[1].querySelector(".bt-wrike")`), "…in place of the status pill, which would say the same thing");
+    await page.eval(`document.querySelectorAll(".bt-rows > .bt-row")[1].querySelector(".bt-row-head .bt-amend").click()`);
+    check(await page.waitFor(`window.__opened === "${T}/AE/Batch_02/c.aep"`, 4000), "…which opens that project, without opening the row");
+    await page.eval(`window.__opened = null`);
+
     console.log("\n4. Where is it");
     await page.eval(`window.__spawned = []`);
     await page.click(".bt-link", "Renders");
@@ -192,7 +201,8 @@ try {
     await page.eval(`window.__stale = ["SF_INTL_Characters_DOOH_Post_old_V01"]`);
     await page.eval(`document.querySelectorAll(".bt-rows > .bt-row")[1].querySelector(".bt-row-top").click()`);
     await pause(100);
-    await page.eval(`[...document.querySelectorAll(".bt-rows > .bt-row")[1].querySelectorAll(".bt-act")].find(b => /Open in AE/.test(b.textContent)).click()`);
+    check(await page.eval(`[...document.querySelectorAll(".bt-rows > .bt-row")[1].querySelectorAll(".bt-act")].some(b => /Open to amend/.test(b.textContent) && b.classList.contains("is-primary"))`), "a To amend row's open button reads 'Open to amend', as the primary action");
+    await page.eval(`[...document.querySelectorAll(".bt-rows > .bt-row")[1].querySelectorAll(".bt-act")].find(b => /Open to amend/.test(b.textContent)).click()`);
     check(await page.waitFor(`window.__opened === "${T}/AE/Batch_02/c.aep"`, 4000), "Open in AE opens the row's project");
     check(await page.waitFor(`!!document.querySelector(".bt-stale")`, 4000), "…and a comp still carrying an old name is pointed out");
     await page.click(".bt-stale .bt-act", "Rename comp");
