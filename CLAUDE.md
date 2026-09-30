@@ -869,6 +869,15 @@ The open project's row is an outlined card, never an edge bar.
   name; `_` folders are never touched. The comp inside is renamed separately,
   when that project is open (`trackerCompCheck`/`trackerRenameComp`, own
   root-level `Main` only, unsaved, Ctrl+Z).
+- **Your Wrike jobs lead the page.** Every job assigned to you is a chip
+  (wrapping, never scrolling) with a built/rendered/delivered bar, a problem
+  count and how far Wrike is behind; with no batch open they ARE the page.
+  `trackerLocate` finds each job on disk as Deliver does (every campaign's
+  Markets root, `territoryCheck`), and when two campaigns hold the territory
+  the one whose AE holds the batch wins, then the one holding a project named
+  with the job's film prefix (`SF_`) — never simply the first walked. Chips are
+  scanned once on open and on refresh, one job at a time; never polled. The
+  page's own scan updates its job's chip, so the two can't disagree.
 - "Wrike looks behind" (rendered, Wrike still Backlog/Motion) is a blue HINT,
   never a problem — the panel can't write to Wrike.
 `node scripts/probe-tracker.cjs` (the stub refuses every write but the

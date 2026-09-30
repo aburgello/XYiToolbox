@@ -27,7 +27,8 @@
 // (Batch_2 never matches Batch_2_POST).
 // =============================================================================
 import { Result, decode } from "./shared";
-import { ownProjectFolder } from "./tools";
+import { ownProjectFolder, territoryCheck } from "./tools";
+import { loadLocLibCampaigns } from "./localise";
 
 function trLoose(n: string): string {
   return String(n).toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/(^|\D)0+(\d)/g, "$1$2");
@@ -555,6 +556,82 @@ export const trackerRenameComp = (): Result & { renamed?: number } => {
       app.endUndoGroup();
     }
     return { success: true, renamed: n };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/**
+ * WHERE EACH OF MY WRIKE JOBS LIVES ON DISK, so the tracker can open a batch
+ * from its job rather than from whatever project is open. `argsJson`:
+ * [{ id, code, batch, prefix }] -- the job's territory code, its batch as the
+ * title says it ("Batch_2_POST"), and the film prefix its subtasks start with
+ * ("SF"). One call for all of them.
+ *
+ * The territory is found as Deliver finds it: every saved Localised Library
+ * campaign's Markets root, a folder territoryCheck resolves to the same
+ * country. Two campaigns can both hold a Norway, so the candidates are ranked:
+ * one whose AE holds this batch beats one that doesn't, and a batch holding a
+ * project named with the job's film prefix beats one that doesn't. The batch
+ * returned is the DISK's spelling (Batch_02 for a title's "Batch 2") when the
+ * AE folder exists, else the title's. Read-only; unmounted roots are skipped
+ * silently.
+ */
+export const trackerLocate = (argsJson: string): Result & { jobs?: { id: string; territoryPath: string; territory: string; batch: string; batches: string[] }[] } => {
+  try {
+    let args: { id: string; code: string; batch: string; prefix?: string }[];
+    try { args = JSON.parse(argsJson); } catch (e) { return { success: false, error: "Could not read the jobs." }; }
+    const camps = loadLocLibCampaigns() || [];
+    // Every territory folder under every mounted Markets root, resolved once.
+    const terrs: { folder: Folder; name: string; country: string }[] = [];
+    for (let c = 0; c < camps.length; c++) {
+      if (!camps[c].marketsRoot) continue;
+      const root = new Folder(camps[c].marketsRoot);
+      if (!root.exists) continue; // a DIRECTORY: the one .exists the NAS answers honestly
+      const kids = trKids(root);
+      for (let i = 0; i < kids.length; i++) {
+        if (!trIsFolder(kids[i])) continue;
+        const nm = decode(String(kids[i].name));
+        if (nm.charAt(0) === "_") continue;
+        const country = territoryCheck(nm);
+        if (country) terrs.push({ folder: kids[i] as Folder, name: nm, country: country });
+      }
+    }
+    const out: { id: string; territoryPath: string; territory: string; batch: string; batches: string[] }[] = [];
+    for (let j = 0; j < args.length; j++) {
+      const want = territoryCheck(String(args[j].code || ""));
+      if (!want) continue;
+      const prefix = String(args[j].prefix || "").toUpperCase();
+      let best: { folder: Folder; name: string } | null = null;
+      let bestScore = -1;
+      let bestBatch = "";
+      for (let t = 0; t < terrs.length; t++) {
+        if (terrs[t].country !== want) continue;
+        let score = 0;
+        let diskBatch = "";
+        const ae = trChild(terrs[t].folder, "AE");
+        const bf = ae ? trBatchIn(ae, String(args[j].batch || "")) : null;
+        if (bf) { score += 2; diskBatch = decode(String(bf.name)); }
+        // Whose film is it: a project named with the job's prefix, in this
+        // batch or -- for a batch not started yet -- in any batch here.
+        if (prefix && ae) {
+          const pool: Folder[] = bf ? [bf] : [];
+          if (!bf) { const bs = trKids(ae); for (let b = 0; b < bs.length; b++) if (trIsFolder(bs[b])) pool.push(bs[b] as Folder); }
+          let hit = false;
+          for (let p = 0; p < pool.length && !hit; p++) {
+            const files = trKids(pool[p]);
+            for (let f = 0; f < files.length; f++) {
+              if (decode(String(files[f].name)).toUpperCase().indexOf(prefix + "_") === 0) { hit = true; break; }
+            }
+          }
+          if (hit) score += 1;
+        }
+        if (score > bestScore) { bestScore = score; best = terrs[t]; bestBatch = diskBatch; }
+      }
+      if (!best) continue;
+      out.push({ id: String(args[j].id), territoryPath: String(best.folder.fsName), territory: best.name, batch: bestBatch || String(args[j].batch || ""), batches: trackerBatchesRaw(best.folder) });
+    }
+    return { success: true, jobs: out };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

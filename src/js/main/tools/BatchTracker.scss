@@ -186,5 +186,36 @@
     }
     .bt-msg { margin: 0; padding: 7px 10px; border-radius: 7px; background: rgba(74, 222, 128, 0.08); color: #86efac; font-size: 11.5px; cursor: pointer; &.is-bad { background: rgba(248, 113, 113, 0.08); color: #fca5a5; } }
 
+    // YOUR JOBS: chips that wrap (AE gives a mouse no sideways wheel), each
+    // with a stacked bar -- built under rendered under delivered.
+    .bt-lead { margin: 2px 0 -2px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #8b9795; }
+    .bt-jobs { display: flex; flex-wrap: wrap; gap: 6px; }
+    .bt-job {
+        display: inline-flex; flex-direction: column; align-items: stretch; gap: 5px;
+        min-width: 96px; padding: 6px 9px 7px;
+        border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; background: rgba(255, 255, 255, 0.03);
+        color: #dfe8e6; text-align: left; cursor: pointer;
+        &:hover, &:active { background: rgba(255, 255, 255, 0.07); border-color: rgba(255, 255, 255, 0.2); color: #fff; }
+        &.is-on { border-color: rgba(45, 212, 191, 0.55); background: rgba(45, 212, 191, 0.08); }
+        &.is-on:hover, &.is-on:active { background: rgba(45, 212, 191, 0.12); }
+        &.is-lost { opacity: 0.55; }
+    }
+    .bt-job-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .bt-job-flag { font-size: 12px; line-height: 1; }
+    .bt-job-label { flex: 1 1 auto; min-width: 0; font-size: 11.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bt-job-behind { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; color: #93c5fd; font-size: 10.5px; font-weight: 700; }
+    .bt-job-status { flex-shrink: 0; font-size: 10.5px; font-weight: 600; }
+    .bt-job-bar {
+        position: relative; display: block; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.08); overflow: hidden;
+        i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; }
+        .is-built { background: rgba(94, 234, 212, 0.3); }
+        .is-rendered { background: rgba(94, 234, 212, 0.65); }
+        .is-delivered { background: #4ade80; }
+    }
+    .bt-job-counts { font-size: 10.5px; color: #8b9795; font-variant-numeric: tabular-nums; }
+    .bt-jobs.is-overview { flex-direction: column; }
+    .bt-jobs.is-overview .bt-job { padding: 9px 11px; gap: 6px; }
+    .bt-jobs.is-overview .bt-job-label { font-size: 12.5px; }
+
     .bt-note { display: flex; align-items: center; gap: 6px; margin: 4px 0; font-size: 12px; color: #9aa7a5; &.is-bad { color: #fca5a5; } }
 }

@@ -36,6 +36,13 @@
 //                      under another name (tracker.ts's claims) is renamed to
 //                      Wrike's name, after a confirm listing what moves. The
 //                      comp inside is renamed when that project is open.
+// YOUR JOBS lead the page: every Wrike job assigned to you is a chip carrying
+// its own progress (built / rendered / delivered of its subtasks, problems,
+// how far Wrike is behind), found on disk by trackerLocate the way Deliver
+// finds a territory. A chip opens that batch -- no project needs to be open,
+// and with none open the chips ARE the page. Scanned once on open and on
+// refresh, one job at a time; never polled.
+//
 // "Wrike looks behind" (rendered, Wrike still Backlog/Motion) is a HINT, not a
 // problem: the panel can't write to Wrike, and a row that is fine must not
 // read as broken.
@@ -45,7 +52,7 @@ import { Image as ImageIcon, FileBox, Film, PackageCheck, FileText, RefreshCw, L
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import Dropdown from "../Dropdown";
-import { fetchJobs, parseJobTitle, statusTint, DELIVERABLE_STATUSES, type WrikeJob } from "../lib/jobsFeed";
+import { fetchJobs, fetchJobsFresh, jobReadiness, territoryFlag, parseJobTitle, statusTint, DELIVERABLE_STATUSES, type WrikeJob } from "../lib/jobsFeed";
 import { loadJobRows, stageBatchFromJob, classifyRows } from "../lib/jobRows";
 import { navigateToTool } from "../lib/navigation";
 import { confirmDialog } from "../Dialog";
@@ -87,6 +94,30 @@ export function rowIssues(r: Row, color: string): string[] {
 /** Rendered, and Wrike still at a status from before rendering. A hint only. */
 export const wrikeBehind = (r: Row): boolean => !!(r.render && r.wrike && /^(backlog|motion)$/i.test(r.wrike.status.trim()));
 
+/** What a job's chip shows: its subtasks' stages, counted. */
+interface JobSummary { total: number; built: number; rendered: number; delivered: number; problems: number; behind: number }
+export function summarise(rows: Row[]): JobSummary {
+    const w = rows.filter((r) => !!r.wrike);
+    return {
+        total: w.length,
+        built: w.filter((r) => !!r.aep).length,
+        rendered: w.filter((r) => !!r.render).length,
+        delivered: w.filter((r) => !!r.delivered).length,
+        problems: w.filter((r) => rowIssues(r, "").length > 0).length,
+        behind: w.filter(wrikeBehind).length,
+    };
+}
+interface Located { id: string; territoryPath: string; territory: string; batch: string; batches: string[] }
+/** A job's batch as a folder name, the way Build a Batch writes it. */
+const jobBatch = (j: WrikeJob) => parseJobTitle(j.title).batch.trim().replace(/\s+/g, "_") || "Batch_1";
+const subsOf = (j: WrikeJob) => (j.subtasks || []).filter((st) => st.name).map((st) => ({ name: st.name, status: st.customStatusName || st.status || "" }));
+/** "NO 2", "CL 1 POST": what the chip is called. */
+const jobLabel = (j: WrikeJob) => {
+    const p = parseJobTitle(j.title);
+    const n = (p.batch.match(/\d+/) || ["1"])[0].replace(/^0+(?=\d)/, "");
+    return [p.territory || p.name || j.title, n, /POST/i.test(p.batch) ? "POST" : ""].filter(Boolean).join(" ");
+};
+
 const stem = (p: string) => (p.split(/[\\/]/).pop() || p).replace(/\.[^.]+$/, "").replace(/_V\d+$/i, "").toUpperCase();
 
 const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
@@ -109,6 +140,11 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
     const [acting, setActing] = useState("");
     /** Comps in the open project still carrying a name its file no longer has. */
     const [staleComps, setStaleComps] = useState<string[]>([]);
+    /** Every Wrike job assigned to you, where it is on disk, and how far along. */
+    const [myJobs, setMyJobs] = useState<WrikeJob[]>([]);
+    const [located, setLocated] = useState<Record<string, Located>>({});
+    const [sums, setSums] = useState<Record<string, JobSummary>>({});
+    const [jobsBusy, setJobsBusy] = useState(false);
 
     // Where the open project sits decides the first view.
     useEffect(() => {
@@ -158,6 +194,15 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
             const r = (await evalTSSafe("trackerScan", JSON.stringify({ territoryPath: tp, batch: b, wrike: w.subs }))) as any;
             if (!r || !r.success) { setError((r && r.error) || "Couldn't read the batch."); return; }
             setScan({ territory: r.territory, batch: r.batch, folders: r.folders, rows: r.rows || [] });
+            // The page's own scan is fresher than the chip's: keep them agreeing.
+            if (w.jobs.length) setSums((prev) => {
+                const next = { ...prev };
+                for (const j of w.jobs) {
+                    const names = new Set(subsOf(j).map((x) => x.name));
+                    next[j.id] = summarise((r.rows || []).filter((x: Row) => x.wrike && names.has(x.wrike.name)));
+                }
+                return next;
+            });
             setOpen({});
             setShowExtra(false);
             // Finder colours on the newest renders: green/orange good, red not.
@@ -169,6 +214,92 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
     };
 
     useEffect(() => { if (ready && territoryPath && batch) void run(); }, [ready, territoryPath, batch]);
+
+    // YOUR JOBS: listed, located on disk, then summarised one at a time.
+    const loadJobs = async (live: boolean) => {
+        setJobsBusy(true);
+        try {
+            let owner = "";
+            try {
+                const st = (await evalTS("teamGetMachineState")) as { owner?: string } | undefined;
+                owner = (st && st.owner) || "";
+            } catch { /* untagged */ }
+            if (!owner) { setMyJobs([]); return; }
+            const pick = (res: Awaited<ReturnType<typeof fetchJobs>>) => {
+                if (res.mock) return [] as WrikeJob[];
+                const who = res.viewingAs || owner;
+                return res.jobs.filter((j) => j.assignee === who && (j.subtaskCount ?? 0) > 0 && jobReadiness(j.status) !== "done" && subsOf(j).length > 0);
+            };
+            const res = live ? await fetchJobs(owner, true) : await fetchJobsFresh(owner, (r) => setMyJobs(pick(r)));
+            const list = pick(res);
+            setMyJobs(list);
+            if (!list.length) return;
+            const loc = (await evalTS("trackerLocate", JSON.stringify(list.map((j) => ({
+                id: j.id, code: jobTerritory(j), batch: jobBatch(j), prefix: (subsOf(j)[0].name.split("_")[0] || "").toUpperCase(),
+            }))))) as any;
+            const map: Record<string, Located> = {};
+            ((loc && loc.jobs) || []).forEach((x: Located) => { map[x.id] = x; });
+            setLocated(map);
+            for (const j of list) {
+                const at = map[j.id];
+                if (!at) continue;
+                try {
+                    const r = (await evalTS("trackerScan", JSON.stringify({ territoryPath: at.territoryPath, batch: at.batch, wrike: subsOf(j) }))) as any;
+                    if (r && r.success) setSums((prev) => ({ ...prev, [j.id]: summarise(r.rows || []) }));
+                } catch { /* one job's folder unreadable: its chip just shows no bar */ }
+            }
+        } finally {
+            setJobsBusy(false);
+        }
+    };
+    useEffect(() => { if (ready) void loadJobs(false); }, [ready]);
+
+    const openJob = (j: WrikeJob) => {
+        const at = located[j.id];
+        if (!at) { setMsg({ text: `Couldn't find ${jobLabel(j)} under any campaign's Markets folder.`, bad: true }); return; }
+        setTerritoryPath(at.territoryPath);
+        setTerritory(at.territory);
+        setBatches(at.batches.some((b) => loose(b) === loose(at.batch)) ? at.batches : at.batches.concat([at.batch]));
+        setBatch(at.batch);
+        setMsg(null);
+    };
+    const isOpenJob = (j: WrikeJob) => {
+        const at = located[j.id];
+        return !!at && at.territoryPath === territoryPath && loose(at.batch) === loose(batch);
+    };
+
+    const jobChips = (overview: boolean) => (
+        <div className={"bt-jobs" + (overview ? " is-overview" : "")}>
+            {myJobs.map((j) => {
+                const sm = sums[j.id];
+                const at = located[j.id];
+                const pct = (n: number) => (sm && sm.total ? (100 * n) / sm.total : 0);
+                const flag = territoryFlag(parseJobTitle(j.title).territory);
+                return (
+                    <button key={j.id} type="button" className={"bt-job" + (isOpenJob(j) ? " is-on" : "") + (at ? "" : " is-lost")} onClick={() => openJob(j)}
+                        title={at ? `${j.title}\n${at.territory} · ${at.batch}` : `${j.title}\nNot found under any campaign's Markets folder`}>
+                        <span className="bt-job-top">
+                            {flag && <span className="bt-job-flag">{flag}</span>}
+                            <span className="bt-job-label">{jobLabel(j)}</span>
+                            {sm && sm.problems > 0 && <span className="bt-issues"><AlertTriangle size={10} />{sm.problems}</span>}
+                            {sm && sm.behind > 0 && <span className="bt-job-behind" title={`${sm.behind} rendered, Wrike still behind`}><ArrowUpRight size={10} />{sm.behind}</span>}
+                            {overview && <span className="bt-job-status" style={{ color: statusTint(j.status).color }}>{j.status}</span>}
+                        </span>
+                        <span className="bt-job-bar" aria-label={sm ? `${sm.built} built, ${sm.rendered} rendered, ${sm.delivered} delivered of ${sm.total}` : "Reading…"}>
+                            <i className="is-built" style={{ width: pct(sm ? sm.built : 0) + "%" }} />
+                            <i className="is-rendered" style={{ width: pct(sm ? sm.rendered : 0) + "%" }} />
+                            <i className="is-delivered" style={{ width: pct(sm ? sm.delivered : 0) + "%" }} />
+                        </span>
+                        {overview && (
+                            <span className="bt-job-counts">
+                                {sm ? `${sm.built}/${sm.total} built · ${sm.rendered} rendered · ${sm.delivered} delivered` : at ? "Reading…" : "Not found on disk"}
+                            </span>
+                        )}
+                    </button>
+                );
+            })}
+        </div>
+    );
 
     // Which project is open, and whether its comp still has an old name.
     const refreshHere = async () => {
@@ -372,7 +503,7 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
         <div className="bt">
             <div className="bt-head">
                 <div className="bt-where">
-                    <span className="bt-title">{territory ? territory.replace(/_/g, " ") : "No territory"}</span>
+                    <span className="bt-title">{territory ? territory.replace(/_/g, " ") : myJobs.length ? "Pick a job" : "No territory"}</span>
                 </div>
                 {batches.length > 0 && (
                     <Dropdown value={batch} onChange={setBatch} options={batches.map((b) => ({ value: b, label: b }))} className="bt-batch" />
@@ -380,14 +511,22 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
                 <button type="button" className="bt-btn" onClick={() => void pick()} title="Pick a territory, or a batch in its AE folder">
                     <Search size={13} /> Other…
                 </button>
-                <button type="button" className="bt-btn bt-icon" disabled={busy || !batch} onClick={() => void run()} aria-label="Refresh" title="Read the folders again">
-                    <RefreshCw size={13} className={busy ? "spin" : ""} />
+                <button type="button" className="bt-btn bt-icon" disabled={busy || jobsBusy} onClick={() => { if (batch) void run(); void loadJobs(true); }} aria-label="Refresh" title="Read the folders and your Wrike jobs again">
+                    <RefreshCw size={13} className={busy || jobsBusy ? "spin" : ""} />
                 </button>
             </div>
 
-            {!territoryPath && (
-                <p className="bt-note">Open a project inside a territory's AE folder, or press Other… to pick one.</p>
+            {territoryPath && myJobs.length > 0 && jobChips(false)}
+            {!territoryPath && myJobs.length > 0 && (
+                <>
+                    <p className="bt-lead">Your jobs</p>
+                    {jobChips(true)}
+                </>
             )}
+            {!territoryPath && myJobs.length === 0 && (
+                <p className="bt-note">{jobsBusy ? <><Loader2 size={13} className="spin" /> Reading your Wrike jobs…</> : "Open a project inside a territory's AE folder, or press Other… to pick one."}</p>
+            )}
+            {!scan && msg && <p className={"bt-msg" + (msg.bad ? " is-bad" : "")} onClick={() => setMsg(null)}>{msg.text}</p>}
             {error && <p className="bt-note is-bad">{error}</p>}
 
             {scan && (

@@ -177,5 +177,25 @@ const rc = a.trackerRenameComp();
 check(rc.success && rc.renamed === 1 && comp.name === 'SF_INTL_Trio_DOOH_POST_1920x1080px_30s_NO_V02' && other.name.endsWith('_V02_DOUBLE_RES'), 'renaming it keeps the version; a matching comp is left alone', { comp: comp.name, other: other.name });
 check(a.trackerCompCheck().comps.length === 0, '…after which there is nothing stale');
 
+// ---------------------------------------------------------------------------
+console.log('\nMy Wrike jobs, found on disk');
+put('/Volumes/paramount/FID/Markets/Norway/AE/Batch_02/FID_INTL_PortalToParadise_DOOH_1920x1080px_15s_NO_V01.aep');
+put('/Volumes/paramount/FID/Markets/Norway/AE/Batch_01/FID_INTL_PortalToParadise_DOOH_1920x1080px_10s_NO_V01.aep');
+put('/Volumes/paramount/FID/Markets/_Archive/Norway/AE/Batch_02/x.aep');
+sb.app.settings = { haveSetting: (sec, k) => k === 'LocLibCampaigns', getSetting: () => 'Forgotten Island\t/Volumes/paramount/FID/Markets\nStreet Fighter\t/Volumes/paramount/SF/Markets\nGone\t/Volumes/unmounted/Markets', saveSetting: NOPE };
+const loc = a.trackerLocate(JSON.stringify([
+    { id: 'J1', code: 'NO', batch: 'Batch_2', prefix: 'SF' },
+    { id: 'J2', code: 'NO', batch: 'Batch_2', prefix: 'FID' },
+    { id: 'J3', code: 'NO', batch: 'Batch_9', prefix: 'SF' },
+    { id: 'J4', code: 'ZZ', batch: 'Batch_1', prefix: 'SF' },
+]));
+const J = (id) => (loc.jobs || []).find((x) => x.id === id);
+check(loc.success, 'it locates', loc.error);
+check(J('J1') && J('J1').territoryPath === T && J('J1').batch === 'Batch_02', "two campaigns hold a Norway Batch_02: the film prefix picks Street Fighter's, and the disk's spelling comes back", J('J1'));
+check(J('J2') && /FID\/Markets\/Norway$/.test(J('J2').territoryPath) && J('J2').batches.join() === 'Batch_01,Batch_02', "…and FID's job lands in FID's Norway, with its batches", J('J2'));
+check(J('J3') && J('J3').batch === 'Batch_9' && J('J3').territoryPath === T, "a batch with no AE folder yet still finds its territory -- the film's, not the first walked -- under the title's spelling", J('J3'));
+check(!J('J4'), 'a territory no campaign holds is left out, not guessed');
+check(!(loc.jobs || []).some((x) => /_Archive|Norway2/.test(x.territoryPath)), 'never an _ folder, never a folder that is not a country');
+
 console.log(fails ? `\n${fails} FAILED` : '\nCLEAN — one batch, lined up by deliverable; the scan only reads, the rename refuses before it moves.');
 process.exit(fails ? 1 : 0);
