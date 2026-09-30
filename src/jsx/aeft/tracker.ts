@@ -633,6 +633,6 @@ export const trackerLocate = (argsJson: string): Result & { jobs?: { id: string;
     }
     return { success: true, jobs: out };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return { success: false, error: e.toString() + (e.line ? " (line " + e.line + ")" : "") };
   }
 };

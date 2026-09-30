@@ -1018,9 +1018,22 @@ function tcNormalise(s: string): string {
   let out = String(s).toLowerCase();
   // Accents folded, so "Türkiye" and "Turkiye" are one spelling. A short
   // table rather than NFD: ExtendScript has no String.prototype.normalize.
-  const fold: { [c: string]: string } = { "ü": "u", "ö": "o", "ä": "a", "é": "e", "è": "e", "ç": "c", "ñ": "n", "å": "a", "ø": "o", "í": "i", "ó": "o", "á": "a", "ş": "s", "ğ": "g", "ı": "i" };
+  //
+  // TWO STRINGS AND indexOf, NEVER AN OBJECT KEYED BY CHARACTER. That was
+  // `fold[out.charAt(i)] || out.charAt(i)`, and in AE's engine it threw
+  // "Object of type Function found where a Number, Array, or Property is
+  // needed" -- a character that names something on an ExtendScript object
+  // answers with a FUNCTION -- which broke every caller walking a Markets
+  // root: Deliver's render lookup and the tracker's job lookup (2026-09-30).
+  // Node never shows it; only the real engine does.
+  const FROM = "üöäéèçñåøíóáşğı";
+  const TO = "uoaeecnaoioasgi";
   let folded = "";
-  for (let i = 0; i < out.length; i++) folded += fold[out.charAt(i)] || out.charAt(i);
+  for (let i = 0; i < out.length; i++) {
+    const c = out.charAt(i);
+    const at = FROM.indexOf(c);
+    folded += at === -1 ? c : TO.charAt(at);
+  }
   out = folded;
   return out.replace(/[_\-\s]+/g, " ").replace(/^ +/, "").replace(/ +$/, "");
 }

@@ -104,6 +104,13 @@ so this whole class of bug is structurally invisible in browser preview.
   there and the WHOLE bundle fails to parse — "SyntaxError: Expected: )" on
   every panel open, and every bridge call answering nonsense until it is
   fixed (2026-09-30). `audit-jsx-precedence.cjs` rule 3 gates it.
+- **Never look a CHARACTER up in an object** (`table[s.charAt(i)]`). In AE's
+  engine some characters name something on every object and come back as a
+  FUNCTION, and the next `+=` throws "Object of type Function found where a
+  Number, Array, or Property is needed". `territoryCheck`'s accent fold did
+  exactly this from 20261011 and broke every Markets walk (Deliver's render
+  lookup, the tracker's jobs). Use two strings and `indexOf`, or key by
+  `charCodeAt` as `shared.ts`'s `SITE_ACCENT_FOLD` does. Node never shows it.
 - **Never `instanceof <AE host class>`** — duck-type on the method you're about
   to call, e.g. `typeof layer.sourceRectAtTime === "function"`.
 - **Never identify an AE DOM object with `===`** — two accesses return different

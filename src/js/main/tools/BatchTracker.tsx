@@ -237,6 +237,8 @@ const BatchTracker: React.FC<ToolProps> = ({ onSelectTool }) => {
             const loc = (await evalTS("trackerLocate", JSON.stringify(list.map((j) => ({
                 id: j.id, code: jobTerritory(j), batch: jobBatch(j), prefix: (subsOf(j)[0].name.split("_")[0] || "").toUpperCase(),
             }))))) as any;
+            // An engine error here used to vanish, leaving every chip "not found".
+            if (!loc || !loc.success) setMsg({ text: `Couldn't look for your jobs' folders: ${(loc && loc.error) || "no answer from AE"}`, bad: true });
             const map: Record<string, Located> = {};
             ((loc && loc.jobs) || []).forEach((x: Located) => { map[x.id] = x; });
             setLocated(map);
