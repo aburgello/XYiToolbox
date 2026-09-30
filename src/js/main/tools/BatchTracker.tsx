@@ -53,8 +53,10 @@
 // most likely to open next, so it's one press from the list rather than open
 // row, then Open in AE. The open project's own row says it's open instead.
 //
-// A JOB IN TO AMEND brings its latest Wrike comment (fetchJobComment, one
-// Wrike call, cached). Amends are written on the PARENT task, per deliverable
+// A JOB IN TO AMEND brings its AMENDS comment (fetchJobComment, one Wrike
+// call, cached): the newest comment that names this batch's deliverables,
+// else one naming any, else the newest -- a hand-off posted after the amends
+// (NO 2, 2026-09-30) must not bury them. Amends are written on the PARENT task, per deliverable
 // -- filenames, then the note -- so lib/amendNotes.ts splits it and each note
 // lands on the row it names, matched through the disk's own spelling too (a
 // comment naming Trio_POST_DOOH finds the row Wrike calls Trio_DOOH_POST).
@@ -75,7 +77,7 @@ import { fetchJobs, fetchJobsFresh, fetchJobsLive, fetchJobComment, jobReadiness
 import { loadJobRows, stageBatchFromJob, classifyRows } from "../lib/jobRows";
 import { navigateToTool } from "../lib/navigation";
 import { confirmDialog } from "../Dialog";
-import { parseAmends, amendKey, type AmendNote, type ParsedAmends } from "../lib/amendNotes";
+import { parseAmends, amendKey, showShortcodes, type AmendNote, type ParsedAmends } from "../lib/amendNotes";
 import type { JobComment } from "../lib/jobsFeed";
 import VideoOverlay from "../VideoOverlay";
 import ActiveJobModal from "../ActiveJobModal";
@@ -219,7 +221,7 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
     const [detailsJob, setDetailsJob] = useState<WrikeJob | null>(null);
     const wantTickDone = useRef(0);
     /** The latest Wrike comment of each To amend job on screen, split. */
-    const [comments, setComments] = useState<Record<string, { comment: JobComment | null; parsed: ParsedAmends; error?: string }>>({});
+    const [comments, setComments] = useState<Record<string, { comment: JobComment | null; parsed: ParsedAmends; error?: string; newer?: JobComment }>>({});
     const [showFullComment, setShowFullComment] = useState(false);
     /** Set by the refresh button: the next comment read goes to Wrike. */
     const freshComments = useRef(false);
@@ -277,11 +279,28 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
             // The amends: only for jobs Wrike has as To amend, one read each.
             const fresh = freshComments.current;
             freshComments.current = false;
-            const next: Record<string, { comment: JobComment | null; parsed: ParsedAmends; error?: string }> = {};
+            const next: Record<string, { comment: JobComment | null; parsed: ParsedAmends; error?: string; newer?: JobComment }> = {};
+            // Every key a comment could name a row by: Wrike's, and the disk's.
+            const onDisk = new Set<string>();
+            (r.rows || []).forEach((x: Row) => {
+                [x.key, x.claimed && amendKey(x.claimed.name), x.aep && amendKey(x.aep.name), x.render && amendKey(x.render.name)]
+                    .forEach((k) => { if (k) onDisk.add(k as string); });
+            });
             for (const j of w.jobs) {
                 if (!AMEND_STATUSES.test(String(j.status || "").trim())) continue;
                 const c = await fetchJobComment(j.id, fresh);
-                next[j.id] = { comment: c.comment, parsed: parseAmends(c.comment ? c.comment.text : ""), error: c.error };
+                const pool = c.recent && c.recent.length ? c.recent : c.comment ? [c.comment] : [];
+                const parsedPool = pool.map((cm) => ({ cm, p: parseAmends(cm.text) }));
+                const pick =
+                    parsedPool.find((x) => Object.keys(x.p.byKey).some((k) => onDisk.has(k))) ||
+                    parsedPool.find((x) => Object.keys(x.p.byKey).length > 0) ||
+                    parsedPool[0];
+                next[j.id] = {
+                    comment: pick ? pick.cm : null,
+                    parsed: pick ? pick.p : parseAmends(""),
+                    error: c.error,
+                    newer: pick && pool[0] && pick.cm !== pool[0] ? pool[0] : undefined,
+                };
             }
             setComments(next);
             // The page's own scan is fresher than the chip's: keep them agreeing.
@@ -774,7 +793,7 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
                     {shownComments.map((c) => (
                         <div key={c.id} className="bt-comment">
                             <span className="bt-comment-head">
-                                <MessageSquare size={12} /> Latest in Wrike{c.comment && c.comment.author ? ` · ${c.comment.author}` : ""}{c.comment && c.comment.date ? ` · ${whenOf(c.comment.date)}` : ""}
+                                <MessageSquare size={12} /> {c.newer ? "Amends in Wrike" : "Latest in Wrike"}{c.comment && c.comment.author ? ` · ${c.comment.author}` : ""}{c.comment && c.comment.date ? ` · ${whenOf(c.comment.date)}` : ""}
                                 {c.comment && (
                                     <button type="button" className="bt-comment-toggle" onClick={() => setShowFullComment(!showFullComment)}>
                                         {showFullComment ? "Hide" : "Full comment"}
@@ -782,12 +801,13 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
                                 )}
                             </span>
                             {c.error && !c.comment && <span className="bt-comment-err">{c.error}</span>}
+                            {c.newer && <span className="bt-comment-sum">A newer comment follows it{c.newer.author ? ` (${c.newer.author}${c.newer.date ? `, ${whenOf(c.newer.date)}` : ""})` : ""}, with no amends in it.</span>}
                             {c.comment && Object.keys(c.parsed.byKey).length > 0 && (
                                 <span className="bt-comment-sum">{Object.keys(c.parsed.byKey).length} deliverable{Object.keys(c.parsed.byKey).length === 1 ? "" : "s"} with amends, shown on their rows.</span>
                             )}
                             {c.parsed.general.map((g, i) => <p key={i} className="bt-comment-general">{g}</p>)}
-                            {c.comment && !Object.keys(c.parsed.byKey).length && !c.parsed.general.length && <p className="bt-comment-general">{c.comment.text}</p>}
-                            {showFullComment && c.comment && <p className="bt-comment-full">{c.comment.text}</p>}
+                            {c.comment && !Object.keys(c.parsed.byKey).length && !c.parsed.general.length && <p className="bt-comment-general">{showShortcodes(c.comment.text)}</p>}
+                            {showFullComment && c.comment && <p className="bt-comment-full">{showShortcodes(c.comment.text)}</p>}
                         </div>
                     ))}
                     <div className="bt-rows">

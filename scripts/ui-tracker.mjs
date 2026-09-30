@@ -81,7 +81,10 @@ let liveKiwi = "Motion";
 const liveFeed = () => FEED.map((j) => ({ ...j, subtasks: j.subtasks.map((st) => (/Kiwi/.test(st.name) ? { ...st, customStatusName: liveKiwi } : st)) }));
 // The job's latest Wrike comment, shaped like Michael's on NO 2: filenames
 // (one as the DISK spells it), then the note; a line under no filename.
-const COMMENT = { task: "J1", count: 3, comment: { author: "Michael Sills", date: new Date().toISOString(), text: [
+// The NEWEST comment is a hand-off with no amends in it (NO 2, 2026-09-30):
+// the tracker must still find Michael's, which is older.
+const HANDOFF = { author: "James Crouch", date: new Date().toISOString(), text: "@Sara Rivas\nDOOH Motions x8:\n/Volumes/paramount/SF/Markets/Norway/Renders/Batch_02" };
+const COMMENT_BASE = { task: "J1", count: 3, comment: { author: "Michael Sills", date: new Date(Date.now() - 3600e3).toISOString(), text: [
     "SF_INTL_Trio_POST_DOOH_1920x1080px_30s_NO_V01.mov",
     "🔶 The paramount logo is cut off at the top",
     "",
@@ -90,6 +93,7 @@ const COMMENT = { task: "J1", count: 3, comment: { author: "Michael Sills", date
     "",
     "✅ The others are approved",
 ].join("\n") } };
+const COMMENT = { ...COMMENT_BASE, comment: HANDOFF, recent: [HANDOFF, COMMENT_BASE.comment] };
 let commentAsks = [];
 const page = await launch({ root: ROOT, fixturesSrc: FIXTURES, routes: {
     "api/panel/comment": (url) => { commentAsks.push(url); return /task=J1/.test(url) ? COMMENT : { comment: null, count: 0 }; },
@@ -167,7 +171,8 @@ try {
     console.log("\n3d. The amends, from the job's latest Wrike comment");
     check(commentAsks.length >= 1 && commentAsks.every((u) => /task=J1/.test(u)), "only the To amend job's comment is asked for", commentAsks.map((u) => u.replace(/^.*\?/, "")));
     const card = await page.eval(`document.querySelector(".bt-comment")?.innerText || ""`);
-    check(/Latest in Wrike · Michael Sills/.test(card) && /2 deliverables with amends/.test(card) && /The others are approved/.test(card) && !/paramount/.test(card), "the job's card names the reviewer, counts the deliverables and says the general line once", card);
+    check(/Amends in Wrike · Michael Sills/.test(card) && /A newer comment follows it \(James Crouch/.test(card), "a later hand-off doesn't bury the amends: Michael's comment is picked, and the newer one is mentioned", card);
+    check(/2 deliverables with amends/.test(card) && /The others are approved/.test(card) && !/paramount/.test(card), "the job's card names the reviewer, counts the deliverables and says the general line once", card);
     await page.eval(`document.querySelectorAll(".bt-rows > .bt-row")[2].querySelector(".bt-row-top").click()`);
     await pause(100);
     const dNotes = await page.eval(`document.querySelectorAll(".bt-rows > .bt-row")[2].querySelector(".bt-amends")?.innerText || ""`);

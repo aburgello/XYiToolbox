@@ -531,7 +531,9 @@ export async function fetchJobsLive(member: string): Promise<JobsFeedResult> {
 // skips both. Never throws: no feed, no route yet, or no network is `null`
 // with a reason, and the tracker simply shows no notes.
 export interface JobComment { text: string; author: string; date: string }
-export interface JobCommentResult { comment: JobComment | null; error?: string }
+/** `comment` is the newest; `recent` the newest few (newest first), since the
+ *  amends are not always the last comment (a hand-off can follow them). */
+export interface JobCommentResult { comment: JobComment | null; recent?: JobComment[]; error?: string }
 const COMMENT_TTL_MS = 3 * 60 * 1000;
 const commentCache: Record<string, { at: number; res: JobCommentResult }> = {};
 
@@ -551,10 +553,10 @@ export async function fetchJobComment(taskId: string, fresh = false): Promise<Jo
         });
         if (!res.ok) return { comment: null, error: res.status === 404 ? "The comment route isn't deployed yet." : `Comment lookup returned ${res.status}.` };
         const data = await res.json();
-        const c = data && data.comment;
-        const out: JobCommentResult = {
-            comment: c && typeof c.text === "string" ? { text: String(c.text), author: String(c.author || ""), date: String(c.date || "") } : null,
-        };
+        const shape = (c: any): JobComment | null =>
+            c && typeof c.text === "string" ? { text: String(c.text), author: String(c.author || ""), date: String(c.date || "") } : null;
+        const recent = ((data && data.recent) || []).map(shape).filter(Boolean) as JobComment[];
+        const out: JobCommentResult = { comment: shape(data && data.comment), recent: recent.length ? recent : undefined };
         commentCache[taskId] = { at: Date.now(), res: out };
         return out;
     } catch {

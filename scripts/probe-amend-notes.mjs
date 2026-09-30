@@ -11,7 +11,7 @@ import { pathToFileURL } from "node:url";
 
 const out = join(tmpdir(), "xyi-amend-notes.mjs");
 await build({ entryPoints: ["src/js/main/lib/amendNotes.ts"], bundle: true, platform: "node", format: "esm", outfile: out, logLevel: "error" });
-const { parseAmends, amendKey } = await import(pathToFileURL(out).href + "?" + Date.now());
+const { parseAmends, amendKey, showShortcodes } = await import(pathToFileURL(out).href + "?" + Date.now());
 
 let fails = 0;
 const check = (ok, msg, extra) => { if (!ok) fails++; console.log((ok ? "  ok    " : "  FAIL  ") + msg + (extra !== undefined ? "   " + JSON.stringify(extra) : "")); };
@@ -55,6 +55,8 @@ const myNote = (my.byKey[amendKey("SF_INTL_RyuHadouken_DINTH_4480x384px_30s_MY")
 check(myNote && myNote.text === "Please fade out the embers at the end" && myNote.version === 1 && my.general.length === 0,
   "Malaysia's MY 2: a filename with no extension, and a bullet sent as :small_orange_diamond:", my);
 check(parseAmends(":white_check_mark: The others are approved").general[0] === "The others are approved", "…and :white_check_mark: comes off the general line too");
+
+check(showShortcodes(":small_orange_diamond: Please fade :white_check_mark: done :not_a_real_one:") === "🔸 Please fade ✅ done :not_a_real_one:", "shown whole, known shortcodes become emoji and unknown ones stay as written");
 
 console.log(fails ? `\n${fails} FAILED` : "\nCLEAN — an amend comment splits onto the deliverables it names.");
 process.exit(fails ? 1 : 0);

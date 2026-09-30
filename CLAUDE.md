@@ -898,7 +898,11 @@ The open project's row is an outlined card, never an edge bar.
 - **To amend puts "Amend" on the folded line** (opens the project; the open
   project's row says "Open" instead), in place of the status pill, and the
   opened row's button reads "Open to amend" as the primary action.
-- **A To amend job brings its latest Wrike comment**, split per deliverable.
+- **A To amend job brings its AMENDS comment**, split per deliverable -- the
+  newest comment naming this batch's deliverables, else one naming any, else
+  the newest (the Worker sends the newest 8 as `recent`; a hand-off posted
+  after the amends must not bury them, NO 2 2026-09-30). Wrike ids are MIXED
+  case with `_`/`-` (`MAAAAABrMQm_`) -- the route validates that shape.
   The studio writes amends on the PARENT task, never the subtasks: filenames,
   then the note (`lib/amendNotes.ts`: a run of filenames is a group, the text
   under it its notes; a blank line ends a group only once it has notes; text

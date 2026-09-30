@@ -102,3 +102,15 @@ export function parseAmends(text: string): ParsedAmends {
     }
     return { byKey, general };
 }
+
+/** For SHOWING a comment whole: Wrike's plain text sends emoji as shortcodes
+ *  (":small_orange_diamond:"); the common ones become the emoji again, and
+ *  any other is left exactly as written. Display only -- parsing strips them. */
+const SHORTCODES: Record<string, string> = {
+    small_orange_diamond: "🔸", large_orange_diamond: "🔶", small_blue_diamond: "🔹", large_blue_diamond: "🔷",
+    white_check_mark: "✅", heavy_check_mark: "✔️", ballot_box_with_check: "☑️", x: "❌", warning: "⚠️",
+    red_circle: "🔴", large_blue_circle: "🔵", arrow_right: "➡️", point_right: "👉", exclamation: "❗",
+};
+export function showShortcodes(text: string): string {
+    return String(text || "").replace(/:([a-z0-9_+-]+):/gi, (m, name) => SHORTCODES[String(name).toLowerCase()] || m);
+}
