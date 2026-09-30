@@ -1,7 +1,7 @@
 // =============================================================================
 // src/js/main/CommandPalette.tsx
 // -----------------------------------------------------------------------------
-// Global quick-open: Ctrl/Cmd+K (or the floating button, bottom-right,
+// Global quick-open: Ctrl/Cmd+K, a double-tap of Ctrl (or the floating button, bottom-right,
 // visible on every screen) opens a searchable list of every TOOLS entry
 // (+ their inner actions) AND every Toolset one-click ACTIONS entry, in one
 // place, reachable from anywhere -- Home, a category page, or a tool's own
@@ -103,15 +103,55 @@ const CommandPalette: React.FC<Props> = ({ screen, onNavigate }) => {
     // component happens to be on-screen (see HomeScreen.tsx's own Cmd/
     // Ctrl+F handler for the pattern this is modeled on, generalized to
     // the whole app instead of one screen).
+    //
+    // DOUBLE-TAP CONTROL does the same (2026-09-30): two taps of Ctrl alone,
+    // each shorter than TAP_MS, the second within DOUBLE_MS of the first, and
+    // NOTHING in between -- any other key or a click cancels. A single tap
+    // would fire on every aborted shortcut and Ctrl-click; two clean taps
+    // almost never happen by accident. Needs panel focus like ⌘K: AE keeps
+    // every key, modifiers too, while its own windows have it.
     useEffect(() => {
+        const TAP_MS = 300, DOUBLE_MS = 350;
+        let downAt = 0;
+        let clean = false;
+        let lastTap = 0;
+        const reset = () => { clean = false; lastTap = 0; };
         const onKeyDown = (e: KeyboardEvent) => {
             if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
                 e.preventDefault();
+                reset();
                 setOpen((v) => !v);
+                return;
+            }
+            if (e.key === "Control") {
+                if (e.repeat) { clean = false; return; } // held, not tapped
+                clean = !e.metaKey && !e.altKey && !e.shiftKey;
+                downAt = Date.now();
+                return;
+            }
+            reset(); // anything else between the taps cancels them
+        };
+        const onKeyUp = (e: KeyboardEvent) => {
+            if (e.key !== "Control") return;
+            const now = Date.now();
+            if (!clean || now - downAt > TAP_MS) { reset(); return; }
+            clean = false;
+            if (lastTap && now - lastTap <= DOUBLE_MS) {
+                lastTap = 0;
+                setOpen((v) => !v);
+            } else {
+                lastTap = now;
             }
         };
+        const onMouseDown = () => reset();
         window.addEventListener("keydown", onKeyDown);
-        return () => window.removeEventListener("keydown", onKeyDown);
+        window.addEventListener("keyup", onKeyUp);
+        window.addEventListener("mousedown", onMouseDown, true);
+        return () => {
+            window.removeEventListener("keydown", onKeyDown);
+            window.removeEventListener("keyup", onKeyUp);
+            window.removeEventListener("mousedown", onMouseDown, true);
+        };
     }, []);
 
     useEffect(() => {
@@ -420,7 +460,7 @@ const CommandPalette: React.FC<Props> = ({ screen, onNavigate }) => {
 
 /** Standalone trigger button -- rendered inline in each screen's header. */
 export const PaletteTrigger: React.FC<{ onClick: () => void }> = ({ onClick }) => (
-    <Tooltip text="Search everywhere (Ctrl/Cmd+K)">
+    <Tooltip text="Search everywhere: ⌘K, or tap Ctrl twice (the panel needs focus)">
         <button className="palette-trigger" onClick={onClick}>
             <Search size={13} />
             <span className="palette-trigger-kbd">⌘K</span>

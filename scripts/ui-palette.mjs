@@ -101,10 +101,41 @@ try {
     const after = await page.eval(`window.__keyClaims`);
     check(after.length > 0 && (await claimsK()), "leaving Edit In Context releases its keys but keeps ⌘K", after);
 
+    console.log("\n6. Double-tap Control");
+    const key = (type, k, extra = "") => page.eval(`window.dispatchEvent(new KeyboardEvent("${type}", { key: "${k}", bubbles: true ${extra} }))`);
+    const tap = async (hold = 60) => { await key("keydown", "Control", ", ctrlKey: true"); await pause(hold); await key("keyup", "Control"); };
+    // A double-tap played INSIDE the page on its own timers: round trips to a
+    // headless tab slow down while the palette animates, which is the test's
+    // timing, not a person's.
+    const doubleTap = (gap = 120, hold = 50) => page.eval(`new Promise((done) => {
+        const k = (t) => window.dispatchEvent(new KeyboardEvent(t, { key: "Control", ctrlKey: t === "keydown", bubbles: true }));
+        k("keydown"); setTimeout(() => { k("keyup"); setTimeout(() => { k("keydown"); setTimeout(() => { k("keyup"); done(true); }, ${hold}); }, ${gap}); }, ${hold});
+    })`);
+    const isOpen = () => page.eval(`!!document.querySelector(".palette-card")`);
+    const closeIt = async () => { if (await isOpen()) { await page.eval(`document.querySelector(".palette-overlay").click()`); await pause(300); } };
+    await closeIt();
+    await doubleTap(); await pause(300);
+    check(await isOpen(), "two quick taps of Ctrl open the palette");
+    await doubleTap();
+    // Closing animates out: wait for the card to go rather than guess a pause.
+    check(await page.waitFor(`!document.querySelector(".palette-card")`, 2000), "…and two more close it");
+    await tap(); await pause(400);
+    check(!(await isOpen()), "one tap does nothing");
+    await tap(); await pause(500); await tap(); await pause(300);
+    check(!(await isOpen()), "two taps too far apart do nothing");
+    await tap(); await pause(60); await key("keydown", "z", ", ctrlKey: true"); await key("keyup", "z"); await tap(); await pause(300);
+    check(!(await isOpen()), "a shortcut between the taps (Ctrl+Z) cancels them");
+    await tap(700); await pause(80); await tap(); await pause(300);
+    check(!(await isOpen()), "a held Ctrl isn't a tap");
+    await tap(); await pause(60); await page.eval(`document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }))`); await tap(); await pause(300);
+    check(!(await isOpen()), "a click between the taps (Ctrl-click) cancels them");
+    const lone = await page.eval(`(() => { const all = window.__keyClaims || []; const last = JSON.parse(all[all.length - 1] || "[]"); return last.filter(k => k.keyCode === 59 || k.keyCode === 62 || k.keyCode === 17).length; })()`);
+    check(lone >= 2, "a lone Control is claimed from AE too, so the taps reach the panel", lone);
+
     console.log("");
     check(page.errors.length === 0, "no page errors", page.errors.slice(0, 5));
 } finally {
     await page.close();
 }
-console.log(failures ? `\n${failures} FAILED` : "\nCLEAN — ⌘K offers what you use, and stays yours while the panel has focus.");
+console.log(failures ? `\n${failures} FAILED` : "\nCLEAN — ⌘K (or a Ctrl double-tap) offers what you use, and stays yours while the panel has focus.");
 process.exit(failures ? 1 : 0);
