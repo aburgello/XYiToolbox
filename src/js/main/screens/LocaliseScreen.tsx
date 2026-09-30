@@ -11,7 +11,7 @@ import { motion, useReducedMotion } from "motion/react";
 import gsap from "gsap";
 import LoadingChatter from "../LoadingChatter";
 import {    Layers,
- ArrowLeft, FileSignature, Stamp, ClipboardCheck, Clapperboard, FileText, Copy, Image as ImageIcon, FileSpreadsheet, Rabbit, ScanSearch, Repeat, FileSearch} from "lucide-react";
+ ArrowLeft, FileSignature, Stamp, ClipboardCheck, Clapperboard, FileText, Copy, Image as ImageIcon, FileSpreadsheet, Rabbit, ScanSearch, Repeat, FileSearch, ListChecks } from "lucide-react";
 import { TOOLS, categoryStyleVars, type ToolProps } from "../toolRegistry";
 import { ToolErrorBoundary } from "../ToolErrorBoundary";
 import { PaletteTrigger, triggerPalette } from "../CommandPalette";
@@ -72,6 +72,8 @@ const TOOLS_ROW: (UtilityEntry & { run?: string })[] = [
     { id: "cheeky-dt",         label: "Cheeky DT",      icon: Stamp },
     // NEXT TO Check, because it is the same kind of question -- "is this
     // deliverable right?" -- asked of the artwork rather than the comp.
+    // FIRST in Check: the whole batch at once, before any one deliverable.
+    { id: "batch-tracker",     label: "Batch Tracker",  icon: ListChecks },
     { id: "artwork-check",     label: "Artwork Check",  icon: FileSearch },
     { id: "check",             label: "Check",          icon: ClipboardCheck },
     { id: "name-audit",        label: "Naming Audit",   icon: ScanSearch },
@@ -90,7 +92,7 @@ const OWN_HEADER_IDS = ["localised-library"];
 const TOOL_GROUPS: { name: string; ids: string[] }[] = [
     { name: "Prepare",      ids: ["pdf-to-csv", "name-generator", "edit-generator", "generate-cue-sheet"] },
     { name: "Swap & build", ids: ["ov-swap", "jpeg-loc", "aep-thief", "bespoke"] },
-    { name: "Check",        ids: ["artwork-check", "check", "name-audit", "cheeky-dt"] },
+    { name: "Check",        ids: ["batch-tracker", "artwork-check", "check", "name-audit", "cheeky-dt"] },
 ];
 
 /** Placeholder furniture for a tool that hasn't mounted yet. Bounded by the

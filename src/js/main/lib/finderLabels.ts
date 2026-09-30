@@ -79,3 +79,17 @@ export function openInDefaultApp(path: string): boolean {
         return false;
     }
 }
+
+/** Show a file selected in its Finder window (`open -R`), or open a folder.
+ *  Off the bridge, and read-only: it opens a window, nothing else. */
+export function revealInFinder(path: string, isFolder = false): boolean {
+    const sp = (child_process as any).spawn;
+    if (typeof sp !== "function") return false;
+    try {
+        const c = sp.call(child_process, "open", isFolder ? [path] : ["-R", path], { detached: true, stdio: "ignore" });
+        if (c && typeof c.unref === "function") c.unref();
+        return true;
+    } catch {
+        return false;
+    }
+}

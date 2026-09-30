@@ -124,7 +124,7 @@ try {
     check((await page.eval(text(".ls-libcard-line"))).indexOf("310 components across 14 of 19") === 0, "the card says what is behind it", await page.eval(text(".ls-libcard-line")));
     const openBg = await page.eval(`getComputedStyle(document.querySelector(".ls-libcard-open")).backgroundColor`);
     check(openBg === "rgb(230, 244, 247)", "the Open button is the one light button (not repainted by .form-tool button)", openBg);
-    check((await page.eval(count(".ls-tool-group"))) === 3 && (await page.eval(count(".ls-tool-group .ls-grid-item"))) === 12, "tools: three groups, twelve tools");
+    check((await page.eval(count(".ls-tool-group"))) === 3 && (await page.eval(count(".ls-tool-group .ls-grid-item"))) === 13, "tools: three groups, thirteen tools");
     check(!(await page.eval(`!!document.querySelector(".specs-camp-banner") && getComputedStyle(document.querySelector(".specs-camp-banner")).display !== "none"`)), "no banner pinned: no empty banner block");
     check(await page.waitFor(`/Czechia/.test(document.querySelector(".ls-page-heading .ls-page-title")?.innerText || "")`, 4000), "the header says where you are", await page.eval(text(".ls-page-heading")));
     check((await page.eval(text(".ls-page-batch"))) === "· Batch_01", "…including the open project's batch", await page.eval(text(".ls-page-batch")));

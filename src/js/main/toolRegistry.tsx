@@ -67,6 +67,7 @@ const NameGeneratorTool     = React.lazy(() => import("./tools/NameGenerator"));
 const CampaignLocaliserTool = React.lazy(() => import("./tools/CampaignLocaliser"));
 const CSVLocaliserTool      = React.lazy(() => import("./tools/CSVLocaliser"));
 const ArtworkCheckTool     = React.lazy(() => import("./tools/ArtworkCheck"));
+const BatchTrackerTool     = React.lazy(() => import("./tools/BatchTracker"));
 const WorkflowBoardTool    = React.lazy(() => import("./tools/WorkflowBoard"));
 const EditGeneratorTool     = React.lazy(() => import("./tools/EditGenerator"));
 const GenerateCueSheetTool  = React.lazy(() => import("./tools/GenerateCueSheet"));
@@ -124,6 +125,7 @@ const PREFETCH_MAP: Record<string, () => Promise<any>> = {
     "campaign-localiser": () => import("./tools/CampaignLocaliser"),
     "csv-localiser":      () => import("./tools/CSVLocaliser"),
     "artwork-check":      () => import("./tools/ArtworkCheck"),
+    "batch-tracker":      () => import("./tools/BatchTracker"),
     "edit-generator":     () => import("./tools/EditGenerator"),
     "generate-cue-sheet": () => import("./tools/GenerateCueSheet"),
     "cheeky-dt":          () => import("./tools/CheekyDT"),
@@ -457,6 +459,17 @@ export const TOOLS: ToolEntry[] = [
         Component: CheekyDTTool,
         actions: ["Cheeky DT", "Territory Check"],
         description: "Updates the active Frontcard's fields from its filename.",
+    },
+    {
+        id: "batch-tracker",
+        label: "Batch Tracker",
+        categories: ["localise"],
+        icon: ListChecks,
+        Component: BatchTrackerTool,
+        description: "One batch, lined up by deliverable: art, project, render, delivered and Wrike, with names that disagree flagged.",
+        actions: ["Other…", "Art", "AE", "Renders", "Delivered", "Specs"],
+        // Read-only throughout: it lists folders and opens Finder.
+        actionSafety: { "Art": "read", "AE": "read", "Renders": "read", "Delivered": "read", "Specs": "read" },
     },
     {
         id: "artwork-check",

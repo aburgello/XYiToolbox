@@ -830,6 +830,17 @@ runs, so `Portal_To_Paradise` answers to `PortalToParadise`). It is deliberately
 not `suggestJpgPngMatch`, whose substring branch fires on `Trio` inside
 `Triology`; names under three characters are refused as evidence.
 
+**Batch Tracker lines ONE batch up by deliverable and writes NOTHING.**
+(`tracker.ts`, `tools/BatchTracker.tsx`) Four places — `JPG_PNG` art, the
+`AE` project, the `Renders` MOV, `_mp4`/`_Delivery` — plus the Wrike subtask,
+keyed by `trackerKey` (upper-cased, extension, `_Vnn`, `_DOUBLE/TRIPLE/QUAD_RES`
+and ratio tokens off). Its links only ever spawn `open`/`open -R`. Two rules:
+batches pair LOOSELY (`Batch_02` is `Batch_2`, but a `_POST` batch is its own),
+and a near miss is **flagged, never joined** — and only between ORPHANS, rows
+each holding a stage the other lacks, or every sibling size in a batch would
+be "nearly" every other. `node scripts/probe-tracker.cjs` (stub throws on any
+write) and `node scripts/ui-tracker.mjs` guard it.
+
 **Folders starting with `_` are excluded from every scan.** The one exception is
 Naming Audit, which skips only `Auto-Save`/`_Archive`/`_Old`/`_DEV`.
 
@@ -1414,6 +1425,9 @@ Korea→KR); accents are folded first. Street Fighter's `Turkiye` resolved to
 nothing, so Deliver never opened its Renders; `Korea` resolved to NORTH Korea
 through the substring guard. Add the next one there, never by loosening the
 substring test.
+
+`node scripts/probe-tracker.cjs` (after `yarn build`) and
+`node scripts/ui-tracker.mjs` (after `yarn build:web`) guard the Batch Tracker.
 
 `node scripts/probe-job-titles.cjs` (no build needed) drives
 `parseJobTitle` over dashed and dashless Wrike titles. The batch becomes an

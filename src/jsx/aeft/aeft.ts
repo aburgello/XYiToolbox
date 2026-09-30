@@ -46,3 +46,4 @@ export * from "./edgeController";
 export * from "./sixtySeven";
 export * from "./cutdowns";
 export * from "./wordGame";
+export * from "./tracker";

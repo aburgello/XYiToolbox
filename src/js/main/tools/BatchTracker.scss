@@ -1,0 +1,122 @@
+// Batch Tracker -- read-only, one batch lined up by deliverable. Every button
+// is scoped under .bt with its own hover, since .form-tool button and
+// index.scss's global button:hover would repaint a bare one.
+.bt {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+    padding: 12px 16px;
+
+    .bt-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .bt-where { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+    .bt-title { font-size: 17px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bt-batch { min-width: 120px; }
+
+    .bt-btn, .bt-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 28px;
+        padding: 0 10px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 7px;
+        background: rgba(255, 255, 255, 0.03);
+        color: #d4dcda;
+        font-size: 11.5px;
+        font-weight: 600;
+        cursor: pointer;
+
+        svg { color: var(--cat-icon, #5eead4); flex-shrink: 0; }
+        &:hover:not(:disabled), &:active:not(:disabled) { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.22); color: #fff; }
+        &:disabled { opacity: 0.35; cursor: default; }
+        &.is-on { border-color: #fbbf24; color: #fbbf24; background: rgba(251, 191, 36, 0.08); svg { color: #fbbf24; } }
+    }
+    .bt-icon { width: 28px; padding: 0; justify-content: center; }
+
+    .bt-links { display: flex; flex-wrap: wrap; gap: 6px; }
+    .bt-links--here { align-items: center; }
+    .bt-here { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--cat-icon, #5eead4); margin-right: 2px; }
+
+    .bt-summary {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 8px 2px 6px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+        font-size: 12px;
+        color: #aab6b4;
+
+        strong { color: #fff; }
+    }
+    .bt-count { padding: 1px 7px; border-radius: 999px; background: rgba(255, 255, 255, 0.06); font-size: 11px; font-variant-numeric: tabular-nums; }
+    .bt-spacer { flex: 1 1 auto; }
+
+    .bt-rows { display: flex; flex-direction: column; }
+    .bt-row {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 9px 6px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        min-width: 0;
+
+        &.is-here { box-shadow: inset 2px 0 0 var(--cat-border, #2dd4bf); background: rgba(45, 212, 191, 0.05); }
+    }
+    .bt-row-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .bt-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 600; color: #eef3f2; }
+    .bt-wrike { flex-shrink: 0; padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 600; }
+
+    // Four stages, each a dot that lights when that stage exists; pressing
+    // one shows it in Finder.
+    .bt-stages { display: flex; flex-wrap: wrap; gap: 4px; }
+    .bt-stage {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 22px;
+        padding: 0 8px 0 6px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 999px;
+        background: none;
+        color: #6f7c7a;
+        font-size: 10.5px;
+        font-weight: 600;
+        cursor: pointer;
+
+        em { font-style: normal; font-weight: 500; color: #9aa7a5; display: inline-flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
+        &:disabled { cursor: default; }
+        &:hover:not(:disabled), &:active:not(:disabled) { background: rgba(255, 255, 255, 0.06); color: #fff; }
+        &.is-on { color: #dfe8e6; border-color: rgba(45, 212, 191, 0.3); }
+        &.is-on.is-bad { border-color: rgba(248, 113, 113, 0.5); }
+    }
+    .bt-stage-dot { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid #4a5654; box-sizing: border-box; }
+    .bt-stage.is-on .bt-stage-dot { border-color: var(--cat-icon, #5eead4); background: var(--cat-icon, #5eead4); }
+    .bt-stage.is-on.is-bad .bt-stage-dot { border-color: #f87171; background: #f87171; }
+    .bt-fc { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+    .bt-fc.is-green { background: #4ade80; }
+    .bt-fc.is-orange { background: #fb923c; }
+    .bt-fc.is-red { background: #f87171; }
+    .bt-fc.is-yellow { background: #facc15; }
+    .bt-fc.is-blue { background: #60a5fa; }
+    .bt-fc.is-purple { background: #c084fc; }
+    .bt-fc.is-gray { background: #9ca3af; }
+
+    .bt-near {
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+        margin: 0;
+        font-size: 11px;
+        line-height: 1.4;
+        color: #fbbf24;
+
+        span { min-width: 0; }
+        strong { font-weight: 600; color: #fde68a; word-break: break-word; }
+        svg { flex-shrink: 0; margin-top: 2px; }
+    }
+
+    .bt-note { display: flex; align-items: center; gap: 6px; margin: 4px 0; font-size: 12px; color: #9aa7a5; &.is-bad { color: #fca5a5; } }
+    .bt-foot { display: flex; align-items: center; gap: 5px; margin: 6px 0 0; font-size: 10.5px; color: #5f6c6a; }
+}
