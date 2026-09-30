@@ -3211,8 +3211,100 @@ $rail-gap: 10px;   // exactly the flex gap between rows, so segments tile
     }
 }
 
+// SWAP ON THE GO: the campaign's name is a button that opens the list. It
+// keeps the title's look (the strong above); only a chevron and a quiet wash
+// on hover say it can be pressed. (0,3,1)+ so .form-tool button can't paint it.
+.specs-tool .specs-camp-text button.specs-camp-switch {
+    font: inherit; // a <button> doesn't take the page's font on its own
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    align-self: flex-start;
+    max-width: 100%;
+    min-width: 0;
+    margin: -3px 0 0 -6px;
+    padding: 2px 6px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: none;
+    color: #fff;
+    cursor: pointer;
+    box-shadow: none;
+    transform: none;
+
+    strong { min-width: 0; }
+    svg { flex-shrink: 0; color: #8fa3a0; transition: transform 0.15s ease; }
+    &.is-open svg { transform: rotate(180deg); }
+    &:hover:not(:disabled), &:active:not(:disabled), &.is-open {
+        background: rgba(255, 255, 255, 0.06);
+        border-color: rgba(255, 255, 255, 0.12);
+        color: #fff;
+        box-shadow: none;
+        transform: none;
+    }
+    &:disabled { cursor: default; opacity: 1; }
+}
+
+// Portalled (Droplet), like the Manage menu: its own look and hover.
+.specs-switch-list {
+    font-family: -apple-system, "Segoe UI", sans-serif;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px;
+    min-width: 240px;
+    max-height: 320px;
+    overflow-y: auto;
+
+    button.specs-switch-item {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        width: 100%;
+        text-align: left;
+        padding: 6px 8px;
+        border: none;
+        border-radius: 6px;
+        background: none;
+        color: #ddd;
+        cursor: pointer;
+
+        em { margin-left: auto; font-style: normal; font-size: 10.5px; color: #8a9a98; }
+        svg { margin-left: auto; flex-shrink: 0; color: #5eead4; }
+        em + svg { margin-left: 6px; }
+        &:hover:not(:disabled), &:active:not(:disabled) { background: rgba(255, 255, 255, 0.07); color: #fff; }
+        &.is-current { background: rgba(45, 212, 191, 0.1); color: #fff; }
+        &:disabled { opacity: 0.4; cursor: default; }
+    }
+}
+.specs-switch-thumb {
+    flex-shrink: 0;
+    width: 44px;
+    height: 26px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: #10181a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    span { font-size: 12px; font-weight: 800; color: rgba(255, 255, 255, 0.3); }
+}
+.specs-switch-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 600; }
+
+// EDITING IN PLACE: the editor fills the campaign card's slot, the Library
+// stays beside it. The card's frame stays; the form sits inside it.
+.specs-tool .specs-camp.is-editing {
+    padding: 14px 16px 16px;
+    gap: 4px;
+
+    .specs-run-row { margin-top: 10px; }
+}
+
 @media (max-width: 620px) {
     .specs-tool .specs-hub.has-library { grid-template-columns: minmax(0, 1fr); }
+    .specs-tool .specs-camp.is-editing { display: flex; padding: 14px; }
 
     // A1: banner beside the name, actions full width underneath.
     .specs-tool .specs-camp {

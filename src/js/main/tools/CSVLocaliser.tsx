@@ -2353,49 +2353,10 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
         </div>
     );
 
-    return (
-        <div className="form-tool specs-tool" ref={toolRootRef}>
-            {/* Folders */}
-            {/* Job setup, rendered as a PATH rather than three lookalike
-                fields. Markets and Masters are not independent inputs -- they
-                are two folders under one job, and Markets is usually derived
-                from the campaign. Branching them off the campaign says that,
-                and makes "what is still missing" readable at a glance instead
-                of requiring you to notice an empty box. */}
-            <div className="specs-setup">
-                {!showSetup && (
-                    /* THE CAMPAIGN, AS THE PAGE'S SUBJECT. Everything the form
-                       would ask for, already answered: the banner pinned in OV
-                       Library, the name, and what to do next -- Scan leads,
-                       the two routes follow. The Library card sits beside it
-                       (under it on a narrow dock), so the campaign and what is
-                       already localised for it are read together. */
-                    <div className={"specs-hub" + (librarySlot ? " has-library" : "") + (readyBanner && !bannerFailed ? " has-banner" : "")}>
-                        <div className={"specs-camp" + (readyBanner && !bannerFailed ? " has-banner" : "")}>
-                            <div className="specs-camp-banner" aria-hidden="true">
-                                {readyBanner && !bannerFailed
-                                    ? <img src={toFileUrl(readyBanner)} alt="" onError={() => setBannerFailed(true)} />
-                                    : <span className="specs-camp-initial">{campaignName.charAt(0).toUpperCase()}</span>}
-                            </div>
-                            <div className="specs-camp-head">
-                                <span className="specs-camp-text">
-                                    <strong>{campaignName}</strong>
-                                    <span>{baseName(marketsRoot)} · {mastersAuto ? "masters found" : baseName(aepPath)}</span>
-                                </span>
-                                <button className="specs-ready-edit" onClick={() => setSetupOpen(true)}>Edit</button>
-                            </div>
-                            <div className="specs-camp-actions">
-                                <button className={"specs-scan-btn specs-camp-scan" + (scan ? " is-secondary" : "")} disabled={busy || !marketsRoot} onClick={runScan}>
-                                    {scan ? <RefreshCw size={14} /> : <ScanSearch size={14} />} {scan ? "Re-scan" : "Scan territories"}
-                                </button>
-                                {routesEl}
-                            </div>
-                        </div>
-                        {librarySlot}
-                    </div>
-                )}
-                {showSetup && librarySlot && <div className="specs-hub-solo">{librarySlot}</div>}
-                {showSetup && (
+    // EDIT opens the editor where the campaign card was; the full-page setup
+    // (Library above, form below) is kept for a campaign that isn't set up.
+    const editInPlace = setupOpen && setupComplete;
+    const setupEl = (
                 <>
                 <div className="specs-setup-root">
                     <label className="specs-field-label">Campaign</label>
@@ -2566,7 +2527,98 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
                     </button>
                 </div>
                 </>
+    );
+    // SWAP ON THE GO: the campaign's name on the card is the switcher, so
+    // changing campaign is a pick, not a trip through Edit. Same list as the
+    // editor's picker (banners, retired greyed and unpickable unless it is
+    // the one you're on).
+    const campaignSwitch = (
+        <Droplet
+            panelClassName="specs-switch-panel"
+            trigger={({ open: switchOpen, toggle }) => (
+                <button className={"specs-camp-switch" + (switchOpen ? " is-open" : "")} disabled={busy || campaigns.length < 2} onClick={toggle}
+                    title={campaigns.length < 2 ? campaignName : "Switch campaign"}>
+                    <strong>{campaignName}</strong>
+                    {campaigns.length > 1 && <ChevronDown size={14} />}
+                </button>
+            )}
+        >
+            {(close) => (
+                <div className="specs-switch-list" role="listbox" aria-label="Campaigns">
+                    {campaigns.map((c) => {
+                        const retired = !!retiredEntry(c.name);
+                        const current = c.name === campaignName;
+                        const hint = retired ? "retired" : campaignReach[c.name] === false ? "not mounted" : "";
+                        return (
+                            <button key={c.name} role="option" aria-selected={current}
+                                className={"specs-switch-item" + (current ? " is-current" : "")}
+                                disabled={retired && !current}
+                                onClick={() => { close(); if (!current) selectCampaign(c.name); }}>
+                                <span className="specs-switch-thumb">
+                                    {banners[c.name] ? <img src={toFileUrl(banners[c.name])} alt="" /> : <span>{c.name.charAt(0).toUpperCase()}</span>}
+                                </span>
+                                <span className="specs-switch-name">{c.name}</span>
+                                {hint && <em>{hint}</em>}
+                                {current && <Check size={13} />}
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+        </Droplet>
+    );
+
+    return (
+        <div className="form-tool specs-tool" ref={toolRootRef}>
+            {/* Folders */}
+            {/* Job setup, rendered as a PATH rather than three lookalike
+                fields. Markets and Masters are not independent inputs -- they
+                are two folders under one job, and Markets is usually derived
+                from the campaign. Branching them off the campaign says that,
+                and makes "what is still missing" readable at a glance instead
+                of requiring you to notice an empty box. */}
+            <div className="specs-setup">
+                {(!showSetup || editInPlace) && (
+                    /* THE CAMPAIGN, AS THE PAGE'S SUBJECT. Everything the form
+                       would ask for, already answered: the banner pinned in OV
+                       Library, the name, and what to do next -- Scan leads,
+                       the two routes follow. The Library card sits beside it
+                       (under it on a narrow dock), so the campaign and what is
+                       already localised for it are read together. */
+                    <div className={"specs-hub" + (librarySlot ? " has-library" : "") + (readyBanner && !bannerFailed ? " has-banner" : "")}>
+                        {editInPlace ? (
+                            /* EDITING IN PLACE: the editor takes the campaign
+                               card's own slot and the Library stays beside it,
+                               instead of the whole page re-laying itself out
+                               around a form (2026-09-30). */
+                            <div className="specs-camp is-editing">{setupEl}</div>
+                        ) : (
+                        <div className={"specs-camp" + (readyBanner && !bannerFailed ? " has-banner" : "")}>
+                            <div className="specs-camp-banner" aria-hidden="true">
+                                {readyBanner && !bannerFailed
+                                    ? <img src={toFileUrl(readyBanner)} alt="" onError={() => setBannerFailed(true)} />
+                                    : <span className="specs-camp-initial">{campaignName.charAt(0).toUpperCase()}</span>}
+                            </div>
+                            <div className="specs-camp-head">
+                                <span className="specs-camp-text">
+                                    {campaignSwitch}
+                                    <span>{baseName(marketsRoot)} · {mastersAuto ? "masters found" : baseName(aepPath)}</span>
+                                </span>
+                                <button className="specs-ready-edit" onClick={() => setSetupOpen(true)}>Edit</button>
+                            </div>
+                            <div className="specs-camp-actions">
+                                <button className={"specs-scan-btn specs-camp-scan" + (scan ? " is-secondary" : "")} disabled={busy || !marketsRoot} onClick={runScan}>
+                                    {scan ? <RefreshCw size={14} /> : <ScanSearch size={14} />} {scan ? "Re-scan" : "Scan territories"}
+                                </button>
+                                {routesEl}
+                            </div>
+                        </div>
+                        )}
+                        {librarySlot}
+                    </div>
                 )}
+                {showSetup && !editInPlace && librarySlot && <div className="specs-hub-solo">{librarySlot}</div>}
+                {showSetup && !editInPlace && setupEl}
             </div>
 
             {progress && <p className="hint specs-progress">{progress}</p>}

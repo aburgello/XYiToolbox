@@ -492,6 +492,15 @@ where you are**: the territory comes from the card's detection (`onHere`), never
 a second lookup, and the batch only when the open project's path really is
 `<Territory>/AE/<Batch_*>/…`. The campaign banner washes behind it. CSV
 Localiser's scan list pins the same territory first (`hereTerritory`).
+**The campaign is swapped from the card, and edited in its place.** The
+campaign's name on the card is a switcher (a Droplet of the same list the
+editor's picker shows: banners, retired greyed unless current), so changing
+campaign is a pick, not a trip through Edit. **Edit opens the setup form in
+the campaign card's own slot** with the Library still beside it
+(`editInPlace`); the full-page setup (Library above, form below) is only for
+a campaign that isn't set up -- which a switch can still land on when the
+new campaign's masters folder can't be found. Nothing else on the page moves.
+
 **The Tracker is the landing's THIRD PANE** (beside Big Guy Localiser and
 Trott & Batch), not a card in the tools grid -- it is where a batch is looked at
 before and after either half runs. The last pane used is remembered per viewer

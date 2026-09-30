@@ -157,8 +157,14 @@ try {
     await page.resize(760, 1100);
 
     console.log("\n1a. Setup form: Edit, Manage, Done");
+    const libBefore = await page.eval(rect(".ls-libcard"));
     await page.click(".specs-camp .specs-ready-edit");
     check(await page.waitFor(`document.querySelector(".specs-setup-root")`, 3000), "Edit opens the setup form");
+    const libDuring = await page.eval(rect(".ls-libcard"));
+    check(await page.eval(`!!document.querySelector(".specs-hub .specs-camp.is-editing .specs-setup-root") && !document.querySelector(".specs-hub-solo")`)
+        && Math.abs(libBefore.left - libDuring.left) < 2 && Math.abs(libBefore.top - libDuring.top) < 2,
+        "…IN PLACE of the campaign card: the Library doesn't move", { libBefore, libDuring });
+    await page.shot(path.join(SHOTS, "ui-edit-in-place.png"));
     check((await page.eval(count(".specs-run-row .checkbox-toggle, .specs-run-row input[type=checkbox], .specs-options"))) === 0, "no option checkboxes in Setup");
     check((await page.eval(count(".specs-setup-root .specs-campaign-btn"))) === 0, "no row of icon buttons beside the picker");
     await page.click(".specs-manage-btn");
@@ -385,6 +391,21 @@ try {
     await openLocalise(page);
     await pause(600);
     check(!(await page.eval(`!!document.querySelector(".specs-handoff")`)), "…and is taken once: coming back does not replay it");
+
+    console.log("\n6c. Swap campaigns from the card");
+    await page.click(".home-button");
+    await openLocalise(page);
+    await page.waitFor(`!!document.querySelector(".specs-camp-switch")`, 6000);
+    check(/Street Fighter/.test(await page.eval(text(".specs-camp-switch"))), "the campaign's name on the card is the switcher");
+    await page.click(".specs-camp-switch");
+    check(await page.waitFor(`document.querySelectorAll(".specs-switch-item").length === 2`, 3000), "…opening the campaigns, with no trip through Edit");
+    const items2 = await page.eval(`[...document.querySelectorAll(".specs-switch-item")].map(b => b.querySelector(".specs-switch-name").innerText + (b.classList.contains("is-current") ? " *" : ""))`);
+    check(items2.join("|") === "Street Fighter *|Forgotten Island", "…the one you're on marked", items2);
+    await page.shot(path.join(SHOTS, "ui-campaign-switch.png"));
+    await page.click(".specs-switch-item", "Forgotten Island");
+    // Masters come from the disk's sibling folder, which this inert fs can't
+    // answer -- so here the setup asks for them; on the share the card swaps.
+    check(await page.waitFor(`/XY026040_Markets/.test(document.body.innerText)`, 4000), "picking one switches the campaign at once");
 
     console.log("\n7. Your jobs, on the Localise page");
     await page.click(".home-button");
