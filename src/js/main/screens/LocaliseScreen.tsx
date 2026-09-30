@@ -26,6 +26,7 @@ import { toFileUrl } from "../lib/fileUrl";
 import { setPendingLibraryCampaign } from "../lib/localiseHandoff";
 import CampaignLocaliserTool from "../tools/CampaignLocaliser";
 import BatchTrackerTool from "../tools/BatchTracker";
+import { recordUse } from "../lib/toolUsage";
 import { sfx } from "../../lib/utils/sfx";
 import "./LocaliseScreen.scss";
 import HomeButton from "../HomeButton";
@@ -249,6 +250,7 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
             onJobSent();
             return;
         }
+        recordUse("tool:" + toolId);
         setLocalToolId(toolId);
     };
 

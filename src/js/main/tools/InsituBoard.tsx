@@ -18,6 +18,7 @@
 // read in 26.2 (see src/jsx/aeft/insitu.ts), so this panel is the only copy of
 // the shape.
 // =============================================================================
+import { setToolKeys } from "../lib/keyInterest";
 import React, { useEffect, useRef, useState } from "react";
 import {
     ArrowLeft, Image as ImageIcon, Plus, Trash2, Hammer, Copy, RotateCcw,
@@ -1034,7 +1035,7 @@ const InsituBoard: React.FC<Props> = ({
                 keys.push({ keyCode: arrows[i], shiftKey: false });
                 keys.push({ keyCode: arrows[i], shiftKey: true });
             }
-            csi.registerKeyEventsInterest(JSON.stringify(keys));
+            setToolKeys(JSON.stringify(keys));
         } catch { /* no host in preview */ }
         setArmed(true);
         // preventScroll, ALWAYS. The catcher sits at the wrap's top left, and
@@ -1050,11 +1051,11 @@ const InsituBoard: React.FC<Props> = ({
         }
     };
     const release = () => {
-        try { csi.registerKeyEventsInterest("[]"); } catch { /* nothing to release */ }
+        try { setToolKeys(null); } catch { /* nothing to release */ }
         setArmed(false);
     };
     // Never leave AE without its own undo if the tool unmounts while armed.
-    useEffect(() => () => { try { csi.registerKeyEventsInterest("[]"); } catch { /* no host */ } }, []);
+    useEffect(() => () => { try { setToolKeys(null); } catch { /* no host */ } }, []);
 
     /**
      * KEEPS THE CATCHER FOCUSED, which is what actually delivers the keys.

@@ -11,6 +11,7 @@
 // To add a new one-click tool here: add its aeft.ts function, then add one
 // entry to ACTIONS below.
 // =============================================================================
+import { recordUse } from "../lib/toolUsage";
 import React, { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import {
@@ -1438,6 +1439,7 @@ const ToolsetTool: React.FC<{ onNavigate?: (screen: Screen) => void; focusAction
     };
 
     const runAction = async (action: ActionEntry) => {
+        recordUse("action:" + action.id);
         const result = await action.run();
         // MC It! returns a full structured report -- show the app-root results
         // modal (McItReportHost in main.tsx) instead of a one-line toast, same

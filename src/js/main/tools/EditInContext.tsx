@@ -22,6 +22,7 @@
 // Backend: editInContextRoot / Layers / Target / Nudge / Reveal in tools.ts.
 // Transform properties of the open project only — no app.open(), no saves.
 // =============================================================================
+import { setToolKeys } from "../lib/keyInterest";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
     ArrowLeft, ArrowRight, ArrowUp, ArrowDown,
@@ -250,15 +251,15 @@ const EditInContextTool = () => {
     };
 
     const claimArrows = () => {
-        try { csi.registerKeyEventsInterest(arrowInterest()); } catch (e) { /* no host in preview */ }
+        try { setToolKeys(arrowInterest()); } catch (e) { /* no host in preview */ }
         setArmed(true);
     };
     const releaseArrows = () => {
-        try { csi.registerKeyEventsInterest("[]"); } catch (e) { /* nothing to release */ }
+        try { setToolKeys(null); } catch (e) { /* nothing to release */ }
         setArmed(false);
     };
     // Never leave AE without its arrow keys if the tool unmounts while armed.
-    useEffect(() => () => { try { csi.registerKeyEventsInterest("[]"); } catch (e) {} }, []);
+    useEffect(() => () => { try { setToolKeys(null); } catch (e) {} }, []);
 
     const call = useCallback(async (fn: string, ...args: unknown[]) => {
         try {

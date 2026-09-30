@@ -38,6 +38,7 @@ import { rankedFuzzySearch, type FuzzyRecord } from "./lib/fuzzySearch";
 import StatusIcon from "./StatusIcon";
 import Tooltip from "./Tooltip";
 import type { Screen } from "./main";
+import { recordUse, recentUses, mostUsed } from "./lib/toolUsage";
 import "./CommandPalette.scss";
 
 // Module-level singleton: lets PaletteTrigger (rendered inline in drill
@@ -46,7 +47,9 @@ import "./CommandPalette.scss";
 let _openPalette: (() => void) | null = null;
 export const triggerPalette = () => _openPalette?.();
 
-type Hit =
+// `section`: the heading an empty-query row sits under (Recent, Most used,
+// Favorites); a searched row has none.
+type Hit = (
     | { kind: "tool"; key: string; tool: ToolEntry; matchedAction?: string }
     | { kind: "action"; key: string; action: ActionEntry }
     // A "page"-kind custom tool (Script Playground's My Tools list) --
@@ -56,7 +59,8 @@ type Hit =
     // mechanism, and running an arbitrary saved script sight-unseen off a
     // single search selection is a bigger leap than auto-clicking a known
     // static button -- this always just navigates to My Tools, never runs.
-    | { kind: "custom-page"; key: string; entry: CustomToolEntry };
+    | { kind: "custom-page"; key: string; entry: CustomToolEntry }
+) & { section?: string };
 
 interface Props {
     screen: Screen;
@@ -162,18 +166,44 @@ const CommandPalette: React.FC<Props> = ({ screen, onNavigate }) => {
     const hits = useMemo<Hit[]>(() => {
         const q = query.trim();
         if (!q) {
-            // Empty query: surface favorites (reuses the same favorites this
-            // app already has via the home screen's star icon) rather than
-            // showing nothing, or dumping all ~44 entries unranked.
-            return favoriteEntries.map(({ tool, action }) => ({
-                kind: "tool" as const,
-                key: tool.id + (action ? ":" + action : ""),
-                tool,
-                matchedAction: action,
-            }));
+            // Empty query: what this person actually reaches for -- the last
+            // few used, then the most used, then their starred favourites --
+            // each thing shown once, under the first heading that has it.
+            const out: Hit[] = [];
+            const seen = new Set<string>();
+            const add = (h: Hit | null, section: string) => {
+                if (!h || seen.has(h.key)) return;
+                seen.add(h.key);
+                out.push({ ...h, section } as Hit);
+            };
+            const buttons = customTools.filter((t) => t.kind === "button").map((t) => ({ t, a: customButtonToAction(t) }));
+            const fromUse = (k: string): Hit | null => {
+                const i = k.indexOf(":");
+                const kind = k.slice(0, i), id = k.slice(i + 1);
+                if (kind === "tool") {
+                    const tool = TOOLS.find((t) => t.id === id);
+                    return tool ? { kind: "tool", key: tool.id, tool } : null;
+                }
+                if (kind === "action") {
+                    const a = ACTIONS.find((x) => x.id === id);
+                    if (a) return { kind: "action", key: "toolset:" + a.id, action: a };
+                    const c = buttons.find((x) => x.a.id === id);
+                    return c ? { kind: "action", key: "custom:" + c.t.id, action: c.a } : null;
+                }
+                if (kind === "custompage") {
+                    const e = customTools.find((t) => t.kind === "page" && t.id === id);
+                    return e ? { kind: "custom-page", key: "custompage:" + e.id, entry: e } : null;
+                }
+                return null;
+            };
+            const recent = recentUses(5);
+            recent.forEach((k) => add(fromUse(k), "Recent"));
+            mostUsed(5, recent).forEach((k) => add(fromUse(k), "Most used"));
+            favoriteEntries.forEach(({ tool, action }) => add({ kind: "tool", key: tool.id + (action ? ":" + action : ""), tool, matchedAction: action }, "Favorites"));
+            return out;
         }
         return rankedFuzzySearch(searchRecords, q);
-    }, [query, favoriteEntries, searchRecords]);
+    }, [query, favoriteEntries, searchRecords, customTools, open]);
 
     // Keep the highlighted row in view when navigating by keyboard past the
     // edge of the scrollable list.
@@ -187,6 +217,7 @@ const CommandPalette: React.FC<Props> = ({ screen, onNavigate }) => {
     const close = () => setOpen(false);
 
     const runAction = async (action: ActionEntry) => {
+        recordUse("action:" + action.id);
         if (runningRef.current) return;
         runningRef.current = true;
         setRunning(action.label);
@@ -219,6 +250,7 @@ const CommandPalette: React.FC<Props> = ({ screen, onNavigate }) => {
             onNavigate({ type: "tool", toolId: hit.tool.id, backTo: screen, autoAction: hit.matchedAction });
             close();
         } else if (hit.kind === "custom-page") {
+            recordUse("custompage:" + hit.entry.id);
             onNavigate({ type: "tool", toolId: "my-tools", backTo: screen });
             close();
         } else {
@@ -298,17 +330,19 @@ const CommandPalette: React.FC<Props> = ({ screen, onNavigate }) => {
                                     </div>
 
                                     <div className="palette-list" ref={listRef}>
-                                        {!query && favoriteEntries.length === 0 && (
+                                        {!query && hits.length === 0 && (
                                             <p className="palette-hint">
-                                                Type to search every tool and one-click action — or star a tool from search
-                                                results to see it here first.
+                                                Type to search every tool and one-click action. The ones you use will
+                                                gather here, and so will any you star.
                                             </p>
                                         )}
                                         {query && hits.length === 0 && <p className="palette-hint">No matches for "{query}".</p>}
-                                        {!query && favoriteEntries.length > 0 && <p className="palette-section-label">Favorites</p>}
-
                                         {hits.map((hit, index) => {
                                             const isSelected = index === selectedIndex;
+                                            const heading = hit.section && (index === 0 || hits[index - 1].section !== hit.section)
+                                                ? <p key={"h:" + hit.section} className="palette-section-label">{hit.section}</p>
+                                                : null;
+                                            const row = (() => {
                                             if (hit.kind === "tool") {
                                                 const Icon = hit.tool.icon;
                                                 return (
@@ -364,6 +398,8 @@ const CommandPalette: React.FC<Props> = ({ screen, onNavigate }) => {
                                                     {isSelected && <CornerDownLeft size={12} className="palette-row-enter" />}
                                                 </div>
                                             );
+                                            })();
+                                            return <React.Fragment key={hit.key + (hit.section || "")}>{heading}{row}</React.Fragment>;
                                         })}
                                     </div>
 

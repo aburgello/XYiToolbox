@@ -31,6 +31,7 @@
 // ESCAPE CLOSES THESE GAMES. Worth stating because it isn't universal: a game
 // that used Escape as its own in-game menu key would need a different quit
 // binding. None of ours do, so Escape is the obvious thing and it works.
+import { setToolKeys } from "../lib/keyInterest";
 import { useCallback, useEffect, useRef } from "react";
 import { motion } from "motion/react";
 import { X } from "lucide-react";
@@ -84,13 +85,13 @@ export const ArcadeFrame = ({ title, hint, keyCodes, fluid, onClose, children }:
     // happens even if the game itself throws while mounting.
     useEffect(() => {
         try {
-            csi.registerKeyEventsInterest(keyEventsInterest(keyCodes));
+            setToolKeys(keyEventsInterest(keyCodes));
         } catch {
             /* no CEP host (browser preview) -- keys arrive normally there */
         }
         return () => {
             try {
-                csi.registerKeyEventsInterest("[]");
+                setToolKeys(null);
             } catch {
                 /* nothing to release if there was no host to claim from */
             }

@@ -609,11 +609,24 @@ panel's target and AE's selection are separate things and both get moved; and
 when three are. `editInContextReveal` sets the selection itself, so it must skip
 one tick or it throws away the trail it was just revealing from.
 
+**⌘K is claimed from AE, and tools add their keys through `lib/keyInterest.ts`.**
+⌘K is AE's Composition Settings, so while the panel has focus AE took it
+before the palette saw it; `claimPaletteKey()` (main.tsx) registers it
+(macOS key 40 + ⌘, Windows 75 + Ctrl). `registerKeyEventsInterest` REPLACES
+the whole set, so a tool must never call it directly: `setToolKeys(json)` to
+claim, `setToolKeys(null)` to release, and ⌘K survives both. No registration
+reaches a panel while AE's own windows have focus -- that is CEP; the search
+button is the way in then. **The palette's empty state is Recent / Most used
+/ Favorites** from `lib/toolUsage.ts` (per viewer, browser storage; keys
+`tool:`/`action:`/`custompage:`, recorded where things are USED -- main.tsx
+screen changes, LocaliseScreen picks, Toolset and palette runs). Most used
+needs two uses and skips what Recent shows. `node scripts/ui-palette.mjs`.
+
 **Input.** Prefer **mouse events over pointer events** for anything beyond a
 plain click — the macOS AE CEP host doesn't reliably dispatch Pointer Events.
 For real keyboard input outside a text field, focus a hidden `<input>`
 (opacity 0, 1px, `pointer-events:none`, re-focused on a ~400ms interval) and
-release `registerKeyEventsInterest` with `"[]"` on unmount. **The keygrab must
+release with `setToolKeys(null)` on unmount (never a bare `"[]"`, which drops ⌘K). **The keygrab must
 stand down when `document.activeElement` is already editable**, or it pulls the
 caret out of your own text field several times a second.
 

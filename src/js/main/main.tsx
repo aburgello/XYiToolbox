@@ -42,6 +42,8 @@ import { useTheme } from "./hooks/useTheme";
 import { registerSoftReload } from "./softReload";
 import { setNavigator, setHomeNavigator } from "./lib/navigation";
 import WorkflowBubble from "./WorkflowBubble";
+import { recordUse } from "./lib/toolUsage";
+import { claimPaletteKey } from "./lib/keyInterest";
 // ---------------------------------------------------------------------------
 // Screen type -- exported so screen components can reference it without a
 // circular import (they import Screen, Main imports them).
@@ -67,6 +69,14 @@ const Main = () => {
     useTheme();
 
     const [screen, setScreen] = useState<Screen>({ type: "home" });
+    // ⌘K is AE's Composition Settings: claim it for the palette while the
+    // panel has focus (lib/keyInterest.ts).
+    useEffect(() => { claimPaletteKey(); }, []);
+    // Every tool opened, however it was reached, feeds ⌘K's Recent/Most used.
+    useEffect(() => {
+        if (screen.type === "tool") recordUse("tool:" + screen.toolId);
+        else if (screen.type === "category" && screen.selectedToolId) recordUse("tool:" + screen.selectedToolId);
+    }, [screen]);
 
     // Track previous screen type to determine transition direction
     const prevScreenRef = useRef<Screen | null>(null);

@@ -68,7 +68,8 @@ function bridgeSource(fixturesSrc) {
     getExtensionId: () => "com.xyi.toolbox",
     getOSInformation: () => "Mac OS 14",
     addEventListener() {}, removeEventListener() {}, dispatchEvent() {},
-    registerKeyEventsInterest() {}, requestOpenExtension() {}, closeExtension() {},
+    // Recorded, so a test can see which keys the panel claims from AE.
+    registerKeyEventsInterest(k) { (window.__keyClaims = window.__keyClaims || []).push(String(k)); }, requestOpenExtension() {}, closeExtension() {},
     getScaleFactor: () => 1, getNetworkPreferences: () => "{}", invokeSync: () => "", invokeAsync() {},
   };
   window.__adobe_cep__ = new Proxy(base, { get: (t, k) => (k in t ? t[k] : () => "") });

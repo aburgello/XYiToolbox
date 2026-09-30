@@ -26,6 +26,7 @@
 // deliverable, and that is a studio decision rather than a coding one. The
 // composition is designed, checked and saved here; building it is the next
 // step. Shipping a Build button that guessed would be worse than not having one.
+import { setToolKeys } from "../lib/keyInterest";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { AlertCircle, ChevronRight, Copy, Crosshair, Frame, Globe2, Image as ImageIcon, Layers, Wand2, LayoutGrid, Library, Pause, Play, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, RotateCcw, Search, Square as SquareIcon, Trash2, X } from "lucide-react";
@@ -1680,15 +1681,15 @@ export const BespokeTool = () => {
         return JSON.stringify(out);
     };
     const claimBoard = () => {
-        try { csi.registerKeyEventsInterest(boardInterest()); } catch (e) { /* no host in preview */ }
+        try { setToolKeys(boardInterest()); } catch (e) { /* no host in preview */ }
         setBoardArmed(true);
     };
     const releaseBoard = () => {
-        try { csi.registerKeyEventsInterest("[]"); } catch (e) { /* nothing to release */ }
+        try { setToolKeys(null); } catch (e) { /* nothing to release */ }
         setBoardArmed(false);
     };
     // Never leave AE without its arrow keys if the tool unmounts while armed.
-    useEffect(() => () => { try { csi.registerKeyEventsInterest("[]"); } catch (e) { /* no host */ } }, []);
+    useEffect(() => () => { try { setToolKeys(null); } catch (e) { /* no host */ } }, []);
 
     /**
      * ONE STEP IS ONE PIXEL, ten with Shift. Not acceleration.
