@@ -97,6 +97,31 @@ try {
     const tip = await page.eval(`[...document.querySelectorAll(".ov-tooltip-bubble, [class*=tooltip-bubble], [role=tooltip]")].map(e => e.innerText).join(" ")`);
     check(/drawn at 25%/.test(tip) && /8 px inside/.test(tip) && /0\.5 px on screen/.test(tip), "its tooltip explains it with this layer's numbers", tip.slice(0, 140));
 
+    console.log("\n3b. The step field");
+    await page.eval(`(() => { const i = document.querySelector(".eic-dpad-step input"); i.focus(); i.click(); })()`);
+    await pause(150);
+    const selected = await page.eval(`(() => { const i = document.querySelector(".eic-dpad-step input"); return [i.selectionStart, i.selectionEnd, i.value.length]; })()`);
+    check(selected[0] === 0 && selected[1] === selected[2], "a click selects the whole number, so typing replaces it", selected);
+    check(await page.eval(`!!document.querySelector(".eic-dpad-step .eic-step-tray")`), "a tray of common steps opens under it");
+    await page.eval(`[...document.querySelectorAll(".eic-dpad-step .eic-step-tray button")].find(b => b.innerText === "10").dispatchEvent(new MouseEvent("mousedown", { bubbles: true }))`);
+    await page.eval(`[...document.querySelectorAll(".eic-dpad-step .eic-step-tray button")].find(b => b.innerText === "10").click()`);
+    await pause(150);
+    check((await page.eval(`document.querySelector(".eic-dpad-step input").value`)) === "10", "picking 10 sets the step", await page.eval(`document.querySelector(".eic-dpad-step input").value`));
+    await page.eval(`(() => { const i = document.querySelector(".eic-dpad-step input"); i.focus(); i.click(); })()`);
+    await pause(100);
+    await page.eval(`document.querySelector(".eic-dpad-step .eic-step-back").click()`);
+    await pause(100);
+    check((await page.eval(`document.querySelector(".eic-dpad-step input").value`)) === "1", "⌫ deletes the last digit, as the key would", await page.eval(`document.querySelector(".eic-dpad-step input").value`));
+    await page.eval(`(() => { const i = document.querySelector(".eic-dpad-step input"); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set; set.call(i, "2x"); i.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+    await pause(100);
+    check((await page.eval(`document.querySelector(".eic-dpad-step input").value`)) === "2", "only numbers go in", await page.eval(`document.querySelector(".eic-dpad-step input").value`));
+    const inside = await page.eval(`(() => { const t = document.querySelector(".eic-step-tray").getBoundingClientRect(); const tool = document.querySelector(".eic-tool").getBoundingClientRect(); return t.left >= tool.left && t.right <= tool.right; })()`);
+    check(inside, "the tray stays inside the panel");
+    await page.shot(path.join(SHOTS, "ui-eic-step.png"));
+    await page.eval(`document.querySelector(".eic-editor-title").dispatchEvent(new MouseEvent("mousedown", { bubbles: true }))`);
+    await pause(150);
+    check(!(await page.eval(`!!document.querySelector(".eic-step-tray")`)), "a press anywhere else closes the tray");
+
     console.log("\n4. Presses reach After Effects");
     await page.click(".eic-dpad-right .eic-nudge");
     await pause(300);

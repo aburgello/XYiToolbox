@@ -571,6 +571,13 @@ question), `Tooltip`, `Droplet`, `Dropdown`, `SegmentedToggle`
 (needs a unique `name` or two instances share one Framer `layoutId`),
 `ArcadeFrame`, `ToolErrorBoundary`, `VideoOverlay` (the ONE video player — portals to `<body>`, closes on Esc/backdrop/X; OVLibrary's private copy was promoted, don't re-roll a second), `lib/fileUrl.ts`'s `toFileUrl` (the Windows-drive and UNC branches are why — a malformed `file://` URL shows nothing and throws nothing).
 
+**Edit In Context's step boxes are `StepField`s**: a click SELECTS the number
+(typing replaces it -- the caret-at-the-end box needed Backspace, which AE's
+host does not reliably hand a panel), a tray of common steps plus a ⌫ that
+deletes the last digit opens under it, and only digits and one point go in.
+It opens on click as well as focus, and closes on a press elsewhere as well
+as blur: neither focus event is guaranteed in a panel without window focus.
+
 **Edit in Context follows AE's selection.** `editInContextSelection` is polled
 (~900ms, non-toasting) and the panel opens the selected layer's precomp. Two
 rules keep it from fighting the artist: act **only when the signature

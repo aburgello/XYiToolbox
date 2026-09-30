@@ -121,6 +121,71 @@ const NudgeButton: React.FC<{
     );
 };
 
+/**
+ * A step size you can change without fighting it. The box was a few pixels
+ * wide and kept its caret at the end, so changing 4 to 8 meant Backspace --
+ * which AE's host does not reliably hand to a panel. Now: a click SELECTS the
+ * number, so typing replaces it; a tray of common steps sits under it while
+ * it's focused; and a ⌫ button deletes the last digit, the way the key would.
+ * Only digits and one point are accepted, so a stray letter can't break a step.
+ */
+const StepField: React.FC<{ className: string; unit: string; value: string; onChange: (v: string) => void; presets: string[]; label: string; title: string }> = ({ className, unit, value, onChange, presets, label, title }) => {
+    const ref = useRef<HTMLInputElement>(null);
+    const [open, setOpen] = useState(false);
+    const clean = (v: string) => {
+        let out = v.replace(/[^0-9.]/g, "");
+        const dot = out.indexOf(".");
+        if (dot !== -1) out = out.slice(0, dot + 1) + out.slice(dot + 1).replace(/\./g, "");
+        return out;
+    };
+    // Tray buttons must not take the focus from the field, or the tray closes
+    // under the pointer before the click lands.
+    const keep = (e: React.MouseEvent) => e.preventDefault();
+    // Closed by a press anywhere else as well as by blur: blur is not
+    // guaranteed to fire in a panel without window focus.
+    const boxRef = useRef<HTMLLabelElement>(null);
+    useEffect(() => {
+        if (!open) return;
+        const away = (e: MouseEvent) => {
+            if (boxRef.current && !boxRef.current.contains(e.target as Node)) {
+                setOpen(false);
+                if (value === "" || value === ".") onChange(presets[0]);
+            }
+        };
+        document.addEventListener("mousedown", away);
+        return () => document.removeEventListener("mousedown", away);
+    }, [open, value]);
+    return (
+        <label ref={boxRef} className={className + (open ? " is-editing" : "")} title={title}>
+            <input
+                ref={ref}
+                className="eic-step-in"
+                type="text"
+                inputMode="decimal"
+                value={value}
+                aria-label={label}
+                onFocus={(e) => { setOpen(true); const t = e.currentTarget; setTimeout(() => t.select(), 0); }}
+                // Also on the click itself: a focus event is not guaranteed
+                // (a panel without window focus doesn't dispatch one).
+                onClick={(e) => { if (!open) { setOpen(true); e.currentTarget.select(); } }}
+                onBlur={() => { setOpen(false); if (value === "" || value === ".") onChange(presets[0]); }}
+                onChange={(e) => onChange(clean(e.target.value))}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") { setOpen(false); ref.current?.blur(); } }}
+                style={{ width: `${Math.max(2, value.length) + 0.4}ch` }}
+            />
+            <em>{unit}</em>
+            {open && (
+                <span className="eic-step-tray" onMouseDown={keep}>
+                    {presets.map((p) => (
+                        <button key={p} type="button" className={p === value ? "is-on" : ""} onMouseDown={keep} onClick={() => { onChange(p); setOpen(false); ref.current?.blur(); }}>{p}</button>
+                    ))}
+                    <button type="button" className="eic-step-back" aria-label="Delete the last digit" title="Delete the last digit" onMouseDown={keep} onClick={() => onChange(value.slice(0, -1))}>⌫</button>
+                </span>
+            )}
+        </label>
+    );
+};
+
 const EditInContextTool = () => {
     const [status, setStatus] = useState<{ text: string; type: "success" | "error" } | null>(null);
     const [rootId, setRootId] = useState<number | null>(null);
@@ -617,10 +682,7 @@ const EditInContextTool = () => {
                                 />
                                 <span className="eic-dpad-up"><NudgeButton title="Up" disabled={target.locked} onStep={(s) => nudge("position", 0, -amount(stepPos, s))}><ArrowUp size={15} /></NudgeButton></span>
                                 <span className="eic-dpad-left"><NudgeButton title="Left" disabled={target.locked} onStep={(s) => nudge("position", -amount(stepPos, s), 0)}><ArrowLeft size={15} /></NudgeButton></span>
-                                <label className="eic-dpad-step" title="Step in pixels (Shift: ×10)">
-                                    <input className="eic-step-in" type="text" value={stepPos} onChange={(e) => setStepPos(e.target.value)} aria-label="Position step in pixels" style={{ width: `${Math.max(1, stepPos.length) + 0.4}ch` }} />
-                                    <em>px</em>
-                                </label>
+                                <StepField className="eic-dpad-step" unit="px" value={stepPos} onChange={setStepPos} presets={["1", "2", "5", "10", "50"]} label="Position step in pixels" title="Step in pixels (Shift: ×10)" />
                                 <span className="eic-dpad-right"><NudgeButton title="Right" disabled={target.locked} onStep={(s) => nudge("position", amount(stepPos, s), 0)}><ArrowRight size={15} /></NudgeButton></span>
                                 <span className="eic-dpad-down"><NudgeButton title="Down" disabled={target.locked} onStep={(s) => nudge("position", 0, amount(stepPos, s))}><ArrowDown size={15} /></NudgeButton></span>
                             </div>
@@ -641,10 +703,7 @@ const EditInContextTool = () => {
                             <span className="eic-group-label">Scale{target.scaleKeyed ? <em> · animated</em> : null}</span>
                             <div className="eic-scale">
                                 <NudgeButton title="Smaller" disabled={target.locked} onStep={(s) => nudge("scale", -amount(stepScale, s), -amount(stepScale, s))}><Minus size={15} /></NudgeButton>
-                                <label className="eic-scale-step" title="Step in percent (Shift: ×10)">
-                                    <input className="eic-step-in" type="text" value={stepScale} onChange={(e) => setStepScale(e.target.value)} aria-label="Scale step in percent" style={{ width: `${Math.max(1, stepScale.length) + 0.4}ch` }} />
-                                    <em>%</em>
-                                </label>
+                                <StepField className="eic-scale-step" unit="%" value={stepScale} onChange={setStepScale} presets={["0.1", "0.5", "1", "5"]} label="Scale step in percent" title="Step in percent (Shift: ×10)" />
                                 <NudgeButton title="Bigger" disabled={target.locked} onStep={(s) => nudge("scale", amount(stepScale, s), amount(stepScale, s))}><Plus size={15} /></NudgeButton>
                             </div>
                         </div>
