@@ -25,6 +25,7 @@
 // version reviewed is kept, so a row can say a newer render exists since.
 //
 // Plain text in, plain text out: nothing here is ever rendered as markup.
+// Wrike may send a bullet as its emoji shortcode; see stripLead.
 // =============================================================================
 
 export interface AmendNote {
@@ -50,7 +51,11 @@ export function amendKey(name: string): string {
     return s.split(/[_ ]+/).filter((t) => t && !/^\d{1,2}x\d{1,2}$/i.test(t)).map((t) => t.toUpperCase()).join("_");
 }
 
-const stripLead = (line: string) => line.replace(/^[^\p{L}\p{N}]+/u, "").trim();
+// Bullets come as the emoji (🔶) OR as the shortcode Wrike's plain text sends
+// (":small_orange_diamond:" -- Malaysia's MY 2, 2026-09-30); both come off,
+// along with any other punctuation leading the line.
+const stripLead = (line: string) =>
+    line.replace(/^(?::[a-z0-9_+-]+:|[^\p{L}\p{N}])+/iu, "").trim(); // shortcode FIRST, or the bare ":" goes alone
 
 function isFilename(line: string): boolean {
     const t = stripLead(line);

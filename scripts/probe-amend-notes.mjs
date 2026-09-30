@@ -49,5 +49,12 @@ check((q.byKey[amendKey("SF_INTL_Trio_DOOH_Odeon_1920x1080px_15s_NO")] || []).le
 check(amendKey("SF_INTL_Trio_DOOH_Kiwi_9x16_1080x1920px_15s_NO_V02_DOUBLE_RES.mov") === "SF_INTL_TRIO_DOOH_KIWI_1080X1920PX_15S_NO", "keys exactly as the tracker does (version, RES, ratio, extension off)");
 check(parseAmends("").general.length === 0 && Object.keys(parseAmends("Looks great, thanks!").byKey).length === 0, "an ordinary comment is general, with no deliverables");
 
+const my = parseAmends(`SF_INTL_RyuHadouken_DINTH_4480x384px_30s_MY_V01
+:small_orange_diamond: Please fade out the embers at the end`);
+const myNote = (my.byKey[amendKey("SF_INTL_RyuHadouken_DINTH_4480x384px_30s_MY")] || [])[0];
+check(myNote && myNote.text === "Please fade out the embers at the end" && myNote.version === 1 && my.general.length === 0,
+  "Malaysia's MY 2: a filename with no extension, and a bullet sent as :small_orange_diamond:", my);
+check(parseAmends(":white_check_mark: The others are approved").general[0] === "The others are approved", "…and :white_check_mark: comes off the general line too");
+
 console.log(fails ? `\n${fails} FAILED` : "\nCLEAN — an amend comment splits onto the deliverables it names.");
 process.exit(fails ? 1 : 0);
