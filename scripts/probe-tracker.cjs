@@ -3,7 +3,7 @@
 // -----------------------------------------------------------------------------
 // The Batch Tracker over a stubbed Norway, shaped like the real one: AE/Batch_02
 // beside JPG_PNG/Batch_2 (a different spelling of the same batch), Renders with
-// V01/V02 and an _mp4, the POST pair whose names disagree between AE and
+// V01/V02, a _Delivery and an _mp4 of previews that must NOT count as delivered, the POST pair whose names disagree between AE and
 // JPG_PNG, and Wrike subtasks named in capitals. Read-only: the stub THROWS on
 // anything that isn't a listing.
 // =============================================================================
@@ -42,7 +42,8 @@ put(`${T}/JPG_PNG/Batch_2/${P}NfkinoPOST_1200x380px_30s_NO/a.png`);
 put(`${T}/Renders/Batch_02/${P}NfkinoPOST_345x496px_30s_NO_V01.mov`);
 put(`${T}/Renders/Batch_02/${P}NfkinoPOST_345x496px_30s_NO_V02.mov`);
 put(`${T}/Renders/Batch_02/${P}OdeonPOST_3840x1152px_30s_NO_V01.mov`);
-put(`${T}/Renders/Batch_02/_mp4/${P}NfkinoPOST_345x496px_30s_NO.mp4`);
+put(`${T}/Renders/Batch_02/_Delivery/${P}NfkinoPOST_345x496px_30s_NO.mp4`);
+put(`${T}/Renders/Batch_02/_mp4/${P}OdeonPOST_3840x1152px_30s_NO.mp4`);
 put(`${T}/Renders/Batch_02/_Old/${P}NfkinoPOST_1200x380px_30s_NO_V01.mov`);
 put(`${T}/Masters/Specs/NO.pdf`);
 
@@ -65,6 +66,7 @@ const wrike = [
 ];
 const r = a.trackerScan(JSON.stringify({ territoryPath: T, batch: 'Batch_02', wrike }));
 check(r.success, 'it scans', r.error);
+check(r.folders.delivered.every((f) => !/_mp4$/i.test(f)), '_mp4 is previews, never a delivery folder', r.folders.delivered);
 const by = (re) => r.rows.find((x) => re.test(x.name));
 const nk = by(/NfkinoPOST_345/);
 check(nk && nk.art && nk.aep && nk.render && nk.delivered && nk.wrike, 'a finished deliverable lights every stage, across Batch_02 and Batch_2', nk && Object.keys(nk));
@@ -72,7 +74,7 @@ check(nk.render.version === 2 && nk.render.versions === 2, '…its render is the
 check(nk.art.files === 1, '…counting the artwork in its own folder', nk.art);
 check(nk.wrike.status === 'Prep for delivery', '…with its Wrike status, matched through the capitals', nk.wrike);
 const od = by(/OdeonPOST/);
-check(od && od.art && od.aep && od.render && !od.delivered, 'a JPG_PNG name with a ratio token (_16x5) still pairs; not yet delivered', od && Object.keys(od));
+check(od && od.art && od.aep && od.render && !od.delivered, 'a JPG_PNG name with a ratio token (_16x5) still pairs; a preview in _mp4 is NOT delivered', od && Object.keys(od));
 const n12 = by(/1200x380/);
 check(n12 && n12.aep && n12.art && !n12.render, 'a render moved to _Old is not counted as rendered');
 const ch = r.rows.filter((x) => /Characters/.test(x.name));

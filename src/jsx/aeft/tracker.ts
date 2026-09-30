@@ -7,7 +7,9 @@
 //   <Territory>/JPG_PNG/<Batch>/<deliverable>/        the artwork   (Art)
 //   <Territory>/AE/<Batch>/<deliverable>_V01.aep      the project   (Built)
 //   <Territory>/Renders/<Batch>/<deliverable>_V02.mov the render    (Rendered)
-//   …/Renders/<Batch>/_mp4 or Renders/_Delivery       the delivered file
+//   …/Renders/<Batch>/_Delivery or Renders/_Delivery  the delivered file
+//
+// `_mp4` is NOT delivery -- it holds previews -- so it is never read here.
 //
 // plus its Wrike subtask, which the panel supplies. Until now each tool looked
 // at one of those; this lines them up by deliverable so "what's left on Chile
@@ -273,7 +275,7 @@ export const trackerScan = (argsJson: string): TrackerResult => {
       for (let i = 0; i < kids.length; i++) {
         const nm = decode(String(kids[i].name));
         if (trIsFolder(kids[i])) {
-          if (nm.toLowerCase() === "_mp4" || nm.toLowerCase() === "_delivery") deliveredIn.push(kids[i] as Folder);
+          if (nm.toLowerCase() === "_delivery") deliveredIn.push(kids[i] as Folder);
           continue;
         }
         if (!/\.mov$/i.test(nm) || nm.charAt(0) === "_") continue;

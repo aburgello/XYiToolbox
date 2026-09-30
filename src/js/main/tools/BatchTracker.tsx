@@ -3,7 +3,7 @@
 // -----------------------------------------------------------------------------
 // ONE BATCH, LINED UP BY DELIVERABLE. Each deliverable lives in four places --
 // its artwork in JPG_PNG, its project in AE, its render in Renders, its
-// delivered file in _mp4/_Delivery -- plus a Wrike subtask. This shows them
+// delivered file in _Delivery (never _mp4, which is previews) -- plus a Wrike subtask. This shows them
 // side by side, so "what's left on Norway Batch_02" is one screen, and a name
 // that disagrees between two of them (Norway's "Post" project against its
 // "Digital MetroPOST" artwork) is flagged the moment both exist, not when MC
@@ -215,7 +215,7 @@ const BatchTracker: React.FC = () => {
                                         <Dot on={!!r.render} label="Rendered" path={r.render?.path} tone={c === "red" ? "bad" : c === "green" || c === "orange" ? "good" : ""}
                                             title={r.render ? `${r.render.name}${r.render.versions > 1 ? ` (newest of ${r.render.versions})` : ""}${c ? ` · marked ${c} in Finder` : ""}` : "No render in this batch's Renders folder"}
                                             extra={r.render ? <em>V{String(r.render.version).padStart(2, "0")}{c ? <i className={"bt-fc is-" + c} /> : null}</em> : null} />
-                                        <Dot on={!!r.delivered} label="Delivered" path={r.delivered?.path} title={r.delivered ? r.delivered.name : "Not in _mp4 or _Delivery yet"} />
+                                        <Dot on={!!r.delivered} label="Delivered" path={r.delivered?.path} title={r.delivered ? r.delivered.name : "Not in _Delivery yet"} />
                                     </div>
                                     {r.near && r.near.map((n, i) => (
                                         <p key={i} className="bt-near" title={n.name}>

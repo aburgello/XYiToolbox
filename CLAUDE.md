@@ -832,7 +832,7 @@ not `suggestJpgPngMatch`, whose substring branch fires on `Trio` inside
 
 **Batch Tracker lines ONE batch up by deliverable and writes NOTHING.**
 (`tracker.ts`, `tools/BatchTracker.tsx`) Four places — `JPG_PNG` art, the
-`AE` project, the `Renders` MOV, `_mp4`/`_Delivery` — plus the Wrike subtask,
+`AE` project, the `Renders` MOV, `_Delivery` (never `_mp4`: previews) — plus the Wrike subtask,
 keyed by `trackerKey` (upper-cased, extension, `_Vnn`, `_DOUBLE/TRIPLE/QUAD_RES`
 and ratio tokens off). Its links only ever spawn `open`/`open -R`. Two rules:
 batches pair LOOSELY (`Batch_02` is `Batch_2`, but a `_POST` batch is its own),

@@ -22,12 +22,12 @@ const FIXTURES = `{
   getTerritoryCountryCode: () => "NO",
   trackerContext: () => ({ success: true, territoryPath: "${T}", territory: "Norway", batch: "Batch_02", batches: ["Batch_01", "Batch_02"], projectPath: "${T}/AE/Batch_02/${P}NfkinoPOST_345x496px_30s_NO_V01.aep" }),
   trackerScan: (json) => { window.__scan = JSON.parse(json); return { success: true, territory: "Norway", batch: "Batch_02",
-    folders: { art: "${T}/JPG_PNG/Batch_2", aep: "${T}/AE/Batch_02", renders: "${T}/Renders/Batch_02", delivered: ["${T}/Renders/Batch_02/_mp4"], specs: "${T}/Masters/Specs" },
+    folders: { art: "${T}/JPG_PNG/Batch_2", aep: "${T}/AE/Batch_02", renders: "${T}/Renders/Batch_02", delivered: ["${T}/Renders/Batch_02/_Delivery"], specs: "${T}/Masters/Specs" },
     rows: [
       { key: "A", name: "${P}NfkinoPOST_345x496px_30s_NO", art: { path: "${T}/JPG_PNG/Batch_2/${P}NfkinoPOST_345x496px_30s_NO", files: 2 },
         aep: { name: "${P}NfkinoPOST_345x496px_30s_NO_V01.aep", path: "${T}/AE/Batch_02/${P}NfkinoPOST_345x496px_30s_NO_V01.aep", version: 1, versions: 1 },
         render: { name: "${P}NfkinoPOST_345x496px_30s_NO_V02.mov", path: "${T}/Renders/Batch_02/${P}NfkinoPOST_345x496px_30s_NO_V02.mov", version: 2, versions: 2, all: [] },
-        delivered: { name: "x.mp4", path: "${T}/Renders/Batch_02/_mp4/x.mp4" }, wrike: { name: "x", status: "Prep for delivery" } },
+        delivered: { name: "x.mp4", path: "${T}/Renders/Batch_02/_Delivery/x.mp4" }, wrike: { name: "x", status: "Prep for delivery" } },
       { key: "B", name: "SF_INTL_Characters_DOOH_Post_1080x1920px_30s_NO",
         aep: { name: "SF_INTL_Characters_DOOH_Post_1080x1920px_30s_NO_V01.aep", path: "${T}/AE/Batch_02/c.aep", version: 1, versions: 1 },
         near: [{ stage: "art (JPG_PNG)", name: "SF_INTL_Characters_DOOH_Digital MetroPOST_1080x1920px_10s_NO", why: "same size, named differently (and 30s vs 10s)" }] },
@@ -81,6 +81,14 @@ try {
     check(left.length === 2 && left.every((n) => /Characters/.test(n)), "the filter keeps only the rows with something wrong", left);
     await page.shot(path.join(SHOTS, "ui-tracker.png"));
     await page.click(".bt-summary .bt-btn");
+    await page.resize(420, 1100);
+    await pause(200);
+    await page.resize(420, 420);
+    await pause(200);
+    const scroll = await page.eval(`(() => { const el = document.querySelector(".bt"); const before = el.scrollTop; el.scrollTop = 9999; const moved = el.scrollTop > before; el.scrollTop = 0; return { moved, h: el.clientHeight, sh: el.scrollHeight, overflow: getComputedStyle(el).overflowY }; })()`);
+    check(scroll.moved && scroll.overflow === "auto", "on a short panel the tracker scrolls", scroll);
+    const squashed = await page.eval(`[...document.querySelectorAll(".bt > *")].some(e => e.scrollHeight > e.clientHeight + 1 && getComputedStyle(e).overflowY === "visible")`);
+    check(!squashed, "…and nothing inside is squashed to fit");
     await page.resize(420, 1100);
     await pause(200);
     const sideways = await page.eval(`document.documentElement.scrollWidth - document.documentElement.clientWidth`);
