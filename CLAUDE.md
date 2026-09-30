@@ -927,6 +927,16 @@ The open project's row is an outlined card, never an edge bar.
   Never counted as delivered; a preview older than the newest render is a hint.
 - "Wrike looks behind" (rendered, Wrike still Backlog/Motion) is a blue HINT,
   never a problem — the panel can't write to Wrike.
+- **SPEED: AE's engine is the cost, not the NAS** (18 listings are ~40ms
+  from Node). `trackerScan` splits READING (`trReadDisk`, kept per batch for
+  a minute in AE) from MERGING with Wrike, so a re-merge -- fresh statuses, a
+  chip summary -- lists nothing; `force` (refresh) reads again, and the
+  rename drops what was kept. The chips are ONE `trackerScanMany` call, made
+  after the batch on screen is scanned. The page draws from the feed already
+  in memory (`peekJobs`) or from the disk alone, merging Wrike in after; asks
+  the tag and a territory's code once a session; keeps its last view in
+  module scope so a tab switch draws at once; and leaves open rows open
+  across a rescan of the same batch. The refresh tooltip shows the timings.
 `node scripts/probe-tracker.cjs` (the stub refuses every write but the
 rename's) and `node scripts/ui-tracker.mjs` guard it.
 

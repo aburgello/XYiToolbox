@@ -225,5 +225,24 @@ check(pr(/WrikeOnly/) && pr(/WrikeOnly/).art, "a subtask with no project yet sti
 check(!pr(/MupiDigital/).art, "a project with no folder there still says so");
 check(pa.folders.art === `${PA}/JPG_PNG`, 'the Art link opens JPG_PNG itself', pa.folders.art);
 
+// ---------------------------------------------------------------------------
+console.log('\nRead once, merged many times');
+let listings = 0;
+const realGetFiles = Folder.prototype.getFiles;
+Folder.prototype.getFiles = function () { listings++; return realGetFiles.call(this); };
+const req3 = (o) => JSON.stringify(Object.assign({ territoryPath: T, batch: 'Batch_02', wrike: [] }, o));
+a.trackerScan(req3({ force: true }));
+const cold = listings;
+listings = 0;
+const warm = a.trackerScan(req3({ wrike: [{ name: `${P}NFKINOPOST_345x496px_30s_NO`, status: 'Delivered' }] }));
+check(cold > 5 && listings === 0 && warm.took && warm.took.cached, 'asked again within a minute with new Wrike statuses, it lists NOTHING', { cold, warm: listings, took: warm.took });
+check(warm.rows.find((x) => /NfkinoPOST_345/.test(x.name)).wrike.status === 'Delivered', '…yet the rows carry the new statuses (only the merge is redone)');
+listings = 0;
+a.trackerScan(req3({ force: true }));
+check(listings === cold, 'refresh (force) reads the disk again', listings);
+const many = a.trackerScanMany(JSON.stringify([{ id: 'A', territoryPath: T, batch: 'Batch_02', wrike: [] }, { id: 'B', territoryPath: PA, batch: 'Batch_01', wrike: [] }]));
+check(many.success && many.results.A.success && many.results.B.success && many.results.B.territory === 'Panama', 'every job chip in one call, each answer a scan of its own', Object.keys(many.results || {}));
+Folder.prototype.getFiles = realGetFiles;
+
 console.log(fails ? `\n${fails} FAILED` : '\nCLEAN — one batch, lined up by deliverable; the scan only reads, the rename refuses before it moves.');
 process.exit(fails ? 1 : 0);

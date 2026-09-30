@@ -66,6 +66,7 @@ const FIXTURES = `{
   // The Tracker pane: nothing open in a batch, and only Indonesia on disk.
   trackerContext: () => ({ success: true }),
   trackerCompCheck: () => ({ success: true, comps: [] }),
+  trackerScanMany: (json) => ({ success: true, results: Object.fromEntries(JSON.parse(json).map((q) => [q.id, { success: true, rows: [] }])) }),
   trackerLocate: (json) => ({ success: true, jobs: JSON.parse(json).filter((j) => j.code === "ID").map((j) => ({ id: j.id, territoryPath: "/Volumes/paramount/SF/XY026205_Markets/Indonesia", territory: "Indonesia", batch: "Batch_01", batches: ["Batch_01"] })) }),
   trackerScan: (json) => { window.__trackerScan = JSON.parse(json); return { success: true, territory: "Indonesia", batch: "Batch_01", folders: { art: "", aep: "", renders: "", delivered: [], specs: "" }, rows: [] }; },
   getTerritoryCountryCode: (t) => (${JSON.stringify({

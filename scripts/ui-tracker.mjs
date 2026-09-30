@@ -53,6 +53,8 @@ const FIXTURES = `{
       { key: "C", name: "SF_INTL_Characters_DOOH_Digital MetroPOST_1080x1920px_10s_NO", art: { path: "${T}/JPG_PNG/Batch_2/c", files: 1 } },
     ] }); },
   trackerCompCheck: () => ({ success: true, comps: window.__stale || [] }),
+  // A method, so THIS is the fixtures: every chip answered by the fake trackerScan.
+  trackerScanMany(json) { const list = JSON.parse(json); window.__scanMany = (window.__scanMany || 0) + 1; const keep = window.__scan; const out = {}; list.forEach((q) => { out[q.id] = this.trackerScan(JSON.stringify(q)); }); window.__scan = keep; return { success: true, results: out }; },
   trackerRenameComp: () => { window.__stale = []; window.__compRenamed = true; return { success: true, renamed: 1 }; },
   trackerRename: (json) => { const a = JSON.parse(json); (window.__renames = window.__renames || []).push(a);
     return a.apply ? { success: true, renamed: 3, plan: [] } : { success: true, plan: [{ from: "a", to: "b", kind: "project" }, { from: "a2", to: "b2", kind: "project" }, { from: "c", to: "d", kind: "render" }] }; },
@@ -73,6 +75,7 @@ const FEED = [{ id: "J1", title: "SF Motion Outdoor NO 2", assignee: "Antonio", 
 let failures = 0;
 const check = (ok, msg, extra) => { if (!ok) failures++; console.log((ok ? "  ok    " : "  FAIL  ") + msg + (extra !== undefined ? "   " + (typeof extra === "string" ? extra : JSON.stringify(extra)) : "")); };
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+const openRowAt = (page, i) => page.eval(`(() => { const r = document.querySelectorAll(".bt-rows > .bt-row")[${i}]; if (r && !r.classList.contains("is-open")) r.querySelector(".bt-row-top").click(); })()`);
 
 // The feed answers a LIVE read (refresh=1) with Wrike as it is now, and
 // anything else with the snapshot -- the difference the tracker kept hiding.
@@ -238,7 +241,9 @@ try {
 
     console.log("\n6. Every problem carries its way out");
     const rowText = (i) => page.eval(`document.querySelectorAll(".bt-rows > .bt-row")[${i}].innerText`);
-    await page.eval(`document.querySelectorAll(".bt-rows > .bt-row")[2].querySelector(".bt-row-top").click()`);
+    // Rows stay open across a rescan of the SAME batch now, so open-if-closed.
+    const openRow = (i) => page.eval(`(() => { const r = document.querySelectorAll(".bt-rows > .bt-row")[${i}]; if (!r.classList.contains("is-open")) r.querySelector(".bt-row-top").click(); })()`);
+    await openRow(2);
     await pause(100);
     const d = (await rowText(2)).replace(/\s+/g, " ");
     check(/On disk it's named SF_INTL_Trio_POST_DOOH_1920x1080px_30s_NO \(same words, another order\)/.test(d), "a subtask found under another name says so", d);
@@ -254,16 +259,15 @@ try {
     const ren = await page.eval(`window.__renames[1]`);
     check(ren.apply === true && ren.from === "SF_INTL_Trio_POST_DOOH_1920x1080px_30s_NO" && ren.to === "SF_INTL_Trio_DOOH_POST_1920x1080px_30s_NO" && ren.batch === "Batch_02", "confirmed, it renames the disk's name to Wrike's", ren);
 
-    // The rename rescans, which folds every row: let it land first.
-    await page.waitFor(`!!document.querySelector(".bt-msg") && !document.querySelector(".bt-row.is-open")`, 4000);
-    await page.eval(`document.querySelectorAll(".bt-rows > .bt-row")[2].querySelector(".bt-row-top").click()`);
+    // The rename rescans: let it land, and the row somebody had open stays open.
+    await page.waitFor(`!!document.querySelector(".bt-msg")`, 4000);
+    await pause(200);
+    await openRow(2);
     await page.resize(420, 1000); await pause(200);
     await page.shot(path.join(SHOTS, "ui-tracker-actions.png"));
-    await page.eval(`document.querySelectorAll(".bt-rows > .bt-row")[2].querySelector(".bt-row-top").click()`);
-    await pause(100);
     check(/Renamed 3/.test(await page.eval(`document.querySelector(".bt-msg").innerText`)), "…says what it did, and reads the batch again");
     await page.eval(`window.__stale = ["SF_INTL_Characters_DOOH_Post_old_V01"]`);
-    await page.eval(`document.querySelectorAll(".bt-rows > .bt-row")[1].querySelector(".bt-row-top").click()`);
+    await openRow(1);
     await pause(100);
     check(await page.eval(`[...document.querySelectorAll(".bt-rows > .bt-row")[1].querySelectorAll(".bt-act")].some(b => /Open to amend/.test(b.textContent) && b.classList.contains("is-primary"))`), "a To amend row's open button reads 'Open to amend', as the primary action");
     await page.eval(`[...document.querySelectorAll(".bt-rows > .bt-row")[1].querySelectorAll(".bt-act")].find(b => /Open to amend/.test(b.textContent)).click()`);
@@ -272,7 +276,7 @@ try {
     await page.click(".bt-stale .bt-act", "Rename comp");
     check(await page.waitFor(`window.__compRenamed && !document.querySelector(".bt-stale")`, 4000), "…and renamed in one press");
 
-    await page.eval(`document.querySelectorAll(".bt-rows > .bt-row")[3].querySelector(".bt-row-top").click()`);
+    await openRow(3);
     await pause(100);
     check(/Build it/.test(await rowText(3)), "a subtask with nothing on disk offers Build it");
     await page.eval(`[...document.querySelectorAll(".bt-rows > .bt-row")[3].querySelectorAll(".bt-act")].find(b => /Build it/.test(b.textContent)).click()`);
@@ -281,7 +285,7 @@ try {
 
     await page.click(".ls-pane-tab", "Tracker");
     await page.waitFor(`document.querySelectorAll(".bt-row").length === 4`, 8000);
-    await page.eval(`document.querySelectorAll(".bt-rows > .bt-row")[0].querySelector(".bt-row-top").click()`);
+    await openRow(0);
     await pause(100);
     await page.eval(`[...document.querySelectorAll(".bt-rows > .bt-row")[0].querySelectorAll(".bt-act")].find(b => /Deliver/.test(b.textContent)).click()`);
     check(await page.waitFor(`!!window.__deliverAsked`, 8000), "Deliver opens the Deliver page on this job's renders");
@@ -295,6 +299,9 @@ try {
     await page.waitFor(`[...document.querySelectorAll(".ls-pane-tab")].some(b => /Tracker/.test(b.textContent))`, 8000);
     await page.click(".ls-pane-tab", "Tracker");
     check(await page.waitFor(`document.querySelectorAll(".bt-job").length === 2 && !!window.__peruScan`, 8000), "every Wrike job assigned to you is a chip");
+    const order = await page.eval(`window.__calls.map(c => c.fn).filter(f => /^tracker(Scan|ScanMany)$/.test(f))`);
+    check(order.filter((f) => f === "trackerScanMany").length === 1 && order.indexOf("trackerScan") !== -1 && order.indexOf("trackerScan") < order.indexOf("trackerScanMany"),
+        "the chips cost ONE call to AE, made after the batch on screen was scanned", order);
     const locd = await page.eval(`window.__located`);
     check(locd.length === 2 && locd[0].code === "NO" && locd[0].batch === "Batch_2" && locd[0].prefix === "SF" && locd[1].batch === "Batch_1", "…located by territory, batch and film prefix", locd);
     const chips = await page.eval(`[...document.querySelectorAll(".bt-job")].map(b => ({ label: b.querySelector(".bt-job-label").innerText, on: b.classList.contains("is-on"), built: b.querySelector(".is-built").style.width, issues: b.querySelector(".bt-issues")?.innerText.trim() || "" }))`);
@@ -327,6 +334,26 @@ try {
     await page.click(".bt-head .bt-icon", "");
     check(await page.waitFor(`[...document.querySelectorAll(".bt-rows > .bt-row")].some(x => /Kiwi/.test(x.innerText) && /Revised/.test(x.querySelector(".bt-wrike")?.innerText || ""))`, 8000),
         "refresh reads Wrike live and the rows follow", await pillOf("/Kiwi/"));
+
+    console.log("\n10. Coming back is instant, and nothing is asked twice");
+    await openRowAt(page, 1);
+    await page.click(".ls-pane-tab", "Big Guy");
+    await page.waitFor(`!document.querySelector(".bt")`, 4000);
+    await page.eval(`window.__calls = []`);
+    await page.click(".ls-pane-tab", "Tracker");
+    check(await page.eval(`document.querySelectorAll(".bt-rows > .bt-row").length === 4 && !/Reading where/.test(document.body.innerText)`), "back on the Tracker tab, the rows are there at once -- no wait on AE");
+    await pause(1500);
+    const again = await page.eval(`window.__calls.map(c => c.fn)`);
+    check(!again.includes("teamGetMachineState") && !again.includes("getTerritoryCountryCode"), "…and the machine's tag and the country code aren't asked again this session", again);
+    check(again.filter((f) => f === "trackerScan").length <= 1, "…the batch is re-checked once behind it", again.filter((f) => /tracker/.test(f)));
+    check(again.filter((f) => f === "trackerContext").length === 1, "…and where the open project sits is asked once, not twice", again.filter((f) => f === "trackerContext").length);
+    await openRowAt(page, 1);
+    await page.click(".bt-head .bt-icon", "");
+    await page.waitFor(`window.__calls.filter(c => c.fn === "trackerScan").length >= 2`, 8000);
+    await pause(600);
+    check(await page.eval(`document.querySelectorAll(".bt-rows > .bt-row")[1].classList.contains("is-open")`), "a row you have open stays open when fresh Wrike data lands");
+    const forced = await page.eval(`window.__calls.filter(c => c.fn === "trackerScan").map(c => JSON.parse(c.args[0]).force)`);
+    check(forced.includes(true), "refresh asks AE for a real read of the disk (force)", forced);
 
     console.log("");
     check(page.errors.length === 0, "no page errors", page.errors.slice(0, 5));

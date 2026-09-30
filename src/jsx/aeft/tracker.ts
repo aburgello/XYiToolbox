@@ -184,6 +184,25 @@ function trSameDeliverable(a: string, b: string): string {
   return "";
 }
 
+/**
+ * Every job chip's batch in ONE call (argsJson: [{ id, territoryPath, batch,
+ * wrike }]), so the chips cost one trip to AE instead of one each -- and
+ * reuse the listings trackerScan keeps. Each answer is exactly trackerScan's.
+ */
+export const trackerScanMany = (argsJson: string): Result & { results?: { [id: string]: any } } => {
+  try {
+    let list: { id: string; territoryPath: string; batch: string; wrike?: { name: string; status: string }[]; force?: boolean }[];
+    try { list = JSON.parse(argsJson); } catch (e) { return { success: false, error: "Could not read the request." }; }
+    const results: { [id: string]: any } = {};
+    for (let i = 0; i < list.length; i++) {
+      results[String(list[i].id)] = trackerScan(JSON.stringify(list[i]));
+    }
+    return { success: true, results: results };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
 /** Where the open project sits, if it is inside a markets tree. */
 export const trackerContext = (): Result & { territoryPath?: string; territory?: string; batch?: string; batches?: string[]; projectPath?: string } => {
   try {
@@ -254,14 +273,140 @@ export const trackerPickFolder = (): Result & { territoryPath?: string; batch?: 
  * The batch, lined up by deliverable. `argsJson` (one JSON string, the bridge
  * rule): { territoryPath, batch, wrike?: [{ name, status }] }.
  */
-export const trackerScan = (argsJson: string): TrackerResult => {
+/**
+ * WHAT'S ON DISK FOR ONE BATCH -- the folder listings and nothing else, so it
+ * can be kept. Reading is the slow half of a scan (AE's getFiles on the NAS);
+ * lining the listing up with Wrike is not. The page asks again whenever
+ * Wrike's statuses change (a live read lands, a job chip summarises), so the
+ * listing is kept TR_DISK_TTL and only the merge is redone; refresh passes
+ * `force` for a real read. Plain data only, no File objects, so a kept one
+ * can never go stale in AE's hands.
+ */
+interface TrEntry { nm: string; path: string }
+interface TrDisk {
+  folders: { art: string; aep: string; renders: string; delivered: string[]; specs: string };
+  aes: TrEntry[];
+  /** Deliverable folders under JPG_PNG/<batch>, or under JPG_PNG itself. */
+  art: (TrEntry & { files: number })[];
+  artIsRoot: boolean;
+  artRoot: string;
+  renders: TrEntry[];
+  delivered: TrEntry[];
+  previews: TrEntry[];
+}
+const TR_DISK_TTL = 60 * 1000;
+const trDiskCache: { [k: string]: { at: number; disk: TrDisk } } = {};
+const trNow = () => new Date().getTime();
+
+function trReadDisk(terr: Folder, batch: string): TrDisk {
+  const disk: TrDisk = { folders: { art: "", aep: "", renders: "", delivered: [], specs: "" }, aes: [], art: [], artIsRoot: false, artRoot: "", renders: [], delivered: [], previews: [] };
+  const masters = trChild(terr, "Masters");
+  const specs = masters ? trChild(masters, "Specs") : null;
+  if (specs) disk.folders.specs = String(specs.fsName);
+
+  const ae = trChild(terr, "AE");
+  const aeBatch = ae ? trBatchIn(ae, batch) : null;
+  if (aeBatch) {
+    disk.folders.aep = String(aeBatch.fsName);
+    const kids = trKids(aeBatch);
+    for (let i = 0; i < kids.length; i++) {
+      if (trIsFolder(kids[i])) continue;
+      const nm = decode(String(kids[i].name));
+      if (!/\.aep$/i.test(nm) || nm.charAt(0) === "_") continue;
+      disk.aes.push({ nm: nm, path: String(kids[i].fsName) });
+    }
+  }
+
+  // JPG_PNG: under a batch folder, or -- no batch level (Panama) -- under
+  // JPG_PNG itself; see the merge for why the root only ever attaches.
+  const jp = trChild(terr, "JPG_PNG");
+  const jpBatch = jp ? trBatchIn(jp, batch) : null;
+  const artAt = jpBatch || jp;
+  disk.artIsRoot = !jpBatch;
+  if (jp) disk.artRoot = String(jp.fsName);
+  if (artAt) {
+    const kids = trKids(artAt);
+    for (let i = 0; i < kids.length; i++) {
+      if (!trIsFolder(kids[i])) continue;
+      const nm = decode(String(kids[i].name));
+      if (nm.charAt(0) === "_") continue;
+      let count = 0;
+      const inner = trKids(kids[i] as Folder);
+      for (let j = 0; j < inner.length; j++) if (!trIsFolder(inner[j]) && /\.(png|jpe?g|tiff?)$/i.test(decode(String(inner[j].name)))) count++;
+      disk.art.push({ nm: nm, path: String(kids[i].fsName), files: count });
+    }
+    if (jpBatch) disk.folders.art = String(jpBatch.fsName);
+  }
+
+  const rd = trChild(terr, "Renders");
+  const rdBatch = rd ? trBatchIn(rd, batch) : null;
+  const deliveredIn: Folder[] = [];
+  const previewIn: Folder[] = [];
+  if (rdBatch) {
+    disk.folders.renders = String(rdBatch.fsName);
+    const kids = trKids(rdBatch);
+    for (let i = 0; i < kids.length; i++) {
+      const nm = decode(String(kids[i].name));
+      if (trIsFolder(kids[i])) {
+        if (nm.toLowerCase() === "_delivery") deliveredIn.push(kids[i] as Folder);
+        else if (nm.toLowerCase() === "_mp4") previewIn.push(kids[i] as Folder);
+        continue;
+      }
+      if (!/\.mov$/i.test(nm) || nm.charAt(0) === "_") continue;
+      disk.renders.push({ nm: nm, path: String(kids[i].fsName) });
+    }
+  }
+  if (rd) {
+    const dl = trChild(rd, "_Delivery");
+    if (dl) deliveredIn.push(dl);
+  }
+  for (let d = 0; d < deliveredIn.length; d++) {
+    disk.folders.delivered.push(String(deliveredIn[d].fsName));
+    const stack: Folder[] = [deliveredIn[d]];
+    let depth = 0;
+    while (stack.length && depth++ < 40) {
+      const f = stack.pop() as Folder;
+      const kids = trKids(f);
+      for (let i = 0; i < kids.length; i++) {
+        if (trIsFolder(kids[i])) { stack.push(kids[i] as Folder); continue; }
+        const nm = decode(String(kids[i].name));
+        if (/\.(mp4|mov)$/i.test(nm)) disk.delivered.push({ nm: nm, path: String(kids[i].fsName) });
+      }
+    }
+  }
+  for (let d = 0; d < previewIn.length; d++) {
+    const kids = trKids(previewIn[d]);
+    for (let i = 0; i < kids.length; i++) {
+      if (trIsFolder(kids[i])) continue;
+      const nm = decode(String(kids[i].name));
+      if (!/\.(mp4|m4v)$/i.test(nm) || nm.charAt(0) === "_" || nm.charAt(0) === ".") continue;
+      disk.previews.push({ nm: nm, path: String(kids[i].fsName) });
+    }
+  }
+  return disk;
+}
+
+export const trackerScan = (argsJson: string): TrackerResult & { took?: { disk: number; cached: boolean } } => {
   try {
-    let args: { territoryPath?: string; batch?: string; wrike?: { name: string; status: string }[] };
+    let args: { territoryPath?: string; batch?: string; wrike?: { name: string; status: string }[]; force?: boolean };
     try { args = JSON.parse(argsJson); } catch (e) { return { success: false, error: "Could not read the request." }; }
-    const terr = new Folder(String(args.territoryPath || ""));
-    if (!terr.exists) return { success: false, error: "That territory folder isn't reachable." };
     const batch = String(args.batch || "");
     if (!batch) return { success: false, error: "Pick a batch." };
+    const cacheKey = String(args.territoryPath || "") + "|" + trLoose(batch);
+    const hit = trDiskCache[cacheKey];
+    const t0 = trNow();
+    let disk: TrDisk;
+    let cached = false;
+    let terr: Folder = new Folder(String(args.territoryPath || ""));
+    if (!args.force && hit && t0 - hit.at < TR_DISK_TTL) {
+      disk = hit.disk;
+      cached = true;
+    } else {
+      if (!terr.exists) return { success: false, error: "That territory folder isn't reachable." };
+      disk = trReadDisk(terr, batch);
+      trDiskCache[cacheKey] = { at: trNow(), disk: disk };
+    }
+    const took = { disk: trNow() - t0, cached: cached };
 
     const rows: { [k: string]: TrackerRow } = {};
     const order: string[] = [];
@@ -269,118 +414,59 @@ export const trackerScan = (argsJson: string): TrackerResult => {
       if (!rows[key]) { rows[key] = { key: key, name: name }; order.push(key); }
       return rows[key];
     };
-    const folders = { art: "", aep: "", renders: "", delivered: [] as string[], specs: "" };
-    const masters = trChild(terr, "Masters");
-    const specs = masters ? trChild(masters, "Specs") : null;
-    if (specs) folders.specs = String(specs.fsName);
+    const folders = { art: disk.folders.art, aep: disk.folders.aep, renders: disk.folders.renders, delivered: disk.folders.delivered.slice(0), specs: disk.folders.specs };
 
     // AE: the projects.
-    const ae = trChild(terr, "AE");
-    const aeBatch = ae ? trBatchIn(ae, batch) : null;
-    if (aeBatch) {
-      folders.aep = String(aeBatch.fsName);
-      const kids = trKids(aeBatch);
-      for (let i = 0; i < kids.length; i++) {
-        if (trIsFolder(kids[i])) continue;
-        const nm = decode(String(kids[i].name));
-        if (!/\.aep$/i.test(nm) || nm.charAt(0) === "_") continue;
-        const r = row(trackerKey(nm), nm.replace(/_[Vv]\d+\.aep$/i, "").replace(/\.aep$/i, ""));
-        const v = trVersion(nm);
-        const n = r.aep ? r.aep.versions + 1 : 1;
-        if (!r.aep || v > r.aep.version) r.aep = { name: nm, path: String(kids[i].fsName), version: v, versions: n };
-        else r.aep.versions = n;
-      }
+    for (let i = 0; i < disk.aes.length; i++) {
+      const nm = disk.aes[i].nm;
+      const r = row(trackerKey(nm), nm.replace(/_[Vv]\d+\.aep$/i, "").replace(/\.aep$/i, ""));
+      const v = trVersion(nm);
+      const n = r.aep ? r.aep.versions + 1 : 1;
+      if (!r.aep || v > r.aep.version) r.aep = { name: nm, path: disk.aes[i].path, version: v, versions: n };
+      else r.aep.versions = n;
     }
 
-    // JPG_PNG: the artwork, one subfolder per deliverable -- under a batch
-    // folder, or, in territories with NO batch level (Street Fighter INT:
-    // Panama's JPG_PNG/<deliverable>/ beside AE/Batch_01, 2026-09-30), straight
-    // under JPG_PNG. That root holds EVERY batch's art, so its folders are only
-    // ATTACHED to deliverables this batch already has (from AE or Wrike, after
-    // those are read below) and never add rows -- the same structural rule as
-    // MC It!'s mcItDeriveImageFolder, which already handled this layout; the
-    // tracker called every one of Panama's rows "no artwork".
-    const jp = trChild(terr, "JPG_PNG");
-    const jpBatch = jp ? trBatchIn(jp, batch) : null;
-    const artAt = jpBatch || jp;
+    // JPG_PNG. Under a batch folder, every deliverable folder is a row. With
+    // NO batch level (Street Fighter INT: Panama's JPG_PNG/<deliverable>/
+    // beside AE/Batch_01, 2026-09-30) the root holds EVERY batch's art, so its
+    // folders are only ATTACHED to deliverables this batch already has (from
+    // AE or Wrike, after those are read below) and never add rows -- the same
+    // structural rule as MC It!'s mcItDeriveImageFolder.
     const rootArt: { [k: string]: { path: string; files: number } } = {};
-    if (artAt) {
-      const kids = trKids(artAt);
-      for (let i = 0; i < kids.length; i++) {
-        if (!trIsFolder(kids[i])) continue;
-        const nm = decode(String(kids[i].name));
-        if (nm.charAt(0) === "_") continue;
-        let count = 0;
-        const inner = trKids(kids[i] as Folder);
-        for (let j = 0; j < inner.length; j++) if (!trIsFolder(inner[j]) && /\.(png|jpe?g|tiff?)$/i.test(decode(String(inner[j].name)))) count++;
-        const art = { path: String(kids[i].fsName), files: count };
-        if (jpBatch) row(trackerKey(nm), nm).art = art;
-        else rootArt[trackerKey(nm)] = art;
-      }
-      if (jpBatch) folders.art = String(jpBatch.fsName);
+    for (let i = 0; i < disk.art.length; i++) {
+      const a = disk.art[i];
+      const art = { path: a.path, files: a.files };
+      if (!disk.artIsRoot) row(trackerKey(a.nm), a.nm).art = art;
+      else rootArt[trackerKey(a.nm)] = art;
     }
 
-    // Renders: the MOVs, and what was delivered.
-    const rd = trChild(terr, "Renders");
-    const rdBatch = rd ? trBatchIn(rd, batch) : null;
-    const deliveredIn: Folder[] = [];
-    const previewIn: Folder[] = [];
-    if (rdBatch) {
-      folders.renders = String(rdBatch.fsName);
-      const kids = trKids(rdBatch);
-      for (let i = 0; i < kids.length; i++) {
-        const nm = decode(String(kids[i].name));
-        if (trIsFolder(kids[i])) {
-          if (nm.toLowerCase() === "_delivery") deliveredIn.push(kids[i] as Folder);
-          else if (nm.toLowerCase() === "_mp4") previewIn.push(kids[i] as Folder);
-          continue;
-        }
-        if (!/\.mov$/i.test(nm) || nm.charAt(0) === "_") continue;
-        const r = row(trackerKey(nm), nm.replace(/(_[Vv]\d+)?(_(DOUBLE|TRIPLE|QUAD)_RES)?\.mov$/i, ""));
-        const v = trVersion(nm);
-        if (!r.render) r.render = { name: nm, path: String(kids[i].fsName), version: v, versions: 0, all: [] };
-        r.render.versions++;
-        r.render.all.push(String(kids[i].fsName));
-        if (v > r.render.version) { r.render.name = nm; r.render.path = String(kids[i].fsName); r.render.version = v; }
-      }
+    // Renders: the MOVs.
+    for (let i = 0; i < disk.renders.length; i++) {
+      const nm = disk.renders[i].nm, path = disk.renders[i].path;
+      const r = row(trackerKey(nm), nm.replace(/(_[Vv]\d+)?(_(DOUBLE|TRIPLE|QUAD)_RES)?\.mov$/i, ""));
+      const v = trVersion(nm);
+      if (!r.render) r.render = { name: nm, path: path, version: v, versions: 0, all: [] };
+      r.render.versions++;
+      r.render.all.push(path);
+      if (v > r.render.version) { r.render.name = nm; r.render.path = path; r.render.version = v; }
     }
-    if (rd) {
-      const dl = trChild(rd, "_Delivery");
-      if (dl) deliveredIn.push(dl);
-    }
-    for (let d = 0; d < deliveredIn.length; d++) {
-      folders.delivered.push(String(deliveredIn[d].fsName));
-      const stack: Folder[] = [deliveredIn[d]];
-      let depth = 0;
-      while (stack.length && depth++ < 40) {
-        const f = stack.pop() as Folder;
-        const kids = trKids(f);
-        for (let i = 0; i < kids.length; i++) {
-          if (trIsFolder(kids[i])) { stack.push(kids[i] as Folder); continue; }
-          const nm = decode(String(kids[i].name));
-          if (!/\.(mp4|mov)$/i.test(nm)) continue;
-          const k = trackerKey(nm);
-          // Only a deliverable this batch already knows: _Delivery at the
-          // Renders root holds every batch's files.
-          if (rows[k] && !rows[k].delivered) rows[k].delivered = { name: nm, path: String(kids[i].fsName) };
-        }
-      }
+
+    // Delivered: only a deliverable this batch already knows -- _Delivery at
+    // the Renders root holds every batch's files.
+    for (let i = 0; i < disk.delivered.length; i++) {
+      const k = trackerKey(disk.delivered[i].nm);
+      if (rows[k] && !rows[k].delivered) rows[k].delivered = { name: disk.delivered[i].nm, path: disk.delivered[i].path };
     }
 
     // Previews: the studio renders a web-playable mp4 per deliverable into the
     // batch's _mp4 (2026-09-30). Only for deliverables this batch knows, the
     // newest version kept. Shown and played, never counted as delivered.
-    for (let d = 0; d < previewIn.length; d++) {
-      const kids = trKids(previewIn[d]);
-      for (let i = 0; i < kids.length; i++) {
-        if (trIsFolder(kids[i])) continue;
-        const nm = decode(String(kids[i].name));
-        if (!/\.(mp4|m4v)$/i.test(nm) || nm.charAt(0) === "_" || nm.charAt(0) === ".") continue;
-        const r = rows[trackerKey(nm)];
-        if (!r) continue;
-        const v = trVersion(nm);
-        if (!r.preview || v > r.preview.version) r.preview = { name: nm, path: String(kids[i].fsName), version: v };
-      }
+    for (let i = 0; i < disk.previews.length; i++) {
+      const nm = disk.previews[i].nm;
+      const r = rows[trackerKey(nm)];
+      if (!r) continue;
+      const v = trVersion(nm);
+      if (!r.preview || v > r.preview.version) r.preview = { name: nm, path: disk.previews[i].path, version: v };
     }
 
     // Wrike: the subtasks, if the panel sent them.
@@ -398,7 +484,7 @@ export const trackerScan = (argsJson: string): TrackerResult => {
       rows[k].art = rootArt[k];
       rootHits++;
     }
-    if (rootHits && jp) folders.art = String(jp.fsName);
+    if (rootHits && disk.artRoot) folders.art = disk.artRoot;
 
     // CLAIMS: a Wrike subtask with nothing on disk takes the ONE disk row that
     // is the same deliverable spelled another way (trSameDeliverable) -- and
@@ -462,7 +548,7 @@ export const trackerScan = (argsJson: string): TrackerResult => {
     order.sort();
     const out: TrackerRow[] = [];
     for (let i = 0; i < order.length; i++) out.push(rows[order[i]]);
-    return { success: true, territory: decode(String(terr.name)), batch: batch, folders: folders, rows: out };
+    return { success: true, territory: decode(String(terr.name)), batch: batch, folders: folders, rows: out, took: took };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -534,6 +620,8 @@ export const trackerRename = (argsJson: string): Result & { plan?: { from: strin
     for (let i = 0; i < steps.length; i++) plan.push({ from: steps[i].from, to: steps[i].to, kind: steps[i].kind });
     if (!args.apply) return { success: true, plan: plan };
 
+    // The tracker's own write: whatever it kept of this disk is now wrong.
+    for (const k in trDiskCache) if (trDiskCache.hasOwnProperty(k)) delete trDiskCache[k];
     let renamed = 0;
     const failed: string[] = [];
     for (let i = 0; i < steps.length; i++) {

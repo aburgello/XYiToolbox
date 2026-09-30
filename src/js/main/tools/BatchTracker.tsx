@@ -67,6 +67,18 @@
 // older than the newest render says a newer one exists since. What sits under
 // no filename ("The others are approved") shows once, for the job.
 //
+// SPEED (2026-09-30). The NAS listings are cheap from Node (18 in ~40ms) but
+// every trip into AE's engine is not, and the page used to make a lot: wait
+// for the feed, scan, then one full scan PER JOB CHIP queued behind it in
+// AE's single-threaded engine, all of it again when the live Wrike read
+// landed, and all of it again on every tab switch. Now: the scan draws from
+// the feed already in memory (or from the disk alone, Wrike merged in after);
+// AE keeps each batch's listing a minute (tracker.ts) so a re-merge lists
+// nothing; the chips are ONE call after the batch on screen; the tag and
+// country code are asked once a session; and the session's last view comes
+// back at once on remount while it re-checks behind it. Refresh forces a real
+// read. The refresh button's tooltip says how long each part took.
+//
 // "Wrike looks behind" (rendered, Wrike still Backlog/Motion) is a HINT, not a
 // problem: the panel can't write to Wrike, and a row that is fine must not
 // read as broken.
@@ -76,7 +88,7 @@ import { Image as ImageIcon, FileBox, Film, PackageCheck, FileText, RefreshCw, L
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import Dropdown from "../Dropdown";
-import { fetchJobs, fetchJobsFresh, fetchJobsLive, fetchJobComment, jobReadiness, territoryFlag, parseJobTitle, statusTint, DELIVERABLE_STATUSES, AMEND_STATUSES, type WrikeJob } from "../lib/jobsFeed";
+import { fetchJobs, fetchJobsFresh, fetchJobsLive, fetchJobComment, peekJobs, jobReadiness, territoryFlag, parseJobTitle, statusTint, DELIVERABLE_STATUSES, AMEND_STATUSES, type WrikeJob } from "../lib/jobsFeed";
 import { loadJobRows, stageBatchFromJob, classifyRows } from "../lib/jobRows";
 import { navigateToTool } from "../lib/navigation";
 import { confirmDialog } from "../Dialog";
@@ -187,6 +199,21 @@ const whenOf = (iso: string) => {
 
 const stem = (p: string) => (p.split(/[\\/]/).pop() || p).replace(/\.[^.]+$/, "").replace(/_V\d+$/i, "").toUpperCase();
 
+/** SESSION MEMORY, module scope: what the page last showed, so a tab switch
+ *  (a remount) draws at once and re-checks behind it. Plus the two answers
+ *  that never change in a session: this machine's tag, a territory's code. */
+type CommentView = { comment: JobComment | null; parsed: ParsedAmends; error?: string; newer?: JobComment };
+const memo: {
+    owner: string | null;
+    codes: Record<string, string>;
+    view: { territoryPath: string; territory: string; batches: string[]; batch: string } | null;
+    scans: Record<string, { scan: Scan; colors: Record<string, FinderColor>; comments: Record<string, CommentView>; jobs: WrikeJob[] }>;
+    myJobs: WrikeJob[];
+    located: Record<string, Located>;
+    sums: Record<string, JobSummary>;
+} = { owner: null, codes: {}, view: null, scans: {}, myJobs: [], located: {}, sums: {} };
+const viewKey = (tp: string, b: string) => tp + "|" + loose(b);
+
 interface Props extends ToolProps {
     /** From the Localise page's job chips: open on this job's batch. The tick
      *  changes on every press, so pressing the same chip again still lands. */
@@ -194,29 +221,30 @@ interface Props extends ToolProps {
 }
 
 const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
-    const [territoryPath, setTerritoryPath] = useState("");
-    const [territory, setTerritory] = useState("");
-    const [batches, setBatches] = useState<string[]>([]);
-    const [batch, setBatch] = useState("");
+    const [territoryPath, setTerritoryPath] = useState(memo.view ? memo.view.territoryPath : "");
+    const [territory, setTerritory] = useState(memo.view ? memo.view.territory : "");
+    const [batches, setBatches] = useState<string[]>(memo.view ? memo.view.batches : []);
+    const [batch, setBatch] = useState(memo.view ? memo.view.batch : "");
     const [openProject, setOpenProject] = useState("");
-    const [scan, setScan] = useState<Scan | null>(null);
+    const memoScan = memo.view ? memo.scans[viewKey(memo.view.territoryPath, memo.view.batch)] : undefined;
+    const [scan, setScan] = useState<Scan | null>(memoScan ? memoScan.scan : null);
     const [error, setError] = useState("");
     const [busy, setBusy] = useState(false);
-    const [colors, setColors] = useState<Record<string, FinderColor>>({});
+    const [colors, setColors] = useState<Record<string, FinderColor>>(memoScan ? memoScan.colors : {});
     const [onlyIssues, setOnlyIssues] = useState(false);
     const [ready, setReady] = useState(false);
     const [open, setOpen] = useState<Record<string, boolean>>({});
     const [showExtra, setShowExtra] = useState(false);
     /** The batch's Wrike jobs, kept for the hand-offs (Build it, Deliver). */
-    const [jobs, setJobs] = useState<WrikeJob[]>([]);
+    const [jobs, setJobs] = useState<WrikeJob[]>(memoScan ? memoScan.jobs : []);
     const [msg, setMsg] = useState<{ text: string; bad?: boolean } | null>(null);
     const [acting, setActing] = useState("");
     /** Comps in the open project still carrying a name its file no longer has. */
     const [staleComps, setStaleComps] = useState<string[]>([]);
     /** Every Wrike job assigned to you, where it is on disk, and how far along. */
-    const [myJobs, setMyJobs] = useState<WrikeJob[]>([]);
-    const [located, setLocated] = useState<Record<string, Located>>({});
-    const [sums, setSums] = useState<Record<string, JobSummary>>({});
+    const [myJobs, setMyJobs] = useState<WrikeJob[]>(memo.myJobs);
+    const [located, setLocated] = useState<Record<string, Located>>(memo.located);
+    const [sums, setSums] = useState<Record<string, JobSummary>>(memo.sums);
     const [jobsBusy, setJobsBusy] = useState(false);
     const [playing, setPlaying] = useState<{ path: string; title: string } | null>(null);
     /** The Wrike job window (ActiveJobModal): names Wrike didn't send, and the
@@ -224,7 +252,20 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
     const [detailsJob, setDetailsJob] = useState<WrikeJob | null>(null);
     const wantTickDone = useRef(0);
     /** The latest Wrike comment of each To amend job on screen, split. */
-    const [comments, setComments] = useState<Record<string, { comment: JobComment | null; parsed: ParsedAmends; error?: string; newer?: JobComment }>>({});
+    const [comments, setComments] = useState<Record<string, CommentView>>(memoScan ? memoScan.comments : {});
+    /** How long the last read took, for the refresh button's tooltip. */
+    const [timing, setTiming] = useState<{ folders?: number; engine?: number; cached?: boolean; wrike?: number; chips?: number }>({});
+    /** Set by the refresh button: the next scan reads the disk, not AE's copy. */
+    const forceNext = useRef(false);
+    /** Resolves once the batch on screen has been scanned: the job chips wait
+     *  for it, so they never queue in front of it in AE's engine. */
+    const firstScan = useRef<{ done: Promise<void>; resolve: () => void } | null>(null);
+    if (!firstScan.current) {
+        let resolve: () => void = () => {};
+        const done = new Promise<void>((r) => { resolve = r; });
+        firstScan.current = { done, resolve };
+    }
+    const shownKey = useRef(memo.view ? viewKey(memo.view.territoryPath, memo.view.batch) : "");
     const [showFullComment, setShowFullComment] = useState(false);
     /** Set by the refresh button: the next comment read goes to Wrike. */
     const freshComments = useRef(false);
@@ -236,7 +277,9 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
         (async () => {
             try {
                 const c = (await evalTS("trackerContext")) as any;
-                if (c && c.territoryPath) {
+                // The session's last view wins over the open project: coming
+                // back to the tab should be where you left it.
+                if (c && c.territoryPath && !memo.view) {
                     setTerritoryPath(c.territoryPath);
                     setTerritory(c.territory || "");
                     setBatches(c.batches || []);
@@ -247,18 +290,35 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
             setReady(true);
         })();
     }, []);
+    // Nothing to scan (no batch yet): the chips have nothing to wait for.
+    useEffect(() => { if (ready && !(territoryPath && batch) && firstScan.current) firstScan.current.resolve(); }, [ready, territoryPath, batch]);
 
     // The Wrike subtasks of THIS territory's job for THIS batch, if the feed
     // has one: same code, same batch number (a title with none is batch 1).
-    const wrikeFor = async (terr: string, b: string): Promise<{ subs: { name: string; status: string }[]; jobs: WrikeJob[] }> => {
-        const none = { subs: [], jobs: [] };
+    const ownerOf = async (): Promise<string> => {
+        if (memo.owner !== null) return memo.owner;
         try {
             const state = (await evalTS("teamGetMachineState")) as { owner?: string } | undefined;
-            const owner = (state && state.owner) || "";
+            memo.owner = (state && state.owner) || "";
+        } catch { return ""; }
+        return memo.owner || "";
+    };
+    const codeOf = async (terr: string): Promise<string> => {
+        if (memo.codes[terr] !== undefined) return memo.codes[terr];
+        try { memo.codes[terr] = String((await evalTS("getTerritoryCountryCode", terr)) || "").toUpperCase(); } catch { return ""; }
+        return memo.codes[terr];
+    };
+    /** `peek`: only what's already in memory -- never wait on the network. */
+    const wrikeFor = async (terr: string, b: string, peek = false): Promise<{ subs: { name: string; status: string }[]; jobs: WrikeJob[]; missing?: boolean }> => {
+        const none = { subs: [], jobs: [] };
+        try {
+            const owner = await ownerOf();
             if (!owner) return none;
-            const code = String((await evalTS("getTerritoryCountryCode", terr)) || "").toUpperCase();
+            const code = await codeOf(terr);
             if (!code) return none;
-            const res = await fetchJobs(owner);
+            const held = peekJobs(owner);
+            if (peek && !held) return { subs: [], jobs: [], missing: true };
+            const res = held || (await fetchJobs(owner));
             if (res.mock) return none;
             const out: { name: string; status: string }[] = [];
             // jobBatch, not the title's raw batch: a title with no number is Batch 1
@@ -275,16 +335,42 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
         if (!tp || !b) return;
         setBusy(true);
         setError("");
+        const key = viewKey(tp, b);
+        const force = forceNext.current;
+        forceNext.current = false;
         try {
-            const w = await wrikeFor(terr, b);
-            setJobs(w.jobs);
-            const r = (await evalTSSafe("trackerScan", JSON.stringify({ territoryPath: tp, batch: b, wrike: w.subs }))) as any;
+            // Draw from the feed already in memory; with none, draw from the
+            // disk alone and merge Wrike in when it lands (a re-merge lists
+            // nothing: AE keeps the listing).
+            let w = await wrikeFor(terr, b, true);
+            const scanOnce = async (subs: { name: string; status: string }[], forceDisk: boolean) =>
+                (await evalTSSafe("trackerScan", JSON.stringify({ territoryPath: tp, batch: b, wrike: subs, force: forceDisk }))) as any;
+            const t0 = performance.now();
+            let r = await scanOnce(w.subs, force);
+            const folders = performance.now() - t0;
             if (!r || !r.success) { setError((r && r.error) || "Couldn't read the batch."); return; }
-            setScan({ territory: r.territory, batch: r.batch, folders: r.folders, rows: r.rows || [] });
+            let wrikeMs: number | undefined;
+            const show = (res: any, jobList: WrikeJob[]) => {
+                setJobs(jobList);
+                setScan({ territory: res.territory, batch: res.batch, folders: res.folders, rows: res.rows || [] });
+            };
+            show(r, w.jobs);
+            if (w.missing) {
+                const tw = performance.now();
+                w = await wrikeFor(terr, b);
+                wrikeMs = performance.now() - tw;
+                const r2 = await scanOnce(w.subs, false);
+                if (r2 && r2.success) { r = r2; show(r, w.jobs); }
+            }
+            setTiming((t) => ({ ...t, folders, engine: r.took ? r.took.disk : undefined, cached: r.took ? r.took.cached : undefined, wrike: wrikeMs }));
+            if (firstScan.current) firstScan.current.resolve();
+            // Rows fold when the BATCH changes, not every time Wrike refreshes
+            // under a row somebody has open.
+            if (shownKey.current !== key) { setOpen({}); setShowExtra(false); shownKey.current = key; }
             // The amends: only for jobs Wrike has as To amend, one read each.
             const fresh = freshComments.current;
             freshComments.current = false;
-            const next: Record<string, { comment: JobComment | null; parsed: ParsedAmends; error?: string; newer?: JobComment }> = {};
+            const next: Record<string, CommentView> = {};
             // Every key a comment could name a row by: Wrike's, and the disk's.
             const onDisk = new Set<string>();
             (r.rows || []).forEach((x: Row) => {
@@ -324,21 +410,25 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
                 }
                 return next;
             });
-            setOpen({});
-            setShowExtra(false);
             // Finder colours on the newest renders: green/orange good, red not.
             const paths = (r.rows || []).filter((x: Row) => x.render).map((x: Row) => x.render!.path);
-            setColors(await readFinderColors(paths));
+            const cols = await readFinderColors(paths);
+            setColors(cols);
+            memo.view = { territoryPath: tp, territory: terr, batches, batch: b };
+            memo.scans[key] = { scan: { territory: r.territory, batch: r.batch, folders: r.folders, rows: r.rows || [] }, colors: cols, comments: next, jobs: w.jobs };
         } finally {
             setBusy(false);
+            if (firstScan.current) firstScan.current.resolve();
         }
     };
 
     useEffect(() => { if (ready && territoryPath && batch) void run(); }, [ready, territoryPath, batch]);
 
     // YOUR JOBS: listed, located on disk, then summarised one at a time.
-    const locateAndSummarise = async (list: WrikeJob[]) => {
+    const locateAndSummarise = async (list: WrikeJob[], force = false) => {
         if (!list.length) return;
+        // The batch on screen first: the chips never queue in front of it.
+        if (firstScan.current) await Promise.race([firstScan.current.done, new Promise((r) => setTimeout(r, 15000))]);
         const loc = (await evalTS("trackerLocate", JSON.stringify(list.map((j) => ({
             id: j.id, code: jobTerritory(j), batch: jobBatch(j), prefix: (subsOf(j)[0].name.split("_")[0] || "").toUpperCase(),
         }))))) as any;
@@ -347,14 +437,21 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
         const map: Record<string, Located> = {};
         ((loc && loc.jobs) || []).forEach((x: Located) => { map[x.id] = x; });
         setLocated(map);
-        for (const j of list) {
-            const at = map[j.id];
-            if (!at) continue;
-            try {
-                const r = (await evalTS("trackerScan", JSON.stringify({ territoryPath: at.territoryPath, batch: at.batch, wrike: subsOf(j) }))) as any;
-                if (r && r.success) setSums((prev) => ({ ...prev, [j.id]: summarise(r.rows || []) }));
-            } catch { /* one job's folder unreadable: its chip just shows no bar */ }
-        }
+        memo.located = map;
+        // Every chip in ONE trip to AE, reusing the listings it keeps.
+        const wanted = list.filter((j) => map[j.id]).map((j) => ({ id: j.id, territoryPath: map[j.id].territoryPath, batch: map[j.id].batch, wrike: subsOf(j), force }));
+        if (!wanted.length) return;
+        const t0 = performance.now();
+        try {
+            const many = (await evalTS("trackerScanMany", JSON.stringify(wanted))) as any;
+            const got: Record<string, JobSummary> = {};
+            if (many && many.success) Object.keys(many.results || {}).forEach((id) => {
+                const r = many.results[id];
+                if (r && r.success) got[id] = summarise(r.rows || []);
+            });
+            setSums((prev) => { const next = { ...prev, ...got }; memo.sums = next; return next; });
+        } catch { /* a folder unreadable: its chip just shows no bar */ }
+        setTiming((t) => ({ ...t, chips: performance.now() - t0 }));
     };
 
     /** Bumped whenever a LIVE Wrike read lands (on open or from refresh): the
@@ -365,13 +462,9 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
     const loadJobs = async (live: boolean) => {
         setJobsBusy(true);
         try {
-            let owner = "";
-            try {
-                const st = (await evalTS("teamGetMachineState")) as { owner?: string } | undefined;
-                owner = (st && st.owner) || "";
-            } catch { /* untagged */ }
+            const owner = await ownerOf();
             ownerRef.current = owner;
-            if (!owner) { setMyJobs([]); return; }
+            if (!owner) { setMyJobs([]); memo.myJobs = []; return; }
             const pick = (res: Awaited<ReturnType<typeof fetchJobs>>) => {
                 if (res.mock) return [] as WrikeJob[];
                 const who = res.viewingAs || owner;
@@ -384,13 +477,15 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
                 : await fetchJobsFresh(owner, (r) => {
                     const fresh = pick(r);
                     setMyJobs(fresh);
+                    memo.myJobs = fresh;
                     setFreshTick((t) => t + 1);
                     void locateAndSummarise(fresh);
                 });
             const list = pick(res);
             setMyJobs(list);
-            if (live) { freshComments.current = true; setFreshTick((t) => t + 1); }
-            await locateAndSummarise(list);
+            memo.myJobs = list;
+            if (live) { freshComments.current = true; forceNext.current = true; setFreshTick((t) => t + 1); }
+            await locateAndSummarise(list, live);
         } finally {
             setJobsBusy(false);
         }
@@ -468,7 +563,17 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
             setStaleComps((cc && cc.success && cc.comps) || []);
         } catch { /* preview */ }
     };
-    useEffect(() => { if (ready) void refreshHere(); }, [ready]);
+    // On arrival the open project is already known (the context read above):
+    // only the comp check is left to ask.
+    useEffect(() => {
+        if (!ready) return;
+        (async () => {
+            try {
+                const cc = (await evalTS("trackerCompCheck")) as any;
+                setStaleComps((cc && cc.success && cc.comps) || []);
+            } catch { /* preview */ }
+        })();
+    }, [ready]);
 
     const jobOf = (r: Row): WrikeJob | undefined =>
         r.wrike ? jobs.find((j) => (j.subtasks || []).some((st) => st.name === r.wrike!.name)) : undefined;
@@ -719,7 +824,8 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
         );
     };
 
-    if (!ready) return <div className="bt"><p className="bt-note"><Loader2 size={13} className="spin" /> Reading where the open project is…</p></div>;
+    // A remembered view draws at once; only a first-ever open waits for AE.
+    if (!ready && !scan) return <div className="bt"><p className="bt-note"><Loader2 size={13} className="spin" /> Reading where the open project is…</p></div>;
 
     return (
         <div className="bt">
@@ -733,7 +839,7 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
                 <button type="button" className="bt-btn" onClick={() => void pick()} title="Pick a territory, or a batch in its AE folder">
                     <Search size={13} /> Other…
                 </button>
-                <button type="button" className="bt-btn bt-icon" disabled={busy || jobsBusy} onClick={() => void loadJobs(true)} aria-label="Refresh" title="Read Wrike live and the folders again">
+                <button type="button" className="bt-btn bt-icon" disabled={busy || jobsBusy} onClick={() => void loadJobs(true)} aria-label="Refresh" title={"Read Wrike live and the folders again" + (timing.folders !== undefined ? `\nLast read: folders ${(timing.folders / 1000).toFixed(1)}s` + (timing.engine !== undefined ? ` (AE ${(timing.engine / 1000).toFixed(1)}s${timing.cached ? ", kept listing" : ""})` : "") + (timing.wrike !== undefined ? ` · Wrike ${(timing.wrike / 1000).toFixed(1)}s` : "") + (timing.chips !== undefined ? ` · job chips ${(timing.chips / 1000).toFixed(1)}s` : "") : "")}>
                     <RefreshCw size={13} className={busy || jobsBusy ? "spin" : ""} />
                 </button>
             </div>

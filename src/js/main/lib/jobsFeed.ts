@@ -354,6 +354,12 @@ function normalise(rows: any[]): WrikeJob[] {
     return out.filter((j) => j.title !== "");
 }
 
+/** The jobs already in memory for `member`, or null -- never a network read.
+ *  For a page that can draw without Wrike first and merge it in after. */
+export function peekJobs(member: string): JobsFeedResult | null {
+    return cache && cacheMember === member ? cache : null;
+}
+
 export async function fetchJobs(member: string, force = false, live = false): Promise<JobsFeedResult> {
     // Keyed by member: switching the machine's tag must not serve the previous
     // person's jobs out of cache.
