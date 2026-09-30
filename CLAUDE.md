@@ -899,8 +899,10 @@ The open project's row is an outlined card, never an edge bar.
   project's row says "Open" instead), in place of the status pill, and the
   opened row's button reads "Open to amend" as the primary action.
 - **A To amend job brings its AMENDS comment**, split per deliverable -- the
-  newest comment naming this batch's deliverables, else one naming any, else
-  the newest (the Worker sends the newest 8 as `recent`; a hand-off posted
+  newest comment **by somebody other than this machine's tag** naming this
+  batch's deliverables, else one naming any, else the newest. Your own
+  "amends are in:" reply repeats every filename and note, so without the
+  author rule it wins (the Worker sends the newest 8 as `recent`; a hand-off posted
   after the amends must not bury them, NO 2 2026-09-30). Wrike ids are MIXED
   case with `_`/`-` (`MAAAAABrMQm_`) -- the route validates that shape.
   The studio writes amends on the PARENT task, never the subtasks: filenames,

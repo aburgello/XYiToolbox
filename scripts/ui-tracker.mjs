@@ -93,7 +93,10 @@ const COMMENT_BASE = { task: "J1", count: 3, comment: { author: "Michael Sills",
     "",
     "✅ The others are approved",
 ].join("\n") } };
-const COMMENT = { ...COMMENT_BASE, comment: HANDOFF, recent: [HANDOFF, COMMENT_BASE.comment] };
+// And the motioner's own "amends are in" REPLY, which repeats the filenames
+// and notes -- newer than the amends, and never the one to show.
+const REPLY = { author: "Antonio Burgello", date: new Date(Date.now() - 1800e3).toISOString(), text: "Hey @Michael Sills , amends are in:\n\nSF_INTL_Trio_POST_DOOH_1920x1080px_30s_NO_V02.mov\n:small_orange_diamond: The paramount logo is fixed" };
+const COMMENT = { ...COMMENT_BASE, comment: HANDOFF, recent: [HANDOFF, REPLY, COMMENT_BASE.comment] };
 let commentAsks = [];
 const page = await launch({ root: ROOT, fixturesSrc: FIXTURES, routes: {
     "api/panel/comment": (url) => { commentAsks.push(url); return /task=J1/.test(url) ? COMMENT : { comment: null, count: 0 }; },
@@ -171,7 +174,7 @@ try {
     console.log("\n3d. The amends, from the job's latest Wrike comment");
     check(commentAsks.length >= 1 && commentAsks.every((u) => /task=J1/.test(u)), "only the To amend job's comment is asked for", commentAsks.map((u) => u.replace(/^.*\?/, "")));
     const card = await page.eval(`document.querySelector(".bt-comment")?.innerText || ""`);
-    check(/Amends in Wrike · Michael Sills/.test(card) && /A newer comment follows it \(James Crouch/.test(card), "a later hand-off doesn't bury the amends: Michael's comment is picked, and the newer one is mentioned", card);
+    check(/Amends in Wrike · Michael Sills/.test(card) && /A newer comment follows it \(James Crouch/.test(card), "a later hand-off and your own 'amends are in' reply don't bury the amends: Michael's is picked", card);
     check(/2 deliverables with amends/.test(card) && /The others are approved/.test(card) && !/paramount/.test(card), "the job's card names the reviewer, counts the deliverables and says the general line once", card);
     await page.eval(`document.querySelectorAll(".bt-rows > .bt-row")[2].querySelector(".bt-row-top").click()`);
     await pause(100);

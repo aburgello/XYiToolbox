@@ -54,9 +54,12 @@
 // row, then Open in AE. The open project's own row says it's open instead.
 //
 // A JOB IN TO AMEND brings its AMENDS comment (fetchJobComment, one Wrike
-// call, cached): the newest comment that names this batch's deliverables,
-// else one naming any, else the newest -- a hand-off posted after the amends
-// (NO 2, 2026-09-30) must not bury them. Amends are written on the PARENT task, per deliverable
+// call, cached): the newest comment BY SOMEBODY ELSE that names this batch's
+// deliverables, else one naming any, else the newest. Both halves measured on
+// NO 2 (2026-09-30): a hand-off landed after the amends, and the motioner's
+// own "amends are in:" reply repeats every filename and note -- it is the
+// amends DONE, and the newest comment naming deliverables. Your own comments
+// are replies; the amends are the reviewer's. Amends are written on the PARENT task, per deliverable
 // -- filenames, then the note -- so lib/amendNotes.ts splits it and each note
 // lands on the row it names, matched through the disk's own spelling too (a
 // comment naming Trio_POST_DOOH finds the row Wrike calls Trio_DOOH_POST).
@@ -225,6 +228,8 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
     const [showFullComment, setShowFullComment] = useState(false);
     /** Set by the refresh button: the next comment read goes to Wrike. */
     const freshComments = useRef(false);
+    /** This machine's tag ("Antonio"): the author whose comments are replies. */
+    const ownerRef = useRef("");
 
     // Where the open project sits decides the first view.
     useEffect(() => {
@@ -290,7 +295,14 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
                 if (!AMEND_STATUSES.test(String(j.status || "").trim())) continue;
                 const c = await fetchJobComment(j.id, fresh);
                 const pool = c.recent && c.recent.length ? c.recent : c.comment ? [c.comment] : [];
-                const parsedPool = pool.map((cm) => ({ cm, p: parseAmends(cm.text) }));
+                // "Antonio" is "Antonio Burgello": first name or the whole name.
+                const me = ownerRef.current.trim().toLowerCase();
+                const byMe = (cm: JobComment) => {
+                    const a = cm.author.trim().toLowerCase();
+                    return !!me && !!a && (a === me || a.indexOf(me + " ") === 0);
+                };
+                const theirs = pool.filter((cm) => !byMe(cm));
+                const parsedPool = (theirs.length ? theirs : pool).map((cm) => ({ cm, p: parseAmends(cm.text) }));
                 const pick =
                     parsedPool.find((x) => Object.keys(x.p.byKey).some((k) => onDisk.has(k))) ||
                     parsedPool.find((x) => Object.keys(x.p.byKey).length > 0) ||
@@ -358,6 +370,7 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
                 const st = (await evalTS("teamGetMachineState")) as { owner?: string } | undefined;
                 owner = (st && st.owner) || "";
             } catch { /* untagged */ }
+            ownerRef.current = owner;
             if (!owner) { setMyJobs([]); return; }
             const pick = (res: Awaited<ReturnType<typeof fetchJobs>>) => {
                 if (res.mock) return [] as WrikeJob[];
