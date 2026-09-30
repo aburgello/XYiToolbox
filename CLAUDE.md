@@ -1545,6 +1545,14 @@ the same master for two rows and accepted it for four). Review's selection loade
 comps: AE leaves an import selected, so a second Import & Compare reviewed the
 masters.
 
+`node scripts/probe-compare-layout.cjs` (after `yarn build`) guards **how
+every comparison is laid out**: `compareLayout` (`review.ts`), shared by
+Review's `createReviewComparison` (and so 67's compare icon) and OV Library's
+`createComparisonComp`. Side by side up to 2:1, **STACKED past it** (reference
+on top, local below, DIFF over the top) -- a 4480x384 side by side was an
+8960px comp of two slivers. Review caps the comp's LONGER side at 3840; OV
+Library's comp stays uncapped. The legacy 1920x858 (2.24:1) stacks too.
+
 `node scripts/ui-review-jobs.mjs` (after `yarn build:web`) clicks through
 Review Session's **Your jobs** strip (`tools/ReviewJobs.tsx`): Deliver's
 `deliveryFindRenders`/`deliveryImportRenders`, asked about **To amend** and

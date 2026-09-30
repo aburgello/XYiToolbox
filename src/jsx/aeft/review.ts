@@ -815,6 +815,41 @@ export const playFile = (filePath: string): Result => {
 // user's own selected localised render side by side, each confined to its
 // own half of the comparison comp regardless of the two renders' actual
 // (and not necessarily identical) source dimensions.
+/**
+ * WHERE THE TWO SIDES OF A COMPARISON GO -- one answer for every builder
+ * (Review Session, 67's compare icon, OV Library), so they can't disagree.
+ * Side by side, unless the frame is wider than COMPARE_STACK_RATIO: then
+ * STACKED, the reference on top and the local below (2026-09-30). A 4480x384
+ * banner side by side was an 8960px-wide comp with two slivers in it.
+ *
+ * `maxDim` caps the comp's LONGER side (0 = no cap): three full layers per
+ * frame (reference, local, DIFF), so the memory is the comp's area times
+ * three. `first` is the reference's centre, `second` the local's.
+ */
+export const COMPARE_STACK_RATIO = 2;
+export function compareLayout(srcW: number, srcH: number, maxDim: number) {
+  var w = srcW > 0 ? srcW : 1920;
+  var h = srcH > 0 ? srcH : 1080;
+  var stacked = w / h > COMPARE_STACK_RATIO;
+  var rawW = stacked ? w : w * 2;
+  var rawH = stacked ? h * 2 : h;
+  var longest = Math.max(rawW, rawH);
+  var scale = maxDim > 0 && longest > maxDim ? maxDim / longest : 1;
+  var compW = Math.round(rawW * scale);
+  var compH = Math.round(rawH * scale);
+  var boxW = stacked ? compW : Math.round(compW / 2);
+  var boxH = stacked ? Math.round(compH / 2) : compH;
+  return {
+    stacked: stacked,
+    compW: compW,
+    compH: compH,
+    boxW: boxW,
+    boxH: boxH,
+    first: [boxW / 2, boxH / 2],
+    second: stacked ? [boxW / 2, boxH + boxH / 2] : [boxW + boxW / 2, boxH / 2],
+  };
+}
+
 function fitLayerIntoBox(layer: AVLayer, boxWidth: number, boxHeight: number, centerX: number, centerY: number) {
   const src = layer.source;
   const srcW = src ? src.width : boxWidth;
@@ -865,22 +900,25 @@ export const createComparisonComp = (renderPath: string, width: number, height: 
       return { success: false, error: "Could not import render: " + impErr.toString() };
     }
 
-    const compWidth = width * 2;
-    const compHeight = height;
+    // Side by side, or stacked past 2:1 (compareLayout). No size cap here, as
+    // before: this comp has two layers, not Review's three.
+    const L = compareLayout(width, height, 0);
+    const compWidth = L.compW;
+    const compHeight = L.compH;
     const frameRate = ovFootage.frameRate > 0 ? ovFootage.frameRate : 25;
     const duration = Math.max(ovFootage.duration || 0, selectedItem.duration || 0) || 10;
     const compName = "Compare_" + f.name.replace(/\.[^.]+$/, "");
 
     const comp = app.project.items.addComp(compName, compWidth, compHeight, 1, duration, frameRate);
 
-    // Right half: the user's own selected localised render/comp.
+    // Right half (or the bottom, stacked): the user's own localised render/comp.
     const rightLayer = comp.layers.add(selectedItem);
-    fitLayerIntoBox(rightLayer, width, height, width + width / 2, height / 2);
+    fitLayerIntoBox(rightLayer, L.boxW, L.boxH, L.second[0], L.second[1]);
 
-    // Left half: the freshly-imported OV render -- after the local's
-    // frontcard, when it has one (frontcardOffset), so both show one beat.
+    // Left half (or the top): the freshly-imported OV render -- after the
+    // local's frontcard, when it has one (frontcardOffset), so both show one beat.
     const leftLayer = comp.layers.add(ovFootage);
-    fitLayerIntoBox(leftLayer, width, height, width / 2, height / 2);
+    fitLayerIntoBox(leftLayer, L.boxW, L.boxH, L.first[0], L.first[1]);
     const offset = frontcardOffset(selectedItem.duration || 0, ovFootage.duration || 0, frameRate);
     if (offset > 0) {
       try {
@@ -995,8 +1033,8 @@ export const reviewLoadSelectedItems = (): ReviewLoadResult => {
 //
 // What it adds over the basic createComparisonComp():
 //   1. Finds local by ID     — no manual selection step
-//   2. "MASTER"/"LOCAL"      — small text labels, bottom corners
-//   3. Center divider         — thin rule between the two halves
+//   2. Layout                 — side by side, or STACKED past 2:1
+//                               (compareLayout, shared with OV Library)
 //   4. Difference matte       — third track on top, Difference blending,
 //                               pixel-level deltas light up instantly
 //   5. Timecode overlay       — burnt-in source TC on both sides
@@ -1121,14 +1159,13 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     //    frame.  Capping at 3840 gives reliable behaviour for the common case
     //    (≤1920px sources fit at 1:1) and proportionally scales anything
     //    wider.
-    var MAX_COMP_W = 3840;
+    //    Past 2:1 the two are STACKED instead (compareLayout), and the cap
+    //    applies to the comp's longer side either way.
     var srcW = masterFootage.width || 1920;
     var srcH = masterFootage.height || 1080;
-    var rawCompW = srcW * 2;
-    var scaleFactor = rawCompW > MAX_COMP_W ? (MAX_COMP_W / rawCompW) : 1;
-    var compW = Math.round(rawCompW * scaleFactor);
-    var compH = Math.round(srcH * scaleFactor);
-    var halfW = Math.round(compW / 2);
+    var L = compareLayout(srcW, srcH, 3840);
+    var compW = L.compW;
+    var compH = L.compH;
     var fps = masterFootage.frameRate > 0 ? masterFootage.frameRate : 25;
     var dur = Math.max((masterFootage.duration || 0) * times, localItem.duration || 0) || 10;
 
@@ -1168,7 +1205,7 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     var offset = isMaster ? frontcardOffset(localItem.duration || 0, (masterFootage.duration || 0) * times, fps) : 0;
     step = "placing the master";
     var masterLayer = comp.layers.add(masterFootage);
-    fitLayerIntoBox(masterLayer, halfW, compH, halfW / 2, compH / 2);
+    fitLayerIntoBox(masterLayer, L.boxW, L.boxH, L.first[0], L.first[1]);
     masterLayer.name = isMaster ? "MASTER (.mp4)" : refLabel + " (" + decodeURI(String(f.name)) + ")";
     if (offset > 0) {
       try { masterLayer.startTime = offset; } catch (eOff) { /* stays at 0 */ }
@@ -1178,7 +1215,7 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     // 6. Place local render on the RIGHT half.
     step = "placing the local render";
     var localLayer = comp.layers.add(localItem);
-    fitLayerIntoBox(localLayer, halfW, compH, halfW + halfW / 2, compH / 2);
+    fitLayerIntoBox(localLayer, L.boxW, L.boxH, L.second[0], L.second[1]);
     step = "after placing both";
     localLayer.name = kind === "amend" ? "AFTER (imported render)" : kind === "prepost" ? "POST (imported render)" : "LOCAL (imported render)";
 
@@ -1198,7 +1235,7 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     //     blend mode can't be set.
     try {
       var diffLayer = comp.layers.add(localItem);
-      fitLayerIntoBox(diffLayer, halfW, compH, halfW / 2, compH / 2);
+      fitLayerIntoBox(diffLayer, L.boxW, L.boxH, L.first[0], L.first[1]);
       diffLayer.name = "DIFF (local over master)";
       // Starts hidden — the artist toggles it on (eyeball in the timeline)
       // when they want to see the difference pass, rather than it washing
