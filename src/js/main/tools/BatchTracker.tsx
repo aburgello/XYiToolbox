@@ -16,9 +16,17 @@
 // The strip at the top is "where is it": one press to each of the batch's
 // folders and the territory's Specs, and to the open project's own art and
 // render when the open project is in this batch.
+//
+// WRIKE LEADS. When the batch has a job in the feed, its subtasks ARE the
+// list -- they are what has to be delivered -- and every row starts folded to
+// one line: name, four stage pips, and either a count of problems or a tick.
+// Opening a row shows its stages (each a Finder link) and the problems in
+// words. What sits on disk but is not in Wrike folds into one line at the
+// bottom: usually a misnamed file, which the near misses already point at.
+// With no job in the feed it falls back to everything on disk.
 // =============================================================================
 import React, { useEffect, useState } from "react";
-import { FolderOpen, Image as ImageIcon, FileBox, Film, PackageCheck, FileText, RefreshCw, Loader2, AlertTriangle, MapPin, Search } from "lucide-react";
+import { FolderOpen, Image as ImageIcon, FileBox, Film, PackageCheck, FileText, RefreshCw, Loader2, AlertTriangle, MapPin, Search, ChevronRight, Check, HardDrive } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import Dropdown from "../Dropdown";
@@ -40,6 +48,20 @@ interface Row {
 interface Scan { territory: string; batch: string; folders: { art: string; aep: string; renders: string; delivered: string[]; specs: string }; rows: Row[] }
 
 const loose = (s: string) => String(s).toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/(^|\D)0+(\d)/g, "$1$2");
+/** A row's problems, in words. A near miss REPLACES the plain "missing" line
+ *  for its stage: "the project is named X" says more than "no project". */
+export function rowIssues(r: Row, color: string): string[] {
+    const out: string[] = [];
+    const near = r.near || [];
+    const nearOn = (label: RegExp) => near.some((n) => label.test(n.stage));
+    for (const n of near) out.push(`The ${n.stage} is named ${n.name}: ${n.why}.`);
+    if (!r.art && !nearOn(/^art/)) out.push("No artwork folder in JPG_PNG.");
+    if (!r.aep && !nearOn(/^project/)) out.push("No project in AE.");
+    if (!r.render && !nearOn(/^render/) && r.wrike && /prep|deliver|review|revised/i.test(r.wrike.status)) out.push(`Not rendered, but Wrike says ${r.wrike.status}.`);
+    if (r.render && color === "red") out.push("The newest render is marked red in Finder.");
+    return out;
+}
+
 const stem = (p: string) => (p.split(/[\\/]/).pop() || p).replace(/\.[^.]+$/, "").replace(/_V\d+$/i, "").toUpperCase();
 
 const BatchTracker: React.FC = () => {
@@ -54,6 +76,8 @@ const BatchTracker: React.FC = () => {
     const [colors, setColors] = useState<Record<string, FinderColor>>({});
     const [onlyIssues, setOnlyIssues] = useState(false);
     const [ready, setReady] = useState(false);
+    const [open, setOpen] = useState<Record<string, boolean>>({});
+    const [showExtra, setShowExtra] = useState(false);
 
     // Where the open project sits decides the first view.
     useEffect(() => {
@@ -101,6 +125,8 @@ const BatchTracker: React.FC = () => {
             const r = (await evalTSSafe("trackerScan", JSON.stringify({ territoryPath: tp, batch: b, wrike }))) as any;
             if (!r || !r.success) { setError((r && r.error) || "Couldn't read the batch."); return; }
             setScan({ territory: r.territory, batch: r.batch, folders: r.folders, rows: r.rows || [] });
+            setOpen({});
+            setShowExtra(false);
             // Finder colours on the newest renders: green/orange good, red not.
             const paths = (r.rows || []).filter((x: Row) => x.render).map((x: Row) => x.render!.path);
             setColors(await readFinderColors(paths));
@@ -121,12 +147,19 @@ const BatchTracker: React.FC = () => {
         setBatch(r.batch || ((b && b.batches) || [])[0] || "");
     };
 
-    const rows = scan ? scan.rows : [];
+    const all = scan ? scan.rows : [];
+    const fromWrike = all.some((r) => !!r.wrike);
+    // Wrike's subtasks are the list when there are any; the rest is extra.
+    const rows = fromWrike ? all.filter((r) => !!r.wrike) : all;
+    const extra = fromWrike ? all.filter((r) => !r.wrike) : [];
     const count = (f: (r: Row) => boolean) => rows.filter(f).length;
-    const issue = (r: Row): boolean => !!(r.near && r.near.length) || !r.aep || !r.art || (!!r.wrike && !r.render && /prep|deliver|review|revised/i.test(r.wrike.status));
+    const colorOf = (r: Row) => (r.render ? colors[r.render.path] || "" : "");
+    const issuesOf = (r: Row) => rowIssues(r, colorOf(r));
+    const issue = (r: Row): boolean => issuesOf(r).length > 0;
     const shown = onlyIssues ? rows.filter(issue) : rows;
     const openStem = openProject ? stem(openProject) : "";
-    const openRow = rows.find((r) => r.aep && stem(r.aep.path) === openStem);
+    const openRow = all.find((r) => r.aep && stem(r.aep.path) === openStem);
+    const toggle = (k: string) => setOpen((o) => ({ ...o, [k]: !o[k] }));
 
     const Link: React.FC<{ icon: React.ReactNode; label: string; path?: string; folder?: boolean }> = ({ icon, label, path, folder }) => (
         <button type="button" className="bt-link" disabled={!path} title={path || `No ${label.toLowerCase()} for this batch`} onClick={() => path && revealInFinder(path, !!folder)}>
@@ -141,6 +174,49 @@ const BatchTracker: React.FC = () => {
             {extra}
         </button>
     );
+
+    const renderRow = (r: Row, isExtra: boolean) => {
+        const c = colorOf(r);
+        const isHere = !!openRow && openRow.key === r.key;
+        const problems = issuesOf(r);
+        const isOpen = !!open[r.key];
+        const label = r.wrike ? r.wrike.name : r.name;
+        const pip = (on: boolean, bad = false) => <i className={"bt-pip" + (on ? " is-on" : "") + (bad ? " is-bad" : "")} />;
+        return (
+            <div key={r.key} className={"bt-row" + (isHere ? " is-here" : "") + (problems.length ? " has-issue" : "") + (isOpen ? " is-open" : "") + (isExtra ? " is-extra" : "")}>
+                <button type="button" className="bt-row-top" onClick={() => toggle(r.key)} aria-expanded={isOpen}>
+                    <ChevronRight size={13} className="bt-chev" />
+                    {isHere && <MapPin size={12} className="bt-here-pin" aria-label="Open in AE" />}
+                    <span className="bt-name" title={isHere ? label + " (open in AE)" : label}>{label}</span>
+                    <span className="bt-pips" title="Art · Built · Rendered · Delivered">
+                        {pip(!!r.art)}{pip(!!r.aep)}{pip(!!r.render, c === "red")}{pip(!!r.delivered)}
+                    </span>
+                    {problems.length > 0
+                        ? <span className="bt-issues" title={problems.join("\n")}><AlertTriangle size={11} />{problems.length}</span>
+                        : <span className="bt-ok" title="Nothing to look at"><Check size={12} /></span>}
+                    {r.wrike && (
+                        <span className="bt-wrike" style={{ color: statusTint(r.wrike.status).color, background: statusTint(r.wrike.status).background }} title="Wrike">{r.wrike.status || "Wrike"}</span>
+                    )}
+                </button>
+                {isOpen && (
+                    <div className="bt-detail">
+                        <div className="bt-stages">
+                            <Dot on={!!r.art} label="Art" folder path={r.art?.path} title={r.art ? `${r.art.files} image${r.art.files === 1 ? "" : "s"} in JPG_PNG` : "No JPG_PNG folder with this name"} />
+                            <Dot on={!!r.aep} label="Built" path={r.aep?.path} title={r.aep ? r.aep.name : "No project with this name in AE"} extra={r.aep && r.aep.version ? <em>V{String(r.aep.version).padStart(2, "0")}</em> : null} />
+                            <Dot on={!!r.render} label="Rendered" path={r.render?.path} tone={c === "red" ? "bad" : c === "green" || c === "orange" ? "good" : ""}
+                                title={r.render ? `${r.render.name}${r.render.versions > 1 ? ` (newest of ${r.render.versions})` : ""}${c ? ` · marked ${c} in Finder` : ""}` : "No render in this batch's Renders folder"}
+                                extra={r.render ? <em>V{String(r.render.version).padStart(2, "0")}{c ? <i className={"bt-fc is-" + c} /> : null}</em> : null} />
+                            <Dot on={!!r.delivered} label="Delivered" path={r.delivered?.path} title={r.delivered ? r.delivered.name : "Not in _Delivery yet"} />
+                        </div>
+                        {problems.length === 0 && <p className="bt-fine"><Check size={11} /> Nothing to look at.</p>}
+                        {problems.map((t, i) => (
+                            <p key={i} className="bt-near"><AlertTriangle size={11} /> <span>{t}</span></p>
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
+    };
 
     if (!ready) return <div className="bt"><p className="bt-note"><Loader2 size={13} className="spin" /> Reading where the open project is…</p></div>;
 
@@ -185,7 +261,7 @@ const BatchTracker: React.FC = () => {
                     )}
 
                     <div className="bt-summary">
-                        <span><strong>{rows.length}</strong> deliverable{rows.length === 1 ? "" : "s"}</span>
+                        <span><strong>{rows.length}</strong> {fromWrike ? `in Wrike` : `on disk`}</span>
                         <span className="bt-count">{count((r) => !!r.art)} art</span>
                         <span className="bt-count">{count((r) => !!r.aep)} built</span>
                         <span className="bt-count">{count((r) => !!r.render)} rendered</span>
@@ -197,34 +273,19 @@ const BatchTracker: React.FC = () => {
                     </div>
 
                     <div className="bt-rows">
+                        {!fromWrike && all.length > 0 && <p className="bt-note">No Wrike job for this batch in your feed, so this is everything on disk.</p>}
                         {shown.length === 0 && <p className="bt-note">{onlyIssues ? "Nothing to look at in this batch." : "Nothing in this batch yet."}</p>}
-                        {shown.map((r) => {
-                            const c = r.render ? colors[r.render.path] || "" : "";
-                            const isHere = openRow && openRow.key === r.key;
-                            return (
-                                <div key={r.key} className={"bt-row" + (isHere ? " is-here" : "") + (issue(r) ? " has-issue" : "")}>
-                                    <div className="bt-row-top">
-                                        <span className="bt-name" title={r.name}>{r.name}</span>
-                                        {r.wrike && (
-                                            <span className="bt-wrike" style={{ color: statusTint(r.wrike.status).color, background: statusTint(r.wrike.status).background }} title="Wrike">{r.wrike.status || "Wrike"}</span>
-                                        )}
-                                    </div>
-                                    <div className="bt-stages">
-                                        <Dot on={!!r.art} label="Art" folder path={r.art?.path} title={r.art ? `${r.art.files} image${r.art.files === 1 ? "" : "s"} in JPG_PNG` : "No JPG_PNG folder with this name"} />
-                                        <Dot on={!!r.aep} label="Built" path={r.aep?.path} title={r.aep ? r.aep.name : "No project with this name in AE"} extra={r.aep && r.aep.version ? <em>V{String(r.aep.version).padStart(2, "0")}</em> : null} />
-                                        <Dot on={!!r.render} label="Rendered" path={r.render?.path} tone={c === "red" ? "bad" : c === "green" || c === "orange" ? "good" : ""}
-                                            title={r.render ? `${r.render.name}${r.render.versions > 1 ? ` (newest of ${r.render.versions})` : ""}${c ? ` · marked ${c} in Finder` : ""}` : "No render in this batch's Renders folder"}
-                                            extra={r.render ? <em>V{String(r.render.version).padStart(2, "0")}{c ? <i className={"bt-fc is-" + c} /> : null}</em> : null} />
-                                        <Dot on={!!r.delivered} label="Delivered" path={r.delivered?.path} title={r.delivered ? r.delivered.name : "Not in _Delivery yet"} />
-                                    </div>
-                                    {r.near && r.near.map((n, i) => (
-                                        <p key={i} className="bt-near" title={n.name}>
-                                            <AlertTriangle size={11} /> <span>The {n.stage} is named <strong>{n.name}</strong>: {n.why}.</span>
-                                        </p>
-                                    ))}
-                                </div>
-                            );
-                        })}
+                        {shown.map((r) => renderRow(r, false))}
+                        {extra.length > 0 && (
+                            <>
+                                <button type="button" className={"bt-extra" + (showExtra ? " is-open" : "")} onClick={() => setShowExtra(!showExtra)}
+                                    title="Files in this batch's folders with no Wrike subtask of the same name">
+                                    <ChevronRight size={13} className="bt-chev" /><HardDrive size={12} />
+                                    <span>{extra.length} on disk, not in Wrike</span>
+                                </button>
+                                {showExtra && extra.map((r) => renderRow(r, true))}
+                            </>
+                        )}
                     </div>
                 </>
             )}

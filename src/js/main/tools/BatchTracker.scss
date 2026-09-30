@@ -59,18 +59,53 @@
     .bt-count { padding: 1px 7px; border-radius: 999px; background: rgba(255, 255, 255, 0.06); font-size: 11px; font-variant-numeric: tabular-nums; }
     .bt-spacer { flex: 1 1 auto; }
 
-    .bt-rows { display: flex; flex-direction: column; }
+    .bt-rows { display: flex; flex-direction: column; gap: 4px; }
+    // Each deliverable is a small card. The open project's is outlined and
+    // washed in the category tint -- the whole card, no bar on one edge.
     .bt-row {
         display: flex;
         flex-direction: column;
-        gap: 6px;
-        padding: 9px 6px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        gap: 8px;
+        padding: 8px 10px;
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.02);
         min-width: 0;
+        transition: border-color 0.15s ease, background 0.15s ease;
 
-        &.is-here { box-shadow: inset 2px 0 0 var(--cat-border, #2dd4bf); background: rgba(45, 212, 191, 0.05); }
+        &:hover { border-color: rgba(255, 255, 255, 0.12); }
+        &.is-open { background: rgba(255, 255, 255, 0.035); border-color: rgba(255, 255, 255, 0.12); }
+        &.is-here { border-color: rgba(45, 212, 191, 0.45); background: rgba(45, 212, 191, 0.07); }
     }
-    .bt-row-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .bt-here-pin { flex-shrink: 0; color: var(--cat-icon, #5eead4); }
+    // The row's one line is the toggle. Scoped hover: see the header.
+    .bt-row-top, .bt-extra {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        width: 100%;
+        padding: 0;
+        border: 0;
+        background: none;
+        color: inherit;
+        text-align: left;
+        cursor: pointer;
+        &:hover, &:active { background: none; }
+        &:hover .bt-name { color: #fff; }
+    }
+    .bt-chev { flex-shrink: 0; color: #6f7c7a; transition: transform 0.15s ease; }
+    .is-open > .bt-row-top .bt-chev, .bt-extra.is-open .bt-chev { transform: rotate(90deg); }
+    .bt-pips { display: inline-flex; gap: 3px; flex-shrink: 0; }
+    .bt-pip { width: 6px; height: 6px; border-radius: 50%; border: 1.5px solid #4a5654; box-sizing: border-box; }
+    .bt-pip.is-on { border-color: var(--cat-icon, #5eead4); background: var(--cat-icon, #5eead4); }
+    .bt-pip.is-on.is-bad { border-color: #f87171; background: #f87171; }
+    .bt-issues { display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0; padding: 1px 6px; border-radius: 999px; background: rgba(251, 191, 36, 0.12); color: #fbbf24; font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .bt-ok { display: inline-flex; flex-shrink: 0; color: #4ade80; }
+    .bt-detail { display: flex; flex-direction: column; gap: 6px; padding-left: 21px; }
+    .bt-fine { display: flex; align-items: center; gap: 5px; margin: 0; font-size: 11px; color: #86efac; }
+    .bt-extra { padding: 10px 6px 6px; font-size: 11.5px; font-weight: 600; color: #8b9795; svg { color: #6f7c7a; } &:hover span { color: #fff; } }
+    .bt-row.is-extra .bt-name { color: #b9c4c2; font-weight: 500; }
     .bt-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 600; color: #eef3f2; }
     .bt-wrike { flex-shrink: 0; padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 600; }
 

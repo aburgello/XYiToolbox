@@ -838,7 +838,12 @@ and ratio tokens off). Its links only ever spawn `open`/`open -R`. Two rules:
 batches pair LOOSELY (`Batch_02` is `Batch_2`, but a `_POST` batch is its own),
 and a near miss is **flagged, never joined** — and only between ORPHANS, rows
 each holding a stage the other lacks, or every sibling size in a batch would
-be "nearly" every other. `node scripts/probe-tracker.cjs` (stub throws on any
+be "nearly" every other. **Wrike leads**: when the batch has a job in the
+feed its subtasks ARE the list (they are what gets delivered), each row folded
+to a line of pips and a problem count until opened; files not in Wrike fold
+into one "on disk, not in Wrike" line; no job falls back to everything on
+disk. The open project's row is an outlined card, never an edge bar.
+`node scripts/probe-tracker.cjs` (stub throws on any
 write) and `node scripts/ui-tracker.mjs` guard it.
 
 **Folders starting with `_` are excluded from every scan.** The one exception is
