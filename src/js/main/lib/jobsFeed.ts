@@ -591,6 +591,22 @@ export function commonTitlePrefix(titles: string[]): string {
     return out.join(" ");
 }
 
+/**
+ * IS THIS A JOB TO LOCALISE? The feed carries everything assigned to you, and
+ * "Motion Debrief" and "2026 Showreel" sat on the Localise page as chips that
+ * open onto nothing. A localise job says so in one of two places: its title
+ * names a territory, or a subtask is a deliverable filename -- it carries a
+ * SIZE as its own token (three digits a side, so a ratio or a site's grid is
+ * not one). Either is enough, because each fails alone on real jobs: an
+ * international batch has no two-letter territory in its title, and the feed
+ * has lost subtask names before.
+ */
+export function isLocaliseJob(job: WrikeJob): boolean {
+    if (parseJobTitle(job.title).territory) return true;
+    return (job.subtasks || []).some((s) =>
+        String(s.name || "").split("_").some((t) => /^\d{3,}x\d{3,}(?:px)?$/i.test(t)));
+}
+
 export function parseJobTitle(title: string): { film: string; territory: string; name: string; batch: string } {
     const parts = title.split(/\s+-\s+/).map((p) => p.trim());
     // TITLES WITHOUT DASHES. Real boards also write "SF Motion Outdoor LV" and

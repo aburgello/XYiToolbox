@@ -23,7 +23,7 @@ import { motion, type Transition } from "motion/react";
 import { evalTS } from "../../lib/utils/bolt";
 import { CATEGORIES, TOOLS, categoryStyleVars, prefetchTool } from "../toolRegistry";
 import { iconWiggle, categoryLift } from "../animations";
-import { fetchJobsFresh, jobReadiness, parseJobTitle, REVISED_STATUSES, type WrikeJob, type JobsFeedResult } from "../lib/jobsFeed";
+import { fetchJobsFresh, jobReadiness, parseJobTitle, isLocaliseJob, REVISED_STATUSES, type WrikeJob, type JobsFeedResult } from "../lib/jobsFeed";
 import { isDeliverable, jobTerritory } from "../tools/DeliveryJobs";
 import { lastToolIn, type CardsLayout } from "../lib/homeLayout";
 import { sfx } from "../../lib/utils/sfx";
@@ -53,7 +53,7 @@ export function hereFromProjectPath(p: string | null | undefined): string {
 /** The four signals, from the jobs this machine's owner is on. */
 export function signalsFrom(jobs: WrikeJob[], owner: string, here: string, lastTool: string): Record<string, Signal> {
     const mine = jobs.filter((j) => !owner || j.assignee === owner);
-    const ready = mine.filter((j) => jobReadiness(j.status) === "ready" && (j.subtasksDone ?? 0) < (j.subtaskCount ?? 1)).length;
+    const ready = mine.filter((j) => isLocaliseJob(j) && jobReadiness(j.status) === "ready" && (j.subtasksDone ?? 0) < (j.subtaskCount ?? 1)).length;
     let revised = 0;
     for (const j of mine) for (const st of j.subtasks || []) if (REVISED_STATUSES.test(st.customStatusName || "")) revised++;
     const deliver = mine.filter((j) => isDeliverable(j));

@@ -14,6 +14,9 @@
 // The job whose territory the open project sits in is lit and goes first --
 // the same answer the Library card and the scan list give.
 //
+// ONLY JOBS TO LOCALISE (isLocaliseJob): a showreel or a debrief assigned to
+// you is not a batch, and its chip opened onto nothing.
+//
 // QUIET WHEN THERE IS NOTHING: an untagged machine, no jobs, or nothing left to
 // do renders no strip at all. The feed's own sample list (it could not be
 // reached) is shown marked SAMPLE, exactly as the home card marks it.
@@ -21,7 +24,7 @@
 import React, { useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
-import { fetchJobs, fetchJobsFresh, fetchJobsLive, parseJobTitle, jobReadiness, territoryFlag, type WrikeJob } from "../lib/jobsFeed";
+import { fetchJobs, fetchJobsFresh, fetchJobsLive, parseJobTitle, isLocaliseJob, jobReadiness, territoryFlag, type WrikeJob } from "../lib/jobsFeed";
 import ActiveJobModal from "../ActiveJobModal";
 
 interface Props {
@@ -59,6 +62,7 @@ const LocaliseJobsStrip: React.FC<Props> = ({ hereCode, onSent, onOpenJob }) => 
             setMock(res.mock);
             setJobs(res.jobs.filter((j) =>
                 j.assignee === listFor
+                && isLocaliseJob(j)
                 && (j.subtaskCount ?? 0) > 0
                 && jobReadiness(j.status) !== "done"
                 && (j.subtasksDone ?? 0) < (j.subtaskCount ?? 0)));

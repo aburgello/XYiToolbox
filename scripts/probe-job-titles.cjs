@@ -53,5 +53,26 @@ for (const [title, want] of cases) {
     if (!ok) fails++;
     console.log((ok ? "  ok    " : "  FAIL  ") + JSON.stringify(title) + "  ->  " + JSON.stringify(got));
 }
+// WHICH JOBS ARE LOCALISE JOBS: a territory in the title, or a subtask that is
+// a deliverable filename. A showreel is neither.
+const isLoc = m.exports.isLocaliseJob;
+const sub = (...names) => names.map((name, i) => ({ id: String(i), name, status: "Active" }));
+const jobCases = [
+    [{ title: "Motion Debrief", subtasks: sub("Edit", "Music", "Grade") }, false],
+    [{ title: "2026 Showreel", subtasks: sub("Cut 1", "Titles 1920x1080") }, false],
+    [{ title: "SF Motion Outdoor NO 2", subtasks: sub("x") }, true],
+    [{ title: "SF Motion Outdoor PA", subtasks: [] }, true],
+    // International: no two-letter territory, but its subtasks are deliverables.
+    [{ title: "SF Motion Outdoor INT", subtasks: sub("SF_INTL_Trio_DOOH_1920x1080px_15s_INT") }, true],
+    [{ title: "SF Motion Outdoor INT", subtasks: sub("SF_INTL_Trio_DOOH_1920x1080_15sec_INT") }, true],
+    // A ratio or a site's grid is not a size.
+    [{ title: "Showreel", subtasks: sub("Reel_9x16_social", "Hoyts3x3_wall") }, false],
+    [{ title: "Showreel" }, false],
+];
+for (const [job, want] of jobCases) {
+    const got = isLoc(job);
+    if (got !== want) fails++;
+    console.log((got === want ? "  ok    " : "  FAIL  ") + JSON.stringify(job.title) + " [" + (job.subtasks || []).map((s) => s.name).join(", ") + "]  ->  " + got);
+}
 console.log(fails ? `\n${fails} FAILED` : "\nCLEAN — dashed and dashless titles both find their territory.");
 process.exit(fails ? 1 : 0);
