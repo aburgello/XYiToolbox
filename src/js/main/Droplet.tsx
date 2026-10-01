@@ -77,7 +77,12 @@ const Droplet: React.FC<Props> = ({ trigger, children, panelClassName }) => {
         if (!anchorEl || !panelEl) return;
 
         const anchorRect = anchorEl.getBoundingClientRect();
-        const panelRect = panelEl.getBoundingClientRect();
+        // offsetWidth/Height, NOT getBoundingClientRect: the panel mounts at
+        // scale 0.95 and a bounding rect reports the SCALED box, so a 380px
+        // panel measured 361 and the edge clamp left it 19px past the panel's
+        // right edge (Review's Change master, the first droplet wide enough
+        // for 5% to show).
+        const panelRect = { width: panelEl.offsetWidth, height: panelEl.offsetHeight };
         const spaceBelow = window.innerHeight - anchorRect.bottom;
         const spaceAbove = anchorRect.top;
 

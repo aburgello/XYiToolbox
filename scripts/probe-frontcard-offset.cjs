@@ -55,6 +55,7 @@ function makeComp(name, w, h, par, dur, fps) {
     Object.defineProperty(c, 'numLayers', { get: () => layers.length });
     c._layers = layers;
     c.openInViewer = () => {};
+    c.remove = () => { items.splice(items.indexOf(c), 1); };
     items.push(c);
     return c;
 }
@@ -127,6 +128,22 @@ const c4 = project.itemByID(r.compId);
 const passes = c4 ? c4._layers.filter((l) => /^MASTER/.test(l.name)).map((l) => l.startTime).sort((a, b) => a - b) : [];
 check(r.success && passes.length === 2 && passes[0] === 5 && passes[1] === 15, 'a x2 master plays twice, end to end, after the 5s card (not a 15s "card")', passes);
 check(c4 && c4.duration === 25 && c4.displayStartTime === -5 && /repeat:2/.test(r.enrichNotes), 'the comp covers the whole deliverable', c4 && [c4.duration, c4.displayStartTime, r.enrichNotes]);
+
+// CHANGE MASTER (Review): the rebuild takes the old comparison's place, name
+// and all, and never removes a comp this tool did not make.
+const pill = new FootageItem({ id: nextId++, name: 'SF_INTL_Trio_DINTH_PDHPillars_2560x1216px_30s_MY_V01.mov', width: 2560, height: 1216, duration: 35, frameRate: 25, parentFolder: root });
+items.push(pill);
+r = aeft.createReviewComparison('/masters/SF_INTL_Trio_DOOH_1920x1080px_15s_OV.mp4', pill.id, pill.name, 'master', 2);
+const firstId = r.compId, firstName = r.compName;
+const before = items.filter((x) => x instanceof CompItem).length;
+r = aeft.createReviewComparison('/masters/SF_INTL_Trio_DOOH_1080x1920px_15s_OV.mp4', pill.id, pill.name, 'master', 2, firstId);
+check(r.success && r.compId !== firstId && !project.itemByID(firstId) && items.filter((x) => x instanceof CompItem).length === before,
+    'a rebuild against another master replaces the old comparison, one comp for the row', [r.compName, r.error]);
+check(r.compName === firstName && project.itemByID(r.compId).name === firstName, '…under the same name, not Compare_…_2', r.compName);
+check(/replaced/.test(r.enrichNotes || ''), 'and the notes say so', r.enrichNotes);
+const mine = makeComp('SF_INTL_Trio_DINTH_PDHPillars_2560x1216px_30s_MY_V01', 2560, 1216, 1, 35, 25);
+r = aeft.createReviewComparison('/masters/SF_INTL_Trio_DOOH_1920x1080px_15s_OV.mp4', pill.id, pill.name, 'master', 2, mine.id);
+check(r.success && !!project.itemByID(mine.id), "a comp that isn't a Compare_ is never removed, whatever id is passed");
 
 // OV Library's own Compare, from the Project-panel selection.
 project.selection = [local];

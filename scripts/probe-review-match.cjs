@@ -107,5 +107,12 @@ check(own('x', '/x/FID_INTL_Trio_DOOH_1920x1080_15sec_OV1.mov') && own('Compare_
 check(!own('FID_INTL_PortalToParadise_DOOH_TheCrown_1536x768px_10s_DK_V01.mov', '/x/FID_INTL_PortalToParadise_DOOH_TheCrown_1536x768px_10s_DK_V01.mov')
     && !own('x', '/x/FID_INTL_PortalToParadise_DOOH_NorrebroBycenter_520x520px_10s_DK_V01_DOUBLE_RES.mov'), 'a localised render (even DOUBLE_RES) is');
 
+// CHANGE MASTER lists every render of the campaign, once per stem.
+const mr = aeft.reviewMasterRenders(ROOT);
+const mrNames = (mr.renders || []).map((x) => x.name);
+check(mr.success && mrNames.length > 0 && mrNames.length === new Set(mrNames.map((x) => x.toLowerCase())).size, 'Change master lists the campaign\'s renders, one per stem', mrNames.length);
+check(mrNames.some((x) => /PortalToParadise.*1080x1920/i.test(x)) && mrNames.some((x) => /Trio/i.test(x)), '…every creative\'s, since the point is to pick what the matcher did not');
+check(!aeft.reviewMasterRenders('').success, 'and says so with no campaign picked');
+
 console.log(fails ? `\n${fails} FAILED` : '\nCLEAN — Review pairs a deliverable with its own creative\'s master.');
 process.exit(fails ? 1 : 0);

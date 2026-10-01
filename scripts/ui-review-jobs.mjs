@@ -45,6 +45,12 @@ const FIXTURES = `{
   reviewMatchToMaster: (root, json) => ({ success: true, items: JSON.parse(json).map((it) => ({ name: it.name, sourcePath: it.sourcePath,
       mp4Path: "/Volumes/paramount/SF_Masters/Support/Motion_Components/_MP4/SF_INTL_Trio_DOOH_1920x1080px_10s_OV.mp4", masterStem: "x",
       repeat: /InMotion/.test(it.name) ? 2 : undefined })) }),
+  reviewMasterRenders: () => ({ success: true, renders: [
+      { name: "SF_INTL_RyuHadouken_DOOH_1920x1080px_10s_OV", path: "/m/SF_INTL_RyuHadouken_DOOH_1920x1080px_10s_OV.mp4" },
+      { name: "SF_INTL_Trio_DOOH_1080x1920px_10s_OV", path: "/m/SF_INTL_Trio_DOOH_1080x1920px_10s_OV.mp4" },
+      { name: "SF_INTL_Trio_DOOH_1920x1080px_10s_OV", path: "/Volumes/paramount/SF_Masters/Support/Motion_Components/_MP4/SF_INTL_Trio_DOOH_1920x1080px_10s_OV.mp4" },
+      { name: "SF_INTL_Trio_DOOH_1080x1920px_5s_OV", path: "/m/SF_INTL_Trio_DOOH_1080x1920px_5s_OV.mp4" } ] }),
+  createReviewComparison: (...a) => { window.__rebuilt = a; return { success: true, compId: 950, compName: "Compare_picked", enrichNotes: "diff:ok | replaced" }; },
   createReviewComparisons: (json) => { window.__compared = JSON.parse(json); return { success: true, results: window.__compared.map((m, i) => ({ success: true, compId: 900 + i, compName: "Compare_" + i })) }; },
 }`;
 
@@ -151,6 +157,24 @@ try {
     await page.resize(760, 1100);
     await pause(200);
     await page.shot(path.join(SHOTS, "ui-review-session.png"));
+    // CHANGE MASTER: the reviewer picks another, and the row is rebuilt.
+    await page.eval(`document.querySelector(".rv-row .rv-hover-acts .droplet-anchor button").click()`);
+    check(await page.waitFor(`document.querySelectorAll(".rv-pick-row").length === 4`, 3000), "Change master lists the campaign's renders");
+    const listed = await page.eval(`[...document.querySelectorAll(".rv-pick-row")].map(b => b.innerText.replace(/^SF_INTL_/, ""))`);
+    check(/^Trio/.test(listed[0]) && /^Trio/.test(listed[1]) && /^Trio/.test(listed[2]) && /^RyuHadouken/.test(listed[3]), "this row's creative first, the others after", listed);
+    check((await page.eval(`[...document.querySelectorAll(".rv-pick-row.is-current")].map(b => b.innerText).join()`)) === "SF_INTL_Trio_DOOH_1920x1080px_10s_OV", "the one in use is marked");
+    await page.shot(path.join(SHOTS, "ui-review-pick-open.png"));
+    await page.eval(`(() => { const t = document.querySelector(".rv-pick-filter"); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set; set.call(t, "1080x1920 5s"); t.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+    check(await page.waitFor(`document.querySelectorAll(".rv-pick-row").length === 1`, 2000), "the filter narrows by size and length");
+    await page.eval(`document.querySelector(".rv-pick-row").click()`);
+    check(await page.waitFor(`!!window.__rebuilt`, 3000), "picking one rebuilds that row's comparison");
+    const rb = await page.eval(`window.__rebuilt`);
+    check(rb && /1080x1920px_5s_OV[.]mp4$/.test(rb[0]) && rb[1] === 11 && rb[3] === "master" && rb[4] === 2 && rb[5] === 900,
+      "against the picked master, x2 (a 10s on a 5s), in the old comp's place", rb);
+    check(await page.waitFor(`/1080x1920px_5s_OV/.test(document.querySelector(".rv-row .rv-row-master-name")?.innerText || "")`, 2000), "the row names its new master");
+    check((await page.eval(`[...document.querySelector(".rv-row").querySelectorAll(".rv-row-repeat")].map(e => e.innerText).join()`)) === "picked,×2", "marked as picked, with its x2");
+    check(!(await page.eval(`!!document.querySelector(".rv-pick")`)), "and the list closes");
+    await page.shot(path.join(SHOTS, "ui-review-picked.png"));
     await page.eval(`[...document.querySelectorAll(".rv-sections-bar .seg-option")].find(b => /Amends/.test(b.innerText)).click()`);
     await pause(300);
     const amendRow = await page.eval(`[...document.querySelectorAll(".rv-row")].map(r => r.innerText.replace(/\\s+/g, " "))`);

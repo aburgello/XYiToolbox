@@ -609,6 +609,59 @@ export const scanAllRenders = (mastersRoot: string): RenderEntry[] => {
   return out;
 };
 
+/**
+ * Every master render of a campaign, for Review's "Change master": the list a
+ * reviewer picks from when the scorer's answer is not the one they want to
+ * compare against (a portrait deliverable the scorer paired with a landscape
+ * master). One entry per stem -- the web-playable .mp4 when a stem has both,
+ * the same preference the rows' own previews take.
+ *
+ * Read-only, and the cached scan: nothing here walks the share a second time.
+ */
+export const reviewMasterRenders = (mastersRoot: string): Result & { renders?: { name: string; path: string }[] } => {
+  try {
+    if (!mastersRoot) return { success: false, error: "No campaign picked." };
+    var all = scanAllRenders(mastersRoot);
+    var at: { [stem: string]: number } = {};
+    var out: { name: string; path: string }[] = [];
+    for (var i = 0; i < all.length; i++) {
+      // .name is URI-encoded (CLAUDE.md); a stray % must not lose the list.
+      var stem = String(all[i].stem);
+      try { stem = decodeURI(stem); } catch (eDec) {}
+      var key = stem.toLowerCase();
+      var isMp4 = /\.(mp4|m4v)$/i.test(all[i].path);
+      if (at.hasOwnProperty(key)) {
+        if (isMp4) out[at[key]].path = all[i].path;
+        continue;
+      }
+      at[key] = out.length;
+      out.push({ name: stem, path: all[i].path });
+    }
+    return { success: true, renders: out };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
+/**
+ * Any video file as a row's master, for one the list does not hold. The
+ * dialog starts in the campaign's masters folder (openDlg on a File inside
+ * it; File.openDialog opens wherever AE was last). "" on cancel, never an
+ * error.
+ */
+export const reviewPickMasterFile = (mastersRoot: string): string => {
+  try {
+    var picked: File | null = null;
+    var start = mastersRoot ? new Folder(mastersRoot) : null;
+    // .exists is trustworthy on a DIRECTORY (CLAUDE.md), which this is.
+    if (start && start.exists) picked = new File(start.fsName + "/master.mp4").openDlg("Pick the render to compare against") as File | null;
+    else picked = File.openDialog("Pick the render to compare against") as File | null;
+    return picked ? picked.fsName : "";
+  } catch (e) {
+    return "";
+  }
+};
+
 // ── Review Session: match local .mov files to master .mp4 renders ────────
 // Reuses the same master-lookup pipeline the Localise tools already use:
 //   buildMastersIndex()  — one walk of the AE/ tree, campaign/size/duration
@@ -1096,7 +1149,7 @@ export type ReviewCompareKind = "master" | "amend" | "prepost";
  *  selected, exactly the trap reviewIsOwnByProduct handles for masters. */
 export const REVIEW_REFERENCE_FOLDER = "Review References";
 
-export const createReviewComparison = (mp4Path: string, localItemId: number, localItemName: string, kind?: string, repeat?: number): ReviewComparisonResult => {
+export const createReviewComparison = (mp4Path: string, localItemId: number, localItemName: string, kind?: string, repeat?: number, replaceCompId?: number): ReviewComparisonResult => {
   // A master played `times` times end to end (a 20s deliverable of a 10s cut).
   var times = kind && kind !== "master" ? 1 : Math.max(1, Math.min(MAX_DURATION_MULTIPLE, Math.floor(Number(repeat) || 1)));
   var isMaster = !kind || kind === "master";
@@ -1342,6 +1395,23 @@ export const createReviewComparison = (mp4Path: string, localItemId: number, loc
     // opening them all would spike memory for no good reason.  The artist
     // clicks the purple comparison chip in the review row to open one at a
     // time via focusReviewComp().
+
+    // A REBUILD AGAINST ANOTHER MASTER takes the old comparison's place: the
+    // row points at one comp, and a `Compare_…_2` beside the one it replaced
+    // is a comp nobody can tell apart from it. Only ever a comp this tool
+    // made (named Compare_…), only after the new one exists, and inside the
+    // undo group -- Ctrl+Z brings the old one back.
+    if (replaceCompId) {
+      try {
+        var old: any = app.project.itemByID(replaceCompId);
+        if (old && old.id !== comp.id && typeof old.openInViewer === "function" && String(old.name).indexOf("Compare_") === 0) {
+          var oldName = String(old.name);
+          old.remove();
+          if (oldName === compName && finalName !== compName) { comp.name = compName; finalName = compName; }
+          enrichNotes.push("replaced");
+        }
+      } catch (eOld) { enrichNotes.push("replace:FAIL " + eOld.toString()); }
+    }
     app.endUndoGroup();
     return { success: true, compName: finalName, compId: comp.id, compFps: fps, enrichNotes: enrichNotes.join(" | ") };
   } catch (e) {

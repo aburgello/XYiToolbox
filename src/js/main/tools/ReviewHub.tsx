@@ -31,12 +31,15 @@ import {
     Film,
     Columns2,
     Layers,
+    ArrowLeftRight,
+    FolderOpen,
 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { sfx } from "../../lib/utils/sfx";
 import { usePersistentState } from "../../lib/utils/usePersistentState";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
+import Droplet from "../Droplet";
 import TutorialIcon from "../TutorialIcon";
 import ReviewJobs from "./ReviewJobs";
 import SegmentedToggle from "../SegmentedToggle";
@@ -126,6 +129,8 @@ interface ReviewItem {
     masterPath?: string;
     /** >1 when the master is a shorter cut played that many times (20s = 10s x2). */
     masterRepeat?: number;
+    /** The reviewer chose this master over the one the matcher found. */
+    masterPicked?: boolean;
     /** An earlier version of this deliverable (V01 for a V02), off disk. */
     amendPath?: string;
     amendName?: string;
@@ -273,6 +278,120 @@ const MasterThumb: React.FC<{ path: string | null | undefined }> = ({ path }) =>
     );
 };
 
+// ---------------------------------------------------------------------------
+// Change master
+// ---------------------------------------------------------------------------
+// The matcher pairs a deliverable with the closest master of its creative,
+// and sometimes the closest is not the one to check against: a 2560x1216
+// pillar built from the 1080x1920 portrait master pairs with the landscape
+// one. The reviewer picks another, from the campaign's own renders or any
+// file, and that row's comparison is rebuilt against it.
+
+interface MasterRender { name: string; path: string }
+
+/** One read per campaign per session: the list is the campaign's, not a row's. */
+const masterRendersCache: Record<string, MasterRender[]> = {};
+
+const NOT_A_CREATIVE = /^(\d+x\d+(px)?|\d+(s|sec)|V\d+|[A-Za-z]{2}|INTL|DGTL|DOM|DOOH|DFOH|DINTH|FOH)$/i;
+
+/** The campaign's renders with the likeliest first: those sharing the most
+ *  name words with the row (its creative, its site), then by name. The film
+ *  title is the first word of every name and tells nothing apart. */
+export function rankMasterRenders(itemName: string, renders: MasterRender[]): MasterRender[] {
+    const words = new Set(itemName.split(/[_.]/).slice(1).filter((t) => t && !NOT_A_CREATIVE.test(t)).map((t) => t.toLowerCase()));
+    const score = (r: MasterRender) => r.name.split("_").slice(1).filter((t) => words.has(t.toLowerCase())).length;
+    return renders
+        .map((r) => ({ r, s: score(r) }))
+        .sort((a, b) => b.s - a.s || a.r.name.localeCompare(b.r.name))
+        .map((x) => x.r);
+}
+
+/** How many times a picked master plays to fill the deliverable: its length
+ *  into the deliverable's, when it goes in exactly (a 30s on a 15s is 2). */
+export function repeatForMaster(itemName: string, masterPath: string): number {
+    const secs = (s: string) => { const m = /_(\d+)(?:s|sec)(?:_|\.|$)/i.exec(s); return m ? parseInt(m[1], 10) : 0; };
+    const local = secs(itemName);
+    const master = secs(masterDisplayName(masterPath));
+    return master > 0 && local > master && local % master === 0 ? local / master : 1;
+}
+
+const MasterPicker: React.FC<{
+    itemName: string;
+    current: string | null;
+    mastersRoot: string;
+    onPick: (path: string) => void;
+}> = ({ itemName, current, mastersRoot, onPick }) => {
+    const [renders, setRenders] = useState<MasterRender[] | null>(masterRendersCache[mastersRoot] || null);
+    const [failed, setFailed] = useState("");
+    const [filter, setFilter] = useState("");
+    const load = async () => {
+        if (masterRendersCache[mastersRoot]) { setRenders(masterRendersCache[mastersRoot]); return; }
+        try {
+            const r = (await evalTS("reviewMasterRenders", mastersRoot)) as any;
+            if (r && r.success) { masterRendersCache[mastersRoot] = r.renders || []; setRenders(masterRendersCache[mastersRoot]); }
+            else setFailed((r && r.error) || "Couldn't read the campaign's renders.");
+        } catch { setFailed("No CEP bridge. Open inside After Effects."); }
+    };
+    const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
+    const shown = rankMasterRenders(itemName, renders || []).filter((r) => words.every((w) => r.name.toLowerCase().indexOf(w) !== -1));
+    return (
+        <Droplet
+            panelClassName="rv-pick-panel"
+            trigger={({ open, toggle }) => (
+                <Tooltip text="Compare against a different master">
+                    <button className={"rv-act" + (open ? " rv-act--on" : "")} onClick={() => { if (!open) void load(); toggle(); }}>
+                        <ArrowLeftRight size={12} />
+                    </button>
+                </Tooltip>
+            )}
+        >
+            {(close) => (
+                <div className="rv-pick">
+                    <p className="droplet-title">Compare against</p>
+                    <input
+                        className="rv-pick-filter"
+                        placeholder="Filter by size, length, name…"
+                        value={filter}
+                        autoFocus
+                        onChange={(e) => setFilter(e.target.value)}
+                    />
+                    <div className="rv-pick-list">
+                        {failed && <p className="rv-pick-note">{failed}</p>}
+                        {!failed && renders === null && <p className="rv-pick-note">Reading the campaign's renders…</p>}
+                        {!failed && renders !== null && shown.length === 0 && (
+                            <p className="rv-pick-note">{renders.length === 0 ? "This campaign has no master renders." : "Nothing matches that filter."}</p>
+                        )}
+                        {shown.map((r) => (
+                            <button
+                                key={r.path}
+                                type="button"
+                                className={"rv-pick-row" + (r.path === current ? " is-current" : "")}
+                                title={r.path}
+                                onClick={() => { close(); if (r.path !== current) onPick(r.path); }}
+                            >
+                                {r.name}
+                            </button>
+                        ))}
+                    </div>
+                    <button
+                        type="button"
+                        className="rv-pick-file"
+                        onClick={async () => {
+                            close();
+                            try {
+                                const path = (await evalTS("reviewPickMasterFile", mastersRoot)) as string;
+                                if (path) onPick(path);
+                            } catch { /* no bridge */ }
+                        }}
+                    >
+                        <FolderOpen size={12} /> Pick a file…
+                    </button>
+                </div>
+            )}
+        </Droplet>
+    );
+};
+
 const STATUS_NEXT: Record<ReviewStatus, ReviewStatus> = { pending: "approved", approved: "amend", amend: "pending" };
 /** The Compare button's hover: what it opens, plus a line for each part of
  *  the comp the build could not make. The host's own notes
@@ -305,7 +424,10 @@ const ReviewRow: React.FC<{
     onOpenComp: (compId: number) => void;
     onToggleDiff: (compId: number) => void;
     onRetryCompare: () => void;
-}> = ({ item, batchIndex, kind, comp, matchedMp4, isOpen, onChange, onRemove, onOpenComp, onToggleDiff, onRetryCompare }) => {
+    /** The campaign's masters root, when one is picked: what Change master lists. */
+    mastersRoot?: string;
+    onPickMaster: (path: string) => void;
+}> = ({ item, batchIndex, kind, comp, matchedMp4, isOpen, onChange, onRemove, onOpenComp, onToggleDiff, onRetryCompare, mastersRoot, onPickMaster }) => {
     const reduced = useReducedMotion();
     const { site, tags } = rowNameParts(item.name);
     const refLabel = kind === "amend" ? "vs previous" : kind === "prepost" ? `vs PRE${item.preFolder ? " · " + item.preFolder : ""}` : "vs";
@@ -348,6 +470,9 @@ const ReviewRow: React.FC<{
                         <span className="rv-row-master" title={matchedMp4}>
                             <span className="rv-row-master-label">{refLabel}</span>
                             <span className="rv-row-master-name">{kind === "master" ? masterDisplayName(matchedMp4) : truncateNameAtArtwork(masterDisplayName(matchedMp4))}</span>
+                            {kind === "master" && item.masterPicked && (
+                                <span className="rv-row-repeat" title="You picked this master. The matcher had chosen another, or none.">picked</span>
+                            )}
                             {kind === "master" && (item.masterRepeat || 1) > 1 && (
                                 <span className="rv-row-repeat" title={`The master plays ${item.masterRepeat} times back to back to fill this length`}>×{item.masterRepeat}</span>
                             )}
@@ -371,6 +496,9 @@ const ReviewRow: React.FC<{
                                     <Film size={12} />
                                 </button>
                             </Tooltip>
+                        )}
+                        {kind === "master" && mastersRoot && (
+                            <MasterPicker itemName={item.name} current={matchedMp4} mastersRoot={mastersRoot} onPick={onPickMaster} />
                         )}
                         {comp.compId && (
                             <Tooltip text="Show or hide the difference layer">
@@ -674,6 +802,34 @@ const ReviewSession: React.FC = () => {
         }
     };
 
+    // A row's master, chosen by the reviewer: the row takes it, and its
+    // comparison is rebuilt against it in the old one's place.
+    const changeMaster = async (item: ReviewItem, path: string) => {
+        const repeat = repeatForMaster(item.name, path);
+        const next: ReviewItem = { ...item, masterPath: path, masterRepeat: repeat > 1 ? repeat : undefined, masterPicked: true };
+        updateItem(item.id, { masterPath: next.masterPath, masterRepeat: next.masterRepeat, masterPicked: true });
+        if (item.aeId === undefined) {
+            pushToast("Master changed. Import & Compare this item again to build its comparison.", "error");
+            return;
+        }
+        try {
+            const r = (await evalTS("createReviewComparison", path, item.aeId, item.name, "master", repeat, item.comparisonCompId || 0)) as any;
+            if (!mountedRef.current) return;
+            if (r && r.compId && r.compName) {
+                updateItem(item.id, compPatch(next, "master", { compName: r.compName, compId: r.compId, enrich: r.enrichNotes || "", fps: r.compFps }));
+                pushToast(`Now compared against ${masterDisplayName(path)}.`);
+            } else {
+                // The old comparison is still there, against the old master:
+                // forget it, so the row doesn't open a comp it no longer describes.
+                const why = (r && r.error) || "no comp came back";
+                updateItem(item.id, compPatch(next, "master", { error: why }));
+                pushToast(`Master changed, but the comparison couldn't be built: ${why}`, "error");
+            }
+        } catch {
+            pushToast("No CEP bridge. Open inside After Effects.", "error");
+        }
+    };
+
     const handleToggleDiff = async (compId: number) => {
         try {
             const result = await evalTS("reviewToggleDiff", compId);
@@ -943,6 +1099,8 @@ const ReviewSession: React.FC = () => {
                                             onOpenComp={handleOpenComp}
                                             onToggleDiff={handleToggleDiff}
                                             onRetryCompare={() => void retryCompare(item, kind)}
+                                            mastersRoot={campaign ? campaign.mastersRoot : undefined}
+                                            onPickMaster={(path) => void changeMaster(item, path)}
                                         />
                                     );
                                 })}

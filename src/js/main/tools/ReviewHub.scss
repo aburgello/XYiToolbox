@@ -1185,3 +1185,56 @@
     // ── Amends for Wrike: the footer ─────────────────────────────────────────
     .rv-wrike-header span { display: inline-flex; align-items: center; gap: 6px; color: #fbbf24; }
 }
+
+// CHANGE MASTER. Droplet portals its panel to <body>, outside .review-hub and
+// outside the category tint, so these are top-level and carry their own
+// colours. Buttons re-declare hover/active: index.scss's global button states
+// paint over any custom one.
+.rv-pick-panel { width: 380px; max-width: calc(100vw - 16px); padding: 10px; }
+.rv-pick { display: flex; flex-direction: column; }
+.rv-pick-filter {
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 6px;
+    padding: 5px 8px;
+    background: #1b1b1b;
+    border: 1px solid #444;
+    border-radius: 5px;
+    color: #ddd;
+    font-size: 11px;
+    &:focus { outline: none; border-color: var(--ov-accent, #2dd4bf); }
+}
+.rv-pick-list { max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; }
+.rv-pick-note { margin: 6px 2px; color: #888; font-size: 11px; }
+.rv-pick-row,
+.rv-pick-file {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    width: 100%;
+    padding: 5px 8px;
+    background: transparent;
+    border: 0;
+    border-radius: 4px;
+    color: #ccc;
+    font-size: 11px;
+    text-align: left;
+    cursor: pointer;
+    &:hover { background: #333; color: #fff; }
+    &:active { background: #3a3a3a; color: #fff; }
+}
+.rv-pick-row {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    &.is-current { color: var(--ov-accent, #2dd4bf); }
+}
+.rv-pick-file {
+    margin-top: 6px;
+    padding-top: 8px;
+    border-top: 1px solid #3a3a3a;
+    border-radius: 0 0 4px 4px;
+    color: #999;
+    svg { margin-right: 6px; flex-shrink: 0; }
+}
