@@ -339,6 +339,28 @@ const HOME_LAYOUT_KEY = "OVHomeLayout";
 export const loadHomeLayout = (): string[] => loadTabList(HOME_LAYOUT_KEY);
 export const saveHomeLayout = (tokens: string[]): Result => saveTabList(HOME_LAYOUT_KEY, tokens);
 
+// The Tracker's "Message for Wrike" templates. JSON, never a delimited list:
+// the bodies are user-authored text with newlines, braces and anything else
+// in them (CLAUDE.md). "" means nothing stored, and the panel's own starting
+// list applies; saving "" clears the key's content back to that.
+const MESSAGE_TEMPLATES_KEY = "TrackerMessageTemplates";
+export const loadMessageTemplates = (): string => {
+  try {
+    if (!app.settings.haveSetting(TOOL_ORDER_SETTINGS_SECTION, MESSAGE_TEMPLATES_KEY)) return "";
+    return app.settings.getSetting(TOOL_ORDER_SETTINGS_SECTION, MESSAGE_TEMPLATES_KEY) || "";
+  } catch (e) {
+    return "";
+  }
+};
+export const saveMessageTemplates = (json: string): Result => {
+  try {
+    app.settings.saveSetting(TOOL_ORDER_SETTINGS_SECTION, MESSAGE_TEMPLATES_KEY, String(json || ""));
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+};
+
 export const loadHiddenToolsetActions = (): string[] => loadTabList(TOOLSET_HIDDEN_KEY);
 export const saveHiddenToolsetActions = (ids: string[]): Result => saveTabList(TOOLSET_HIDDEN_KEY, ids);
 

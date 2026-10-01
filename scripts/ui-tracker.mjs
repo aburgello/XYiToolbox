@@ -34,7 +34,7 @@ const FIXTURES = `{
     // Like the real one, a row's Wrike status is whatever the scan was SENT.
     const echo = (out) => { out.rows.forEach((r) => { if (!r.wrike) return; const w = (q.wrike || []).find((x) => x.name === r.wrike.name); if (w) r.wrike.status = w.status; }); return out; };
     return echo({ success: true, territory: "Norway", batch: "Batch_02",
-    folders: { art: "${T}/JPG_PNG/Batch_2", aep: "${T}/AE/Batch_02", renders: "${T}/Renders/Batch_02", delivered: ["${T}/Renders/Batch_02/_Delivery"], specs: "${T}/Masters/Specs" },
+    folders: { art: "${T}/JPG_PNG/Batch_2", aep: "${T}/AE/Batch_02", renders: "${T}/Renders/Batch_02", delivered: ["${T}/Renders/Batch_02/_Delivery"], specs: "${T}/Masters/Specs", pdfs: "${T}/PDFs" },
     rows: [
       { key: "A", name: "${P}NfkinoPOST_345x496px_30s_NO", art: { path: "${T}/JPG_PNG/Batch_2/${P}NfkinoPOST_345x496px_30s_NO", files: 2 },
         aep: { name: "${P}NfkinoPOST_345x496px_30s_NO_V01.aep", path: "${T}/AE/Batch_02/${P}NfkinoPOST_345x496px_30s_NO_V01.aep", version: 1, versions: 1 },
@@ -52,6 +52,9 @@ const FIXTURES = `{
       { key: "E", name: "${P}Kiwi_1920x1080px_15s_NO", wrike: { name: "${P}Kiwi_1920x1080px_15s_NO", status: "Backlog" } },
       { key: "C", name: "SF_INTL_Characters_DOOH_Digital MetroPOST_1080x1920px_10s_NO", art: { path: "${T}/JPG_PNG/Batch_2/c", files: 1 } },
     ] }); },
+  loadMessageTemplates: () => window.__templates || "",
+  saveMessageTemplates: (json) => { window.__templates = json; return { success: true }; },
+  timesheetCopyToClipboard: (text) => { window.__clip = text; return { success: true }; },
   trackerCompCheck: () => ({ success: true, comps: window.__stale || [] }),
   // A method, so THIS is the fixtures: every chip answered by the fake trackerScan.
   trackerScanMany(json) { const list = JSON.parse(json); window.__scanMany = (window.__scanMany || 0) + 1; const keep = window.__scan; const out = {}; list.forEach((q) => { out[q.id] = this.trackerScan(JSON.stringify(q)); }); window.__scan = keep; return { success: true, results: out }; },
@@ -355,6 +358,42 @@ try {
     check(await page.eval(`document.querySelectorAll(".bt-rows > .bt-row")[1].classList.contains("is-open")`), "a row you have open stays open when fresh Wrike data lands");
     const forced = await page.eval(`window.__calls.filter(c => c.fn === "trackerScan").map(c => JSON.parse(c.args[0]).force)`);
     check(forced.includes(true), "refresh asks AE for a real read of the disk (force)", forced);
+
+    console.log("\n11. Message for Wrike");
+    await page.click(".bt-link", "Message");
+    check(await page.waitFor(`!!document.querySelector(".bt-msgcard-preview")`, 3000), "the Message link opens the card");
+    const msgTabs = await page.eval(`[...document.querySelectorAll(".bt-msgcard-tab")].map(b => b.innerText.trim())`);
+    check(msgTabs.join() === "For review,Revised,Delivery,New", "the three starting messages, and New", msgTabs);
+    let msgPrev = await page.eval(`document.querySelector(".bt-msgcard-preview").innerText`);
+    check(/2 x Renders:\s*\/.*\/Renders\/Batch_02/.test(msgPrev) && /PDFs:\s*\/.*\/PDFs/.test(msgPrev), "For review is written from the batch: its count, its Renders folder, the territory's PDFs", msgPrev);
+    check(/^Hey \[To\],/.test(msgPrev) && /Left out.*Masters/.test(await page.eval(`document.querySelector(".bt-msgcard-dropped")?.innerText || ""`)), "nobody named yet shows as [To]; no masters folder found is said, and left out");
+    const msgType = (sel, v) => page.eval(`(() => { const t = document.querySelector(${JSON.stringify(sel)}); const proto = t.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(proto, "value").set.call(t, ${JSON.stringify(v)}); t.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+    await msgType(".bt-msgcard-field input", "@James Crouch");
+    await pause(150);
+    msgPrev = await page.eval(`document.querySelector(".bt-msgcard-preview").innerText`);
+    check(/^Hey @James Crouch, renders ready:/.test(msgPrev), "the name typed in To lands in the message", msgPrev.split("\n")[0]);
+    check((await page.eval(`document.querySelectorAll(".bt-msgcard-preview b").length`)) === 2, "headings show bold");
+    await page.click(".bt-msgcard-acts .bt-act", "Copy for Wrike");
+    check(await page.waitFor(`/Copied/.test(document.querySelector(".bt-msg")?.innerText || "")`, 3000), "Copy for Wrike says it copied");
+    await page.click(".bt-msgcard-tab", "Delivery");
+    await pause(200);
+    const msgAsks = await page.eval(`[...document.querySelectorAll(".bt-msgcard-field span")].map(e => e.innerText)`);
+    check(msgAsks.join() === "To,Upload folder,MASV link", "Delivery asks for the upload folder and the link", msgAsks);
+    check(/ENT:/.test(await page.eval(`document.querySelector(".bt-msgcard-preview").innerText`)), "and a Paramount batch's upload is headed ENT");
+    check((await page.eval(`[...document.querySelectorAll(".bt-msgcard-field input")].map(i => i.value).join("|")`)) === "||", "and starts blank: a name is remembered per message, a link never");
+    await page.click(".bt-msgcard-tab", "For review");
+    await pause(200);
+    check((await page.eval(`document.querySelector(".bt-msgcard-field input").value`)) === "@James Crouch", "back on For review, its To is remembered");
+    await page.click(".bt-msgcard-acts .bt-act", "Edit message");
+    check(await page.waitFor(`!!document.querySelector(".bt-msgcard-body")`, 2000), "Edit message opens the template");
+    check((await page.eval(`document.querySelectorAll(".bt-msgcard-token").length`)) > 10, "with every token one press away");
+    await msgType(".bt-msgcard-body", "Hey {to}, {renders.count} renders with banners ready:\n\n{renders.folder}");
+    await pause(100);
+    await page.click(".bt-msgcard-acts .bt-act", "Save");
+    check(await page.waitFor(`/2 renders with banners ready/.test(document.querySelector(".bt-msgcard-preview")?.innerText || "")`, 2000), "a saved edit is the message from then on");
+    const msgStored = await page.eval(`window.__templates || ""`);
+    check(/with banners ready/.test(msgStored) && JSON.parse(msgStored).length === 3, "and is stored as JSON, with the other two", msgStored.slice(0, 80));
+    await page.shot(path.join(SHOTS, "ui-tracker-message.png"));
 
     console.log("");
     check(page.errors.length === 0, "no page errors", page.errors.slice(0, 5));

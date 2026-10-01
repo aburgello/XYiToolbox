@@ -109,7 +109,7 @@ export interface TrackerRow {
 interface TrackerResult extends Result {
   territory?: string;
   batch?: string;
-  folders?: { art: string; aep: string; renders: string; delivered: string[]; specs: string };
+  folders?: { art: string; aep: string; renders: string; delivered: string[]; specs: string; pdfs: string };
   rows?: TrackerRow[];
 }
 
@@ -284,7 +284,7 @@ export const trackerPickFolder = (): Result & { territoryPath?: string; batch?: 
  */
 interface TrEntry { nm: string; path: string }
 interface TrDisk {
-  folders: { art: string; aep: string; renders: string; delivered: string[]; specs: string };
+  folders: { art: string; aep: string; renders: string; delivered: string[]; specs: string; pdfs: string };
   aes: TrEntry[];
   /** Deliverable folders under JPG_PNG/<batch>, or under JPG_PNG itself. */
   art: (TrEntry & { files: number })[];
@@ -299,10 +299,13 @@ const trDiskCache: { [k: string]: { at: number; disk: TrDisk } } = {};
 const trNow = () => new Date().getTime();
 
 function trReadDisk(terr: Folder, batch: string): TrDisk {
-  const disk: TrDisk = { folders: { art: "", aep: "", renders: "", delivered: [], specs: "" }, aes: [], art: [], artIsRoot: false, artRoot: "", renders: [], delivered: [], previews: [] };
+  const disk: TrDisk = { folders: { art: "", aep: "", renders: "", delivered: [], specs: "", pdfs: "" }, aes: [], art: [], artIsRoot: false, artRoot: "", renders: [], delivered: [], previews: [] };
   const masters = trChild(terr, "Masters");
   const specs = masters ? trChild(masters, "Specs") : null;
   if (specs) disk.folders.specs = String(specs.fsName);
+  // The territory's PDFs: named in the hand-off message (Message for Wrike).
+  const pdfs = trChild(terr, "PDFs");
+  if (pdfs) disk.folders.pdfs = String(pdfs.fsName);
 
   const ae = trChild(terr, "AE");
   const aeBatch = ae ? trBatchIn(ae, batch) : null;
@@ -414,7 +417,7 @@ export const trackerScan = (argsJson: string): TrackerResult & { took?: { disk: 
       if (!rows[key]) { rows[key] = { key: key, name: name }; order.push(key); }
       return rows[key];
     };
-    const folders = { art: disk.folders.art, aep: disk.folders.aep, renders: disk.folders.renders, delivered: disk.folders.delivered.slice(0), specs: disk.folders.specs };
+    const folders = { art: disk.folders.art, aep: disk.folders.aep, renders: disk.folders.renders, delivered: disk.folders.delivered.slice(0), specs: disk.folders.specs, pdfs: disk.folders.pdfs };
 
     // AE: the projects.
     for (let i = 0; i < disk.aes.length; i++) {

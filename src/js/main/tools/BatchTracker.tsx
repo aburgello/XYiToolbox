@@ -84,11 +84,11 @@
 // read as broken.
 // =============================================================================
 import React, { useEffect, useRef, useState } from "react";
-import { Image as ImageIcon, FileBox, Film, PackageCheck, FileText, RefreshCw, Loader2, AlertTriangle, MapPin, Search, ChevronRight, Check, HardDrive, FolderOpen, Hammer, Truck, PenLine, ArrowUpRight, Play, MessageSquare, Info } from "lucide-react";
+import { Image as ImageIcon, FileBox, Film, PackageCheck, FileText, RefreshCw, Loader2, AlertTriangle, MapPin, Search, ChevronRight, Check, HardDrive, FolderOpen, Hammer, Truck, PenLine, ArrowUpRight, Play, MessageSquare, MessageSquarePlus, Info } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import Dropdown from "../Dropdown";
-import { fetchJobs, fetchJobsFresh, fetchJobsLive, fetchJobComment, peekJobs, jobReadiness, territoryFlag, parseJobTitle, statusTint, DELIVERABLE_STATUSES, AMEND_STATUSES, type WrikeJob } from "../lib/jobsFeed";
+import { fetchJobs, fetchJobsFresh, fetchJobsLive, fetchJobComment, peekJobs, jobReadiness, territoryFlag, parseJobTitle, isLocaliseJob, statusTint, DELIVERABLE_STATUSES, AMEND_STATUSES, type WrikeJob } from "../lib/jobsFeed";
 import { loadJobRows, stageBatchFromJob, classifyRows } from "../lib/jobRows";
 import { navigateToTool } from "../lib/navigation";
 import { confirmDialog } from "../Dialog";
@@ -101,6 +101,10 @@ import { toFileUrl } from "../lib/fileUrl";
 import type { ToolProps } from "../toolRegistry";
 import { jobTerritory, setPendingDeliverJob } from "./DeliveryJobs";
 import { readFinderColors, revealInFinder, type FinderColor } from "../lib/finderLabels";
+import { fs, path as nodePath } from "../../lib/cep/node";
+import { deriveMastersFromMarkets } from "../lib/mastersRoot";
+import TrackerMessage from "./TrackerMessage";
+import { uploadNameFor } from "../lib/wrikeMessage";
 import "./BatchTracker.scss";
 
 interface Row {
@@ -117,7 +121,35 @@ interface Row {
     /** Wrike's subtask, found on disk under another name (tracker.ts). */
     claimed?: { name: string; why: string };
 }
-interface Scan { territory: string; batch: string; folders: { art: string; aep: string; renders: string; delivered: string[]; specs: string }; rows: Row[] }
+interface Scan { territory: string; batch: string; folders: { art: string; aep: string; renders: string; delivered: string[]; specs: string; pdfs?: string }; rows: Row[] }
+
+/**
+ * Where the MASTERS' renders of this batch's creative are, for the hand-off
+ * message: `<Masters sibling>/Renders/<Creative>`, one line per creative the
+ * batch holds. The folder is the disk's own spelling, matched to a whole word
+ * (or run of words) of a deliverable's name -- `PORTAL_TO_PARADISE` answers to
+ * `PortalToParadise`. Nothing found is "", never a guessed path: the message
+ * leaves that block out.
+ */
+export function mastersRendersFor(territoryPath: string, names: string[]): string {
+    try {
+        const masters = deriveMastersFromMarkets(nodePath.dirname(territoryPath));
+        if (!masters) return "";
+        const renders = nodePath.join(masters, "Renders");
+        const squash = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
+        const runs = new Set<string>();
+        for (const n of names) {
+            const toks = n.split("_").map(squash).filter(Boolean);
+            for (let i = 0; i < toks.length; i++) for (let j = i; j < toks.length && j < i + 4; j++) runs.add(toks.slice(i, j + 1).join(""));
+        }
+        return (fs.readdirSync(renders, { withFileTypes: true }) as any[])
+            .filter((d) => d.isDirectory() && d.name.charAt(0) !== "_" && d.name.charAt(0) !== "." && runs.has(squash(d.name)))
+            .map((d) => nodePath.join(renders, d.name))
+            .join("\n");
+    } catch {
+        return "";
+    }
+}
 
 const loose = (s: string) => String(s).toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/(^|\D)0+(\d)/g, "$1$2");
 /** A row's problems, in words. A near miss REPLACES the plain "missing" line
@@ -286,6 +318,16 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
     }
     const shownKey = useRef(memo.view ? viewKey(memo.view.territoryPath, memo.view.batch) : "");
     const [showFullComment, setShowFullComment] = useState(false);
+    // Message for Wrike: the card, and the one fact it needs that the scan
+    // doesn't carry (the masters' Renders folder, two listings, read on open).
+    const [showMessage, setShowMessage] = useState(false);
+    const [mastersRenders, setMastersRenders] = useState("");
+    useEffect(() => {
+        if (!showMessage || !scan || !territoryPath) return;
+        const names = scan.rows.map((r) => (r.wrike ? r.wrike.name : r.name));
+        const t = setTimeout(() => setMastersRenders(mastersRendersFor(territoryPath, names)), 0);
+        return () => clearTimeout(t);
+    }, [showMessage, scan, territoryPath]);
     /** Set by the refresh button: the next comment read goes to Wrike. */
     const freshComments = useRef(false);
     /** This machine's tag ("Antonio"): the author whose comments are replies. */
@@ -511,7 +553,7 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
             const pick = (res: Awaited<ReturnType<typeof fetchJobs>>) => {
                 if (res.mock) return [] as WrikeJob[];
                 const who = res.viewingAs || owner;
-                return res.jobs.filter((j) => j.assignee === who && (j.subtaskCount ?? 0) > 0 && jobReadiness(j.status) !== "done" && subsOf(j).length > 0);
+                return res.jobs.filter((j) => j.assignee === who && isLocaliseJob(j) && (j.subtaskCount ?? 0) > 0 && jobReadiness(j.status) !== "done" && subsOf(j).length > 0);
             };
             // Refresh: Wrike, live, now. Open: the snapshot at once and a live
             // read behind it (throttled panel-wide), which re-reads on landing.
@@ -745,6 +787,31 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
     const behindCount = count(wrikeBehind);
     const amendCount = count(isAmend);
 
+    // What the hand-off message is written from (lib/wrikeMessage.ts TOKENS).
+    // A count of zero is "", so its block is left out rather than reading "0 x".
+    const revised = rows.filter((r) => {
+        if (!r.render || !isAmend(r)) return false;
+        const reviewed = Math.max(0, ...amendsFor(r).map((n) => n.version));
+        return reviewed ? r.render.version > reviewed : r.render.version > 1;
+    });
+    const n = (k: number) => (k > 0 ? String(k) : "");
+    const messageData: Record<string, string> = scan ? {
+        territory: territory.replace(/_/g, " "),
+        batch,
+        "renders.count": n(count((r) => !!r.render)),
+        "renders.folder": scan.folders.renders,
+        "renders.list": rows.filter((r) => r.render).map((r) => r.render!.path).join("\n"),
+        "revised.count": n(revised.length),
+        "revised.paths": revised.map((r) => r.render!.path).join("\n"),
+        "pdfs.folder": scan.folders.pdfs || "",
+        "masters.renders": mastersRenders,
+        "delivered.count": n(count((r) => !!r.delivered)),
+        "delivered.folder": scan.folders.delivered[0] || "",
+        "specs.folder": scan.folders.specs,
+        "ae.folder": scan.folders.aep,
+        "upload.name": uploadNameFor(territoryPath),
+    } : {};
+
     const Link: React.FC<{ icon: React.ReactNode; label: string; path?: string; folder?: boolean }> = ({ icon, label, path, folder }) => (
         <button type="button" className="bt-link" disabled={!path} title={path || `No ${label.toLowerCase()} for this batch`} onClick={() => path && revealInFinder(path, !!folder)}>
             {icon}<span>{label}</span>
@@ -912,12 +979,18 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
                         <Link icon={<Film size={13} />} label="Renders" path={scan.folders.renders} folder />
                         <Link icon={<PackageCheck size={13} />} label="Delivered" path={scan.folders.delivered[0]} folder />
                         <Link icon={<FileText size={13} />} label="Specs" path={scan.folders.specs} folder />
+                        <button type="button" className={"bt-link" + (showMessage ? " is-on" : "")} onClick={() => setShowMessage(!showMessage)} title="Write the hand-off comment for Wrike from this batch">
+                            <MessageSquarePlus size={13} /><span>Message</span>
+                        </button>
                         {jobs.map((j) => (
                             <button key={j.id} type="button" className="bt-link" onClick={() => setDetailsJob(j)} title={`${j.title}: every subtask, and Send to Localise`}>
                                 <Info size={13} /><span>{jobs.length > 1 ? `${jobLabel(j)} details` : "Job details"}</span>
                             </button>
                         ))}
                     </div>
+                    {showMessage && (
+                        <TrackerMessage data={messageData} onClose={() => setShowMessage(false)} onCopied={(text, bad) => setMsg({ text, bad })} />
+                    )}
                     {openRow && (
                         <div className="bt-links bt-links--here">
                             <span className="bt-here"><MapPin size={12} /> Open project</span>

@@ -161,6 +161,7 @@ const PROFILE_KEYS: string[] = [
   "QuickFxCombos",
   "MotionToolsEasePresets",
   "OVCustomTools",
+  "TrackerMessageTemplates",
 ];
 
 const PROFILE_FILE_TYPE = "xyi-toolbox-profile";

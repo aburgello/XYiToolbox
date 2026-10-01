@@ -516,7 +516,13 @@ header that **wrap, never scroll sideways** (AE gives a mouse no horizontal
 wheel, so a chip past the edge was unreachable; Deliver's strip follows suit), the open project's territory lit. A chip opens the same
 `ActiveJobModal` as the home card. **Every jobs surface opens fresh**: `fetchJobsFresh` shows the feed's cache at once and revalidates with ONE live Wrike read, throttled panel-wide to one per 2 minutes and shared by whoever asks; a failed live read puts the previous cache back (never the sample list over real rows) and names the cache had are filled back by subtask id. **Every refresh button reads Wrike LIVE** (`fetchJobsLive`: unthrottled, same two safety nets) -- they used to re-read the feed's snapshot, which is why pressing refresh never showed a status changed in Wrike. Batch Tracker re-reads its ROWS when any live read lands (`freshTick`), or the chips move on while the rows keep the snapshot's status. Sending bumps CSV Localiser's
 `handoffTick`, because that tool is already mounted and takes a staged batch
-only on mount otherwise. No strip at all when untagged, empty or finished. The Library's own
+only on mount otherwise. No strip at all when untagged, empty or finished. **Only
+jobs to localise are chips** (`isLocaliseJob`, `jobsFeed.ts`): a territory in the
+title, OR a subtask that is a deliverable filename (a three-digits-a-side size
+token). Either is enough -- an international batch has no two-letter territory
+and the feed has lost subtask names before. "Motion Debrief" and "2026
+Showreel" are neither; the Tracker's chips and the home Localise count use the
+same test. `node scripts/probe-job-titles.cjs`. The Library's own
 territory list pins the open project's territory first rather than repeating it
 in a banner, and folds empty territories into one line.
 
@@ -935,7 +941,12 @@ The open project's row is an outlined card, never an edge bar.
   The studio writes amends on the PARENT task, never the subtasks: filenames,
   then the note (`lib/amendNotes.ts`: a run of filenames is a group, the text
   under it its notes; a blank line ends a group only once it has notes; text
-  under no filename is said once for the job). Notes land on rows through the
+  under no filename is said once for the job). **Three looser shapes are
+  read too** (2026-10-01, after a path read as "no amends in it"): a full
+  PATH is the file at the end of it, a note may sit on the filename's own
+  line, and a name inside a sentence makes that sentence its note. What makes
+  a word a deliverable does not loosen: one unbroken word with a size AND a
+  length between underscores. Notes land on rows through the
   DISK's spelling too (`claimed`, aep, render names), since reviewers name the
   file. A note on a version older than the newest render still shows, with
   "rendered since", but doesn't make the row to amend. Read through TimeHub's
@@ -971,6 +982,26 @@ The open project's row is an outlined card, never an edge bar.
   isn't asked again; chips aren't re-summarised within 5 min unless the jobs
   or their statuses changed; a job's folder is looked for once a session.
   Refresh forces all of it, and so does the tracker's own rename.
+- **Message for Wrike** (the `Message` link; `tools/TrackerMessage.tsx`,
+  `lib/wrikeMessage.ts`) writes the hand-off comment from the batch on screen
+  and COPIES it -- the panel cannot post to Wrike, so the last step is a
+  paste, and an `@name` is plain text (Wrike only makes a mention from one
+  picked in its own editor). A template is text with `{data.tokens}`
+  (`TOKENS`), `{to}` (remembered per template, browser storage) and
+  `{?Label}` fields that are asked for EVERY time and never remembered: last
+  batch's MASV link in this batch's message is the mistake a remembered field
+  would make. **A block (blank-line separated) whose data token is empty is
+  left out whole**, heading and all; a zero count is empty. `**bold**` goes on
+  the clipboard as rich text beside the plain copy. Templates are the
+  artist's own: JSON in `TrackerMessageTemplates` (in `PROFILE_KEYS`), stored
+  only once one is edited. `revised` is a To amend row whose newest render is
+  newer than the version the amend comment reviewed. The masters' Renders
+  folder is found from the Markets sibling (`deriveMastersFromMarkets`), its
+  creative folder by a whole word of a deliverable's name, never guessed.
+  `{upload.name}` is ENT for a Paramount film and PUMA for a Universal one,
+  read off the batch's path as a whole folder name (`uploadNameFor`); any
+  other studio is "Upload", never empty.
+  `node scripts/probe-wrike-message.mjs`.
 `node scripts/probe-tracker.cjs` (the stub refuses every write but the
 rename's) and `node scripts/ui-tracker.mjs` guard it.
 
@@ -1654,6 +1685,17 @@ Localiser builds those deliverables with -- on the PARSED creative only, fewest
 repeats first, and the compare lays the master end to end that many times
 after the frontcard (the offset counts the repeated length, or a 20s + 5s card
 would read as a 15s card). The row shows `×2`.
+**A reviewer can CHANGE a row's master** (the hover action on a vs Master row,
+`MasterPicker`): the campaign's renders with the row's own creative first
+(`reviewMasterRenders`, one per stem, the mp4 preferred), a filter, and Pick a
+file… for anything else. The matcher takes the closest shape, which is the
+wrong one for a pillar built from the portrait master. The row keeps the pick
+(`masterPicked`, shown as "picked"), the repeat is the master's length into the
+deliverable's when it goes in exactly, and the comparison is REBUILT IN THE OLD
+ONE'S PLACE (`createReviewComparison`'s `replaceCompId`): one comp per row,
+same name, only ever a `Compare_` comp, removed after the new one exists and
+inside the undo group. Not a drag target: CEP gives a panel no reliable drop
+from AE's Project panel.
 
 `node scripts/probe-review-match.cjs` (after `yarn build`) drives Review
 Session's `reviewMatchToMaster` over a stubbed Forgotten Island tree. **Pass the
