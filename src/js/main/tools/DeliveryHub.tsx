@@ -13,6 +13,11 @@ import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
 import Droplet from "../Droplet";
 import DeliveryJobs from "./DeliveryJobs";
+import TrackerMessage from "./TrackerMessage";
+import { deliveryGroups } from "../lib/deliveryMessage";
+import { uploadNameFor } from "../lib/wrikeMessage";
+import { mastersRendersFor } from "../lib/mastersRoot";
+import { loadUploadRoots, saveUploadRoot, uploadRootFor, uploadFolderFor, campaignKeyOf } from "../lib/uploadRoots";
 import "../shared.scss";
 import "./DeliveryHub.scss";
 
@@ -469,6 +474,17 @@ const DeliveryHubTool = () => {
     // suggestForComp refuses when a match is ambiguous, which is right for
     // filling a field and useless when you want to know whether the PDF is
     // silent, wrong, or simply describes sizes nobody ordered.
+    // MESSAGE FOR WRIKE, once something is queued: the same card the Tracker
+    // has, opened on the delivery message and written from what was queued.
+    // A queue can hold several batches; each is its own comment, picked by chip.
+    const [msgOpen, setMsgOpen] = useState(false);
+    const [msgGroup, setMsgGroup] = useState("");
+    const [uploadRoots, setUploadRoots] = useState<Awaited<ReturnType<typeof loadUploadRoots>>>([]);
+    useEffect(() => { void loadUploadRoots().then(setUploadRoots); }, []);
+    // The two facts that cost a folder listing, kept per batch: this page
+    // re-renders on every tick of the render watch, and the share must not be
+    // listed on each one.
+    const msgFacts = useRef<Record<string, { masters: string; upload: string }>>({});
     const [report, setReport] = useState<SpecReport | null>(null);
     const [reportBusy, setReportBusy] = useState(false);
     // WHICH SHEET IS ON SCREEN. One at a time: a Specs folder holds a PRE and a
@@ -848,6 +864,7 @@ const DeliveryHubTool = () => {
                 } else {
                     pushToast("Queued. You'll get a toast per file as renders finish (while this page stays open).");
                 }
+                setMsgOpen(true);
                 startRenderWatch();
             }
             else setCheckError(result.error || "Something went wrong.");
@@ -1219,6 +1236,61 @@ const DeliveryHubTool = () => {
                     <QueueButton busy={checkBusy} disabled={checkBusy || rows.length === 0} onClick={queueAll} />
                 </div>
             )}
+
+            {/* ── The comment for Wrike, from what was queued ─────── */}
+            {msgOpen && (() => {
+                const groups = deliveryGroups(rows.filter((r) => r.queued));
+                if (groups.length === 0) return null;
+                const g = groups.find((x) => x.rendersFolder === msgGroup) || groups[0];
+                const root = uploadRootFor(uploadRoots, g.territoryPath);
+                const factKey = g.rendersFolder + "|" + root + "|" + g.names.join(",");
+                const facts = msgFacts.current[factKey] || (msgFacts.current[factKey] = {
+                    masters: mastersRendersFor(g.territoryPath, g.names),
+                    upload: uploadFolderFor(root, g.territoryPath, g.batch).folder,
+                });
+                const data: Record<string, string> = {
+                    territory: g.territory.replace(/_/g, " "),
+                    batch: g.batch,
+                    "renders.count": String(g.names.length),
+                    "renders.folder": g.rendersFolder,
+                    "delivered.count": String(g.names.length),
+                    "delivered.folder": g.deliveryFolder,
+                    "delivered.list": g.names.join("\n"),
+                    "masters.renders": facts.masters,
+                    "upload.name": uploadNameFor(g.territoryPath),
+                    "upload.folder": facts.upload,
+                };
+                return (
+                    <div className="dh-message">
+                        {groups.length > 1 && (
+                            <div className="dh-message-groups">
+                                {groups.map((x) => (
+                                    <button key={x.rendersFolder} type="button" className={"dh-message-group" + (x === g ? " is-on" : "")} onClick={() => setMsgGroup(x.rendersFolder)}>
+                                        {x.label} <em>{x.names.length}</em>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                        <TrackerMessage
+                            key={g.rendersFolder}
+                            data={data}
+                            prefer="delivery"
+                            uploadRoot={root}
+                            onPickUploadRoot={async () => {
+                                const campaign = campaignKeyOf(g.territoryPath);
+                                const picked = (await evalTS("uploadRootPick", campaign)) as unknown as string;
+                                if (!picked) return;
+                                const why = await saveUploadRoot(g.territoryPath, picked);
+                                if (why) { pushToast(why, "error"); return; }
+                                setUploadRoots(await loadUploadRoots());
+                                pushToast(`Uploads folder shared for ${campaign}.`);
+                            }}
+                            onClose={() => setMsgOpen(false)}
+                            onCopied={(text, bad) => pushToast(text, bad ? "error" : "success")}
+                        />
+                    </div>
+                );
+            })()}
 
             {/* ── What the spec PDFs say ─────────────────────────── */}
             <AnimatePresence>

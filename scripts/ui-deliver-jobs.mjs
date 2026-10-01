@@ -48,6 +48,16 @@ const FIXTURES = `{
   },
   deliveryImportRenders: (json) => ({ success: true, imported: JSON.parse(json).paths.length, reused: 0, failed: [], itemIds: [1, 2, 3] }),
   delivery: () => ({ success: true, compIds: [] }),
+  // Load Comps, then Queue: what the Message for Wrike is written from.
+  deliveryChecklistLoadComps: () => ({ success: true, comps: [
+    { id: 71, name: "SF_INTL_Trio_DOOH_Led_1920x1080px_15s_HU", folderName: "Batch_02", batchFolder: "Batch_02", territoryCode: "HU", sourcePath: "/Volumes/paramount/SF/XY1_Markets/Hungary/Renders/Batch_02/SF_INTL_Trio_DOOH_Led_1920x1080px_15s_HU_V01.mov", duration: 15, frameRate: 25 },
+    { id: 72, name: "SF_INTL_Trio_DOOH_Ledshopmark_1120x704px_10s_HU", folderName: "Batch_02", batchFolder: "Batch_02", territoryCode: "HU", sourcePath: "/Volumes/paramount/SF/XY1_Markets/Hungary/Renders/Batch_02/SF_INTL_Trio_DOOH_Ledshopmark_1120x704px_10s_HU_V02.mov", duration: 10, frameRate: 25 },
+    { id: 73, name: "SF_INTL_Trio_DOOH_Kino_1920x1080px_10s_NO", folderName: "Batch_01", batchFolder: "Batch_01", territoryCode: "NO", sourcePath: "/Volumes/paramount/SF/XY1_Markets/Norway/Renders/Batch_01/SF_INTL_Trio_DOOH_Kino_1920x1080px_10s_NO_V01.mov", duration: 10, frameRate: 25 } ] }),
+  deliveryChecklistQueue: () => ({ success: true, log: "", notQueued: [] }),
+  renderWatchSnapshot: () => ({ success: true, items: [] }),
+  uploadRootsLoad: () => ({ success: true, entries: [{ key: "XY1_MARKETS", campaign: "XY1_Markets", root: "/Volumes/uploads/Upload_To_ENT_New/StreetFighter/Outdoor/DOOH" }] }),
+  loadMessageTemplates: () => "",
+  timesheetCopyToClipboard: (text) => { window.__clip = text; return { success: true }; },
 }`;
 
 const sub = (name, s) => ({ id: name, name, status: "Active", customStatusName: s });
@@ -167,6 +177,28 @@ try {
     check((await page.eval(calls("delivery"))).length === 1, "which runs the page's own Delivery");
     check(!(await page.eval(`!!document.querySelector(".dj-done")`)), "…and the line clears");
     await page.shot(path.join(SHOTS, "ui-deliver-jobs.png"));
+
+    console.log("\n4. After Queue, the message for Wrike");
+    check(!(await page.eval(`!!document.querySelector(".bt-msgcard")`)), "nothing queued yet: no message card");
+    await page.click("button", "Load Comps");
+    check(await page.waitFor(`document.querySelectorAll(".dh-row").length === 3`, 4000), "three comps load");
+    await page.eval(`document.querySelector(".dh-queue-bar button").click()`);
+    check(await page.waitFor(`!!document.querySelector(".dh-message .bt-msgcard-preview")`, 4000), "queueing brings up the message card");
+    check((await page.eval(`document.querySelector(".bt-msgcard-tab.is-on")?.innerText.trim()`)) === "Delivery", "opened on the Delivery message");
+    const dMsg = await page.eval(`document.querySelector(".bt-msgcard-preview").innerText`);
+    check(/ENT:\s*\/Volumes\/uploads\/Upload_To_ENT_New\/StreetFighter\/Outdoor\/DOOH\/Hungary\/Batch_02/.test(dMsg), "ENT and this batch's folder under the campaign's uploads root, from what was queued", dMsg);
+    const msgChips = await page.eval(`[...document.querySelectorAll(".dh-message-group")].map(b => b.textContent.replace(/\\s+/g, " ").trim())`);
+    check(msgChips.join("|") === "Hungary · Batch_02 2|Norway · Batch_01 1", "two batches in the queue: a chip each, the bigger first", msgChips);
+    await page.click(".dh-message-group", "Norway");
+    check(await page.waitFor(`(document.querySelector(".bt-msgcard-preview")?.innerText || "").includes("DOOH/Norway/Batch_01")`, 3000), "the other batch's chip writes its own message");
+    const msgCard = await page.eval(`(() => { const c = getComputedStyle(document.querySelector(".bt-msgcard")); const b = getComputedStyle(document.querySelector(".bt-msgcard .bt-act.is-primary")); return { display: c.display, border: c.borderTopWidth, btn: b.display, btnH: b.height }; })()`);
+    check(msgCard.display === "flex" && msgCard.border === "1px" && /flex/.test(msgCard.btn) && msgCard.btnH === "26px", "the card is styled here too, outside the Tracker", msgCard);
+    await page.click(".bt-msgcard-acts .bt-act", "Copy for Wrike");
+    check(await page.waitFor(`[...document.querySelectorAll(".toast")].some(t => /Copied/.test(t.innerText))`, 3000), "Copy for Wrike says it copied");
+    await page.shot(path.join(SHOTS, "ui-deliver-message.png"));
+    await page.eval(`document.querySelector(".bt-msgcard-x").click()`);
+    await pause(200);
+    check(!(await page.eval(`!!document.querySelector(".bt-msgcard")`)), "and it closes");
 
     console.log("");
     check(page.errors.length === 0, "no page errors", page.errors.slice(0, 5));

@@ -17,6 +17,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Copy, Pencil, Plus, Trash2, X, MessageSquarePlus, RotateCcw } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { confirmDialog } from "../Dialog";
+import "./TrackerMessage.scss";
 import { DEFAULT_TEMPLATES, TOKENS, fieldsOf, fillMessage, parseTemplates, toHtml, toPlain, type MessageTemplate } from "../lib/wrikeMessage";
 
 interface Props {
@@ -28,6 +29,9 @@ interface Props {
     uploadRoot: string;
     /** Pick it (or another), and share it with the team. */
     onPickUploadRoot: () => void;
+    /** Open on this message when there is one by that id, rather than the one
+     *  last used: Delivery opens on the delivery message. */
+    prefer?: string;
     onClose: () => void;
     onCopied: (text: string, bad?: boolean) => void;
 }
@@ -55,10 +59,10 @@ function copyBoth(html: string, text: string): boolean {
     return done;
 }
 
-const TrackerMessage: React.FC<Props> = ({ data, warnings, uploadRoot, onPickUploadRoot, onClose, onCopied }) => {
+const TrackerMessage: React.FC<Props> = ({ data, warnings, uploadRoot, onPickUploadRoot, prefer, onClose, onCopied }) => {
     const [templates, setTemplates] = useState<MessageTemplate[]>(DEFAULT_TEMPLATES);
     const [custom, setCustom] = useState(false);
-    const [id, setId] = useState(remembered(LAST_KEY) || DEFAULT_TEMPLATES[0].id);
+    const [id, setId] = useState(prefer || remembered(LAST_KEY) || DEFAULT_TEMPLATES[0].id);
     const [fields, setFields] = useState<Record<string, string>>({});
     const [editing, setEditing] = useState<MessageTemplate | null>(null);
     const bodyRef = useRef<HTMLTextAreaElement>(null);
@@ -90,7 +94,9 @@ const TrackerMessage: React.FC<Props> = ({ data, warnings, uploadRoot, onPickUpl
         setCustom(true);
         Promise.resolve(evalTS("saveMessageTemplates", JSON.stringify(next))).catch(() => { /* preview */ });
     };
-    const choose = (tid: string) => { setId(tid); remember(LAST_KEY, tid); setEditing(null); };
+    // A page that opens on its own message does not change which one the
+    // Tracker comes back to.
+    const choose = (tid: string) => { setId(tid); if (!prefer) remember(LAST_KEY, tid); setEditing(null); };
 
     const labels = fieldsOf(current.body);
     const filled = fillMessage(current.body, data, fields);

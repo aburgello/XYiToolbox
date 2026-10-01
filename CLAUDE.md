@@ -1024,6 +1024,18 @@ The open project's row is an outlined card, never an edge bar.
   level that exists. Tagged machines only write; an unmounted team folder
   reads as none set. A stored message still asking `{?Upload folder}` gets
   that box prefilled. `node scripts/probe-upload-roots.mjs`.
+- **Delivery shows the same card once something is QUEUED**
+  (`lib/deliveryMessage.ts`), opened on the delivery message (`prefer`, which
+  does not change the message the Tracker comes back to). It is written from
+  the queued rows' own render paths: the territory is the folder above
+  `Renders`, the batch the one below, the delivery `_Delivery` beside them. A
+  queue holding several batches is a chip each, biggest first: each is its own
+  comment on its own job. A row with no render under a `Renders` folder
+  belongs to no batch and is left out. The card's styles are its own sheet
+  (`TrackerMessage.scss`), top level and tinted by `--cat-*`, because nested
+  under `.bt` Delivery could not reach them. The two facts that list a folder
+  (masters, uploads) are kept per batch: that page re-renders on every tick of
+  the render watch. `node scripts/probe-delivery-message.mjs`.
   `{upload.name}` is ENT for a Paramount film and PUMA for a Universal one,
   read off the batch's path as a whole folder name (`uploadNameFor`); any
   other studio is "Upload", never empty.

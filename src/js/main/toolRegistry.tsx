@@ -511,7 +511,7 @@ export const TOOLS: ToolEntry[] = [
         categories: ["deliver"],
         icon: Truck,
         Component: DeliveryHubTool,
-        actions: ["Delivery", "Set Frame Rate", "Load Selected Comps", "Queue"],
+        actions: ["Delivery", "Set Frame Rate", "Load Selected Comps", "Queue", "Copy for Wrike"],
     },
     {
         id: "edge-controller",

@@ -818,6 +818,7 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
         "masters.renders": mastersRenders,
         "delivered.count": n(count((r) => !!r.delivered)),
         "delivered.folder": scan.folders.delivered[0] || "",
+        "delivered.list": rows.filter((r) => r.delivered).map((r) => r.delivered!.name).join("\n"),
         "specs.folder": scan.folders.specs,
         "ae.folder": scan.folders.aep,
         "upload.name": uploadNameFor(territoryPath),

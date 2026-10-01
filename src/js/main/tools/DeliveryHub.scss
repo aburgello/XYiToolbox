@@ -1143,3 +1143,17 @@
     span { font-size: 11px; white-space: nowrap; }
     svg { flex: none; }
 }
+
+// MESSAGE FOR WRIKE, under the queue. The card is TrackerMessage's own; this
+// is only its place on the page and the chips that pick a batch when the
+// queue holds more than one. Buttons re-declare hover/active (index.scss).
+.dh-message { display: flex; flex-direction: column; gap: 6px; padding: 0 14px 12px; flex-shrink: 0; }
+.dh-message-groups { display: flex; flex-wrap: wrap; gap: 5px; }
+.dh-message-group {
+    display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 12px; background: rgba(255, 255, 255, 0.03);
+    color: #c7d1cf; font-size: 11px; font-weight: 600; cursor: pointer;
+    em { font-style: normal; color: #8f9896; }
+    &:hover, &:active { background: rgba(255, 255, 255, 0.09); border-color: rgba(255, 255, 255, 0.24); color: #fff; }
+    &.is-on, &.is-on:hover, &.is-on:active { border-color: var(--cat-edge, rgba(251, 146, 60, 0.6)); background: var(--cat-wash, rgba(251, 146, 60, 0.12)); color: #fff; }
+}

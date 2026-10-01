@@ -49,6 +49,7 @@ export const TOKENS: { token: string; what: string }[] = [
     { token: "masters.renders", what: "The masters' Renders folder: the creative's own when the batch has one creative, the whole folder when it has several" },
     { token: "delivered.count", what: "How many deliverables are in _Delivery" },
     { token: "delivered.folder", what: "This batch's _Delivery folder" },
+    { token: "delivered.list", what: "The delivered files' names, one a line" },
     { token: "specs.folder", what: "The territory's Masters/Specs folder" },
     { token: "ae.folder", what: "This batch's AE folder" },
     { token: "upload.folder", what: "This batch's folder under the campaign's shared uploads folder" },
