@@ -45,5 +45,6 @@ export * from "./insitu";
 export * from "./edgeController";
 export * from "./sixtySeven";
 export * from "./cutdowns";
+export * from "./uploads";
 export * from "./wordGame";
 export * from "./tracker";

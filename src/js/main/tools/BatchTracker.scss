@@ -88,6 +88,15 @@
     .bt-msgcard-none, .bt-msgcard-dropped, .bt-msgcard-help { margin: 0; font-size: 11px; line-height: 1.45; color: #9aa7a5; }
     .bt-msgcard-help code { padding: 0 3px; border-radius: 3px; background: rgba(255, 255, 255, 0.08); color: #d6dedc; font-size: 10.5px; }
     .bt-msgcard-edit { display: flex; flex-direction: column; gap: 7px; }
+    .bt-msgcard-upload {
+        display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0; font-size: 11px; line-height: 1.45; color: #9aa7a5;
+        span { color: #d6dedc; overflow-wrap: break-word; word-break: break-word; min-width: 0; }
+    }
+    .bt-msgcard-link {
+        height: 20px; padding: 0 8px; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 6px;
+        background: none; color: #c7d1cf; font-size: 10.5px; font-weight: 600; cursor: pointer;
+        &:hover, &:active { background: rgba(255, 255, 255, 0.08); color: #fff; }
+    }
     .bt-msgcard-token {
         height: 21px; padding: 0 7px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 5px;
         background: rgba(255, 255, 255, 0.04); color: #b9c4c2; font-size: 10.5px; font-family: Menlo, Consolas, monospace; cursor: pointer;

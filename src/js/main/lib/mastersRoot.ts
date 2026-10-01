@@ -52,6 +52,44 @@ export function deriveMarketsFromMasters(mastersRoot: string): string {
     return deriveSibling(mastersRoot, /[_-]?masters$/i, /markets$/i, /masters$/i);
 }
 
+/**
+ * Where the MASTERS' renders for this batch are, for the hand-off message.
+ * `<Masters sibling>/Renders/<Creative>` when EVERY deliverable is that one
+ * creative; `<Masters sibling>/Renders` itself the moment the batch holds
+ * more than one (Norway's Batch_02 is Trio and Characters) or one whose
+ * folder can't be told from its name. The reviewer needs all of them, and
+ * naming Trio's folder alone points them away from the rest.
+ *
+ * A creative's folder is the disk's own spelling, matched to a whole word (or
+ * run of words) of the deliverable's name -- `PORTAL_TO_PARADISE` answers to
+ * `PortalToParadise`. No Masters sibling, or no Renders in it, is "", never a
+ * guessed path: the message leaves that block out.
+ */
+export function mastersRendersFor(territoryPath: string, names: string[]): string {
+    try {
+        const masters = deriveMastersFromMarkets(path.dirname(territoryPath));
+        if (!masters) return "";
+        const renders = path.join(masters, "Renders");
+        const squash = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
+        const folders = (fs.readdirSync(renders, { withFileTypes: true }) as any[])
+            .filter((d) => d.isDirectory() && d.name.charAt(0) !== "_" && d.name.charAt(0) !== ".")
+            .map((d) => ({ name: d.name as string, key: squash(d.name) }));
+        const hit = new Set<string>();
+        let unplaced = false;
+        for (const n of names) {
+            const toks = n.split("_").map(squash).filter(Boolean);
+            const runs = new Set<string>();
+            for (let i = 0; i < toks.length; i++) for (let j = i; j < toks.length && j < i + 4; j++) runs.add(toks.slice(i, j + 1).join(""));
+            const mine = folders.filter((f) => runs.has(f.key));
+            if (mine.length === 1) hit.add(mine[0].name);
+            else unplaced = true;
+        }
+        return hit.size === 1 && !unplaced ? path.join(renders, Array.from(hit)[0]) : renders;
+    } catch {
+        return "";
+    }
+}
+
 // --- pairing the two campaign lists ------------------------------------------
 // A campaign is ONE job, and the panel keeps two lists of it: OVLibCampaigns
 // (name + masters root, behind OV Library and Review) and LocLibCampaigns

@@ -61,6 +61,9 @@ put(`${T}/Renders/Batch_02/_mp4/${P}NfkinoPOST_345x496px_30s_NO_V02.mp4`);
 put(`${T}/Renders/Batch_02/_mp4/${P}Somebody_else_1920x1080px_30s_NO_V01.mp4`);
 put(`${T}/Renders/Batch_02/_Old/${P}NfkinoPOST_1200x380px_30s_NO_V01.mov`);
 put(`${T}/Masters/Specs/NO.pdf`);
+// PDFs filed by batch, the batch folder spelled without its zero.
+put(`${T}/PDFs/Batch_1/a.pdf`);
+put(`${T}/PDFs/Batch_2/b.pdf`);
 
 const sb = { Folder, File, app: { settings: { haveSetting: () => false, getSetting: () => '', saveSetting() {} }, project: {}, beginUndoGroup() {}, endUndoGroup() {} }, $: { writeln() {}, global: null }, BridgeTalk: { appName: 'aftereffects' }, alert() {}, decodeURI, encodeURI, parseInt, parseFloat, isNaN, Math, Date, JSON, String, Number, Array, Object, RegExp, Error };
 sb.File.decode = decodeURI;
@@ -101,6 +104,7 @@ const aepOnly = ch.find((x) => x.aep);
 check(aepOnly && aepOnly.near && aepOnly.near.some((n) => /same size, named differently \(and 30s vs 10s\)/.test(n.why) && /MetroPOST/.test(n.name)), '…but each points at the other: same size, named differently, 30s vs 10s', aepOnly && aepOnly.near);
 check(!nk.near && !od.near, 'two complete deliverables of one size are never flagged');
 check(r.folders.specs === `${T}/Masters/Specs` && /Batch_2$/.test(r.folders.art) && /Renders\/Batch_02$/.test(r.folders.renders), 'and it knows where each stage lives, for the links', r.folders);
+check(r.folders.pdfs === `${T}/PDFs/Batch_2`, "the PDFs are this batch's own folder (Batch_2 for Batch_02), for the hand-off message", r.folders.pdfs);
 check(!a.trackerScan(JSON.stringify({ territoryPath: '/nowhere', batch: 'Batch_02' })).success, 'an unreachable territory is said so');
 
 // ---------------------------------------------------------------------------
@@ -216,6 +220,7 @@ put(`${PA}/JPG_PNG/${TD}/ARTWORK_ONLY/${TD}_ARTWORK_1.jpg`);
 put(`${PA}/JPG_PNG/SF_INTL_Trio_DOOH_SomeOtherBatch_1920x1080px_15s_PA/x.jpg`);
 put(`${PA}/JPG_PNG/_Old/${TD}/old.jpg`);
 put(`${PA}/JPG_PNG/SF_INTL_Trio_DOOH_WrikeOnly_640x480px_10s_PA/w.png`);
+put(`${PA}/PDFs/sheet.pdf`);
 const pa = a.trackerScan(JSON.stringify({ territoryPath: PA, batch: 'Batch_01', wrike: [{ name: 'SF_INTL_Trio_DOOH_WrikeOnly_640x480px_10s_PA', status: 'Backlog' }] }));
 const pr = (re) => pa.rows.find((x) => re.test(x.name));
 const td = pr(/TotemsDigitales/);
@@ -224,6 +229,7 @@ check(!pr(/SomeOtherBatch/), "another batch's art in the same JPG_PNG adds no ro
 check(pr(/WrikeOnly/) && pr(/WrikeOnly/).art, "a subtask with no project yet still finds its art there");
 check(!pr(/MupiDigital/).art, "a project with no folder there still says so");
 check(pa.folders.art === `${PA}/JPG_PNG`, 'the Art link opens JPG_PNG itself', pa.folders.art);
+check(pa.folders.pdfs === `${PA}/PDFs`, 'PDFs kept loose, with no batch folder: PDFs itself', pa.folders.pdfs);
 
 // ---------------------------------------------------------------------------
 console.log('\nRead once, merged many times');

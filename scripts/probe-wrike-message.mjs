@@ -43,18 +43,21 @@ check(toPlain(f.marked) === `Hi @Nicholas, amends are in:\n\n🟠 1 x Revised:\n
 f = fillMessage(T("revised"), { "revised.count": "", "revised.paths": "" }, { To: "@Nicholas" });
 check(f.dropped.length === 1 && toPlain(f.marked) === "Hi @Nicholas, amends are in:", "nothing revised yet: no \"0 x Revised\"", f);
 
-console.log("\n3. Delivery, and fields that are asked for each time");
-check(fieldsOf(T("delivery")).join() === "To,Upload folder,MASV link", "it asks for the upload folder and the link", fieldsOf(T("delivery")));
+console.log("\n3. Delivery: the campaign's uploads folder, and a link asked for each time");
+const UP = "/Volumes/uploads/Upload_To_ENT_New/StreetFighter/Outdoor/DOOH/Taiwan/Batch_01";
+check(fieldsOf(T("delivery")).join() === "To,MASV link", "it asks only for the link: the upload folder is the campaign's", fieldsOf(T("delivery")));
 check(uploadNameFor(M + "/Taiwan") === "ENT" && uploadNameFor("/Volumes/universal/ForgottenIsland/INT/XY026040_Markets/Denmark") === "PUMA", "the upload is ENT for a Paramount film, PUMA for a Universal one");
 check(uploadNameFor("P:\\Universal\\FID\\Markets\\Denmark") === "PUMA" && uploadNameFor("/Volumes/newmedia/ParamountPlus_Idents/Markets/UK") === "Upload" && uploadNameFor("") === "Upload",
   "a whole folder name, either slash; any other studio is Upload, never empty");
-f = fillMessage(T("delivery"), { "upload.name": "PUMA" }, { To: "@AM", "Upload folder": "/Volumes/uploads/PUMA/FID/Denmark" });
+f = fillMessage(T("delivery"), { "upload.name": "PUMA", "upload.folder": "/Volumes/uploads/PUMA/FID/Denmark/Batch_01" }, { To: "@AM" });
 check(/^PUMA:\n\/Volumes\/uploads\/PUMA/m.test(toPlain(f.marked)), "a Universal batch's delivery says PUMA", toPlain(f.marked));
-f = fillMessage(T("delivery"), { "upload.name": "ENT" }, { To: "@James Crouch & @AM", "Upload folder": "/Volumes/uploads/Upload_To_ENT_New/StreetFighter/Outdoor/DOOH/Taiwan/Batch_01", "MASV link": "https://get.massive.app/x?secret=y&lang=system" });
-check(/ENT:\n\/Volumes\/uploads/.test(toPlain(f.marked)) && /MASV:\nhttps:\/\/get\.massive\.app\/x\?secret=y&lang=system$/.test(toPlain(f.marked)), "both land under their headings", toPlain(f.marked));
+f = fillMessage(T("delivery"), { "upload.name": "ENT", "upload.folder": UP }, { To: "@James Crouch & @AM", "MASV link": "https://get.massive.app/x?secret=y&lang=system" });
+check(toPlain(f.marked) === `Hey @James Crouch & @AM, here's the delivery:\n\nENT:\n${UP}\n\nMASV:\nhttps://get.massive.app/x?secret=y&lang=system`, "the delivery comment that was typed by hand (Taiwan Batch_01, 2026-09-29)", toPlain(f.marked));
 check(/secret=y&amp;lang=system/.test(toHtml(f.marked)), "an & in a link is escaped on the rich copy, and whole on the plain one");
-f = fillMessage(T("delivery"), { "upload.name": "ENT" }, { To: "@AM" });
-check(/\[Upload folder\]/.test(f.marked) && /\[MASV link\]/.test(f.marked) && f.dropped.length === 0, "an unfilled field shows as [MASV link]; it never drops its block");
+f = fillMessage(T("delivery"), { "upload.name": "ENT", "upload.folder": "" }, { To: "@AM" });
+check(!/ENT/.test(f.marked) && f.dropped.length === 1 && /\[MASV link\]/.test(f.marked), "no uploads folder set for the campaign: that block goes; an unfilled field shows as [MASV link] and never drops its block", f);
+f = fillMessage("**{upload.name}:**\n{?Upload folder}", { "upload.name": "ENT" }, { "Upload folder": UP });
+check(toPlain(f.marked) === `ENT:\n${UP}`, "a message still asking for the folder in a box takes what the box holds");
 
 console.log("\n4. A template somebody wrote");
 f = fillMessage("Hey {to}, {territory} {batch} is up.\n\n{delivered.count} delivered:\n{delivered.folder}\n\nSee {notatoken} and {?Notes}", { territory: "Taiwan", batch: "Batch_01", "delivered.count": "", "delivered.folder": "/d" }, { To: "@AM", Notes: "<script>x</script>" });

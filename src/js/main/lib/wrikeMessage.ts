@@ -45,12 +45,13 @@ export const TOKENS: { token: string; what: string }[] = [
     { token: "renders.list", what: "The newest render of each deliverable, one path a line" },
     { token: "revised.count", what: "How many amended deliverables have a newer render" },
     { token: "revised.paths", what: "Those newer renders, one path a line" },
-    { token: "pdfs.folder", what: "The territory's PDFs folder" },
-    { token: "masters.renders", what: "The masters' Renders folder for this batch's creative" },
+    { token: "pdfs.folder", what: "This batch's folder in the territory's PDFs, or PDFs itself when it has none" },
+    { token: "masters.renders", what: "The masters' Renders folder: the creative's own when the batch has one creative, the whole folder when it has several" },
     { token: "delivered.count", what: "How many deliverables are in _Delivery" },
     { token: "delivered.folder", what: "This batch's _Delivery folder" },
     { token: "specs.folder", what: "The territory's Masters/Specs folder" },
     { token: "ae.folder", what: "This batch's AE folder" },
+    { token: "upload.folder", what: "This batch's folder under the campaign's shared uploads folder" },
     { token: "upload.name", what: "Where deliveries are uploaded: ENT for Paramount, PUMA for Universal" },
 ];
 const IS_DATA: Record<string, boolean> = {};
@@ -70,7 +71,7 @@ export const DEFAULT_TEMPLATES: MessageTemplate[] = [
     {
         id: "delivery",
         name: "Delivery",
-        body: "Hey {to}, here's the delivery:\n\n**{upload.name}:**\n{?Upload folder}\n\n**MASV:**\n{?MASV link}",
+        body: "Hey {to}, here's the delivery:\n\n**{upload.name}:**\n{upload.folder}\n\n**MASV:**\n{?MASV link}",
     },
 ];
 

@@ -22,6 +22,10 @@ import { DEFAULT_TEMPLATES, TOKENS, fieldsOf, fillMessage, parseTemplates, toHtm
 interface Props {
     /** The batch's facts, keyed by token (lib/wrikeMessage.ts TOKENS). */
     data: Record<string, string>;
+    /** The campaign's shared uploads folder, "" when nobody has set one. */
+    uploadRoot: string;
+    /** Pick it (or another), and share it with the team. */
+    onPickUploadRoot: () => void;
     onClose: () => void;
     onCopied: (text: string, bad?: boolean) => void;
 }
@@ -49,7 +53,7 @@ function copyBoth(html: string, text: string): boolean {
     return done;
 }
 
-const TrackerMessage: React.FC<Props> = ({ data, onClose, onCopied }) => {
+const TrackerMessage: React.FC<Props> = ({ data, uploadRoot, onPickUploadRoot, onClose, onCopied }) => {
     const [templates, setTemplates] = useState<MessageTemplate[]>(DEFAULT_TEMPLATES);
     const [custom, setCustom] = useState(false);
     const [id, setId] = useState(remembered(LAST_KEY) || DEFAULT_TEMPLATES[0].id);
@@ -71,6 +75,13 @@ const TrackerMessage: React.FC<Props> = ({ data, onClose, onCopied }) => {
     const current = templates.find((t) => t.id === id) || templates[0];
     // {to} is remembered per template; every other field starts blank.
     useEffect(() => { setFields({ To: remembered(toKey(current.id)) }); }, [current.id]);
+    // A message written before {upload.folder} existed asks for it in a box
+    // ({?Upload folder}): that box starts with the campaign's folder for this
+    // batch, still editable, and never over something already typed.
+    const uploadFolder = data["upload.folder"] || "";
+    useEffect(() => {
+        if (uploadFolder) setFields((f) => (f["Upload folder"] ? f : { ...f, "Upload folder": uploadFolder }));
+    }, [current.id, uploadFolder]);
 
     const persist = (next: MessageTemplate[]) => {
         setTemplates(next);
@@ -187,6 +198,19 @@ const TrackerMessage: React.FC<Props> = ({ data, onClose, onCopied }) => {
                     {empty
                         ? <p className="bt-msgcard-none">Nothing to say yet: this batch has none of what the message lists.</p>
                         : <p className="bt-msgcard-preview" dangerouslySetInnerHTML={{ __html: toHtml(filled.marked) }} />}
+                    {/* Only on a message that names it: the campaign's uploads
+                        folder is one path for the whole team, set once. */}
+                    {/\{(upload\.|\?Upload folder\})/i.test(current.body) && (
+                        <p className="bt-msgcard-upload">
+                            {uploadRoot
+                                ? <>Uploads for this campaign: <span title={uploadRoot}>{uploadRoot}</span></>
+                                : <>No uploads folder is set for this campaign yet.</>}
+                            <button type="button" className="bt-msgcard-link" onClick={onPickUploadRoot}
+                                title="Pick the folder that holds this campaign's territories on the uploads share. It is shared with the team.">
+                                {uploadRoot ? "Change…" : "Set it…"}
+                            </button>
+                        </p>
+                    )}
                     {filled.dropped.length > 0 && !empty && (
                         <p className="bt-msgcard-dropped">Left out, nothing to put in it: {filled.dropped.join(", ")}.</p>
                     )}

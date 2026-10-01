@@ -636,7 +636,11 @@ each under 300ms, the second within 350ms, nothing between (another key or a
 click cancels, so typing capitals never fires it). **Not Control**: macOS
 Dictation can be set to "Press Control key twice" and fired alongside it;
 neither OS uses a double Shift (Sticky Keys is five). A lone Shift is claimed
-alongside ⌘K (macOS 56/60, Windows 16). **The palette's empty state is Recent / Most used
+alongside ⌘K (macOS 56/60, Windows 16). **A THIRD tap goes to the Tracker**
+(`lib/localisePane.ts`): the Localise landing's Tracker pane, from any screen.
+It is a third tap of the SAME run, within 350ms of the two that OPENED the
+palette, so a double-tap on an open palette still closes it and nothing new is
+claimed from AE. The palette shows for the instant between taps two and three. **The palette's empty state is Recent / Most used
 / Favorites** from `lib/toolUsage.ts` (per viewer, browser storage; keys
 `tool:`/`action:`/`custompage:`, recorded where things are USED -- main.tsx
 screen changes, LocaliseScreen picks, Toolset and palette runs). Most used
@@ -996,8 +1000,26 @@ The open project's row is an outlined card, never an edge bar.
   artist's own: JSON in `TrackerMessageTemplates` (in `PROFILE_KEYS`), stored
   only once one is edited. `revised` is a To amend row whose newest render is
   newer than the version the amend comment reviewed. The masters' Renders
-  folder is found from the Markets sibling (`deriveMastersFromMarkets`), its
-  creative folder by a whole word of a deliverable's name, never guessed.
+  folder is found from the Markets sibling (`deriveMastersFromMarkets`): the
+  creative's own folder only when EVERY deliverable matches that one folder by
+  a whole word of its name, `Masters/Renders` itself the moment the batch
+  holds several creatives or one it can't place. Never a guessed path.
+  `{pdfs.folder}` is the batch's own folder inside `PDFs` when there is one
+  (`PDFs/Batch_2` for `Batch_02`, paired loosely), else `PDFs` itself.
+  `node scripts/probe-masters-renders.mjs`.
+- **A campaign's UPLOADS folder is shared, set once** (`uploads.ts`,
+  `shared-upload-roots.json`, `lib/uploadRoots.ts`). Deliveries go to another
+  share (`/Volumes/uploads/Upload_To_ENT_New/StreetFighter/Outdoor/DOOH`) with
+  a territory and a batch folder under it, and nothing on the Markets tree
+  says where. The root is PICKED, never derived, and filed under the Markets
+  folder's own NAME (`XY026205_…_Markets`): the job number is what every
+  machine spells the same, whatever the share is mounted as. `{upload.folder}`
+  is `<root>/<Territory>/<Batch>`, in the uploads share's own spelling where
+  the folders exist and from the Markets names where they don't yet (the
+  folder is often made at delivery); the `Uploads` link opens the deepest
+  level that exists. Tagged machines only write; an unmounted team folder
+  reads as none set. A stored message still asking `{?Upload folder}` gets
+  that box prefilled. `node scripts/probe-upload-roots.mjs`.
   `{upload.name}` is ENT for a Paramount film and PUMA for a Universal one,
   read off the batch's path as a whole folder name (`uploadNameFor`); any
   other studio is "Upload", never empty.

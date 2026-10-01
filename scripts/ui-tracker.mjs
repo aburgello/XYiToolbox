@@ -52,6 +52,9 @@ const FIXTURES = `{
       { key: "E", name: "${P}Kiwi_1920x1080px_15s_NO", wrike: { name: "${P}Kiwi_1920x1080px_15s_NO", status: "Backlog" } },
       { key: "C", name: "SF_INTL_Characters_DOOH_Digital MetroPOST_1080x1920px_10s_NO", art: { path: "${T}/JPG_PNG/Batch_2/c", files: 1 } },
     ] }); },
+  uploadRootsLoad: () => ({ success: true, entries: window.__roots || [] }),
+  uploadRootPick: () => "/Volumes/uploads/Upload_To_ENT_New/StreetFighter/Outdoor/DOOH",
+  uploadRootSet: (campaign, root) => { window.__roots = [{ key: campaign.toUpperCase(), campaign, root, author: "Antonio" }]; return { success: true, entries: window.__roots }; },
   loadMessageTemplates: () => window.__templates || "",
   saveMessageTemplates: (json) => { window.__templates = json; return { success: true }; },
   timesheetCopyToClipboard: (text) => { window.__clip = text; return { success: true }; },
@@ -378,9 +381,16 @@ try {
     await page.click(".bt-msgcard-tab", "Delivery");
     await pause(200);
     const msgAsks = await page.eval(`[...document.querySelectorAll(".bt-msgcard-field span")].map(e => e.innerText)`);
-    check(msgAsks.join() === "To,Upload folder,MASV link", "Delivery asks for the upload folder and the link", msgAsks);
-    check(/ENT:/.test(await page.eval(`document.querySelector(".bt-msgcard-preview").innerText`)), "and a Paramount batch's upload is headed ENT");
-    check((await page.eval(`[...document.querySelectorAll(".bt-msgcard-field input")].map(i => i.value).join("|")`)) === "||", "and starts blank: a name is remembered per message, a link never");
+    check(msgAsks.join() === "To,MASV link", "Delivery asks only for the link: the upload folder is the campaign's", msgAsks);
+    check((await page.eval(`[...document.querySelectorAll(".bt-msgcard-field input")].map(i => i.value).join("|")`)) === "|", "and starts blank: a name is remembered per message, a link never");
+    check(/No uploads folder is set/.test(await page.eval(`document.querySelector(".bt-msgcard-upload")?.innerText || ""`)) && !/ENT:/.test(await page.eval(`document.querySelector(".bt-msgcard-preview").innerText`))
+      && !(await page.eval(`[...document.querySelectorAll(".bt-links .bt-link")].some(b => /Uploads/.test(b.innerText))`)), "no uploads folder set for the campaign: said, the block left out, no Uploads link");
+    await page.click(".bt-msgcard-link", "Set it");
+    check(await page.waitFor(`/ENT:\\s*\\/Volumes\\/uploads\\/Upload_To_ENT_New\\/StreetFighter\\/Outdoor\\/DOOH\\/Norway\\/Batch_02/.test(document.querySelector(".bt-msgcard-preview")?.innerText || "")`, 3000),
+      "set once, a Paramount batch's delivery names ENT and this batch's folder under the campaign's root", await page.eval(`document.querySelector(".bt-msgcard-preview").innerText`));
+    check((await page.eval(`(window.__roots || []).map(r => r.key).join()`)) === "MARKETS", "shared under the Markets folder's own name");
+    check(await page.eval(`[...document.querySelectorAll(".bt-links .bt-link")].some(b => /Uploads/.test(b.innerText))`), "and the batch gets an Uploads link beside Renders and Delivered");
+    check(/Uploads for this campaign[\s\S]*DOOH/.test(await page.eval(`document.querySelector(".bt-msgcard-upload")?.innerText || ""`)) && /Change/.test(await page.eval(`document.querySelector(".bt-msgcard-link")?.innerText || ""`)), "the card says which folder, with a way to change it", await page.eval(`document.querySelector(".bt-msgcard-upload")?.innerText || ""`));
     await page.click(".bt-msgcard-tab", "For review");
     await pause(200);
     check((await page.eval(`document.querySelector(".bt-msgcard-field input").value`)) === "@James Crouch", "back on For review, its To is remembered");

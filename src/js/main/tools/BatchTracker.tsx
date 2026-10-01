@@ -84,7 +84,7 @@
 // read as broken.
 // =============================================================================
 import React, { useEffect, useRef, useState } from "react";
-import { Image as ImageIcon, FileBox, Film, PackageCheck, FileText, RefreshCw, Loader2, AlertTriangle, MapPin, Search, ChevronRight, Check, HardDrive, FolderOpen, Hammer, Truck, PenLine, ArrowUpRight, Play, MessageSquare, MessageSquarePlus, Info } from "lucide-react";
+import { Image as ImageIcon, FileBox, Film, PackageCheck, FileText, RefreshCw, Loader2, AlertTriangle, MapPin, Search, ChevronRight, Check, HardDrive, FolderOpen, Hammer, Truck, PenLine, ArrowUpRight, Play, MessageSquare, MessageSquarePlus, Info, UploadCloud } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import Dropdown from "../Dropdown";
@@ -101,10 +101,10 @@ import { toFileUrl } from "../lib/fileUrl";
 import type { ToolProps } from "../toolRegistry";
 import { jobTerritory, setPendingDeliverJob } from "./DeliveryJobs";
 import { readFinderColors, revealInFinder, type FinderColor } from "../lib/finderLabels";
-import { fs, path as nodePath } from "../../lib/cep/node";
-import { deriveMastersFromMarkets } from "../lib/mastersRoot";
+import { mastersRendersFor } from "../lib/mastersRoot";
 import TrackerMessage from "./TrackerMessage";
 import { uploadNameFor } from "../lib/wrikeMessage";
+import { loadUploadRoots, saveUploadRoot, uploadRootFor, uploadFolderFor, campaignKeyOf } from "../lib/uploadRoots";
 import "./BatchTracker.scss";
 
 interface Row {
@@ -122,34 +122,6 @@ interface Row {
     claimed?: { name: string; why: string };
 }
 interface Scan { territory: string; batch: string; folders: { art: string; aep: string; renders: string; delivered: string[]; specs: string; pdfs?: string }; rows: Row[] }
-
-/**
- * Where the MASTERS' renders of this batch's creative are, for the hand-off
- * message: `<Masters sibling>/Renders/<Creative>`, one line per creative the
- * batch holds. The folder is the disk's own spelling, matched to a whole word
- * (or run of words) of a deliverable's name -- `PORTAL_TO_PARADISE` answers to
- * `PortalToParadise`. Nothing found is "", never a guessed path: the message
- * leaves that block out.
- */
-export function mastersRendersFor(territoryPath: string, names: string[]): string {
-    try {
-        const masters = deriveMastersFromMarkets(nodePath.dirname(territoryPath));
-        if (!masters) return "";
-        const renders = nodePath.join(masters, "Renders");
-        const squash = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
-        const runs = new Set<string>();
-        for (const n of names) {
-            const toks = n.split("_").map(squash).filter(Boolean);
-            for (let i = 0; i < toks.length; i++) for (let j = i; j < toks.length && j < i + 4; j++) runs.add(toks.slice(i, j + 1).join(""));
-        }
-        return (fs.readdirSync(renders, { withFileTypes: true }) as any[])
-            .filter((d) => d.isDirectory() && d.name.charAt(0) !== "_" && d.name.charAt(0) !== "." && runs.has(squash(d.name)))
-            .map((d) => nodePath.join(renders, d.name))
-            .join("\n");
-    } catch {
-        return "";
-    }
-}
 
 const loose = (s: string) => String(s).toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/(^|\D)0+(\d)/g, "$1$2");
 /** A row's problems, in words. A near miss REPLACES the plain "missing" line
@@ -322,6 +294,29 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
     // doesn't carry (the masters' Renders folder, two listings, read on open).
     const [showMessage, setShowMessage] = useState(false);
     const [mastersRenders, setMastersRenders] = useState("");
+    // The campaign's shared uploads folder, and this batch's folder under it.
+    const [uploadRoot, setUploadRoot] = useState("");
+    const [upload, setUpload] = useState<{ folder: string; open: string }>({ folder: "", open: "" });
+    useEffect(() => {
+        if (!territoryPath) { setUploadRoot(""); return; }
+        let dead = false;
+        void loadUploadRoots().then((roots) => { if (!dead) setUploadRoot(uploadRootFor(roots, territoryPath)); });
+        return () => { dead = true; };
+    }, [territoryPath]);
+    useEffect(() => {
+        const t = setTimeout(() => setUpload(uploadFolderFor(uploadRoot, territoryPath, batch)), 0);
+        return () => clearTimeout(t);
+    }, [uploadRoot, territoryPath, batch]);
+    const pickUploadRoot = async () => {
+        const campaign = campaignKeyOf(territoryPath);
+        if (!campaign) return;
+        const picked = (await evalTS("uploadRootPick", campaign)) as unknown as string;
+        if (!picked) return;
+        const why = await saveUploadRoot(territoryPath, picked);
+        if (why) { setMsg({ text: why, bad: true }); return; }
+        setUploadRoot(picked);
+        setMsg({ text: `Uploads folder shared for ${campaign}. Everyone's Tracker uses it from now on.` });
+    };
     useEffect(() => {
         if (!showMessage || !scan || !territoryPath) return;
         const names = scan.rows.map((r) => (r.wrike ? r.wrike.name : r.name));
@@ -810,6 +805,7 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
         "specs.folder": scan.folders.specs,
         "ae.folder": scan.folders.aep,
         "upload.name": uploadNameFor(territoryPath),
+        "upload.folder": upload.folder,
     } : {};
 
     const Link: React.FC<{ icon: React.ReactNode; label: string; path?: string; folder?: boolean }> = ({ icon, label, path, folder }) => (
@@ -979,6 +975,7 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
                         <Link icon={<Film size={13} />} label="Renders" path={scan.folders.renders} folder />
                         <Link icon={<PackageCheck size={13} />} label="Delivered" path={scan.folders.delivered[0]} folder />
                         <Link icon={<FileText size={13} />} label="Specs" path={scan.folders.specs} folder />
+                        {upload.open && <Link icon={<UploadCloud size={13} />} label="Uploads" path={upload.open} folder />}
                         <button type="button" className={"bt-link" + (showMessage ? " is-on" : "")} onClick={() => setShowMessage(!showMessage)} title="Write the hand-off comment for Wrike from this batch">
                             <MessageSquarePlus size={13} /><span>Message</span>
                         </button>
@@ -989,7 +986,7 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
                         ))}
                     </div>
                     {showMessage && (
-                        <TrackerMessage data={messageData} onClose={() => setShowMessage(false)} onCopied={(text, bad) => setMsg({ text, bad })} />
+                        <TrackerMessage data={messageData} uploadRoot={uploadRoot} onPickUploadRoot={() => void pickUploadRoot()} onClose={() => setShowMessage(false)} onCopied={(text, bad) => setMsg({ text, bad })} />
                     )}
                     {openRow && (
                         <div className="bt-links bt-links--here">

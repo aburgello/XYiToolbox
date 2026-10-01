@@ -304,8 +304,14 @@ function trReadDisk(terr: Folder, batch: string): TrDisk {
   const specs = masters ? trChild(masters, "Specs") : null;
   if (specs) disk.folders.specs = String(specs.fsName);
   // The territory's PDFs: named in the hand-off message (Message for Wrike).
+  // THIS BATCH'S folder inside it when there is one (PDFs/Batch_2, paired
+  // loosely like every other batch folder), else PDFs itself: some
+  // territories keep the sheets loose.
   const pdfs = trChild(terr, "PDFs");
-  if (pdfs) disk.folders.pdfs = String(pdfs.fsName);
+  if (pdfs) {
+    const pdfBatch = trBatchIn(pdfs, batch);
+    disk.folders.pdfs = String((pdfBatch || pdfs).fsName);
+  }
 
   const ae = trChild(terr, "AE");
   const aeBatch = ae ? trBatchIn(ae, batch) : null;
