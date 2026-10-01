@@ -397,7 +397,7 @@ function trReadDisk(terr: Folder, batch: string): TrDisk {
 
 export const trackerScan = (argsJson: string): TrackerResult & { took?: { disk: number; cached: boolean } } => {
   try {
-    let args: { territoryPath?: string; batch?: string; wrike?: { name: string; status: string }[]; force?: boolean };
+    let args: { territoryPath?: string; batch?: string; wrike?: { name: string; status: string }[]; force?: boolean; disk?: TrDisk };
     try { args = JSON.parse(argsJson); } catch (e) { return { success: false, error: "Could not read the request." }; }
     const batch = String(args.batch || "");
     if (!batch) return { success: false, error: "Pick a batch." };
@@ -407,7 +407,16 @@ export const trackerScan = (argsJson: string): TrackerResult & { took?: { disk: 
     let disk: TrDisk;
     let cached = false;
     let terr: Folder = new Folder(String(args.territoryPath || ""));
-    if (!args.force && hit && t0 - hit.at < TR_DISK_TTL) {
+    // THE PANEL READ THE FOLDERS ITSELF (lib/trackerDisk.ts, a port of
+    // trReadDisk): the listing arrives with the request and this engine lists
+    // nothing -- the seconds a scan took were all here. Taken only when it is
+    // whole; anything else falls through to the read below, as before.
+    const given = args.disk;
+    if (given && given.folders && given.aes instanceof Array && given.art instanceof Array && given.renders instanceof Array
+        && given.delivered instanceof Array && given.previews instanceof Array && given.folders.delivered instanceof Array) {
+      disk = given;
+      trDiskCache[cacheKey] = { at: t0, disk: disk };
+    } else if (!args.force && hit && t0 - hit.at < TR_DISK_TTL) {
       disk = hit.disk;
       cached = true;
     } else {
