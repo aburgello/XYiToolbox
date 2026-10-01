@@ -108,5 +108,40 @@ const id = (hit.entries || [])[0].id;
 say(A.cutdownsRemove(id).success, 'it goes');
 say((A.cutdownsFor('', 'Trio', '1080x1920', '7sec').entries || []).length === 0, 'and stops being offered');
 
+console.log('\n5. an Insitu project is never a master');
+const T = '/Markets/Taiwan/AE/Batch_01';
+tree[T] = [
+    'SF_INTL_RyuHadouken_DFOH_TPEArena_1710x260px_30s_TW_V01.aep',
+    'SF_INTL_RyuHadouken_DFOH_TPEArena_Insitu_1710x260px_30s_TW_V01.aep',
+    'SF_INTL_RyuHadouken_DFOH_InsituPlaza_1710x260px_20s_TW_V01.aep',
+];
+scan = A.cutdownsScanFolder(T, 'Street Fighter', 'RyuHadouken');
+const tw = (scan.found || []).map((c) => c.name);
+say(tw.indexOf('SF_INTL_RyuHadouken_DFOH_TPEArena_1710x260px_30s_TW_V01.aep') !== -1, 'the real 30s is found', tw.join(' · '));
+say(tw.indexOf('SF_INTL_RyuHadouken_DFOH_TPEArena_Insitu_1710x260px_30s_TW_V01.aep') === -1, 'its Insitu twin is not');
+say((scan.insitu || []).length === 1, 'and is reported as passed over', JSON.stringify(scan.insitu));
+say(tw.indexOf('SF_INTL_RyuHadouken_DFOH_InsituPlaza_1710x260px_20s_TW_V01.aep') !== -1, 'a site merely containing the letters is kept');
+// Handed straight to the add, as an older panel would.
+A.cutdownsAdd(JSON.stringify([{
+    id: 'x', campaign: 'Street Fighter', creative: 'RyuHadouken', duration: '30', size: '1710x260', territory: 'TW',
+    path: T + '/SF_INTL_RyuHadouken_DFOH_TPEArena_Insitu_1710x260px_30s_TW_V01.aep',
+    name: 'SF_INTL_RyuHadouken_DFOH_TPEArena_Insitu_1710x260px_30s_TW_V01.aep', folder: T, author: 'Antonio', stamp: 's',
+}]));
+say((A.cutdownsFor('', 'RyuHadouken', '1710x260', '30').entries || []).length === 0, 'the add refuses one too');
+// One registered before the rule existed: already in the shared file.
+const sharedPath = Object.keys(written).filter((k) => /shared-cutdowns\.json$/.test(k))[0];
+const doc = JSON.parse(written[sharedPath]);
+const listKey = Object.keys(doc).filter((k) => Array.isArray(doc[k]))[0];
+doc[listKey].push({
+    id: 'old', campaign: 'Street Fighter', creative: 'RyuHadouken', duration: '30', size: '1710x260', territory: 'TW',
+    path: T + '/x_Insitu.aep', name: 'SF_INTL_RyuHadouken_DFOH_TPEArena_Insitu_1710x260px_30s_TW_V01.aep',
+    folder: T, author: 'Antonio', stamp: 's',
+});
+written[sharedPath] = JSON.stringify(doc);
+say((A.cutdownsFor('', 'RyuHadouken', '1710x260', '30').entries || []).length === 0, 'one already registered is no longer offered');
+A.cutdownsAdd(JSON.stringify(scan.found));
+say(written[sharedPath].indexOf('TPEArena_Insitu') === -1, 'and leaves the shared file on the next write');
+say((A.cutdownsFor('', 'RyuHadouken', '1710x260', '30').entries || []).length === 1, 'the real 30s takes its place');
+
 console.log(fails === 0 ? '\nCLEAN — only what somebody registered, and only where the tree is silent.' : '\n' + fails + ' FAILED');
 process.exit(fails ? 1 : 0);

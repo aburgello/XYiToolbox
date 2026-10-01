@@ -1907,7 +1907,13 @@ size and market. Three rules: it is **never preferred over a real master**
 creative+length+size **replaces rather than duplicates**; and **the artwork is
 not swapped**, because a cut-down is already localised and MC It!/Support Swap
 refuse market→market on purpose — the build copies and renames, the images
-still import, and a person does the swap. `node scripts/probe-cutdowns.cjs`
+still import, and a person does the swap. **An `Insitu` project is never a
+cut-down** (`isInsituName`, a WHOLE token): it shares its real twin's creative,
+size and length, and nobody localises off a picture of the screen — refused at
+the scan, the add and the read, so one registered earlier drops out on the next
+write. **Two files sharing a size and length in one folder are ASKED about**
+(the panel's `selectDialog`), never left to listing order, which is what the
+replace rule did with them. `node scripts/probe-cutdowns.cjs`
 guards it. In the panel it rides the master-pin mechanism, so a run needs no
 new argument.
 

@@ -64,6 +64,8 @@ export interface CutdownScanResult extends Result {
   found?: Cutdown[];
   /** The folder as picked, for the report. */
   folder?: string;
+  /** Names passed over as in-situ mock-ups, so "nothing found" can say why. */
+  insitu?: string[];
 }
 
 function canon(s: string): string {
@@ -76,6 +78,25 @@ function durKey(s: string): string {
 }
 
 /**
+ * INSITU IS NEVER A MASTER. An in-situ project is the deliverable composited
+ * onto a photo of the site -- a picture OF the screen, not what plays on it --
+ * and it sits in the same batch folder under the same creative, size and
+ * length as the real one (`…_TPEArena_1710x260px_30s_TW` beside
+ * `…_TPEArena_Insitu_1710x260px_30s_TW`). Nobody localises off it, by studio
+ * decision, so it is refused at every door: the scan, the add, and the read.
+ *
+ * A WHOLE TOKEN, never a substring -- a site may yet be called something
+ * that merely contains the letters.
+ */
+export function isInsituName(name: string): boolean {
+  const tokens = String(name || "").toUpperCase().split(/[^A-Z0-9]+/);
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i] === "INSITU") return true;
+  }
+  return false;
+}
+
+/**
  * NO FILE YET IS NOT "COULD NOT READ". readSharedFile returns null for both,
  * and this list starts life absent -- so the first registration on a fresh
  * team folder failed with "is the NAS mounted?" on a mounted NAS. The
@@ -84,7 +105,14 @@ function durKey(s: string): string {
  */
 function readCutdowns(): Cutdown[] {
   const raw = readSharedFile<Cutdown>(SHARED_CUTDOWNS_FILE, SHARED_CUTDOWNS_TYPE);
-  return raw === null ? [] : raw;
+  if (raw === null) return [];
+  // An in-situ file registered before the rule existed is not offered, and
+  // drops out of the shared file on the next write.
+  const out: Cutdown[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    if (raw[i] && !isInsituName(raw[i].name)) out.push(raw[i]);
+  }
+  return out;
 }
 
 /** Everything registered. An unmounted share is refused above; beyond that,
@@ -118,6 +146,7 @@ export const cutdownsScanFolder = (folderPath: string, campaign: string, creativ
 
     const wantCreative = canon(creative);
     const found: Cutdown[] = [];
+    const insitu: string[] = [];
     const me = loadLocalSetting(MACHINE_OWNER_KEY) || "";
 
     const consider = (f: File, inFolder: Folder) => {
@@ -127,6 +156,7 @@ export const cutdownsScanFolder = (folderPath: string, campaign: string, creativ
       const meta = parseFilenameMeta(nm);
       if (!meta.campaign) return;
       if (canon(meta.campaign) !== wantCreative) return;
+      if (isInsituName(nm)) { insitu.push(nm); return; }
       found.push({
         id: "cut-" + new Date().getTime() + "-" + Math.floor(Math.random() * 100000) + "-" + found.length,
         campaign: campaign,
@@ -160,7 +190,7 @@ export const cutdownsScanFolder = (folderPath: string, campaign: string, creativ
       }
     }
 
-    return { success: true, found: found, folder: folder.fsName };
+    return { success: true, found: found, folder: folder.fsName, insitu: insitu };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -171,7 +201,9 @@ export const cutdownsScanFolder = (folderPath: string, campaign: string, creativ
  * nested arrays of objects do not survive the bridge (CLAUDE.md).
  *
  * Replaces by campaign+creative+duration+size: registering the same length
- * twice means the second one is the answer, not that there are two.
+ * twice means the second one is the answer, not that there are two. Which
+ * makes two files sharing a key in ONE call a question for a person -- the
+ * panel asks before it gets here, since the later one would silently win.
  */
 export const cutdownsAdd = (entriesJson: string): CutdownsResult => {
   try {
@@ -192,6 +224,7 @@ export const cutdownsAdd = (entriesJson: string): CutdownsResult => {
     for (let i = 0; i < incoming.length; i++) {
       const c = incoming[i];
       if (!c || !c.path || !c.creative) continue;
+      if (isInsituName(c.name)) continue;
       if (!c.author) c.author = me;
       if (!c.stamp) c.stamp = new Date().toString();
       let replaced = false;

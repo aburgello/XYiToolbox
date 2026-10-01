@@ -39,7 +39,7 @@ import { VideoOverlay } from "../VideoOverlay";
 import { toFileUrl } from "../lib/fileUrl";
 import StatusIcon from "../StatusIcon";
 import Droplet from "../Droplet";
-import { alertDialog, confirmDialog, promptDialog } from "../Dialog";
+import { alertDialog, confirmDialog, promptDialog, selectDialog } from "../Dialog";
 import { marketsHalfFor, pairCampaignToLocalise } from "../lib/mastersRoot";
 import { hasUserTheme } from "../themes";
 import { runMasterCheck, openReport } from "../lib/masterCheck";
@@ -1029,10 +1029,40 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
             const folder = (await evalTS("workflowSelectFolder")) as string;
             if (!folder) return;
             const scan = (await safeEvalTS("cutdownsScanFolder", folder, selectedCampaign.name, selectedCreative)) as
-                { success: boolean; error?: string; found?: CutdownRec[] };
+                { success: boolean; error?: string; found?: CutdownRec[]; insitu?: string[] };
             if (!scan || !scan.success) { pushToast(scan?.error || "Couldn't read that folder.", "error"); return; }
-            const found = scan.found || [];
-            if (found.length === 0) { pushToast(`Nothing in that folder reads as ${selectedCreative}.`, "error"); return; }
+            const scanned = scan.found || [];
+            if (scanned.length === 0) {
+                pushToast((scan.insitu || []).length > 0
+                    ? `Only Insitu projects of ${selectedCreative} in that folder — those are never registered.`
+                    : `Nothing in that folder reads as ${selectedCreative}.`, "error");
+                return;
+            }
+            // ONE CUT-DOWN PER SIZE AND LENGTH, and the host replaces on that
+            // key -- so two files sharing it would register as whichever came
+            // last in the listing. That is a person's call, asked here.
+            const groups: { key: string; items: CutdownRec[] }[] = [];
+            for (const c of scanned) {
+                const key = `${c.size.toUpperCase()}|${c.duration}`;
+                const g = groups.find((x) => x.key === key);
+                if (g) g.items.push(c);
+                else groups.push({ key, items: [c] });
+            }
+            const found: CutdownRec[] = [];
+            for (const g of groups) {
+                if (g.items.length === 1) { found.push(g.items[0]); continue; }
+                const pick = await selectDialog(
+                    {
+                        title: `Which ${g.items[0].size} ${g.items[0].duration}s is the cut-down?`,
+                        body: `${g.items.length} projects in that folder share this size and length. Only one can be the master for it.`,
+                        confirm: "Register",
+                    },
+                    g.items.map((c) => c.name.replace(/\.aep$/i, "")),
+                    0,
+                );
+                if (pick === null) return;
+                found.push(g.items[pick]);
+            }
             const r = (await safeEvalTS("cutdownsAdd", JSON.stringify(found))) as
                 { success: boolean; error?: string; entries?: CutdownRec[] };
             if (!r || !r.success) { pushToast(r?.error || "Couldn't register those.", "error"); return; }
@@ -1443,7 +1473,7 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
                             <h4>
                                 <Scissors size={13} />
                                 CUT-DOWNS ({cutdowns.length})
-                                <Tooltip text={`Point at the batch folder holding a length of ${selectedCreative} that became a master — a 7s built for one market and reused by the next. Localise offers it where no real master exists at that length.`}>
+                                <Tooltip text={`Pick the batch folder holding a cut-down of ${selectedCreative}, such as a 7s built for one market. Localise offers it when no master exists at that length. Insitu projects are skipped.`}>
                                     <button className="cutdown-add" disabled={cutBusy} onClick={registerCutdowns}>
                                         <FolderPlus size={11} /> {cutBusy ? "Reading…" : "Register…"}
                                     </button>
@@ -1451,7 +1481,7 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
                             </h4>
                             {cutdowns.length === 0 && (
                                 <p className="cutdown-none">
-                                    Nothing registered. A length built for one market and reused by the next belongs here.
+                                    No cut-downs registered for {selectedCreative} yet.
                                 </p>
                             )}
                             {cutdowns.map((c) => (
