@@ -88,7 +88,7 @@ import { Image as ImageIcon, FileBox, Film, PackageCheck, FileText, RefreshCw, L
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import Dropdown from "../Dropdown";
-import { fetchJobs, fetchJobsFresh, fetchJobsLive, fetchJobComment, peekJobs, jobReadiness, territoryFlag, parseJobTitle, isLocaliseJob, statusTint, DELIVERABLE_STATUSES, AMEND_STATUSES, type WrikeJob } from "../lib/jobsFeed";
+import { fetchJobs, fetchJobsFresh, fetchJobsLive, fetchJobComment, peekJobs, jobReadiness, territoryFlag, parseJobTitle, isLocaliseJob, statusTint, DELIVERABLE_STATUSES, AMEND_STATUSES, REVISED_STATUSES, type WrikeJob } from "../lib/jobsFeed";
 import { loadJobRows, stageBatchFromJob, classifyRows } from "../lib/jobRows";
 import { navigateToTool } from "../lib/navigation";
 import { confirmDialog } from "../Dialog";
@@ -784,11 +784,27 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
 
     // What the hand-off message is written from (lib/wrikeMessage.ts TOKENS).
     // A count of zero is "", so its block is left out rather than reading "0 x".
-    const revised = rows.filter((r) => {
-        if (!r.render || !isAmend(r)) return false;
+    // REVISED = every deliverable that was sent back and has a render: Wrike
+    // says To amend or Revised, or the amend comment names it. Its NEWEST
+    // render is what the message lists. It used to count only a render newer
+    // than the version the comment reviewed, which read 0 on the batch it was
+    // written for: the message is sent by the person who just did the amend,
+    // and a render re-made over the same version is still the amended one.
+    // A render no newer than the one reviewed is SAID (messageWarnings), not
+    // left out.
+    const sentBack = (r: Row) => !!r.render && (isAmend(r) || amendsFor(r).length > 0 || !!(r.wrike && REVISED_STATUSES.test(r.wrike.status.trim())));
+    const revised = rows.filter(sentBack);
+    const sameVersion = revised.filter((r) => {
         const reviewed = Math.max(0, ...amendsFor(r).map((n) => n.version));
-        return reviewed ? r.render.version > reviewed : r.render.version > 1;
+        return reviewed ? r.render!.version <= reviewed : false;
     });
+    const messageWarnings: string[] = [];
+    if (sameVersion.length) {
+        const v = (r: Row) => "V" + String(r.render!.version).padStart(2, "0");
+        messageWarnings.push(sameVersion.length === 1
+            ? `The revised render is still ${v(sameVersion[0])}, the version the amends were written on. Fine if you rendered over it; otherwise render the new version first.`
+            : `${sameVersion.length} of the revised renders are still the version the amends were written on. Fine if you rendered over them; otherwise render the new versions first.`);
+    }
     const n = (k: number) => (k > 0 ? String(k) : "");
     const messageData: Record<string, string> = scan ? {
         territory: territory.replace(/_/g, " "),
@@ -986,7 +1002,7 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob }) => {
                         ))}
                     </div>
                     {showMessage && (
-                        <TrackerMessage data={messageData} uploadRoot={uploadRoot} onPickUploadRoot={() => void pickUploadRoot()} onClose={() => setShowMessage(false)} onCopied={(text, bad) => setMsg({ text, bad })} />
+                        <TrackerMessage data={messageData} warnings={messageWarnings} uploadRoot={uploadRoot} onPickUploadRoot={() => void pickUploadRoot()} onClose={() => setShowMessage(false)} onCopied={(text, bad) => setMsg({ text, bad })} />
                     )}
                     {openRow && (
                         <div className="bt-links bt-links--here">

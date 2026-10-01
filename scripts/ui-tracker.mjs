@@ -378,6 +378,10 @@ try {
     check((await page.eval(`document.querySelectorAll(".bt-msgcard-preview b").length`)) === 2, "headings show bold");
     await page.click(".bt-msgcard-acts .bt-act", "Copy for Wrike");
     check(await page.waitFor(`/Copied/.test(document.querySelector(".bt-msg")?.innerText || "")`, 3000), "Copy for Wrike says it copied");
+    await page.click(".bt-msgcard-tab", "Revised");
+    await pause(200);
+    const revisedMsg = await page.eval(`(document.querySelector(".bt-msgcard-preview")?.innerText || "") + " || " + [...document.querySelectorAll(".bt-msgcard-warn, .bt-msgcard-dropped")].map(e => e.innerText).join(" | ")`);
+    check(/\d+ x Revised:\s*\/.*\.mov/.test(revisedMsg), "Revised lists the newest render of what was sent back, whatever version it is", revisedMsg);
     await page.click(".bt-msgcard-tab", "Delivery");
     await pause(200);
     const msgAsks = await page.eval(`[...document.querySelectorAll(".bt-msgcard-field span")].map(e => e.innerText)`);

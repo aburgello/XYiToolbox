@@ -998,8 +998,12 @@ The open project's row is an outlined card, never an edge bar.
   left out whole**, heading and all; a zero count is empty. `**bold**` goes on
   the clipboard as rich text beside the plain copy. Templates are the
   artist's own: JSON in `TrackerMessageTemplates` (in `PROFILE_KEYS`), stored
-  only once one is edited. `revised` is a To amend row whose newest render is
-  newer than the version the amend comment reviewed. The masters' Renders
+  only once one is edited. `revised` is every deliverable SENT BACK that
+  has a render (Wrike says To amend or Revised, or the amend comment names
+  it), and lists its newest render. It used to require a render newer than
+  the version reviewed and read 0 on the batch it was needed for; a render
+  no newer than the one reviewed is now a warning on the card, never a
+  reason to leave it out. The masters' Renders
   folder is found from the Markets sibling (`deriveMastersFromMarkets`): the
   creative's own folder only when EVERY deliverable matches that one folder by
   a whole word of its name, `Masters/Renders` itself the moment the batch

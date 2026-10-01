@@ -22,6 +22,8 @@ import { DEFAULT_TEMPLATES, TOKENS, fieldsOf, fillMessage, parseTemplates, toHtm
 interface Props {
     /** The batch's facts, keyed by token (lib/wrikeMessage.ts TOKENS). */
     data: Record<string, string>;
+    /** Things worth knowing before sending a message that lists revised renders. */
+    warnings?: string[];
     /** The campaign's shared uploads folder, "" when nobody has set one. */
     uploadRoot: string;
     /** Pick it (or another), and share it with the team. */
@@ -53,7 +55,7 @@ function copyBoth(html: string, text: string): boolean {
     return done;
 }
 
-const TrackerMessage: React.FC<Props> = ({ data, uploadRoot, onPickUploadRoot, onClose, onCopied }) => {
+const TrackerMessage: React.FC<Props> = ({ data, warnings, uploadRoot, onPickUploadRoot, onClose, onCopied }) => {
     const [templates, setTemplates] = useState<MessageTemplate[]>(DEFAULT_TEMPLATES);
     const [custom, setCustom] = useState(false);
     const [id, setId] = useState(remembered(LAST_KEY) || DEFAULT_TEMPLATES[0].id);
@@ -211,6 +213,10 @@ const TrackerMessage: React.FC<Props> = ({ data, uploadRoot, onPickUploadRoot, o
                             </button>
                         </p>
                     )}
+                    {/\{revised\./i.test(current.body) && !data["revised.count"] && (
+                        <p className="bt-msgcard-dropped">No revised renders: nothing in this batch is To amend or Revised in Wrike with a render.</p>
+                    )}
+                    {/\{revised\./i.test(current.body) && (warnings || []).map((w, i) => <p key={i} className="bt-msgcard-warn">{w}</p>)}
                     {filled.dropped.length > 0 && !empty && (
                         <p className="bt-msgcard-dropped">Left out, nothing to put in it: {filled.dropped.join(", ")}.</p>
                     )}

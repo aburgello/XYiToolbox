@@ -88,6 +88,7 @@
     .bt-msgcard-none, .bt-msgcard-dropped, .bt-msgcard-help { margin: 0; font-size: 11px; line-height: 1.45; color: #9aa7a5; }
     .bt-msgcard-help code { padding: 0 3px; border-radius: 3px; background: rgba(255, 255, 255, 0.08); color: #d6dedc; font-size: 10.5px; }
     .bt-msgcard-edit { display: flex; flex-direction: column; gap: 7px; }
+    .bt-msgcard-warn { margin: 0; font-size: 11px; line-height: 1.45; color: #fdba74; }
     .bt-msgcard-upload {
         display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0; font-size: 11px; line-height: 1.45; color: #9aa7a5;
         span { color: #d6dedc; overflow-wrap: break-word; word-break: break-word; min-width: 0; }
