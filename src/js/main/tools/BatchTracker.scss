@@ -284,4 +284,38 @@
     .bt-jobs.is-overview .bt-job-label { font-size: 12.5px; }
 
     .bt-note { display: flex; align-items: center; gap: 6px; margin: 4px 0; font-size: 12px; color: #9aa7a5; &.is-bad { color: #fca5a5; } }
+
+    // THE PAGE'S SHAPE WHILE AE ANSWERS (see `skeleton` in the TSX). Bars the
+    // size of what will replace them, so nothing jumps when the rows land.
+    // The sweep runs only while this is on screen; it is gone with the wait.
+    .bt-skel { display: flex; flex-direction: column; gap: 10px; }
+    .bt-skel-links { display: flex; flex-wrap: wrap; gap: 6px; i { height: 28px; border-radius: 7px; } }
+    .bt-skel-rows { display: flex; flex-direction: column; gap: 6px; }
+    .bt-skel-row {
+        display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 12px;
+        border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 8px; background: rgba(255, 255, 255, 0.015);
+        i { height: 10px; border-radius: 5px; flex: 0 1 auto; }
+        .bt-skel-pips { margin-left: auto; width: 44px; flex-shrink: 0; }
+        .bt-skel-pill { width: 86px; height: 18px; border-radius: 9px; flex-shrink: 0; }
+    }
+    .bt-skel-title { display: block; width: 140px; height: 18px; border-radius: 5px; }
+    .bt-skel i, .bt-skel-title {
+        display: block;
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.11) 45%, rgba(255, 255, 255, 0.05) 90%);
+        background-size: 220% 100%;
+        animation: bt-skel-sweep 1.5s ease-in-out infinite;
+    }
+    .bt-skel-row:nth-child(2) i { animation-delay: 0.08s; }
+    .bt-skel-row:nth-child(3) i { animation-delay: 0.16s; }
+    .bt-skel-row:nth-child(4) i { animation-delay: 0.24s; }
+    .bt-skel-row:nth-child(5) i { animation-delay: 0.32s; }
+    .bt-skel-row:nth-child(6) i { animation-delay: 0.4s; }
+    @media (prefers-reduced-motion: reduce) {
+        .bt-skel i, .bt-skel-title { animation: none; }
+    }
+}
+
+@keyframes bt-skel-sweep {
+    0% { background-position: 100% 0; }
+    100% { background-position: -120% 0; }
 }

@@ -287,7 +287,7 @@ try {
     await pause(100);
     check(/Build it/.test(await rowText(3)), "a subtask with nothing on disk offers Build it");
     await page.eval(`[...document.querySelectorAll(".bt-rows > .bt-row")[3].querySelectorAll(".bt-act")].find(b => /Build it/.test(b.textContent)).click()`);
-    check(await page.waitFor(`!!document.querySelector(".ls-pane-tab") && !document.querySelector(".bt")`, 8000), "…which goes back to the Localise landing");
+    check(await page.waitFor(`!!document.querySelector(".ls-pane-tab") && !document.querySelector(".bt")?.offsetParent`, 8000), "…which goes back to the Localise landing");
     check(await page.waitFor(`/1 row from SF Motion Outdoor NO 2/.test(document.body.innerText)`, 6000), "…where Build a Batch has the one subtask staged");
 
     await page.click(".ls-pane-tab", "Tracker");
@@ -345,7 +345,7 @@ try {
     console.log("\n10. Coming back is instant, and nothing is asked twice");
     await openRowAt(page, 1);
     await page.click(".ls-pane-tab", "Big Guy");
-    await page.waitFor(`!document.querySelector(".bt")`, 4000);
+    await page.waitFor(`!document.querySelector(".bt")?.offsetParent`, 4000);
     await page.eval(`window.__calls = []`);
     await page.click(".ls-pane-tab", "Tracker");
     check(await page.eval(`document.querySelectorAll(".bt-rows > .bt-row").length === 4 && !/Reading where/.test(document.body.innerText)`), "back on the Tracker tab, the rows are there at once -- no wait on AE");
@@ -413,6 +413,29 @@ try {
     check(page.errors.length === 0, "no page errors", page.errors.slice(0, 5));
 } finally {
     await page.close();
+}
+// A FIRST OPEN WITH AE SLOW TO ANSWER: the page's own shape, not a blank panel.
+{
+    const slow = await launch({ root: ROOT, fixturesSrc: FIXTURES, routes: { "api/panel/comment": () => ({ comment: null, count: 0 }), "api/panel/jobs": () => FEED } });
+    try {
+        console.log("\n12. While AE answers");
+        await slow.goto();
+        await slow.waitFor(`[...document.querySelectorAll("button.category-card")].some(b => /Localise/.test(b.textContent))`, 10000);
+        await slow.click("button.category-card", "Localise");
+        await slow.waitFor(`[...document.querySelectorAll(".ls-pane-tab")].some(b => /Tracker/.test(b.textContent))`, 8000);
+        await slow.eval(`window.__bridgeDelay = 1500`);
+        await slow.click(".ls-pane-tab", "Tracker");
+        check(await slow.waitFor(`document.querySelectorAll(".bt-skel-row").length === 6`, 1000), "a first open draws the page's shape at once, before AE has answered anything");
+        check(/Finding the open project/.test(await slow.eval(`document.querySelector(".bt-skel .bt-note")?.innerText || ""`)), "…and says which step it is on");
+        await slow.shot(path.join(SHOTS, "ui-tracker-loading.png"));
+        check(await slow.waitFor(`/Reading Norway Batch 02/.test(document.querySelector(".bt-skel .bt-note")?.innerText || "") && /Norway/.test(document.querySelector(".bt-title")?.innerText || "")`, 6000),
+            "once the batch is known the header names it, and the wait says it is reading that batch");
+        await slow.shot(path.join(SHOTS, "ui-tracker-loading-2.png"));
+        check(await slow.waitFor(`document.querySelectorAll(".bt-rows > .bt-row").length === 4 && !document.querySelector(".bt-skel")`, 12000), "the rows replace it when they land");
+        check(slow.errors.length === 0, "no page errors", slow.errors.slice(0, 5));
+    } finally {
+        await slow.close();
+    }
 }
 console.log(failures ? `\n${failures} FAILED` : "\nCLEAN — the tracker lines a batch up, flags what disagrees, and every problem hands off to its fix.");
 process.exit(failures ? 1 : 0);

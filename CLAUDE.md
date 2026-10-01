@@ -501,6 +501,18 @@ the campaign card's own slot** with the Library still beside it
 a campaign that isn't set up -- which a switch can still land on when the
 new campaign's masters folder can't be found. Nothing else on the page moves.
 
+**A Localise pane stays ALIVE once opened** (`keep`, `.ls-pane-keep`): hidden
+with CSS, never unmounted, like the Workflows bubble. They were swapped in and
+out, so each tab switch rebuilt a pane: Big Guy lost its territory scan and
+re-read the campaigns, their folders and the team board. A pane is not built
+until first opened; opening one of the page's TOOLS drops them all, and coming
+back builds only the pane on show. The wrapper is `display: contents`, so the
+surface's rules reach a pane as `> .ls-pane-keep > …`, never `> .bt`. The
+Tracker takes `active` and, on coming back to its tab, does what a remount
+did: the open project, the batch (its own freshness rule), your jobs.
+`main.tsx`'s auto-press skips a button with no box, so a stored link can never
+press one on a hidden pane.
+
 **The Tracker is the landing's THIRD PANE** (beside Big Guy Localiser and
 Trott & Batch), not a card in the tools grid -- it is where a batch is looked at
 before and after either half runs. The last pane used is remembered per viewer
@@ -986,6 +998,29 @@ The open project's row is an outlined card, never an edge bar.
   isn't asked again; chips aren't re-summarised within 5 min unless the jobs
   or their statuses changed; a job's folder is looked for once a session.
   Refresh forces all of it, and so does the tracker's own rename.
+- **A first open draws the page's SHAPE while AE answers** (`skeleton`): the
+  links, a line naming the step, six greyed rows. It was one line of text on
+  an empty panel for the seconds the engine takes, which read as a panel that
+  failed to load. The sweep runs only while it is on screen. The wait itself
+  was the engine. `ui-tracker.mjs` section 12 holds the bridge slow
+  (`window.__bridgeDelay`) to check it.
+- **THE PANEL READS THE FOLDERS, AE ONLY MERGES** (`lib/trackerDisk.ts`,
+  2026-10-01). A batch's listings took seconds in AE's engine, with AE's busy
+  cursor up, and ~40ms from the panel's Node. So the panel lists, and passes
+  the listing to `trackerScan`/`trackerScanMany` as `disk`; the merge is the
+  host's, unchanged, so what pairs with what is still one piece of code.
+  `readTrackerDisk` is a PORT of `trReadDisk` and must stay one: same folders,
+  same filters, same order (the delivered walk's stack included -- the merge
+  keeps the first found). Change one, change the other.
+  `node scripts/probe-tracker-disk.mjs` runs both over one tree, fails on any
+  difference, and stubs AE's listing to THROW when the panel has read. Measured
+  over all 55 real Street Fighter batches: no row differs. `null` from the
+  panel's read (no Node, a folder it can't list) means AE reads as before --
+  never an empty listing in place of a failed one. Names are folded to NFD on
+  macOS, as AE hands them over; paths stay as listed. A listing that is not
+  whole is ignored by the host. The panel keeps a listing 60s like the host
+  does; refresh and the rename read again. `trackerLocate` (finding a job's
+  folder, once a session) still runs in AE.
 - **Message for Wrike** (the `Message` link; `tools/TrackerMessage.tsx`,
   `lib/wrikeMessage.ts`) writes the hand-off comment from the batch on screen
   and COPIES it -- the panel cannot post to Wrike, so the last step is a

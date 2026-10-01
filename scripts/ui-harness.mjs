@@ -60,7 +60,9 @@ function bridgeSource(fixturesSrc) {
           try { const v = F[m[1]](...args); out = v === undefined ? "undefined" : JSON.stringify(v); } catch (e) { out = "undefined"; }
         }
       }
-      if (cb) setTimeout(() => cb(out), 5);
+      // __bridgeDelay: a test can make AE slow to answer, to see what a page
+      // shows while it waits.
+      if (cb) setTimeout(() => cb(out), window.__bridgeDelay || 5);
     },
     getHostEnvironment: () => env,
     getCurrentApiVersion: () => JSON.stringify({ major: 11, minor: 0, micro: 0 }),
