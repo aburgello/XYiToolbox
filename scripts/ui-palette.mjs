@@ -149,10 +149,10 @@ try {
     check(await page.waitFor(`!!document.querySelector(".bt") && !document.querySelector(".palette-card")`, 6000), "Shift x3 from home lands on the Tracker, palette closed");
     check(await page.eval(`document.querySelector(".ls-pane-tab.active")?.innerText.trim() === "Tracker"`), "…as the Localise page's Tracker pane");
     await page.click(".ls-pane-tab", "Big Guy");
-    await page.waitFor(`!document.querySelector(".bt")`, 4000);
+    await page.waitFor(`!document.querySelector(".bt")?.offsetParent`, 4000);
     await pause(500);
     await tripleTap();
-    check(await page.waitFor(`!!document.querySelector(".bt")`, 4000), "already on Localise, on another pane: it switches to the Tracker");
+    check(await page.waitFor(`!!document.querySelector(".bt")?.offsetParent`, 4000), "already on Localise, on another pane: it switches to the Tracker");
     await pause(500);
     await doubleTap(); await pause(700);
     check(await isOpen(), "two taps still only open the palette");

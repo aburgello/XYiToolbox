@@ -167,6 +167,9 @@ const Main = () => {
             const match = Array.from(container.querySelectorAll("button")).find(
                 (b) =>
                     b.textContent?.trim() === label &&
+                    // Never a button on a pane that is kept alive but hidden
+                    // (the Localise page's other tabs): it has no box.
+                    (b as HTMLElement).offsetParent !== null &&
                     // NEVER reach into the agent's own panel. It is mounted in
                     // the shell, so a broadened search can see it, and a label
                     // collision there would have the agent clicking itself.

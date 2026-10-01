@@ -463,8 +463,10 @@ $ls-shift: cubic-bezier(0.22, 1, 0.36, 1);    // colour, border, shadow
     // margins disagreed on every edge.
     padding: 16px;
 
-    > .form-tool,
-    > .campaign-localiser {
+    // Each pane sits in a keep-alive wrapper (.ls-pane-keep, display:contents
+    // when shown), so "the pane" is one level further down than it was.
+    > .ls-pane-keep > .form-tool,
+    > .ls-pane-keep > .campaign-localiser {
         padding: 0;
     }
 }
@@ -657,7 +659,7 @@ $ls-shift: cubic-bezier(0.22, 1, 0.36, 1);    // colour, border, shadow
 // The tracker as a pane: the surface owns the inset and the page scrolls, so
 // the tool gives up its own padding and scroll box (it keeps them when it is
 // opened as a page of its own).
-.ls-main-surface > .bt { padding: 0; height: auto; overflow: visible; }
+.ls-main-surface > .ls-pane-keep > .bt { padding: 0; height: auto; overflow: visible; }
 
 // ── The Library card ────────────────────────────────────────────────────────
 // Blue-teal, where everything else on the page is teal: a different KIND of
@@ -948,7 +950,7 @@ $ls-shift: cubic-bezier(0.22, 1, 0.36, 1);    // colour, border, shadow
 // overflow-x `auto` too, so a few pixels of anything too wide inside it grows
 // a horizontal scrollbar across the whole Localise page. On the landing the
 // page itself scrolls; sideways is never wanted here.
-.ls-main-surface.is-bare > .form-tool { overflow-x: hidden; }
+.ls-main-surface.is-bare > .ls-pane-keep > .form-tool { overflow-x: hidden; }
 
 // ── Your jobs: one line under the header ────────────────────────────────────
 // Chips, not rows: this is a way in, not a list to read. The job for the

@@ -417,15 +417,30 @@ try {
     check(!(await page.eval(`!!document.querySelector(".ls-jobs-label")`)) && !/Your jobs/.test(await page.eval(text(".ls-jobs"))), "no 'Your jobs' label taking a chip's worth of the row");
     await page.shot(path.join(SHOTS, "ui-jobs-strip.png"));
     await page.click(".ls-jobs-chip", "TW");
-    check(await page.waitFor(`/Tracker/.test(document.querySelector(".ls-pane-tab.active")?.innerText || "") && !!document.querySelector(".ls-main-surface > .bt")`, 4000), "a job chip opens the Tracker pane (the job window is a press further in)");
+    check(await page.waitFor(`/Tracker/.test(document.querySelector(".ls-pane-tab.active")?.innerText || "") && !!document.querySelector(".ls-main-surface .bt")?.offsetParent`, 4000), "a job chip opens the Tracker pane (the job window is a press further in)");
     check(!(await page.eval(`!!document.querySelector(".ls-jobs")`)), "…where the tracker's own job chips stand in for the strip");
-    check(await page.eval(`getComputedStyle(document.querySelector(".ls-main-surface > .bt")).paddingTop === "0px"`), "…and the surface, not the tool, owns the inset");
+    check(await page.eval(`getComputedStyle(document.querySelector(".ls-main-surface .bt")).paddingTop === "0px"`), "…and the surface, not the tool, owns the inset");
     await page.click(".home-button");
     await page.waitFor(`[...document.querySelectorAll("button.category-card")].some(b => /Localise/.test(b.textContent))`, 6000);
     await page.click("button.category-card", "Localise");
     check(await page.waitFor(`/Tracker/.test(document.querySelector(".ls-pane-tab.active")?.innerText || "")`, 6000), "the last pane used is where Localise opens next time");
     await page.click(".ls-pane-tab", "Big Guy");
     check(await page.waitFor(`!!document.querySelector(".ls-jobs") && !!document.querySelector(".ls-libcard-row")`, 6000), "back on Big Guy Localiser, the strip returns");
+
+    // PANES STAY ALIVE: switching tabs hides a pane, it does not rebuild it.
+    console.log("\n7b. A pane is kept once opened");
+    const shown = (sel) => page.eval(`!!document.querySelector(${JSON.stringify(sel)})?.offsetParent`);
+    await page.eval(`(() => { const el = document.querySelector(".ls-main-surface .form-tool"); if (el) el.setAttribute("data-kept", "1"); })()`);
+    await page.eval(`window.__calls = []`);
+    await page.click(".ls-pane-tab", "Tracker");
+    check(await page.waitFor(`!!document.querySelector(".ls-main-surface .bt")?.offsetParent`, 4000) && !(await shown(".ls-main-surface .form-tool")), "on the Tracker tab, Big Guy is hidden");
+    await page.click(".ls-pane-tab", "Big Guy");
+    await pause(600);
+    check((await shown(".ls-main-surface .form-tool")) && (await page.eval(`document.querySelector(".ls-main-surface .form-tool")?.getAttribute("data-kept")`)) === "1", "back on Big Guy, it is the SAME page, not a rebuilt one");
+    const reread = await page.eval(`window.__calls.map(c => c.fn).filter(f => /^(loadLocLibCampaigns|locLibCampaignStatus|teamCampaignBoard|scanTerritories|loadCampaignBanner)$/.test(f))`);
+    check(reread.length === 0, "…and nothing about the campaigns was read again on the way back", reread);
+    check(!(await shown(".ls-main-surface .bt")) && !!(await page.eval(`!!document.querySelector(".ls-main-surface .bt")`)), "the Tracker is hidden, and still there");
+    check((await page.eval(`getComputedStyle(document.querySelector(".ls-main-surface .form-tool")).paddingTop`)) === "0px", "the surface still owns the inset through the keep-alive wrapper");
 
 
     console.log("");

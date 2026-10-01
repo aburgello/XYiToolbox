@@ -164,6 +164,20 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
         setPaneState(p);
         setLocalToolId(null);
     }), []);
+    // A PANE STAYS ALIVE ONCE OPENED, hidden rather than removed. They were
+    // swapped in and out, so every switch threw a pane away and rebuilt it:
+    // Big Guy lost its territory scan and re-read the campaigns, their folders
+    // and the team board; the Tracker re-read its batch. A pane is still not
+    // built until it is first opened, and leaving the Localise page (or
+    // opening one of its tools) still lets all three go.
+    const keptPanes = useRef<Record<string, boolean>>({});
+    // A tool opened from this page replaces the landing, panes and all; coming
+    // back builds only the pane on show, as it always did, not every pane
+    // that had been opened before.
+    if (tool) keptPanes.current = {};
+    keptPanes.current[pane] = true;
+    const keep = (p: Pane, node: React.ReactNode) =>
+        keptPanes.current[p] ? <div key={p} className="ls-pane-keep" data-pane={p} style={{ display: pane === p ? "contents" : "none" }}>{node}</div> : null;
     /** A job chip pressed: the tracker opens on that job's batch. The tick
      *  lets the same chip be pressed twice. */
     const [trackerJob, setTrackerJob] = useState<{ id: string; tick: number } | null>(null);
@@ -456,14 +470,14 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
                         {pane !== "tracker" && <LocaliseJobsStrip hereCode={here ? here.code : undefined} onSent={onJobSent} onOpenJob={(j) => openTrackerOn(j.id)} />}
                         {/* Trott & Batch has no campaign card to sit beside, so
                             the Library leads the pane on its own. */}
-                        {pane === "batch" && <div className="ls-libcard-solo">{libraryCard}</div>}
+                        {keep("batch", <div className="ls-libcard-solo">{libraryCard}</div>)}
                         <div className={"ls-main-surface" + (pane === "csv" ? " is-bare" : "")}>
                             {/* onSelectTool is what makes the localiser's own
                                 "Bespoke It" button able to navigate. The drilled
                                 tool at the top of this file already receives it;
                                 the LANDING pane did not, so that button silently
                                 did nothing. */}
-                            {pane === "csv" && (
+                            {keep("csv", (
                                 <CSVLocaliserTool
                                     onSelectTool={handleSelect}
                                     onCampaignChange={onCampaignChange}
@@ -471,9 +485,9 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
                                     hereTerritory={here ? here.name : undefined}
                                     handoffTick={handoffTick}
                                 />
-                            )}
-                            {pane === "batch" && <CampaignLocaliserTool />}
-                            {pane === "tracker" && <BatchTrackerTool onSelectTool={handleSelect} openJob={trackerJob} />}
+                            ))}
+                            {keep("batch", <CampaignLocaliserTool />)}
+                            {keep("tracker", <BatchTrackerTool onSelectTool={handleSelect} openJob={trackerJob} active={pane === "tracker"} />)}
                         </div>
                     </div>
 
