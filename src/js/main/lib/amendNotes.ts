@@ -20,6 +20,17 @@
 //
 // A filename is a line carrying a delimited SIZE token and a LENGTH token and
 // hardly any spaces (a sentence mentioning "1920x1080" is not a filename).
+//
+// PEOPLE DO NOT ALL WRITE IT THAT WAY, so three looser shapes are read too
+// (Norway Batch_02, 2026-10-01, which read as "no amends in it"):
+//   - a PATH: "/Volumes/…/Renders/Batch_02/SF_…_NO_V02.mov" is that file. The
+//     folders come off; they keyed the whole path, which matches no row.
+//   - the note ON THE SAME LINE: "SF_…_NO_V02.mov - logo is cut off".
+//   - a name INSIDE a sentence: "the logo on SF_…_NO_V02 is cut off". The
+//     sentence is the note, whole.
+// What makes a word a deliverable does not loosen: one unbroken word with a
+// size AND a length between underscores. A sentence naming a size is still
+// only a sentence.
 // Deliverables key exactly as the tracker keys them (tracker.ts trackerKey):
 // upper-cased, extension, _Vnn / _Vnn_DOUBLE_RES and a ratio token off. The
 // version reviewed is kept, so a row can say a newer render exists since.
@@ -57,10 +68,45 @@ export function amendKey(name: string): string {
 const stripLead = (line: string) =>
     line.replace(/^(?::[a-z0-9_+-]+:|[^\p{L}\p{N}])+/iu, "").trim(); // shortcode FIRST, or the bare ":" goes alone
 
+const looksDeliverable = (t: string) =>
+    /(^|_)\d{2,5}x\d{2,5}(px)?(_|$)/i.test(t) && /(^|_)\d+s(ec)?(_|\.|$)/i.test(t);
+
+/** The file off a path, either slash. */
+const baseName = (t: string) => t.substring(Math.max(t.lastIndexOf("/"), t.lastIndexOf("\\")) + 1);
+
 function isFilename(line: string): boolean {
-    const t = stripLead(line);
+    const t = baseName(stripLead(line));
     if ((t.match(/ /g) || []).length > 2) return false;
-    return /(^|_)\d{2,5}x\d{2,5}(px)?(_|$)/i.test(t) && /(^|_)\d+s(ec)?(_|\.|$)/i.test(t);
+    return looksDeliverable(t);
+}
+
+/** Deliverables named somewhere in a line that is not just a filename, and
+ *  the note the line carries: what follows the names when they lead it, the
+ *  whole sentence (paths cut to the file) when they sit inside it. */
+function namesInLine(line: string): { names: string[]; note: string } | null {
+    const words = stripLead(line).split(/\s+/);
+    const names: string[] = [];
+    const shown: string[] = [];
+    const rest: string[] = [];
+    let leading = true;
+    let lead = true;
+    for (const w of words) {
+        // Off the path, and out of any brackets, quotes or trailing comma.
+        const name = baseName(w).replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+        if (name && looksDeliverable(name)) {
+            names.push(name);
+            shown.push(baseName(w));
+            if (!leading) lead = false;
+            continue;
+        }
+        // "A and B: note" still leads with its names.
+        if (leading && names.length && /^(and|&|\+|,)$/i.test(w)) { shown.push(w); continue; }
+        leading = false;
+        shown.push(w);
+        rest.push(w);
+    }
+    if (!names.length) return null;
+    return { names, note: stripLead(lead ? rest.join(" ") : shown.join(" ")) };
 }
 
 function versionOf(name: string): number {
@@ -84,7 +130,17 @@ export function parseAmends(text: string): ParsedAmends {
                 group = { names: [], notes: [] };
                 groups.push(group);
             }
-            group.names.push(stripLead(line));
+            group.names.push(baseName(stripLead(line)));
+            continue;
+        }
+        const inline = namesInLine(line);
+        if (inline) {
+            if (!group || group.notes.length) {
+                group = { names: [], notes: [] };
+                groups.push(group);
+            }
+            group.names.push(...inline.names);
+            if (inline.note) group.notes.push(inline.note);
             continue;
         }
         const note = stripLead(line);

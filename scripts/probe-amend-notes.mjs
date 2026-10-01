@@ -58,5 +58,32 @@ check(parseAmends(":white_check_mark: The others are approved").general[0] === "
 
 check(showShortcodes(":small_orange_diamond: Please fade :white_check_mark: done :not_a_real_one:") === "🔸 Please fade ✅ done :not_a_real_one:", "shown whole, known shortcodes become emoji and unknown ones stay as written");
 
+// LOOSER SHAPES. Norway Batch_02, 2026-10-01: the file given as a full path,
+// under a thank-you. It read as "a newer comment, with no amends in it".
+const K1200 = amendKey("SF_INTL_Trio_DOOH_NfkinoPOST_1200x380px_30s_NO");
+const nick = parseAmends(`Thanks @Antonio Burgello
+
+/Volumes/paramount/StreetFighter/Digital/INT/XY026205_INTL_DIGITAL_Outdoor_Campaign_Markets/Norway/Renders/Batch_02/SF_INTL_Trio_DOOH_NfkinoPOST_1200x380px_30s_NO_V02.mov
+:large_orange_diamond: I think the top of the paramount logo is being chopped off? Can you check this`);
+check((nick.byKey[K1200] || []).length === 1 && /chopped off/.test(nick.byKey[K1200][0].text) && nick.byKey[K1200][0].version === 2
+  && nick.byKey[K1200][0].name === "SF_INTL_Trio_DOOH_NfkinoPOST_1200x380px_30s_NO_V02.mov",
+  "a full path is the file at the end of it, version and all", nick.byKey);
+check(Object.keys(nick.byKey).length === 1 && nick.general.length === 1 && nick.general[0] === "Thanks @Antonio Burgello", "…and the thank-you above it is general", nick.general);
+const win = parseAmends("P:\\Renders\\Batch_02\\SF_INTL_Trio_DOOH_NfkinoPOST_1200x380px_30s_NO_V02.mov\nlogo is cut off");
+check((win.byKey[K1200] || []).length === 1, "a Windows path too");
+const spaced = parseAmends("/Volumes/new media/Street Fighter 2/Job Folder/Renders/SF_INTL_Trio_DOOH_NfkinoPOST_1200x380px_30s_NO_V02.mov\nlogo is cut off");
+check((spaced.byKey[K1200] || []).length === 1 && spaced.byKey[K1200][0].text === "logo is cut off", "a path with spaces in its folders", spaced.byKey);
+
+const same = parseAmends("SF_INTL_Trio_DOOH_NfkinoPOST_1200x380px_30s_NO_V02.mov - the logo is cut off at the top");
+check((same.byKey[K1200] || []).length === 1 && same.byKey[K1200][0].text === "the logo is cut off at the top", "the note on the filename's own line", same.byKey);
+const inside = parseAmends("Can you check the logo on SF_INTL_Trio_DOOH_NfkinoPOST_1200x380px_30s_NO_V02, it looks chopped");
+check((inside.byKey[K1200] || []).length === 1 && inside.byKey[K1200][0].text === "Can you check the logo on SF_INTL_Trio_DOOH_NfkinoPOST_1200x380px_30s_NO_V02, it looks chopped"
+  && inside.byKey[K1200][0].version === 2, "a name inside a sentence: the sentence is the note", inside.byKey);
+const two = parseAmends("SF_INTL_Trio_DOOH_NfkinoPOST_1200x380px_30s_NO_V02 and SF_INTL_Trio_DOOH_OdeonPOST_3840x1152px_30s_NO_V01: date is off the baseline\nand the bugs are too small");
+const kOdeon = amendKey("SF_INTL_Trio_DOOH_OdeonPOST_3840x1152px_30s_NO");
+check((two.byKey[K1200] || []).length === 1 && (two.byKey[kOdeon] || []).length === 1 && two.byKey[kOdeon][0].text === "date is off the baseline\nand the bugs are too small",
+  "two names in one line share the note, and the line under it", two.byKey);
+check(Object.keys(parseAmends("please redo the 1920x1080 30s version and the 9x16 one").byKey).length === 0, "a sentence naming a size and a length is still not a deliverable");
+
 console.log(fails ? `\n${fails} FAILED` : "\nCLEAN — an amend comment splits onto the deliverables it names.");
 process.exit(fails ? 1 : 0);
