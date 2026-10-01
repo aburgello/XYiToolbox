@@ -151,8 +151,8 @@ interface CompStamp {
 
 const SECTIONS: { id: Section; label: string; tip: string }[] = [
     { id: "master",  label: "vs Master",   tip: "Every item against the campaign's OV master render" },
-    { id: "amend",   label: "Amends",      tip: "Against the previous version of the same deliverable (V01 for a V02), found beside it or in its _Old" },
-    { id: "prepost", label: "Pre vs Post", tip: "A POST render against its PRE batch twin: the same name without the Post token, in a sibling batch folder" },
+    { id: "amend",   label: "Amends",      tip: "Each render against its previous version, V02 against V01" },
+    { id: "prepost", label: "Pre vs Post", tip: "Each POST render against the PRE render of the same deliverable" },
 ];
 
 /** Where an item lands when imported: its MASTER whenever it has one. A V02
@@ -274,6 +274,19 @@ const MasterThumb: React.FC<{ path: string | null | undefined }> = ({ path }) =>
 };
 
 const STATUS_NEXT: Record<ReviewStatus, ReviewStatus> = { pending: "approved", approved: "amend", amend: "pending" };
+/** The Compare button's hover: what it opens, plus a line for each part of
+ *  the comp the build could not make. The host's own notes
+ *  (`diff:ok | tc-master:ok | frontcard:5.00s`) are for debugging, and used
+ *  to be shown here raw. */
+function compareTip(comp: CompStamp): string {
+    const notes = comp.enrich || "";
+    const lines = [`Open "${comp.compName}" in AE`];
+    if (/diff:(FAIL|no-blend)/.test(notes)) lines.push("Built without the difference layer.");
+    if (/tc-(master|local):FAIL/.test(notes)) lines.push("Built without frame counters.");
+    if (/frontcard:shifted/.test(notes)) lines.push("The frontcard marker is missing.");
+    return lines.join("\n");
+}
+
 const STATUS_WORD: Record<ReviewStatus, string> = { pending: "Pending", approved: "Approved", amend: "To amend" };
 
 // ---------------------------------------------------------------------------
@@ -336,11 +349,11 @@ const ReviewRow: React.FC<{
                             <span className="rv-row-master-label">{refLabel}</span>
                             <span className="rv-row-master-name">{kind === "master" ? masterDisplayName(matchedMp4) : truncateNameAtArtwork(masterDisplayName(matchedMp4))}</span>
                             {kind === "master" && (item.masterRepeat || 1) > 1 && (
-                                <span className="rv-row-repeat" title={`A ${item.masterRepeat}× duration multiple: this master plays ${item.masterRepeat} times end to end`}>×{item.masterRepeat}</span>
+                                <span className="rv-row-repeat" title={`The master plays ${item.masterRepeat} times back to back to fill this length`}>×{item.masterRepeat}</span>
                             )}
                         </span>
                     ) : kind === "master" ? (
-                        <span className="rv-row-master rv-row-master--none" title="No master render matched this deliverable's creative, size and length. With no campaign picked in OV Library, nothing can match.">
+                        <span className="rv-row-master rv-row-master--none" title="No master render matches this creative, size and length. Check a campaign is picked in OV Library.">
                             no master found
                         </span>
                     ) : null}
@@ -353,14 +366,14 @@ const ReviewRow: React.FC<{
                         off the row. */}
                     <span className="rv-hover-acts">
                         {matchedMp4 && (
-                            <Tooltip text={`Play ${kind === "master" ? "master" : kind === "amend" ? "previous version" : "PRE render"} in its own player`}>
+                            <Tooltip text={`Play the ${kind === "master" ? "master" : kind === "amend" ? "previous version" : "PRE render"}`}>
                                 <button className="rv-act" onClick={async () => { try { await evalTS("playFile", matchedMp4); } catch { /* no bridge */ } }}>
                                     <Film size={12} />
                                 </button>
                             </Tooltip>
                         )}
                         {comp.compId && (
-                            <Tooltip text="Toggle the DIFF (difference) layer">
+                            <Tooltip text="Show or hide the difference layer">
                                 <button className="rv-act" onClick={() => onToggleDiff(comp.compId!)}>
                                     <Layers size={12} />
                                 </button>
@@ -388,7 +401,7 @@ const ReviewRow: React.FC<{
                         </Tooltip>
                     )}
                     {comp.compId ? (
-                        <Tooltip text={comp.enrich ? `${comp.compName}\n${comp.enrich}` : `Open "${comp.compName}" in AE`}>
+                        <Tooltip text={compareTip(comp)}>
                             <button className="rv-comp-btn" onClick={openOrBuild}>
                                 <Columns2 size={11} /><span className="rv-comp-label">Compare</span>
                             </button>
@@ -944,7 +957,7 @@ const ReviewSession: React.FC = () => {
                 <div className="rv-wrike-box">
                     <div className="rv-wrike-header">
                         <span><AlertTriangle size={12} /> {amendWithNotes.length} amend{amendWithNotes.length === 1 ? "" : "s"} for Wrike</span>
-                        <Tooltip text="Copy to clipboard, in the director's paste-into-Wrike format">
+                        <Tooltip text="Copy the notes, ready to paste into Wrike">
                             <button className="rv-wrike-copy" onClick={copyWrikeText}>
                                 <Copy size={12} /> Copy for Wrike
                             </button>
