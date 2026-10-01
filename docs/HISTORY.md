@@ -9646,3 +9646,36 @@ at, when two pairs of those rows were identical. It now says how many
 
 **Not done:** verified against the sheet as transcribed from the panel, not by
 re-parsing the PDF through `parsePdfDeliverySpecs`.
+
+
+## 2026-10-01 — Guide Scale said "no ruler guides" on one machine: AE 26.5
+
+Aaron's Guide Scale answered "No ruler guides on …_3840x1080px_30s_MY" with
+guides drawn on that comp; the same build worked on 26.2.1. The 2026-09-18
+change (name the comp, list the comps that do carry guides) had assumed the
+wrong comp was active. It was the right comp: the tool had already passed "one
+selected layer, and it is a precomp" on it.
+
+His AE is **26.5.0 (Build 89)**. 26.5 reworked guide scripting: `Item.guides`
+entries now carry `orientationType` as a `GuideOrientationType` constant
+(not 0/1), `positionType` PIXEL or PERCENTAGE, plus `color` and `pinned`; the
+scripting guide now says to compare against the constants because the integers
+differ between versions. `guideScale` tested `=== 1` / `=== 0`, so every guide
+matched neither and both lists stayed empty. The "guides are on: X (1)" list
+counted `guides.length`, which is why the other comps still showed theirs.
+
+`readRulerGuides` now resolves the constants off `$.global` when they exist,
+falls back to the integers, converts percentage to pixels of the comp, and
+refuses (raw values and `app.version` in the message) when a guide matches
+neither. Also corrected: `Item.guides` is AE 16.1+, not 23.0+.
+
+Second report, same day: after a Guide Scale the edit had to be put back to
+100% by hand. The precomp was scaled to the region and the layer kept its own
+Scale. It is now set to 100% (not when keyframed), as `scaleCompositionMulti`
+does.
+
+**Not done:** nothing here was run in a real 26.5. The cause is read off the
+error, the version and Adobe's scripting guide; the probe's enum numbers are
+invented. The pinned-guide direction (position counted from the right/bottom
+edge) is an assumption. Bespoke's `addGuide(1, x)` / `addGuide(0, y)` still
+passes integers, which the 26.5 docs keep as the two-argument form.

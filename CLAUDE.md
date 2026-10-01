@@ -119,6 +119,17 @@ so this whole class of bug is structurally invisible in browser preview.
   `layer.property("<display name>")`** — matchName collisions (Point of Interest
   ≡ Anchor Point) resolve against the wrong property on other layer types. Use
   `layer.transform.*`.
+- **Never compare a ruler guide's `orientationType` or `positionType` to a
+  number.** Up to AE 26.2 they are plain integers (0 horizontal, 1 vertical,
+  position always pixels); from **26.5** they are `GuideOrientationType` /
+  `GuidePositionType` constants with other numbers behind them, a position
+  can be a PERCENTAGE, and a guide can be `pinned` to the right/bottom edge.
+  Guide Scale read `=== 1` / `=== 0`, so on the one 26.5 machine every guide
+  fell through and it answered "No ruler guides" about a comp showing four.
+  Go through `readRulerGuides` (`tools.ts`): the constants off `$.global`
+  when the host has them (they are not identifiers before 26.5), the integers
+  otherwise, and a guide matching neither is **refused with its raw values,
+  never skipped**. `node scripts/probe-guide-scale.cjs`.
 - **Never fetch an EFFECT parameter by display name either — use its
   matchName.** Display names change between AE point releases. The Transform
   effect's uniform-scale slot reports as `"Scale"` on AE ≤26.2 and
@@ -1647,6 +1658,14 @@ ExtendScript (`editInContextNudge`'s arguments). A tool inside `.form-tool` must
 scope its button styles under its own root: `.form-tool button` (0,1,1) and its
 hover (0,3,1) outrank a bare `.tool-*` class, which is how every Edit In Context
 control ended up the same black box.
+
+`node scripts/probe-guide-scale.cjs` (after `yarn build`) drives `guideScale`
+over guides as AE 26.2 reports them and as 26.5 does (enumerated orientation,
+percentage, pinned), and checks an unreadable guide is refused with nothing
+touched. **Guide Scale sets the layer's own Scale to 100%** once its precomp is
+the region's size (keyframed Scale is left and said so), as Scale Multiple
+Composition always has. A pinned guide's position is taken as counted from the
+right/bottom edge: from the docs, NOT measured in a real 26.5.
 
 `node scripts/probe-darken.cjs` (after `yarn build`) drives Darken's pool over
 a stubbed parented, scaled layer. **A pool is sized to where the layer is

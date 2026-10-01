@@ -5961,7 +5961,7 @@ export const scaleCompositionExplicit = (newWidth: number, newHeight: number): R
 };
 
 // Guide Scale -- ported from toolset/XYI_Guide_Scaler.jsx's guider(). Reads the
-// active comp's ruler guides (AE 23.0+ `CompItem.guides`) to derive a target
+// active comp's ruler guides (AE 16.1+ `Item.guides`, via readRulerGuides) to derive a target
 // region, repositions the selected PRE-COMP layer so its top-left sits at that
 // region's top-left, then scales the layer's SOURCE comp to fill the region.
 // The standalone script only ever returned [width, height] and left the actual
@@ -6012,6 +6012,81 @@ function compsCarryingGuides(exclude: CompItem | null): string[] {
   return out;
 }
 
+interface RulerGuides {
+  v: number[];
+  h: number[];
+  total: number;
+  /** Guides AE handed over that could not be placed, described raw. */
+  unread: string[];
+  percent: number;
+  pinned: number;
+}
+
+/**
+ * A comp's ruler guides as PIXEL positions, whatever this After Effects calls
+ * them. Null when the host has no `guides` at all (before 16.1).
+ *
+ * AE 26.5 REWROTE WHAT A GUIDE REPORTS. Until then `orientationType` was a
+ * plain 0 (horizontal) / 1 (vertical) and `position` was always pixels. From
+ * 26.5 `orientationType` is a `GuideOrientationType` constant whose number is
+ * neither, `positionType` can be PERCENTAGE, and a guide can be pinned to the
+ * right/bottom edge. This read `=== 1` / `=== 0`, so on 26.5 every guide fell
+ * through both tests and the tool answered "No ruler guides" about a comp
+ * showing four of them -- one machine, for weeks, while 26.2 next to it worked.
+ *
+ * So: the enumerated constants when the host has them, the old integers when
+ * it does not, and a guide matching neither is REPORTED with its raw values,
+ * never skipped. The enums are fetched off `$.global` because they do not
+ * exist as identifiers before 26.5.
+ */
+function readRulerGuides(comp: CompItem): RulerGuides | null {
+  const guides = (comp as any).guides;
+  if (guides === undefined || guides === null) return null;
+  const host: any = ($ as any).global || {};
+  const oEnum = host.GuideOrientationType;
+  const pEnum = host.GuidePositionType;
+  const out: RulerGuides = { v: [], h: [], total: guides.length, unread: [], percent: 0, pinned: 0 };
+
+  for (let i = 0; i < guides.length; i++) {
+    const g = guides[i];
+    const o = g.orientationType;
+    let vertical = -1; // -1 unknown, 0 horizontal, 1 vertical
+    if (oEnum) {
+      if (o === oEnum.VERTICAL) vertical = 1;
+      else if (o === oEnum.HORIZONTAL) vertical = 0;
+    }
+    if (vertical === -1) {
+      const n = Number(o);
+      if (n === 1) vertical = 1;
+      else if (n === 0) vertical = 0;
+    }
+
+    let pos = Number(g.position);
+    let isPercent = false;
+    let knownType = true;
+    if (pEnum) {
+      if (g.positionType === pEnum.PERCENTAGE) isPercent = true;
+      else if (g.positionType !== pEnum.PIXEL && Number(g.positionType) !== 0) knownType = false;
+    }
+
+    if (vertical === -1 || isNaN(pos) || !knownType) {
+      out.unread.push("orientationType " + String(o) + ", positionType " + String(g.positionType) + ", position " + String(g.position));
+      continue;
+    }
+
+    const dim = vertical === 1 ? comp.width : comp.height;
+    if (isPercent) { pos = (dim * pos) / 100; out.percent++; }
+    // Pinned = held against the right/bottom edge, so its position counts from
+    // there. Counted, and named in the report, because a wrong edge here is a
+    // wrong region.
+    if (g.pinned === true) { pos = dim - pos; out.pinned++; }
+
+    if (vertical === 1) out.v.push(pos);
+    else out.h.push(pos);
+  }
+  return out;
+}
+
 export const guideScale = (): Result => {
   try {
     const activeComp = app.project.activeItem;
@@ -6025,20 +6100,24 @@ export const guideScale = (): Result => {
       return { success: false, error: "The selected layer must be a pre-composition." };
     }
 
-    // CompItem.guides is AE 23.0+ only; older typings/hosts don't expose it.
-    const guides = (activeComp as any).guides;
-    if (guides === undefined) {
-      return { success: false, error: "This version of After Effects is too old to read ruler guides (needs 23.0+)." };
+    const read = readRulerGuides(activeComp);
+    if (!read) {
+      return { success: false, error: "This version of After Effects is too old to read ruler guides (needs 16.1+)." };
     }
 
-    const vGuidePositions: number[] = [];
-    const hGuidePositions: number[] = [];
-    for (let i = 0; i < guides.length; i++) {
-      const g = guides[i];
-      const pos = Number(g.position);
-      if (g.orientationType === 1) vGuidePositions.push(pos); // Vertical
-      else if (g.orientationType === 0) hGuidePositions.push(pos); // Horizontal
+    // A guide AE handed over and this could not place is a REFUSAL, with the
+    // raw values in it: building a region from the guides that happened to be
+    // readable would scale to the wrong box and call it a success.
+    if (read.unread.length > 0) {
+      return {
+        success: false,
+        error: "After Effects " + app.version + " reports " + read.total + " guide(s) on \"" + activeComp.name + "\", but " +
+          read.unread.length + " could not be read (" + read.unread.slice(0, 3).join("; ") + "). Nothing was changed.",
+      };
     }
+
+    const vGuidePositions = read.v;
+    const hGuidePositions = read.h;
 
     if (vGuidePositions.length === 0 && hGuidePositions.length === 0) {
       // NAME THE COMP IT READ. This is the front-most viewer's item, which is
@@ -6107,11 +6186,30 @@ export const guideScale = (): Result => {
       if (hGuidePositions[hi] < 0 || hGuidePositions[hi] > activeComp.height) outside++;
     }
     if (outside > 0) notes.push(outside + " guide(s) sit outside the comp");
+    if (read.percent > 0) notes.push(read.percent + " percentage guide(s) read as pixels of this comp");
+    if (read.pinned > 0) notes.push(read.pinned + " pinned guide(s) measured from the right/bottom edge");
 
     app.beginUndoGroup("XYi Guide Scale");
     targetLayer.property("Anchor Point").setValue(anchor);
     targetLayer.property("Position").setValue(position);
     scaleCompToFit(targetLayer.source, widthStore, heightStore);
+    // THE LAYER HAS TO BE AT 100% OR IT DOES NOT FILL THE REGION. The source
+    // comp is now exactly the region's size, so whatever Scale the layer was
+    // carrying (a 50% edit in a half-size deliverable) leaves it short and the
+    // artist resetting it by hand. Scale Multiple Composition has always done
+    // this. Keyframed Scale is somebody's animation: said, not overwritten.
+    const layerScale = targetLayer.transform.scale;
+    if (layerScale.numKeys > 0) {
+      notes.push("layer Scale is keyframed, left as it was");
+    } else {
+      const sc = layerScale.value as number[];
+      if (sc[0] !== 100 || sc[1] !== 100) {
+        sc[0] = 100;
+        sc[1] = 100;
+        layerScale.setValue(sc);
+        notes.push("layer Scale reset to 100%");
+      }
+    }
     app.endUndoGroup();
 
     return { success: true, message: "Guide Scale: " + notes.join(" · ") } as Result;
