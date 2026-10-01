@@ -28,6 +28,7 @@
 // app-wide toast system.
 // =============================================================================
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { requestLocalisePane } from "./lib/localisePane";
 import { motion, AnimatePresence } from "motion/react";
 import { Search, CornerDownLeft, ArrowUpDown, Terminal } from "lucide-react";
 import { TOOLS, categoryStyleVars, type ToolEntry } from "./toolRegistry";
@@ -90,6 +91,17 @@ const CommandPalette: React.FC<Props> = ({ screen, onNavigate }) => {
     // (e.g. "Turk It" bumping version numbers) -- running one twice from a
     // single selection would be a real, visible bug, not just a UI glitch.
     const runningRef = useRef(false);
+    // For the key listener, which is bound once: whether the palette is open,
+    // and the way to the Tracker from whatever screen is up now.
+    const openRef = useRef(false);
+    openRef.current = open;
+    const goTrackerRef = useRef<() => void>(() => {});
+    goTrackerRef.current = () => {
+        setOpen(false);
+        recordUse("tool:batch-tracker");
+        requestLocalisePane("tracker");
+        onNavigate({ type: "category", categoryId: "localise" });
+    };
 
     // Register module-level opener so PaletteTrigger components rendered
     // elsewhere (drill screen headers) can open this same palette instance.
@@ -112,12 +124,19 @@ const CommandPalette: React.FC<Props> = ({ screen, onNavigate }) => {
     // fired alongside it; neither macOS nor Windows uses a double Shift (Sticky
     // Keys is FIVE). Needs panel focus like ⌘K: AE keeps every key, modifiers
     // too, while its own windows have it.
+    //
+    // A THIRD TAP GOES TO THE TRACKER (2026-10-01): the page the day is run
+    // from, and the one place with no page of its own to search for. It is a
+    // third tap of the SAME run -- within DOUBLE_MS of the two that opened the
+    // palette -- so a double-tap to close an open palette still closes it, and
+    // nothing new is claimed from AE. Only ever from the taps that OPENED it.
     useEffect(() => {
         const TAP_MS = 300, DOUBLE_MS = 350;
         let downAt = 0;
         let clean = false;
         let lastTap = 0;
-        const reset = () => { clean = false; lastTap = 0; };
+        let openedAt = 0;
+        const reset = () => { clean = false; lastTap = 0; openedAt = 0; };
         const onKeyDown = (e: KeyboardEvent) => {
             if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
                 e.preventDefault();
@@ -138,8 +157,16 @@ const CommandPalette: React.FC<Props> = ({ screen, onNavigate }) => {
             const now = Date.now();
             if (!clean || now - downAt > TAP_MS) { reset(); return; }
             clean = false;
+            if (openedAt && now - openedAt <= DOUBLE_MS) {
+                openedAt = 0;
+                lastTap = 0;
+                goTrackerRef.current();
+                return;
+            }
+            openedAt = 0;
             if (lastTap && now - lastTap <= DOUBLE_MS) {
                 lastTap = 0;
+                if (!openRef.current) openedAt = now;
                 setOpen((v) => !v);
             } else {
                 lastTap = now;
@@ -449,6 +476,7 @@ const CommandPalette: React.FC<Props> = ({ screen, onNavigate }) => {
                                         <span><ArrowUpDown size={11} /> navigate</span>
                                         <span><CornerDownLeft size={11} /> select</span>
                                         <span>esc close</span>
+                                        <span className="palette-footer-tracker">shift ×3 Tracker</span>
                                     </div>
                                 </>
                             )}
@@ -462,7 +490,7 @@ const CommandPalette: React.FC<Props> = ({ screen, onNavigate }) => {
 
 /** Standalone trigger button -- rendered inline in each screen's header. */
 export const PaletteTrigger: React.FC<{ onClick: () => void }> = ({ onClick }) => (
-    <Tooltip text="Search everywhere: ⌘K, or tap Shift twice (the panel needs focus)">
+    <Tooltip text="Search everywhere: ⌘K, or tap Shift twice. A third tap goes to the Tracker. The panel needs focus.">
         <button className="palette-trigger" onClick={onClick}>
             <Search size={13} />
             <span className="palette-trigger-kbd">⌘K</span>

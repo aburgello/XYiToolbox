@@ -7,6 +7,7 @@
 // rail. When a tool is selected it renders full-width in place.
 // =============================================================================
 import React, { Suspense, useState, useRef, useEffect, useCallback } from "react";
+import { PANE_KEY, onLocalisePaneRequest, type LocalisePane } from "../lib/localisePane";
 import { motion, useReducedMotion } from "motion/react";
 import gsap from "gsap";
 import LoadingChatter from "../LoadingChatter";
@@ -58,13 +59,12 @@ interface UtilityEntry {
 // Wrike job chips under the header open it on their batch. The last pane used
 // is remembered per viewer (browser storage -- a convenience, so it degrades
 // to Big Guy Localiser when storage is unavailable).
-type Pane = "csv" | "batch" | "tracker";
+type Pane = LocalisePane;
 const PANES: { id: Pane; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
     { id: "csv",     label: "Big Guy Localiser", icon: FileSpreadsheet },
     { id: "batch",   label: "Trott & Batch", icon: Rabbit },
     { id: "tracker", label: "Tracker", icon: ListChecks },
 ];
-const PANE_KEY = "xyi.localise.pane";
 function savedPane(): Pane {
     try {
         const v = window.localStorage.getItem(PANE_KEY);
@@ -158,6 +158,12 @@ export const LocaliseScreen: React.FC<Props> = ({ selectedToolId: parentToolId, 
         setPaneState(p);
         try { window.localStorage.setItem(PANE_KEY, p); } catch { /* storage off: not remembered */ }
     }, []);
+    // A pane asked for from outside (Shift x3 goes to the Tracker): the
+    // landing, on that pane, even from inside one of this page's tools.
+    useEffect(() => onLocalisePaneRequest((p) => {
+        setPaneState(p);
+        setLocalToolId(null);
+    }), []);
     /** A job chip pressed: the tracker opens on that job's batch. The tick
      *  lets the same chip be pressed twice. */
     const [trackerJob, setTrackerJob] = useState<{ id: string; tick: number } | null>(null);

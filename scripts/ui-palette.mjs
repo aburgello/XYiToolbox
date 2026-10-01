@@ -114,8 +114,9 @@ try {
     const isOpen = () => page.eval(`!!document.querySelector(".palette-card")`);
     const closeIt = async () => { if (await isOpen()) { await page.eval(`document.querySelector(".palette-overlay").click()`); await pause(300); } };
     await closeIt();
-    await doubleTap(); await pause(300);
+    await doubleTap(); await pause(600);
     check(await isOpen(), "two quick taps of Shift open the palette");
+    check(/shift ×3 Tracker/.test(await page.eval(`document.querySelector(".palette-footer")?.innerText || ""`)), "…and it says a third goes to the Tracker");
     await doubleTap();
     // Closing animates out: wait for the card to go rather than guess a pause.
     check(await page.waitFor(`!document.querySelector(".palette-card")`, 2000), "…and two more close it");
@@ -133,6 +134,31 @@ try {
     check(!(await isOpen()), "a click between the taps (Shift-click) cancels them");
     const lone = await page.eval(`(() => { const all = window.__keyClaims || []; const last = JSON.parse(all[all.length - 1] || "[]"); return last.filter(k => k.keyCode === 56 || k.keyCode === 60 || k.keyCode === 16).length; })()`);
     check(lone >= 2, "a lone Shift is claimed from AE too, so the taps reach the panel", lone);
+
+    console.log("\n7. A third tap goes to the Tracker");
+    // Three taps on the page's own timers, like doubleTap.
+    const tripleTap = (gap = 110, hold = 45) => page.eval(`new Promise((done) => {
+        const k = (t) => window.dispatchEvent(new KeyboardEvent(t, { key: "Shift", shiftKey: t === "keydown", bubbles: true }));
+        let n = 0;
+        const one = () => { k("keydown"); setTimeout(() => { k("keyup"); if (++n < 3) setTimeout(one, ${gap}); else done(true); }, ${hold}); };
+        one();
+    })`);
+    await closeIt();
+    await pause(500);
+    await tripleTap();
+    check(await page.waitFor(`!!document.querySelector(".bt") && !document.querySelector(".palette-card")`, 6000), "Shift x3 from home lands on the Tracker, palette closed");
+    check(await page.eval(`document.querySelector(".ls-pane-tab.active")?.innerText.trim() === "Tracker"`), "…as the Localise page's Tracker pane");
+    await page.click(".ls-pane-tab", "Big Guy");
+    await page.waitFor(`!document.querySelector(".bt")`, 4000);
+    await pause(500);
+    await tripleTap();
+    check(await page.waitFor(`!!document.querySelector(".bt")`, 4000), "already on Localise, on another pane: it switches to the Tracker");
+    await pause(500);
+    await doubleTap(); await pause(700);
+    check(await isOpen(), "two taps still only open the palette");
+    await tap(); await pause(400);
+    check(await isOpen() && !!(await page.eval(`!!document.querySelector(".bt")`)), "a tap long after it opened is not a third tap");
+    await closeIt();
 
     console.log("");
     check(page.errors.length === 0, "no page errors", page.errors.slice(0, 5));
