@@ -890,10 +890,10 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
 
     // --- Campaign management ------------------------------------------
     const handleNewCampaign = async () => {
-        const name = await promptDialog("Campaign name (e.g. ODY_INTL_DIGITAL_Outdoor):", "");
+        const name = await promptDialog({ title: "Name the campaign", body: "For example ODY_INTL_DIGITAL_Outdoor. You pick its masters folder next.", confirm: "Next" }, "");
         if (!name) return;
         if (campaigns.some((c) => c.name === name)) {
-            await alertDialog(`A campaign named "${name}" already exists.`);
+            await alertDialog({ title: `${name} already exists`, body: "Use another name, or pick it from the campaign list." });
             return;
         }
         const mastersRoot = await safeEvalTS("selectMastersFolder");
@@ -901,7 +901,7 @@ const OVLibraryTool: React.FC<Props> = ({ hero = false, onCampaignChange }) => {
 
         const result = await safeEvalTS("saveCampaign", name, mastersRoot);
         if (!result.success) {
-            await alertDialog(result.error || "Could not save campaign.");
+            await alertDialog({ title: "Couldn't save the campaign", body: result.error || "" });
             return;
         }
         const newCamp = { name, mastersRoot };

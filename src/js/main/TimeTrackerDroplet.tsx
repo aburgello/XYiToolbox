@@ -51,7 +51,7 @@ const TimeTrackerDroplet: React.FC<Props> = ({ onOpenFullTracker }) => {
             const info = await evalTS("timesheetActiveFile" as any);
             if (info && info.folderName) suggestion = info.folderName;
         } catch (e) { /* preview -- no bridge */ }
-        const name = await promptDialog("Name this batch (auto-filled from the open file's folder):", suggestion);
+        const name = await promptDialog({ title: "Name this batch", body: "Filled in from the open file's folder.", confirm: "Start tracking" }, suggestion);
         if (!name) return;
         await tracker.createBatch(name, defaultCategoryFor(digitalCategories(tracker.categories)));
         await tracker.startTracking();

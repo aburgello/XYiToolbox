@@ -1855,7 +1855,7 @@ const WorkflowBoardTool: React.FC<{
     const renameWorkflow = async () => {
         if (!entry) { toast("error", "Save this workflow first, then it can be renamed."); return; }
         const next = await promptDialog(
-            `Rename this workflow for ${prettyCreative(creative)} — leave it empty to make it the main one:`,
+            { title: `Rename this ${prettyCreative(creative)} workflow`, body: "Leave it empty to make it the main one.", confirm: "Rename" },
             wfName,
         );
         if (next === null) return;
@@ -1878,7 +1878,7 @@ const WorkflowBoardTool: React.FC<{
 
     const startNamedWorkflow = async () => {
         if (!creative) return;
-        const name = await promptDialog(`Name this workflow for ${prettyCreative(creative)}:`, "");
+        const name = await promptDialog({ title: `Name the new ${prettyCreative(creative)} workflow`, confirm: "Create" }, "");
         if (!name || !name.trim()) return;
         const clean = name.trim().toUpperCase();
         if (siblingWorkflows.indexOf(clean) !== -1) {

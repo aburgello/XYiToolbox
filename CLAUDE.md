@@ -618,7 +618,10 @@ touches), the button a verb ("Remove", "Find", "Delete for everyone"), and
 `danger: true` on anything destructive (red, focus never starts on it). The
 dialogs had drifted into three-paragraph explanations under an "OK", read once
 and skimmed forever. A plain string still works -- a short first paragraph
-becomes the title -- but new call sites use the object. The dialog takes the
+becomes the title -- but **no call site passes one any more** (swept
+2026-10-02, all four kinds: confirm, alert, prompt, pick-one), so a new one
+would be the only dialog with "OK" under a paragraph. An error alert is a
+title saying what failed with the host's error as the body. The dialog takes the
 tint of wherever it was opened (the last-pressed element's `--cat-grad`).
 
 **Shared primitives — use these, don't re-roll them:** `Dialog` (never
@@ -1424,6 +1427,12 @@ tokens and is correctly not a candidate.
   extra words. They come back as a fixable no-match naming the words, the
   project's own creative's first. Never auto-pick even a lone variant: the
   extra word is the thing nobody can read off the OV name.
+- **The open-project preview offers the whole batch** ("Scan the batch (N)"
+  in the report's header, when other `.aep`s sit beside the project): the
+  same dry run over the project's folder, replacing the report. It asks
+  first, since AE opens every project to read it and the one on screen is
+  closed. Picks already made carry over (they are keyed by `.aep` name).
+  Support Swap only; MC It!'s report does not offer it.
 - A file already present under the identical name is reported as
   "already the version in this market's Masters/Support" — worded to cover
   BOTH already-localised and shared-across-markets, because one market's tree

@@ -110,14 +110,14 @@ export const HomeScreen: React.FC<Props> = ({ onNavigate, focusAction }) => {
         const path = await evalTS("selectUsefulFolder");
         if (!path) return;
         const def = (path as string).split(/[\\/]/).pop() || path;
-        const label = await promptDialog("Name this shortcut:", def);
+        const label = await promptDialog({ title: "Name this shortcut", confirm: "Add" }, def);
         if (label === null) return;
         await evalTS("addUsefulFolder", label || def, path);
         loadFolders();
     };
 
     const renameFolder = async (i: number, current: string) => {
-        const next = await promptDialog("Rename:", current);
+        const next = await promptDialog({ title: `Rename ${current}`, confirm: "Rename" }, current);
         if (!next) return;
         await evalTS("renameUsefulFolder", i, next);
         loadFolders();

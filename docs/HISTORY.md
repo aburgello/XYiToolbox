@@ -9723,3 +9723,33 @@ one-token rule and everything it applies automatically are unchanged.
 `probe-support-swap.cjs` section 8.
 
 **Not done:** not run in AE against the real Thailand project.
+
+
+## 2026-10-02 — Support Swap: from the open project to its batch
+
+The batch-wide swap existed only in Big Guy Localiser's scan list, behind
+Scan territories and a batch row's ⋯ menu, which the Toolset card gave no
+hint of. The card's preview now carries "Scan the batch (N)" when the open
+project has other `.aep` files beside it (`batchAeps`, counted host-side from
+a plain listing). Pressing it confirms, then runs the same `supportSwap` dry
+run over the project's folder and replaces the report.
+
+**Not done:** the button was not clicked in the panel; the host half is in
+`probe-support-swap.cjs`. A pick is still per project, so a variant (the
+Thailand dates) is picked once per project in a batch report.
+
+
+## 2026-10-02 — Every dialog speaks title / body / verb
+
+Thirty call sites still passed `Dialog` a plain string: every alert, prompt
+and pick-one, and one confirm (Bespoke's in-situ follow-up). They rendered in
+the shared design already, with the first paragraph as a title and "OK" or
+"Continue" on the button. All now pass `{ title, body?, confirm }`: prompts
+name their button for what happens next ("Next", "Rename", "Start tracking"),
+the three "campaign name" prompts say which folder is asked for after, and
+error alerts carry the host's error as the body under a title saying what
+failed. No logic changed; the 18 custom modals (reports, pre-flight, job
+window) were not touched.
+
+**Not done:** none of the thirty was opened in the panel. Both builds pass
+and the Localise, home and palette UI checks still click through.

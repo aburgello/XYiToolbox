@@ -313,7 +313,7 @@ const TimesheetTrackerTool = () => {
             const info = await evalTS("timesheetActiveFile" as any);
             if (info && info.folderName) suggestion = info.folderName;
         } catch (e) { /* preview */ }
-        const name = await promptDialog("Name this batch (auto-filled from the open file's folder):", suggestion);
+        const name = await promptDialog({ title: "Name this batch", body: "Filled in from the open file's folder.", confirm: "Create" }, suggestion);
         if (!name) return;
         await tracker.createBatch(name, defaultCategoryFor(categoryOptions));
         setOutput("");
@@ -329,7 +329,7 @@ const TimesheetTrackerTool = () => {
 
     const editFileMinutes = async (f: BatchFile) => {
         const current = Math.round(f.seconds / 60);
-        const input = await promptDialog(`Adjust logged minutes for "${f.name}":`, String(current));
+        const input = await promptDialog({ title: `Minutes logged for ${f.name}`, confirm: "Save" }, String(current));
         if (input === null) return;
         const mins = parseFloat(input);
         if (isNaN(mins) || mins < 0) { setError("Enter a valid number of minutes."); return; }

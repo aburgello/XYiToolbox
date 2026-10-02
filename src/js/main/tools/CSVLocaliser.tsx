@@ -1658,10 +1658,10 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
     // Add a campaign the same way Localised Library does, so they stay in sync.
     const addCampaign = async () => {
         try {
-            const name = await promptDialog("Campaign name (e.g. INTL_DIGITAL_Outdoor_Campaign):", "");
+            const name = await promptDialog({ title: "Name the campaign", body: "For example INTL_DIGITAL_Outdoor_Campaign. You pick its Markets folder next.", confirm: "Next" }, "");
             if (!name) return;
             if (campaigns.some((c) => c.name === name)) {
-                await alertDialog(`A campaign named "${name}" already exists.`);
+                await alertDialog({ title: `${name} already exists`, body: "Use another name, or pick it from the campaign list." });
                 return;
             }
             const mr = await evalTS("selectMarketsFolder");
@@ -1669,7 +1669,7 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
             if (!mr) return;
             const res = await evalTS("saveLocLibCampaign", name, mr);
             if (!res || !res.success) {
-                await alertDialog((res && res.error) || "Could not save campaign.");
+                await alertDialog({ title: "Couldn't save the campaign", body: (res && res.error) || "" });
                 return;
             }
             await refreshCampaigns();
@@ -1755,7 +1755,7 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
         try {
             const res = await evalTS("removeLocLibCampaign", campaignName);
             if (!res || !res.success) {
-                await alertDialog((res && (res as { error?: string }).error) || "Could not remove the campaign.");
+                await alertDialog({ title: "Couldn't remove the campaign", body: (res && (res as { error?: string }).error) || "" });
                 return;
             }
             setCampaignName("");
@@ -1810,7 +1810,7 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
     const restoreRetiredCampaign = async () => {
         const names = teamCampaigns.rows.filter((r) => r.retiredBy).map((r) => r.name);
         if (!names.length) return;
-        const pick = await selectDialog("Bring which campaign back?", names.map((n) => {
+        const pick = await selectDialog({ title: "Bring which campaign back?", confirm: "Bring back" }, names.map((n) => {
             const row = teamCampaigns.rows.find((r) => r.name === n);
             return row && row.retiredBy ? `${n} — retired by ${row.retiredBy}` : n;
         }));

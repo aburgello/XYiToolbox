@@ -1577,9 +1577,12 @@ export const BespokeTool = () => {
         const saved = entry && (entry as any).insitu ? (entry as any).insitu : null;
         if (!saved || !saved.faces) return;
 
-        const ok = await confirmDialog(
-            `${activeScreen.name} has an in-situ saved. Build that too, with the board you just made on it?`
-        );
+        const ok = await confirmDialog({
+            title: `Build ${activeScreen.name}'s in-situ too?`,
+            body: "It has one saved. The board you just made goes on it.",
+            confirm: "Build",
+            cancel: "Not now",
+        });
         if (!ok) return;
 
         try {

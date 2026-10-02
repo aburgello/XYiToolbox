@@ -605,7 +605,7 @@ export const ACTIONS: ActionEntry[] = [
         group: "transform",
         safety: "undoable",
         run: async () => {
-            const choice = await selectDialog("Toggle layers with which label color?", LABEL_COLORS, 2);
+            const choice = await selectDialog({ title: "Toggle layers with which label color?", confirm: "Toggle" }, LABEL_COLORS, 2);
             if (choice === null) return null;
             return evalTSSafe("toggleLayersByLabel", choice);
         },
@@ -620,11 +620,11 @@ export const ACTIONS: ActionEntry[] = [
         safety: "undoable",
         run: async () => {
             const presets = ["10s", "15s", "20s", "30s", "Custom…"];
-            const choice = await selectDialog("Set comp duration to:", presets, 0);
+            const choice = await selectDialog({ title: "Set the comp's duration", confirm: "Set" }, presets, 0);
             if (choice === null) return null;
             let seconds: number;
             if (choice === 4) {
-                const val = await promptDialog("Duration in seconds:", "10");
+                const val = await promptDialog({ title: "Duration in seconds", confirm: "Set" }, "10");
                 if (val === null) return null;
                 seconds = parseFloat(val);
                 if (isNaN(seconds) || seconds <= 0 || seconds > 10800) {
@@ -704,7 +704,7 @@ export const ACTIONS: ActionEntry[] = [
                 return { success: false, error: "No recent effects yet -- apply one from the Effects page (Tools) first." };
             }
             const labels = list.effects.map((e) => e.label);
-            const choice = await selectDialog("Re-apply which effect?", labels, 0);
+            const choice = await selectDialog({ title: "Re-apply which effect?", confirm: "Apply" }, labels, 0);
             if (choice === null) return null;
             const fx = list.effects[choice];
             return evalTSSafe("applyEffectToSelectedLayers", fx.id, fx.matchName, fx.label, fx.category);
@@ -719,7 +719,7 @@ export const ACTIONS: ActionEntry[] = [
         group: "organise",
         safety: "undoable",
         run: async () => {
-            const val = await promptDialog("Duration in seconds:", "15");
+            const val = await promptDialog({ title: "How long is the comp, in seconds?", confirm: "Build" }, "15");
             if (val === null) return null;
             const duration = parseFloat(val);
             if (isNaN(duration) || duration <= 0) {

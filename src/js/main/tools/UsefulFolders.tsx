@@ -49,14 +49,14 @@ const UsefulFoldersTool = () => {
         const path = await evalTS("selectUsefulFolder");
         if (!path) return;
         const defaultLabel = path.split(/[\\/]/).pop() || path;
-        const label = await promptDialog("Name this shortcut:", defaultLabel);
+        const label = await promptDialog({ title: "Name this shortcut", confirm: "Add" }, defaultLabel);
         if (label === null) return;
         await evalTS("addUsefulFolder", label || defaultLabel, path);
         reload();
     };
 
     const renameFolder = async (index: number, current: string) => {
-        const newLabel = await promptDialog("Rename this shortcut:", current);
+        const newLabel = await promptDialog({ title: `Rename ${current}`, confirm: "Rename" }, current);
         if (newLabel === null || newLabel === "") return;
         await evalTS("renameUsefulFolder", index, newLabel);
         reload();

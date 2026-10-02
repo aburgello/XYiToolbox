@@ -613,10 +613,10 @@ const LocalisedLibraryTool = () => {
     };
 
     const handleNewCampaign = async () => {
-        const name = await promptDialog("Campaign name (e.g. HORSE, ODY_INTL_DGTL_DOOH...):", "");
+        const name = await promptDialog({ title: "Name the campaign", body: "For example HORSE or ODY_INTL_DGTL_DOOH. You pick its Markets folder next.", confirm: "Next" }, "");
         if (!name) return;
         if (campaigns.some((c) => c.name === name)) {
-            await alertDialog(`A campaign named "${name}" already exists.`);
+            await alertDialog({ title: `${name} already exists`, body: "Use another name, or pick it from the campaign list." });
             return;
         }
         const marketsRoot = await safeEvalTS("selectMarketsFolder");
@@ -624,7 +624,7 @@ const LocalisedLibraryTool = () => {
 
         const result = await safeEvalTS("saveLocLibCampaign", name, marketsRoot);
         if (!result || !result.success) {
-            await alertDialog((result && result.error) || "Could not save campaign.");
+            await alertDialog({ title: "Couldn't save the campaign", body: (result && result.error) || "" });
             return;
         }
         const newCamp = { name, marketsRoot };
@@ -658,7 +658,7 @@ const LocalisedLibraryTool = () => {
         if (!path) return;
 
         const defaultLabel = (path.split("/").pop() || path).replace(/\.[^.]+$/, "");
-        const label = await promptDialog("Label this component:", defaultLabel);
+        const label = await promptDialog({ title: "Label this component", confirm: "Add" }, defaultLabel);
         if (label === null) return;
 
         // Filed into the branch whose own "Add to …" button was pressed.
@@ -853,7 +853,7 @@ const LocalisedLibraryTool = () => {
 
     const handleAutoPopulate = async () => {
         if (!selectedCampaign) {
-            await alertDialog("Select or create a campaign first.");
+            await alertDialog({ title: "Pick a campaign first", body: "Select one, or add a new one." });
             return;
         }
         if (
@@ -1119,11 +1119,11 @@ const LocalisedLibraryTool = () => {
         const preview = await safeEvalTS("previewBatchFolderAep", folder);
         if (!preview) return;
         if (preview.blocked) {
-            await alertDialog(preview.blockedReason || "That folder can't be used for this.");
+            await alertDialog({ title: "That folder can't be used", body: preview.blockedReason || "" });
             return;
         }
         if (!preview.count) {
-            await alertDialog("No .aep files found in that folder.");
+            await alertDialog({ title: "No .aep files in that folder" });
             return;
         }
 
