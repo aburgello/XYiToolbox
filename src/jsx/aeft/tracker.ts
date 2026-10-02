@@ -716,13 +716,74 @@ export const trackerRenameComp = (): Result & { renamed?: number } => {
  *
  * The territory is found as Deliver finds it: every saved Localised Library
  * campaign's Markets root, a folder territoryCheck resolves to the same
- * country. Two campaigns can both hold a Norway, so the candidates are ranked:
- * one whose AE holds this batch beats one that doesn't, and a batch holding a
- * project named with the job's film prefix beats one that doesn't. The batch
- * returned is the DISK's spelling (Batch_02 for a title's "Batch 2") when the
- * AE folder exists, else the title's. Read-only; unmounted roots are skipped
- * silently.
+ * country. Two campaigns can both hold a Thailand, so THE FILM DECIDES and the
+ * batch only breaks ties (trFilmOf). It was the other way round -- the batch
+ * folder scored 2 and the film 1 -- so a Street Fighter "TH Batch 3" not yet
+ * built opened Forgotten Island's Thailand, which has a Batch_3 of its own:
+ * eleven subtasks against another film's files, and a Build button pointed at
+ * the wrong campaign. A territory whose files are another film's is not a
+ * candidate at all; "not found" is a better answer than someone else's folder.
+ * The batch returned is the DISK's spelling (Batch_02 for a title's "Batch 2")
+ * when the AE folder exists, else the title's. Read-only; unmounted roots are
+ * skipped silently.
  */
+
+/** Names in a folder, decoded, minus `_` and dot entries. */
+function trNames(folder: Folder | null): string[] {
+  const out: string[] = [];
+  if (!folder) return out;
+  const kids = trKids(folder);
+  for (let i = 0; i < kids.length; i++) {
+    const nm = decode(String(kids[i].name));
+    const c = nm.charAt(0);
+    if (c !== "_" && c !== ".") out.push(nm);
+  }
+  return out;
+}
+
+/**
+ * Whose film these names are: 1 the job's (one starts with its prefix),
+ * -1 another's (deliverable-shaped names, none with the prefix), 0 nothing to
+ * tell by. "Deliverable-shaped" is a size token, so a `Batch_3` folder or a
+ * stray notes file is never evidence of another film.
+ */
+function trFilmOf(names: string[], prefix: string): number {
+  let other = false;
+  for (let i = 0; i < names.length; i++) {
+    const nm = names[i].toUpperCase();
+    if (nm.indexOf(prefix + "_") === 0) return 1;
+    if (/_\d{3,}X\d{3,}/.test(nm)) other = true;
+  }
+  return other ? -1 : 0;
+}
+
+/**
+ * The film a territory folder belongs to, asked of the nearest thing that can
+ * answer: this batch's projects, then every batch's, then JPG_PNG (the root
+ * and one level down, since some territories have no batch level there) for a
+ * territory nobody has built anything in yet.
+ */
+function trTerritoryFilm(terr: Folder, ae: Folder | null, bf: Folder | null, prefix: string): number {
+  if (!prefix) return 0;
+  let v = bf ? trFilmOf(trNames(bf), prefix) : 0;
+  if (v !== 0) return v;
+  const levels: (Folder | null)[] = [ae, trChild(terr, "JPG_PNG")];
+  for (let l = 0; l < levels.length; l++) {
+    const top = levels[l];
+    if (!top) continue;
+    let names = trNames(top);
+    const kids = trKids(top);
+    for (let k = 0; k < kids.length; k++) {
+      if (!trIsFolder(kids[k])) continue;
+      if (decode(String(kids[k].name)).charAt(0) === "_") continue;
+      names = names.concat(trNames(kids[k] as Folder));
+    }
+    v = trFilmOf(names, prefix);
+    if (v !== 0) return v;
+  }
+  return 0;
+}
+
 export const trackerLocate = (argsJson: string): Result & { jobs?: { id: string; territoryPath: string; territory: string; batch: string; batches: string[] }[] } => {
   try {
     let args: { id: string; code: string; batch: string; prefix?: string }[];
@@ -747,32 +808,21 @@ export const trackerLocate = (argsJson: string): Result & { jobs?: { id: string;
     for (let j = 0; j < args.length; j++) {
       const want = territoryCheck(String(args[j].code || ""));
       if (!want) continue;
-      const prefix = String(args[j].prefix || "").toUpperCase();
+      // A prefix is a short code (SF, FID). Anything else -- a subtask that is
+      // not a deliverable name -- is no evidence, and must not rule a folder out.
+      let prefix = String(args[j].prefix || "").toUpperCase();
+      if (!/^[A-Z0-9]{2,8}$/.test(prefix)) prefix = "";
       let best: { folder: Folder; name: string } | null = null;
-      let bestScore = -1;
+      let bestScore = -99;
       let bestBatch = "";
       for (let t = 0; t < terrs.length; t++) {
         if (terrs[t].country !== want) continue;
-        let score = 0;
-        let diskBatch = "";
         const ae = trChild(terrs[t].folder, "AE");
         const bf = ae ? trBatchIn(ae, String(args[j].batch || "")) : null;
-        if (bf) { score += 2; diskBatch = decode(String(bf.name)); }
-        // Whose film is it: a project named with the job's prefix, in this
-        // batch or -- for a batch not started yet -- in any batch here.
-        if (prefix && ae) {
-          const pool: Folder[] = bf ? [bf] : [];
-          if (!bf) { const bs = trKids(ae); for (let b = 0; b < bs.length; b++) if (trIsFolder(bs[b])) pool.push(bs[b] as Folder); }
-          let hit = false;
-          for (let p = 0; p < pool.length && !hit; p++) {
-            const files = trKids(pool[p]);
-            for (let f = 0; f < files.length; f++) {
-              if (decode(String(files[f].name)).toUpperCase().indexOf(prefix + "_") === 0) { hit = true; break; }
-            }
-          }
-          if (hit) score += 1;
-        }
-        if (score > bestScore) { bestScore = score; best = terrs[t]; bestBatch = diskBatch; }
+        const film = trTerritoryFilm(terrs[t].folder, ae, bf, prefix);
+        if (film < 0) continue; // another film's territory is never this job's
+        const score = film * 4 + (bf ? 2 : 0);
+        if (score > bestScore) { bestScore = score; best = terrs[t]; bestBatch = bf ? decode(String(bf.name)) : ""; }
       }
       if (!best) continue;
       out.push({ id: String(args[j].id), territoryPath: String(best.folder.fsName), territory: best.name, batch: bestBatch || String(args[j].batch || ""), batches: trackerBatchesRaw(best.folder) });

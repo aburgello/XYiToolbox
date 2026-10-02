@@ -160,6 +160,13 @@ interface Located { id: string; territoryPath: string; territory: string; batch:
 /** A job's batch as a folder name, the way Build a Batch writes it. */
 const jobBatch = (j: WrikeJob) => parseJobTitle(j.title).batch.trim().replace(/\s+/g, "_") || "Batch_1";
 const subsOf = (j: WrikeJob) => (j.subtasks || []).filter((st) => st.name).map((st) => ({ name: st.name, status: st.customStatusName || st.status || "" }));
+// The film a job belongs to (SF, FID): the first token of its first subtask
+// that is a DELIVERABLE name. It was the first subtask's whatever it was, so
+// an unnamed one ("Amends") would have been sent as a film.
+const jobFilmPrefix = (j: WrikeJob) => {
+    const named = subsOf(j).find((st) => /_\d{3,}x\d{3,}/i.test(st.name));
+    return named ? named.name.split("_")[0].toUpperCase() : "";
+};
 /** "NO 2", "CL 1 POST": what the chip is called. */
 const jobLabel = (j: WrikeJob) => {
     const p = parseJobTitle(j.title);
@@ -518,7 +525,7 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob, active 
         const map: Record<string, Located> = force ? {} : { ...memo.located };
         if (toFind.length) {
             const loc = (await evalTS("trackerLocate", JSON.stringify(toFind.map((j) => ({
-                id: j.id, code: jobTerritory(j), batch: jobBatch(j), prefix: (subsOf(j)[0].name.split("_")[0] || "").toUpperCase(),
+                id: j.id, code: jobTerritory(j), batch: jobBatch(j), prefix: jobFilmPrefix(j),
             }))))) as any;
             // An engine error here used to vanish, leaving every chip "not found".
             if (!loc || !loc.success) setMsg({ text: `Couldn't look for your jobs' folders: ${(loc && loc.error) || "no answer from AE"}`, bad: true });

@@ -951,8 +951,13 @@ The open project's row is an outlined card, never an edge bar.
   count and how far Wrike is behind; with no batch open they ARE the page.
   `trackerLocate` finds each job on disk as Deliver does (every campaign's
   Markets root, `territoryCheck`), and when two campaigns hold the territory
-  the one whose AE holds the batch wins, then the one holding a project named
-  with the job's film prefix (`SF_`) — never simply the first walked. Chips are
+  **the FILM decides and the batch only breaks ties**: the job's prefix (`SF_`,
+  off its first deliverable-named subtask) against this batch's projects, then
+  any batch's, then the JPG_PNG folders. A territory holding another film's
+  files is **not a candidate at all** — a job nothing matches is "not found",
+  never somebody else's folder. The batch folder used to outrank the film, so
+  an unbuilt Street Fighter `TH Batch 3` opened Forgotten Island's Thailand,
+  which has its own `Batch_3`, with Build pointed at it. Chips are
   scanned once on open and on refresh, one job at a time; never polled. The
   page's own scan updates its job's chip, so the two can't disagree.
 - **To amend puts "Amend" on the folded line** (opens the project; the open

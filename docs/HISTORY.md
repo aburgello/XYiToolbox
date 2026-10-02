@@ -9679,3 +9679,28 @@ error, the version and Adobe's scripting guide; the probe's enum numbers are
 invented. The pinned-guide direction (position counted from the right/bottom
 edge) is an assumption. Bespoke's `addGuide(1, x)` / `addGuide(0, y)` still
 passes integers, which the 26.5 docs keep as the two-argument form.
+
+
+## 2026-10-02 — A Street Fighter job opened Forgotten Island's Thailand
+
+The Tracker's `TH Batch 3` chip (eleven `SF_INTL_…_TH` subtasks, all Backlog)
+opened Thailand / Batch_3 with 0 art, 0 built and "7 on disk, not in Wrike".
+The folder was Forgotten Island's: both campaigns hold a Thailand, and FID's
+has a `Batch_3`.
+
+`trackerLocate` scored a candidate 2 for holding the batch in `AE` and 1 for
+holding a project with the job's film prefix. Street Fighter's Thailand had no
+`Batch_3` yet, so it scored at most 1 against FID's 2. The existing probe case
+("a batch with no AE folder yet") only covered a batch NEITHER campaign had.
+
+Now the film is asked first (`trTerritoryFilm`: this batch's names, then every
+AE batch's, then JPG_PNG and one level under it), scores 4 against the batch's
+2, and a territory whose deliverable-shaped names are all another film's is
+dropped rather than ranked. The panel sends the prefix of the first subtask
+that is a deliverable name, where it sent the first subtask's first word; the
+host ignores a prefix that is not a short code.
+
+**Not done:** the two Thailand folders were not listed from here (the shell
+is refused on /Volumes/paramount), so what Street Fighter's Thailand holds is
+unknown. If it holds nothing with an `SF_` name, the job now reads as not
+found instead of opening FID's.

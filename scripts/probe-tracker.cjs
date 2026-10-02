@@ -205,6 +205,30 @@ check(J('J1') && J('J1').territoryPath === T && J('J1').batch === 'Batch_02', "t
 check(J('J2') && /FID\/Markets\/Norway$/.test(J('J2').territoryPath) && J('J2').batches.join() === 'Batch_01,Batch_02', "…and FID's job lands in FID's Norway, with its batches", J('J2'));
 check(J('J3') && J('J3').batch === 'Batch_9' && J('J3').territoryPath === T, "a batch with no AE folder yet still finds its territory -- the film's, not the first walked -- under the title's spelling", J('J3'));
 check(!J('J4'), 'a territory no campaign holds is left out, not guessed');
+// Thailand, 2026-10-02: FID has a Batch_3, Street Fighter's Thailand has not
+// started its own. The batch folder used to outrank the film.
+put('/Volumes/paramount/FID/Markets/Thailand/AE/Batch_3/FID_INTL_PortalToParadise_DOOH_1080x1920px_15s_TH_V01.aep');
+put('/Volumes/paramount/SF/Markets/Thailand/AE/Batch_01/SF_INTL_Trio_DOOH_PrimeOffice_1280x720px_15s_TH_V01.aep');
+put('/Volumes/paramount/FID/Markets/Peru/AE/Batch_01/FID_INTL_PortalToParadise_DOOH_1080x1920px_15s_PE_V01.aep');
+put('/Volumes/paramount/SF/Markets/Peru/JPG_PNG/SF_INTL_Trio_DOOH_RealPlaza_1080x1920px_20s_PE/a.jpg');
+put('/Volumes/paramount/FID/Markets/Chile/AE/Batch_01/FID_INTL_PortalToParadise_DOOH_1080x1920px_15s_CL_V01.aep');
+put('/Volumes/paramount/SF/Markets/Taiwan/PDFs/sheet.pdf');
+put('/Volumes/paramount/FID/Markets/Taiwan/AE/Batch_01/notes.txt');
+const loc2 = a.trackerLocate(JSON.stringify([
+    { id: 'T1', code: 'TH', batch: 'Batch_3', prefix: 'SF' },
+    { id: 'T2', code: 'TH', batch: 'Batch_3', prefix: 'FID' },
+    { id: 'T3', code: 'PE', batch: 'Batch_1', prefix: 'SF' },
+    { id: 'T4', code: 'CL', batch: 'Batch_1', prefix: 'SF' },
+    { id: 'T5', code: 'CL', batch: 'Batch_1', prefix: 'Motion Debrief' },
+    { id: 'T6', code: 'TW', batch: 'Batch_1', prefix: 'SF' },
+]));
+const K = (id) => (loc2.jobs || []).find((x) => x.id === id);
+check(K('T1') && /SF\/Markets\/Thailand$/.test(K('T1').territoryPath) && K('T1').batch === 'Batch_3', "another film holds this batch number and ours has not started it: the FILM picks Street Fighter's Thailand", K('T1'));
+check(K('T2') && /FID\/Markets\/Thailand$/.test(K('T2').territoryPath), "…and FID's own job still lands in FID's", K('T2'));
+check(K('T3') && /SF\/Markets\/Peru$/.test(K('T3').territoryPath), "nothing built yet: the art folders say whose territory it is, over another film's built batch", K('T3'));
+check(!K('T4'), "only another film holds the territory: not found, never somebody else's folder", K('T4'));
+check(K('T5') && /FID\/Markets\/Chile$/.test(K('T5').territoryPath), 'a prefix that is not a film code rules nothing out', K('T5'));
+check(K('T6') && /FID\/Markets\/Taiwan$/.test(K('T6').territoryPath) && K('T6').batch === 'Batch_01', 'no film to tell by either way: the one holding the batch, as before', K('T6'));
 check(!(loc.jobs || []).some((x) => /_Archive|Norway2/.test(x.territoryPath)), 'never an _ folder, never a folder that is not a country');
 
 // ---------------------------------------------------------------------------
