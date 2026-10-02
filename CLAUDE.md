@@ -1413,6 +1413,17 @@ tokens and is correctly not a candidate.
   PRE deliverable never sees one; where no POST version exists (taglines,
   logos) the ordinary one is taken; and a POST project already swapped to the
   PRE date is UPGRADED to its POST twin. `node scripts/probe-support-swap-post.cjs`.
+- **A market's VARIANTS of an OV file are offered, never applied**
+  (`ssVariantExtras`). Thailand holds `SF_Trio_Date_White_TH_RGB.ai`,
+  `…_Yellow_TH…` and `…_White_1Line_TH…` for a master using plain
+  `SF_Trio_Date_OV_RGB.ai`: one or two words more than the original, so the
+  one-token rule rightly finds nothing, and the tool said "hasn't localised
+  this component yet" about a folder with three localised dates. Only for an
+  original carrying an OV token, only when no exact swap exists: the
+  original's tokens in order, OV swapped for a market-shaped token, up to two
+  extra words. They come back as a fixable no-match naming the words, the
+  project's own creative's first. Never auto-pick even a lone variant: the
+  extra word is the thing nobody can read off the OV name.
 - A file already present under the identical name is reported as
   "already the version in this market's Masters/Support" — worded to cover
   BOTH already-localised and shared-across-markets, because one market's tree

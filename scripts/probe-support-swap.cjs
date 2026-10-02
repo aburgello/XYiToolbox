@@ -287,5 +287,50 @@ console.log('\n7. a batch run persists its report');
     }
 }
 
+// ---------------------------------------------------------------------------
+// 8. Thailand, 2026-10-02: the market's dates carry a colour the OV does not.
+console.log('\n8. a market holding VARIANTS of an OV file offers them, and applies none');
+{
+    const say = (ok, msg, extra) => { if (!ok) fails++; console.log((ok ? '  ok    ' : '  FAIL  ') + msg + (extra ? '   ' + extra : '')); };
+    const ex = (a, b) => aeft.ssVariantExtras(a, b);
+    say(String(ex('SF_Trio_Date_OV_RGB.ai', 'SF_Trio_Date_White_TH_RGB.ai')) === 'White', 'White_TH is a variant of the plain OV date');
+    say(String(ex('SF_Trio_Date_OV_RGB.ai', 'SF_Trio_Date_White_1Line_TH_RGB.ai')) === 'White,1Line', '…and so is White_1Line_TH');
+    say(ex('SF_Trio_Date_OV_RGB.ai', 'SF_Trio_Date_DropShadow_OV_RGB.ai') === null, 'an OV file with an extra word is not this market\'s version');
+    say(ex('SF_Trio_Date_OV_RGB.ai', 'SF_Trio_Date_TH_RGB.ai') === null, 'the exact one-token swap is not a "variant" (the real rule owns it)');
+    say(ex('SF_Trio_Date_OV_RGB.ai', 'SF_Trio_Tagline_White_TH_RGB.ai') === null, 'a different component is not a variant');
+    say(ex('SF_Trio_Date_OV_RGB.ai', 'SF_Trio_Date_White_TH_RGB.psd') === null, 'nor is another file type');
+    say(ex('SF_Trio_Date_OV_RGB.ai', 'SF_Trio_Date_A_B_C_TH_RGB.ai') === null, 'three extra words is too far');
+
+    const TH = '/Volumes/paramount/…/Markets/Thailand';
+    const S = TH + '/Masters/Support';
+    const dir = (p, kids) => { tree[p] = kids; };
+    dir(TH, ['AE', 'Masters']); dir(TH + '/AE', ['Batch_1']); dir(TH + '/AE/Batch_1', []);
+    dir(TH + '/Masters', ['Support']);
+    dir(S, ['Trio', 'RyuHadouken']);
+    dir(S + '/Trio', ['Date', 'TT']);
+    dir(S + '/Trio/Date', ['SF_Trio_Date_DropShadow_OV_RGB.ai', 'SF_Trio_Date_White_1Line_TH_RGB.ai', 'SF_Trio_Date_White_TH_RGB.ai', 'SF_Trio_Date_Yellow_TH_RGB.ai']);
+    dir(S + '/Trio/TT', ['SF_TT_TH_RGB.ai']);
+    dir(S + '/RyuHadouken', ['Date']);
+    dir(S + '/RyuHadouken/Date', ['SF_Trio_Date_Red_TH_RGB.ai']);
+    const pf = new FolderItem('Support');
+    const its = [
+        new FootageItem(new File('/x/SF_Trio_Date_OV_RGB.ai'), pf),
+        new FootageItem(new File('/x/SF_TT_OV_RGB.ai'), pf),
+    ];
+    sandbox.app.project = {
+        file: new File(TH + '/AE/Batch_1/SF_INTL_Trio_DOOH_PrimeOffice_1280x720px_15s_TH_V01.aep'),
+        numItems: its.length, item: (i) => its[i - 1], saved: false, save() { this.saved = true; },
+    };
+    const d = aeft.supportSwap('', '', true);
+    const rows = d.success ? d.projects[0].items : [];
+    const date = rows.filter((r) => r.name === 'SF_Trio_Date_OV_RGB.ai')[0];
+    say(d.success && date && date.action === 'no-match' && date.candidates && date.candidates.length === 3, 'the OV date comes back to be picked, with this creative\'s three versions', date && JSON.stringify(date.candidates && date.candidates.map((c) => c.name)));
+    say(date && !/Red/.test(JSON.stringify(date.candidates)), '…and not another creative\'s, while this one has its own');
+    say(date && /White/.test(date.reason) && /Yellow/.test(date.reason), 'the reason names the versions', date && date.reason);
+    say(rows.filter((r) => r.name === 'SF_TT_OV_RGB.ai')[0]?.newName === 'SF_TT_TH_RGB.ai', 'the ordinary swap beside it is unchanged');
+    const real = aeft.supportSwap('', d.imageFolder, false);
+    say(real.success && its[0].replacedWith === null && /SF_TT_TH_RGB/.test(its[1].replacedWith || ''), 'a real run swaps the title and leaves the date alone');
+}
+
 console.log(fails === 0 ? '\nCLEAN — the rule holds on every real family surveyed.' : '\n' + fails + ' FAILED');
 process.exit(fails ? 1 : 0);

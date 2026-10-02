@@ -9704,3 +9704,22 @@ host ignores a prefix that is not a short code.
 is refused on /Volumes/paramount), so what Street Fighter's Thailand holds is
 unknown. If it holds nothing with an `SF_` name, the job now reads as not
 found instead of opening FID's.
+
+
+## 2026-10-02 — Support Swap: Thailand's dates carry a colour the OV does not
+
+`SF_Trio_Date_OV_RGB.ai` in a Thailand project was not swapped. The market's
+`Masters/Support/Trio/Date` holds `SF_Trio_Date_White_TH_RGB.ai`,
+`SF_Trio_Date_Yellow_TH_RGB.ai`, `SF_Trio_Date_White_1Line_TH_RGB.ai` and
+`SF_Trio_Date_DropShadow_OV_RGB.ai`. Six or seven tokens against five, so
+`ssOneTokenDiff` returns -1 on count and the item fell to "Still the OV
+version — this market hasn't localised this component yet".
+
+Not swapping is right: nothing in the OV's name says White or Yellow. The
+message was wrong. `ssVariantExtras` now recognises a candidate that is the
+original with OV swapped for a market token plus one or two extra words, and
+the item comes back as a no-match with those candidates to pick from. The
+one-token rule and everything it applies automatically are unchanged.
+`probe-support-swap.cjs` section 8.
+
+**Not done:** not run in AE against the real Thailand project.

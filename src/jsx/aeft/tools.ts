@@ -4447,6 +4447,45 @@ function ssIsMarketToken(tok: string): boolean {
   return true;
 }
 
+/**
+ * A VARIANT: this market's file for an OV original, with one or two words the
+ * original does not have. Returns those words, or null when it is not one.
+ *
+ * Street Fighter's Thailand holds `SF_Trio_Date_White_TH_RGB.ai`,
+ * `…_Yellow_TH_RGB.ai` and `…_White_1Line_TH_RGB.ai` for a master that uses
+ * plain `SF_Trio_Date_OV_RGB.ai`. Six tokens against five, so the one-token
+ * rule finds nothing -- correctly, since nothing in the name says which colour
+ * the layer wants -- and the tool reported "this market hasn't localised this
+ * component yet" about a folder with three localised dates in it.
+ *
+ * So these are OFFERED, never applied: the original's tokens in order, its OV
+ * swapped for a market-shaped token, and up to two extra words in between.
+ */
+export function ssVariantExtras(name: string, candName: string): string[] | null {
+  if (ssExt(name) !== ssExt(candName)) return null;
+  const ta = ssTokens(name);
+  const tb = ssTokens(candName);
+  const more = tb.length - ta.length;
+  if (more < 1 || more > 2) return null;
+  const extras: string[] = [];
+  let i = 0;
+  let swapped = false;
+  for (let j = 0; j < tb.length; j++) {
+    if (i < ta.length) {
+      if (ta[i].toLowerCase() === tb[j].toLowerCase()) {
+        if (ssIsOvToken(tb[j])) return null; // still an OV file, whatever else it carries
+        i++;
+        continue;
+      }
+      if (!swapped && ssIsOvToken(ta[i]) && ssIsMarketToken(tb[j]) && !ssIsOvToken(tb[j])) { swapped = true; i++; continue; }
+    }
+    if (ssIsOvToken(tb[j])) return null;
+    extras.push(tb[j]);
+  }
+  if (i !== ta.length || !swapped || extras.length !== more) return null;
+  return extras;
+}
+
 /** Does this filename carry an OV token of its own? */
 function ssHasOvToken(name: string): boolean {
   const t = ssTokens(name);
@@ -4777,6 +4816,37 @@ export function ssApplyToOpenProject(
       // empty too. Reading the OV token off the item itself catches both,
       // and keeps "shared across markets" meaning only what it says.
       if (ssHasOvToken(name)) {
+        // LOCALISED, BUT IN VERSIONS THE ORIGINAL'S NAME CANNOT CHOOSE BETWEEN
+        // (ssVariantExtras). Offered for a pick, the project's own creative
+        // first when it holds any; never applied.
+        const vars: { name: string; path: string; own: boolean; extra: string }[] = [];
+        for (let k = 0; k < cands.length; k++) {
+          let cn = decode(cands[k].file.name);
+          const tw = ssPostTwinOf(cn);
+          if (tw) { if (!post) continue; cn = tw; }
+          const ex = ssVariantExtras(name, cn);
+          if (!ex) continue;
+          vars.push({
+            name: cands[k].creative + " / " + cands[k].category + " / " + decode(cands[k].file.name),
+            path: cands[k].file.fsName, own: projCreative !== "" && cands[k].creative === projCreative, extra: ex.join(" "),
+          });
+        }
+        if (vars.length > 0) {
+          let anyOwn = false;
+          for (let k = 0; k < vars.length; k++) if (vars[k].own) anyOwn = true;
+          const vopts: { name: string; path: string }[] = [];
+          const words: string[] = [];
+          for (let k = 0; k < vars.length; k++) {
+            if (anyOwn && !vars[k].own) continue;
+            vopts.push({ name: vars[k].name, path: vars[k].path });
+            if (words.indexOf(vars[k].extra) === -1) words.push(vars[k].extra);
+          }
+          projReport.items.push({
+            folder: folderName, name: name, action: "no-match", key: key, candidates: vopts,
+            reason: "This market has it as " + words.join(", ") + " — the OV's name doesn't say which, so pick one.",
+          });
+          continue;
+        }
         let where = "";
         if (m.ov.length > 0 && m.ov[0].cand.creative !== "") where = " under " + m.ov[0].cand.creative;
         projReport.items.push({
