@@ -17,6 +17,7 @@
 import React, { useEffect, useState } from "react";
 import { Image as ImageIcon, X, CheckCircle2, AlertTriangle, CircleSlash, CheckSquare, Square, Wrench, FolderSearch, Undo2, ChevronRight, ChevronDown } from "lucide-react";
 import { evalTS } from "../lib/utils/bolt";
+import { confirmDialog } from "./Dialog";
 import "./McItReportModal.scss";
 
 export interface McItemRep {
@@ -69,6 +70,8 @@ export interface McReport {
     toolName?: string;
     // Verb shown on the cards ("replaced" / "swapped"). Absent = "replaced".
     verb?: string;
+    /** An open-project preview with other .aep files beside it: how many. */
+    batchAeps?: number;
 }
 
 let pushMcItReport: ((report: McReport) => void) | null = null;
@@ -168,12 +171,44 @@ export const McItReportHost: React.FC = () => {
         }
     };
 
+    // ONE PROJECT -> ITS WHOLE BATCH. The same preview over every .aep beside
+    // the open project, replacing this report. It asks first because AE opens
+    // each project in turn to read it, so the one on screen is closed (AE
+    // prompts about unsaved changes itself). Plain evalTS: a batch takes as
+    // long as it takes, and the poller recovers the report if the page doesn't
+    // survive it.
+    const scanBatch = async () => {
+        if (!report || !report.aepFolder) return;
+        const n = report.batchAeps || 0;
+        const folder = report.aepFolder.split(/[\\/]/).pop() || "this folder";
+        const ok = await confirmDialog({
+            title: `Scan all ${n} projects in ${folder}?`,
+            body: "After Effects opens each one in turn to read it, so the project on screen is closed. Nothing is swapped until you press Apply.",
+            confirm: "Scan",
+        });
+        if (!ok) return;
+        setApplying(true);
+        try {
+            const res = await evalTS(report.applyExport || "mcIt", report.aepFolder, report.imageFolder || "", true);
+            if (res?.success) {
+                const r = res as McReport;
+                shownRunIdRef.current = r.runId || r.finishedAt || "";
+                setReport(r);
+            }
+        } catch (e) {
+            /* bridge lost mid-scan — the poller will recover the real report */
+        } finally {
+            setApplying(false);
+        }
+    };
+
     if (!report) return null;
-    return <McItReportModal report={report} onClose={close} onApply={report.dryRun ? apply : undefined} applying={applying} />;
+    const canScanBatch = !!report.dryRun && report.applyExport === "supportSwap" && (report.batchAeps || 0) > 1;
+    return <McItReportModal report={report} onClose={close} onApply={report.dryRun ? apply : undefined} applying={applying} onScanBatch={canScanBatch ? scanBatch : undefined} />;
 
 };
 
-const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply?: (selected: string[], overrides: Overrides) => void; applying?: boolean }> = ({ report, onClose, onApply, applying }) => {
+const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply?: (selected: string[], overrides: Overrides) => void; applying?: boolean; onScanBatch?: () => void }> = ({ report, onClose, onApply, applying, onScanBatch }) => {
     // Which projects are UNticked, keyed by .aep filename. Absent = included,
     // so a fresh preview starts with everything selected (the previous
     // behaviour) and unticking is the deliberate act.
@@ -251,6 +286,11 @@ const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply
                         {report.finishedAt ? <span className="mcit-finished"> · {report.finishedAt}</span> : null}
                     </div>
                 </div>
+                {onScanBatch && (
+                    <button className="mcit-selectall" disabled={applying} onClick={onScanBatch} title="Preview the same swap over every project in this batch folder">
+                        {applying ? "Working…" : `Scan the batch (${report.batchAeps})`}
+                    </button>
+                )}
                 {onApply && actionable.length > 1 && (
                     <button
                         className="mcit-selectall"

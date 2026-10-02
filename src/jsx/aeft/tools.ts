@@ -3436,6 +3436,9 @@ interface McItResult {
   pickExport?: string;
   toolName?: string;
   verb?: string;
+  // Set on an OPEN-PROJECT preview only: how many .aep files sit beside the
+  // project, so the modal can offer to scan the whole batch from there.
+  batchAeps?: number;
 }
 
 // <Territory>/AE/Batch_01 -> the matching <Territory>/JPG_PNG batch folder.
@@ -5080,6 +5083,20 @@ export const supportSwap = (
       toolName: "Support Swap",
       verb: "swapped",
     };
+    // THE WAY FROM ONE PROJECT TO ITS BATCH. The Toolset card only ever reads
+    // the open project, and the batch-wide run lived three levels into Big Guy
+    // Localiser's scan list. Counted from a plain listing (never a mask, never
+    // .exists) so the modal can say how many it would open.
+    if (openProjectMode && dryRun && app.project.file && app.project.file.parent) {
+      let beside = 0;
+      try {
+        const sibs = app.project.file.parent.getFiles();
+        for (let b = 0; b < sibs.length; b++) {
+          if (sibs[b] instanceof File && ssExt(decode(sibs[b].name)) === "aep") beside++;
+        }
+      } catch (listErr) { beside = 0; }
+      if (beside > 1) out.batchAeps = beside;
+    }
     // A batch run opens and saves every project in the folder, which is long
     // enough to outlive the page that asked for it -- see persistLastReport.
     // Without this the panel came back on the home screen showing nothing.

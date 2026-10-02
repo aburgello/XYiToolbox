@@ -328,6 +328,12 @@ console.log('\n8. a market holding VARIANTS of an OV file offers them, and appli
     say(date && !/Red/.test(JSON.stringify(date.candidates)), '…and not another creative\'s, while this one has its own');
     say(date && /White/.test(date.reason) && /Yellow/.test(date.reason), 'the reason names the versions', date && date.reason);
     say(rows.filter((r) => r.name === 'SF_TT_OV_RGB.ai')[0]?.newName === 'SF_TT_TH_RGB.ai', 'the ordinary swap beside it is unchanged');
+    say(d.batchAeps === undefined, 'a project alone in its folder offers no batch scan');
+    dir(TH + '/AE/Batch_1', ['SF_INTL_Trio_DOOH_PrimeOffice_1280x720px_15s_TH_V01.aep', 'SF_INTL_Trio_DOOH_WP1_840x320px_15s_TH_V01.aep', 'notes.txt', 'Auto-Save']);
+    dir(TH + '/AE/Batch_1/Auto-Save', []);
+    const d2 = aeft.supportSwap('', '', true);
+    say(d2.batchAeps === 2 && /Batch_1$/.test(d2.aepFolder), 'with projects beside it, the preview says how many the batch holds', String(d2.batchAeps));
+    dir(TH + '/AE/Batch_1', []);
     const real = aeft.supportSwap('', d.imageFolder, false);
     say(real.success && its[0].replacedWith === null && /SF_TT_TH_RGB/.test(its[1].replacedWith || ''), 'a real run swaps the title and leaves the date alone');
 }
