@@ -6031,6 +6031,10 @@ export const bespokeBuildRegions = (
       scalePanels?: boolean;
       marketsRoot?: string; territory?: string; batch?: string;
       refPath?: string; guidesX?: number[]; guidesY?: number[];
+      /** The guided build: also put each panel's piece of the reference
+       *  inside its own comp, and leave the board's on top, both in
+       *  Difference. Absent means the tracing board's arrangement. */
+      refInPanels?: boolean;
       /** Place the country's own build of each master where one exists. */
       useLocalised?: boolean;
     };
@@ -6112,6 +6116,22 @@ export const bespokeBuildRegions = (
 
       let fps = 25;
       for (const k in compFor) { if (compFor.hasOwnProperty(k)) { fps = compFor[k].frameRate; break; } }
+
+      // THE REFERENCE, IMPORTED ONCE AND BEFORE THE PANELS, because the guided
+      // build puts a piece of it inside each of them as well as on the board.
+      // A reference that will not import is reported below and never fails the
+      // build: the deliverable is the panels.
+      let refFootage: FootageItem | null = null;
+      let refError = "";
+      if (plan.refPath) {
+        try {
+          refFootage = app.project.importFile(new ImportOptions(new File(plan.refPath))) as FootageItem;
+        } catch (eRef) {
+          refFootage = null;
+          refError = eRef.toString();
+        }
+      }
+      let refInPanelCount = 0;
 
       const outName = plan.name && plan.name !== "" ? plan.name : "Bespoke_" + canvasW + "x" + canvasH;
       const out = app.project.items.addComp(outName, canvasW, canvasH, 1, seconds, fps);
@@ -6231,6 +6251,38 @@ export const bespokeBuildRegions = (
           (layer.property("Scale") as Property).setValue([100, 100]);
           (layer.property("Position") as Property).setValue([reg.x + reg.w / 2, reg.y + reg.h / 2]);
           (layer as AVLayer).label = (i % 16) + 1;
+
+          // THIS PANEL'S PIECE OF THE REFERENCE, INSIDE THE PANEL.
+          //
+          // Matching a master to the mech means moving things INSIDE the panel
+          // comp, and in there the board's reference is not on screen. So the
+          // same picture goes in on top, placed so the part of the board this
+          // panel covers lands exactly on the panel: the board's scale, moved
+          // by the panel's corner. In Difference, so what lines up goes black.
+          //
+          // A GUIDE LAYER, which is what makes it safe to leave switched on: a
+          // guide layer shows in its own comp's viewer and is not drawn when
+          // that comp is nested, so the board (and the render) never see it.
+          // Added AFTER scaleCompToFit, which would otherwise scale it along
+          // with the artwork. Not for a turned panel: its comp is sized
+          // unrotated, and a sideways reference is worse than none.
+          if (plan.refInPanels === true && refFootage && turn === 0 && refFootage.width > 0 && refFootage.height > 0) {
+            try {
+              const piece = panel.layers.add(refFootage) as AVLayer;
+              piece.name = "REFERENCE";
+              (piece.property("Scale") as Property).setValue([
+                (canvasW / refFootage.width) * 100,
+                (canvasH / refFootage.height) * 100,
+              ]);
+              (piece.property("Position") as Property).setValue([canvasW / 2 - reg.x, canvasH / 2 - reg.y]);
+              piece.blendingMode = BlendingMode.DIFFERENCE;
+              piece.guideLayer = true;
+              piece.locked = true;
+              refInPanelCount++;
+            } catch (ePiece) {
+              lines.push("  R" + (i + 1) + ": its piece of the reference could not be added: " + ePiece.toString());
+            }
+          }
           // PLAYED AGAIN TO FILL THE BOARD. A 30s board from a 15s master is
           // the same duration multiple the localiser builds: each further
           // pass a duplicate of the layer, started where the last one ends
@@ -6334,10 +6386,11 @@ export const bespokeBuildRegions = (
       //
       // Failing to attach it must never fail the build: the deliverable is the
       // regions, and the reference is a convenience.
-      if (plan.refPath) {
+      if (plan.refPath && !refFootage) {
+        lines.push("  reference could not be attached: " + refError);
+      } else if (plan.refPath && refFootage) {
         try {
-          const io = new ImportOptions(new File(plan.refPath));
-          const refItem = app.project.importFile(io) as FootageItem;
+          const refItem = refFootage;
           const refLayer = out.layers.add(refItem) as AVLayer;
           refLayer.name = "REFERENCE";
           // The JPG comes out of the guide PDF at whatever size the export
@@ -6351,9 +6404,21 @@ export const bespokeBuildRegions = (
           }
           refLayer.guideLayer = true;
           refLayer.enabled = false;
-          refLayer.moveToEnd();
+          if (plan.refInPanels === true) {
+            // ON TOP AND IN DIFFERENCE, eye off: one click on the eye and the
+            // whole board is checked against the mech. At the bottom, where
+            // the tracing board parks it, Difference would have nothing under
+            // it to differ from.
+            refLayer.blendingMode = BlendingMode.DIFFERENCE;
+            refLayer.moveToBeginning();
+          } else {
+            refLayer.moveToEnd();
+          }
           refLayer.locked = true;
-          lines.push("  reference attached as a locked guide layer (eye off)");
+          lines.push(plan.refInPanels === true
+            ? "  reference on top of the board in Difference (guide layer, eye off), and a piece of it in "
+              + refInPanelCount + " panel comp" + (refInPanelCount === 1 ? "" : "s") + " (guide layer, eye on)"
+            : "  reference attached as a locked guide layer (eye off)");
         } catch (e) {
           lines.push("  reference could not be attached: " + e.toString());
         }

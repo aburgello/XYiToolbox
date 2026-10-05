@@ -359,6 +359,17 @@ way to watch was to close the panel.
   - **The build is `bespokeBuildRegions`, unchanged** but for a per-region
     `repeat` (scaled-panel path only). `scalePanels` always; the mech sheet
     goes as the guide layer.
+  - **Each panel comp carries ITS PIECE OF THE MECH SHEET, in Difference**
+    (`refInPanels`, guided only). Matching a master to the mech means moving
+    things inside the panel comp, where the board's reference is not on
+    screen. The same footage goes in on top at the board's scale, moved by the
+    panel's corner (`[canvasW/2 - x, canvasH/2 - y]`), added AFTER
+    `scaleCompToFit` so it is not scaled with the artwork. **A guide layer,
+    eye ON**: it shows in the panel's own viewer and is not drawn when the
+    comp is nested, so neither the board nor a render sees it. The board's
+    own copy sits on TOP in Difference with its eye off (at the bottom, where
+    the tracing board parks it, Difference has nothing under it). Skipped for
+    a turned panel. The reference is imported once, before the panels.
   - **`TT` rows are drawn dashed and not built**: a master carries its own
     title. Artwork that is a film clip has no ART row, so parts of a board
     arrive with no panel (an arch's lintel either side of its legs; a CSV with

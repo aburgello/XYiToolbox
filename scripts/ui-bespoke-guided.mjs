@@ -201,6 +201,7 @@ try {
     check(plan.regions[4].path === "" && plan.regions[4].label === "PANEL 5" && [plan.regions[4].x, plan.regions[4].w, plan.regions[4].h].join() === "2817,2430,320", "an empty panel goes as an empty comp of its size, where it was put", plan.regions[4]);
     check(plan.territory === "Malaysia" && plan.batch === "Bespoke_VivaCity" && /XY026206_Bespoke$/.test(plan.marketsRoot), "filed where the CSV's own folders say", [plan.marketsRoot, plan.territory, plan.batch]);
     check(new RegExp(ARCH + "\\.jpg$").test(plan.refPath), "the mech sheet goes along as the guide layer", plan.refPath);
+    check(plan.refInPanels === true, "…and is asked for inside each panel's comp too");
     check(await page.waitFor(`/Built and saved/.test((document.querySelector(".bsg-note") || {}).innerText || "") && /built SF_INTL/.test((document.querySelector(".bsg-report") || {}).innerText || "")`, 5000), "the report comes back on the page", await text(page, ".bsg-note"));
     check(/already in Malaysia\/AE\/Bespoke_VivaCity/.test(await text(page, ".bsg-filing")), "…and the page knows it is on disk now", await text(page, ".bsg-filing"));
 
@@ -213,6 +214,7 @@ try {
     await page.click(".bsg-build");
     await page.waitFor(`!!window.__plan`, 5000);
     check((await page.eval(`window.__plan.territory`)) === "", "…so that build carries no territory and is left open");
+    check(await page.waitFor(`/^Built, and left open/.test((document.querySelector(".bsg-note") || {}).innerText || "")`, 5000), "…and says so");
     const tall = await page.eval(`(() => { const b = document.querySelector(".bsg-board").getBoundingClientRect(); return { h: b.height, ratio: b.width / b.height }; })()`);
     check(tall.h <= 462 && Math.abs(tall.ratio - 384 / 1152) < 0.01, "a tall board is held to a height, still in its own shape", tall);
     await page.click(".bsg-sib", "TGVToppen");
@@ -222,7 +224,7 @@ try {
     console.log("\nWhat can't be read");
     await type(page, ".bsg-path", `${BATCH}/${ARCH}/ARTWORK_ONLY`);
     await page.click(".bsg-top .bsp-btn", "Read");
-    check(await page.waitFor(`/No CSV in ARTWORK_ONLY/.test((document.querySelector(".bsg-note.is-bad") || {}).innerText || "")`, 5000), "a folder with no CSV says so");
+    check(await page.waitFor(`/No CSV in ARTWORK_ONLY/.test((document.querySelector(".bsg-note.is-bad") || {}).innerText || "")`, 5000), "a folder with no CSV says so", await page.eval(`JSON.stringify({ notes: [...document.querySelectorAll(".bsg-note")].map(e => e.className + ": " + e.innerText), path: document.querySelector(".bsg-path").value, head: (document.querySelector(".bsg-head") || {}).innerText })`));
     await page.click(".bsg-top .bsp-btn", "Back");
     check(await page.waitFor(`document.querySelectorAll(".bsp-choose-card").length === 2`, 4000), "Back returns to the chooser");
     const errs = await page.eval(`window.__errors || []`);

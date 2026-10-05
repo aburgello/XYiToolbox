@@ -183,6 +183,10 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, creatives, onBack }) => {
     // master once, for where the panel ends, and not for every pixel on the way.
     const [live, setLive] = useState<{ id: number; rect: Rect; atX: number | null; atY: number | null } | null>(null);
     const dragged = useRef(false);
+    // Which deliverable is on the page NOW, for a build that answers after
+    // somebody has moved on to the next one.
+    const showing = useRef("");
+    showing.current = board ? board.csvPath : "";
     const nextId = useRef(1);
     // What the localiser's ranking answered, kept per creative|size|length so a
     // panel edited back to a size already asked about costs nothing.
@@ -469,15 +473,23 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, creatives, onBack }) => {
                     return { path: c ? c.path : "", x: p.x, y: p.y, w: p.w, h: p.h, rotation: 0, label: c ? undefined : `PANEL ${i + 1}`, repeat: c ? c.repeat : 1 };
                 }),
                 refPath: board.pictures[page] || board.pictures[board.pages[0]] || "",
+                // Each panel's comp gets its own piece of the mech sheet, in
+                // Difference, to line the master up against.
+                refInPanels: true,
                 guidesX: [],
                 guidesY: [],
             };
             const res = (await evalTS("bespokeBuildRegions", JSON.stringify(plan))) as unknown as
                 { success: boolean; error?: string; report?: string; saved?: boolean; savedTo?: string } | undefined;
             if (!res) { setNote({ text: "No answer from After Effects. Open this panel inside After Effects to build.", bad: true }); return; }
-            if (!res.success) { setNote({ text: res.error || "The build failed.", bad: true }); return; }
-            setReport(res.report || "");
-            setNote({ text: res.saved ? `Built and saved to ${(res.savedTo || "").split("/").slice(-3).join("/")}` : "Built, and left open in After Effects. Not saved." });
+            // A BUILD CAN ANSWER AFTER THE PAGE HAS MOVED ON to the next
+            // deliverable. Its answer is still said, under its own name, but its
+            // report is not laid over a board it does not describe.
+            const here = showing.current === board.csvPath;
+            const whose = here ? "" : board.name + ": ";
+            if (!res.success) { setNote({ text: whose + (res.error || "The build failed."), bad: true }); return; }
+            if (here) setReport(res.report || "");
+            setNote({ text: whose + (res.saved ? `Built and saved to ${(res.savedTo || "").split("/").slice(-3).join("/")}` : "Built, and left open in After Effects. Not saved.") });
             // Only if this board is still the one on the page: the build takes a
             // while, and another deliverable may have been opened meanwhile.
             if (res.saved) setBoard((now) => (now && now.csvPath === board.csvPath ? { ...now, built: true } : now));
@@ -710,7 +722,7 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, creatives, onBack }) => {
                         ) : (
                             <span>This CSV isn't under a territory's PNGs folder, so the build is left open and not saved.</span>
                         )}
-                        <span className="bsg-hint">It builds into the project open in After Effects{saveIt && board.where && !board.built ? ", and saves that project under the deliverable's name" : ""}. Titles in the CSV are drawn dashed and not built: a master carries its own.{mastersPath ? ` Masters from ${nodePath.basename(mastersPath)}.` : ""}</span>
+                        <span className="bsg-hint">It builds into the project open in After Effects{saveIt && board.where && !board.built ? ", and saves that project under the deliverable's name" : ""}. Titles in the CSV are drawn dashed and not built: a master carries its own. The mech sheet goes on the board and inside each panel's comp as a Difference guide layer, to line things up against; guide layers never render.{mastersPath ? ` Masters from ${nodePath.basename(mastersPath)}.` : ""}</span>
                     </div>
 
                     {report && <pre className="bsg-report">{report}</pre>}

@@ -9992,3 +9992,27 @@ the panel to x 0. It now stops at the edge.
 **Not done:** dragged in the harness only, with synthetic mouse events.
 Whether After Effects' CEP delivers `mousemove` on `window` as smoothly is
 the thing to feel in the panel.
+
+
+## 2026-10-05 — The reference, snipped into each panel
+
+First real guided build (the VivaCity arch), checked by laying the mech sheet
+over the board in Difference: the masters' titles and framing do not sit
+where the mech put them, which is expected (a master is cover-cropped into
+its panel and carries its own title). Asked for: the reference "snipped" into
+each precomp, so the part needed is there to align against.
+
+Done in `bespokeBuildRegions` under `refInPanels`. Nothing is cut: the whole
+sheet is placed in each panel comp so the panel's own area lands on it.
+
+While making this edit the host file was emptied by a failed write (text with
+non-Latin-1 characters written through a Latin-1 round trip, after the file
+had been opened for writing). Restored from the previous commit; nothing but
+that edit was in flight. `localise.ts` carries a NUL byte and is edited as
+BYTES from here on.
+
+**Not done:** not built in After Effects. Two things to see there: that the
+piece lands exactly on its panel, and that a guide layer inside a panel comp
+really stays out of the board's viewer. Also offered and not built: using the
+territory's localised masters (`useLocalised`), and moving a master's title
+to the CSV's `TT` box.
