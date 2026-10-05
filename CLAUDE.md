@@ -317,13 +317,49 @@ way to watch was to close the panel.
 (`home` | `category` | `tool`); `backTo` carries the previous screen.
 
 - `localise` → `screens/LocaliseScreen.tsx` (bespoke)
-- **Bespoke has THREE modes**, chosen once at the door: `multi` (equal-panel
-  tiling), `regions` (masters placed on a traced board) and `insitu` (the build
-  on a photo of the site). Insitu takes the whole page from
+- **Bespoke has FOUR modes**: `multi` (equal-panel tiling), `guided` (the
+  board read off the mech's CSV; what the Bespoke card opens), `regions`
+  (masters placed on a traced board; only a saved screen opens it now) and
+  `insitu` (the build on a photo of the site). Insitu takes the whole page from
   `tools/InsituBoard.tsx` and shares none of the region machinery — a quad over
   a photograph has no board size, no guides and no running order, and threading
   a third value through forty `mode === "multi"` branches would put a third
   meaning on every one of them.
+- **The Bespoke card opens the GUIDED build, and the board is READ, not
+  drawn** (`tools/BespokeGuided.tsx`, `lib/bespokeCsv.ts`, 2026-10-05; mode
+  `guided`, whole page like Insitu). Tracing made a person redo in a docked
+  panel what the mech team had done in InDesign. The mech's CSV beside each
+  deliverable's sheet (`<Territory>/PNGs/<Batch>/<Deliverable>/<name>.csv`,
+  the format Extreme Tools' Build From CSV reads) already holds it: the canvas
+  in the name, a window per `ART` row, whose artwork in the path
+  (`…/Support/<Creative>/…`). Point at the folder, correct the proposal, build.
+  - **A panel is one piece of artwork, not one row.** Rows of one artwork
+    (name with `_BG`/`_BORDER` off) on one page whose WINDOWS overlap by 20%
+    of the smaller are one panel, and the panel is the box round them (an
+    arch's lintel and leg are one picture). Never group on where the picture
+    was placed: on the pillar boards a panel's two layers are placed
+    differently, and a neighbour is a pixel over. Measured on all 17 Malaysia
+    CSVs; `node scripts/probe-bespoke-csv.mjs [x.csv]` prints a real one.
+  - **The master is the localiser's answer** (`csvLocaliserListMasters` for
+    the panel's size and the board's length): the creative's own first, then
+    one that goes in 2 or 3 times (`repeatFor`), played that often. Another
+    creative's master is listed and NEVER proposed; a panel with none is asked
+    about, or built as an empty comp.
+  - **The build is `bespokeBuildRegions`, unchanged** but for a per-region
+    `repeat` (scaled-panel path only). `scalePanels` always; the mech sheet
+    goes as the guide layer.
+  - **`TT` rows are drawn dashed and not built**: a master carries its own
+    title. A CSV with titles only (artwork that is a film clip has no ART row)
+    reads as no panels, and a panel is added by TYPING its numbers. Nothing on
+    this page is dragged.
+  - **Where it files is read off where the CSV sits** (`whereItFiles`), never
+    invented; any other path builds and saves nothing. A deliverable whose
+    `_V01.aep` is already in the batch's AE folder is built and NOT saved:
+    `app.project.save(file)` overwrites without asking.
+  - **The tracing board is still there, reached only by opening a saved
+    screen** (those hold real traced layouts). Do not delete it as dead: it
+    shares its state with Multiple Art through forty `mode` branches.
+  `node scripts/ui-bespoke-guided.mjs` clicks through it.
 - **Bespoke's number fields take sums** (`5000/3`, `(600+300)/2`) via
   `evalNumeric` — a hand-rolled recursive-descent parser, **never `eval`**: this
   is typed text in a `file://` page with the ExtendScript bridge behind it, and

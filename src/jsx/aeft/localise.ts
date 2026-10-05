@@ -5676,6 +5676,10 @@ interface BespokeRegion {
   rotation?: number;
   /** A placeholder's name, so the empty comp is findable in the project. */
   label?: string;
+  /** How many times the master is played end to end to fill the board (the
+   *  guided build: a 30s board from a 15s master is 2). Absent or 1 is once.
+   *  Only honoured on the scaled-panel path, which is the only one that asks. */
+  repeat?: number;
 }
 
 /**
@@ -5698,6 +5702,29 @@ export const bespokeSelectReference = (): string => {
   try {
     const f = File.openDialog("Select the reference JPG for this deliverable", "*.jpg;*.jpeg;*.png", false);
     return f ? (f as File).fsName : "";
+  } catch (e) {
+    return "";
+  }
+};
+
+/**
+ * Picks a deliverable's mech CSV for the guided build. "" on cancel. Starts in
+ * `startPath` when it can be opened (openDlg on an object: File.openDialog
+ * opens wherever After Effects was last).
+ */
+export const bespokeSelectCsv = (startPath: string): string => {
+  try {
+    let f: File | null = null;
+    if (startPath) {
+      try {
+        f = (new File(startPath + "/_") as any).openDlg("Select the deliverable's CSV", "*.csv", false) as File | null;
+      } catch (e1) {
+        f = null;
+      }
+    } else {
+      f = File.openDialog("Select the deliverable's CSV", "*.csv", false) as File | null;
+    }
+    return f ? String((f as File).fsName) : "";
   } catch (e) {
     return "";
   }
@@ -6001,6 +6028,7 @@ export const bespokeBuildRegions = (
     const plan = JSON.parse(planJson) as {
       canvasWidth: number; canvasHeight: number; seconds: number;
       regions: BespokeRegion[]; name?: string;
+      scalePanels?: boolean;
       marketsRoot?: string; territory?: string; batch?: string;
       refPath?: string; guidesX?: number[]; guidesY?: number[];
       /** Place the country's own build of each master where one exists. */
@@ -6203,10 +6231,33 @@ export const bespokeBuildRegions = (
           (layer.property("Scale") as Property).setValue([100, 100]);
           (layer.property("Position") as Property).setValue([reg.x + reg.w / 2, reg.y + reg.h / 2]);
           (layer as AVLayer).label = (i % 16) + 1;
-          const over0 = Math.round((src.duration - seconds) * 10) / 10;
+          // PLAYED AGAIN TO FILL THE BOARD. A 30s board from a 15s master is
+          // the same duration multiple the localiser builds: each further
+          // pass a duplicate of the layer, started where the last one ends
+          // and moved below it so the stack reads in playback order. Capped
+          // at what the board can show, never past four passes.
+          let passes = Math.round(Number(reg.repeat) || 1);
+          if (passes > 4) passes = 4;
+          const span = (layer as AVLayer).outPoint - (layer as AVLayer).inPoint;
+          let laid = 1;
+          if (passes > 1 && span > 0) {
+            let previous: AVLayer = layer as AVLayer;
+            const base = (layer as AVLayer).startTime;
+            for (let k = 1; k < passes; k++) {
+              if (base + span * k >= seconds) break;
+              const again = (layer as AVLayer).duplicate() as AVLayer;
+              again.moveAfter(previous);
+              again.startTime = base + span * k;
+              previous = again;
+              laid++;
+            }
+          }
+          const over0 = laid > 1 ? 0 : Math.round((src.duration - seconds) * 10) / 10;
           lines.push("  R" + (i + 1) + " " + src.name + " at " + reg.x + "," + reg.y
             + " " + reg.w + "x" + reg.h + " -- panel comp " + compW + "x" + compH
             + (turn !== 0 ? ", turned " + turn + " deg" : "")
+            + (laid > 1 ? ", played " + laid + "x" : "")
+            + (laid === 1 && src.duration < seconds - 0.05 ? "  [" + Math.round(src.duration * 10) / 10 + "s of a " + Math.round(seconds * 10) / 10 + "s board: empty after that]" : "")
             + (over0 > 0 ? "  [" + Math.round(src.duration * 10) / 10 + "s from the start; last " + over0 + "s not rendered]" : ""));
           continue;
         }

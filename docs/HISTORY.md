@@ -9905,3 +9905,37 @@ lower than the clip beside it, and the box was sized in pixels then squeezed
 by `max-width`, so a 2:1 sheet sat letterboxed in a squarer box. And only the
 first picture could be wiped. Now one mode, the pane's width, the row's shape,
 and a pager stepping both sides together.
+
+
+## 2026-10-05 — Bespoke is guided: the board is read off the mech's CSV
+
+Asked for: a rework of the tracing board, which was "double the work you'd do
+in AE" on a canvas a panel is too small for. Proposed and agreed: read the
+board from the CSV the mech team already exports beside each sheet, propose a
+master per panel with the localiser's own ranking, and replace tracing at the
+door.
+
+What the 17 real Malaysia CSVs taught (XY026206, read 2026-10-05):
+
+- A first grouping rule (same artwork, same placement) made eight panels of a
+  four-pillar board: a pillar's BORDER and BG layers are placed differently
+  behind one window. Grouping by overlapping WINDOWS reads all 17 sensibly.
+- Neighbouring pillars overlap by a pixel (511..1023 beside 0..512), so
+  "overlap" needs a share (20% of the smaller), not a touch.
+- Two boards (TGV Toppen, Sunway bulkhead) have titles and no ART row at all:
+  their artwork is a film clip. They read as no panels, and a panel is typed.
+- PDH's first CSV reads one leg as two panels (a 15% overlap); its `_v2`
+  reads right. Left as it is: the panel's numbers can be typed over.
+
+Kept: the tracing board, reachable from a saved screen only. Commenting it
+out was asked about and not done: its state is shared with Multiple Art, so
+it is neither dead nor separable without a larger change.
+
+Found while testing: the build's completion wrote the old board back over a
+deliverable opened while it ran. It now only updates the board still on the
+page.
+
+**Not done:** nothing here has been built in After Effects. The per-region
+`repeat` in `bespokeBuildRegions` is unproven there, and so is how a master
+scaled to an arch leg's box actually looks. Pages are a label only: every
+panel runs the whole length, whatever page the CSV put it on.

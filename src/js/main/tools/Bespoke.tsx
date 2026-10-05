@@ -33,6 +33,7 @@ import { AlertCircle, ChevronRight, Copy, Crosshair, Frame, Globe2, Image as Ima
 import { csi, evalTS } from "../../lib/utils/bolt";
 import { deriveMastersFromMarkets } from "../lib/mastersRoot";
 import InsituBoard from "./InsituBoard";
+import BespokeGuided from "./BespokeGuided";
 import { usePosterFrame, pickPreviewRender, isImageFile, type RenderEntry } from "../lib/renderPreview";
 import StatusIcon from "../StatusIcon";
 import Tooltip from "../Tooltip";
@@ -870,7 +871,7 @@ export const BespokeTool = () => {
     // UNSET until chosen. Which kind of build this is gets decided once per
     // deliverable and never revisited, so it is a question asked at the door
     // rather than a switch sat permanently above the work.
-    const [mode, setMode] = useState<"multi" | "regions" | "insitu" | null>(null);
+    const [mode, setMode] = useState<"multi" | "regions" | "guided" | "insitu" | null>(null);
 
     // THE HEADER ICON FOLLOWS THE MODE. This tool is one registry entry over
     // three builds that share a door and nothing else, so one tutorial for
@@ -3644,6 +3645,20 @@ export const BespokeTool = () => {
     // below it. A quad over a photograph has no board size, no guides and no
     // running order; threading a third value through forty `mode === "multi"`
     // branches would put a third meaning on every one of them.
+    // GUIDED IS THE BESPOKE DOOR NOW (2026-10-05), and takes the whole page
+    // for the same reason Insitu does: it shares none of the tracing board's
+    // state. The board is read off the mech's CSV instead of drawn
+    // (BespokeGuided.tsx). The tracing board below is still what a SAVED
+    // SCREEN opens into -- those hold real traced layouts -- but no longer
+    // what the Bespoke card does.
+    if (mode === "guided") {
+        return (
+            <div className="form-tool bsp">
+                <BespokeGuided mastersPath={mastersPath} onBack={() => setMode(null)} />
+            </div>
+        );
+    }
+
     if (mode === "insitu") {
         return (
             <div className="form-tool bsp">
@@ -3746,7 +3761,7 @@ export const BespokeTool = () => {
                                 button was the only place saying Multi Art. */}
                             <b>Multiple Art</b>
                         </button>
-                        <button className="bsp-choose-card" onClick={() => setMode("regions")}>
+                        <button className="bsp-choose-card" onClick={() => setMode("guided")}>
                             <Layers size={30} />
                             <b>Bespoke</b>
                         </button>

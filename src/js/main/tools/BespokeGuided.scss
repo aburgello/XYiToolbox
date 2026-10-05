@@ -1,0 +1,273 @@
+// =============================================================================
+// src/js/main/tools/BespokeGuided.scss
+// -----------------------------------------------------------------------------
+// Bespoke's guided build. Mounted inside `.form-tool.bsp`, so the buttons and
+// inputs are Bespoke's own (`.bsp-btn`, `.bsp-input`); what is here is the
+// page's layout. Anything that IS a button restates rest, hover and active
+// under `.bsp .bsg`: `.form-tool button` and index.scss's global states
+// outrank a bare class.
+//
+// chrome74: no aspect-ratio (the board's shape is padding-bottom, set inline),
+// no min()/clamp(), no flex gap relied on.
+// =============================================================================
+.bsg {
+    display: flex;
+    flex-direction: column;
+    font-family: -apple-system, "Segoe UI", sans-serif;
+    color: #dfe5e5;
+}
+
+.bsg-top {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+
+    > * { margin-right: 6px; }
+    > *:last-child { margin-right: 0; }
+}
+
+.bsg .bsg-path { flex: 1 1 auto; min-width: 0; width: auto; }
+
+.bsg-note {
+    margin: 0 0 10px;
+    padding: 8px 10px;
+    border-radius: 7px;
+    background: rgba(94, 234, 212, 0.08);
+    font-size: 11.5px;
+    line-height: 1.4;
+    color: #cfe9e5;
+
+    &.is-bad { background: rgba(248, 113, 113, 0.1); color: #f3b8b8; }
+}
+
+.bsg-hint { margin: 4px 0 0; font-size: 10.5px; line-height: 1.4; color: #8d9596; }
+
+.bsg-empty {
+    display: flex;
+    flex-direction: column;
+    padding: 26px 18px;
+    border: 1px dashed rgba(255, 255, 255, 0.14);
+    border-radius: 10px;
+    text-align: center;
+
+    b { font-size: 13px; color: #fff; }
+    span { margin-top: 6px; font-size: 11.5px; line-height: 1.45; color: #9aa5a6; }
+}
+
+// The other deliverables in the batch, and the pages of this one.
+.bsg-siblings { display: flex; flex-wrap: wrap; margin: 0 -3px 8px; }
+
+.bsp .bsg .bsg-sib {
+    display: inline-flex;
+    align-items: center;
+    height: 24px;
+    margin: 0 3px 5px;
+    padding: 0 9px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.04);
+    color: #cfd6d6;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+
+    em { margin-left: 6px; font-style: normal; font-weight: 400; color: #7f8787; }
+
+    &:hover { background: rgba(255, 255, 255, 0.09); border-color: var(--cat-border, #5eead4); color: #fff; }
+    &:active { background: rgba(255, 255, 255, 0.14); }
+    &.is-on,
+    &.is-on:hover,
+    &.is-on:active { border-color: var(--cat-border, #5eead4); background: rgba(94, 234, 212, 0.14); color: #fff; }
+}
+
+.bsg-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+
+    strong { margin-right: 10px; font-size: 13px; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+    > span { margin-right: 12px; font-size: 11.5px; color: #9aa5a6; }
+}
+
+.bsg-pages { display: inline-flex; margin-left: auto; margin-right: 0; .bsg-sib { margin-bottom: 0; } }
+
+.bsg-num {
+    display: inline-flex;
+    align-items: center;
+    font-size: 10px;
+    color: #8d9596;
+
+    span { margin: 0 4px 0 0; }
+    .bsp-input { width: 54px; flex: none; text-align: center; }
+}
+
+.bsg-num--secs {
+    margin-right: 12px;
+    font-size: 11.5px;
+    span { margin: 0 0 0 5px; }
+    .bsp-input { width: 44px; }
+}
+
+// ── the mech's sheet, with the panels read off its CSV drawn on it ───────
+// As wide as the page lets it be: this is the thing to look at. A tall board
+// is held to a height by a max-width worked out from its shape, set inline.
+.bsg-stage { width: 100%; margin: 0 auto; }
+
+.bsg-board {
+    position: relative;
+    width: 100%;
+    height: 0;
+    border-radius: 6px;
+    background: #0e0f10;
+    overflow: hidden;
+
+    img {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+    }
+}
+
+// The windows a panel is really seen through (an arch's lintel and leg).
+.bsg-window { position: absolute; opacity: 0.16; pointer-events: none; }
+
+// The box that gets built: what a master has to cover.
+.bsg-panel {
+    position: absolute;
+    box-sizing: border-box;
+    border: 2px solid;
+    cursor: pointer;
+
+    b {
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        min-width: 16px;
+        height: 16px;
+        padding: 0 4px;
+        box-sizing: border-box;
+        border-radius: 8px;
+        color: #0d1516;
+        font-size: 10px;
+        font-weight: 800;
+        line-height: 16px;
+        text-align: center;
+    }
+
+    &.is-on { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), inset 0 0 0 1px rgba(0, 0, 0, 0.5); }
+}
+
+// A title treatment in the CSV: shown, never built.
+.bsg-title {
+    position: absolute;
+    box-sizing: border-box;
+    border: 1px dashed rgba(255, 255, 255, 0.55);
+    pointer-events: none;
+}
+
+// ── one row per panel ───────────────────────────────────────────────────
+.bsg-rows { margin-top: 12px; }
+
+.bsg-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 6px;
+    padding: 8px 8px 8px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.03);
+
+    &.is-on { border-color: rgba(255, 255, 255, 0.32); background: rgba(255, 255, 255, 0.055); }
+}
+
+.bsg-row-n {
+    flex: none;
+    min-width: 22px;
+    height: 22px;
+    margin-right: 10px;
+    border-radius: 11px;
+    color: #0d1516;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 22px;
+    text-align: center;
+}
+
+.bsg-row-main { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; margin-right: 10px; }
+
+.bsg-row-what {
+    display: flex;
+    align-items: baseline;
+    margin-bottom: 5px;
+    white-space: nowrap;
+
+    b { margin-right: 8px; font-size: 12px; color: #fff; }
+    span { margin-right: 8px; font-size: 11px; color: #a9b4b5; }
+    em { min-width: 0; font-size: 10.5px; font-style: normal; color: #6f7879; overflow: hidden; text-overflow: ellipsis; }
+}
+
+.bsg-row-fit { margin-top: 4px; font-size: 10.5px; color: #8fb9b3; }
+
+.bsg-row-nums {
+    display: flex;
+    flex: none;
+    margin-right: 8px;
+
+    .bsg-num { margin-left: 6px; }
+}
+
+// ── build ───────────────────────────────────────────────────────────────
+.bsg-foot { display: flex; align-items: center; margin-top: 8px; }
+
+.bsg-foot-sum { flex: 1 1 auto; margin: 0 12px; font-size: 11.5px; color: #9aa5a6; }
+
+// The one solid button on the page.
+.bsp .bsg .bsg-build {
+    height: 34px;
+    padding: 0 18px;
+    border: 0;
+    background: var(--cat-icon, #5eead4);
+    color: #0d1516;
+    font-size: 12.5px;
+    font-weight: 800;
+
+    &:hover { background: #fff; color: #0d1516; }
+    &:active { background: #d7f5f0; color: #0d1516; }
+    &:disabled,
+    &:disabled:hover { background: rgba(255, 255, 255, 0.07); color: #8d9596; cursor: default; }
+}
+
+.bsg-filing {
+    display: flex;
+    flex-direction: column;
+    margin-top: 10px;
+    font-size: 11.5px;
+    color: #a9b4b5;
+}
+
+.bsg-report {
+    margin: 12px 0 0;
+    padding: 10px 12px;
+    border-radius: 7px;
+    background: #101112;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 10.5px;
+    line-height: 1.5;
+    color: #b9c2c2;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+// A narrow dock: the numbers drop under the master.
+@media (max-width: 620px) {
+    .bsg-row { flex-wrap: wrap; }
+    .bsg-row-main { flex: 1 1 0; }
+    .bsg-row-nums { order: 3; flex: 1 1 100%; margin: 8px 0 0 26px; }
+    .bsg-top { flex-wrap: wrap; }
+    .bsg .bsg-path { flex: 1 1 100%; margin: 6px 0; order: 2; }
+}

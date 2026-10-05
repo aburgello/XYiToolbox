@@ -447,7 +447,7 @@ export const TOOLS: ToolEntry[] = [
         categories: ["localise"],
         icon: Layers,
         Component: BespokeTool,
-        actions: ["Bespoke", "Bespokin", "Multiple Art", "Add segment", "Remove segment", "Screen library", "Library", "Seed from templates", "Find references", "Trace", "Save this layout"],
+        actions: ["Bespoke", "Bespokin", "Multiple Art", "Add segment", "Remove segment", "Screen library", "Library", "Seed from templates", "Find references", "Trace", "Save this layout", "Read", "Browse…", "Add a panel", "Build it"],
         // NO actionSafety, and that is not an omission. Bespoke opens on the
         // mode chooser, so "Screen library" does not exist yet for anything to
         // click — every button here stays unpressable by a stored link, and a
