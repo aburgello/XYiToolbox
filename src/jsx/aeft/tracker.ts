@@ -30,6 +30,73 @@ import { Result, decode } from "./shared";
 import { ownProjectFolder, territoryCheck } from "./tools";
 import { loadLocLibCampaigns } from "./localise";
 
+// =============================================================================
+// NO OPTIONAL GROUPS IN A REGEX HERE -- `(...)?` / `(?:...)?` -- on anything
+// the scan runs per file. AE 26.5's ExtendScript engine ABORTS THE WHOLE
+// APPLICATION inside its regex quantifier code (crash report 2026-10-05:
+// sccore reQuantifier::match -> Heap::operator delete -> SIGABRT, from
+// trackerScanMany -> trackerScan's render loop, on
+// `/(_[Vv]\d+)?(_(DOUBLE|TRIPLE|QUAD)_RES)?\.mov$/i`). Opening Localise on the
+// Tracker pane took After Effects down every time, on 26.5 only. The tails
+// are taken off with plain string work below instead; the behaviour is the
+// regexes' exactly (probe-tracker.cjs).
+// =============================================================================
+const TR_DIGITS = "0123456789";
+const trAllDigits = (t: string): boolean => {
+  if (!t.length) return false;
+  for (let i = 0; i < t.length; i++) if (TR_DIGITS.indexOf(t.charAt(i)) === -1) return false;
+  return true;
+};
+/** `ext` (no dot) off the end, any case; the name unchanged when it isn't there. */
+function trDropExt(s: string, ext: string): string {
+  const e = "." + ext.toLowerCase();
+  return s.length > e.length && s.substring(s.length - e.length).toLowerCase() === e ? s.substring(0, s.length - e.length) : s;
+}
+const TR_RES_TAILS = ["_DOUBLE_RES", "_TRIPLE_RES", "_QUAD_RES"];
+/** A trailing _DOUBLE_RES / _TRIPLE_RES / _QUAD_RES (any case) off; unchanged without one. */
+function trDropRes(s: string): string {
+  const up = s.toUpperCase();
+  for (let i = 0; i < TR_RES_TAILS.length; i++) {
+    const t = TR_RES_TAILS[i];
+    if (up.length > t.length && up.substring(up.length - t.length) === t) return s.substring(0, s.length - t.length);
+  }
+  return s;
+}
+/** The number of a trailing `_Vnn` (V or v), or -1 when the name doesn't end on one. */
+function trTailVersion(s: string): number {
+  const i = s.lastIndexOf("_");
+  if (i < 0) return -1;
+  const t = s.substring(i + 1);
+  // Separate statements, never a mixed ||/&&: AE's engine reads
+  // `a || b && c` as `(a || b) && c` (audit-jsx-precedence.cjs).
+  if (t.length < 2) return -1;
+  const first = t.charAt(0);
+  if (first !== "V" && first !== "v") return -1;
+  if (!trAllDigits(t.substring(1))) return -1;
+  return parseInt(t.substring(1), 10);
+}
+/** A trailing `_Vnn` off; unchanged without one. */
+function trDropVersion(s: string): string {
+  return trTailVersion(s) === -1 ? s : s.substring(0, s.lastIndexOf("_"));
+}
+/** "1920X1080" or "1920X1080PX" (upper case) -> "1920X1080"; "" otherwise. `min` digits a side. */
+function trSizeToken(t: string, min: number): string {
+  let u = t;
+  if (u.length > 2 && u.substring(u.length - 2) === "PX") u = u.substring(0, u.length - 2);
+  const x = u.indexOf("X");
+  if (x < min || x !== u.lastIndexOf("X")) return "";
+  const w = u.substring(0, x), h = u.substring(x + 1);
+  return trAllDigits(w) && trAllDigits(h) && h.length >= min ? u : "";
+}
+/** "30S" or "30SEC" (upper case) -> "30"; "" otherwise. */
+function trLengthToken(t: string): string {
+  let u = t;
+  if (u.length > 3 && u.substring(u.length - 3) === "SEC") u = u.substring(0, u.length - 3);
+  else if (u.length > 1 && u.charAt(u.length - 1) === "S") u = u.substring(0, u.length - 1);
+  else return "";
+  return trAllDigits(u) ? u : "";
+}
+
 function trLoose(n: string): string {
   return String(n).toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/(^|\D)0+(\d)/g, "$1$2");
 }
@@ -68,7 +135,11 @@ export function trackerKey(name: string): string {
   let s = decode(String(name || ""));
   const dot = s.lastIndexOf(".");
   if (dot > 0 && s.length - dot <= 5) s = s.substring(0, dot);
-  s = s.replace(/_[Vv]\d+_(?:DOUBLE|TRIPLE|QUAD)_RES$/i, "").replace(/_[Vv]\d+$/, "");
+  // `_Vnn_DOUBLE_RES` off as a pair (a RES tail with no version before it
+  // stays), then a plain `_Vnn`. No regex: see the note at the top.
+  const noRes = trDropRes(s);
+  if (noRes !== s && trTailVersion(noRes) !== -1) s = trDropVersion(noRes);
+  s = trDropVersion(s);
   const toks = s.split(/[_ ]+/);
   const out: string[] = [];
   for (let i = 0; i < toks.length; i++) {
@@ -80,9 +151,14 @@ export function trackerKey(name: string): string {
 }
 
 function trVersion(name: string): number {
-  const n = decode(String(name));
-  const m = /_[Vv](\d+)(?:_(?:DOUBLE|TRIPLE|QUAD)_RES)?(?:\.[^.]*)?$/i.exec(n);
-  return m ? parseInt(m[1], 10) : 0;
+  let n = decode(String(name));
+  // An extension (anything after the last dot), then a RES tail, then the
+  // `_Vnn` -- the order the old regex read them in. No regex: see the top.
+  const dot = n.lastIndexOf(".");
+  if (dot !== -1) n = n.substring(0, dot);
+  n = trDropRes(n);
+  const v = trTailVersion(n);
+  return v === -1 ? 0 : v;
 }
 
 interface TrFile { name: string; path: string; version: number }
@@ -129,8 +205,8 @@ function trNearWhy(a: string, b: string): string {
     }
     if (at === -1) return "";
     const x = ta[at], y = tb[at];
-    if (/^\d+S(EC)?$/.test(x) && /^\d+S(EC)?$/.test(y)) return "length differs: " + x.toLowerCase() + " vs " + y.toLowerCase();
-    if (/^\d+X\d+(PX)?$/.test(x) && /^\d+X\d+(PX)?$/.test(y)) return "size differs: " + x.toLowerCase() + " vs " + y.toLowerCase();
+    if (trLengthToken(x) && trLengthToken(y)) return "length differs: " + x.toLowerCase() + " vs " + y.toLowerCase();
+    if (trSizeToken(x, 1) && trSizeToken(y, 1)) return "size differs: " + x.toLowerCase() + " vs " + y.toLowerCase();
     return "differs: " + x + " vs " + y;
   }
   // The same name plus words -- a variant, not another deliverable.
@@ -141,10 +217,11 @@ function trNearWhy(a: string, b: string): string {
   // MetroPOST_1080x1920px_10s" in JPG_PNG -- two tokens and a length apart, so
   // the one-token rule never saw it. Only ever asked of two ORPHANS (see the
   // caller), so two real deliverables of one size are never flagged.
-  const size = (t: string[]) => { for (let i = 0; i < t.length; i++) if (/^\d{3,}X\d{3,}(PX)?$/.test(t[i])) return t[i].replace(/PX$/, ""); return ""; };
+  const size = (t: string[]) => { for (let i = 0; i < t.length; i++) { const z = trSizeToken(t[i], 3); if (z) return z; } return ""; };
   const sa = size(ta), sb = size(tb);
   if (sa && sa === sb && ta.slice(0, 4).join("_") === tb.slice(0, 4).join("_")) {
-    const la = (a.match(/_(\d+)S(?:EC)?(?:_|$)/) || [])[1], lb = (b.match(/_(\d+)S(?:EC)?(?:_|$)/) || [])[1];
+    const lengthOf = (t: string[]) => { for (let i = 1; i < t.length; i++) { const l = trLengthToken(t[i]); if (l) return l; } return ""; };
+    const la = lengthOf(ta), lb = lengthOf(tb);
     return "same size, named differently" + (la && lb && la !== lb ? " (and " + la + "s vs " + lb + "s)" : "");
   }
   return "";
@@ -176,8 +253,16 @@ function trSameDeliverable(a: string, b: string): string {
   }
   if (at === -1) return "";
   const x = ta[at], y = tb[at];
-  const fixed = /^\d+X\d+(PX)?$|^\d+S(EC)?$|^[A-Z]{2}$/;
-  if (fixed.test(x) || fixed.test(y)) return "";
+  // A size, a length or a market code is never the word that differs. No
+  // regex: see the note at the top.
+  const isUpper = (c: string) => c >= "A" && c <= "Z";
+  const fixed = (t: string): boolean => {
+    if (trSizeToken(t, 1)) return true;
+    if (trLengthToken(t)) return true;
+    if (t.length !== 2) return false;
+    return isUpper(t.charAt(0)) && isUpper(t.charAt(1));
+  };
+  if (fixed(x) || fixed(y)) return "";
   const short = x.length <= y.length ? x : y, long = x.length <= y.length ? y : x;
   if (short.length < 3) return "";
   if (long.indexOf(short) === 0 || long.lastIndexOf(short) === long.length - short.length) return y + " vs " + x;
@@ -437,7 +522,8 @@ export const trackerScan = (argsJson: string): TrackerResult & { took?: { disk: 
     // AE: the projects.
     for (let i = 0; i < disk.aes.length; i++) {
       const nm = disk.aes[i].nm;
-      const r = row(trackerKey(nm), nm.replace(/_[Vv]\d+\.aep$/i, "").replace(/\.aep$/i, ""));
+      const aepStem = trDropExt(nm, "aep");
+      const r = row(trackerKey(nm), aepStem !== nm ? trDropVersion(aepStem) : nm);
       const v = trVersion(nm);
       const n = r.aep ? r.aep.versions + 1 : 1;
       if (!r.aep || v > r.aep.version) r.aep = { name: nm, path: disk.aes[i].path, version: v, versions: n };
@@ -461,7 +547,10 @@ export const trackerScan = (argsJson: string): TrackerResult & { took?: { disk: 
     // Renders: the MOVs.
     for (let i = 0; i < disk.renders.length; i++) {
       const nm = disk.renders[i].nm, path = disk.renders[i].path;
-      const r = row(trackerKey(nm), nm.replace(/(_[Vv]\d+)?(_(DOUBLE|TRIPLE|QUAD)_RES)?\.mov$/i, ""));
+      // THE LINE THAT TOOK AE 26.5 DOWN (see the top): `.mov`, a RES tail,
+      // then a `_Vnn`, each only if it is there -- now without a regex.
+      const movStem = trDropExt(nm, "mov");
+      const r = row(trackerKey(nm), movStem !== nm ? trDropVersion(trDropRes(movStem)) : nm);
       const v = trVersion(nm);
       if (!r.render) r.render = { name: nm, path: path, version: v, versions: 0, all: [] };
       r.render.versions++;
@@ -694,7 +783,10 @@ export const trackerRenameComp = (): Result & { renamed?: number } => {
         if (typeof it.layers === "undefined") continue;
         const cur = String(it.name);
         if (trackerKey(cur) === want) continue;
-        const tail = (/(_[Vv]\d+)?(_(DOUBLE|TRIPLE|QUAD)_RES)?$/i.exec(cur) || [""])[0];
+        // The `_Vnn` and RES tail the comp's name ends on, kept across the
+        // rename. No regex: see the top.
+        const noResTail = trDropRes(cur);
+        const tail = cur.substring(trDropVersion(noResTail).length);
         it.name = stemName + tail;
         n++;
       }
