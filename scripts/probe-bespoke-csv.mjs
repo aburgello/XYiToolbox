@@ -99,6 +99,30 @@ check(B.parseBespokeCsv("").length === 0 && B.boardFromRows([], 100, 100).panels
 check(B.creativeFromSupportPath(`${S}/Motion_Components/_Trio/Tiffs/x.aep`) === "Trio" && B.creativeFromSupportPath("/Desktop/x.tif") === "", "Motion_Components is a container, never a creative; no Support level, no creative");
 check(B.artFamily("SF_INTL_Trio_OOH_48Sheet_RGB_OV.tif") === "SF_INTL_Trio_OOH_48Sheet_RGB_OV" && B.artFamily("X_RGB_BORDER.tif") === "X_RGB", "only a layer suffix comes off an artwork's name");
 
+console.log("\nPlacing what the CSV could not see (the VivaCity arch's lintel)");
+const archBoard = B.boardFromRows(B.parseBespokeCsv(arch), 7680, 1472);
+const legs = archBoard.panels.map((p) => p.box);
+const runOns = [].concat(...archBoard.panels.map((p) => p.extras));
+const g = (x, y, panels = legs) => { const r = B.gapAt(x, y, panels, runOns, 7680, 1472); return r ? [r.x, r.y, r.w, r.h].join() : null; };
+check(g(900, 150) === "0,0,2049,320", "pointing left of the first leg: the lintel up to it, 320 tall because the run-on says so", g(900, 150));
+check(g(4000, 150) === "2817,0,4479,320", "between the legs: the whole stretch from one to the other", g(4000, 150));
+check(g(2400, 700) === null, "pointing at a panel is not a gap");
+check(g(900, 900) === "0,320,2049,1152", "below the lintel is its own band (not screen on this board, but that is the person's call)", g(900, 900));
+check(g(100, 100, []) === "0,0,7680,320" && B.gapAt(100, 100, [], [], 500, 300).w === 500, "nothing read at all: the band, or the whole board");
+const ryu = { x: 0, y: 0, w: 2049, h: 320 };
+const cp = B.copySpot(ryu, legs, 7680);
+check(cp && cp.x === 5247 && cp.w === 2049 && cp.h === 320, "a copy of the left banner lands against the FAR leg, mirrored", cp);
+check(g(4000, 150, legs.concat([ryu, cp])) === "2817,0,2430,320", "…and what is left between them is the middle panel, in one press", g(4000, 150, legs.concat([ryu, cp])));
+const pillar = { x: 0, y: 0, w: 512, h: 1344 };
+check(B.copySpot(pillar, [], 2048).x === 512, "a copy with room straight after it goes hard against it: the next pillar along");
+check(B.copySpot({ x: 1536, y: 0, w: 512, h: 1344 }, [], 2048).x === 1024, "no room to the right: to the left instead");
+check(B.copySpot({ x: 0, y: 0, w: 2048, h: 1344 }, [], 2048) === null, "no room in the band: nowhere");
+const halves = B.splitInTwo({ x: 2817, y: 0, w: 4479, h: 320 });
+check(halves[0].x === 2817 && halves[0].w === 2239 && halves[1].x === 5056 && halves[1].w === 2240 && halves[0].h === 320, "a split cuts the longer side, the halves meeting with no pixel lost", halves);
+check(B.splitInTwo({ x: 0, y: 0, w: 384, h: 1472 })[1].y === 736, "…down a tall panel, across a wide one");
+check(B.creativeIn(ryu, archBoard.titles, "Page1") === "RyuHadouken" && B.creativeIn({ x: 2817, y: 0, w: 2430, h: 320 }, archBoard.titles, "Page1") === "", "a new panel takes the creative of the title inside it; one with no title has none", [B.creativeIn(ryu, archBoard.titles, "Page1")]);
+check(B.creativeIn({ x: 0, y: 0, w: 7680, h: 1472 }, archBoard.titles, "Page1") === "", "…and two creatives' titles in one box decide nothing");
+
 console.log("\nWhere a build is filed");
 const w = B.whereItFiles("/Volumes/paramount/SF/XY026206_Bespoke/Malaysia/PNGs/Bespoke_VivaCity/SF_X_384x1152px_30s_MY/SF_X_384x1152px_30s_MY.csv");
 check(w && w.marketsRoot === "/Volumes/paramount/SF/XY026206_Bespoke" && w.territory === "Malaysia" && w.batch === "Bespoke_VivaCity", "read off where the CSV sits", w);

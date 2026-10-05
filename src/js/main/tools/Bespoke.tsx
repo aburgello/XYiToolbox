@@ -3654,7 +3654,11 @@ export const BespokeTool = () => {
     if (mode === "guided") {
         return (
             <div className="form-tool bsp">
-                <BespokeGuided mastersPath={mastersPath} onBack={() => setMode(null)} />
+                <BespokeGuided
+                    mastersPath={mastersPath}
+                    creatives={(masters || []).map((m) => m.creative).filter((c, i, all) => !!c && all.indexOf(c) === i)}
+                    onBack={() => setMode(null)}
+                />
             </div>
         );
     }

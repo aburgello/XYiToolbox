@@ -257,3 +257,91 @@ export function whereItFiles(csvPath: string): { marketsRoot: string; territory:
     if (!territory || !marketsRoot) return null;
     return { marketsRoot, territory, batch: parts[parts.length - 3] };
 }
+
+// ---------------------------------------------------------------------------
+// PLACING A PANEL THE CSV COULD NOT SEE, without drawing it.
+//
+// Artwork that is a film clip has no ART row, so parts of a board arrive with
+// no panel: an arch's lintel either side of its legs. Those are added by
+// pointing at the gap. The gap is worked out from what is already known: the
+// BAND is the strip between the nearest horizontal edges of anything read
+// (panels and run-on windows; a lintel's run-on is what says the lintel is 320
+// tall), and across it the gap runs until it meets a panel or the board's edge.
+// ---------------------------------------------------------------------------
+
+const overlapsBand = (r: Rect, y0: number, y1: number) => Math.min(r.y + r.h, y1) - Math.max(r.y, y0) > 0;
+
+/**
+ * The free box round a point on the board, or null when the point is on a
+ * panel. `lines` are extra boxes whose edges mark bands without blocking (the
+ * run-on windows).
+ */
+export function gapAt(px: number, py: number, panels: Rect[], lines: Rect[], canvasW: number, canvasH: number): Rect | null {
+    if (px < 0 || py < 0 || px > canvasW || py > canvasH) return null;
+    if (panels.some((p) => px >= p.x && px < p.x + p.w && py >= p.y && py < p.y + p.h)) return null;
+    let y0 = 0;
+    let y1 = canvasH;
+    panels.concat(lines).forEach((r) => {
+        [r.y, r.y + r.h].forEach((e) => {
+            if (e <= py && e > y0) y0 = e;
+            if (e > py && e < y1) y1 = e;
+        });
+    });
+    let x0 = 0;
+    let x1 = canvasW;
+    panels.filter((p) => overlapsBand(p, y0, y1)).forEach((p) => {
+        if (p.x + p.w <= px && p.x + p.w > x0) x0 = p.x + p.w;
+        if (p.x > px && p.x < x1) x1 = p.x;
+    });
+    if (!(x1 - x0 > 0) || !(y1 - y0 > 0)) return null;
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+/**
+ * Where a COPY of a panel goes: the next gap in its own band wide enough to
+ * take it. A gap that starts where the panel ends takes the copy hard against
+ * it (the next pillar along). A gap beyond something else takes it at its FAR
+ * end, which is where a mirrored board puts it (an arch's second banner sits
+ * against the far leg). To the right first, then to the left. Null when
+ * nothing in the band has room.
+ */
+export function copySpot(panel: Rect, others: Rect[], canvasW: number): Rect | null {
+    const y0 = panel.y;
+    const y1 = panel.y + panel.h;
+    const taken = others.concat([panel]).filter((r) => overlapsBand(r, y0, y1)).sort((a, b) => a.x - b.x);
+    const gaps: { a: number; b: number }[] = [];
+    let at = 0;
+    taken.forEach((r) => {
+        if (r.x - at > 0) gaps.push({ a: at, b: r.x });
+        at = Math.max(at, r.x + r.w);
+    });
+    if (canvasW - at > 0) gaps.push({ a: at, b: canvasW });
+    const right = gaps.filter((g) => g.a >= panel.x + panel.w && g.b - g.a >= panel.w)[0];
+    if (right) return { x: right.a === panel.x + panel.w ? right.a : right.b - panel.w, y: panel.y, w: panel.w, h: panel.h };
+    const left = gaps.filter((g) => g.b <= panel.x && g.b - g.a >= panel.w).pop();
+    if (left) return { x: left.b === panel.x ? left.b - panel.w : left.a, y: panel.y, w: panel.w, h: panel.h };
+    return null;
+}
+
+/** A panel cut in two along its longer side. The halves share every pixel between them. */
+export function splitInTwo(r: Rect): [Rect, Rect] {
+    if (r.w >= r.h) {
+        const a = Math.floor(r.w / 2);
+        return [{ x: r.x, y: r.y, w: a, h: r.h }, { x: r.x + a, y: r.y, w: r.w - a, h: r.h }];
+    }
+    const a = Math.floor(r.h / 2);
+    return [{ x: r.x, y: r.y, w: r.w, h: a }, { x: r.x, y: r.y + a, w: r.w, h: r.h - a }];
+}
+
+/** The creative of the title sitting in a box, when exactly one creative's titles do. "" otherwise. */
+export function creativeIn(box: Rect, titles: CsvTitle[], page: string): string {
+    const seen: string[] = [];
+    titles.forEach((t) => {
+        if (t.page !== page || !t.creative) return;
+        const cx = t.box.x + t.box.w / 2;
+        const cy = t.box.y + t.box.h / 2;
+        if (cx < box.x || cx >= box.x + box.w || cy < box.y || cy >= box.y + box.h) return;
+        if (seen.indexOf(t.creative) === -1) seen.push(t.creative);
+    });
+    return seen.length === 1 ? seen[0] : "";
+}

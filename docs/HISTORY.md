@@ -9955,3 +9955,21 @@ it belong to it, windows continuing it edge to edge extend it (PDH's `_v2`
 lays a leg's background in two tiles), and the rest are run-ons: shown dashed
 with their numbers and a "Make it a panel". All five arch CSVs read as their
 legs.
+
+
+## 2026-10-05 — Pointing at a gap, copying, splitting
+
+Asked for after the legs read right: the VivaCity arch also needs two
+RyuHadouken banners along the lintel and a hole in the middle for a PNG, none
+of which the CSV has a row for, "so I guess we need those kind of controls to
+stick things within the canvas".
+
+Built without bringing dragging back: press an empty part of the sheet and
+the gap becomes a panel; Copy mirrors it into the next gap; Split halves one.
+On that arch it is three presses: the left lintel (0..2049, taking Ryu from
+the title in it), Copy (lands at 5247, against the far leg), then the gap
+left between them (2817..5247, no title in it, so it starts empty).
+
+**Not known:** whether the real right-hand banner starts at 5247. That is
+"the same size as the left one, against the far leg", which is a guess the
+mech sheet did not contradict by eye; its X can be typed over.

@@ -17,6 +17,16 @@
 // wrong -- another master, a panel's numbers, a panel the CSV could not see --
 // and nothing is ever dragged.
 //
+// WHAT THE CSV COULD NOT SEE IS ADDED BY POINTING AT THE GAP. Artwork that is
+// a film clip has no ART row, so an arch arrives as its two legs and nothing
+// along the lintel. Moving over an empty part of the sheet shows the gap that
+// would be filled (the band's height from what was read, across until a panel
+// or the edge); a press makes it a panel. A panel can be COPIED, the copy
+// landing in the next gap of its band (against the far leg, mirrored), and
+// SPLIT in two. Between them an arch's lintel is three presses and no typing.
+// A new panel takes the creative of the title sitting in it; one with no
+// title in it starts EMPTY, because that is what a hole for a PNG is.
+//
 // THE MASTER FOR A PANEL IS THE LOCALISER'S ANSWER. `csvLocaliserListMasters`
 // is the same ranked list Build a Batch's master picker shows (creative tiers
 // first, then the closest shape), asked for the panel's own size and the
@@ -34,15 +44,16 @@
 // the panel's own Node.
 // =============================================================================
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, FolderOpen, Hammer, Plus, X } from "lucide-react";
+import { ArrowLeft, CopyPlus, FolderOpen, Hammer, Plus, Scissors, X } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { fs, path as nodePath } from "../../lib/cep/node";
 import { toFileUrl } from "../lib/fileUrl";
 import { hasNode, listDir } from "../lib/sizeFinderStore";
 import { closeness, creativeOfName, repeatFor, sizeOfName } from "../lib/sizeMatch";
-import { boardFromRows, CsvTitle, parseBespokeCsv, Rect, whereItFiles } from "../lib/bespokeCsv";
+import { boardFromRows, copySpot, creativeIn, CsvTitle, gapAt, parseBespokeCsv, Rect, splitInTwo, whereItFiles } from "../lib/bespokeCsv";
 import CheckboxToggle from "../CheckboxToggle";
 import Dropdown from "../Dropdown";
+import Tooltip from "../Tooltip";
 import "./BespokeGuided.scss";
 
 /** One master a panel could be built from. */
@@ -114,10 +125,12 @@ const chosen = (p: Panel, cands: Cand[] | undefined): Cand | null => {
 interface Props {
     /** The campaign's masters folder, as Bespoke resolved it. */
     mastersPath: string;
+    /** The campaign's creatives (its AE folders), so a panel's can be changed. */
+    creatives: string[];
     onBack: () => void;
 }
 
-const BespokeGuided: React.FC<Props> = ({ mastersPath, onBack }) => {
+const BespokeGuided: React.FC<Props> = ({ mastersPath, creatives, onBack }) => {
     const [text, setText] = useState(() => { try { return localStorage.getItem(STORE) || ""; } catch { return ""; } });
     const [board, setBoard] = useState<Loaded | null>(null);
     const [panels, setPanels] = useState<Panel[]>([]);
@@ -130,6 +143,9 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, onBack }) => {
     const [report, setReport] = useState("");
     // A picture that would not draw is left out, not shown as a broken image.
     const [noPicture, setNoPicture] = useState<Record<string, true>>({});
+    // The gap under the pointer: what a press on the sheet would make a panel.
+    const [ghost, setGhost] = useState<Rect | null>(null);
+    const boardRef = useRef<HTMLDivElement | null>(null);
     const nextId = useRef(1);
     // What the localiser's ranking answered, kept per creative|size|length so a
     // panel edited back to a size already asked about costs nothing.
@@ -291,6 +307,61 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, onBack }) => {
     };
 
     const onPage = useMemo(() => panels.filter((p) => p.page === page), [panels, page]);
+
+    /** The gap a point on the sheet sits in, in the board's own pixels. Mouse events: CEP on macOS. */
+    const gapUnder = (e: React.MouseEvent): Rect | null => {
+        const el = boardRef.current;
+        if (!el || !board) return null;
+        const r = el.getBoundingClientRect();
+        if (!(r.width > 0) || !(r.height > 0)) return null;
+        const px = ((e.clientX - r.left) / r.width) * board.canvasW;
+        const py = ((e.clientY - r.top) / r.height) * board.canvasH;
+        const lines: Rect[] = [];
+        onPage.forEach((p) => p.extras.forEach((x) => lines.push(x)));
+        return gapAt(px, py, onPage, lines, board.canvasW, board.canvasH);
+    };
+
+    /** A panel in a gap. The title sitting in it says whose; no title, and it starts empty. */
+    const fillGap = (gap: Rect) => {
+        if (!board) return;
+        const whose = creativeIn(gap, board.titles, page);
+        const id = nextId.current++;
+        setPanels((prev) => prev.concat([{
+            id, page, creative: whose || creativeOfName(board.name), family: "", masks: [], extras: [],
+            x: gap.x, y: gap.y, w: gap.w, h: gap.h, pick: whose ? undefined : "",
+        }]));
+        setFocus(id);
+        setGhost(null);
+    };
+
+    const copyPanel = (p: Panel) => {
+        if (!board) return;
+        const spot = copySpot(p, panels.filter((x) => x.page === p.page && x.id !== p.id), board.canvasW);
+        if (!spot) { setNote({ text: `No room beside panel ${panels.indexOf(p) + 1} for a copy its size. Add a panel and type where it goes.`, bad: true }); return; }
+        const id = nextId.current++;
+        setPanels((prev) => {
+            const out: Panel[] = [];
+            prev.forEach((x) => { out.push(x); if (x.id === p.id) out.push({ ...p, id, masks: [], extras: [], x: spot.x, y: spot.y }); });
+            return out;
+        });
+        setFocus(id);
+        setNote(null);
+    };
+
+    const splitPanel = (p: Panel) => {
+        const [a, b] = splitInTwo(p);
+        const id = nextId.current++;
+        setPanels((prev) => {
+            const out: Panel[] = [];
+            prev.forEach((x) => {
+                if (x.id !== p.id) { out.push(x); return; }
+                out.push({ ...p, masks: [], extras: [], x: a.x, y: a.y, w: a.w, h: a.h });
+                out.push({ ...p, id, masks: [], extras: [], x: b.x, y: b.y, w: b.w, h: b.h });
+            });
+            return out;
+        });
+        setFocus(id);
+    };
     const filled = panels.filter((p) => !!chosen(p, candsOf(p))).length;
     const waiting = panels.some((p) => !candsOf(p));
 
@@ -411,13 +482,29 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, onBack }) => {
                     {/* The mech's own sheet, with what was read off its CSV drawn on
                         it: check it against the picture, change the numbers below. */}
                     <div className="bsg-stage" style={{ maxWidth: Math.max(120, Math.round((STAGE_MAX_H * board.canvasW) / board.canvasH)) }}>
-                        <div className="bsg-board" style={{ paddingBottom: (board.canvasH / board.canvasW) * 100 + "%" }}>
+                        <div
+                            className={"bsg-board" + (ghost ? " has-ghost" : "")}
+                            ref={boardRef}
+                            style={{ paddingBottom: (board.canvasH / board.canvasW) * 100 + "%" }}
+                            onMouseMove={(e) => {
+                                const g = gapUnder(e);
+                                if ((g && ghost && g.x === ghost.x && g.y === ghost.y && g.w === ghost.w && g.h === ghost.h) || (!g && !ghost)) return;
+                                setGhost(g);
+                            }}
+                            onMouseLeave={() => setGhost(null)}
+                            onClick={(e) => { const g = gapUnder(e); if (g) fillGap(g); }}
+                        >
                             {board.pictures[page] && !noPicture[board.pictures[page]] && (
                                 <img src={toFileUrl(board.pictures[page])} alt="" draggable={false} onError={() => setNoPicture((prev) => ({ ...prev, [board.pictures[page]]: true }))} />
                             )}
                             {board.titles.filter((t) => t.page === page).map((t, i) => (
                                 <span key={"t" + i} className="bsg-title" style={rectStyle(t.box)} title={`Title: ${t.name}`} />
                             ))}
+                            {ghost && (
+                                <span className="bsg-ghost" style={rectStyle(ghost)}>
+                                    <i><Plus size={11} /> {ghost.w}×{ghost.h}</i>
+                                </span>
+                            )}
                             {onPage.map((p) => {
                                 const n = panels.indexOf(p);
                                 const hue = HUES[n % HUES.length];
@@ -437,7 +524,10 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, onBack }) => {
                             })}
                         </div>
                     </div>
-                    {!board.pictures[page] && <p className="bsg-hint">No picture of {page} in the folder, so the panels are drawn on an empty board.</p>}
+                    <p className="bsg-hint">
+                        Press an empty part of the sheet to make that gap a panel.
+                        {!board.pictures[page] ? ` No picture of ${page} in the folder, so the panels are drawn on an empty board.` : ""}
+                    </p>
 
                     {panels.length === 0 && (
                         <p className="bsg-note">
@@ -459,7 +549,16 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, onBack }) => {
                                     <span className="bsg-row-n" style={{ background: HUES[n % HUES.length] }}>{n + 1}</span>
                                     <div className="bsg-row-main">
                                         <div className="bsg-row-what">
-                                            <b>{p.creative || "No creative"}</b>
+                                            {creatives.length > 1 ? (
+                                                <Dropdown
+                                                    className="bsg-creative"
+                                                    value={creatives.filter((c) => c.toUpperCase().replace(/[^A-Z0-9]/g, "") === p.creative.toUpperCase().replace(/[^A-Z0-9]/g, ""))[0] || p.creative}
+                                                    onChange={(v) => patch(p.id, { creative: v, pick: undefined })}
+                                                    options={(creatives.indexOf(p.creative) === -1 && !creatives.some((c) => c.toUpperCase().replace(/[^A-Z0-9]/g, "") === p.creative.toUpperCase().replace(/[^A-Z0-9]/g, "")) && p.creative ? [p.creative] : []).concat(creatives).map((c) => ({ value: c, label: c }))}
+                                                />
+                                            ) : (
+                                                <b>{p.creative || "No creative"}</b>
+                                            )}
                                             <span>{p.w}×{p.h}{board.pages.length > 1 ? ` · ${p.page}` : ""}</span>
                                             {p.family ? <em title={p.family}>{p.family}</em> : <em>added by hand</em>}
                                         </div>
@@ -468,7 +567,7 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, onBack }) => {
                                             value={c ? c.path : p.pick === "" ? "" : "__none__"}
                                             onChange={(v) => patch(p.id, { pick: v })}
                                             options={options}
-                                            placeholder={!cands ? "Finding a master…" : `No ${p.creative || "creative's"} master fits. Pick one, or leave it empty.`}
+                                            placeholder={!cands ? "Finding a master…" : `No ${p.creative || "creative's"} master at this length. Pick one, or leave it empty.`}
                                             emptyMessage="No masters at this length."
                                         />
                                         {c && (c.fit || c.repeat > 1) && (
@@ -489,6 +588,12 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, onBack }) => {
                                         {numField(p, "w", "W")}
                                         {numField(p, "h", "H")}
                                     </div>
+                                    <Tooltip text="Copy it into the next gap along (against the far side, mirrored)">
+                                        <button className="bsp-btn bsp-btn--ghost bsp-btn--icon" aria-label={`Copy panel ${n + 1}`} onClick={() => copyPanel(p)}><CopyPlus size={12} /></button>
+                                    </Tooltip>
+                                    <Tooltip text="Split it in two along its longer side">
+                                        <button className="bsp-btn bsp-btn--ghost bsp-btn--icon" aria-label={`Split panel ${n + 1}`} onClick={() => splitPanel(p)}><Scissors size={12} /></button>
+                                    </Tooltip>
                                     <button className="bsp-btn bsp-btn--ghost bsp-btn--icon bsp-btn--danger" aria-label={`Remove panel ${n + 1}`} onClick={() => setPanels((prev) => prev.filter((x) => x.id !== p.id))}><X size={12} /></button>
                                 </div>
                             );

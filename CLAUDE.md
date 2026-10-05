@@ -355,9 +355,22 @@ way to watch was to close the panel.
     `repeat` (scaled-panel path only). `scalePanels` always; the mech sheet
     goes as the guide layer.
   - **`TT` rows are drawn dashed and not built**: a master carries its own
-    title. A CSV with titles only (artwork that is a film clip has no ART row)
-    reads as no panels, and a panel is added by TYPING its numbers. Nothing on
-    this page is dragged.
+    title. Artwork that is a film clip has no ART row, so parts of a board
+    arrive with no panel (an arch's lintel either side of its legs; a CSV with
+    titles only reads as none at all).
+  - **What the CSV could not see is added by POINTING AT THE GAP, never by
+    drawing it.** Moving over an empty part of the sheet shows the gap
+    (`gapAt`): the band between the nearest horizontal edges of anything read
+    (a run-on window is what says a lintel is 320 tall; run-ons mark bands
+    and never block), across until a panel or the board's edge. A press makes
+    it a panel. **Copy** puts a twin in the next gap of the panel's band
+    (`copySpot`): hard against it when the gap starts there (the next pillar),
+    at the gap's FAR end otherwise (an arch's second banner sits against the
+    far leg). **Split** cuts the longer side in two. A new panel takes the
+    creative of the one title sitting in it (`creativeIn`) and **starts EMPTY
+    when no title does**: a hole for a PNG. Each panel's creative is a
+    dropdown of the campaign's AE folders. Numbers can still be typed over;
+    nothing on this page is dragged.
   - **Where it files is read off where the CSV sits** (`whereItFiles`), never
     invented; any other path builds and saves nothing. A deliverable whose
     `_V01.aep` is already in the batch's AE folder is built and NOT saved:
