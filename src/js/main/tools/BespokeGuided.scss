@@ -393,3 +393,11 @@
     .bsg-top { flex-wrap: wrap; }
     .bsg .bsg-path { flex: 1 1 100%; margin: 6px 0; order: 2; }
 }
+
+// The master list, portalled to <body>: wide enough that a size, a length, a
+// format and how it fits all show on one row.
+.bsg-pick-panel { min-width: 430px; }
+
+@media (max-width: 520px) {
+    .bsg-pick-panel { min-width: 0; }
+}

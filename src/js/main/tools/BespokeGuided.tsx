@@ -127,6 +127,23 @@ const readText = (p: string): Promise<string | null> =>
         try { (fs as any).readFile(p, "utf8", (err: any, txt: string) => resolve(err ? null : String(txt || ""))); } catch { resolve(null); }
     });
 
+/**
+ * A master, said by what tells it from its neighbours: its SIZE first, then
+ * its length, then the site or format between the artwork type and the size.
+ * Every master of a creative starts `SF_INTL_Trio_DOOH_…`, so the filename
+ * in a list cut to fit showed the same eleven characters on every row.
+ */
+const masterLabel = (name: string): string => {
+    const stem = name.replace(/\.aep$/i, "");
+    const info = sizeOfName(stem);
+    if (!info) return stem;
+    const toks = stem.split(/[_ ]+/);
+    const sizeAt = toks.findIndex((t) => /^\d{3,}x\d{3,}(?:px)?$/i.test(t));
+    const typeAt = toks.findIndex((t) => /^(DOOH|DINTH|D?FOH|OOH|DGTL)$/i.test(t));
+    const what = typeAt !== -1 && sizeAt > typeAt + 1 ? toks.slice(typeAt + 1, sizeAt).join(" ") : "";
+    return `${info.w}×${info.h}` + (info.seconds ? ` · ${info.seconds}s` : "") + (what ? ` · ${what}` : "");
+};
+
 const candKey = (p: Panel, seconds: number) => [p.creative, p.w, p.h, seconds].join("|");
 
 /** The master a panel is built from, given what somebody chose: null is an empty panel. */
@@ -614,8 +631,8 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, creatives, onBack }) => {
                             const c = chosen(p, cands);
                             const options = (cands || []).map((x) => ({
                                 value: x.path,
-                                label: x.name.replace(/\.aep$/i, "") + (x.own ? "" : ` · ${x.creative}`),
-                                hint: [x.fit, x.repeat > 1 ? `played ${x.repeat}×` : ""].filter(Boolean).join(" · "),
+                                label: masterLabel(x.name) + (x.own ? "" : ` · ${x.creative}`),
+                                hint: [x.fit, x.repeat > 1 ? `×${x.repeat}` : ""].filter(Boolean).join(" · "),
                             })).concat([{ value: "", label: "Leave it empty", hint: "an empty comp to build later" }]);
                             return (
                                 <div key={p.id} className={"bsg-row" + (focus === p.id ? " is-on" : "")} onMouseDown={() => { setFocus(p.id); if (p.page !== page) setPage(p.page); }}>
@@ -637,15 +654,16 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, creatives, onBack }) => {
                                         </div>
                                         <Dropdown
                                             className="bsg-pick"
+                                            panelClassName="bsg-pick-panel"
                                             value={c ? c.path : p.pick === "" ? "" : "__none__"}
                                             onChange={(v) => patch(p.id, { pick: v })}
                                             options={options}
                                             placeholder={!cands ? "Finding a master…" : `No ${p.creative || "creative's"} master at this length. Pick one, or leave it empty.`}
                                             emptyMessage="No masters at this length."
                                         />
-                                        {c && (c.fit || c.repeat > 1) && (
-                                            <span className="bsg-row-fit">
-                                                {c.fit}{c.fit && !/^(Exact|Same)/.test(c.fit) ? ", cropped to the panel" : ""}{c.repeat > 1 ? ` · played ${c.repeat}× to fill ${seconds}s` : ""}{p.pick ? " · picked" : ""}
+                                        {c && (
+                                            <span className="bsg-row-fit" title={c.name}>
+                                                {c.name.replace(/\.aep$/i, "")} · {c.fit}{c.fit && !/^(Exact|Same)/.test(c.fit) ? ", cropped to the panel" : ""}{c.repeat > 1 ? ` · played ${c.repeat}× to fill ${seconds}s` : ""}{p.pick ? " · picked" : ""}
                                             </span>
                                         )}
                                         {p.extras.map((e, i) => (

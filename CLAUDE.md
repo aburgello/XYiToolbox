@@ -351,6 +351,11 @@ way to watch was to close the panel.
     one that goes in 2 or 3 times (`repeatFor`), played that often. Another
     creative's master is listed and NEVER proposed; a panel with none is asked
     about, or built as an empty comp.
+  - **A master is listed by its SIZE, then its length, then its format**
+    (`masterLabel`: "1080×1920 · 15s · MotionPoster"), with the full filename
+    on the line under the picked one. Every master of a creative starts
+    `SF_INTL_Trio_DOOH_…`, so filenames cut to fit showed the same eleven
+    characters on every row.
   - **The build is `bespokeBuildRegions`, unchanged** but for a per-region
     `repeat` (scaled-panel path only). `scalePanels` always; the mech sheet
     goes as the guide layer.

@@ -97,9 +97,10 @@ try {
     let r = await rows(page);
     check(/^Trio 768×1472/.test(r[0].what) && r[0].nums === "2049,0,768,1472" && r[1].nums === "7296,0,384,1472", "each panel is its leg exactly as the CSV wrote it, never a box round the lintel too", r.map((x) => x.nums));
     check(/also runs on at 1641, 0 · 1176×320/.test(await text(page, ".bsg-row .bsg-row-extra")), "…and the lintel its artwork runs along is said, not built", await text(page, ".bsg-row .bsg-row-extra"));
-    check(await page.waitFor(`[...document.querySelectorAll(".bsg-row .bsg-pick .dropdown-trigger-label")].every(e => /Trio_DOOH_MotionPoster_1080x1920px_15s_OV/.test(e.innerText))`, 6000), "no 30s Trio master: the 15s is proposed for each, never another creative's 30s", (await rows(page)).map((x) => x.pick));
+    check(await page.waitFor(`[...document.querySelectorAll(".bsg-row .bsg-pick .dropdown-trigger-label")].every(e => /^1080×1920 · 15s · MotionPoster$/.test(e.innerText.trim()))`, 6000), "no 30s Trio master: the 15s is proposed for each, never another creative's 30s", (await rows(page)).map((x) => x.pick));
     r = await rows(page);
     check(/played 2× to fill 30s/.test(r[0].fit) && /cropped to the panel/.test(r[0].fit), "…saying it is played twice and how its shape sits", r[0].fit);
+    check(/^SF_INTL_Trio_DOOH_MotionPoster_1080x1920px_15s_OV · /.test(r[0].fit), "…with the master's full name under it, since the list shows its size instead", r[0].fit);
     check(await page.eval(`document.querySelectorAll(".bsg-board .bsg-panel").length === 2 && document.querySelectorAll(".bsg-board .bsg-window").length === 3 && document.querySelectorAll(".bsg-board .bsg-extra").length === 2 && document.querySelectorAll(".bsg-board .bsg-title").length === 2`), "the sheet shows both legs, the two lintels dashed beside them, and the titles");
     const geo = await page.eval(`(() => { const b = document.querySelector(".bsg-board").getBoundingClientRect(); const p = document.querySelector(".bsg-board .bsg-panel").getBoundingClientRect(); return { ratio: b.width / b.height, left: (p.left - b.left) / b.width, width: p.width / b.width, wide: b.width }; })()`);
     check(Math.abs(geo.ratio - 7680 / 1472) < 0.05 && Math.abs(geo.left - 2049 / 7680) < 0.005 && Math.abs(geo.width - 768 / 7680) < 0.005, "…drawn in the board's own shape, each box where the CSV put it", geo);
@@ -112,8 +113,8 @@ try {
     await page.click(".bsg-row .bsg-pick");
     await page.waitFor(`document.querySelector(".dropdown-option")`, 3000);
     const opts = await page.eval(`[...document.querySelectorAll(".dropdown-option")].map(o => o.innerText.replace(/\\s+/g, " "))`);
-    check(opts.length === 4 && /15s_OV.*played 2×/i.test(opts[0]) && /10s_OV.*played 3×/i.test(opts[1]) && /Characters.*CharacterMotionPoster/.test(opts[2]) && /Leave it empty/.test(opts[3]), "the list: fewest passes first, then other creatives', then empty. A 20s that doesn't go into 30s is not offered", opts);
-    await page.click(".dropdown-option", "10s_OV");
+    check(opts.length === 4 && /^1080×1920 · 15s · MotionPoster .*×2/i.test(opts[0]) && /^1080×1920 · 10s · MotionPoster .*×3/i.test(opts[1]) && /1080×1920 · 30s · MotionPoster · CharacterMotionPoster/.test(opts[2]) && /Leave it empty/.test(opts[3]), "the list: fewest passes first, then other creatives', then empty. A 20s that doesn't go into 30s is not offered", opts);
+    await page.click(".dropdown-option", "· 10s ·");
     check(await page.waitFor(`/played 3×/.test(document.querySelector(".bsg-row .bsg-row-fit").innerText) && /picked/.test(document.querySelector(".bsg-row .bsg-row-fit").innerText)`, 3000), "picking another master sticks, and says it was picked");
     console.log("\nWhat the CSV could not see: the lintel");
     const over = (fx, fy, kind) => page.eval(`(() => { const el = document.querySelector(".bsg-board"); const r = el.getBoundingClientRect(); el.dispatchEvent(new MouseEvent(${JSON.stringify(kind)}, { bubbles: true, clientX: r.left + r.width * ${fx}, clientY: r.top + r.height * ${fy} })); })()`);
@@ -183,7 +184,7 @@ try {
     await page.click(".bsg-row:nth-child(4) .bsg-creative");
     await page.waitFor(`document.querySelector(".dropdown-option")`, 3000);
     await page.click(".dropdown-option", "Trio");
-    check(await page.waitFor(`/Trio_DOOH_MotionPoster_1080x1920px_15s_OV/.test((document.querySelectorAll(".bsg-row")[3].querySelector(".bsg-pick .dropdown-trigger-label") || {}).innerText || "")`, 5000), "changing a panel's creative re-asks for its master");
+    check(await page.waitFor(`/1080×1920 · 15s · MotionPoster/.test((document.querySelectorAll(".bsg-row")[3].querySelector(".bsg-pick .dropdown-trigger-label") || {}).innerText || "")`, 5000), "changing a panel's creative re-asks for its master");
     await page.click(".bsg-row:nth-child(2) .bsg-link");
     check(await page.waitFor(`document.querySelectorAll(".bsg-row").length === 6`, 3000), "a run-on window can be made a panel of its own");
     r = await rows(page);
