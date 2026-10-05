@@ -135,12 +135,48 @@ try {
     await page.waitFor(`document.querySelectorAll(".bsg-row").length === 5`, 3000);
     r = await rows(page);
     check(r[4].nums === "2817,0,2430,320" && /Leave it empty/.test(r[4].pick), "…and with no title in it, it starts empty: a hole for a PNG", r[4]);
-    await page.click(".bsg-row:nth-child(5) button[aria-label='Split panel 5']");
-    check(await page.waitFor(`document.querySelectorAll(".bsg-row").length === 6`, 3000) && (await nums()).slice(4).join(" ") === "2817,0,1215,320 4032,0,1215,320", "Split cuts it in two along its length", (await nums()).slice(4));
-    await page.click(".bsg-row:nth-child(6) .bsp-btn--danger");
-    await page.waitFor(`document.querySelectorAll(".bsg-row").length === 5`, 3000);
-    await type(page, ".bsg-row:nth-child(5) .bsg-row-nums .bsg-num:nth-child(3) input", "2430");
-    check(await page.waitFor(`/2430×320/.test(document.querySelectorAll(".bsg-row")[4].innerText.replace(/\\s+/g, " "))`, 3000), "a number can still be typed over", (await nums())[4]);
+    check(!(await page.eval(`!!document.querySelector(".bsg-row button[aria-label^='Split']")`)), "there is no Split");
+
+    console.log("\nSums, and magnetic sides");
+    const enter = async (sel, v) => { await type(page, sel, v); await page.eval(`document.querySelector(${JSON.stringify(sel)}).dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))`); };
+    const W5 = ".bsg-row:nth-child(5) .bsg-row-nums .bsg-num:nth-child(3) input";
+    await type(page, W5, "2430/");
+    check((await page.eval(`document.querySelector(${JSON.stringify(W5)}).value`)) === "2430/" && /2430×320/.test((await rows(page))[4].what), "a half-typed sum is left alone, and changes nothing yet", (await rows(page))[4].what);
+    await enter(W5, "2430/2");
+    check(await page.waitFor(`document.querySelector(${JSON.stringify(W5)}).value === "1215"`, 3000), "W takes a sum: 2430/2 is 1215", (await nums())[4]);
+    await enter(".bsg-row:nth-child(5) .bsg-row-nums .bsg-num:nth-child(1) input", "2049+768");
+    check((await nums())[4] === "2817,0,1215,320", "…and so does X", (await nums())[4]);
+    await enter(W5, "99999");
+    check((await nums())[4] === "2817,0,4863,320", "a number past the board's edge stops at it", (await nums())[4]);
+    await enter(W5, "1215");
+    // Drag panel 5's right side to within reach of panel 4's left (5247).
+    const drag = (n, handle, toX, toY, release = true) => page.eval(`(() => {
+        const b = document.querySelector(".bsg-board").getBoundingClientRect();
+        const panel = [...document.querySelectorAll(".bsg-board .bsg-panel")].filter(p => p.querySelector("b").innerText.trim() === "${n}")[0];
+        const el = ${JSON.stringify(handle)} ? panel.querySelector(${JSON.stringify(handle)}) : panel;
+        const r = el.getBoundingClientRect();
+        const sx = r.left + r.width / 2, sy = r.top + r.height / 2;
+        const px = (bx) => b.left + (bx / 7680) * b.width, py = (by) => b.top + (by / 1472) * b.height;
+        const tx = ${toX} === null ? sx : (${JSON.stringify(handle)} ? px(${toX}) : sx + (${toX} / 7680) * b.width);
+        const ty = ${toY} === null ? sy : (${JSON.stringify(handle)} ? py(${toY}) : sy + (${toY} / 1472) * b.height);
+        el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0, clientX: sx, clientY: sy }));
+        window.dispatchEvent(new MouseEvent("mousemove", { clientX: (sx + tx) / 2, clientY: (sy + ty) / 2 }));
+        window.dispatchEvent(new MouseEvent("mousemove", { clientX: tx, clientY: ty }));
+        if (${release}) window.dispatchEvent(new MouseEvent("mouseup", { clientX: tx, clientY: ty }));
+    })()`);
+    await drag(5, ".bsg-handle--r", 5210, null, false);
+    check(await page.waitFor(`!!document.querySelector(".bsg-snap--x") && /2430×320 at 2817, 0/.test((document.querySelector(".bsg-panel.is-dragging em") || {}).innerText || "")`, 3000), "dragging a side near another panel's catches on it: the line shows, and the size reads live", await text(page, ".bsg-panel.is-dragging"));
+    check((await page.eval(`document.querySelector(${JSON.stringify(W5)}).value`)) === "2430", "…in the number field too, while it is still held");
+    await page.eval(`window.dispatchEvent(new MouseEvent("mouseup", {}))`);
+    check(await page.waitFor(`!document.querySelector(".bsg-snap") && !document.querySelector(".bsg-panel.is-dragging")`, 3000) && (await nums())[4] === "2817,0,2430,320", "letting go leaves it exactly on that side, 37 pixels short of where the mouse was", (await nums())[4]);
+    await drag(4, "", -1000, null);
+    await page.waitFor(`!document.querySelector(".bsg-panel.is-dragging")`, 3000);
+    const moved = (await nums())[3].split(",").map(Number);
+    check(Math.abs(moved[0] - 4247) <= 3 && moved[2] === 2049 && moved[3] === 320, "dragging a panel's body moves it freely when nothing is near", moved);
+    await drag(4, "", 5215 - moved[0], 40);
+    await page.waitFor(`!document.querySelector(".bsg-panel.is-dragging")`, 3000);
+    check((await nums())[3] === "5247,0,2049,320", "…and back near where it was, it catches on both axes", (await nums())[3]);
+    check((await page.eval(`document.querySelectorAll(".bsg-row").length`)) === 5 && !(await page.eval(`!!document.querySelector(".bsg-ghost")`)), "a drag is never read as a press on a gap");
     check((await page.eval(`document.querySelectorAll(".bsg-board .bsg-panel").length`)) === 5, "all five are on the sheet");
     await page.shot(path.join(SHOTS, "ui-bespoke-lintel.png"));
     // The creative of a panel can be changed: the copy becomes Trio's.

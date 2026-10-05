@@ -117,11 +117,22 @@ const pillar = { x: 0, y: 0, w: 512, h: 1344 };
 check(B.copySpot(pillar, [], 2048).x === 512, "a copy with room straight after it goes hard against it: the next pillar along");
 check(B.copySpot({ x: 1536, y: 0, w: 512, h: 1344 }, [], 2048).x === 1024, "no room to the right: to the left instead");
 check(B.copySpot({ x: 0, y: 0, w: 2048, h: 1344 }, [], 2048) === null, "no room in the band: nowhere");
-const halves = B.splitInTwo({ x: 2817, y: 0, w: 4479, h: 320 });
-check(halves[0].x === 2817 && halves[0].w === 2239 && halves[1].x === 5056 && halves[1].w === 2240 && halves[0].h === 320, "a split cuts the longer side, the halves meeting with no pixel lost", halves);
-check(B.splitInTwo({ x: 0, y: 0, w: 384, h: 1472 })[1].y === 736, "…down a tall panel, across a wide one");
 check(B.creativeIn(ryu, archBoard.titles, "Page1") === "RyuHadouken" && B.creativeIn({ x: 2817, y: 0, w: 2430, h: 320 }, archBoard.titles, "Page1") === "", "a new panel takes the creative of the title inside it; one with no title has none", [B.creativeIn(ryu, archBoard.titles, "Page1")]);
 check(B.creativeIn({ x: 0, y: 0, w: 7680, h: 1472 }, archBoard.titles, "Page1") === "", "…and two creatives' titles in one box decide nothing");
+
+console.log("\nMagnetic sides");
+const XS = [0, 7680, 2049, 2817, 7296];
+const YS = [0, 1472, 320];
+const mv = (r, dx, dy, reach = 30) => { const s = B.snapMove(r, dx, dy, XS, YS, reach, 7680, 1472); return [s.rect.x, s.rect.y, s.rect.w, s.rect.h, s.atX, s.atY].join(); };
+check(mv({ x: 100, y: 10, w: 1900, h: 320 }, 30, -4) === "149,0,1900,320,2049,0", "a box moved near a leg takes it by its RIGHT side, and the top edge by its top", mv({ x: 100, y: 10, w: 1900, h: 320 }, 30, -4));
+check(mv({ x: 2900, y: 0, w: 500, h: 320 }, -70, 0) === "2817,0,500,320,2817,0", "…by its left side when that is the nearer one", mv({ x: 2900, y: 0, w: 500, h: 320 }, -70, 0));
+check(mv({ x: 3500, y: 600, w: 500, h: 320 }, 40, 40) === "3540,640,500,320,,", "out of reach of every line it moves freely", mv({ x: 3500, y: 600, w: 500, h: 320 }, 40, 40));
+check(mv({ x: 7000, y: 0, w: 500, h: 320 }, 900, 0, 0) === "7180,0,500,320,,0", "and it never leaves the board", mv({ x: 7000, y: 0, w: 500, h: 320 }, 900, 0, 0));
+const rs = (r, sides, dx, dy) => { const s = B.snapResize(r, sides, dx, dy, XS, YS, 30, 7680, 1472); return [s.rect.x, s.rect.y, s.rect.w, s.rect.h, s.atX, s.atY].join(); };
+check(rs({ x: 2817, y: 0, w: 2000, h: 320 }, { r: true }, 2460, 0) === "2817,0,4479,320,7296,", "dragging a right side to within reach of the far leg stops it ON the leg", rs({ x: 2817, y: 0, w: 2000, h: 320 }, { r: true }, 2460, 0));
+check(rs({ x: 2817, y: 0, w: 2000, h: 300 }, { b: true, l: true }, -10, 15) === "2817,0,2000,320,2817,320", "a corner takes a line on each axis, the other two sides staying put", rs({ x: 2817, y: 0, w: 2000, h: 300 }, { b: true, l: true }, -10, 15));
+check(rs({ x: 3000, y: 400, w: 500, h: 300 }, { l: true }, 900, 0) === "3492,400,8,300,,", "a side cannot cross its opposite: the box keeps a few pixels", rs({ x: 3000, y: 400, w: 500, h: 300 }, { l: true }, 900, 0));
+check(rs({ x: 3000, y: 400, w: 500, h: 300 }, { t: true }, 0, -900) === "3000,0,500,700,,", "…nor leave the board", rs({ x: 3000, y: 400, w: 500, h: 300 }, { t: true }, 0, -900));
 
 console.log("\nWhere a build is filed");
 const w = B.whereItFiles("/Volumes/paramount/SF/XY026206_Bespoke/Malaysia/PNGs/Bespoke_VivaCity/SF_X_384x1152px_30s_MY/SF_X_384x1152px_30s_MY.csv");

@@ -323,16 +323,6 @@ export function copySpot(panel: Rect, others: Rect[], canvasW: number): Rect | n
     return null;
 }
 
-/** A panel cut in two along its longer side. The halves share every pixel between them. */
-export function splitInTwo(r: Rect): [Rect, Rect] {
-    if (r.w >= r.h) {
-        const a = Math.floor(r.w / 2);
-        return [{ x: r.x, y: r.y, w: a, h: r.h }, { x: r.x + a, y: r.y, w: r.w - a, h: r.h }];
-    }
-    const a = Math.floor(r.h / 2);
-    return [{ x: r.x, y: r.y, w: r.w, h: a }, { x: r.x, y: r.y + a, w: r.w, h: r.h - a }];
-}
-
 /** The creative of the title sitting in a box, when exactly one creative's titles do. "" otherwise. */
 export function creativeIn(box: Rect, titles: CsvTitle[], page: string): string {
     const seen: string[] = [];
@@ -344,4 +334,70 @@ export function creativeIn(box: Rect, titles: CsvTitle[], page: string): string 
         if (seen.indexOf(t.creative) === -1) seen.push(t.creative);
     });
     return seen.length === 1 ? seen[0] : "";
+}
+
+// ---------------------------------------------------------------------------
+// MOVING AND SIZING A PANEL ON THE SHEET, WITH MAGNETIC SIDES.
+//
+// Tracing went because it meant drawing a whole board freehand. This is the
+// other half of what it did, kept: nudging a box that is nearly right. A side
+// that comes within `reach` of a line it could sit on (another panel's side,
+// a run-on window's, the board's edge) takes that line, so two panels meet
+// with no gap and no overlap without anybody typing the number.
+// ---------------------------------------------------------------------------
+
+export interface Snapped {
+    rect: Rect;
+    /** The lines the box is now held to, for drawing them. null when free on that axis. */
+    atX: number | null;
+    atY: number | null;
+}
+
+/** Which sides a drag moves. None of them is a move of the whole box. */
+export interface Sides { l?: boolean; r?: boolean; t?: boolean; b?: boolean }
+
+const MIN_SIDE = 8;
+
+const pull = (v: number, lines: number[], reach: number): number | null => {
+    let best: number | null = null;
+    for (const l of lines) {
+        const d = Math.abs(l - v);
+        if (d <= reach && (best === null || d < Math.abs(best - v))) best = l;
+    }
+    return best;
+};
+
+/** The whole box moved by (dx, dy): whichever of its two sides is nearer a line takes it. */
+export function snapMove(r: Rect, dx: number, dy: number, xs: number[], ys: number[], reach: number, canvasW: number, canvasH: number): Snapped {
+    const axis = (pos: number, size: number, lines: number[], max: number): { v: number; at: number | null } => {
+        const near = pull(pos, lines, reach);
+        const far = pull(pos + size, lines, reach);
+        let v = pos;
+        let at: number | null = null;
+        if (near !== null && (far === null || Math.abs(near - pos) <= Math.abs(far - (pos + size)))) { v = near; at = near; }
+        else if (far !== null) { v = far - size; at = far; }
+        const held = Math.max(0, Math.min(max - size, v));
+        return { v: Math.round(held), at: held === v ? at : null };
+    };
+    const x = axis(r.x + dx, r.w, xs, canvasW);
+    const y = axis(r.y + dy, r.h, ys, canvasH);
+    return { rect: { x: x.v, y: y.v, w: r.w, h: r.h }, atX: x.at, atY: y.at };
+}
+
+/** The named sides dragged by (dx, dy), the others staying where they are. */
+export function snapResize(r: Rect, sides: Sides, dx: number, dy: number, xs: number[], ys: number[], reach: number, canvasW: number, canvasH: number): Snapped {
+    let x0 = r.x;
+    let x1 = r.x + r.w;
+    let y0 = r.y;
+    let y1 = r.y + r.h;
+    let atX: number | null = null;
+    let atY: number | null = null;
+    if (sides.l) { x0 += dx; const s = pull(x0, xs, reach); if (s !== null) { x0 = s; atX = s; } x0 = Math.max(0, Math.min(x1 - MIN_SIDE, x0)); }
+    if (sides.r) { x1 += dx; const s = pull(x1, xs, reach); if (s !== null) { x1 = s; atX = s; } x1 = Math.min(canvasW, Math.max(x0 + MIN_SIDE, x1)); }
+    if (sides.t) { y0 += dy; const s = pull(y0, ys, reach); if (s !== null) { y0 = s; atY = s; } y0 = Math.max(0, Math.min(y1 - MIN_SIDE, y0)); }
+    if (sides.b) { y1 += dy; const s = pull(y1, ys, reach); if (s !== null) { y1 = s; atY = s; } y1 = Math.min(canvasH, Math.max(y0 + MIN_SIDE, y1)); }
+    const rect = { x: Math.round(x0), y: Math.round(y0), w: Math.round(x1) - Math.round(x0), h: Math.round(y1) - Math.round(y0) };
+    if (atX !== null && atX !== rect.x && atX !== rect.x + rect.w) atX = null;
+    if (atY !== null && atY !== rect.y && atY !== rect.y + rect.h) atY = null;
+    return { rect, atX, atY };
 }

@@ -22,8 +22,17 @@
 // along the lintel. Moving over an empty part of the sheet shows the gap that
 // would be filled (the band's height from what was read, across until a panel
 // or the edge); a press makes it a panel. A panel can be COPIED, the copy
-// landing in the next gap of its band (against the far leg, mirrored), and
-// SPLIT in two. Between them an arch's lintel is three presses and no typing.
+// landing in the next gap of its band (against the far leg, mirrored). Between
+// them an arch's lintel is three presses and no typing.
+//
+// A PANEL THAT IS NEARLY RIGHT IS DRAGGED, WITH MAGNETIC SIDES. Its body moves
+// it and its edges and corners size it, and a side that comes near a line it
+// could sit on (another panel's side, a run-on window's, the board's edge)
+// takes it, with the line drawn while it holds. That is the half of tracing
+// worth keeping: nudging a box, never drawing a board. The X/Y/W/H fields take
+// sums (`2817+2430`, `7680/3`) through the same NumField the rest of Bespoke
+// uses. Mouse events throughout: CEP on macOS does not reliably send pointer
+// events.
 // A new panel takes the creative of the title sitting in it; one with no
 // title in it starts EMPTY, because that is what a hole for a PNG is.
 //
@@ -44,16 +53,17 @@
 // the panel's own Node.
 // =============================================================================
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, CopyPlus, FolderOpen, Hammer, Plus, Scissors, X } from "lucide-react";
+import { ArrowLeft, CopyPlus, FolderOpen, Hammer, Plus, X } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { fs, path as nodePath } from "../../lib/cep/node";
 import { toFileUrl } from "../lib/fileUrl";
 import { hasNode, listDir } from "../lib/sizeFinderStore";
 import { closeness, creativeOfName, repeatFor, sizeOfName } from "../lib/sizeMatch";
-import { boardFromRows, copySpot, creativeIn, CsvTitle, gapAt, parseBespokeCsv, Rect, splitInTwo, whereItFiles } from "../lib/bespokeCsv";
+import { boardFromRows, copySpot, creativeIn, CsvTitle, gapAt, parseBespokeCsv, Rect, Sides, snapMove, snapResize, whereItFiles } from "../lib/bespokeCsv";
 import CheckboxToggle from "../CheckboxToggle";
 import Dropdown from "../Dropdown";
 import Tooltip from "../Tooltip";
+import { NumField } from "../NumField";
 import "./BespokeGuided.scss";
 
 /** One master a panel could be built from. */
@@ -106,6 +116,11 @@ interface Loaded {
 const STORE = "xyi.bespoke.guided.path";
 const HUES = ["#5eead4", "#fbbf24", "#f472b6", "#60a5fa", "#a3e635", "#fb923c", "#c084fc", "#f87171"];
 const STAGE_MAX_H = 460;
+/** The four sides and four corners a panel is sized by. */
+const HANDLES: { k: string; sides: Sides }[] = [
+    { k: "l", sides: { l: true } }, { k: "r", sides: { r: true } }, { k: "t", sides: { t: true } }, { k: "b", sides: { b: true } },
+    { k: "tl", sides: { t: true, l: true } }, { k: "tr", sides: { t: true, r: true } }, { k: "bl", sides: { b: true, l: true } }, { k: "br", sides: { b: true, r: true } },
+];
 
 const readText = (p: string): Promise<string | null> =>
     new Promise((resolve) => {
@@ -146,6 +161,11 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, creatives, onBack }) => {
     // The gap under the pointer: what a press on the sheet would make a panel.
     const [ghost, setGhost] = useState<Rect | null>(null);
     const boardRef = useRef<HTMLDivElement | null>(null);
+    // A panel being dragged: where it is NOW, and the lines holding it. Kept
+    // apart from `panels` until the mouse comes up, so a drag asks about a
+    // master once, for where the panel ends, and not for every pixel on the way.
+    const [live, setLive] = useState<{ id: number; rect: Rect; atX: number | null; atY: number | null } | null>(null);
+    const dragged = useRef(false);
     const nextId = useRef(1);
     // What the localiser's ranking answered, kept per creative|size|length so a
     // panel edited back to a size already asked about costs nothing.
@@ -281,6 +301,19 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, creatives, onBack }) => {
         // master picked for the old shape may not be offered for the new one.
         if (change.w !== undefined || change.h !== undefined || change.x !== undefined || change.y !== undefined) next.masks = [];
         if ((change.w !== undefined || change.h !== undefined) && p.pick) next.pick = undefined;
+        // Typed or dragged, a panel stays on the board.
+        // A size typed too big stops at the edge and leaves the panel where it
+        // is; a position typed too far stops there and leaves its size.
+        if (board) {
+            next.x = Math.max(0, Math.min(board.canvasW - 1, next.x));
+            next.y = Math.max(0, Math.min(board.canvasH - 1, next.y));
+            if (change.w !== undefined && change.x === undefined) next.w = Math.min(next.w, board.canvasW - next.x);
+            if (change.h !== undefined && change.y === undefined) next.h = Math.min(next.h, board.canvasH - next.y);
+            next.w = Math.max(1, Math.min(board.canvasW, next.w));
+            next.h = Math.max(1, Math.min(board.canvasH, next.h));
+            next.x = Math.min(next.x, board.canvasW - next.w);
+            next.y = Math.min(next.y, board.canvasH - next.h);
+        }
         return next;
     }));
 
@@ -321,6 +354,52 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, creatives, onBack }) => {
         return gapAt(px, py, onPage, lines, board.canvasW, board.canvasH);
     };
 
+    /**
+     * Drag a panel by its body (no sides) or by the sides named. Every other
+     * panel's sides on the page, every run-on window's and the board's own are
+     * the lines it can take; within eight screen pixels it does.
+     */
+    const startDrag = (e: React.MouseEvent, p: Panel, sides: Sides | null) => {
+        const el = boardRef.current;
+        if (!el || !board || e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setFocus(p.id);
+        setGhost(null);
+        const box = el.getBoundingClientRect();
+        if (!(box.width > 0)) return;
+        const perPx = board.canvasW / box.width;
+        const xs = [0, board.canvasW];
+        const ys = [0, board.canvasH];
+        onPage.forEach((o) => {
+            if (o.id !== p.id) { xs.push(o.x, o.x + o.w); ys.push(o.y, o.y + o.h); }
+            o.extras.forEach((x) => { xs.push(x.x, x.x + x.w); ys.push(x.y, x.y + x.h); });
+        });
+        const from: Rect = { x: p.x, y: p.y, w: p.w, h: p.h };
+        const sx = e.clientX;
+        const sy = e.clientY;
+        let last: Rect = from;
+        const move = (ev: MouseEvent) => {
+            const dx = (ev.clientX - sx) * perPx;
+            const dy = (ev.clientY - sy) * perPx;
+            if (!dragged.current && Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) < 3) return;
+            dragged.current = true;
+            const s = sides ? snapResize(from, sides, dx, dy, xs, ys, 8 * perPx, board.canvasW, board.canvasH) : snapMove(from, dx, dy, xs, ys, 8 * perPx, board.canvasW, board.canvasH);
+            last = s.rect;
+            setLive({ id: p.id, rect: s.rect, atX: s.atX, atY: s.atY });
+        };
+        const up = () => {
+            window.removeEventListener("mousemove", move);
+            window.removeEventListener("mouseup", up);
+            setLive(null);
+            if (dragged.current && (last.x !== from.x || last.y !== from.y || last.w !== from.w || last.h !== from.h)) patch(p.id, last);
+            // The click that follows a drag must not be read as a press on a gap.
+            setTimeout(() => { dragged.current = false; }, 0);
+        };
+        window.addEventListener("mousemove", move);
+        window.addEventListener("mouseup", up);
+    };
+
     /** A panel in a gap. The title sitting in it says whose; no title, and it starts empty. */
     const fillGap = (gap: Rect) => {
         if (!board) return;
@@ -348,20 +427,6 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, creatives, onBack }) => {
         setNote(null);
     };
 
-    const splitPanel = (p: Panel) => {
-        const [a, b] = splitInTwo(p);
-        const id = nextId.current++;
-        setPanels((prev) => {
-            const out: Panel[] = [];
-            prev.forEach((x) => {
-                if (x.id !== p.id) { out.push(x); return; }
-                out.push({ ...p, masks: [], extras: [], x: a.x, y: a.y, w: a.w, h: a.h });
-                out.push({ ...p, id, masks: [], extras: [], x: b.x, y: b.y, w: b.w, h: b.h });
-            });
-            return out;
-        });
-        setFocus(id);
-    };
     const filled = panels.filter((p) => !!chosen(p, candsOf(p))).length;
     const waiting = panels.some((p) => !candsOf(p));
 
@@ -408,15 +473,16 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, creatives, onBack }) => {
 
     const pct = (v: number, of: number) => (of > 0 ? (v / of) * 100 : 0) + "%";
     const rectStyle = (r: Rect) => board ? { left: pct(r.x, board.canvasW), top: pct(r.y, board.canvasH), width: pct(r.w, board.canvasW), height: pct(r.h, board.canvasH) } : {};
+    // Sums are welcome (`2817+2430`, `7680/3`); a panel never leaves the board or turns inside out.
     const numField = (p: Panel, key: "x" | "y" | "w" | "h", label: string) => (
         <label className="bsg-num">
             <span>{label}</span>
-            <input
+            <NumField
                 className="bsp-input"
-                type="text"
-                value={String(p[key])}
+                ariaLabel={`${label} of panel ${panels.indexOf(p) + 1}`}
+                value={live && live.id === p.id ? live.rect[key] : p[key]}
                 onFocus={() => setFocus(p.id)}
-                onChange={(e) => patch(p.id, { [key]: Math.max(0, parseInt(e.target.value.replace(/[^0-9]/g, ""), 10) || 0) } as Partial<Panel>)}
+                onCommit={(v) => patch(p.id, { [key]: Math.max(key === "w" || key === "h" ? 1 : 0, Math.round(v)) } as Partial<Panel>)}
             />
         </label>
     );
@@ -487,12 +553,13 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, creatives, onBack }) => {
                             ref={boardRef}
                             style={{ paddingBottom: (board.canvasH / board.canvasW) * 100 + "%" }}
                             onMouseMove={(e) => {
+                                if (live) return;
                                 const g = gapUnder(e);
                                 if ((g && ghost && g.x === ghost.x && g.y === ghost.y && g.w === ghost.w && g.h === ghost.h) || (!g && !ghost)) return;
                                 setGhost(g);
                             }}
                             onMouseLeave={() => setGhost(null)}
-                            onClick={(e) => { const g = gapUnder(e); if (g) fillGap(g); }}
+                            onClick={(e) => { if (dragged.current) return; const g = gapUnder(e); if (g) fillGap(g); }}
                         >
                             {board.pictures[page] && !noPicture[board.pictures[page]] && (
                                 <img src={toFileUrl(board.pictures[page])} alt="" draggable={false} onError={() => setNoPicture((prev) => ({ ...prev, [board.pictures[page]]: true }))} />
@@ -500,6 +567,8 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, creatives, onBack }) => {
                             {board.titles.filter((t) => t.page === page).map((t, i) => (
                                 <span key={"t" + i} className="bsg-title" style={rectStyle(t.box)} title={`Title: ${t.name}`} />
                             ))}
+                            {live && live.atX !== null && <span className="bsg-snap bsg-snap--x" style={{ left: pct(live.atX, board.canvasW) }} />}
+                            {live && live.atY !== null && <span className="bsg-snap bsg-snap--y" style={{ top: pct(live.atY, board.canvasH) }} />}
                             {ghost && (
                                 <span className="bsg-ghost" style={rectStyle(ghost)}>
                                     <i><Plus size={11} /> {ghost.w}×{ghost.h}</i>
@@ -513,11 +582,15 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, creatives, onBack }) => {
                                         {p.masks.map((m, i) => <span key={i} className="bsg-window" style={{ ...rectStyle(m), background: hue }} />)}
                                         {p.extras.map((m, i) => <span key={"e" + i} className="bsg-extra" style={{ ...rectStyle(m), borderColor: hue }} />)}
                                         <span
-                                            className={"bsg-panel" + (focus === p.id ? " is-on" : "")}
-                                            style={{ ...rectStyle(p), borderColor: hue, color: hue }}
-                                            onMouseDown={() => setFocus(p.id)}
+                                            className={"bsg-panel" + (focus === p.id ? " is-on" : "") + (live && live.id === p.id ? " is-dragging" : "")}
+                                            style={{ ...rectStyle(live && live.id === p.id ? live.rect : p), borderColor: hue, color: hue }}
+                                            onMouseDown={(e) => startDrag(e, p, null)}
                                         >
                                             <b style={{ background: hue }}>{n + 1}</b>
+                                            {live && live.id === p.id && <em>{live.rect.w}×{live.rect.h} at {live.rect.x}, {live.rect.y}</em>}
+                                            {HANDLES.map((h) => (
+                                                <i key={h.k} className={"bsg-handle bsg-handle--" + h.k} onMouseDown={(e) => startDrag(e, p, h.sides)} />
+                                            ))}
                                         </span>
                                     </React.Fragment>
                                 );
@@ -525,7 +598,7 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, creatives, onBack }) => {
                         </div>
                     </div>
                     <p className="bsg-hint">
-                        Press an empty part of the sheet to make that gap a panel.
+                        Press an empty part of the sheet to make that gap a panel. Drag a panel to move it, its edges to size it: sides catch on each other. The number fields take sums.
                         {!board.pictures[page] ? ` No picture of ${page} in the folder, so the panels are drawn on an empty board.` : ""}
                     </p>
 
@@ -559,7 +632,7 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, creatives, onBack }) => {
                                             ) : (
                                                 <b>{p.creative || "No creative"}</b>
                                             )}
-                                            <span>{p.w}×{p.h}{board.pages.length > 1 ? ` · ${p.page}` : ""}</span>
+                                            <span>{(live && live.id === p.id ? live.rect : p).w}×{(live && live.id === p.id ? live.rect : p).h}{board.pages.length > 1 ? ` · ${p.page}` : ""}</span>
                                             {p.family ? <em title={p.family}>{p.family}</em> : <em>added by hand</em>}
                                         </div>
                                         <Dropdown
@@ -590,9 +663,6 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, creatives, onBack }) => {
                                     </div>
                                     <Tooltip text="Copy it into the next gap along (against the far side, mirrored)">
                                         <button className="bsp-btn bsp-btn--ghost bsp-btn--icon" aria-label={`Copy panel ${n + 1}`} onClick={() => copyPanel(p)}><CopyPlus size={12} /></button>
-                                    </Tooltip>
-                                    <Tooltip text="Split it in two along its longer side">
-                                        <button className="bsp-btn bsp-btn--ghost bsp-btn--icon" aria-label={`Split panel ${n + 1}`} onClick={() => splitPanel(p)}><Scissors size={12} /></button>
                                     </Tooltip>
                                     <button className="bsp-btn bsp-btn--ghost bsp-btn--icon bsp-btn--danger" aria-label={`Remove panel ${n + 1}`} onClick={() => setPanels((prev) => prev.filter((x) => x.id !== p.id))}><X size={12} /></button>
                                 </div>

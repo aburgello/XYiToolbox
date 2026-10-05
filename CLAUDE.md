@@ -366,11 +366,23 @@ way to watch was to close the panel.
     it a panel. **Copy** puts a twin in the next gap of the panel's band
     (`copySpot`): hard against it when the gap starts there (the next pillar),
     at the gap's FAR end otherwise (an arch's second banner sits against the
-    far leg). **Split** cuts the longer side in two. A new panel takes the
-    creative of the one title sitting in it (`creativeIn`) and **starts EMPTY
-    when no title does**: a hole for a PNG. Each panel's creative is a
-    dropdown of the campaign's AE folders. Numbers can still be typed over;
-    nothing on this page is dragged.
+    far leg). A new panel takes the creative of the one title sitting in it
+    (`creativeIn`) and **starts EMPTY when no title does**: a hole for a PNG.
+    Each panel's creative is a dropdown of the campaign's AE folders. (A
+    Split button shipped for an hour and was removed on request.)
+  - **A panel that is nearly right is DRAGGED, with magnetic sides**
+    (`snapMove`/`snapResize`): its body moves it, its four sides and four
+    corners size it, and a side within eight SCREEN pixels of a line it could
+    sit on (another panel's side, a run-on window's, the board's edge) takes
+    it, the line drawn while it holds. That is nudging a box, which is the
+    half of tracing worth having; nobody draws a board here. The drag lives in
+    `live` until the mouse comes up, so the master is asked about ONCE, for
+    where the panel ends up, and never per pixel on the way. Mouse events, and
+    the click that follows a drag is not a press on a gap.
+  - **X/Y/W/H take sums** through `NumField`/`evalNumeric`, now in
+    `main/NumField.tsx` and shared with the rest of Bespoke (lifted out, not
+    copied). A size typed past the board stops at the edge and leaves the
+    panel where it is; a position typed too far keeps the size.
   - **Where it files is read off where the CSV sits** (`whereItFiles`), never
     invented; any other path builds and saves nothing. A deliverable whose
     `_V01.aep` is already in the batch's AE folder is built and NOT saved:
@@ -380,7 +392,7 @@ way to watch was to close the panel.
     shares its state with Multiple Art through forty `mode` branches.
   `node scripts/ui-bespoke-guided.mjs` clicks through it.
 - **Bespoke's number fields take sums** (`5000/3`, `(600+300)/2`) via
-  `evalNumeric` — a hand-rolled recursive-descent parser, **never `eval`**: this
+  `evalNumeric` (`main/NumField.tsx`) — a hand-rolled recursive-descent parser, **never `eval`**: this
   is typed text in a `file://` page with the ExtendScript bridge behind it, and
   the codebase already carries one bare eval as a known soft spot. Unreadable
   input **leaves the field exactly as typed** — a half-finished `5000/` must not

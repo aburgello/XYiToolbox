@@ -9973,3 +9973,22 @@ left between them (2817..5247, no title in it, so it starts empty).
 **Not known:** whether the real right-hand banner starts at 5247. That is
 "the same size as the left one, against the far leg", which is a guess the
 mech sheet did not contradict by eye; its X can be typed over.
+
+
+## 2026-10-05 — Split out; dragging back, with magnetic sides; sums in the fields
+
+Asked for after trying the gap controls: no Split, but "better transform
+tools with magnetic sides on the canvas, and arithmetic operations on the
+scales and coordinates".
+
+So dragging is back on the guided sheet, for moving and sizing a panel that
+already exists, with its sides catching on other panels', on run-on windows
+and on the board's edge. The X/Y/W/H fields became the `NumField` the tracing
+board already had, moved to its own file so the two share one parser.
+
+Found by the test: a width typed past the board's edge was clamped by moving
+the panel to x 0. It now stops at the edge.
+
+**Not done:** dragged in the harness only, with synthetic mouse events.
+Whether After Effects' CEP delivers `mousemove` on `window` as smoothly is
+the thing to feel in the panel.

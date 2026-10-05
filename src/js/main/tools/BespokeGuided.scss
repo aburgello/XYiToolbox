@@ -121,10 +121,12 @@
     height: 0;
     border-radius: 6px;
     background: #0e0f10;
-    overflow: hidden;
+    // Not clipped: a panel against the board's edge keeps its handles.
+    user-select: none;
 
     img {
         position: absolute;
+        border-radius: 6px;
         top: 0;
         left: 0;
         width: 100%;
@@ -180,7 +182,7 @@
     position: absolute;
     box-sizing: border-box;
     border: 2px solid;
-    cursor: pointer;
+    user-select: none;
 
     b {
         position: absolute;
@@ -198,7 +200,70 @@
         text-align: center;
     }
 
-    &.is-on { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), inset 0 0 0 1px rgba(0, 0, 0, 0.5); }
+    // Where it is while it is being dragged.
+    em {
+        position: absolute;
+        left: 50%;
+        bottom: 4px;
+        margin-left: -70px;
+        width: 140px;
+        padding: 2px 0;
+        border-radius: 999px;
+        background: rgba(13, 21, 22, 0.88);
+        color: #fff;
+        font-size: 10px;
+        font-style: normal;
+        font-weight: 700;
+        text-align: center;
+        white-space: nowrap;
+        pointer-events: none;
+    }
+
+    &.is-on { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), inset 0 0 0 1px rgba(0, 0, 0, 0.5); z-index: 2; }
+    &.is-dragging { background: rgba(255, 255, 255, 0.1); z-index: 3; }
+}
+
+.bsg-board .bsg-panel { cursor: move; }
+
+// The sides and corners a panel is sized by. Wider than they look: a 2px
+// border is not something to aim a mouse at.
+.bsg-handle {
+    position: absolute;
+
+    &--l, &--r { top: 8px; bottom: 8px; width: 9px; cursor: ew-resize; }
+    &--t, &--b { left: 8px; right: 8px; height: 9px; cursor: ns-resize; }
+    &--l { left: -5px; }
+    &--r { right: -5px; }
+    &--t { top: -5px; }
+    &--b { bottom: -5px; }
+    &--tl, &--tr, &--bl, &--br { width: 13px; height: 13px; }
+    &--tl { top: -6px; left: -6px; cursor: nwse-resize; }
+    &--br { bottom: -6px; right: -6px; cursor: nwse-resize; }
+    &--tr { top: -6px; right: -6px; cursor: nesw-resize; }
+    &--bl { bottom: -6px; left: -6px; cursor: nesw-resize; }
+}
+
+// The corners of the panel being worked on are drawn; the sides are felt.
+.bsg-panel.is-on .bsg-handle--tl,
+.bsg-panel.is-on .bsg-handle--tr,
+.bsg-panel.is-on .bsg-handle--bl,
+.bsg-panel.is-on .bsg-handle--br {
+    box-sizing: border-box;
+    border: 2px solid #fff;
+    border-radius: 3px;
+    background: currentColor;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+}
+
+// The line a side is held to, for as long as it holds.
+.bsg-snap {
+    position: absolute;
+    background: #ff4fd8;
+    pointer-events: none;
+    z-index: 4;
+
+    &--x { top: 0; bottom: 0; width: 1px; margin-left: -0.5px; }
+    &--y { left: 0; right: 0; height: 1px; margin-top: -0.5px; }
 }
 
 // A title treatment in the CSV: shown, never built.
