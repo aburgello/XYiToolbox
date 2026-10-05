@@ -9894,3 +9894,14 @@ project, with its real names.
 and the compare has only been seen in the harness, which blocks local images.
 The `.ai` at that project's root (`SF_Trio_Date_YellowIMAX_EG_RGB.ai`) is
 Support Swap's, and was not looked at.
+
+
+## 2026-10-05 — The compare is a wipe, and pages
+
+Seen in After Effects for the first time (Thailand's Kicking against Egypt's):
+the pictures DO draw in the panel, which settles the "JPG pane not seen in AE"
+note above. Two faults in what was seen: the toggle above the wipe left it
+lower than the clip beside it, and the box was sized in pixels then squeezed
+by `max-width`, so a 2:1 sheet sat letterboxed in a squarer box. And only the
+first picture could be wiped. Now one mode, the pane's width, the row's shape,
+and a pager stepping both sides together.

@@ -178,8 +178,6 @@
     }
 
     // ── the row's own sheet against the approved one's ───────────────────
-    .szf-cmp-bar { display: flex; margin-bottom: 8px; }
-
     .szf-cmp-note {
         margin-bottom: 8px;
         padding: 7px 9px;
@@ -203,29 +201,9 @@
         color: #8d9596;
     }
 
-    .szf-cmp-side { display: flex; margin: 0 -4px; }
-
-    .szf-cmp-cell {
-        display: flex;
-        flex-direction: column;
-        flex: 1 1 0;
-        min-width: 0;
-        margin: 0 4px;
-    }
-
-    .szf-cmp-frame {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 6px;
-        background: #0e0f10;
-        overflow: hidden;
-
-        img { display: block; max-width: 100%; max-height: 100%; }
-    }
-
-    .szf-cmp-cap,
     .szf-cmp-legend {
+        display: flex;
+        justify-content: space-between;
         margin-top: 5px;
         font-size: 10.5px;
         color: #8d9596;
@@ -233,15 +211,13 @@
         b { font-weight: 700; color: #dfe5e5; }
     }
 
-    .szf-cmp-cap { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .szf-cmp-legend { display: flex; justify-content: space-between; }
-
-    // One sheet wiped over the other. Sized in JS to the row's own shape
-    // (chrome74: no aspect-ratio); max-width keeps it inside a narrow pane.
+    // One sheet wiped over the other. As wide as the pane, its height the
+    // row's own shape through padding-bottom set inline (chrome74: no
+    // aspect-ratio), so it starts level with the clip beside it.
     .szf-cmp-wipe {
         position: relative;
-        max-width: 100%;
-        margin: 0 auto;
+        width: 100%;
+        height: 0;
         border-radius: 6px;
         background: #0e0f10;
         overflow: hidden;

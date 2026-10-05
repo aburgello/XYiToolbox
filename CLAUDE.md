@@ -1175,10 +1175,15 @@ campaign, each with its clip beside its mech sheet.
   map, `pinMarketsJson` (CSV index → market code; nested objects lose their
   values over the bridge). The run copies it like any master, so the other
   market's project is never opened.
-- **In that window the sheet pane COMPARES**: the row's own mech sheet
-  against the approved one's, side by side or WIPED (a divider dragged with
-  mouse events), with the approved deliverable's own paged sheets as a third
-  mode. **Never a pixel difference**: two markets' sheets differ in language,
+- **In that window the sheet pane COMPARES**: the row's own pictures WIPED
+  over the approved one's (a divider dragged with mouse events). **One mode,
+  no switch above it** (a three-way toggle shipped for an hour: it pushed the
+  wipe down beside a clip that starts at the top, and only the first picture
+  could be wiped). It PAGES: both folders list the same way (sheet, numbered
+  slots, ARTWORK_ONLY), so picture N of one goes over picture N of the other
+  and a side with nothing at N says so. The box is the pane's full width and
+  the row's own shape via inline `padding-bottom`, kept between 0.3 and 1.25
+  of the width. **Never a pixel difference**: two markets' sheets differ in language,
   date and size, so one lights up everywhere and says nothing. The row has no
   filename until it is built, so its JPG_PNG folder is found by what the row
   states (`folderIsRow`: size exactly, length, creative, and the site when

@@ -35,7 +35,6 @@ import { byCloseness, closeness, Closeness, marketOfName, parseWanted, ratioLabe
 import { Approved, findApprovedProject, findRowArt } from "../lib/sizeScan";
 import { hasNode, isChecking, listDir, onApprovedChange, peekApproved, readApproved } from "../lib/sizeFinderStore";
 import Dropdown from "../Dropdown";
-import SegmentedToggle from "../SegmentedToggle";
 import VideoOverlay from "../VideoOverlay";
 import "../shared.scss";
 import "./SizeFinder.scss";
@@ -192,30 +191,34 @@ const ComparePic: React.FC<{ pic: Pic | null; none: string }> = ({ pic, none }) 
     return <img src={toFileUrl(pic.path)} alt="" draggable={false} onError={() => setBroken(true)} />;
 };
 
-const CMP_STORE = "xyi.sizefinder.compare";
-
 /**
- * THE ROW'S OWN SHEET AGAINST THE APPROVED ONE'S. Opened from a batch row, the
- * question is "is this the same layout", and that is answered by looking at
- * the two mech sheets together: side by side, or one WIPED over the other
- * with a divider to drag. Not a pixel difference: two markets' sheets differ
- * in language, date and usually size, so a difference image lights up
- * everywhere and says nothing.
+ * THE ROW'S OWN PICTURES AGAINST THE APPROVED ONE'S, WIPED. Opened from a
+ * batch row, the question is "is this the same layout", and that is answered
+ * by laying one mech sheet over the other with a divider to drag. Not a pixel
+ * difference: two markets' sheets differ in language, date and usually size,
+ * so a difference image lights up everywhere and says nothing.
+ *
+ * ONE MODE, AND IT PAGES. It shipped with a three-way toggle over it (side by
+ * side, wipe, the approved sheets), which pushed the wipe down beside a clip
+ * that starts at the top, and the wipe only ever showed the first picture.
+ * Both folders list the same way (the sheet, then the numbered slots, then
+ * ARTWORK_ONLY), so picture N of one is wiped over picture N of the other,
+ * and a side with nothing at N says so.
  *
  * The row has no filename until it is built, so its JPG_PNG folder is found by
  * what the row states (findRowArt) and used only when exactly ONE matches.
  * None (the artwork has not landed) or several (the row does not say enough)
- * is said, and the approved sheet is shown alone as it always was.
+ * is said, and the approved sheets are shown alone as they always were.
  */
 const ComparePane: React.FC<{ row: Approved; use: UseAsMaster }> = ({ row, use }) => {
     const spec = use.row as RowSpec;
     const [mine, setMine] = useState<{ pics: Pic[]; folders: number } | null>(null); // null = looking
     const [theirs, setTheirs] = useState<Pic[] | null>(null);
-    const [mode, setMode] = useState(() => { try { return localStorage.getItem(CMP_STORE) || "side"; } catch { return "side"; } });
     const [split, setSplit] = useState(50);
+    const [at, setAt] = useState(0);
     const boxRef = useRef<HTMLDivElement | null>(null);
 
-    // The row's own sheet: looked for once per window, it does not change with the card picked.
+    // The row's own pictures: looked for once per window, they do not change with the card picked.
     useEffect(() => {
         let alive = true;
         setMine(null);
@@ -230,11 +233,10 @@ const ComparePane: React.FC<{ row: Approved; use: UseAsMaster }> = ({ row, use }
     useEffect(() => {
         let alive = true;
         setTheirs(null);
+        setAt(0);
         folderPics(row.artFolder, row.artFolderName).then((p) => { if (alive) setTheirs(p); });
         return () => { alive = false; };
     }, [row.id]);
-
-    const pickMode = (v: string) => { setMode(v); try { localStorage.setItem(CMP_STORE, v); } catch { /* a convenience only */ } };
 
     // Mouse events, not pointer events: the macOS CEP host doesn't reliably send those.
     const drag = (e: React.MouseEvent) => {
@@ -254,7 +256,7 @@ const ComparePane: React.FC<{ row: Approved; use: UseAsMaster }> = ({ row, use }
     if (mine === null || theirs === null) return <div className="szf-none">Looking for the two sheets…</div>;
     const here = use.territory || "this market";
     if (!mine.pics.length) {
-        // Nothing of the row's to compare with: the approved sheet alone, and why.
+        // Nothing of the row's to compare with: the approved sheets alone, and why.
         const why = mine.folders > 1
             ? `${mine.folders} JPG_PNG folders in ${here} could be this row's, so none is compared. A site on the row narrows it.`
             : mine.folders === 1
@@ -267,46 +269,38 @@ const ComparePane: React.FC<{ row: Approved; use: UseAsMaster }> = ({ row, use }
             </>
         );
     }
-    const a = mine.pics[0];
-    const b = theirs[0] || null;
-    const noneB = row.artFolder ? "No JPG or PNG in its JPG_PNG folder." : `No JPG_PNG folder for it in ${row.territory}.`;
-    const box = fitBox(spec.w, spec.h, 440, 340);
+    const count = Math.max(mine.pics.length, theirs.length);
+    const n = at % count;
+    const a = mine.pics[n] || null;
+    const b = theirs[n] || null;
+    const step = (by: number) => setAt((n + by + count) % count);
+    const noneB = theirs.length
+        ? `${row.territory} has no picture ${n + 1}.`
+        : row.artFolder ? "No JPG or PNG in its JPG_PNG folder." : `No JPG_PNG folder for it in ${row.territory}.`;
+    // The row's own shape, as a share of the pane's WIDTH (padding-bottom:
+    // chrome74 has no aspect-ratio), kept between a strip and a tall card so
+    // an extreme format neither vanishes nor runs off the window.
+    const tall = Math.max(0.3, Math.min(1.25, spec.h / spec.w));
+    const name = (a || b || { name: "" }).name;
     return (
         <div className="szf-cmp">
-            <div className="szf-cmp-bar">
-                <SegmentedToggle
-                    name="szf-compare"
-                    value={mode}
-                    onChange={pickMode}
-                    options={[{ value: "side", label: "Side by side" }, { value: "wipe", label: "Wipe" }, { value: "theirs", label: `${row.territory}'s sheets` }]}
-                />
+            <div className="szf-cmp-wipe" ref={boxRef} style={{ paddingBottom: tall * 100 + "%" }} onMouseDown={drag}>
+                <span className="szf-cmp-layer"><ComparePic pic={b} none={noneB} /></span>
+                <span className="szf-cmp-layer szf-cmp-layer--top" style={{ clipPath: `inset(0 ${100 - split}% 0 0)`, WebkitClipPath: `inset(0 ${100 - split}% 0 0)` }}>
+                    <ComparePic pic={a} none={`${here} has no picture ${n + 1}.`} />
+                </span>
+                <span className="szf-cmp-divider" style={{ left: split + "%" }}><i /></span>
             </div>
-            {mode === "theirs" ? (
-                <SheetPane row={row} />
-            ) : mode === "wipe" ? (
-                <>
-                    <div className="szf-cmp-wipe" ref={boxRef} style={box} onMouseDown={drag}>
-                        <span className="szf-cmp-layer"><ComparePic pic={b} none={noneB} /></span>
-                        <span className="szf-cmp-layer szf-cmp-layer--top" style={{ clipPath: `inset(0 ${100 - split}% 0 0)`, WebkitClipPath: `inset(0 ${100 - split}% 0 0)` }}>
-                            <ComparePic pic={a} none="" />
-                        </span>
-                        <span className="szf-cmp-divider" style={{ left: split + "%" }}><i /></span>
-                    </div>
-                    <div className="szf-cmp-legend">
-                        <span><b>This row</b> · {here}</span>
-                        <span>{row.territory} · <b>approved</b></span>
-                    </div>
-                </>
-            ) : (
-                <div className="szf-cmp-side">
-                    <span className="szf-cmp-cell">
-                        <span className="szf-cmp-frame" style={{ height: box.height }}><ComparePic pic={a} none="" /></span>
-                        <span className="szf-cmp-cap"><b>This row</b> · {here} · {spec.w}×{spec.h}</span>
-                    </span>
-                    <span className="szf-cmp-cell">
-                        <span className="szf-cmp-frame" style={{ height: box.height }}><ComparePic pic={b} none={noneB} /></span>
-                        <span className="szf-cmp-cap"><b>Approved</b> · {row.territory} · {row.w}×{row.h}</span>
-                    </span>
+            <div className="szf-cmp-legend">
+                <span><b>This row</b> · {here}</span>
+                <span>{row.territory} · <b>approved</b></span>
+            </div>
+            {count > 1 && (
+                <div className="szf-pager">
+                    <button type="button" onClick={() => step(-1)} aria-label="Previous picture"><ChevronLeft size={14} /></button>
+                    <span className="szf-pager-count">{n + 1} of {count}</span>
+                    <button type="button" onClick={() => step(1)} aria-label="Next picture"><ChevronRight size={14} /></button>
+                    <span className="szf-pager-name" title={name}>{name}</span>
                 </div>
             )}
         </div>

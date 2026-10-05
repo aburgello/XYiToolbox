@@ -132,14 +132,20 @@ for (const f of ["SF_INTL_Trio_DOOH_Cinema_768x1280px_10s_IT.mp4", "SF_INTL_Trio
     }
 }
 
-// Denmark's own artwork for the first builder row, to compare a sheet with.
+// Denmark's own artwork for the first builder row (the sheet and two slots),
+// and Italy's for the approved Cinema (the sheet and one), to wipe and page.
 {
     const D = "SF_INTL_Trio_DOOH_ShowtimeCinemasTPED_768x1280px_30s_DK";
-    const parts = ("/Volumes/paramount/SF/XY026205_Markets/Denmark/JPG_PNG/Batch_1/" + D + "/" + D + ".jpg").split("/");
-    for (let i = 2; i <= parts.length; i++) {
-        const dir = parts.slice(0, i - 1).join("/");
-        const list = (APPROVED[dir] = APPROVED[dir] || []);
-        if (!list.some((e) => e.name === parts[i - 1])) list.push({ name: parts[i - 1], dir: i < parts.length });
+    const I = "SF_INTL_Trio_DOOH_Cinema_768x1280px_10s_IT";
+    const M = "/Volumes/paramount/SF/XY026205_Markets/";
+    for (const f of [`Denmark/JPG_PNG/Batch_1/${D}/${D}.jpg`, `Denmark/JPG_PNG/Batch_1/${D}/${D}1.png`, `Denmark/JPG_PNG/Batch_1/${D}/${D}2.png`,
+        `Italy/JPG_PNG/Batch_1/${I}/${I}.jpg`, `Italy/JPG_PNG/Batch_1/${I}/${I}1.png`]) {
+        const parts = (M + f).split("/");
+        for (let i = 2; i <= parts.length; i++) {
+            const dir = parts.slice(0, i - 1).join("/");
+            const list = (APPROVED[dir] = APPROVED[dir] || []);
+            if (!list.some((e) => e.name === parts[i - 1])) list.push({ name: parts[i - 1], dir: i < parts.length });
+        }
     }
 }
 
@@ -447,22 +453,29 @@ try {
     await page.waitFor(`document.querySelector(".dropdown-option")`, 3000);
     await page.click(".dropdown-option", "Denmark");
     await page.click(".specs-build-seen");
-    check(await page.waitFor(`document.querySelectorAll(".szf-window .szf-cmp-side .szf-cmp-cell").length === 2`, 6000), "with the row's JPG_PNG folder found: the two sheets side by side");
-    const caps = await page.eval(`[...document.querySelectorAll(".szf-window .szf-cmp-cap")].map(e => e.innerText)`);
-    check(/This row · Denmark · 768×1280/.test(caps[0]) && /Approved · Italy/.test(caps[1]), "…each saying whose it is", caps);
-    await page.click(".szf-window .seg-option", "Wipe");
-    check(await page.waitFor(`document.querySelector(".szf-window .szf-cmp-wipe .szf-cmp-divider")`, 4000), "Wipe lays one over the other with a divider");
+    check(await page.waitFor(`document.querySelector(".szf-window .szf-cmp-wipe .szf-cmp-divider")`, 6000), "with the row's JPG_PNG folder found: its sheet wiped over the approved one's");
+    check(!(await page.eval(`!!document.querySelector(".szf-window .szf-cmp .segmented-toggle")`)), "…and nothing above it: no mode switch");
+    const legend = await page.eval(text(".szf-window .szf-cmp-legend"));
+    check(/This row · Denmark/.test(legend) && /Italy · approved/.test(legend), "…saying which side is whose", legend);
+    const tops = await page.eval(`({ clip: document.querySelector(".szf-window .szf-pane video").getBoundingClientRect().top, wipe: document.querySelector(".szf-window .szf-cmp-wipe").getBoundingClientRect().top })`);
+    check(Math.abs(tops.clip - tops.wipe) < 2, "the wipe starts level with the clip beside it", tops);
+    const shape = await page.eval(`(() => { const r = document.querySelector(".szf-window .szf-cmp-wipe").getBoundingClientRect(); return r.height / r.width; })()`);
+    check(Math.abs(shape - 1.25) < 0.02, "…in the row's own shape, capped for a tall one", shape);
     const before = await page.eval(`document.querySelector(".szf-window .szf-cmp-divider").style.left`);
     await page.eval(`(() => { const el = document.querySelector(".szf-window .szf-cmp-wipe"); const r = el.getBoundingClientRect(); const at = (x) => ({ bubbles: true, clientX: r.left + r.width * x, clientY: r.top + 10 }); el.dispatchEvent(new MouseEvent("mousedown", at(0.5))); window.dispatchEvent(new MouseEvent("mousemove", at(0.2))); window.dispatchEvent(new MouseEvent("mouseup", at(0.2))); })()`);
     await pause(150);
     const after = await page.eval(`document.querySelector(".szf-window .szf-cmp-divider").style.left`);
-    check(before === "50%" && Math.abs(parseFloat(after) - 20) < 1.5, "…which follows a drag (mouse events)", { before, after });
+    check(before === "50%" && Math.abs(parseFloat(after) - 20) < 1.5, "the divider follows a drag (mouse events)", { before, after });
+    const cpager = () => page.eval(text(".szf-window .szf-cmp .szf-pager"));
+    check(/1 of 3/.test(await cpager()) && /30s_DK\.jpg/.test(await cpager()), "it pages through every picture, opening on the sheets", await cpager());
+    await page.click(".szf-window .szf-cmp .szf-pager button[aria-label='Next picture']");
+    check(/2 of 3/.test(await cpager()) && /DK1\.png/.test(await cpager()), "next is slot 1 of each", await cpager());
+    check(Math.abs(parseFloat(await page.eval(`document.querySelector(".szf-window .szf-cmp-divider").style.left`)) - 20) < 1.5, "…with the divider left where it was put");
+    await page.click(".szf-window .szf-cmp .szf-pager button[aria-label='Next picture']");
+    check(/3 of 3/.test(await cpager()) && /Italy has no picture 3/.test(await page.eval(text(".szf-window .szf-cmp-wipe"))), "a picture only one side has says so on the other", await page.eval(text(".szf-window .szf-cmp-wipe")));
+    await page.click(".szf-window .szf-cmp .szf-pager button[aria-label='Next picture']");
+    check(/1 of 3/.test(await cpager()), "and round to the sheets again");
     await page.shot(path.join(SHOTS, "ui-compare-wipe.png"));
-    await page.click(".szf-window .seg-option", "Italy's sheets");
-    check(await page.waitFor(`!document.querySelector(".szf-window .szf-cmp-wipe") && !document.querySelector(".szf-window .szf-cmp-side")`, 4000), "the third mode is the approved deliverable's own sheets, paged as before");
-    await page.click(".szf-window .seg-option", "Side by side");
-    await page.waitFor(`document.querySelector(".szf-window .szf-cmp-side")`, 4000);
-    await page.shot(path.join(SHOTS, "ui-compare-side.png"));
     await page.click(".szf-window-close");
 
     console.log("\n6b. Hand-picking a master");
