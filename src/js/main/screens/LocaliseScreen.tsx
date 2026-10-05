@@ -12,7 +12,7 @@ import { motion, useReducedMotion } from "motion/react";
 import gsap from "gsap";
 import LoadingChatter from "../LoadingChatter";
 import {    Layers,
- ArrowLeft, FileSignature, Stamp, ClipboardCheck, Clapperboard, FileText, Copy, Image as ImageIcon, FileSpreadsheet, Rabbit, ScanSearch, Repeat, FileSearch, ListChecks } from "lucide-react";
+ ArrowLeft, FileSignature, Stamp, ClipboardCheck, Clapperboard, FileText, Copy, Image as ImageIcon, FileSpreadsheet, Rabbit, ScanSearch, Repeat, FileSearch, ListChecks, Ruler } from "lucide-react";
 import { TOOLS, categoryStyleVars, type ToolProps } from "../toolRegistry";
 import { ToolErrorBoundary } from "../ToolErrorBoundary";
 import { PaletteTrigger, triggerPalette } from "../CommandPalette";
@@ -97,6 +97,8 @@ const TOOLS_ROW: (UtilityEntry & { run?: string })[] = [
     { id: "generate-cue-sheet",label: "Cue Sheet",      icon: FileText },
     { id: "name-generator",    label: "Name Generator", icon: FileSignature },
     { id: "edit-generator",    label: "Edit Generator", icon: Clapperboard },
+    // In Prepare: it is asked before a build, about a size nobody has made yet.
+    { id: "size-finder",       label: "Size Finder",    icon: Ruler },
 ];
 
 // Tools that draw their OWN header on this screen, so the shared strip
@@ -107,7 +109,7 @@ const OWN_HEADER_IDS = ["localised-library"];
 // The same tools, by the kind of job. Every TOOLS_ROW id appears exactly once;
 // an id missing here would simply not render, so keep the two in step.
 const TOOL_GROUPS: { name: string; ids: string[] }[] = [
-    { name: "Prepare",      ids: ["pdf-to-csv", "name-generator", "edit-generator", "generate-cue-sheet"] },
+    { name: "Prepare",      ids: ["pdf-to-csv", "name-generator", "edit-generator", "generate-cue-sheet", "size-finder"] },
     { name: "Swap & build", ids: ["ov-swap", "jpeg-loc", "aep-thief", "bespoke"] },
     { name: "Check",        ids: ["artwork-check", "check", "name-audit", "cheeky-dt"] },
 ];

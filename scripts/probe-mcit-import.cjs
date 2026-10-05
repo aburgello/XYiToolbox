@@ -223,5 +223,27 @@ say(r8.items[0].action === 'no-match', 'two sites at one size stay a no-match', 
 r8 = aeft.mcItApplyToOpenProject(oneSlot(OVPNG), UA + '_V01.aep', [new File(`${UAD}/${UASITE}.png`), new File(`${UAD}/${UA}.png`)], true, undefined, '');
 say(decodeURI(r8.items[0].newName || '') === UA + '.png', 'an exact identity still wins outright', r8.items[0].newName);
 
+// 9. A project built from ANOTHER MARKET'S APPROVED deliverable (Size Finder's
+// "Use as this row's master"): its slots carry _DK where a master's carry _OV.
+function slotIn(folderName, orig) {
+    const fold = new FolderItem(folderName);
+    const it = new FootageItem(new File('/m/' + orig), fold);
+    fold.numItems = 1; fold.item = () => it;
+    const footage = new FolderItem('Footage'); footage.numItems = 1; footage.item = () => fold; fold.parentFolder = footage;
+    const items = [footage, fold, it];
+    return { numItems: 3, item: (i) => items[i - 1], items: { addFolder: () => new FolderItem('x') }, importFile: () => new FootageItem(null) };
+}
+const TW = 'SF_INTL_Trio_DOOH_Taipei_768x1280px_30s_TW';
+const TWD = '/b/JPG_PNG/' + TW;
+const DKPNG = 'SF_INTL_Trio_DOOH_Kube_768x1280px_30s_DK1.png';
+let r9 = aeft.mcItApplyToOpenProject(slotIn('PNG', DKPNG), TW + '_V01.aep', [new File(`${TWD}/${TW}1.png`)], true, undefined, '');
+say(r9.items[0].action === 'replaced' && decodeURI(r9.items[0].newName) === TW + '1.png', "a PNG folder already re-matches another market's slot by number", r9.items[0].action + ' ' + (r9.items[0].newName || r9.items[0].reason));
+r9 = aeft.mcItApplyToOpenProject(slotIn('Artwork', DKPNG), TW + '_V01.aep', [new File(`${TWD}/${TW}1.png`)], true, undefined, '');
+say(r9.items[0].action === 'skipped', 'in Artwork, a _DK file is not a target on an ordinary run', r9.items[0].reason);
+r9 = aeft.mcItApplyToOpenProject(slotIn('Artwork', DKPNG), TW + '_V01.aep', [new File(`${TWD}/${TW}1.png`)], true, undefined, '', 'DK');
+say(r9.items[0].action === 'replaced', '…and is one when the row was built from DK on purpose', r9.items[0].action + ' ' + (r9.items[0].newName || r9.items[0].reason));
+r9 = aeft.mcItApplyToOpenProject(slotIn('Artwork', 'Sky_Grade_2.png'), TW + '_V01.aep', [new File(`${TWD}/${TW}2.png`)], true, undefined, '', 'DK');
+say(r9.items[0].action === 'skipped', '…while a file with neither token stays out of it', r9.items[0].reason);
+
 console.log(fails === 0 ? '\nCLEAN — each project gets its own images, once.' : '\n' + fails + ' FAILED');
 process.exit(fails ? 1 : 0);

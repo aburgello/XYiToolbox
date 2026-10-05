@@ -93,7 +93,31 @@ function bridgeSource(fixturesSrc) {
   };
   posix.posix = posix;
   const EMPTY = { existsSync: false, readdirSync: [], readFileSync: "", constants: {} };
-  const inert = new Proxy({}, { get: (t, k) => (k === "constants" ? {} : (k in EMPTY ? () => EMPTY[k] : () => undefined)) });
+  // One exception, and only when a test asks: readdir answers from
+  // window.__fsTree ({ "/dir": [{ name, dir }] }) so a tool that LISTS folders
+  // (Size Finder) can be shown a tree. Still nothing real is read.
+  const fakeReaddir = (dir, opts, cb) => {
+    const tree = window.__fsTree;
+    if (!tree) return undefined;
+    const list = tree[String(dir).replace(/[/]+$/, "")];
+    setTimeout(() => (list ? cb(null, list.map((e) => ({ name: e.name, isDirectory: () => !!e.dir }))) : cb(new Error("ENOENT"))), 0);
+  };
+  // And, under the same opt-in, a few FILE calls against window.__fsFiles
+  // ({ path: text }) so a team-folder cache can be read and written. Folder
+  // listings come from __fsTree; __fsDelay (ms) slows listings to watch a
+  // background check happen.
+  const fileCalls = {
+    readFile: (p, enc, cb) => { if (!window.__fsTree) return undefined; const f = window.__fsFiles || {}; setTimeout(() => (p in f ? cb(null, f[p]) : cb(new Error("ENOENT"))), 0); },
+    writeFile: (p, body, enc, cb) => { if (!window.__fsTree) return undefined; (window.__fsFiles = window.__fsFiles || {})[p] = String(body); setTimeout(() => cb(null), 0); },
+    rename: (a, b, cb) => { if (!window.__fsTree) return undefined; const f = window.__fsFiles || {}; if (a in f) { f[b] = f[a]; delete f[a]; } setTimeout(() => cb(null), 0); },
+    mkdir: (p, cb) => { if (!window.__fsTree) return undefined; setTimeout(() => cb(null), 0); },
+  };
+  const slowReaddir = (dir, opts, cb) => {
+    if (!window.__fsTree) return undefined;
+    const ms = window.__fsDelay || 0;
+    return ms ? setTimeout(() => fakeReaddir(dir, opts, cb), ms) : fakeReaddir(dir, opts, cb);
+  };
+  const inert = new Proxy({}, { get: (t, k) => (k === "constants" ? {} : k === "readdir" ? slowReaddir : k in fileCalls ? fileCalls[k] : (k in EMPTY ? () => EMPTY[k] : () => undefined)) });
   // child_process: INERT too -- it runs nothing. execFile answers from
   // window.__fakeXattr[path] (hex FinderInfo) when a test sets it, and spawn
   // only records into window.__spawned.

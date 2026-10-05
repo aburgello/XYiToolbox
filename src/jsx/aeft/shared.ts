@@ -88,6 +88,8 @@ export interface LocGenRowReport {
   imagesReplaced?: number;
   imagesNote?: string;
   componentsSwapped?: number;
+  /** Built from another market's approved deliverable: what that means for the row. */
+  sourceNote?: string;
 }
 
 export interface LocGenResult {

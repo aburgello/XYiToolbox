@@ -9753,3 +9753,105 @@ window) were not touched.
 
 **Not done:** none of the thirty was opened in the panel. Both builds pass
 and the Localise, home and palette UI checks still click through.
+
+
+## 2026-10-02 — Size Finder
+
+Asked for: a way to type a resolution and see what has already been approved
+at the closest proportions, with the mp4 and the PDF, so a new size can be
+matched to something made before.
+
+What the share turned out to hold (Street Fighter, read 2026-10-02): delivered
+files are mp4s in `Renders/<Batch>/_Delivery` and `Renders/_Delivery`, so the
+approved file is its own preview; `PDFs/<Batch>/` holds one PDF per
+deliverable, named by the mech team (`Digital_Metro` for our `DigitalMetro`,
+`_V2` for `_V01`). One campaign reads in ~0.7s from Node: 245 approved in 160
+sizes, 235 playable, 196 with a PDF. The 49 without are named for another
+length or site (Belgium's delivered `…_DOOH_1080x1920px_15s_BE` against a PDF
+called `…_DOOH_MotionPoster_1080x1920px_10s_BE`), left unpaired on purpose.
+
+The UI harness's inert `fs` gained one exception, `readdir` from
+`window.__fsTree`, so the page can be clicked through on a fake tree.
+
+First run in AE, same day: the clip played, and the PDF pane read
+"require$$6.createCanvas is not a function". pdf.js detects Node in CEP and
+takes its Node branch, which wants the `canvas` npm module. `pdfSpecs.ts`
+never hit it because it only reads text. `lib/pdfPage.ts` was deleted; the
+pane now shows the JPG the mech team exports from that PDF into the
+deliverable's JPG_PNG folder (189 of Street Fighter's 245 approved have the
+folder, and all 189 hold a JPG named as the folder is). Also from that run:
+the typed size shows its ratio, and the cards say how far the RATIO is off
+rather than "2.8× larger".
+
+**Not done:** the JPG pane has not been seen in After Effects. The harness
+blocks file:// images, so there it only proves a sheet was found.
+
+
+## 2026-10-02 — Size Finder reaches the builder; the inline switches go
+
+Asked how Size Finder could come into localising without touching master
+selection. Answer built: a "seen before" pill on a Build a Batch row, counted
+from what the campaign has had approved for that row's creative at that exact
+ratio, opening Size Finder on it. Two decisions:
+
+- It opens in a window over the builder. Navigating to the tool would unmount
+  the Localise panes (they are dropped when one of the page's tools opens),
+  and the batch being edited with them.
+- It counts and shows; it does not feed the scorer. Using an approved
+  deliverable as the row's starting project was discussed and held back.
+
+The approved-deliverables read moved into `lib/sizeFinderStore.ts`, kept per
+campaign for the session, so the hint and the tool share one read.
+
+Same request: the MC It! and Support Swap checkboxes beside Localise are
+gone. Both always run inline; `csvLocaliserRun` still takes the two flags,
+now always true. The batch table behind `batchOpen` turned out to have no
+`setBatchOpen` call left, so the hint went into Build a Batch only.
+
+**Not done:** neither the pill nor the window has been seen in After Effects.
+
+
+## 2026-10-05 — Size Finder keeps a copy in the team folder
+
+Asked whether the team folder could make it faster. It can: one JSON read per
+campaign against a few hundred folder listings (~0.7-0.9s for Street Fighter
+from Node). `misc/sizes/<campaign>.json` holds the last scan, written by the
+tagged machine that made it; a reader shows it at once and rescans behind it,
+rewriting the copy only when the disk says something different. Rows store
+paths relative to the Markets root.
+
+Asked in the same breath whether the Tracker would gain from the same thing.
+Not much: since 2026-10-01 the Tracker's folders are already read by the
+panel in ~40ms; what is left is the MERGE with Wrike inside After Effects'
+engine (and `trackerLocate`, once a session), which a cached listing does not
+shorten. The background check here does not hold the panel or AE either way:
+Node's file calls are asynchronous, and no bridge call is made for them.
+
+The UI harness's opt-in fake fs gained readFile/writeFile/rename/mkdir over
+`window.__fsFiles` and a `__fsDelay` for listings, so the copy-then-check
+sequence can be watched in `ui-size-finder.mjs`.
+
+**Not done:** not run against the real team folder. Whether the panel's Node
+may write there on a given machine (this shell is refused on
+/Volumes/newmedia; the release script is not) is the first thing to check.
+
+
+## 2026-10-05 — Use as this row's master
+
+The idea held back on 2026-10-02 was built after all: a row in Build a Batch
+can be built from another market's approved deliverable, picked in the Size
+Finder window. It was in a stash when a Batch Tracker hotfix (20261029) went
+out, and was finished afterwards.
+
+How it avoids the cut-down problem: the row carries the market its source was
+made for (`pinMarketsJson`), and for that one project MC It! and Support Swap
+treat that market's token as the slot to swap from. Nothing else about either
+tool changes; section 9 of `probe-mcit-import.cjs` and of
+`probe-support-swap.cjs` hold both halves, and `ui-localise.mjs` 6a2 clicks
+through the refusal by length, the pin and the way back to automatic.
+
+**Not done:** no row has been built this way in After Effects. The probes
+stub the project, so what a real localised project does when it is scaled a
+second time, and whether its comp is found by the file's stem, are unproven.
+The earlier "not done" notes above (the JPG pane, the pill and the window,
+the team folder write) still stand.

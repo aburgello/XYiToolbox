@@ -338,5 +338,40 @@ console.log('\n8. a market holding VARIANTS of an OV file offers them, and appli
     say(real.success && its[0].replacedWith === null && /SF_TT_TH_RGB/.test(its[1].replacedWith || ''), 'a real run swaps the title and leaves the date alone');
 }
 
+// ---------------------------------------------------------------------------
+// 9. A project built from ANOTHER MARKET'S APPROVED deliverable: _DK stands
+// in for _OV for that one project, and nowhere else.
+console.log("\n9. built from Denmark's approved deliverable, for Taiwan");
+{
+    const say = (ok, msg, extra) => { if (!ok) fails++; console.log((ok ? '  ok    ' : '  FAIL  ') + msg + (extra ? '   ' + extra : '')); };
+    const TWT = '/Volumes/paramount/…/Markets/Taiwan';
+    const S = TWT + '/Masters/Support';
+    const dir = (p, kids) => { tree[p] = kids; };
+    dir(TWT, ['Masters']); dir(TWT + '/Masters', ['Support']);
+    dir(S, ['Trio']);
+    dir(S + '/Trio', ['Date', 'TT']);
+    dir(S + '/Trio/Date', ['SF_Trio_Date_White_TW_RGB.ai']);
+    dir(S + '/Trio/TT', ['SF_TT_TW_RGB.ai']);
+    const pf = new FolderItem('Support');
+    const its = [
+        new FootageItem(new File('/x/SF_Trio_Date_White_DK_RGB.ai'), pf),   // DK's, TW has its own
+        new FootageItem(new File('/x/SF_Trio_Logo_DK_RGB.ai'), pf),         // DK's, TW has none
+        new FootageItem(new File('/x/SF_TT_OV_RGB.ai'), pf),                // still an OV slot
+    ];
+    const proj = { numItems: its.length, item: (i) => its[i - 1] };
+    const cands = aeft.ssCollectSupport(new Folder(S));
+    const creatives = aeft.ssCreativesOf(cands);
+    const aep = 'SF_INTL_Trio_DOOH_Taipei_768x1280px_30s_TW_V01.aep';
+    const row = (rep, n) => rep.items.filter((r) => r.name === n)[0] || {};
+    const plain = aeft.ssApplyToOpenProject(proj, aep, cands, creatives, true);
+    say(row(plain, 'SF_Trio_Date_White_DK_RGB.ai').action === 'no-match' && /DK version/.test(row(plain, 'SF_Trio_Date_White_DK_RGB.ai').reason), 'an ordinary run still refuses DK -> TW, as a fixable no-match', row(plain, 'SF_Trio_Date_White_DK_RGB.ai').reason);
+    const built = aeft.ssApplyToOpenProject(proj, aep, cands, creatives, true, undefined, 'DK');
+    say(row(built, 'SF_Trio_Date_White_DK_RGB.ai').newName === 'SF_Trio_Date_White_TW_RGB.ai', 'built from DK on purpose: DK -> TW is swapped like OV -> TW', JSON.stringify(row(built, 'SF_Trio_Date_White_DK_RGB.ai')));
+    say(row(built, 'SF_Trio_Logo_DK_RGB.ai').action === 'no-match' && /Still the DK version/.test(row(built, 'SF_Trio_Logo_DK_RGB.ai').reason), "DK's file with no TW version is a fault to fix, not 'not localised yet'", row(built, 'SF_Trio_Logo_DK_RGB.ai').reason);
+    say(row(built, 'SF_TT_OV_RGB.ai').newName === 'SF_TT_TW_RGB.ai', 'an OV slot in the same project still swaps', row(built, 'SF_TT_OV_RGB.ai').newName);
+    const bogus = aeft.ssApplyToOpenProject(proj, aep, cands, creatives, true, undefined, 'OV2');
+    say(row(bogus, 'SF_Trio_Date_White_DK_RGB.ai').action === 'no-match', 'a stand-in that is not a market code is ignored');
+}
+
 console.log(fails === 0 ? '\nCLEAN — the rule holds on every real family surveyed.' : '\n' + fails + ' FAILED');
 process.exit(fails ? 1 : 0);

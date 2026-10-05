@@ -34,6 +34,7 @@ import {
     Grid3x3,
     Expand,
     Scan,
+    Ruler,
     FileSpreadsheet,
     Repeat,
     Layers,
@@ -67,6 +68,7 @@ const NameGeneratorTool     = React.lazy(() => import("./tools/NameGenerator"));
 const CampaignLocaliserTool = React.lazy(() => import("./tools/CampaignLocaliser"));
 const CSVLocaliserTool      = React.lazy(() => import("./tools/CSVLocaliser"));
 const ArtworkCheckTool     = React.lazy(() => import("./tools/ArtworkCheck"));
+const SizeFinderTool       = React.lazy(() => import("./tools/SizeFinder"));
 const BatchTrackerTool     = React.lazy(() => import("./tools/BatchTracker"));
 const WorkflowBoardTool    = React.lazy(() => import("./tools/WorkflowBoard"));
 const EditGeneratorTool     = React.lazy(() => import("./tools/EditGenerator"));
@@ -125,6 +127,7 @@ const PREFETCH_MAP: Record<string, () => Promise<any>> = {
     "campaign-localiser": () => import("./tools/CampaignLocaliser"),
     "csv-localiser":      () => import("./tools/CSVLocaliser"),
     "artwork-check":      () => import("./tools/ArtworkCheck"),
+    "size-finder":        () => import("./tools/SizeFinder"),
     "batch-tracker":      () => import("./tools/BatchTracker"),
     "edit-generator":     () => import("./tools/EditGenerator"),
     "generate-cue-sheet": () => import("./tools/GenerateCueSheet"),
@@ -618,6 +621,17 @@ export const TOOLS: ToolEntry[] = [
         Component: ExtremeTools02Tool,
         actions: ["Adjust From CSV", "Build From CSV"],
         description: "CSV-driven builder/adjuster for the extreme formats.",
+    },
+    {
+        id: "size-finder",
+        label: "Size Finder",
+        categories: ["localise"],
+        icon: Ruler,
+        Component: SizeFinderTool,
+        actions: ["Re-read", "Play large", "Open the PDF", "Open JPG_PNG", "Show in Finder"],
+        // Reads folder listings and plays files. Nothing is written anywhere.
+        actionSafety: { "Re-read": "read" },
+        description: "Type a size: the approved deliverables closest to that ratio, each with its clip and its mech sheet.",
     },
     {
         id: "name-audit",

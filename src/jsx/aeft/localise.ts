@@ -4017,7 +4017,8 @@ function csvLocNameGen(
   repeatFactor?: number,
   ssCands?: SupportSwapCandidate[],
   ssCreatives?: string[],
-  ssOut?: McItProjectReport[]
+  ssOut?: McItProjectReport[],
+  asOv?: string
 ): void {
   const scanRegV = /V\d\d/;
   const myName = myComp.name;
@@ -4163,7 +4164,7 @@ function csvLocNameGen(
   // localisation work that has already succeeded on this file.
   if (mcItImages && mcItImages.length > 0 && mcItAepName) {
     try {
-      const rep = mcItApplyToOpenProject(app.project, mcItAepName, mcItImages, false, undefined, mcItImportFolder);
+      const rep = mcItApplyToOpenProject(app.project, mcItAepName, mcItImages, false, undefined, mcItImportFolder, asOv);
       if (mcItOut) mcItOut.push(rep);
     } catch (mcErr) {
       if (mcItOut) {
@@ -4183,7 +4184,7 @@ function csvLocNameGen(
   // must never lose the localisation work that has already succeeded here.
   if (ssCands && ssCands.length > 0 && mcItAepName) {
     try {
-      const ssRep = ssApplyToOpenProject(app.project, mcItAepName, ssCands, ssCreatives || [], false);
+      const ssRep = ssApplyToOpenProject(app.project, mcItAepName, ssCands, ssCreatives || [], false, undefined, asOv);
       if (ssOut) ssOut.push(ssRep);
     } catch (ssErr) {
       /* reported as zero swapped for this row, never fatal */
@@ -4230,6 +4231,7 @@ export interface CsvLocRowReport {
   // Set when the master was PICKED in the panel rather than scored. Same
   // reason: the report should say which rows a person overrode.
   masterNote?: string;
+  sourceNote?: string;
   /** The language token this row was built with ("FL"), when it had one. */
   language?: string;
 }
@@ -4380,7 +4382,8 @@ export const csvLocaliserRun = (
   runMcIt?: boolean,
   multiplesJson?: string,
   runSupportSwap?: boolean,
-  pinnedJson?: string
+  pinnedJson?: string,
+  pinMarketsJson?: string
 ): CsvLocResult => {
   csvLocSaveLastPath(mastersPath);
   // Masters a person PICKED for a row, CSV row index -> master path. A flat
@@ -4399,6 +4402,26 @@ export const csvLocaliserRun = (
       }
     } catch (e) {
       // Malformed pins fall back to the scorer for every row, as before pins.
+    }
+  }
+  // A pin that is ANOTHER MARKET'S APPROVED DELIVERABLE (Size Finder's "Use as
+  // this row's master"): CSV row index -> the market code its artwork carries.
+  // A second flat map rather than an object per pin, because nested objects
+  // lose their values crossing the bridge. For that row only, MC It! and
+  // Support Swap treat this market's token as the OV slot to swap FROM.
+  const pinMarkets: { [index: string]: string } = {};
+  if (pinMarketsJson) {
+    try {
+      const parsedMarkets = JSON.parse(pinMarketsJson);
+      if (parsedMarkets) {
+        for (const mkKey in parsedMarkets) {
+          if (!parsedMarkets.hasOwnProperty(mkKey)) continue;
+          const code = String(parsedMarkets[mkKey] || "").toUpperCase();
+          if (/^[A-Z]{2,3}$/.test(code) && code !== "OV") pinMarkets[String(mkKey)] = code;
+        }
+      }
+    } catch (e) {
+      // No stand-in markets: a pinned project is swapped as a master would be.
     }
   }
   const multipleRows: { [index: string]: number } = {};
@@ -4637,6 +4660,7 @@ export const csvLocaliserRun = (
       if (siteToken !== "") rep.site = siteToken;
 
       const pinnedPath = pinnedRows[String(rowsAttempted - 1)];
+      let rowAsOv = "";
       let bestMatch: MasterIndexEntry | null = null;
       if (pinnedPath) {
         for (let pi = 0; pi < mastersIndex.length; pi++) {
@@ -4686,6 +4710,19 @@ export const csvLocaliserRun = (
           continue;
         }
         rep.masterNote = "Master picked by hand: " + bestMatch.name;
+        const fromMarket = pinMarkets[String(rowsAttempted - 1)] || "";
+        if (fromMarket !== "") {
+          // Built from this very market's deliverable would swap nothing and
+          // read as a clean localise. Refused.
+          if (fromMarket === String(territoryCode).toUpperCase()) {
+            rep.status = "no-master";
+            rep.error = "The approved deliverable picked for this row is already " + fromMarket + "'s. Pick one from another market, or a master.";
+            continue;
+          }
+          rowAsOv = fromMarket;
+          rep.sourceNote = "Built from " + fromMarket + "'s approved " + bestMatch.name + ", its " + fromMarket + " artwork swapped for " + territoryCode
+            + "'s. Text typed in the comps is still " + fromMarket + "'s: check it.";
+        }
       } else {
         bestMatch = pickBestMasterFromIndex(mastersIndex, campaign, size, duration);
       }
@@ -4805,7 +4842,7 @@ export const csvLocaliserRun = (
       // own size, not the master's.
       const rowMcItReports: McItProjectReport[] = [];
       const rowSsReports: McItProjectReport[] = [];
-      csvLocNameGen(myComp, width, height, newCompName, plm, mcItImages, newCompName + "_V01.aep", rowMcItReports, mcItImportFolder, repeatFactor, ssCands, ssCreatives, rowSsReports);
+      csvLocNameGen(myComp, width, height, newCompName, plm, mcItImages, newCompName + "_V01.aep", rowMcItReports, mcItImportFolder, repeatFactor, ssCands, ssCreatives, rowSsReports, rowAsOv);
       if (rowSsReports.length > 0) {
         ssReports.push(rowSsReports[0]);
         rep.componentsSwapped = ssCountReplaced(rowSsReports[0]);
@@ -4907,6 +4944,7 @@ export const csvLocaliserRun = (
       imagesReplaced: rr.imagesReplaced,
       imagesNote: rr.imagesNote,
       componentsSwapped: rr.componentsSwapped,
+      sourceNote: rr.sourceNote,
     });
   }
   saveLocGenReport({

@@ -14,6 +14,10 @@
 // =============================================================================
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import SizeFinderTool from "./SizeFinder";
+import { hasNode as sizeHasNode, onApprovedChange, peekApproved, readApproved } from "../lib/sizeFinderStore";
+import { countAtRatio, ratioLabel } from "../lib/sizeMatch";
+import type { Approved } from "../lib/sizeScan";
 import { motion, useReducedMotion } from "motion/react";
 import { territoryNameFlag } from "../lib/jobsFeed";
 import { takePendingBatch, setPendingBespoke, type PendingBatch } from "../lib/localiseHandoff";
@@ -50,13 +54,12 @@ import {
     Circle,
     Pin,
     Languages,
-
+    Ruler,
 } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import type { ToolProps } from "../toolRegistry";
 import { fs, path } from "../../lib/cep/node";
-import CheckboxToggle from "../CheckboxToggle";
 import Tooltip from "../Tooltip";
 import Dropdown from "../Dropdown";
 import Droplet from "../Droplet";
@@ -654,7 +657,11 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
     // reopens and resaves every file for the same result. The image folder is
     // derived (<Territory>/JPG_PNG/<Batch>, sibling of the AE folder), never
     // asked for -- see csvLocaliserRun's mcIt setup block.
-    const [runMcIt, setRunMcIt] = useState(true);
+    //
+    // ALWAYS ON since 2026-10-02: the checkbox beside Localise is gone, because
+    // nobody was unticking it. A redo is on the batch row's ⋯ menu and in the
+    // Toolset; a batch with no JPG_PNG folder gets a note, not a failure.
+    const runMcIt = true;
     // The .ai/.psd half of the same job, on by default alongside MC It!.
     //
     // It shipped OFF, on the reasoning that it needs a Masters/Support tree not
@@ -663,7 +670,8 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
     // campaign WITH one and the toggle forgotten gets a batch of files still
     // pointing at OV artwork, which is the failure nobody notices until
     // delivery. The cheap outcome should be the default.
-    const [runSupportSwap, setRunSupportSwap] = useState(true);
+    // Always on, like MC It! above, and for the same reason.
+    const runSupportSwap = true;
     // Batches whose footage was already swapped by the inline pass this
     // session (keyed by batchKey). Only used to relabel the standalone MC It!
     // button as a deliberate RE-run, so it doesn't read as the expected next
@@ -692,6 +700,25 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
     // The tool's own root, used only to read the category tint back off it for
     // portalled content.
     const toolRootRef = useRef<HTMLDivElement>(null);
+
+    // SEEN BEFORE: what this campaign has already had approved, so a builder
+    // row can say "made at this ratio 3 times" and open Size Finder on it. A
+    // reference only: nothing here reaches the master lookup, the pins or the
+    // run. Read once a session through the store Size Finder itself uses.
+    const [approved, setApproved] = useState<Approved[]>([]);
+    const [sizeLook, setSizeLook] = useState<{ size: string; creative: string; rowId: number; seconds: number } | null>(null);
+    useEffect(() => {
+        let alive = true;
+        setApproved([]);
+        if (!sizeHasNode || !campaignName || !marketsRoot) return;
+        readApproved(campaignName, marketsRoot).then((r) => { if (alive) setApproved(r.rows); });
+        // The team copy answers first; the disk check behind it may add to it.
+        const off = onApprovedChange(() => {
+            const r = peekApproved(campaignName, marketsRoot);
+            if (alive && r) setApproved(r.rows);
+        });
+        return () => { alive = false; off(); };
+    }, [campaignName, marketsRoot]);
 
     // categoryStyleVars() sets --cat-* as an inline style on an ANCESTOR of
     // this tool (see main.tsx / ToolScreen), so they cascade normally into the
@@ -1114,7 +1141,10 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
     // answer to one creative/size/duration, so editing any of those drops it
     // (updateBuildRow, revertBuildRow): a pin for a 15s landscape Trio has no
     // business surviving the row being changed to 10s portrait.
-    const [buildPins, setBuildPins] = useState<Record<number, { name: string; path: string }>>({});
+    // `market`/`from`: set when the pin is ANOTHER MARKET'S APPROVED
+    // deliverable, picked in Size Finder. The run then swaps that market's
+    // artwork as it would a master's OV (csvLocaliserRun's pinMarketsJson).
+    const [buildPins, setBuildPins] = useState<Record<number, { name: string; path: string; market?: string; from?: string }>>({});
     // The master picker's open state: which row, and what the host offered.
     // `source` is the folder the list was read from when it isn't the
     // campaign's masters folder ("Look in another folder…").
@@ -1528,16 +1558,20 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
             const multiplesForRun: Record<number, number> = {};
             // Same indexing as the multiples, for the same reason.
             const pinsForRun: Record<number, string> = {};
+            // A SEPARATE flat map for pins that are another market's approved
+            // deliverable: nested objects lose their values over the bridge.
+            const pinMarketsForRun: Record<number, string> = {};
             buildComplete.forEach((r, n) => {
                 const pin = buildPins[r.id];
                 if (pin) {
                     pinsForRun[n] = pin.path;
+                    if (pin.market) pinMarketsForRun[n] = pin.market;
                     return;
                 }
                 const f = buildMultiples[r.id];
                 if (f > 1) multiplesForRun[n] = f;
             });
-            const res = await evalTS("csvLocaliserRun", aepPath, csv, skipExisting, runMcIt, JSON.stringify(multiplesForRun), runSupportSwap, JSON.stringify(pinsForRun));
+            const res = await evalTS("csvLocaliserRun", aepPath, csv, skipExisting, runMcIt, JSON.stringify(multiplesForRun), runSupportSwap, JSON.stringify(pinsForRun), JSON.stringify(pinMarketsForRun));
             if (res === undefined) throw new Error("no bridge");
             if (res.success) {
                 const rrows = (res as { rows?: CsvLocRow[] }).rows || [];
@@ -3411,7 +3445,9 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
                                         // master" and "no master" are both answered there.
                                         if (pin) {
                                             return (
-                                                <Tooltip text={`Master picked by hand: ${pin.name}. Click to change or go back to automatic.`}>
+                                                <Tooltip text={pin.market
+                                                    ? `Built from ${pin.from || pin.market}'s approved ${pin.name.replace(/\.aep$/i, "")}. MC It! and Support Swap swap its ${pin.market} artwork for this market's; text typed in its comps stays ${pin.market}'s. Click to change or go back to automatic.`
+                                                    : `Master picked by hand: ${pin.name}. Click to change or go back to automatic.`}>
                                                     <button type="button" className="specs-master specs-master--pick specs-master--pinned" onClick={() => pickBuildMaster(r)} aria-label="Change master">
                                                         <Pin size={11} />
                                                     </button>
@@ -3586,6 +3622,25 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
                                         row and collapses to just the ✕ when nothing does. */}
                                     <span className="specs-build-end">
                                         {(() => {
+                                            // SEEN BEFORE. Only when this creative has been
+                                            // approved at this exact ratio: a hint that is on
+                                            // every row is one nobody reads.
+                                            const w = parseInt(r.width, 10);
+                                            const h = parseInt(r.height, 10);
+                                            const cr = buildRowCreative(r);
+                                            if (!approved.length || !cr || !(w > 0) || !(h > 0)) return null;
+                                            const seen = countAtRatio(approved, w, h, cr);
+                                            const n = seen.exact + seen.same;
+                                            if (!n) return null;
+                                            return (
+                                                <Tooltip text={`${cr} has been approved ${n} time${n === 1 ? "" : "s"} at ${ratioLabel(w, h)}${seen.exact ? `, ${seen.exact} at exactly ${w}×${h}` : ""}. Click to see them. Changes nothing about this row.`}>
+                                                    <button type="button" className="specs-build-seen" onClick={() => setSizeLook({ size: `${w}x${h}`, creative: cr, rowId: r.id, seconds: parseInt(r.duration, 10) || 0 })} aria-label="See approved deliverables at this ratio">
+                                                        <Ruler size={10} />{n}
+                                                    </button>
+                                                </Tooltip>
+                                            );
+                                        })()}
+                                        {(() => {
                                             const src = r.srcIndex !== undefined && buildOrigin ? buildOrigin.rows[r.srcIndex] : null;
                                             const warns = src ? specRowWarnings(src) : [];
                                             if (!warns.length) return null;
@@ -3647,23 +3702,9 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
                                 of the same name next to it would read as the same
                                 control twice. The redo lives on the batch row's ⋯
                                 menu and in the Toolset. */}
-                            {/* THE SETTING THAT GOVERNS THE BUTTON NEXT TO IT.
-                                It lives in Setup beside "Skip existing files",
-                                which is collapsed by the time anybody is editing
-                                rows -- so a run fired from here swapped footage
-                                or didn't, and nothing on screen said which. Same
-                                `runMcIt` state as Setup's copy, so the two can
-                                never disagree. */}
-                            <Tooltip text="Swap each generated file's PNG/JPG footage for the localised versions in the territory's JPG_PNG batch folder, while the file is still open, instead of re-opening every file afterwards with MC It!">
-                                <span className="specs-build-inline-opt">
-                                    <CheckboxToggle checked={runMcIt} onChange={setRunMcIt} label="MC It!" />
-                                </span>
-                            </Tooltip>
-                            <Tooltip text="Swap each generated file's .ai/.psd component sources for this market's own, from the territory's Masters/Support, while the file is still open. Needs that folder to exist.">
-                                <span className="specs-build-inline-opt">
-                                    <CheckboxToggle checked={runSupportSwap} onChange={setRunSupportSwap} label="Support Swap" />
-                                </span>
-                            </Tooltip>
+                            {/* NO SWITCHES. MC It! and Support Swap both run
+                                during the localise, always (2026-10-02): the two
+                                checkboxes that sat here were never unticked. */}
                             <button className="specs-build-run" disabled={busy || !aepPath || !buildTerritory || buildComplete.length === 0} onClick={runBuilder}>
                                 <PlayCircle size={14} /> Localise {buildComplete.length || ""} row{buildComplete.length === 1 ? "" : "s"}
                             </button>
@@ -3681,6 +3722,41 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
                 <select> of sixty full filenames ran off the side of the panel
                 with no grouping and no way to tell a creative's own masters
                 from everyone else's. */}
+            {/* SIZE FINDER, OVER THE BUILDER. A window, not a navigation: opening
+                a Localise tool drops this page's panes, and the batch being
+                edited with them. Below VideoOverlay (1600), so "Play large"
+                still opens on top of it. */}
+            {sizeLook && createPortal(
+                <div className="szf-window-overlay" style={portalCatVars()} onClick={() => setSizeLook(null)} role="presentation">
+                    <div className="szf-window" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Size Finder">
+                        <div className="szf-window-head">
+                            <strong>Approved at this ratio</strong>
+                            <span>{sizeLook.creative} · {campaignName}</span>
+                            <button type="button" className="szf-window-close" onClick={() => setSizeLook(null)} aria-label="Close"><X size={14} /></button>
+                        </div>
+                        <SizeFinderTool
+                            key={sizeLook.size + sizeLook.creative}
+                            initialSize={sizeLook.size}
+                            initialCreative={sizeLook.creative}
+                            initialCampaign={campaignName}
+                            useAsMaster={{
+                                campaign: campaignName,
+                                marketsRoot,
+                                seconds: sizeLook.seconds,
+                                territory: buildTerritory,
+                                onUse: (row, project, market) => {
+                                    const rowId = sizeLook.rowId;
+                                    setBuildPins((prev) => ({ ...prev, [rowId]: { name: project.name, path: project.path, market, from: row.territory } }));
+                                    setSizeLook(null);
+                                    setNotice(`Row will be built from ${row.territory}'s ${project.name.replace(/\.aep$/i, "")}: its ${market} artwork is swapped as it builds. Check any text typed in its comps.`);
+                                },
+                            }}
+                        />
+                    </div>
+                </div>,
+                document.body
+            )}
+
             {masterPicker && createPortal(
                 (() => {
                     const mp = masterPicker;

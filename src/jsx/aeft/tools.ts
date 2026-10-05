@@ -3622,9 +3622,16 @@ export function mcItApplyToOpenProject(
   imageFiles: File[],
   dryRun?: boolean,
   overrides?: Record<string, string>,
-  importFolderName?: string
+  importFolderName?: string,
+  asOv?: string
 ): McItProjectReport {
   const parsedAEP = mcItParseFilename(aepFileName);
+  // AS OV: the market whose artwork this project currently carries, when it
+  // was built from another market's APPROVED deliverable on purpose (Size
+  // Finder's "Use as this row's master"). Only the Artwork folder's gate
+  // needs telling -- the dedicated PNG/JPG folders already re-match a
+  // localised project's "_DK1.png" by slot.
+  const asOvToken = asOv && /^[A-Za-z]{2,3}$/.test(asOv) && asOv.toUpperCase() !== "OV" ? asOv.toUpperCase() : "";
   const projReport: McItProjectReport = { aep: aepFileName, resolution: parsedAEP.thirdOne || "", items: [] };
 
   // BEFORE the swap, and regardless of how the swap goes. A territory supplies
@@ -3719,7 +3726,9 @@ export function mcItApplyToOpenProject(
           continue;
         }
 
-        if (isArtworkFolder && !/(^|[_\s])OV\d*[_\s.]/i.test(footageItem.file.name)) {
+        let carriesSlotToken = /(^|[_\s])OV\d*[_\s.]/i.test(footageItem.file.name);
+        if (!carriesSlotToken && asOvToken !== "") carriesSlotToken = new RegExp("(^|[_\\s])" + asOvToken + "\\d*[_\\s.]", "i").test(footageItem.file.name);
+        if (isArtworkFolder && !carriesSlotToken) {
           projReport.items.push({
             folder: targetFolder.name,
             name: footageItem.file.name,
@@ -4464,7 +4473,7 @@ function ssIsMarketToken(tok: string): boolean {
  * So these are OFFERED, never applied: the original's tokens in order, its OV
  * swapped for a market-shaped token, and up to two extra words in between.
  */
-export function ssVariantExtras(name: string, candName: string): string[] | null {
+export function ssVariantExtras(name: string, candName: string, asOv?: string): string[] | null {
   if (ssExt(name) !== ssExt(candName)) return null;
   const ta = ssTokens(name);
   const tb = ssTokens(candName);
@@ -4480,13 +4489,33 @@ export function ssVariantExtras(name: string, candName: string): string[] | null
         i++;
         continue;
       }
-      if (!swapped && ssIsOvToken(ta[i]) && ssIsMarketToken(tb[j]) && !ssIsOvToken(tb[j])) { swapped = true; i++; continue; }
+      if (!swapped && ssIsOvLike(ta[i], asOv) && ssIsMarketToken(tb[j]) && !ssIsOvLike(tb[j], asOv)) { swapped = true; i++; continue; }
     }
     if (ssIsOvToken(tb[j])) return null;
     extras.push(tb[j]);
   }
   if (i !== ta.length || !swapped || extras.length !== more) return null;
   return extras;
+}
+
+/**
+ * OV, or the market standing in for it. A project built from another market's
+ * APPROVED deliverable (Size Finder's "Use as this row's master") carries that
+ * market's components where a master carries OV ones, and the row says which
+ * market that is -- so for that project alone, "_DK_" is the slot to swap
+ * FROM. Everywhere else asOv is absent and this is ssIsOvToken exactly.
+ */
+function ssIsOvLike(tok: string, asOv?: string): boolean {
+  if (ssIsOvToken(tok)) return true;
+  return !!asOv && String(tok).toUpperCase() === String(asOv).toUpperCase();
+}
+
+function ssHasOvLikeToken(name: string, asOv?: string): boolean {
+  const t = ssTokens(name);
+  for (let i = 0; i < t.length; i++) {
+    if (ssIsOvLike(t[i], asOv)) return true;
+  }
+  return false;
 }
 
 /** Does this filename carry an OV token of its own? */
@@ -4636,7 +4665,7 @@ interface SsMatches {
  * Every candidate that differs from `name` by exactly one MARKET-SHAPED token,
  * sorted by what that difference means.
  */
-function ssMatchesFor(name: string, cands: SupportSwapCandidate[], post?: boolean): SsMatches {
+function ssMatchesFor(name: string, cands: SupportSwapCandidate[], post?: boolean, asOv?: string): SsMatches {
   const live: SsMatch[] = [];
   const ov: SsMatch[] = [];
   const foreign: SsMatch[] = [];
@@ -4669,8 +4698,8 @@ function ssMatchesFor(name: string, cands: SupportSwapCandidate[], post?: boolea
     const m: SsMatch = { cand: cands[i], fromToken: from, toToken: to, post: !!twin };
     // Never swap TOWARDS the master. A territory part-way through
     // localisation holds both, and offering the OV would undo work.
-    if (ssIsOvToken(to)) ov.push(m);
-    else if (ssIsOvToken(from)) live.push(m);
+    if (ssIsOvLike(to, asOv)) ov.push(m);
+    else if (ssIsOvLike(from, asOv)) live.push(m);
     else foreign.push(m);
   }
   // A POST deliverable takes the POST version wherever one exists, and the
@@ -4747,8 +4776,12 @@ export function ssApplyToOpenProject(
   cands: SupportSwapCandidate[],
   creatives: string[],
   dryRun?: boolean,
-  overrides?: Record<string, string>
+  overrides?: Record<string, string>,
+  asOv?: string
 ): McItProjectReport {
+  // A market standing in for OV (see ssIsOvLike) -- never OV itself, never
+  // anything that is not shaped like a market code.
+  const asOvToken = asOv && ssIsMarketToken(asOv) && !ssIsOvToken(asOv) ? String(asOv).toUpperCase() : "";
   // The creative this project is for, used ONLY to break a tie between two
   // creatives holding the same filename. Never to filter: a deliverable can
   // legitimately carry another creative's component (a shared bug, an
@@ -4783,10 +4816,10 @@ export function ssApplyToOpenProject(
       continue;
     }
 
-    const m = ssMatchesFor(name, cands, post);
+    const m = ssMatchesFor(name, cands, post, asOvToken);
 
     if (m.live.length === 0) {
-      if (m.same && !ssHasOvToken(name)) {
+      if (m.same && !ssHasOvLikeToken(name, asOvToken)) {
         // The identical file is sitting in this market's own tree, so there is
         // nothing to do. Worded to cover BOTH reasons that happens -- already
         // localised, or shared across every market -- because one market's
@@ -4818,7 +4851,7 @@ export function ssApplyToOpenProject(
       // already using, so nothing differs by one token and the ov list is
       // empty too. Reading the OV token off the item itself catches both,
       // and keeps "shared across markets" meaning only what it says.
-      if (ssHasOvToken(name)) {
+      if (ssHasOvLikeToken(name, asOvToken)) {
         // LOCALISED, BUT IN VERSIONS THE ORIGINAL'S NAME CANNOT CHOOSE BETWEEN
         // (ssVariantExtras). Offered for a pick, the project's own creative
         // first when it holds any; never applied.
@@ -4827,7 +4860,7 @@ export function ssApplyToOpenProject(
           let cn = decode(cands[k].file.name);
           const tw = ssPostTwinOf(cn);
           if (tw) { if (!post) continue; cn = tw; }
-          const ex = ssVariantExtras(name, cn);
+          const ex = ssVariantExtras(name, cn, asOvToken);
           if (!ex) continue;
           vars.push({
             name: cands[k].creative + " / " + cands[k].category + " / " + decode(cands[k].file.name),
@@ -4847,6 +4880,17 @@ export function ssApplyToOpenProject(
           projReport.items.push({
             folder: folderName, name: name, action: "no-match", key: key, candidates: vopts,
             reason: "This market has it as " + words.join(", ") + " — the OV's name doesn't say which, so pick one.",
+          });
+          continue;
+        }
+        // THE SOURCE MARKET'S FILE, LEFT BEHIND. In a project built from
+        // another market's approved deliverable this is that market's artwork
+        // sitting in this market's deliverable -- a fault to fix, never the
+        // calm "not localised yet" an OV file earns.
+        if (asOvToken !== "" && !ssHasOvToken(name)) {
+          projReport.items.push({
+            folder: folderName, name: name, action: "no-match", key: key,
+            reason: "Still the " + asOvToken + " version from the project this was built from, and this market has none to swap in. Pick one by hand.",
           });
           continue;
         }

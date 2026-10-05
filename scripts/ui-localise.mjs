@@ -113,9 +113,26 @@ async function openLocalise(page) {
     return ok;
 }
 
+// What Street Fighter has had approved, for the builder's "seen before" hint:
+// Trio twice at 3:5 (once at exactly 768x1280), nothing for any other row.
+const APPROVED = {};
+for (const f of ["SF_INTL_Trio_DOOH_Cinema_768x1280px_10s_IT.mp4", "SF_INTL_Trio_DOOH_Wall_1536x2560px_30s_IT.mp4", "SF_INTL_Characters_DOOH_Wall_1080x1920px_10s_IT.mp4"]) {
+    // The 30s Wall also has the project it was rendered from, so it can be built from.
+    const files = ["Renders/Batch_01/_Delivery/" + f].concat(/Wall_1536/.test(f) ? ["AE/Batch_1/" + f.replace(".mp4", "_V01.aep"), "AE/Batch_1/" + f.replace(".mp4", "_V02.aep")] : []);
+    for (const rel of files) {
+    const parts = ("/Volumes/paramount/SF/XY026205_Markets/Italy/" + rel).split("/");
+    for (let i = 2; i <= parts.length; i++) {
+        const dir = parts.slice(0, i - 1).join("/");
+        const list = (APPROVED[dir] = APPROVED[dir] || []);
+        if (!list.some((e) => e.name === parts[i - 1])) list.push({ name: parts[i - 1], dir: i < parts.length });
+    }
+    }
+}
+
 const page = await launch({ root: ROOT, fixturesSrc: FIXTURES });
 try {
     await page.goto();
+    await page.eval(`window.__fsTree = ${JSON.stringify(APPROVED)}`);
 
     console.log("\n1. Localise landing, side by side (760px)");
     check(await openLocalise(page), "the landing renders and the Library card loads its territories");
@@ -130,7 +147,7 @@ try {
     check((await page.eval(text(".ls-libcard-line"))).indexOf("310 components across 14 of 19") === 0, "the card says what is behind it", await page.eval(text(".ls-libcard-line")));
     const openBg = await page.eval(`getComputedStyle(document.querySelector(".ls-libcard-open")).backgroundColor`);
     check(openBg === "rgb(230, 244, 247)", "the Open button is the one light button (not repainted by .form-tool button)", openBg);
-    check((await page.eval(count(".ls-tool-group"))) === 3 && (await page.eval(count(".ls-tool-group .ls-grid-item"))) === 12, "tools: three groups, twelve tools (the Tracker is a pane, not a card)");
+    check((await page.eval(count(".ls-tool-group"))) === 3 && (await page.eval(count(".ls-tool-group .ls-grid-item"))) === 13, "tools: three groups, thirteen tools (the Tracker is a pane, not a card)");
     check(!(await page.eval(`!!document.querySelector(".specs-camp-banner") && getComputedStyle(document.querySelector(".specs-camp-banner")).display !== "none"`)), "no banner pinned: no empty banner block");
     check(await page.waitFor(`/Czechia/.test(document.querySelector(".ls-page-heading .ls-page-title")?.innerText || "")`, 4000), "the header says where you are", await page.eval(text(".ls-page-heading")));
     check((await page.eval(text(".ls-page-batch"))) === "· Batch_01", "…including the open project's batch", await page.eval(text(".ls-page-batch")));
@@ -359,10 +376,38 @@ try {
     check(built === n && n > 0, "…holding exactly the job's rows", { rows: built, sent: n });
     check(await page.waitFor(`document.querySelector(".specs-camp") && document.querySelector(".ls-libcard-row")`, 8000), "…under the same campaign card and Library");
     const buildBtns = await page.eval(`[...document.querySelectorAll(".specs-build-actions button")].map(b => b.innerText.replace(/\\s+/g, " ").trim())`);
-    // The redo buttons only ever appeared after a run, which this test does not
-    // make -- so this checks the switches, not their absence.
-    check(buildBtns.indexOf("MC It!") !== -1 && buildBtns.indexOf("Support Swap") !== -1, "the builder's switches read MC It! and Support Swap", buildBtns);
-    check(!buildBtns.some((t) => /inline/i.test(t)), "the switches no longer say 'inline'", buildBtns);
+    // MC It! and Support Swap always run during the localise now: no switch,
+    // and no redo button either (that is on the batch row's menu).
+    check(!buildBtns.some((t) => /MC It!|Support Swap|inline/i.test(t)) && buildBtns.some((t) => /^Localise/.test(t)), "the run bar has no MC It! or Support Swap switch, only Localise", buildBtns);
+    check(await page.eval(`document.querySelectorAll(".specs-build-actions input[type=checkbox], .specs-build-actions .checkbox-toggle").length`) === 0, "…and no checkbox at all");
+
+    console.log("\n6a. Seen before");
+    check(await page.waitFor(`document.querySelectorAll(".specs-build-seen").length === 1`, 6000), "one row's creative has been approved at its ratio: one hint, and only one", await page.eval(`document.querySelectorAll(".specs-build-seen").length`));
+    check((await page.eval(text(".specs-build-seen"))).trim() === "2", "…counting both the exact size and the same ratio", await page.eval(text(".specs-build-seen")));
+    await page.click(".specs-build-seen");
+    check(await page.waitFor(`document.querySelector(".szf-window .szf-card")`, 6000), "pressing it opens Size Finder in a window over the builder");
+    check((await page.eval(`document.querySelector(".szf-window .szf-size input").value`)) === "768x1280", "…on that row's size", await page.eval(`document.querySelector(".szf-window .szf-size input").value`));
+    check(await page.eval(`document.querySelectorAll(".szf-window .szf-card").length`) === 2 && /Trio/.test(await page.eval(text(".szf-window .szf-chip.is-on"))), "…and its creative: Trio's two, not Characters'", await page.eval(text(".szf-window .szf-creatives")));
+    await page.click(".szf-window-close");
+    check(await page.waitFor(`!document.querySelector(".szf-window")`, 3000), "closing it");
+    check((await page.eval(`document.querySelectorAll(".specs-build-rows .specs-build-row:not(.specs-build-row--head)").length`)) === n, "…leaves the batch being edited exactly as it was");
+
+    console.log("\n6a2. Use as this row's master");
+    await page.click(".specs-build-seen");
+    await page.waitFor(`document.querySelector(".szf-window .szf-btn--use")`, 6000);
+    check(await page.eval(`document.querySelector(".szf-window .szf-btn--use").disabled`) && /10s and the row is 30s/.test(await page.eval(text(".szf-window .szf-use-why"))), "another length is refused, and the button says why", await page.eval(text(".szf-window .szf-use-why")));
+    await page.click(".szf-window .szf-card", "1536×2560");
+    check(await page.waitFor(`/Wall_1536/.test(document.querySelector(".szf-window .szf-detail-head")?.innerText || "") && !document.querySelector(".szf-window .szf-btn--use").disabled`, 4000), "the same length from another market can be built from");
+    await page.click(".szf-window .szf-btn--use");
+    check(await page.waitFor(`!document.querySelector(".szf-window") && document.querySelectorAll(".specs-master--pinned").length === 1`, 6000), "pressing it closes the window and pins that row, and only that row");
+    const said = await page.eval(`[...document.querySelectorAll(".hint")].map(e => e.innerText).join(" | ")`);
+    check(/built from Italy's SF_INTL_Trio_DOOH_Wall_1536x2560px_30s_IT_V02: its IT artwork is swapped/.test(said), "…from its newest project, saying whose artwork gets swapped", said);
+    check((await page.eval(`document.querySelectorAll(".specs-build-rows .specs-build-row:not(.specs-build-row--head)").length`)) === n, "…with the batch otherwise as it was");
+    // Back to automatic, so the hand-pick below starts from a clean row.
+    await page.click(".specs-master--pinned");
+    await page.waitFor(`document.querySelector(".mpick")`, 4000);
+    await page.click(".mpick-option--auto");
+    check(await page.waitFor(`!document.querySelector(".mpick") && !document.querySelector(".specs-master--pinned")`, 4000), "and the picker takes it back to automatic");
 
     console.log("\n6b. Hand-picking a master");
     check(await page.waitFor(`document.querySelector(".specs-master--none")`, 6000), "an unmatched row offers to pick a master");

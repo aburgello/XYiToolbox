@@ -1097,6 +1097,85 @@ The open project's row is an outlined card, never an edge bar.
 `node scripts/probe-tracker.cjs` (the stub refuses every write but the
 rename's) and `node scripts/ui-tracker.mjs` guard it.
 
+**Size Finder answers "have we already made this shape?"** (`tools/SizeFinder.tsx`,
+`lib/sizeScan.ts`, `lib/sizeMatch.ts`; Localise, Prepare.) Type a size and get
+the approved deliverables closest to it, across every Localised Library
+campaign, each with its clip beside its mech sheet.
+- **Approved is a PLACE: a file in a `_Delivery` folder under a territory's
+  `Renders`** (the territory's own, or a batch's, dated subfolders walked).
+  Never Wrike, never a render that merely exists.
+- **Shape first, scale second.** 400x400 lists every square before a 400x420:
+  a square scales to a square. Exact, then the same ratio by scale, then the
+  nearest other ratio. **The label is about the RATIO, never the scale**
+  ("Same ratio · 1:1", "17:18 · 5.9% taller"): the size is already on the
+  card. The typed size shows its own ratio (`ratioLabel`: "2:1", or "1.45:1"
+  when it reduces to nothing sayable).
+- **What plays is the delivered file itself when it is an mp4**, else its
+  newest twin in the batch's `_mp4`. The PDF is `<Territory>/PDFs/**` (never
+  `_Old`; `_Delivered` is read), newest `_Vn`.
+- **The sheet SHOWN is the JPG, the PDF is a button.** The panel cannot draw
+  a PDF: in CEP pdf.js sees Node, takes its Node branch and fails on
+  "createCanvas is not a function". The same sheet is exported as a JPG into
+  the deliverable's `JPG_PNG` folder, named as the folder is (`pickSheet`;
+  the numbered `…2.jpg` and `_ARTWORK_` files are artwork). The folder is
+  found in the scan (batch level or none), the JPG on picking a row.
+- **Pairing is exact on `deliverableSquash`**: version, RES tail and ratio
+  token off, separators squashed (`Digital_Metro` is `DigitalMetro`), size and
+  length kept. A deliverable whose PDF is named for another length or site
+  shows "no PDF" and a button to the PDFs folder. Do not loosen it to fill
+  those in: a wrong sheet beside a clip is worse than none.
+- **A creative chip narrows it to one creative** (`creativeOfName`: the token
+  left of the artwork type, upper-cased to key so `TRIO` is `Trio`; a legacy
+  `DGTL` name carries none and files under "Other"). It filters and re-ranks
+  inside that creative; it never groups the page into sections. The pictures
+  in a deliverable's JPG_PNG folder PAGE, sheet first (`sheetImages`), then
+  `ARTWORK_ONLY`'s.
+- **The panel's Node lists the folders; AE is asked only for the campaign
+  list** (and, once a session, the team folder's path and the machine tag).
+  About a second a campaign. An unmounted root is named in the summary, never
+  an error.
+- **The team folder keeps a copy per campaign** (`misc/sizes/<campaign>.json`,
+  `lib/sizeFinderStore.ts`): memory, else the team copy SHOWN AT ONCE and
+  checked against the disk behind it ("checking for new deliveries…"), else
+  the disk. When the check differs the copy is replaced and every listener
+  redrawn. It is a CACHE, never a source of truth: rebuildable from Markets,
+  so concurrent writers cost nothing and nothing deletes it. Tagged machines
+  only write, through a temp file and a rename; an unmounted Markets share
+  never overwrites a copy; paths are stored RELATIVE to the Markets root.
+  `Re-read` goes to the disk and refreshes it.
+- The clip beside the PDF is an inline preview; "Play large" is the one
+  `VideoOverlay`.
+- **Build a Batch says when a row has been "seen before"**: a small ruler
+  pill with a count when THIS creative has been approved in THIS campaign at
+  the row's exact ratio. It opens Size Finder on that size and creative **in
+  a window over the builder, never by navigating** (opening a Localise tool
+  drops the page's panes and the batch being edited). **The pill is a
+  reference only:** it reads `lib/sizeFinderStore.ts` (the one per-campaign
+  read Size Finder itself uses) and nothing in it reaches the master lookup,
+  the pins or the run.
+- **"Use as this row's master" is the one thing that does, and only on a
+  press.** Offered in that window only (never on the tool's own page), it pins
+  the row to the approved deliverable's PROJECT (`findApprovedProject`:
+  `<Territory>/AE/<Batch>`, the delivered batch paired loosely, newest `_Vnn`,
+  never Auto-Save). Refused, with the reason beside the button, for another
+  campaign, the row's own territory, another length, a name with no market
+  token, or no project on disk. It rides the master pin, plus a second FLAT
+  map, `pinMarketsJson` (CSV index → market code; nested objects lose their
+  values over the bridge). The run copies it like any master, so the other
+  market's project is never opened.
+- **For that row only, the source market's token stands in for OV** (`asOv`):
+  MC It!'s Artwork-folder gate takes `_DK` slots as targets, Support Swap
+  swaps `_DK_` → this market as it does `_OV_`, and a `_DK_` file this market
+  has no version of is a fault to fix ("Still the DK version…"), never the
+  calm "not localised yet". Absent `asOv`, both behave exactly as before:
+  market→market is still refused everywhere else, cut-downs included. A
+  stand-in that is not market-shaped, or is this row's own market, is ignored
+  or refused. **Text typed in the comps is still the source market's**, and
+  the pin's tooltip, the notice and the report row (`sourceNote`) all say so:
+  nothing can swap it.
+`node scripts/probe-size-finder.mjs [Markets root]` (the optional root is
+listed read-only) and `node scripts/ui-size-finder.mjs` guard it.
+
 **Folders starting with `_` are excluded from every scan.** The one exception is
 Naming Audit, which skips only `Auto-Save`/`_Archive`/`_Old`/`_DEV`.
 
@@ -1133,7 +1212,10 @@ Naming Audit, which skips only `Auto-Save`/`_Archive`/`_Old`/`_DEV`.
   it off, `csvLocaliserRun` copied the master over an existing `_V01.aep`, an
   artist's localised file, and opened the copy. No run wants that, so
   `skipExisting` is a constant and "Done · Re-run" builds only what's missing.
-  The inline MC It! / Support Swap switches live in Build a Batch only.
+  **MC It! and Support Swap run INLINE on every localise, with no switch**
+  (2026-10-02; the two checkboxes in Build a Batch were never unticked).
+  `runMcIt`/`runSupportSwap` are constants like `skipExisting`; the redo is
+  the batch row's ⋯ menu and the Toolset.
 - Never loosen the CSV "already built" matcher into a fuzzy match. A false
   "already built" silently loses a deliverable; a false "new" costs one re-run.
 - Same for OV Swap's `scanOvSwap`: exact normalised name only, never

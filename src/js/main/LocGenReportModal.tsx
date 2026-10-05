@@ -32,6 +32,8 @@ export interface LocGenRow {
     imagesNote?: string; // why nothing was swapped for this row, if applicable
     /** CSV Localiser's inline Support Swap pass. */
     componentsSwapped?: number;
+    /** Built from another market's approved deliverable (Size Finder): what to check. */
+    sourceNote?: string;
 }
 
 export interface LocGenReport {
@@ -225,6 +227,7 @@ const LocGenReportModal: React.FC<{ report: LocGenReport; onClose: () => void }>
                                         </span>
                                     ) : null}
                                     {r.imagesNote ? <span className="locgen-row-muted"> · {r.imagesNote}</span> : null}
+                                    {r.sourceNote ? <span className="locgen-row-source"> · {r.sourceNote}</span> : null}
                                 </span>
                             </div>
                         </div>

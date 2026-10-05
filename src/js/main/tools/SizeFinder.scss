@@ -1,0 +1,433 @@
+// Size Finder. Everything is scoped under .szf, and every <button> declares
+// its own background for rest, hover AND active: index.scss's global
+// button:hover/:active paints over any that leaves them to the cascade.
+// chrome74: no aspect-ratio (the thumbnails are sized in JS), no min()/clamp().
+.szf {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 12px 16px 20px;
+    box-sizing: border-box;
+    overflow-y: auto;
+    color: #ddd;
+    font-family: -apple-system, "Segoe UI", sans-serif;
+    font-size: 12px;
+
+    .szf-bar {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        margin: -4px -4px 4px;
+
+        > * { margin: 4px; }
+    }
+
+    .szf-size {
+        flex: 1 1 160px;
+        display: flex;
+        align-items: center;
+        height: 34px;
+        padding: 0 10px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.35);
+
+        svg { flex-shrink: 0; margin-right: 8px; color: var(--cat-icon, #5eead4); }
+
+        input {
+            flex: 1;
+            min-width: 0;
+            height: 100%;
+            border: 0;
+            outline: 0;
+            background: transparent;
+            color: #fff;
+            font-size: 15px;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+        }
+
+        &:focus-within { border-color: var(--cat-border, #5eead4); }
+    }
+
+    // The typed size's own ratio, with a box of that shape beside it.
+    .szf-ratio {
+        display: inline-flex;
+        align-items: center;
+        flex-shrink: 0;
+        margin-left: 8px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--cat-icon, #5eead4);
+        font-size: 12px;
+        font-weight: 700;
+        white-space: nowrap;
+
+        i {
+            display: block;
+            margin-right: 7px;
+            border: 1.5px solid currentColor;
+            border-radius: 2px;
+            box-sizing: border-box;
+        }
+    }
+
+    .szf-campaign { flex: 0 1 200px; }
+
+    .szf-btn {
+        display: inline-flex;
+        align-items: center;
+        height: 30px;
+        padding: 0 11px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 7px;
+        background: rgba(255, 255, 255, 0.04);
+        color: #ddd;
+        font-size: 11.5px;
+        font-weight: 600;
+        cursor: pointer;
+        white-space: nowrap;
+
+        svg { margin-right: 6px; flex-shrink: 0; }
+
+        &:hover { background: rgba(255, 255, 255, 0.09); border-color: var(--cat-border, #5eead4); color: #fff; }
+        &:active { background: rgba(255, 255, 255, 0.14); }
+        &:disabled { opacity: 0.5; cursor: default; }
+    }
+
+    // The one action that changes something: build the row from this.
+    .szf-btn--use {
+        border-color: var(--cat-border, #5eead4);
+        background: rgba(94, 234, 212, 0.12);
+        color: #fff;
+
+        &:hover { background: rgba(94, 234, 212, 0.22); }
+        &:active { background: rgba(94, 234, 212, 0.3); }
+        &:disabled,
+        &:disabled:hover { background: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.14); color: #aaa; }
+    }
+
+    .szf-use-why { align-self: center; margin: 3px 3px 0; font-size: 10.5px; color: #8d9596; }
+
+    .szf-sum {
+        min-height: 16px;
+        margin: 4px 0 10px;
+        font-size: 11px;
+        color: #8d9596;
+
+        strong { color: #cfd6d6; font-weight: 600; }
+    }
+
+    .szf-common-label { display: block; margin-bottom: 6px; font-size: 11px; color: #8d9596; }
+
+    .szf-chips {
+        display: flex;
+        flex-wrap: wrap;
+        margin: -3px;
+    }
+
+    .szf-chip {
+        margin: 3px;
+        padding: 5px 9px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.04);
+        color: #ddd;
+        font-size: 11.5px;
+        font-weight: 600;
+        cursor: pointer;
+
+        em { margin-left: 6px; font-style: normal; font-weight: 400; color: #7f8787; }
+
+        &:hover { background: rgba(255, 255, 255, 0.09); border-color: var(--cat-border, #5eead4); }
+        &:active { background: rgba(255, 255, 255, 0.14); }
+        // The creative being looked at. Hover and active restated, or the
+        // global button states repaint the chip you are standing on.
+        &.is-on,
+        &.is-on:hover,
+        &.is-on:active { border-color: var(--cat-border, #5eead4); background: rgba(94, 234, 212, 0.14); color: #fff; }
+    }
+
+    .szf-creatives {
+        display: flex;
+        flex-wrap: wrap;
+        margin: 2px -3px 4px;
+    }
+
+    // ── the picked deliverable: its clip beside its PDF ──────────────────
+    .szf-detail {
+        margin-bottom: 14px;
+        padding: 11px 12px 12px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.03);
+    }
+
+    .szf-detail-head {
+        margin-bottom: 9px;
+
+        strong {
+            display: block;
+            font-size: 12.5px;
+            color: #fff;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        span { display: block; margin-top: 2px; font-size: 11px; color: #8d9596; }
+    }
+
+    .szf-pair {
+        display: flex;
+        margin: 0 -6px;
+    }
+
+    .szf-pane {
+        flex: 1 1 0;
+        min-width: 0;
+        margin: 0 6px;
+
+        video {
+            display: block;
+            width: 100%;
+            max-height: 360px;
+            border-radius: 6px;
+            background: #000;
+        }
+    }
+
+    .szf-pane-actions {
+        display: flex;
+        flex-wrap: wrap;
+        margin: 5px -3px -3px;
+
+        .szf-btn { margin: 3px; height: 26px; font-size: 11px; }
+    }
+
+    .szf-sheet {
+        display: block;
+        width: 100%;
+        max-height: 360px;
+        object-fit: contain;
+        border-radius: 6px;
+        background: #fff;
+    }
+
+    .szf-sheet.is-paged { cursor: pointer; }
+
+    .szf-pager {
+        display: flex;
+        align-items: center;
+        margin-top: 6px;
+        font-size: 11px;
+        color: #8d9596;
+
+        button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            width: 26px;
+            height: 24px;
+            padding: 0;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.04);
+            color: #ddd;
+            cursor: pointer;
+
+            &:hover { background: rgba(255, 255, 255, 0.09); border-color: var(--cat-border, #5eead4); color: #fff; }
+            &:active { background: rgba(255, 255, 255, 0.14); }
+        }
+    }
+
+    .szf-pager-count { flex-shrink: 0; margin: 0 8px; color: #cfd6d6; font-weight: 600; }
+
+    .szf-pager-name {
+        min-width: 0;
+        margin-left: 10px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .szf-none {
+        padding: 18px 12px;
+        border: 1px dashed rgba(255, 255, 255, 0.14);
+        border-radius: 6px;
+        font-size: 11px;
+        line-height: 1.45;
+        color: #8d9596;
+        text-align: center;
+    }
+
+    // ── results ──────────────────────────────────────────────────────────
+    // Columns share the row's whole width, so the grid's edges line up with
+    // the detail box above it. Fixed-width cards left the remainder as a gap
+    // on the right. (CSS grid and minmax() are fine on chrome74; min() is not.)
+    .szf-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        grid-gap: 10px;
+    }
+
+    .szf-card {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        min-width: 0;
+        padding: 8px 8px 9px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 9px;
+        background: rgba(255, 255, 255, 0.03);
+        color: #ddd;
+        text-align: left;
+        cursor: pointer;
+
+        &:hover { background: rgba(255, 255, 255, 0.07); border-color: rgba(255, 255, 255, 0.22); }
+        &:active { background: rgba(255, 255, 255, 0.1); }
+        &.is-active { border-color: var(--cat-border, #5eead4); background: rgba(255, 255, 255, 0.07); }
+    }
+
+    .szf-thumb {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 96px;
+        margin-bottom: 7px;
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.4);
+    }
+
+    .szf-thumb-shape {
+        display: block;
+        position: relative;
+        overflow: hidden;
+        border-radius: 2px;
+        background: rgba(255, 255, 255, 0.1);
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.16);
+
+        video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+
+            &.is-ready { opacity: 1; }
+        }
+    }
+
+    .szf-card-size {
+        font-size: 13px;
+        font-weight: 700;
+        color: #fff;
+
+        em { font-style: normal; font-weight: 400; color: #8d9596; }
+    }
+
+    .szf-card-near { margin-top: 2px; font-size: 10.5px; color: #b9a26a; }
+    .szf-card--exact .szf-card-near,
+    .szf-card--same-shape .szf-card-near { color: var(--cat-icon, #5eead4); }
+
+    .szf-card-where {
+        margin-top: 3px;
+        font-size: 10.5px;
+        color: #8d9596;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .szf-card-flags {
+        display: flex;
+        flex-wrap: wrap;
+        margin-top: 2px;
+
+        i {
+            margin: 3px 4px 0 0;
+            padding: 1px 5px;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.07);
+            font-style: normal;
+            font-size: 9.5px;
+            color: #9aa1a1;
+        }
+    }
+
+    .szf-more { align-self: flex-start; margin-top: 12px; }
+}
+
+@media (max-width: 620px) {
+    .szf .szf-pair { flex-direction: column; }
+    .szf .szf-pane + .szf-pane { margin-top: 10px; }
+}
+
+// Size Finder in a window over Build a Batch (CSVLocaliser's "seen before"
+// hint). Top level: it is portalled to <body>. 1500, the floating-panel tier,
+// so VideoOverlay (1600) still opens above it.
+.szf-window-overlay {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 1500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    background: rgba(8, 8, 10, 0.72);
+}
+
+.szf-window {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 980px;
+    height: 100%;
+    max-height: 860px;
+    background: var(--surface-0, #1c1c1e);
+    border: 1px solid var(--surface-edge, #3a3a3a);
+    border-radius: 10px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+    overflow: hidden;
+
+    .szf { flex: 1 1 auto; min-height: 0; height: auto; }
+}
+
+.szf-window-head {
+    display: flex;
+    align-items: baseline;
+    flex-shrink: 0;
+    padding: 11px 14px 9px;
+    border-bottom: 1px solid var(--surface-divider, #2a2a2a);
+    font-family: -apple-system, "Segoe UI", sans-serif;
+
+    strong { font-size: 13px; color: #fff; }
+    span { margin-left: 10px; font-size: 11px; color: #8d9596; }
+}
+
+.szf-window-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    align-self: center;
+    width: 24px;
+    height: 24px;
+    margin-left: auto;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #aaa;
+    cursor: pointer;
+
+    &:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+    &:active { background: rgba(255, 255, 255, 0.16); }
+}
