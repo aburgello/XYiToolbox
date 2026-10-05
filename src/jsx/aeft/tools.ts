@@ -3628,9 +3628,10 @@ export function mcItApplyToOpenProject(
   const parsedAEP = mcItParseFilename(aepFileName);
   // AS OV: the market whose artwork this project currently carries, when it
   // was built from another market's APPROVED deliverable on purpose (Size
-  // Finder's "Use as this row's master"). Only the Artwork folder's gate
-  // needs telling -- the dedicated PNG/JPG folders already re-match a
-  // localised project's "_DK1.png" by slot.
+  // Finder's "Use as this row's master"). The Artwork folder's gate needs
+  // telling (the dedicated PNG/JPG folders already re-match a localised
+  // project's "_DK1.png" by slot), and so does WHERE to look: see
+  // sourceImportFolders below.
   const asOvToken = asOv && /^[A-Za-z]{2,3}$/.test(asOv) && asOv.toUpperCase() !== "OV" ? asOv.toUpperCase() : "";
   const projReport: McItProjectReport = { aep: aepFileName, resolution: parsedAEP.thirdOne || "", items: [] };
 
@@ -3650,7 +3651,30 @@ export function mcItApplyToOpenProject(
   // ownProjectFolder, which is the whole reason this tool reported
   // "0 would be replaced" across a batch.
   const footageFolder = ownProjectFolder(proj, "Footage");
-  if (!footageFolder) {
+
+  // THE SOURCE MARKET'S OWN IMPORT FOLDER. A localised project keeps the
+  // images its territory supplied in a root-level "<Territory>_JPG_PNG" (this
+  // tool makes it, above), and artists build with them from there: Egypt's
+  // approved Kicking had every artwork layer pointing into "Egypt_JPG_PNG" and
+  // nothing in Footage/PNG, so a Thailand row built from it swapped nothing
+  // and kept Egypt's artwork. Only when the row was built from another market
+  // on purpose (asOv), only root-level folders named that way, never the one
+  // this run imports into, and only files carrying that market's token (the
+  // same gate as Artwork, below).
+  const sourceImportFolders: FolderItem[] = [];
+  if (asOvToken !== "") {
+    for (let si = 1; si <= proj.numItems; si++) {
+      const sItem = proj.item(si) as FolderItem;
+      if (typeof (sItem as any).numItems !== "number") continue;
+      const sName = decode(String(sItem.name));
+      if (sName.length <= 8 || sName.substring(sName.length - 8).toUpperCase() !== "_JPG_PNG") continue;
+      if (importFolderName && sName === importFolderName) continue;
+      if (!sItem.parentFolder || sItem.parentFolder.parentFolder != null) continue;
+      sourceImportFolders.push(sItem);
+    }
+  }
+
+  if (!footageFolder && sourceImportFolders.length === 0) {
     projReport.skipped = "No project folder named exactly 'Footage'.";
     return projReport;
   }
@@ -3662,12 +3686,16 @@ export function mcItApplyToOpenProject(
   // Safe to include: only .png/.jpe?g footage items are considered below
   // (PSDs untouched), and the same-type guard still applies.
   const targetFolders: FolderItem[] = [];
-  for (let i = 1; i <= footageFolder.numItems; i++) {
-    const item = footageFolder.item(i);
-    if (item instanceof FolderItem && (item.name === "PNG" || item.name === "JPG" || item.name === "JPEG" || item.name === "Images" || item.name === "Artwork")) {
-      targetFolders.push(item);
+  if (footageFolder) {
+    for (let i = 1; i <= footageFolder.numItems; i++) {
+      const item = footageFolder.item(i);
+      if (item instanceof FolderItem && (item.name === "PNG" || item.name === "JPG" || item.name === "JPEG" || item.name === "Images" || item.name === "Artwork")) {
+        targetFolders.push(item);
+      }
     }
   }
+  const ownTargetCount = targetFolders.length;
+  for (let sf = 0; sf < sourceImportFolders.length; sf++) targetFolders.push(sourceImportFolders[sf]);
   if (targetFolders.length === 0) {
     projReport.skipped = "No PNG/JPG/JPEG/Images/Artwork subfolder inside 'Footage'.";
     return projReport;
@@ -3688,9 +3716,15 @@ export function mcItApplyToOpenProject(
     // in losOpenForEdit()/jpegLoc(). Scoped to Artwork so re-running on an
     // already-localised project (footage renamed "..._HU1.png", no OV
     // left) still re-matches fine in the dedicated folders.
-    const isArtworkFolder = targetFolder.name === "Artwork";
+    // A source market's import folder is mixed too: it holds everything that
+    // territory supplied, used or not. Same token gate as Artwork, and a
+    // picture no comp uses is left alone without a word -- it is not a slot.
+    const isSourceImport = tf >= ownTargetCount;
+    const isArtworkFolder = targetFolder.name === "Artwork" || isSourceImport;
     for (let j = 1; j <= targetFolder.numItems; j++) {
       const footageItem = targetFolder.item(j) as FootageItem;
+      if (!footageItem || typeof (footageItem as any).numItems === "number") continue;
+      if (isSourceImport && (footageItem as any).usedIn && (footageItem as any).usedIn.length === 0) continue;
       if (footageItem.file && /\.(png|jpe?g)$/i.test(footageItem.file.name)) {
         const itemKey = targetFolder.name + "|" + footageItem.file.name;
         const overridePath = overrides ? overrides[itemKey] : undefined;

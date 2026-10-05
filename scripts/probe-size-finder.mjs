@@ -141,6 +141,23 @@ check((await scan.findApprovedProject(R, c, list)) === null, "no project on disk
 const loose = { ...a, batch: "" };
 check(/Batch_2\/.*_V07\.aep$/.test(((await scan.findApprovedProject(R, loose, list)) || {}).path || ""), "delivered from the territory's own _Delivery: every batch is looked in");
 
+console.log("\nA batch row's own artwork, to compare with");
+const TWR = { creative: "Trio", site: "Digital Metro", w: 1080, h: 1920, seconds: 10 };
+check(M.folderIsRow("SF_INTL_Trio_DOOH_DigitalMetro_9x16_1080x1920px_10s_TW", TWR), "a folder is the row's on its size, length, creative and site, however the site is spaced");
+check(!M.folderIsRow("SF_INTL_Trio_DOOH_DigitalMetro_1080x1920px_15s_TW", TWR) && !M.folderIsRow("SF_INTL_Trio_DOOH_DigitalMetro_1080x1080px_10s_TW", TWR), "…never on another length or size");
+check(!M.folderIsRow("SF_INTL_Characters_DOOH_DigitalMetro_1080x1920px_10s_TW", TWR) && !M.folderIsRow("SF_INTL_Trio_DOOH_Kiosk_1080x1920px_10s_TW", TWR), "…nor another creative or site");
+check(M.folderIsRow("SF_INTL_Trio_DOOH_Kiosk_1080x1920px_10s_TW", { ...TWR, site: "" }), "a row with no site takes any site (the caller wants exactly one)");
+const T = R + "/Taiwan";
+put(`${T}/JPG_PNG/Batch_1/SF_INTL_Trio_DOOH_DigitalMetro_9x16_1080x1920px_10s_TW/a.jpg`);
+put(`${T}/JPG_PNG/Batch_2/SF_INTL_Trio_DOOH_Digital_Metro_1080x1920px_10s_TW/a.jpg`);   // the same deliverable, a second batch
+put(`${T}/JPG_PNG/Batch_1/SF_INTL_Trio_DOOH_Kiosk_1080x1920px_10s_TW/a.jpg`);
+put(`${T}/JPG_PNG/_Old/SF_INTL_Trio_DOOH_DigitalMetro_1080x1920px_10s_TW/a.jpg`);
+const mineArt = await scan.findRowArt(T, TWR, list);
+check(mineArt.length === 1 && /Batch_1\/SF_INTL_Trio_DOOH_DigitalMetro_9x16/.test(mineArt[0].path), "one folder: under a batch, never _Old, the same deliverable in two batches counted once", mineArt.map((k) => k.path));
+check((await scan.findRowArt(T, { ...TWR, site: "" }, list)).length === 2, "no site on the row and two sites on disk: both come back, so nothing is compared");
+check((await scan.findRowArt(R + "/Peru", TWR, list)).length === 0 && (await scan.findRowArt("", TWR, list)).length === 0, "no JPG_PNG, or no territory: none");
+check((await scan.findRowArt(R + "/Chile", { creative: "StaticCast", site: "MallPlazaPOST", w: 672, h: 382, seconds: 10 }, list)).length === 1, "JPG_PNG with no batch level is read too");
+
 if (process.argv[2]) {
     console.log("\nA real root, read-only: " + process.argv[2]);
     const real = async (dir) => { try { return fs.readdirSync(dir, { withFileTypes: true }).map((d) => ({ name: d.name, path: join(dir, d.name), dir: d.isDirectory() })); } catch { return []; } };

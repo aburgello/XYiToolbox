@@ -24,7 +24,7 @@
 // is FOR (`_Delivery`, `_mp4`) and `PDFs/_Delivered`, where a batch's PDFs go
 // once it has shipped.
 // =============================================================================
-import { creativeOfName, deliverableSquash, sizeOfName, versionOf } from "./sizeMatch";
+import { creativeOfName, deliverableSquash, folderIsRow, RowSpec, sizeOfName, versionOf } from "./sizeMatch";
 
 export interface Kid { name: string; path: string; dir: boolean }
 export type Lister = (dir: string) => Promise<Kid[]>;
@@ -201,6 +201,34 @@ export async function findApprovedProject(marketsRoot: string, row: Approved, li
         }
     }
     return best ? { name: best.name, path: best.path } : null;
+}
+
+/**
+ * The JPG_PNG folders in ONE territory that could be a batch row's own
+ * artwork (folderIsRow): under a batch folder or straight under JPG_PNG, `_`
+ * folders left alone, the same folder under two batches counted once. Every
+ * candidate comes back, because the caller compares only when there is
+ * exactly one: none means the artwork has not landed, several means the row
+ * does not say enough to choose.
+ */
+export async function findRowArt(territoryPath: string, row: RowSpec, list: Lister): Promise<Kid[]> {
+    if (!territoryPath || !(row.w > 0) || !(row.h > 0)) return [];
+    const jp = child(await list(territoryPath), "JPG_PNG");
+    if (!jp) return [];
+    const level = (await list(jp.path)).filter((k) => k.dir && k.name.charAt(0) !== "_" && !hidden(k.name));
+    const found: Kid[] = level.filter((k) => sizeOfName(k.name));
+    const inside = await Promise.all(level.filter((k) => !sizeOfName(k.name)).map((b) => list(b.path)));
+    inside.forEach((kids) => kids.forEach((k) => { if (k.dir && k.name.charAt(0) !== "_" && !hidden(k.name) && sizeOfName(k.name)) found.push(k); }));
+    const out: Kid[] = [];
+    const seen: Record<string, true> = {};
+    for (const k of found) {
+        if (!folderIsRow(k.name, row)) continue;
+        const key = deliverableSquash(k.name);
+        if (seen[key]) continue;
+        seen[key] = true;
+        out.push(k);
+    }
+    return out;
 }
 
 /** Every approved deliverable under one Markets root. [] when it can't be listed. */

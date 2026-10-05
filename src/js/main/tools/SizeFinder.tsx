@@ -31,10 +31,11 @@ import { evalTS } from "../../lib/utils/bolt";
 import { child_process, path as nodePath } from "../../lib/cep/node";
 import { toFileUrl } from "../lib/fileUrl";
 import { usePosterFrame } from "../lib/renderPreview";
-import { byCloseness, closeness, Closeness, marketOfName, parseWanted, ratioLabel, repeatFor, sheetImages } from "../lib/sizeMatch";
-import { Approved, findApprovedProject } from "../lib/sizeScan";
+import { byCloseness, closeness, Closeness, marketOfName, parseWanted, ratioLabel, repeatFor, RowSpec, sheetImages } from "../lib/sizeMatch";
+import { Approved, findApprovedProject, findRowArt } from "../lib/sizeScan";
 import { hasNode, isChecking, listDir, onApprovedChange, peekApproved, readApproved } from "../lib/sizeFinderStore";
 import Dropdown from "../Dropdown";
+import SegmentedToggle from "../SegmentedToggle";
 import VideoOverlay from "../VideoOverlay";
 import "../shared.scss";
 import "./SizeFinder.scss";
@@ -111,8 +112,27 @@ const SizeCard: React.FC<{ hit: Hit; active: boolean; onPick: () => void; showCa
  * deliverable is picked -- the folder and one level under it -- not for every
  * row of the scan.
  */
+interface Pic { name: string; path: string }
+
+/** The pictures in one JPG_PNG folder, the sheet first, then what is one level under it. */
+async function folderPics(folder: string, folderName: string): Promise<Pic[]> {
+    if (!folder) return [];
+    const kids = await listDir(folder);
+    const own = sheetImages(folderName, kids.filter((k) => !k.dir).map((k) => k.name))
+        .map((name) => ({ name, path: nodePath.join(folder, name) }));
+    // ARTWORK_ONLY and the like, after the folder's own.
+    const subs = kids.filter((k) => k.dir && k.name.charAt(0) !== "_" && k.name.charAt(0) !== ".");
+    const inside = await Promise.all(subs.map((d) => listDir(d.path)));
+    const deeper: Pic[] = [];
+    subs.forEach((d, i) => {
+        sheetImages("", inside[i].filter((k) => !k.dir).map((k) => k.name))
+            .forEach((name) => deeper.push({ name: d.name + "/" + name, path: nodePath.join(d.path, name) }));
+    });
+    return own.concat(deeper);
+}
+
 const SheetPane: React.FC<{ row: Approved }> = ({ row }) => {
-    const [pics, setPics] = useState<{ name: string; path: string }[] | null>(null); // null = looking
+    const [pics, setPics] = useState<Pic[] | null>(null); // null = looking
     const [at, setAt] = useState(0);
     const [broken, setBroken] = useState<Record<string, true>>({});
 
@@ -121,21 +141,7 @@ const SheetPane: React.FC<{ row: Approved }> = ({ row }) => {
         setPics(null);
         setAt(0);
         setBroken({});
-        if (!row.artFolder) { setPics([]); return; }
-        (async () => {
-            const kids = await listDir(row.artFolder);
-            const own = sheetImages(row.artFolderName, kids.filter((k) => !k.dir).map((k) => k.name))
-                .map((name) => ({ name, path: nodePath.join(row.artFolder, name) }));
-            // ARTWORK_ONLY and the like, after the folder's own.
-            const subs = kids.filter((k) => k.dir && k.name.charAt(0) !== "_" && k.name.charAt(0) !== ".");
-            const inside = await Promise.all(subs.map((d) => listDir(d.path)));
-            const deeper: { name: string; path: string }[] = [];
-            subs.forEach((d, i) => {
-                sheetImages("", inside[i].filter((k) => !k.dir).map((k) => k.name))
-                    .forEach((name) => deeper.push({ name: d.name + "/" + name, path: nodePath.join(d.path, name) }));
-            });
-            if (alive) setPics(own.concat(deeper));
-        })();
+        folderPics(row.artFolder, row.artFolderName).then((p) => { if (alive) setPics(p); });
         return () => { alive = false; };
     }, [row.id]);
 
@@ -177,6 +183,136 @@ const SheetPane: React.FC<{ row: Approved }> = ({ row }) => {
     );
 };
 
+/** One side of the compare: a picture fitted to its box, or why there is none. */
+const ComparePic: React.FC<{ pic: Pic | null; none: string }> = ({ pic, none }) => {
+    const [broken, setBroken] = useState(false);
+    useEffect(() => { setBroken(false); }, [pic && pic.path]);
+    if (!pic) return <span className="szf-cmp-none">{none}</span>;
+    if (broken) return <span className="szf-cmp-none">This picture couldn't be shown.</span>;
+    return <img src={toFileUrl(pic.path)} alt="" draggable={false} onError={() => setBroken(true)} />;
+};
+
+const CMP_STORE = "xyi.sizefinder.compare";
+
+/**
+ * THE ROW'S OWN SHEET AGAINST THE APPROVED ONE'S. Opened from a batch row, the
+ * question is "is this the same layout", and that is answered by looking at
+ * the two mech sheets together: side by side, or one WIPED over the other
+ * with a divider to drag. Not a pixel difference: two markets' sheets differ
+ * in language, date and usually size, so a difference image lights up
+ * everywhere and says nothing.
+ *
+ * The row has no filename until it is built, so its JPG_PNG folder is found by
+ * what the row states (findRowArt) and used only when exactly ONE matches.
+ * None (the artwork has not landed) or several (the row does not say enough)
+ * is said, and the approved sheet is shown alone as it always was.
+ */
+const ComparePane: React.FC<{ row: Approved; use: UseAsMaster }> = ({ row, use }) => {
+    const spec = use.row as RowSpec;
+    const [mine, setMine] = useState<{ pics: Pic[]; folders: number } | null>(null); // null = looking
+    const [theirs, setTheirs] = useState<Pic[] | null>(null);
+    const [mode, setMode] = useState(() => { try { return localStorage.getItem(CMP_STORE) || "side"; } catch { return "side"; } });
+    const [split, setSplit] = useState(50);
+    const boxRef = useRef<HTMLDivElement | null>(null);
+
+    // The row's own sheet: looked for once per window, it does not change with the card picked.
+    useEffect(() => {
+        let alive = true;
+        setMine(null);
+        (async () => {
+            const folders = await findRowArt(use.territoryPath || "", spec, listDir);
+            const pics = folders.length === 1 ? await folderPics(folders[0].path, folders[0].name) : [];
+            if (alive) setMine({ pics, folders: folders.length });
+        })();
+        return () => { alive = false; };
+    }, [use.territoryPath, spec.creative, spec.site, spec.w, spec.h, spec.seconds]);
+
+    useEffect(() => {
+        let alive = true;
+        setTheirs(null);
+        folderPics(row.artFolder, row.artFolderName).then((p) => { if (alive) setTheirs(p); });
+        return () => { alive = false; };
+    }, [row.id]);
+
+    const pickMode = (v: string) => { setMode(v); try { localStorage.setItem(CMP_STORE, v); } catch { /* a convenience only */ } };
+
+    // Mouse events, not pointer events: the macOS CEP host doesn't reliably send those.
+    const drag = (e: React.MouseEvent) => {
+        e.preventDefault();
+        const move = (ev: MouseEvent) => {
+            const el = boxRef.current;
+            if (!el) return;
+            const r = el.getBoundingClientRect();
+            if (r.width > 0) setSplit(Math.max(0, Math.min(100, ((ev.clientX - r.left) / r.width) * 100)));
+        };
+        const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
+        window.addEventListener("mousemove", move);
+        window.addEventListener("mouseup", up);
+        move(e.nativeEvent);
+    };
+
+    if (mine === null || theirs === null) return <div className="szf-none">Looking for the two sheets…</div>;
+    const here = use.territory || "this market";
+    if (!mine.pics.length) {
+        // Nothing of the row's to compare with: the approved sheet alone, and why.
+        const why = mine.folders > 1
+            ? `${mine.folders} JPG_PNG folders in ${here} could be this row's, so none is compared. A site on the row narrows it.`
+            : mine.folders === 1
+                ? `This row's JPG_PNG folder in ${here} has no picture in it yet.`
+                : `No JPG_PNG folder for this row in ${here} yet, so there is nothing to compare with.`;
+        return (
+            <>
+                <div className="szf-cmp-note">{why}</div>
+                <SheetPane row={row} />
+            </>
+        );
+    }
+    const a = mine.pics[0];
+    const b = theirs[0] || null;
+    const noneB = row.artFolder ? "No JPG or PNG in its JPG_PNG folder." : `No JPG_PNG folder for it in ${row.territory}.`;
+    const box = fitBox(spec.w, spec.h, 440, 340);
+    return (
+        <div className="szf-cmp">
+            <div className="szf-cmp-bar">
+                <SegmentedToggle
+                    name="szf-compare"
+                    value={mode}
+                    onChange={pickMode}
+                    options={[{ value: "side", label: "Side by side" }, { value: "wipe", label: "Wipe" }, { value: "theirs", label: `${row.territory}'s sheets` }]}
+                />
+            </div>
+            {mode === "theirs" ? (
+                <SheetPane row={row} />
+            ) : mode === "wipe" ? (
+                <>
+                    <div className="szf-cmp-wipe" ref={boxRef} style={box} onMouseDown={drag}>
+                        <span className="szf-cmp-layer"><ComparePic pic={b} none={noneB} /></span>
+                        <span className="szf-cmp-layer szf-cmp-layer--top" style={{ clipPath: `inset(0 ${100 - split}% 0 0)`, WebkitClipPath: `inset(0 ${100 - split}% 0 0)` }}>
+                            <ComparePic pic={a} none="" />
+                        </span>
+                        <span className="szf-cmp-divider" style={{ left: split + "%" }}><i /></span>
+                    </div>
+                    <div className="szf-cmp-legend">
+                        <span><b>This row</b> · {here}</span>
+                        <span>{row.territory} · <b>approved</b></span>
+                    </div>
+                </>
+            ) : (
+                <div className="szf-cmp-side">
+                    <span className="szf-cmp-cell">
+                        <span className="szf-cmp-frame" style={{ height: box.height }}><ComparePic pic={a} none="" /></span>
+                        <span className="szf-cmp-cap"><b>This row</b> · {here} · {spec.w}×{spec.h}</span>
+                    </span>
+                    <span className="szf-cmp-cell">
+                        <span className="szf-cmp-frame" style={{ height: box.height }}><ComparePic pic={b} none={noneB} /></span>
+                        <span className="szf-cmp-cap"><b>Approved</b> · {row.territory} · {row.w}×{row.h}</span>
+                    </span>
+                </div>
+            )}
+        </div>
+    );
+};
+
 /**
  * `initial*` open it ON a size, a creative and a campaign -- how Build a
  * Batch's "seen before" hint shows what a row has been made as before. It is
@@ -197,6 +333,10 @@ export interface UseAsMaster {
     seconds: number;
     /** The territory folder the row is being built for. */
     territory: string;
+    /** That territory's folder on disk, where the row's own JPG_PNG is looked for. "" if unknown. */
+    territoryPath?: string;
+    /** What the row states, to find its own mech sheet and compare it with the approved one. */
+    row?: RowSpec;
     /** `repeat`: how many times the deliverable is played to fill the row (1, 2 or 3). */
     onUse: (row: Approved, project: { name: string; path: string }, market: string, repeat: number) => void;
 }
@@ -461,7 +601,7 @@ const SizeFinderTool = ({ initialSize, initialCreative, initialCampaign, useAsMa
                             </div>
                         </div>
                         <div className="szf-pane">
-                            <SheetPane row={selected.row} />
+                            {useAsMaster && useAsMaster.row ? <ComparePane row={selected.row} use={useAsMaster} /> : <SheetPane row={selected.row} />}
                             <div className="szf-pane-actions">
                                 {selected.row.artFolder && (
                                     <button type="button" className="szf-btn" onClick={() => openPath(selected.row.artFolder)}><FolderOpen size={12} /> Open JPG_PNG</button>

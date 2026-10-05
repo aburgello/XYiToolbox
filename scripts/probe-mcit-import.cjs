@@ -245,6 +245,38 @@ say(r9.items[0].action === 'replaced', '…and is one when the row was built fro
 r9 = aeft.mcItApplyToOpenProject(slotIn('Artwork', 'Sky_Grade_2.png'), TW + '_V01.aep', [new File(`${TWD}/${TW}2.png`)], true, undefined, '', 'DK');
 say(r9.items[0].action === 'skipped', '…while a file with neither token stays out of it', r9.items[0].reason);
 
+// 9b. THE REAL ONE (Thailand built from Egypt's approved Kicking, 2026-10-05):
+// every artwork layer pointed into the root-level "Egypt_JPG_PNG", nothing in
+// Footage/PNG, and the run swapped nothing.
+function egyptProject() {
+    const root = new FolderItem('Root');
+    const eg = new FolderItem('Egypt_JPG_PNG', root);
+    const th = new FolderItem('Thailand_JPG_PNG', root);
+    const footage = new FolderItem('Footage', root);
+    const E = 'SF_INTL_Kicking_DINTH_VOX_MallOfEgypt_1280x640px_15s_EG';
+    const mk = (n, used, parent) => { const it = new FootageItem(new File('/eg/' + n), parent); it.usedIn = used ? [{}] : []; return it; };
+    const egs = [mk(E + '1.png', true, eg), mk(E + '2.jpg', true, eg), mk(E + '2.png', false, eg), mk(E + '.jpg', true, eg), mk(E + '_ARTWORK_1.jpg', false, eg), mk('Sky_Grade_2.png', true, eg)];
+    eg.numItems = egs.length; eg.item = (i) => egs[i - 1];
+    const ths = [mk('SF_INTL_Kicking_DOOH_MiniTruck_1920x960px_15s_TH1.png', false, th)];
+    th.numItems = 1; th.item = () => ths[0];
+    const items = [eg].concat(egs, [footage, th], ths);
+    return { egs, numItems: items.length, item: (i) => items[i - 1], items: { addFolder: () => new FolderItem('x', root) }, importFile: () => new FootageItem(null) };
+}
+const TH = 'SF_INTL_Kicking_DOOH_MiniTruck_1920x960px_15s_TH';
+const THD = '/b/JPG_PNG/Batch_6/' + TH;
+const thImgs = ['.jpg', '1.png', '2.jpg', '2.png'].map((x) => new File(`${THD}/${TH}${x}`));
+const act = (rep, n) => (rep.items.filter((i) => decodeURI(i.name).indexOf(n) !== -1)[0] || {});
+let pe = egyptProject();
+let r9b = aeft.mcItApplyToOpenProject(pe, TH + '_V01.aep', thImgs, false, undefined, 'Thailand_JPG_PNG', 'EG');
+say(act(r9b, '_EG1.png').action === 'replaced' && decodeURI(pe.egs[0].file.name) === TH + '1.png', "Egypt's _EG1.png in Egypt_JPG_PNG becomes Thailand's 1.png", act(r9b, '_EG1.png').action + ' ' + (act(r9b, '_EG1.png').newName || act(r9b, '_EG1.png').reason));
+say(decodeURI(pe.egs[1].file.name) === TH + '2.jpg' && decodeURI(pe.egs[3].file.name) === TH + '.jpg', '…and its 2.jpg and unnumbered .jpg take theirs', decodeURI(pe.egs[1].file.name) + ' | ' + decodeURI(pe.egs[3].file.name));
+say(r9b.items.filter((i) => /_EG2\.png|ARTWORK_1/.test(decodeURI(i.name))).length === 0 && /_EG2\.png$/.test(decodeURI(pe.egs[2].file.name)), 'a picture no comp uses is left alone, without a word');
+say(act(r9b, 'Sky_Grade').action === 'skipped', 'a picture with no market token in there is not a slot', act(r9b, 'Sky_Grade').reason);
+say(r9b.items.every((i) => i.folder !== 'Thailand_JPG_PNG'), "the folder this run imports into is never a target");
+pe = egyptProject();
+r9b = aeft.mcItApplyToOpenProject(pe, TH + '_V01.aep', thImgs, false, undefined, 'Thailand_JPG_PNG', '');
+say(/_EG1\.png$/.test(decodeURI(pe.egs[0].file.name)) && r9b.items.length === 0, 'an ordinary run never looks in another territory\'s import folder', r9b.skipped || '');
+
 // 10. The length a name states, which decides how often an approved
 // deliverable is played to fill a longer row.
 const secs = aeft.csvLocSecondsOfName;

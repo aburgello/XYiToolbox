@@ -9873,3 +9873,24 @@ Three things from the first look at 20261030:
 **Not done:** a repeated build from an approved project has not been run in
 After Effects. The repeat finds the creative layer by the comp's name, which
 a localised project should carry but nothing here has proved.
+
+
+## 2026-10-05 — A compare in the window, and Egypt's artwork in Thailand
+
+A sheet compare went into the Size Finder window (the row's own mech JPG
+against the approved one's: side by side, or a wipe).
+
+First real use-as-master run, by hand in After Effects: Thailand's Kicking
+MiniTruck 1920x960 15s built from Egypt's approved MallOfEgypt 1280x640. The
+project built, and MC It! swapped nothing. The Egypt project's artwork layers
+all pointed into its root-level `Egypt_JPG_PNG` folder (`…_EG.jpg`,
+`…_EG2.jpg`), which MC It! never treated as a place to swap: it only reads
+`Footage/PNG|JPG|JPEG|Images|Artwork`. Thailand's own images were imported
+beside them into `Thailand_JPG_PNG` and used by nothing. Fixed for rows built
+from another market only (see CLAUDE.md); `probe-mcit-import.cjs` 9b is that
+project, with its real names.
+
+**Not done:** the fix has not been re-run in After Effects on that project,
+and the compare has only been seen in the harness, which blocks local images.
+The `.ai` at that project's root (`SF_Trio_Date_YellowIMAX_EG_RGB.ai`) is
+Support Swap's, and was not looked at.

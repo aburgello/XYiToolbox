@@ -1175,6 +1175,25 @@ campaign, each with its clip beside its mech sheet.
   map, `pinMarketsJson` (CSV index → market code; nested objects lose their
   values over the bridge). The run copies it like any master, so the other
   market's project is never opened.
+- **In that window the sheet pane COMPARES**: the row's own mech sheet
+  against the approved one's, side by side or WIPED (a divider dragged with
+  mouse events), with the approved deliverable's own paged sheets as a third
+  mode. **Never a pixel difference**: two markets' sheets differ in language,
+  date and size, so one lights up everywhere and says nothing. The row has no
+  filename until it is built, so its JPG_PNG folder is found by what the row
+  states (`folderIsRow`: size exactly, length, creative, and the site when
+  it has one) and used **only when exactly ONE folder matches**
+  (`findRowArt`). None, or several, is said, and the approved sheet shows
+  alone. Do not pick among several: a wrong sheet in a compare is worse than
+  none.
+- **MC It! also looks in the SOURCE market's import folder** for such a row.
+  A localised project keeps what its territory supplied in a root-level
+  `<Territory>_JPG_PNG`, and artists build with it from there: Egypt's
+  approved Kicking had every artwork layer in `Egypt_JPG_PNG` and nothing in
+  `Footage/PNG`, so Thailand built from it kept Egypt's artwork. With `asOv`,
+  root-level `*_JPG_PNG` folders other than this run's own are targets, gated
+  like Artwork (the file must carry that market's token) and limited to
+  pictures a comp actually uses. An ordinary run never looks there.
 - **For that row only, the source market's token stands in for OV** (`asOv`):
   MC It!'s Artwork-folder gate takes `_DK` slots as targets, Support Swap
   swaps `_DK_` → this market as it does `_OV_`, and a `_DK_` file this market

@@ -179,6 +179,27 @@ export function countAtRatio(
     return { exact, same, near };
 }
 
+/** What a Build a Batch row says about the deliverable it will become. */
+export interface RowSpec { creative: string; site: string; w: number; h: number; seconds: number }
+
+/**
+ * Could a JPG_PNG folder of this name be THIS row's artwork? The row has no
+ * filename until it is built, so it is matched on what it does state: the
+ * size exactly, the length when both state one, the creative, and the site
+ * when the row has one (anywhere in the name, squashed: "Digital Metro" is
+ * `DigitalMetro`). Deliberately a test and not a pick: the caller shows a
+ * sheet only when exactly ONE folder passes.
+ */
+export function folderIsRow(folderName: string, row: RowSpec): boolean {
+    const info = sizeOfName(folderName);
+    if (!info || info.w !== row.w || info.h !== row.h) return false;
+    if (row.seconds && info.seconds && row.seconds !== info.seconds) return false;
+    const sq = (v: string) => String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (sq(row.creative) && sq(creativeOfName(folderName)) !== sq(row.creative)) return false;
+    if (sq(row.site) && deliverableSquash(folderName).indexOf(sq(row.site)) === -1) return false;
+    return true;
+}
+
 /** Sort order for results: shape, then scale, then the newer-looking name. */
 export function byCloseness(a: Closeness, b: Closeness): number {
     if (a.kind === "exact" && b.kind !== "exact") return -1;

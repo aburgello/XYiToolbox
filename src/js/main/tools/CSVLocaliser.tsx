@@ -706,7 +706,7 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
     // reference only: nothing here reaches the master lookup, the pins or the
     // run. Read once a session through the store Size Finder itself uses.
     const [approved, setApproved] = useState<Approved[]>([]);
-    const [sizeLook, setSizeLook] = useState<{ size: string; creative: string; rowId: number; seconds: number } | null>(null);
+    const [sizeLook, setSizeLook] = useState<{ size: string; creative: string; rowId: number; seconds: number; site: string; w: number; h: number } | null>(null);
     useEffect(() => {
         let alive = true;
         setApproved([]);
@@ -3644,7 +3644,7 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
                                                 : `${cr} has not been approved at ${ratioLabel(w, h)}, but ${times(seen.near)} within ${pct}% of it.`;
                                             return (
                                                 <Tooltip text={`${said} Click to see them. Changes nothing about this row unless you pick one.`}>
-                                                    <button type="button" className={"specs-build-seen" + (at ? "" : " specs-build-seen--near")} onClick={() => setSizeLook({ size: `${w}x${h}`, creative: cr, rowId: r.id, seconds: parseInt(r.duration, 10) || 0 })} aria-label="See approved deliverables at this ratio">
+                                                    <button type="button" className={"specs-build-seen" + (at ? "" : " specs-build-seen--near")} onClick={() => setSizeLook({ size: `${w}x${h}`, creative: cr, rowId: r.id, seconds: parseInt(r.duration, 10) || 0, site: r.site || "", w, h })} aria-label="See approved deliverables at this ratio">
                                                         <Ruler size={10} />{n}
                                                     </button>
                                                 </Tooltip>
@@ -3754,6 +3754,11 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
                                 marketsRoot,
                                 seconds: sizeLook.seconds,
                                 territory: buildTerritory,
+                                // Where the row's own JPG_PNG is: the scanned folder when the
+                                // batch came off a sheet (it need not be named as the territory
+                                // is), else Markets/<Territory>. Same rule as the run's.
+                                territoryPath: !buildTerritory ? "" : buildOrigin && buildOrigin.territory === buildTerritory ? buildOrigin.sourceFolder : path.join(marketsRoot, buildTerritory),
+                                row: { creative: sizeLook.creative, site: sizeLook.site, w: sizeLook.w, h: sizeLook.h, seconds: sizeLook.seconds },
                                 onUse: (row, project, market, repeat) => {
                                     const rowId = sizeLook.rowId;
                                     setBuildPins((prev) => ({ ...prev, [rowId]: { name: project.name, path: project.path, market, from: row.territory, repeat } }));

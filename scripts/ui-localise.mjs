@@ -132,6 +132,17 @@ for (const f of ["SF_INTL_Trio_DOOH_Cinema_768x1280px_10s_IT.mp4", "SF_INTL_Trio
     }
 }
 
+// Denmark's own artwork for the first builder row, to compare a sheet with.
+{
+    const D = "SF_INTL_Trio_DOOH_ShowtimeCinemasTPED_768x1280px_30s_DK";
+    const parts = ("/Volumes/paramount/SF/XY026205_Markets/Denmark/JPG_PNG/Batch_1/" + D + "/" + D + ".jpg").split("/");
+    for (let i = 2; i <= parts.length; i++) {
+        const dir = parts.slice(0, i - 1).join("/");
+        const list = (APPROVED[dir] = APPROVED[dir] || []);
+        if (!list.some((e) => e.name === parts[i - 1])) list.push({ name: parts[i - 1], dir: i < parts.length });
+    }
+}
+
 const page = await launch({ root: ROOT, fixturesSrc: FIXTURES });
 try {
     await page.goto();
@@ -427,6 +438,32 @@ try {
     check(await page.waitFor(`!document.querySelector(".szf-window")`, 6000) && /Wall_1536x2560px_30s_IT_V02: its IT artwork/.test(await hints()), "…and pins with no repeat", await hints());
     check((await page.eval(`document.querySelectorAll(".specs-build-rows .specs-build-row:not(.specs-build-row--head)").length`)) === n, "…with the batch otherwise as it was");
     check(await backToAuto(), "and back to automatic, so the hand-pick below starts clean");
+
+    console.log("\n6a3. The row's sheet against the approved one's");
+    await page.click(".specs-build-seen");
+    check(await page.waitFor(`/nothing to compare with/.test(document.querySelector(".szf-window .szf-cmp-note")?.innerText || "")`, 6000), "no territory picked, so no sheet of the row's: said, with the approved sheet as before", await page.eval(text(".szf-window .szf-cmp-note")));
+    await page.click(".szf-window-close");
+    await page.click(".specs-build-meta .dropdown-trigger");
+    await page.waitFor(`document.querySelector(".dropdown-option")`, 3000);
+    await page.click(".dropdown-option", "Denmark");
+    await page.click(".specs-build-seen");
+    check(await page.waitFor(`document.querySelectorAll(".szf-window .szf-cmp-side .szf-cmp-cell").length === 2`, 6000), "with the row's JPG_PNG folder found: the two sheets side by side");
+    const caps = await page.eval(`[...document.querySelectorAll(".szf-window .szf-cmp-cap")].map(e => e.innerText)`);
+    check(/This row · Denmark · 768×1280/.test(caps[0]) && /Approved · Italy/.test(caps[1]), "…each saying whose it is", caps);
+    await page.click(".szf-window .seg-option", "Wipe");
+    check(await page.waitFor(`document.querySelector(".szf-window .szf-cmp-wipe .szf-cmp-divider")`, 4000), "Wipe lays one over the other with a divider");
+    const before = await page.eval(`document.querySelector(".szf-window .szf-cmp-divider").style.left`);
+    await page.eval(`(() => { const el = document.querySelector(".szf-window .szf-cmp-wipe"); const r = el.getBoundingClientRect(); const at = (x) => ({ bubbles: true, clientX: r.left + r.width * x, clientY: r.top + 10 }); el.dispatchEvent(new MouseEvent("mousedown", at(0.5))); window.dispatchEvent(new MouseEvent("mousemove", at(0.2))); window.dispatchEvent(new MouseEvent("mouseup", at(0.2))); })()`);
+    await pause(150);
+    const after = await page.eval(`document.querySelector(".szf-window .szf-cmp-divider").style.left`);
+    check(before === "50%" && Math.abs(parseFloat(after) - 20) < 1.5, "…which follows a drag (mouse events)", { before, after });
+    await page.shot(path.join(SHOTS, "ui-compare-wipe.png"));
+    await page.click(".szf-window .seg-option", "Italy's sheets");
+    check(await page.waitFor(`!document.querySelector(".szf-window .szf-cmp-wipe") && !document.querySelector(".szf-window .szf-cmp-side")`, 4000), "the third mode is the approved deliverable's own sheets, paged as before");
+    await page.click(".szf-window .seg-option", "Side by side");
+    await page.waitFor(`document.querySelector(".szf-window .szf-cmp-side")`, 4000);
+    await page.shot(path.join(SHOTS, "ui-compare-side.png"));
+    await page.click(".szf-window-close");
 
     console.log("\n6b. Hand-picking a master");
     check(await page.waitFor(`document.querySelector(".specs-master--none")`, 6000), "an unmatched row offers to pick a master");

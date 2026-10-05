@@ -177,6 +177,117 @@
         .szf-use-text strong { color: #c9cfd0; }
     }
 
+    // ── the row's own sheet against the approved one's ───────────────────
+    .szf-cmp-bar { display: flex; margin-bottom: 8px; }
+
+    .szf-cmp-note {
+        margin-bottom: 8px;
+        padding: 7px 9px;
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.04);
+        font-size: 11px;
+        line-height: 1.35;
+        color: #a9b4b5;
+    }
+
+    .szf-cmp-none {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 100%;
+        padding: 10px;
+        box-sizing: border-box;
+        font-size: 11px;
+        text-align: center;
+        color: #8d9596;
+    }
+
+    .szf-cmp-side { display: flex; margin: 0 -4px; }
+
+    .szf-cmp-cell {
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 0;
+        min-width: 0;
+        margin: 0 4px;
+    }
+
+    .szf-cmp-frame {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        background: #0e0f10;
+        overflow: hidden;
+
+        img { display: block; max-width: 100%; max-height: 100%; }
+    }
+
+    .szf-cmp-cap,
+    .szf-cmp-legend {
+        margin-top: 5px;
+        font-size: 10.5px;
+        color: #8d9596;
+
+        b { font-weight: 700; color: #dfe5e5; }
+    }
+
+    .szf-cmp-cap { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .szf-cmp-legend { display: flex; justify-content: space-between; }
+
+    // One sheet wiped over the other. Sized in JS to the row's own shape
+    // (chrome74: no aspect-ratio); max-width keeps it inside a narrow pane.
+    .szf-cmp-wipe {
+        position: relative;
+        max-width: 100%;
+        margin: 0 auto;
+        border-radius: 6px;
+        background: #0e0f10;
+        overflow: hidden;
+        cursor: ew-resize;
+        user-select: none;
+    }
+
+    .szf-cmp-layer {
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        img { display: block; max-width: 100%; max-height: 100%; pointer-events: none; }
+    }
+
+    // The top layer needs its own ground, or the sheet under it shows through
+    // wherever the two are different shapes.
+    .szf-cmp-layer--top { background: #0e0f10; }
+
+    .szf-cmp-divider {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        margin-left: -1px;
+        background: var(--cat-icon, #5eead4);
+        pointer-events: none;
+
+        i {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 18px;
+            height: 18px;
+            margin: -9px 0 0 -9px;
+            border-radius: 50%;
+            background: var(--cat-icon, #5eead4);
+            box-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+        }
+    }
+
     .szf-sum {
         min-height: 16px;
         margin: 4px 0 10px;
