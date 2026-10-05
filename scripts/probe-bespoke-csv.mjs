@@ -48,8 +48,9 @@ const arch = HEAD + [
 ].join("\n");
 b = B.boardFromRows(B.parseBespokeCsv(arch), 7680, 1472);
 check(b.panels.length === 2, "five ART rows are two panels", b.panels.map((p) => p.family + " " + box(p)));
-check(box(b.panels[0]) === "1641,0,1176,1472" && b.panels[0].masks.length === 2, "left to right: the lintel piece and the leg cut from one picture are one box", box(b.panels[0]));
-check(box(b.panels[1]) === "6792,0,888,1472" && b.panels[1].masks.length === 3 && b.panels[1].art.length === 2, "…and the right-hand one takes all three windows of its two layers", box(b.panels[1]));
+check(box(b.panels[0]) === "2049,0,768,1472" && b.panels[0].masks.length === 1, "the panel is the LEG, exactly as its row wrote it (never a box round the lintel too)", box(b.panels[0]));
+check(b.panels[0].extras.length === 1 && [b.panels[0].extras[0].x, b.panels[0].extras[0].w, b.panels[0].extras[0].h].join() === "1641,1176,320", "…and the lintel its background runs along is kept beside it, not built", b.panels[0].extras);
+check(box(b.panels[1]) === "7296,0,384,1472" && b.panels[1].masks.length === 2 && b.panels[1].art.length === 2 && b.panels[1].extras.length === 1, "the right leg takes the BORDER window inside it, and leaves its lintel out", [box(b.panels[1]), b.panels[1].masks.length, b.panels[1].extras]);
 check(b.titles.length === 4 && b.titles.filter((t) => t.creative === "RyuHadouken").length === 2, "titles keep their own creative: two are Ryu's, where no panel is", b.titles.map((t) => t.creative));
 
 console.log("\nPillars: one panel's layers placed differently, neighbours a pixel over");
@@ -64,14 +65,21 @@ const pillars = HEAD + [
 ].join("\n");
 b = B.boardFromRows(B.parseBespokeCsv(pillars), 2048, 1280);
 check(b.panels.length === 3, "six rows are three pillars, however each layer was placed", b.panels.map(box));
-check(b.panels.map(box).join(" ") === "0,0,511,1280 511,0,513,1280 1024,0,513,1280", "…and a pixel of overlap between neighbours joins nothing", b.panels.map(box));
+check(b.panels.map(box).join(" ") === "0,0,511,1280 511,0,512,1280 1024,0,512,1280", "…and a pixel of overlap between neighbours joins nothing", b.panels.map(box));
 const leg = HEAD + [
     `Page1,"ART","SF_INTL_Trio_OOH_Tall_Portrait_RGB_BG.tif","${T}_BG.tif",0,0,400,1500,0,0,384,300`,
     `Page1,"ART2","SF_INTL_Trio_OOH_Tall_Portrait_RGB_BG.tif","${T}_BG.tif",0,0,400,1500,0,900,384,572`,
     `Page1,"ART3","SF_INTL_Trio_OOH_Tall_Portrait_RGB_BORDER.tif","${T}_BORDER.tif",0,0,400,1500,0,0,384,1472`,
 ].join("\n");
 b = B.boardFromRows(B.parseBespokeCsv(leg), 2816, 1472);
-check(b.panels.length === 1 && box(b.panels[0]) === "0,0,384,1472" && b.panels[0].masks.length === 3, "two windows that only meet through a third, read last, still end as one panel", b.panels.map(box));
+check(b.panels.length === 1 && box(b.panels[0]) === "0,0,384,1472" && b.panels[0].masks.length === 3 && b.panels[0].extras.length === 0, "two windows that only meet through a third, read last, still end as one panel, both inside it", b.panels.map(box));
+
+const tiled = HEAD + [
+    `Page1,"ART","SF_INTL_Trio_OOH_Tall_Portrait_RGB_BG.tif","${T}_BG.tif",0,0,400,1500,0,596,384,876`,
+    `Page1,"ART2","SF_INTL_Trio_OOH_Tall_Portrait_RGB_BG.tif","${T}_BG.tif",0,0,400,1500,0,0,384,799`,
+].join("\n");
+b = B.boardFromRows(B.parseBespokeCsv(tiled), 2816, 1472);
+check(b.panels.length === 1 && box(b.panels[0]) === "0,0,384,1472" && b.panels[0].extras.length === 0, "a leg laid in two tiles, one above the other at the same width, is one whole leg", b.panels.map(box));
 
 console.log("\nPages");
 const foyer = HEAD + [
@@ -102,7 +110,7 @@ if (process.argv[2]) {
     const m = /_(\d{3,})x(\d{3,})(?:px)?_/.exec(name) || [0, 1920, 1080];
     const real = B.boardFromRows(B.parseBespokeCsv(fs.readFileSync(process.argv[2], "utf8")), +m[1], +m[2]);
     console.log("\n" + name + "  " + m[1] + "x" + m[2] + "  pages " + real.pages.join(","));
-    real.panels.forEach((p, i) => console.log(`  panel ${i + 1}  ${p.page}  ${p.creative}  ${box(p)}  ${p.masks.length} window(s)  ${p.art.join(" + ")}`));
+    real.panels.forEach((p, i) => console.log(`  panel ${i + 1}  ${p.page}  ${p.creative}  ${box(p)}  ${p.masks.length} window(s)${p.extras.length ? "  +" + p.extras.map((e) => [e.x, e.y, e.w, e.h].join(",")).join(" +") : ""}  ${p.art.join(" + ")}`));
     console.log("  " + real.titles.length + " title(s)");
 }
 

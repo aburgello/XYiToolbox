@@ -16,9 +16,15 @@
 // arrives as layers (`…_BG.tif`, `…_BORDER.tif`), each its own row with its own
 // mask, and one picture can show through several windows (an arch: a lintel
 // piece and a leg). So rows are grouped by page, by the artwork's name with
-// its layer suffix off, and by WINDOWS THAT OVERLAP; the panel is the box
-// round every window in the group. What a motion master has to cover is that
-// box.
+// its layer suffix off, and by WINDOWS THAT OVERLAP.
+//
+// THE PANEL IS THE GROUP'S BIGGEST WINDOW, AS THE CSV WROTE IT -- never a box
+// drawn round all of them. It shipped as that box for an afternoon: on the
+// VivaCity arch the poster's leg is 768 wide at x 2049 and its background runs
+// on along the lintel from x 1641, so the box came out 1176 wide at 1641, and
+// a master centred in it would have sat 200px left of the leg it belongs in.
+// The windows a layer adds INSIDE the main one (a BORDER within its BG) belong
+// to it; the ones that run on outside are `extras`, drawn and not built.
 //
 // `TT` rows are title treatments. A motion master carries its own title, so
 // they are kept only to be drawn on the preview: a title sitting where no
@@ -50,10 +56,16 @@ export interface CsvPanel {
     creative: string;
     /** Every row's file name that went into this panel. */
     art: string[];
-    /** The box round every mask, inside the canvas. This is what gets built. */
+    /** The artwork's MAIN window, exactly as the CSV has it. This is what gets built. */
     box: Rect;
-    /** The windows themselves, for drawing the real shape (an L, a lintel and a leg). */
+    /** The windows that make up that box: the main one and any layer's sitting inside it. */
     masks: Rect[];
+    /**
+     * The same artwork's OTHER windows: where its background runs on past the
+     * main one (an arch's lintel beside its leg). Shown, never built unless
+     * somebody makes one a panel of its own.
+     */
+    extras: Rect[];
 }
 
 export interface CsvTitle { page: string; name: string; creative: string; box: Rect }
@@ -147,6 +159,8 @@ const windowOf = (r: CsvRow, w: number, h: number): Rect => clip(r.mask.w > 0 &&
  * mech's own rounding has them a pixel over (511..1023 beside 0..512).
  */
 const SAME_PANEL = 0.2;
+/** How much of a window must lie in the main one to be part of it and not a run-on. */
+const INSIDE = 0.8;
 
 const shared = (a: Rect, b: Rect): number => {
     const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
@@ -193,11 +207,35 @@ export function boardFromRows(rows: CsvRow[], canvasW: number, canvasH: number):
         g.masks.push(win);
     }
     const panels: CsvPanel[] = groups.map((g) => {
-        const x0 = Math.min.apply(null, g.masks.map((m) => m.x));
-        const y0 = Math.min.apply(null, g.masks.map((m) => m.y));
-        const x1 = Math.max.apply(null, g.masks.map((m) => m.x + m.w));
-        const y1 = Math.max.apply(null, g.masks.map((m) => m.y + m.h));
-        return { page: g.page, family: g.family, creative: g.creative, art: g.art, masks: g.masks, box: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } };
+        let main = g.masks[0];
+        g.masks.forEach((m) => { if (m.w * m.h > main.w * main.h) main = m; });
+        // INSIDE means most of the window's own area: `shared` is against the
+        // smaller of the two, and nothing here is bigger than `main`.
+        const inside = g.masks.filter((m) => shared(m, main) >= INSIDE);
+        let extras: Rect[] = [];
+        g.masks.filter((m) => shared(m, main) < INSIDE).forEach((m) => {
+            if (!extras.some((e) => e.x === m.x && e.y === m.y && e.w === m.w && e.h === m.h)) extras.push(m);
+        });
+        // A WINDOW THAT CARRIES THE MAIN ONE ON, EDGE TO EDGE, IS THE SAME
+        // PANEL: a leg whose background was laid in two tiles, one above the
+        // other, the same width at the same x. That is the one case the box
+        // grows. A lintel beside a leg matches on neither axis and stays out.
+        let box: Rect = { x: main.x, y: main.y, w: main.w, h: main.h };
+        const near = (a: number, b: number) => Math.abs(a - b) <= 2;
+        for (let grew = true; grew; ) {
+            grew = false;
+            for (const e of extras) {
+                if (!((near(e.x, box.x) && near(e.w, box.w)) || (near(e.y, box.y) && near(e.h, box.h)))) continue;
+                const x0 = Math.min(box.x, e.x);
+                const y0 = Math.min(box.y, e.y);
+                box = { x: x0, y: y0, w: Math.max(box.x + box.w, e.x + e.w) - x0, h: Math.max(box.y + box.h, e.y + e.h) - y0 };
+                inside.push(e);
+                extras = extras.filter((x) => x !== e);
+                grew = true;
+                break;
+            }
+        }
+        return { page: g.page, family: g.family, creative: g.creative, art: g.art, masks: inside, extras, box };
     });
     panels.sort((a, b) => pages.indexOf(a.page) - pages.indexOf(b.page) || a.box.x - b.box.x || a.box.y - b.box.y);
     return { pages, panels, titles };

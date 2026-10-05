@@ -65,6 +65,8 @@ interface Panel {
     /** What the CSV called the artwork. "" for a panel somebody added. */
     family: string;
     masks: Rect[];
+    /** The same artwork's other windows (a lintel beside its leg): drawn, not built. */
+    extras: Rect[];
     x: number;
     y: number;
     w: number;
@@ -196,7 +198,7 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, onBack }) => {
             const fallback = creativeOfName(name);
             nextId.current = 1;
             setPanels(read.panels.map((p) => ({
-                id: nextId.current++, page: p.page, creative: p.creative || fallback, family: p.family, masks: p.masks,
+                id: nextId.current++, page: p.page, creative: p.creative || fallback, family: p.family, masks: p.masks, extras: p.extras,
                 x: p.box.x, y: p.box.y, w: p.box.w, h: p.box.h,
             })));
             setBoard({ csvPath, folder: target, name, canvasW: info.w, canvasH: info.h, pages, titles: read.titles, pictures, siblings, where, built });
@@ -269,7 +271,22 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, onBack }) => {
     const addPanel = () => {
         if (!board) return;
         const id = nextId.current++;
-        setPanels((prev) => prev.concat([{ id, page, creative: creativeOfName(board.name), family: "", masks: [], x: 0, y: 0, w: board.canvasW, h: board.canvasH }]));
+        setPanels((prev) => prev.concat([{ id, page, creative: creativeOfName(board.name), family: "", masks: [], extras: [], x: 0, y: 0, w: board.canvasW, h: board.canvasH }]));
+        setFocus(id);
+    };
+
+    /** One of a panel's run-on windows becomes a panel of its own, after it in the list. */
+    const promote = (from: Panel, e: Rect) => {
+        const id = nextId.current++;
+        setPanels((prev) => {
+            const out: Panel[] = [];
+            prev.forEach((p) => {
+                if (p.id !== from.id) { out.push(p); return; }
+                out.push({ ...p, extras: p.extras.filter((x) => x !== e) });
+                out.push({ id, page: p.page, creative: p.creative, family: p.family, masks: [e], extras: [], x: e.x, y: e.y, w: e.w, h: e.h });
+            });
+            return out;
+        });
         setFocus(id);
     };
 
@@ -407,6 +424,7 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, onBack }) => {
                                 return (
                                     <React.Fragment key={p.id}>
                                         {p.masks.map((m, i) => <span key={i} className="bsg-window" style={{ ...rectStyle(m), background: hue }} />)}
+                                        {p.extras.map((m, i) => <span key={"e" + i} className="bsg-extra" style={{ ...rectStyle(m), borderColor: hue }} />)}
                                         <span
                                             className={"bsg-panel" + (focus === p.id ? " is-on" : "")}
                                             style={{ ...rectStyle(p), borderColor: hue, color: hue }}
@@ -458,6 +476,12 @@ const BespokeGuided: React.FC<Props> = ({ mastersPath, onBack }) => {
                                                 {c.fit}{c.fit && !/^(Exact|Same)/.test(c.fit) ? ", cropped to the panel" : ""}{c.repeat > 1 ? ` · played ${c.repeat}× to fill ${seconds}s` : ""}{p.pick ? " · picked" : ""}
                                             </span>
                                         )}
+                                        {p.extras.map((e, i) => (
+                                            <span key={i} className="bsg-row-extra">
+                                                Its artwork also runs on at {e.x}, {e.y} · {e.w}×{e.h}, which isn't built.
+                                                <button type="button" className="bsg-link" onClick={() => promote(p, e)}>Make it a panel</button>
+                                            </span>
+                                        ))}
                                     </div>
                                     <div className="bsg-row-nums">
                                         {numField(p, "x", "X")}

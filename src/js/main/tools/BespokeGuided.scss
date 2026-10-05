@@ -136,6 +136,16 @@
 // The windows a panel is really seen through (an arch's lintel and leg).
 .bsg-window { position: absolute; opacity: 0.16; pointer-events: none; }
 
+// The same artwork running on outside its panel (a lintel beside a leg):
+// outlined dashed in the panel's colour, and not built.
+.bsg-extra {
+    position: absolute;
+    box-sizing: border-box;
+    border: 1px dashed;
+    opacity: 0.75;
+    pointer-events: none;
+}
+
 // The box that gets built: what a master has to cover.
 .bsg-panel {
     position: absolute;
@@ -212,6 +222,23 @@
 }
 
 .bsg-row-fit { margin-top: 4px; font-size: 10.5px; color: #8fb9b3; }
+
+.bsg-row-extra { margin-top: 4px; font-size: 10.5px; color: #8d9596; }
+
+.bsp .bsg .bsg-link {
+    margin: 0 0 0 6px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--cat-icon, #5eead4);
+    font-size: 10.5px;
+    font-weight: 600;
+    text-decoration: underline;
+    cursor: pointer;
+
+    &:hover { background: transparent; color: #fff; }
+    &:active { background: transparent; color: #d7f5f0; }
+}
 
 .bsg-row-nums {
     display: flex;

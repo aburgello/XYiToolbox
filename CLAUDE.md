@@ -333,11 +333,17 @@ way to watch was to close the panel.
   the format Extreme Tools' Build From CSV reads) already holds it: the canvas
   in the name, a window per `ART` row, whose artwork in the path
   (`…/Support/<Creative>/…`). Point at the folder, correct the proposal, build.
-  - **A panel is one piece of artwork, not one row.** Rows of one artwork
-    (name with `_BG`/`_BORDER` off) on one page whose WINDOWS overlap by 20%
-    of the smaller are one panel, and the panel is the box round them (an
-    arch's lintel and leg are one picture). Never group on where the picture
-    was placed: on the pillar boards a panel's two layers are placed
+  - **A panel is one piece of artwork, not one row, and its box is the
+    artwork's MAIN WINDOW AS THE CSV WROTE IT.** Rows of one artwork (name
+    with `_BG`/`_BORDER` off) on one page whose WINDOWS overlap by 20% of the
+    smaller are one group; the panel is the group's biggest window, plus any
+    80% inside it (a BORDER within its BG) and any that carry it on edge to
+    edge (a leg laid in two tiles). **Never a box round all of them**: that
+    shipped for an afternoon, and on the VivaCity arch it made the 768-wide
+    leg at x 2049 a 1176-wide panel at 1641, because the artwork's background
+    runs on along the lintel. Those run-ons are `extras`: drawn dashed, named
+    on the row, built only if somebody presses "Make it a panel". Never group
+    on where the picture was placed either: on the pillar boards a panel's two layers are placed
     differently, and a neighbour is a pixel over. Measured on all 17 Malaysia
     CSVs; `node scripts/probe-bespoke-csv.mjs [x.csv]` prints a real one.
   - **The master is the localiser's answer** (`csvLocaliserListMasters` for

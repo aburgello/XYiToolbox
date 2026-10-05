@@ -9939,3 +9939,19 @@ page.
 `repeat` in `bespokeBuildRegions` is unproven there, and so is how a master
 scaled to an arch leg's box actually looks. Pages are a label only: every
 panel runs the whole length, whatever page the CSV put it on.
+
+
+## 2026-10-05 — A panel is the CSV's own window, not a box round several
+
+First look at the guided build in After Effects (the sheet draws, and the
+proposal reads). Reported: the VivaCity arch's panel 1 was 1176 wide at x 1641
+where the CSV's leg is 768 wide at 2049. The panel had been drawn as the box
+round every overlapping window of one artwork, and that artwork's background
+also shows along the lintel. A master centred in that box would have sat
+about 200px left of the leg.
+
+Now the panel is the biggest window of the group, as written. Windows inside
+it belong to it, windows continuing it edge to edge extend it (PDH's `_v2`
+lays a leg's background in two tiles), and the rest are run-ons: shown dashed
+with their numbers and a "Make it a panel". All five arch CSVs read as their
+legs.

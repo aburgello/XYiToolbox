@@ -94,13 +94,14 @@ try {
     check(await page.waitFor(`document.querySelectorAll(".bsg-row").length === 2`, 6000), "pointing at the deliverable's folder reads two panels from five ART rows", await page.eval(`document.querySelectorAll(".bsg-row").length`));
     check(/7680×1472/.test(await text(page, ".bsg-head")) && (await page.eval(`document.querySelector(".bsg-num--secs input").value`)) === "30", "the canvas and the length come off the name", await text(page, ".bsg-head"));
     let r = await rows(page);
-    check(/^Trio 1176×1472/.test(r[0].what) && r[0].nums === "1641,0,1176,1472" && r[1].nums === "6792,0,888,1472", "each panel is the box round its windows, left to right", r.map((x) => x.nums));
+    check(/^Trio 768×1472/.test(r[0].what) && r[0].nums === "2049,0,768,1472" && r[1].nums === "7296,0,384,1472", "each panel is its leg exactly as the CSV wrote it, never a box round the lintel too", r.map((x) => x.nums));
+    check(/also runs on at 1641, 0 · 1176×320/.test(await text(page, ".bsg-row .bsg-row-extra")), "…and the lintel its artwork runs along is said, not built", await text(page, ".bsg-row .bsg-row-extra"));
     check(await page.waitFor(`[...document.querySelectorAll(".bsg-row .dropdown-trigger-label")].every(e => /Trio_DOOH_MotionPoster_1080x1920px_15s_OV/.test(e.innerText))`, 6000), "no 30s Trio master: the 15s is proposed for each, never another creative's 30s", (await rows(page)).map((x) => x.pick));
     r = await rows(page);
     check(/played 2× to fill 30s/.test(r[0].fit) && /cropped to the panel/.test(r[0].fit), "…saying it is played twice and how its shape sits", r[0].fit);
-    check(await page.eval(`document.querySelectorAll(".bsg-board .bsg-panel").length === 2 && document.querySelectorAll(".bsg-board .bsg-window").length === 5 && document.querySelectorAll(".bsg-board .bsg-title").length === 1`), "the sheet shows both boxes, their five windows and the title, dashed");
+    check(await page.eval(`document.querySelectorAll(".bsg-board .bsg-panel").length === 2 && document.querySelectorAll(".bsg-board .bsg-window").length === 3 && document.querySelectorAll(".bsg-board .bsg-extra").length === 2 && document.querySelectorAll(".bsg-board .bsg-title").length === 1`), "the sheet shows both legs, the two lintels dashed beside them, and the title");
     const geo = await page.eval(`(() => { const b = document.querySelector(".bsg-board").getBoundingClientRect(); const p = document.querySelector(".bsg-board .bsg-panel").getBoundingClientRect(); return { ratio: b.width / b.height, left: (p.left - b.left) / b.width, width: p.width / b.width, wide: b.width }; })()`);
-    check(Math.abs(geo.ratio - 7680 / 1472) < 0.05 && Math.abs(geo.left - 1641 / 7680) < 0.005 && Math.abs(geo.width - 1176 / 7680) < 0.005, "…drawn in the board's own shape, each box where the CSV put it", geo);
+    check(Math.abs(geo.ratio - 7680 / 1472) < 0.05 && Math.abs(geo.left - 2049 / 7680) < 0.005 && Math.abs(geo.width - 768 / 7680) < 0.005, "…drawn in the board's own shape, each box where the CSV put it", geo);
     check(geo.wide > 850, "the board takes the page's width", geo.wide);
     check((await page.eval(`document.querySelectorAll(".bsg-sib").length`)) === 3 && !/_Old|Something/.test(await text(page, ".bsg-siblings")), "the rest of the batch is one press away (never _Old)", await text(page, ".bsg-siblings"));
     check(/Save it to Malaysia\/AE\/Bespoke_VivaCity/.test(await text(page, ".bsg-filing")), "where it files is read off where the CSV sits", await text(page, ".bsg-filing"));
@@ -116,10 +117,17 @@ try {
     await page.click(".bsg-foot .bsp-btn", "Add a panel");
     check(await page.waitFor(`document.querySelectorAll(".bsg-row").length === 3`, 3000), "a panel the CSV could not see is added by typing");
     r = await rows(page);
-    check(/RyuHadouken 7680×1472/.test(r[2].what) && /added by hand/.test(r[2].what), "…as the deliverable's own creative, the size of the board until typed", r[2].what);
+    check(r.length === 3 && /RyuHadouken 7680×1472/.test(r[2].what) && /added by hand/.test(r[2].what), "…as the deliverable's own creative, the size of the board until typed", r[2].what);
     await type(page, ".bsg-row:nth-child(3) .bsg-row-nums .bsg-num:nth-child(3) input", "1500");
     check(await page.waitFor(`/RyuHadouken 1500×1472/.test(document.querySelectorAll(".bsg-row")[2].innerText.replace(/\\s+/g, " "))`, 3000), "its numbers are typed, not dragged");
     check(await page.waitFor(`/No RyuHadouken master fits/.test(document.querySelectorAll(".bsg-row")[2].innerText)`, 5000), "a creative with no master of its own is asked about, never given another's");
+
+    await page.click(".bsg-row:nth-child(2) .bsg-link");
+    check(await page.waitFor(`document.querySelectorAll(".bsg-row").length === 4`, 3000), "a run-on window can be made a panel of its own");
+    r = await rows(page);
+    check(r[2].nums === "6792,0,888,320" && /^Trio 888×320/.test(r[2].what) && !/also runs on/.test(await text(page, ".bsg-row:nth-child(2)")), "…straight after the panel it came from, at the CSV's own numbers", r[2]);
+    await page.click(".bsg-row:nth-child(3) .bsp-btn--danger");
+    await page.waitFor(`document.querySelectorAll(".bsg-row").length === 3`, 3000);
 
     console.log("\nBuilding");
     await page.click(".bsg-build");
