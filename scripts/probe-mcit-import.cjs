@@ -245,5 +245,11 @@ say(r9.items[0].action === 'replaced', '…and is one when the row was built fro
 r9 = aeft.mcItApplyToOpenProject(slotIn('Artwork', 'Sky_Grade_2.png'), TW + '_V01.aep', [new File(`${TWD}/${TW}2.png`)], true, undefined, '', 'DK');
 say(r9.items[0].action === 'skipped', '…while a file with neither token stays out of it', r9.items[0].reason);
 
+// 10. The length a name states, which decides how often an approved
+// deliverable is played to fill a longer row.
+const secs = aeft.csvLocSecondsOfName;
+say(secs('SF_INTL_Trio_DOOH_Kube_768x1280px_15s_DK_V02.aep') === 15 && secs('ODY_INTL_DGTL_DOOH_HORSE_LOS_1920x858_10sec_OV.aep') === 10, 'a name states its length on either convention', secs('SF_INTL_Trio_DOOH_Kube_768x1280px_15s_DK_V02.aep') + ' ' + secs('ODY_INTL_DGTL_DOOH_HORSE_LOS_1920x858_10sec_OV.aep'));
+say(secs('SF_INTL_Trio_DOOH_Kiosks_768x1280px_30s_US.aep') === 30 && secs('SF_INTL_Trio_DOOH_Lamppost_768x1280px_DK') === 0 && secs('notes.aep') === 0, '…and a site ending in s, or no length at all, is not one', secs('SF_INTL_Trio_DOOH_Kiosks_768x1280px_30s_US.aep') + ' ' + secs('SF_INTL_Trio_DOOH_Lamppost_768x1280px_DK'));
+
 console.log(fails === 0 ? '\nCLEAN — each project gets its own images, once.' : '\n' + fails + ' FAILED');
 process.exit(fails ? 1 : 0);

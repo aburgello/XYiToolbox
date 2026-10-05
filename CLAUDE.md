@@ -1147,7 +1147,9 @@ campaign, each with its clip beside its mech sheet.
   `VideoOverlay`.
 - **Build a Batch says when a row has been "seen before"**: a small ruler
   pill with a count when THIS creative has been approved in THIS campaign at
-  the row's exact ratio. It opens Size Finder on that size and creative **in
+  the row's ratio **or within 10% of it** (`NEAR_RATIO`; a row with only
+  near ones gets a dashed, quieter pill), at a length the row can be built
+  from (`repeatFor`, below). Exact-ratio-only left most rows with no hint. It opens Size Finder on that size and creative **in
   a window over the builder, never by navigating** (opening a Localise tool
   drops the page's panes and the batch being edited). **The pill is a
   reference only:** it reads `lib/sizeFinderStore.ts` (the one per-campaign
@@ -1157,9 +1159,19 @@ campaign, each with its clip beside its mech sheet.
   press.** Offered in that window only (never on the tool's own page), it pins
   the row to the approved deliverable's PROJECT (`findApprovedProject`:
   `<Territory>/AE/<Batch>`, the delivered batch paired loosely, newest `_Vnn`,
-  never Auto-Save). Refused, with the reason beside the button, for another
-  campaign, the row's own territory, another length, a name with no market
-  token, or no project on disk. It rides the master pin, plus a second FLAT
+  never Auto-Save). It is a BAR across the detail, the one solid button in
+  the window (as a fourth small button under the clip it read as another way
+  to open a folder). Refused, with the reason in the bar, for another
+  campaign, the row's own territory, a name with no market token, no project
+  on disk, or a length the row can't use.
+- **A row is built from its own length, or one that goes into it exactly 2
+  or 3 times** (`repeatFor`: a 30s row from a 15s ×2 or a 10s ×3; never a
+  longer one, a fraction, or four passes). The window opened from a row lists
+  only those lengths and counts the rest. **The host works the repeat out
+  itself** from the project's own name (`csvLocSecondsOfName`) and lays the
+  creative layer end to end like any duration multiple; a length that does
+  not go in is refused there too, never built short. Only for these market
+  pins: an ordinary hand-picked master still beats any multiple. It rides the master pin, plus a second FLAT
   map, `pinMarketsJson` (CSV index → market code; nested objects lose their
   values over the bridge). The run copies it like any master, so the other
   market's project is never opened.

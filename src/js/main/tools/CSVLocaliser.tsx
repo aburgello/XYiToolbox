@@ -16,7 +16,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom";
 import SizeFinderTool from "./SizeFinder";
 import { hasNode as sizeHasNode, onApprovedChange, peekApproved, readApproved } from "../lib/sizeFinderStore";
-import { countAtRatio, ratioLabel } from "../lib/sizeMatch";
+import { countAtRatio, NEAR_RATIO, ratioLabel } from "../lib/sizeMatch";
 import type { Approved } from "../lib/sizeScan";
 import { motion, useReducedMotion } from "motion/react";
 import { territoryNameFlag } from "../lib/jobsFeed";
@@ -1144,7 +1144,9 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
     // `market`/`from`: set when the pin is ANOTHER MARKET'S APPROVED
     // deliverable, picked in Size Finder. The run then swaps that market's
     // artwork as it would a master's OV (csvLocaliserRun's pinMarketsJson).
-    const [buildPins, setBuildPins] = useState<Record<number, { name: string; path: string; market?: string; from?: string }>>({});
+    // `repeat`: that deliverable is shorter than the row and played 2 or 3
+    // times to fill it. Shown here only; the run works it out again itself.
+    const [buildPins, setBuildPins] = useState<Record<number, { name: string; path: string; market?: string; from?: string; repeat?: number }>>({});
     // The master picker's open state: which row, and what the host offered.
     // `source` is the folder the list was read from when it isn't the
     // campaign's masters folder ("Look in another folder…").
@@ -3446,7 +3448,7 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
                                         if (pin) {
                                             return (
                                                 <Tooltip text={pin.market
-                                                    ? `Built from ${pin.from || pin.market}'s approved ${pin.name.replace(/\.aep$/i, "")}. MC It! and Support Swap swap its ${pin.market} artwork for this market's; text typed in its comps stays ${pin.market}'s. Click to change or go back to automatic.`
+                                                    ? `Built from ${pin.from || pin.market}'s approved ${pin.name.replace(/\.aep$/i, "")}${pin.repeat && pin.repeat > 1 ? `, played ${pin.repeat}× to fill the row` : ""}. MC It! and Support Swap swap its ${pin.market} artwork for this market's; text typed in its comps stays ${pin.market}'s. Click to change or go back to automatic.`
                                                     : `Master picked by hand: ${pin.name}. Click to change or go back to automatic.`}>
                                                     <button type="button" className="specs-master specs-master--pick specs-master--pinned" onClick={() => pickBuildMaster(r)} aria-label="Change master">
                                                         <Pin size={11} />
@@ -3623,18 +3625,26 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
                                     <span className="specs-build-end">
                                         {(() => {
                                             // SEEN BEFORE. Only when this creative has been
-                                            // approved at this exact ratio: a hint that is on
-                                            // every row is one nobody reads.
+                                            // approved at this ratio or CLOSE to it (within
+                                            // NEAR_RATIO), at a length the row can be built
+                                            // from: a hint that is on every row is one nobody
+                                            // reads. Close-only is drawn quieter than a match.
                                             const w = parseInt(r.width, 10);
                                             const h = parseInt(r.height, 10);
                                             const cr = buildRowCreative(r);
                                             if (!approved.length || !cr || !(w > 0) || !(h > 0)) return null;
-                                            const seen = countAtRatio(approved, w, h, cr);
-                                            const n = seen.exact + seen.same;
+                                            const seen = countAtRatio(approved, w, h, cr, parseInt(r.duration, 10) || 0);
+                                            const at = seen.exact + seen.same;
+                                            const n = at + seen.near;
                                             if (!n) return null;
+                                            const times = (k: number) => `${k} time${k === 1 ? "" : "s"}`;
+                                            const pct = Math.round(NEAR_RATIO * 100);
+                                            const said = at
+                                                ? `${cr} has been approved ${times(at)} at ${ratioLabel(w, h)}${seen.exact ? `, ${seen.exact} at exactly ${w}×${h}` : ""}${seen.near ? `, and ${times(seen.near)} within ${pct}% of it` : ""}.`
+                                                : `${cr} has not been approved at ${ratioLabel(w, h)}, but ${times(seen.near)} within ${pct}% of it.`;
                                             return (
-                                                <Tooltip text={`${cr} has been approved ${n} time${n === 1 ? "" : "s"} at ${ratioLabel(w, h)}${seen.exact ? `, ${seen.exact} at exactly ${w}×${h}` : ""}. Click to see them. Changes nothing about this row.`}>
-                                                    <button type="button" className="specs-build-seen" onClick={() => setSizeLook({ size: `${w}x${h}`, creative: cr, rowId: r.id, seconds: parseInt(r.duration, 10) || 0 })} aria-label="See approved deliverables at this ratio">
+                                                <Tooltip text={`${said} Click to see them. Changes nothing about this row unless you pick one.`}>
+                                                    <button type="button" className={"specs-build-seen" + (at ? "" : " specs-build-seen--near")} onClick={() => setSizeLook({ size: `${w}x${h}`, creative: cr, rowId: r.id, seconds: parseInt(r.duration, 10) || 0 })} aria-label="See approved deliverables at this ratio">
                                                         <Ruler size={10} />{n}
                                                     </button>
                                                 </Tooltip>
@@ -3730,7 +3740,7 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
                 <div className="szf-window-overlay" style={portalCatVars()} onClick={() => setSizeLook(null)} role="presentation">
                     <div className="szf-window" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Size Finder">
                         <div className="szf-window-head">
-                            <strong>Approved at this ratio</strong>
+                            <strong>Approved at this ratio, and near it</strong>
                             <span>{sizeLook.creative} · {campaignName}</span>
                             <button type="button" className="szf-window-close" onClick={() => setSizeLook(null)} aria-label="Close"><X size={14} /></button>
                         </div>
@@ -3744,11 +3754,11 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
                                 marketsRoot,
                                 seconds: sizeLook.seconds,
                                 territory: buildTerritory,
-                                onUse: (row, project, market) => {
+                                onUse: (row, project, market, repeat) => {
                                     const rowId = sizeLook.rowId;
-                                    setBuildPins((prev) => ({ ...prev, [rowId]: { name: project.name, path: project.path, market, from: row.territory } }));
+                                    setBuildPins((prev) => ({ ...prev, [rowId]: { name: project.name, path: project.path, market, from: row.territory, repeat } }));
                                     setSizeLook(null);
-                                    setNotice(`Row will be built from ${row.territory}'s ${project.name.replace(/\.aep$/i, "")}: its ${market} artwork is swapped as it builds. Check any text typed in its comps.`);
+                                    setNotice(`Row will be built from ${row.territory}'s ${project.name.replace(/\.aep$/i, "")}${repeat > 1 ? `, played ${repeat}× to fill the row` : ""}: its ${market} artwork is swapped as it builds. Check any text typed in its comps.`);
                                 },
                             }}
                         />

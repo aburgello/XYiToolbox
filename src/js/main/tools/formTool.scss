@@ -2126,6 +2126,14 @@
 
     &:hover { background: rgba(94, 234, 212, 0.18); border-color: var(--cat-border, #5eead4); color: #fff; }
     &:active { background: rgba(94, 234, 212, 0.26); }
+
+    // Nothing at this ratio, only close to it: dashed and unfilled, so a row
+    // with a real match still stands out from one with a near miss.
+    &--near {
+        border-style: dashed;
+        background: transparent;
+        color: #9fb8b5;
+    }
 }
 
 .specs-build-warn {

@@ -96,19 +96,86 @@
         &:disabled { opacity: 0.5; cursor: default; }
     }
 
-    // The one action that changes something: build the row from this.
-    .szf-btn--use {
-        border-color: var(--cat-border, #5eead4);
-        background: rgba(94, 234, 212, 0.12);
-        color: #fff;
-
-        &:hover { background: rgba(94, 234, 212, 0.22); }
-        &:active { background: rgba(94, 234, 212, 0.3); }
-        &:disabled,
-        &:disabled:hover { background: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.14); color: #aaa; }
+    // THE ONE ACTION THAT CHANGES SOMETHING: build the row from this. A bar
+    // across the detail, tinted with the category, its button the only solid
+    // one in the window. Rest, hover and active all declared (index.scss's
+    // global button states paint over the rest).
+    .szf-use {
+        display: flex;
+        align-items: center;
+        margin: 0 0 10px;
+        padding: 9px 10px 9px 11px;
+        border: 1px solid var(--cat-border, #5eead4);
+        border-left-width: 3px;
+        border-radius: 8px;
+        background: rgba(94, 234, 212, 0.09);
     }
 
-    .szf-use-why { align-self: center; margin: 3px 3px 0; font-size: 10.5px; color: #8d9596; }
+    .szf-use-mark {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        width: 30px;
+        height: 30px;
+        margin-right: 10px;
+        border-radius: 8px;
+        background: rgba(94, 234, 212, 0.16);
+        color: var(--cat-icon, #5eead4);
+    }
+
+    .szf-use-text {
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+        min-width: 0;
+        margin-right: 12px;
+
+        strong { font-size: 12.5px; font-weight: 700; color: #fff; }
+    }
+
+    .szf-use-why { margin-top: 2px; font-size: 11px; line-height: 1.35; color: #a9b4b5; }
+
+    .szf-use-btn {
+        display: inline-flex;
+        align-items: center;
+        flex-shrink: 0;
+        height: 34px;
+        padding: 0 16px;
+        border: 0;
+        border-radius: 8px;
+        background: var(--cat-icon, #5eead4);
+        color: #0d1516;
+        font-size: 12px;
+        font-weight: 800;
+        white-space: nowrap;
+        cursor: pointer;
+        box-shadow: 0 2px 10px rgba(94, 234, 212, 0.25);
+        transition: background 0.15s ease, box-shadow 0.15s ease;
+
+        em {
+            margin-left: 7px;
+            padding: 1px 6px;
+            border-radius: 999px;
+            background: rgba(13, 21, 22, 0.2);
+            font-style: normal;
+            font-size: 11px;
+        }
+
+        &:hover { background: #fff; color: #0d1516; box-shadow: 0 3px 16px rgba(94, 234, 212, 0.45); }
+        &:active { background: #d7f5f0; color: #0d1516; box-shadow: none; }
+        &:disabled,
+        &:disabled:hover { background: rgba(255, 255, 255, 0.07); color: #8d9596; box-shadow: none; cursor: default; }
+    }
+
+    // Can't be built from: the bar stays, quiet, saying why.
+    .szf-use.is-off {
+        border-color: rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.03);
+
+        .szf-use-mark { background: rgba(255, 255, 255, 0.06); color: #8d9596; }
+        .szf-use-text strong { color: #c9cfd0; }
+    }
 
     .szf-sum {
         min-height: 16px;
@@ -366,6 +433,10 @@
 @media (max-width: 620px) {
     .szf .szf-pair { flex-direction: column; }
     .szf .szf-pane + .szf-pane { margin-top: 10px; }
+    // The bar stacks: the button under what it will do, full width.
+    .szf .szf-use { flex-wrap: wrap; }
+    .szf .szf-use-text { flex: 1 1 0; margin-right: 0; }
+    .szf .szf-use-btn { flex: 1 1 100%; justify-content: center; margin-top: 9px; }
 }
 
 // Size Finder in a window over Build a Batch (CSVLocaliser's "seen before"

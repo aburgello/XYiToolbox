@@ -31,7 +31,7 @@ import { evalTS } from "../../lib/utils/bolt";
 import { child_process, path as nodePath } from "../../lib/cep/node";
 import { toFileUrl } from "../lib/fileUrl";
 import { usePosterFrame } from "../lib/renderPreview";
-import { byCloseness, closeness, Closeness, marketOfName, parseWanted, ratioLabel, sheetImages } from "../lib/sizeMatch";
+import { byCloseness, closeness, Closeness, marketOfName, parseWanted, ratioLabel, repeatFor, sheetImages } from "../lib/sizeMatch";
 import { Approved, findApprovedProject } from "../lib/sizeScan";
 import { hasNode, isChecking, listDir, onApprovedChange, peekApproved, readApproved } from "../lib/sizeFinderStore";
 import Dropdown from "../Dropdown";
@@ -186,8 +186,9 @@ const SheetPane: React.FC<{ row: Approved }> = ({ row }) => {
 /**
  * Offered only from a Build a Batch row: build THAT row from the deliverable
  * on screen instead of a master. Same campaign only (two films can share a
- * creative's name, never its artwork), same length, another market, and only
- * once its project is found on disk.
+ * creative's name, never its artwork), another market, a length the row can
+ * be built from (its own, or one that goes into it exactly 2 or 3 times and
+ * is played that often), and only once its project is found on disk.
  */
 export interface UseAsMaster {
     campaign: string;
@@ -196,43 +197,52 @@ export interface UseAsMaster {
     seconds: number;
     /** The territory folder the row is being built for. */
     territory: string;
-    onUse: (row: Approved, project: { name: string; path: string }, market: string) => void;
+    /** `repeat`: how many times the deliverable is played to fill the row (1, 2 or 3). */
+    onUse: (row: Approved, project: { name: string; path: string }, market: string, repeat: number) => void;
 }
 
 interface SizeFinderProps { initialSize?: string; initialCreative?: string; initialCampaign?: string; onSelectTool?: (toolId: string) => void; useAsMaster?: UseAsMaster }
 
-/** "Use as this row's master" -- or, when it can't be, the reason why, on the button. */
-const UseAsMasterButton: React.FC<{ row: Approved; use: UseAsMaster }> = ({ row, use }) => {
+/**
+ * "Use as this row's master", as a BAR over the clip and the sheet: it is the
+ * one thing in the window that changes the batch, and as a fourth small
+ * button under the clip it read as another way to open a folder. The bar says
+ * what will be built from what; when it can't be, it says why instead.
+ */
+const UseAsMasterBar: React.FC<{ row: Approved; use: UseAsMaster }> = ({ row, use }) => {
     const [state, setState] = useState<"idle" | "looking" | "missing">("idle");
     useEffect(() => { setState("idle"); }, [row.id]);
     const market = marketOfName(row.name);
+    const repeat = repeatFor(use.seconds, row.seconds);
     let why = "";
     if (row.campaign !== use.campaign) why = `It's ${row.campaign}'s. Only this campaign's deliverables can be built from.`;
     else if (row.territory === use.territory) why = `It's already ${row.territory}'s.`;
     else if (!market) why = "Its name doesn't say which market it was made for, so its artwork can't be swapped.";
-    else if (use.seconds && row.seconds && use.seconds !== row.seconds) why = `It's ${row.seconds}s and the row is ${use.seconds}s.`;
+    else if (!repeat) why = `It's ${row.seconds}s and the row is ${use.seconds}s. A row is built from its own length, or one that goes into it 2 or 3 times.`;
     else if (state === "missing") why = `No project for it in ${row.territory}/AE${row.batch ? "/" + row.batch : ""}.`;
     const pick = async () => {
         setState("looking");
         const proj = await findApprovedProject(use.marketsRoot, row, listDir);
         if (!proj) { setState("missing"); return; }
         setState("idle");
-        use.onUse(row, proj, market);
+        use.onUse(row, proj, market, repeat);
     };
-    // A disabled button shows no tooltip in Chromium, so the reason is text.
     return (
-        <>
-        <button
-            type="button"
-            className="szf-btn szf-btn--use"
-            disabled={!!why || state === "looking"}
-            title={why || `Build the row from this ${market} project. MC It! and Support Swap swap its ${market} artwork for the row's market.`}
-            onClick={pick}
-        >
-            <Pin size={12} /> {state === "looking" ? "Finding its project…" : "Use as this row's master"}
-        </button>
-        {why && <span className="szf-use-why">{why}</span>}
-        </>
+        <div className={"szf-use" + (why ? " is-off" : "")}>
+            <span className="szf-use-mark"><Pin size={15} /></span>
+            <span className="szf-use-text">
+                <strong>{why ? "Can't build the row from this one" : `Build the row from ${row.territory}'s ${row.w}×${row.h}`}</strong>
+                <span className="szf-use-why">
+                    {why || (
+                        (repeat > 1 ? `${row.seconds}s, played ${repeat}× to fill ${use.seconds}s. ` : "")
+                        + `Its ${market} artwork is swapped for ${use.territory || "this market"}'s as it builds.`
+                    )}
+                </span>
+            </span>
+            <button type="button" className="szf-use-btn" disabled={!!why || state === "looking"} onClick={pick}>
+                {state === "looking" ? "Finding its project…" : <>Use as this row's master{repeat > 1 ? <em>×{repeat}</em> : null}</>}
+            </button>
+        </div>
     );
 };
 
@@ -298,7 +308,12 @@ const SizeFinderTool = ({ initialSize, initialCreative, initialCampaign, useAsMa
     useEffect(() => { if (wanted) writeStored(text.trim()); }, [text]);
     useEffect(() => { setLimit(24); }, [text, campaign, creative]);
 
-    const inCampaign = useMemo(() => (rows || []).filter((r) => !campaign || r.campaign === campaign), [rows, campaign]);
+    // Opened from a batch row: only lengths that row can be built from (its
+    // own, or one played 2 or 3 times). The rest are counted, not listed.
+    const rowSeconds = useAsMaster ? useAsMaster.seconds : 0;
+    const ofCampaign = useMemo(() => (rows || []).filter((r) => !campaign || r.campaign === campaign), [rows, campaign]);
+    const inCampaign = useMemo(() => (rowSeconds ? ofCampaign.filter((r) => repeatFor(rowSeconds, r.seconds) > 0) : ofCampaign), [ofCampaign, rowSeconds]);
+    const otherLengths = ofCampaign.length - inCampaign.length;
     // The creatives this campaign (or all of them) has delivered, most first.
     const creatives = useMemo(() => {
         const seen: Record<string, { label: string; n: number }> = {};
@@ -395,6 +410,7 @@ const SizeFinderTool = ({ initialSize, initialCreative, initialCampaign, useAsMa
                         ? note
                         : rows
                             ? `${inScope.length} approved ${creativeOn ? (creatives.filter((c) => c.key === creativeOn)[0] || { label: "" }).label + " " : ""}deliverable${inScope.length === 1 ? "" : "s"} in ${sizes} size${sizes === 1 ? "" : "s"}`
+                              + (otherLengths > 0 ? ` · ${otherLengths} at lengths a ${rowSeconds}s row can't be built from left out` : "")
                               + (missing.length ? ` · not mounted: ${missing.join(", ")}` : "")
                               + (checking ? " · checking for new deliveries…" : "")
                             : ""}
@@ -429,6 +445,7 @@ const SizeFinderTool = ({ initialSize, initialCreative, initialCampaign, useAsMa
                             {selected.near ? ` · ${selected.near.label}` : ""}
                         </span>
                     </div>
+                    {useAsMaster && <UseAsMasterBar row={selected.row} use={useAsMaster} />}
                     <div className="szf-pair">
                         <div className="szf-pane">
                             {selected.row.preview ? (
@@ -441,7 +458,6 @@ const SizeFinderTool = ({ initialSize, initialCreative, initialCampaign, useAsMa
                                     <button type="button" className="szf-btn" onClick={() => setPlaying(selected.row)}><Maximize2 size={12} /> Play large</button>
                                 )}
                                 <button type="button" className="szf-btn" onClick={() => openPath(selected.row.delivered, true)}><FolderOpen size={12} /> Show in Finder</button>
-                                {useAsMaster && <UseAsMasterButton row={selected.row} use={useAsMaster} />}
                             </div>
                         </div>
                         <div className="szf-pane">

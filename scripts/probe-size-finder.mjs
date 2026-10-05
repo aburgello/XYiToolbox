@@ -42,6 +42,23 @@ check(M.creativeOfName("ODY_INTL_DGTL_DOOH_HORSE_LOS_1920x858_10sec_OV") === "" 
 check(M.marketOfName("SF_INTL_Trio_DOOH_Kube_520x520px_10s_DK_V02.aep") === "DK" && M.marketOfName("SF_INTL_Characters_DOOH_1080x1920px_15s_BE_FL") === "BE", "the market is the token after the length, language or version after it ignored");
 check(M.marketOfName("FID_INTL_PortalToParadise_DOOH_3840x586px_10s_OV") === "" && M.marketOfName("notes") === "", "…never OV, and nothing when the name doesn't say");
 
+console.log("\nWhat a row can be built from");
+check(M.repeatFor(30, 30) === 1 && M.repeatFor(30, 15) === 2 && M.repeatFor(30, 10) === 3, "its own length, or one that goes into it 2 or 3 times");
+check(M.repeatFor(30, 20) === 0 && M.repeatFor(15, 30) === 0 && M.repeatFor(40, 10) === 0 && M.repeatFor(30, 7) === 0, "never a longer one, a fraction, or four passes");
+check(M.repeatFor(0, 15) === 1 && M.repeatFor(30, 0) === 1, "a length nobody stated is not a reason to refuse");
+const seenRows = [
+    { w: 768, h: 1280, creative: "Trio", seconds: 30 },      // exact
+    { w: 1536, h: 2560, creative: "TRIO", seconds: 15 },     // same ratio, played twice
+    { w: 800, h: 1280, creative: "Trio", seconds: 10 },      // 4.2% wider: close
+    { w: 844, h: 1280, creative: "Trio", seconds: 30 },      // 9.9% wider: the edge, still close
+    { w: 900, h: 1280, creative: "Trio", seconds: 30 },      // 17% wider: not close
+    { w: 768, h: 1280, creative: "Trio", seconds: 20 },      // exact, but 20s into 30s doesn't go
+    { w: 768, h: 1280, creative: "Characters", seconds: 30 },
+];
+check(JSON.stringify(M.countAtRatio(seenRows, 768, 1280, "Trio", 30)) === '{"exact":1,"same":1,"near":2}', "seen before: exact, the same ratio, and within 10% of it, at lengths the row can use", M.countAtRatio(seenRows, 768, 1280, "Trio", 30));
+check(JSON.stringify(M.countAtRatio(seenRows, 768, 1280, "Trio")) === '{"exact":2,"same":1,"near":2}', "…and every length when the row states none", M.countAtRatio(seenRows, 768, 1280, "Trio"));
+check(JSON.stringify(M.countAtRatio(seenRows, 512, 1280, "Trio", 30)) === '{"exact":0,"same":0,"near":0}', "a shape nothing is close to still says nothing");
+
 console.log("\nWhat closest means");
 const near = (w, h, hw, hh) => M.closeness({ w, h }, { w: hw, h: hh });
 check(near(400, 400, 400, 400).kind === "exact", "the same size is exact");

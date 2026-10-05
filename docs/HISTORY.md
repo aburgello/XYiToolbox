@@ -9855,3 +9855,21 @@ stub the project, so what a real localised project does when it is scaled a
 second time, and whether its comp is found by the file's stem, are unproven.
 The earlier "not done" notes above (the JPG pane, the pill and the window,
 the team folder write) still stand.
+
+
+## 2026-10-05 — Use as master: lengths, wiggle room, and a button you can find
+
+Three things from the first look at 20261030:
+
+- The button refused any length but the row's own. It now also takes one that
+  goes into the row 2 or 3 times, played that often (the same repeat a
+  duration multiple uses), and the window lists only lengths the row can use.
+- The pill showed only for an exact ratio, so most rows had none. It now
+  counts anything within 10% of the row's ratio as well, drawn quieter when
+  that is all there is.
+- The button was a fourth small button under the clip. It is a bar across the
+  detail now, saying what will be built from what.
+
+**Not done:** a repeated build from an approved project has not been run in
+After Effects. The repeat finds the creative layer by the comp's name, which
+a localised project should carry but nothing here has proved.

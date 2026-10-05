@@ -128,27 +128,55 @@ export function closeness(want: { w: number; h: number }, have: { w: number; h: 
 }
 
 /**
- * How many of `rows` are one creative at exactly this size, and how many more
- * at the same ratio. What the "seen before" hint on a batch row is counted
- * from. A blank creative counts nothing: the hint is about THIS creative.
+ * WIGGLE ROOM: a ratio within this much of the row's own (10% wider or
+ * taller) is close enough to be worth a look. A 768x1280 row is told about an
+ * 800x1280, which reframes with a nudge; it is not told about a 512x1280.
+ */
+export const NEAR_RATIO = 0.1;
+
+/**
+ * How many times an approved deliverable of `haveSeconds` is played to fill a
+ * row of `rowSeconds`: 1 the same length, 2 or 3 when it goes in exactly that
+ * many times (a 30s row from a 15s or a 10s), 0 when it can't be used. A
+ * length nobody stated on either side is not a reason to refuse.
+ */
+export function repeatFor(rowSeconds: number, haveSeconds: number): number {
+    if (!rowSeconds || !haveSeconds || rowSeconds === haveSeconds) return 1;
+    if (haveSeconds * 2 === rowSeconds) return 2;
+    if (haveSeconds * 3 === rowSeconds) return 3;
+    return 0;
+}
+
+/**
+ * How many of `rows` are one creative at exactly this size, how many more at
+ * the same ratio, and how many CLOSE to it (NEAR_RATIO). What the "seen
+ * before" hint on a batch row is counted from. A blank creative counts
+ * nothing: the hint is about THIS creative. With `seconds`, only lengths the
+ * row could be built from are counted (repeatFor), so the count matches what
+ * the window opened from it lists.
  */
 export function countAtRatio(
-    rows: { w: number; h: number; creative: string }[],
+    rows: { w: number; h: number; creative: string; seconds?: number }[],
     w: number,
     h: number,
-    creative: string
-): { exact: number; same: number } {
+    creative: string,
+    seconds?: number
+): { exact: number; same: number; near: number } {
     const want = String(creative || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
     let exact = 0;
     let same = 0;
-    if (!want || !(w > 0) || !(h > 0)) return { exact, same };
+    let near = 0;
+    if (!want || !(w > 0) || !(h > 0)) return { exact, same, near };
+    const room = Math.log(1 + NEAR_RATIO) + 1e-9;
     for (const r of rows) {
         if (String(r.creative || "").toUpperCase().replace(/[^A-Z0-9]/g, "") !== want) continue;
+        if (seconds && !repeatFor(seconds, r.seconds || 0)) continue;
         const c = closeness({ w, h }, r);
         if (c.kind === "exact") exact++;
         else if (c.kind === "same-shape") same++;
+        else if (c.shape <= room) near++;
     }
-    return { exact, same };
+    return { exact, same, near };
 }
 
 /** Sort order for results: shape, then scale, then the newer-looking name. */

@@ -4204,6 +4204,24 @@ function csvLocNameGen(
 // final-count alert. Crucially "no-master" rows -- previously a SILENT
 // `continue` (the invisible failure mode that hid the JUNGLE_TUNNEL campaign
 // mismatch for a whole afternoon) -- are now first-class results.
+/**
+ * The length a deliverable's name states, in seconds: its `15s` / `15sec`
+ * token. 0 when it has none. Plain string work, no optional-group regex: AE
+ * 26.5's engine aborts on those (see tracker.ts).
+ */
+export function csvLocSecondsOfName(name: string): number {
+  const toks = String(name || "").split(/[_ .]+/);
+  for (let i = 0; i < toks.length; i++) {
+    let t = String(toks[i]).toLowerCase();
+    if (t.length > 3 && t.substring(t.length - 3) === "sec") t = t.substring(0, t.length - 3);
+    else if (t.length > 1 && t.charAt(t.length - 1) === "s") t = t.substring(0, t.length - 1);
+    else continue;
+    if (t.length < 1 || t.length > 3 || !/^\d+$/.test(t)) continue;
+    return parseInt(t, 10);
+  }
+  return 0;
+}
+
 export interface CsvLocRowReport {
   row: number;
   artwork: string;
@@ -4661,6 +4679,9 @@ export const csvLocaliserRun = (
 
       const pinnedPath = pinnedRows[String(rowsAttempted - 1)];
       let rowAsOv = "";
+      // 2 or 3 when the row is built from another market's approved
+      // deliverable SHORTER than itself (see the pinMarkets block below).
+      let pinRepeat = 1;
       let bestMatch: MasterIndexEntry | null = null;
       if (pinnedPath) {
         for (let pi = 0; pi < mastersIndex.length; pi++) {
@@ -4719,8 +4740,27 @@ export const csvLocaliserRun = (
             rep.error = "The approved deliverable picked for this row is already " + fromMarket + "'s. Pick one from another market, or a master.";
             continue;
           }
+          // ITS LENGTH AGAINST THE ROW'S. The same, or one that goes into the
+          // row exactly 2 or 3 times and is played that often. Read off the
+          // project's own name and worked out HERE, never taken from the
+          // panel: a 20s project in a 30s row is refused, not built short.
+          const srcSeconds = csvLocSecondsOfName(decode(String(bestMatch.name)));
+          const rowDigits = String(duration).match(/\d+/);
+          const rowSeconds = rowDigits ? parseInt(rowDigits[0], 10) : 0;
+          if (srcSeconds > 0 && rowSeconds > 0 && srcSeconds !== rowSeconds) {
+            if (srcSeconds * 2 === rowSeconds) pinRepeat = 2;
+            else if (srcSeconds * 3 === rowSeconds) pinRepeat = 3;
+            else {
+              rep.status = "no-master";
+              rep.error = "The approved deliverable picked for this row is " + srcSeconds + "s and the row is " + rowSeconds
+                + "s. Pick one of the row's own length, or one that goes into it 2 or 3 times.";
+              continue;
+            }
+          }
           rowAsOv = fromMarket;
-          rep.sourceNote = "Built from " + fromMarket + "'s approved " + bestMatch.name + ", its " + fromMarket + " artwork swapped for " + territoryCode
+          rep.sourceNote = "Built from " + fromMarket + "'s approved " + bestMatch.name
+            + (pinRepeat > 1 ? " (" + srcSeconds + "s, played " + pinRepeat + "x)" : "")
+            + ", its " + fromMarket + " artwork swapped for " + territoryCode
             + "'s. Text typed in the comps is still " + fromMarket + "'s: check it.";
         }
       } else {
@@ -4728,7 +4768,7 @@ export const csvLocaliserRun = (
       }
       // How many times the creative layer is laid end to end in the delivery
       // comp. 1 = the normal path, untouched.
-      let repeatFactor = 1;
+      let repeatFactor = pinRepeat;
       const chosenFactor = multipleRows[String(rowsAttempted - 1)];
       if (!bestMatch && !pinnedPath && chosenFactor) {
         // No same-duration master, and the user explicitly chose to build this
