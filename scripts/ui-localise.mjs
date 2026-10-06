@@ -138,7 +138,7 @@ for (const f of ["SF_INTL_Trio_DOOH_Cinema_768x1280px_10s_IT.mp4", "SF_INTL_Trio
     const D = "SF_INTL_Trio_DOOH_ShowtimeCinemasTPED_768x1280px_30s_DK";
     const I = "SF_INTL_Trio_DOOH_Cinema_768x1280px_10s_IT";
     const M = "/Volumes/paramount/SF/XY026205_Markets/";
-    for (const f of [`Denmark/JPG_PNG/Batch_1/${D}/${D}.jpg`, `Denmark/JPG_PNG/Batch_1/${D}/${D}1.png`, `Denmark/JPG_PNG/Batch_1/${D}/${D}2.png`,
+    for (const f of ["Denmark/AE/Batch_1/SF_INTL_Trio_DOOH_InTheatreFoyerScreen_512x1280px_30s_DK_V01.aep", "Denmark/AE/Batch_1/Adobe After Effects Auto-Save/x.aep", `Denmark/JPG_PNG/Batch_1/${D}/${D}.jpg`, `Denmark/JPG_PNG/Batch_1/${D}/${D}1.png`, `Denmark/JPG_PNG/Batch_1/${D}/${D}2.png`,
         `Italy/JPG_PNG/Batch_1/${I}/${I}.jpg`, `Italy/JPG_PNG/Batch_1/${I}/${I}1.png`]) {
         const parts = (M + f).split("/");
         for (let i = 2; i <= parts.length; i++) {
@@ -477,6 +477,17 @@ try {
     check(/1 of 3/.test(await cpager()), "and round to the sheets again");
     await page.shot(path.join(SHOTS, "ui-compare-wipe.png"));
     await page.click(".szf-window-close");
+
+    console.log("\n6a4. A POST row's PRE version");
+    const setSite = (n, v) => page.eval(`(() => { const i = document.querySelectorAll("input[aria-label='Media site name (optional)']")[${n}]; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(i, ${JSON.stringify(v)}); i.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+    check(!(await page.eval(`!!document.querySelector(".specs-pre")`)), "no POST row: nothing is offered");
+    await setSite(2, "InTheatreFoyerScreenPOST");
+    check(await page.waitFor(`/1 POST row has a PRE version in Batch_1/.test((document.querySelector(".specs-pre") || {}).innerText || "")`, 5000), "a POST row whose PRE project is in the territory's AE folder is offered it", await page.eval(text(".specs-pre")));
+    await page.click(".specs-pre-btn");
+    check(await page.waitFor(`!document.querySelector(".specs-pre") && document.querySelectorAll(".specs-master--pinned").length === 1`, 4000), "one press pins the row to it, and the offer goes");
+    check(/1 POST row will be built from its PRE version/.test(await page.eval(`[...document.querySelectorAll(".hint")].map(e => e.innerText).join(" | ")`)), "…saying what will be swapped");
+    await setSite(2, "InTheatreFoyerScreen");
+    check(await page.waitFor(`!document.querySelector(".specs-master--pinned") && !document.querySelector(".specs-pre")`, 4000), "taking the POST off the row drops the pin: it was that row's answer, not this one's");
 
     console.log("\n6b. Hand-picking a master");
     check(await page.waitFor(`document.querySelector(".specs-master--none")`, 6000), "an unmatched row offers to pick a master");

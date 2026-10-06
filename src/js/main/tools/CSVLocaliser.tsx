@@ -15,8 +15,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import SizeFinderTool from "./SizeFinder";
-import { hasNode as sizeHasNode, onApprovedChange, peekApproved, readApproved } from "../lib/sizeFinderStore";
-import { countAtRatio, NEAR_RATIO, ratioLabel } from "../lib/sizeMatch";
+import { hasNode as sizeHasNode, listDir as sizeListDir, onApprovedChange, peekApproved, readApproved } from "../lib/sizeFinderStore";
+import { countAtRatio, marketOfName, NEAR_RATIO, preTwinFor, ratioLabel } from "../lib/sizeMatch";
 import type { Approved } from "../lib/sizeScan";
 import { motion, useReducedMotion } from "motion/react";
 import { territoryNameFlag } from "../lib/jobsFeed";
@@ -1146,7 +1146,7 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
     // artwork as it would a master's OV (csvLocaliserRun's pinMarketsJson).
     // `repeat`: that deliverable is shorter than the row and played 2 or 3
     // times to fill it. Shown here only; the run works it out again itself.
-    const [buildPins, setBuildPins] = useState<Record<number, { name: string; path: string; market?: string; from?: string; repeat?: number }>>({});
+    const [buildPins, setBuildPins] = useState<Record<number, { name: string; path: string; market?: string; from?: string; repeat?: number; pre?: boolean }>>({});
     // The master picker's open state: which row, and what the host offered.
     // `source` is the folder the list was read from when it isn't the
     // campaign's masters folder ("Look in another folder…").
@@ -1159,6 +1159,58 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
             delete next[id];
             return next;
         });
+
+    // A POST ROW'S PRE VERSION. A POST deliverable is its PRE one with a new
+    // PNG and a new date, so building it from a master again redoes work that
+    // is already sitting in the territory's AE folder (Thailand: Batch_06
+    // beside Batch_6_POST). Every project the territory holds is listed once
+    // per folder, by the panel's own Node; a POST row whose PRE project is
+    // there is OFFERED it, in one press for the whole batch. Never taken
+    // unasked: it changes what the run builds from, and a PRE that was itself
+    // wrong is not something to inherit silently.
+    const [territoryProjects, setTerritoryProjects] = useState<{ name: string; path: string }[]>([]);
+    const buildSource = !buildTerritory ? "" : buildOrigin && buildOrigin.territory === buildTerritory ? buildOrigin.sourceFolder : path.join(marketsRoot || "", buildTerritory);
+    useEffect(() => {
+        let alive = true;
+        setTerritoryProjects([]);
+        if (!sizeHasNode || !buildOpen || !buildSource) return;
+        (async () => {
+            const batches = (await sizeListDir(path.join(buildSource, "AE"))).filter((k) => k.dir && k.name.charAt(0) !== "_" && k.name.charAt(0) !== ".");
+            const inside = await Promise.all(batches.map((b) => sizeListDir(b.path)));
+            const out: { name: string; path: string }[] = [];
+            inside.forEach((kids) => kids.forEach((k) => { if (!k.dir && k.name.charAt(0) !== "." && /\.aep$/i.test(k.name)) out.push({ name: k.name, path: k.path }); }));
+            if (alive) setTerritoryProjects(out);
+        })();
+        return () => { alive = false; };
+        // `builtDest`: a run that has just written files changes what is on disk.
+    }, [buildOpen, buildSource, builtDest]);
+    const preTwins = useMemo(() => {
+        const out: Record<number, { name: string; path: string }> = {};
+        if (!territoryProjects.length) return out;
+        buildRows.forEach((r) => {
+            const creative = r.creative === CUSTOM_CREATIVE ? r.custom.trim() : r.creative;
+            const w = parseInt(r.width, 10);
+            const h = parseInt(r.height, 10);
+            if (!creative || !(w > 0) || !(h > 0)) return;
+            const t = preTwinFor({ creative, site: r.site || "", w, h, seconds: parseInt(r.duration, 10) || 0 }, territoryProjects);
+            // Its market is what MC It! swaps FROM: a name that does not say is left to a master.
+            if (t && marketOfName(t.name)) out[r.id] = t;
+        });
+        return out;
+    }, [buildRows, territoryProjects]);
+    const preOffered = buildRows.filter((r) => preTwins[r.id] && !(buildPins[r.id] && buildPins[r.id].path === preTwins[r.id].path));
+    const usePreVersions = () => {
+        if (!preOffered.length) return;
+        setBuildPins((prev) => {
+            const next = { ...prev };
+            preOffered.forEach((r) => {
+                const t = preTwins[r.id];
+                next[r.id] = { name: t.name, path: t.path, market: marketOfName(t.name), from: buildTerritory, pre: true };
+            });
+            return next;
+        });
+        setNotice(`${preOffered.length} POST row${preOffered.length === 1 ? "" : "s"} will be built from ${preOffered.length === 1 ? "its PRE version" : "their PRE versions"}: MC It! swaps in the POST artwork and Support Swap the POST dates. Check anything typed in the comps.`);
+    };
     // What a row will ACTUALLY use: the pin when there is one, else the
     // scorer's preview. Every reader of buildMasters goes through this, so the
     // status icon, the × offer, the Bespoke hand-off and the run cannot
@@ -1216,6 +1268,9 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
         if ("creative" in patch || "custom" in patch || "width" in patch || "height" in patch || "duration" in patch) {
             dropBuildPin(id);
         }
+        // A PRE version answers the row's SITE as well (MiniTruckPOST from
+        // MiniTruck), which a hand-picked master does not.
+        if ("site" in patch && buildPins[id] && buildPins[id].pre) dropBuildPin(id);
         setBuildRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
     };
     const addBuildRow = () =>
@@ -3386,6 +3441,19 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
                             )}
                         </div>
 
+                        {/* POST rows whose PRE project is on disk: offered, in one press. */}
+                        {preOffered.length > 0 && (
+                            <div className="specs-handoff specs-pre">
+                                <span>
+                                    <strong>{preOffered.length} POST row{preOffered.length === 1 ? " has" : "s have"} a PRE version</strong> in {Array.from(new Set(preOffered.map((r) => preTwins[r.id].path.split("/").slice(-2, -1)[0]))).join(", ")}.
+                                    {" "}Building from it keeps the work already done; only the artwork and the dates are swapped.
+                                </span>
+                                <button type="button" className="specs-pre-btn" onClick={usePreVersions} disabled={busy}>
+                                    Build {preOffered.length === 1 ? "it" : "them"} from the PRE version{preOffered.length === 1 ? "" : "s"}
+                                </button>
+                            </div>
+                        )}
+
                         {/* ONE CONTAINER for header, rows and the run bar. Loose,
                             each row floated on the page with nothing tying it to
                             the header above or the actions below it. */}
@@ -3447,7 +3515,9 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
                                         // master" and "no master" are both answered there.
                                         if (pin) {
                                             return (
-                                                <Tooltip text={pin.market
+                                                <Tooltip text={pin.pre
+                                                    ? `Built from its PRE version, ${pin.name.replace(/\.aep$/i, "")} (${pin.path.split("/").slice(-2, -1)[0]}). MC It! swaps in the POST artwork and Support Swap the POST dates; anything typed in its comps stays the PRE's. Click to change or go back to automatic.`
+                                                    : pin.market
                                                     ? `Built from ${pin.from || pin.market}'s approved ${pin.name.replace(/\.aep$/i, "")}${pin.repeat && pin.repeat > 1 ? `, played ${pin.repeat}× to fill the row` : ""}. MC It! and Support Swap swap its ${pin.market} artwork for this market's; text typed in its comps stays ${pin.market}'s. Click to change or go back to automatic.`
                                                     : `Master picked by hand: ${pin.name}. Click to change or go back to automatic.`}>
                                                     <button type="button" className="specs-master specs-master--pick specs-master--pinned" onClick={() => pickBuildMaster(r)} aria-label="Change master">

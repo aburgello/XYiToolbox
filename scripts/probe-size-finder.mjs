@@ -158,6 +158,24 @@ check((await scan.findRowArt(T, { ...TWR, site: "" }, list)).length === 2, "no s
 check((await scan.findRowArt(R + "/Peru", TWR, list)).length === 0 && (await scan.findRowArt("", TWR, list)).length === 0, "no JPG_PNG, or no territory: none");
 check((await scan.findRowArt(R + "/Chile", { creative: "StaticCast", site: "MallPlazaPOST", w: 672, h: 382, seconds: 10 }, list)).length === 1, "JPG_PNG with no batch level is read too");
 
+console.log("\nA POST row's PRE version (Thailand's Batch_06 and Batch_6_POST)");
+check(M.sitePre("MiniTruckPOST") === "MiniTruck" && M.sitePre("Mini TruckPOST") === "Mini_Truck" && M.sitePre("POST") === "" && M.sitePre("Digital_Metro_POST") === "Digital_Metro", "POST comes off a site: glued in capitals, or as its own word", [M.sitePre("MiniTruckPOST"), M.sitePre("POST")]);
+check(M.sitePre("MiniTruck") === null && M.sitePre("Lamppost") === null && M.sitePre("OUTPOST") === null && M.sitePre("") === null, "a site with no POST is not a POST row (nor Lamppost, nor an all-capitals OUTPOST)");
+check(M.siteOfName("SF_INTL_Trio_DOOH_LatpraoConnected_704x1152px_15s_TH_V01.aep") === "LatpraoConnected" && M.siteOfName("SF_INTL_Trio_DOOH_Digital Metro_9x16_1080x1920px_10s_NO") === "Digital_Metro" && M.siteOfName("SF_INTL_Trio_DOOH_1920x1080px_30s_NO") === "", "a name's site is what sits between its artwork type and its size, ratio token aside");
+const AE6 = ["SF_INTL_Kicking_DOOH_MiniTruck_1920x960px_15s_TH_V01.aep", "SF_INTL_Trio_DOOH_BulkHeadSukhumvit_3200x1536px_15s_TH_V01.aep", "SF_INTL_Trio_DOOH_LatpraoConnected_704x1152px_15s_TH_V01.aep", "SF_INTL_Trio_DOOH_LatpraoConnected_2432x1152px_15s_TH_V01.aep",
+    "SF_INTL_Trio_DOOH_MiniTruck_960x960px_15s_TH_V01.aep", "SF_INTL_Trio_DOOH_MiniTruck_1920x960px_15s_TH_V01.aep", "SF_INTL_Trio_DOOH_MiniTruck_1920x960px_15s_TH_V02.aep", "SF_INTL_Trio_DOOH_Phahonyathin_1200x720px_15s_TH_V01.aep"]
+    .map((n) => ({ name: n, path: "/th/AE/Batch_06/" + n }));
+const twin = (creative, site, w, h, seconds = 15, list = AE6) => { const t = M.preTwinFor({ creative, site, w, h, seconds }, list); return t ? t.name : null; };
+check(twin("Kicking", "MiniTruckPOST", 1920, 960) === "SF_INTL_Kicking_DOOH_MiniTruck_1920x960px_15s_TH_V01.aep", "Kicking's MiniTruckPOST is built from Kicking's MiniTruck, not Trio's at the same size", twin("Kicking", "MiniTruckPOST", 1920, 960));
+check(twin("Trio", "MiniTruckPOST", 1920, 960) === "SF_INTL_Trio_DOOH_MiniTruck_1920x960px_15s_TH_V02.aep", "…and Trio's from Trio's, its newest version", twin("Trio", "MiniTruckPOST", 1920, 960));
+check(twin("Trio", "Mini TruckPOST", 1920, 960) === "SF_INTL_Trio_DOOH_MiniTruck_1920x960px_15s_TH_V02.aep", "a site Wrike typed with a space still finds it");
+check(twin("Trio", "LatpraoConnectedPOST", 704, 1152) === "SF_INTL_Trio_DOOH_LatpraoConnected_704x1152px_15s_TH_V01.aep" && twin("Trio", "LatpraoConnectedPOST", 2432, 1152) === "SF_INTL_Trio_DOOH_LatpraoConnected_2432x1152px_15s_TH_V01.aep", "two sizes of one site each find their own");
+check(twin("StaticTrio", "PierL1POST", 432, 576) === null, "a PRE that was never built answers nothing (PierL1 has no project in Batch_06)");
+check(twin("Trio", "MiniTruck", 1920, 960) === null, "a row that is not POST has no PRE version");
+check(twin("Trio", "MiniTruckPOST", 1920, 960, 30) === null, "another length is not its PRE");
+check(twin("Trio", "MiniTruckPOST", 1920, 960, 15, AE6.concat([{ name: "SF_INTL_Trio_DOOH_Mini_Truck_1920x960px_15s_TH_V01.aep", path: "/th/AE/Batch_02/x.aep" }])) === "SF_INTL_Trio_DOOH_MiniTruck_1920x960px_15s_TH_V02.aep", "the same deliverable spelled twice is still one answer, the newest", null);
+check(twin("Trio", "MiniTruckPOST", 1920, 960, 15, AE6.concat([{ name: "SF_INTL_Trio_DINTH_MiniTruck_1920x960px_15s_TH_V01.aep", path: "/th/AE/Batch_02/y.aep" }])) === null, "two DIFFERENT projects answering (DOOH and DINTH) is nobody's call to make here");
+
 if (process.argv[2]) {
     console.log("\nA real root, read-only: " + process.argv[2]);
     const real = async (dir) => { try { return fs.readdirSync(dir, { withFileTypes: true }).map((d) => ({ name: d.name, path: join(dir, d.name), dir: d.isDirectory() })); } catch { return []; } };

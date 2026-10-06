@@ -277,6 +277,38 @@ pe = egyptProject();
 r9b = aeft.mcItApplyToOpenProject(pe, TH + '_V01.aep', thImgs, false, undefined, 'Thailand_JPG_PNG', '');
 say(/_EG1\.png$/.test(decodeURI(pe.egs[0].file.name)) && r9b.items.length === 0, 'an ordinary run never looks in another territory\'s import folder', r9b.skipped || '');
 
+// 9c. A POST ROW BUILT FROM ITS OWN MARKET'S PRE PROJECT (Thailand, 2026-10-06).
+// The PRE's artwork sits in "Thailand_JPG_PNG" -- the very folder this run
+// imports the POST images into.
+function preProject() {
+    const root = new FolderItem('Root');
+    const th = new FolderItem('Thailand_JPG_PNG', root);
+    const footage = new FolderItem('Footage', root);
+    const PRE = 'SF_INTL_Kicking_DOOH_MiniTruck_1920x960px_15s_TH';
+    const mk = (n, used) => { const it = new FootageItem(new File('/pre/' + n), th); it.usedIn = used ? [{}] : []; return it; };
+    const pres = [mk(PRE + '1.png', true), mk(PRE + '.jpg', true), mk(PRE + '2.png', false)];
+    const all = pres.slice();
+    th.item = (i) => all[i - 1];
+    th.numItems = all.length;
+    const items = [th, footage].concat(all);
+    const proj = { pres, all, numItems: 0, item: (i) => items[i - 1], items: { addFolder: () => new FolderItem('x', root) } };
+    proj.numItems = items.length;
+    // What the run imports lands in the same folder, used by nothing yet.
+    proj.importFile = (opts) => { const it = new FootageItem(opts.file, th); it.usedIn = []; all.push(it); items.push(it); th.numItems = all.length; proj.numItems = items.length; return it; };
+    return proj;
+}
+const POSTN = 'SF_INTL_Kicking_DOOH_MiniTruckPOST_1920x960px_15s_TH';
+const POSTD = '/b/JPG_PNG/Batch_6_POST/' + POSTN;
+const postImgs = ['.jpg', '1.png', '2.png'].map((x) => new File(`${POSTD}/${POSTN}${x}`));
+let pp = preProject();
+let r9c = aeft.mcItApplyToOpenProject(pp, POSTN + '_V01.aep', postImgs, false, undefined, 'Thailand_JPG_PNG', 'TH');
+say(decodeURI(pp.pres[0].file.name) === POSTN + '1.png' && decodeURI(pp.pres[1].file.name) === POSTN + '.jpg', "the PRE's own artwork, in the folder this run imports into, becomes the POST's", decodeURI(pp.pres[0].file.name) + ' | ' + decodeURI(pp.pres[1].file.name));
+say(/MiniTruck_1920x960px_15s_TH2\.png$/.test(decodeURI(pp.pres[2].file.name)), 'a PRE picture no comp uses is left alone');
+say(r9c.items.filter((i) => i.action === 'replaced').length === 2 && r9c.imported === 3, 'two swapped, three imported, and what was just imported is not swapped with itself', JSON.stringify(r9c.items.map((i) => i.action)) + ' imported ' + r9c.imported);
+pp = preProject();
+r9c = aeft.mcItApplyToOpenProject(pp, POSTN + '_V01.aep', postImgs, false, undefined, 'Thailand_JPG_PNG', '');
+say(/MiniTruck_1920x960px_15s_TH1\.png$/.test(decodeURI(pp.pres[0].file.name)), 'an ordinary run leaves that folder alone, as it always has', r9c.skipped || '');
+
 // 10. The length a name states, which decides how often an approved
 // deliverable is played to fill a longer row.
 const secs = aeft.csvLocSecondsOfName;

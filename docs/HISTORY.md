@@ -10029,3 +10029,22 @@ unbuilt that were never its to build, and "Build 17" would have staged them.
 The chips were right all along (they scan each job against its own batch);
 only the page was wrong. Fixed in `lib/trackerJobs.ts`, with the loose match
 kept as a fallback for territories that file POST work in the plain folder.
+
+
+## 2026-10-06 — A POST row built from its PRE version
+
+Asked for alongside the tracker fix: when a job is POST, point it at the PRE
+batch, "cause its generally just a quick PNG or support swap change".
+Thailand's `Batch_06` holds the seven PRE projects; `Batch_6_POST` wants the
+same seven (and two more) with new artwork.
+
+Build a Batch now offers it, one press for the batch. It reuses the route a
+row built from another market's approved deliverable takes, with two
+differences worked out against the probes rather than assumed: Support Swap
+must NOT be told the source market, and MC It! has to look in the folder it
+is itself importing into.
+
+**Not done:** not run in After Effects. Unproven there: that a PRE project's
+comp is still named as its file is (the run finds it by that name), and that
+MC It! pairs every slot. A PRE never built (Thailand's PierL1 and PierM1 have
+no project in Batch_06) is simply not offered and builds from a master.

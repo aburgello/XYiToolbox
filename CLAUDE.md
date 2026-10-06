@@ -1290,6 +1290,26 @@ campaign, each with its clip beside its mech sheet.
   root-level `*_JPG_PNG` folders other than this run's own are targets, gated
   like Artwork (the file must carry that market's token) and limited to
   pictures a comp actually uses. An ordinary run never looks there.
+- **A POST row is OFFERED its PRE version, in one press for the batch.** A
+  POST deliverable is its PRE one with a new PNG and a new date, so Build a
+  Batch lists every project in the territory's `AE/*` (panel's Node, never
+  `_` folders or Auto-Save) and, for a row whose site carries POST
+  (`sitePre`: its own word, or glued in capitals, the host's
+  `ssIsPostDeliverable` rule), finds the project with the same creative, size
+  and length and the site with POST off (`preTwinFor`). Exact on all of them;
+  two different projects answering is NO answer. Offered, never taken
+  unasked: a PRE that was wrong is not something to inherit silently. It is a
+  master pin with `pre: true`, dropped when the row's SITE changes as well.
+- **It rides the same `pinMarketsJson`, with the row's OWN market.** The host
+  refuses a same-market source for any row that is not POST (it would swap
+  nothing and read as a clean localise). For a POST row: **MC It! is told
+  the market** (the PRE's artwork carries it, and sits in the very
+  `<Territory>_JPG_PNG` folder this run imports into, so that folder is a
+  target now; what the run has just imported is passed over because nothing
+  uses it yet), and **Support Swap is told nothing**: every component in
+  there is already this market's, and it finds the POST twins for a POST
+  deliverable by itself. Telling it the market would report every localised
+  file as "still the TH version".
 - **For that row only, the source market's token stands in for OV** (`asOv`):
   MC It!'s Artwork-folder gate takes `_DK` slots as targets, Support Swap
   swaps `_DK_` → this market as it does `_OV_`, and a `_DK_` file this market

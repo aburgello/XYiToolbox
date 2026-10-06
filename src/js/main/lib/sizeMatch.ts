@@ -260,3 +260,65 @@ export function parseWanted(text: string): { w: number; h: number } | null {
     const h = parseInt(m[2], 10);
     return w > 0 && h > 0 ? { w, h } : null;
 }
+
+// ---------------------------------------------------------------------------
+// A POST ROW'S PRE VERSION. A POST deliverable is its PRE one with a new date
+// and a new PNG, so the quickest build is from the PRE's own project rather
+// than from a master all over again.
+// ---------------------------------------------------------------------------
+
+/**
+ * A site with its POST taken off, or null when it carries none. POST is its
+ * own word, or glued in CAPITALS to a site that has a lower-case letter
+ * (`MiniTruckPOST`, `NfkinoPOST`; never `Lamppost`, never a site that is all
+ * capitals and merely ends in those letters). The same test as the host's
+ * ssIsPostDeliverable, so the two cannot disagree about what a POST row is.
+ */
+export function sitePre(site: string): string | null {
+    const toks = String(site || "").split(/[_ ]+/).filter(Boolean);
+    let found = false;
+    const out: string[] = [];
+    for (const t of toks) {
+        if (t.toUpperCase() === "POST") { found = true; continue; }
+        if (t.length > 4 && t.slice(-4) === "POST" && /[a-z]/.test(t.slice(0, -4))) { found = true; out.push(t.slice(0, -4)); continue; }
+        out.push(t);
+    }
+    return found ? out.join("_") : null;
+}
+
+/** The site a deliverable's name carries: what sits between its artwork type and its size. */
+export function siteOfName(name: string): string {
+    const toks = String(name || "").replace(/\.[A-Za-z0-9]{2,4}$/, "").split(/[_ ]+/);
+    const sizeAt = toks.findIndex((t) => /^\d{3,}x\d{3,}(?:px)?$/i.test(t));
+    const typeAt = toks.findIndex((t) => /^(DOOH|DINTH|D?FOH|OOH)$/i.test(t));
+    if (typeAt === -1 || sizeAt <= typeAt) return "";
+    return toks.slice(typeAt + 1, sizeAt).filter((t) => !/^\d{1,2}x\d{1,2}$/.test(t)).join("_");
+}
+
+/**
+ * The PRE project a POST row can be built from, out of the projects a
+ * territory holds: the same creative, size and length, and the row's site
+ * with its POST off. Exact on every one of those (squashed, so `Mini Truck`
+ * is `MiniTruck`), the newest version when a project has several, and NULL
+ * when two different projects answer -- a row is never built from a guess.
+ * Null too for a row that is not POST.
+ */
+export function preTwinFor(row: RowSpec, projects: { name: string; path: string }[]): { name: string; path: string } | null {
+    const pre = sitePre(row.site);
+    if (pre === null) return null;
+    const sq = (v: string) => String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const hits: Record<string, { name: string; path: string; v: number }> = {};
+    for (const p of projects) {
+        if (!/\.aep$/i.test(p.name)) continue;
+        const info = sizeOfName(p.name);
+        if (!info || info.w !== row.w || info.h !== row.h) continue;
+        if (row.seconds && info.seconds && row.seconds !== info.seconds) continue;
+        if (sq(creativeOfName(p.name)) !== sq(row.creative)) continue;
+        if (sq(siteOfName(p.name)) !== sq(pre)) continue;
+        const key = deliverableSquash(p.name);
+        const v = versionOf(p.name);
+        if (!hits[key] || v > hits[key].v) hits[key] = { name: p.name, path: p.path, v };
+    }
+    const keys = Object.keys(hits);
+    return keys.length === 1 ? { name: hits[keys[0]].name, path: hits[keys[0]].path } : null;
+}

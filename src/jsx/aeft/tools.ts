@@ -3657,10 +3657,17 @@ export function mcItApplyToOpenProject(
   // tool makes it, above), and artists build with them from there: Egypt's
   // approved Kicking had every artwork layer pointing into "Egypt_JPG_PNG" and
   // nothing in Footage/PNG, so a Thailand row built from it swapped nothing
-  // and kept Egypt's artwork. Only when the row was built from another market
-  // on purpose (asOv), only root-level folders named that way, never the one
-  // this run imports into, and only files carrying that market's token (the
-  // same gate as Artwork, below).
+  // and kept Egypt's artwork. Only when the row was built from another
+  // deliverable on purpose (asOv), only root-level folders named that way, and
+  // only files carrying that market's token (the same gate as Artwork, below)
+  // that a comp actually uses.
+  //
+  // THE FOLDER THIS RUN IMPORTS INTO IS ONE OF THEM. It was left out, on the
+  // reasoning that it only holds this deliverable's own images; but a POST
+  // row built from this market's own PRE project finds the PRE's artwork in
+  // exactly that folder ("Thailand_JPG_PNG" both times). What this run has
+  // just imported is not swapped by mistake: nothing uses it yet, and unused
+  // pictures are passed over.
   const sourceImportFolders: FolderItem[] = [];
   if (asOvToken !== "") {
     for (let si = 1; si <= proj.numItems; si++) {
@@ -3668,7 +3675,6 @@ export function mcItApplyToOpenProject(
       if (typeof (sItem as any).numItems !== "number") continue;
       const sName = decode(String(sItem.name));
       if (sName.length <= 8 || sName.substring(sName.length - 8).toUpperCase() !== "_JPG_PNG") continue;
-      if (importFolderName && sName === importFolderName) continue;
       if (!sItem.parentFolder || sItem.parentFolder.parentFolder != null) continue;
       sourceImportFolders.push(sItem);
     }

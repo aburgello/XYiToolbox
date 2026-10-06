@@ -2820,6 +2820,35 @@ $rail-gap: 10px;   // exactly the flex gap between rows, so segments tile
     em { color: #dcdcdc; font-style: normal; font-weight: 600; }
 }
 
+// POST rows offered their PRE version: the notice, with the one button that
+// takes it. Rest, hover and active all declared (index.scss's global states).
+.specs-handoff.specs-pre {
+    display: flex;
+    align-items: center;
+
+    > span { flex: 1 1 auto; min-width: 0; margin-right: 10px; }
+}
+
+.specs-tool .specs-pre .specs-pre-btn,
+.specs-pre .specs-pre-btn {
+    flex: none;
+    height: 28px;
+    padding: 0 12px;
+    border: 1px solid var(--cat-border, #5eead4);
+    border-radius: 6px;
+    background: rgba(94, 234, 212, 0.14);
+    color: #fff;
+    font-size: 11.5px;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+
+    &:hover { background: rgba(94, 234, 212, 0.26); border-color: var(--cat-border, #5eead4); color: #fff; }
+    &:active { background: rgba(94, 234, 212, 0.34); color: #fff; }
+    &:disabled,
+    &:disabled:hover { opacity: 0.5; cursor: default; background: rgba(94, 234, 212, 0.14); }
+}
+
 .specs-handoff-skipped {
     display: block;
     margin-top: 4px;

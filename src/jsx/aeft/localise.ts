@@ -7,7 +7,7 @@
 // =============================================================================
 import { scaleCompToFit } from "./deliver";
 import { cutdownsFor } from "./cutdowns";
-import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, territoryCheck, parseFilenameMeta, frontcardWrap, cheekyTCheck, organiseFolders, FRONTCARD_LEAD_IN_SECONDS, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, rankMastersFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, MasterIndexEntry, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, mcItTerritoryOfImageFolder, matchCreativeInName, ssFindSupportRoot, ssCollectSupport, ssCreativesOf, ssApplyToOpenProject, ssCountReplaced, ssOneTokenDiff, ssTokensOf, SupportSwapCandidate, scanMastersForBestMatch, firstSizeToken, ownProjectFolder } from "./tools";
+import { CampaignLocaliserResult, McItProjectReport, TC_COUNTRIES, territoryCheck, parseFilenameMeta, frontcardWrap, cheekyTCheck, organiseFolders, FRONTCARD_LEAD_IN_SECONDS, MAX_DURATION_MULTIPLE, buildMastersIndex, getMastersIndex, refreshMastersIndex, pickBestMasterFromIndex, rankMastersFromIndex, multipleMasterOptions, multipleMasterForFactor, cheekyDTCheck, drqr, hasIsolatedOvToken, MasterIndexEntry, losOpenForEdit, mcItApplyToOpenProject, mcItCollectImages, mcItCountReplaced, mcItDeriveImageFolderFor, mcItTerritoryOfImageFolder, matchCreativeInName, ssFindSupportRoot, ssCollectSupport, ssCreativesOf, ssApplyToOpenProject, ssCountReplaced, ssOneTokenDiff, ssTokensOf, ssIsPostDeliverable, SupportSwapCandidate, scanMastersForBestMatch, firstSizeToken, ownProjectFolder } from "./tools";
 import { findMotionComponents } from "./artwork";
 import { makeParentLayerOfAllUnparented, scaleAllCameraZooms } from "./deliver";
 import { Result, SETTINGS_SECTION, decode, findBestComponentFile, LocGenRowReport, LocGenResult, finishLocGenReport, saveLocGenReport, buildDeliverableName, durationForMasterLookup, durationDigits, sanitiseSiteToken, camelCaseToken, camelCaseName, sanitiseLanguageToken } from "./shared";
@@ -4018,7 +4018,8 @@ function csvLocNameGen(
   ssCands?: SupportSwapCandidate[],
   ssCreatives?: string[],
   ssOut?: McItProjectReport[],
-  asOv?: string
+  asOv?: string,
+  ssAsOv?: string
 ): void {
   const scanRegV = /V\d\d/;
   const myName = myComp.name;
@@ -4184,7 +4185,12 @@ function csvLocNameGen(
   // must never lose the localisation work that has already succeeded here.
   if (ssCands && ssCands.length > 0 && mcItAepName) {
     try {
-      const ssRep = ssApplyToOpenProject(app.project, mcItAepName, ssCands, ssCreatives || [], false, undefined, asOv);
+      // Its own stand-in, not MC It!'s: a POST row built from this market's
+      // own PRE project hands MC It! the market (its artwork slots carry it)
+      // and Support Swap nothing, because every component in there is ALREADY
+      // this market's and only the POST twins are wanted -- which Support Swap
+      // finds for a POST deliverable without being told.
+      const ssRep = ssApplyToOpenProject(app.project, mcItAepName, ssCands, ssCreatives || [], false, undefined, ssAsOv);
       if (ssOut) ssOut.push(ssRep);
     } catch (ssErr) {
       /* reported as zero swapped for this row, never fatal */
@@ -4679,6 +4685,7 @@ export const csvLocaliserRun = (
 
       const pinnedPath = pinnedRows[String(rowsAttempted - 1)];
       let rowAsOv = "";
+      let rowSsAsOv = "";
       // 2 or 3 when the row is built from another market's approved
       // deliverable SHORTER than itself (see the pinMarkets block below).
       let pinRepeat = 1;
@@ -4733,9 +4740,12 @@ export const csvLocaliserRun = (
         rep.masterNote = "Master picked by hand: " + bestMatch.name;
         const fromMarket = pinMarkets[String(rowsAttempted - 1)] || "";
         if (fromMarket !== "") {
-          // Built from this very market's deliverable would swap nothing and
-          // read as a clean localise. Refused.
-          if (fromMarket === String(territoryCode).toUpperCase()) {
+          // THIS MARKET'S OWN EARLIER DELIVERABLE is allowed for exactly one
+          // thing: a POST row built from its PRE version, which differs by a
+          // PNG and a date. Anything else from the same market would swap
+          // nothing and read as a clean localise, so it is still refused.
+          const ownMarket = fromMarket === String(territoryCode).toUpperCase();
+          if (ownMarket && !ssIsPostDeliverable(String(campaign) + "_" + siteToken)) {
             rep.status = "no-master";
             rep.error = "The approved deliverable picked for this row is already " + fromMarket + "'s. Pick one from another market, or a master.";
             continue;
@@ -4758,10 +4768,13 @@ export const csvLocaliserRun = (
             }
           }
           rowAsOv = fromMarket;
-          rep.sourceNote = "Built from " + fromMarket + "'s approved " + bestMatch.name
-            + (pinRepeat > 1 ? " (" + srcSeconds + "s, played " + pinRepeat + "x)" : "")
-            + ", its " + fromMarket + " artwork swapped for " + territoryCode
-            + "'s. Text typed in the comps is still " + fromMarket + "'s: check it.";
+          rowSsAsOv = ownMarket ? "" : fromMarket;
+          rep.sourceNote = ownMarket
+            ? "Built from its PRE version " + bestMatch.name + ": the POST artwork and dates are swapped in. Anything typed in the comps is still the PRE's: check it."
+            : "Built from " + fromMarket + "'s approved " + bestMatch.name
+              + (pinRepeat > 1 ? " (" + srcSeconds + "s, played " + pinRepeat + "x)" : "")
+              + ", its " + fromMarket + " artwork swapped for " + territoryCode
+              + "'s. Text typed in the comps is still " + fromMarket + "'s: check it.";
         }
       } else {
         bestMatch = pickBestMasterFromIndex(mastersIndex, campaign, size, duration);
@@ -4882,7 +4895,7 @@ export const csvLocaliserRun = (
       // own size, not the master's.
       const rowMcItReports: McItProjectReport[] = [];
       const rowSsReports: McItProjectReport[] = [];
-      csvLocNameGen(myComp, width, height, newCompName, plm, mcItImages, newCompName + "_V01.aep", rowMcItReports, mcItImportFolder, repeatFactor, ssCands, ssCreatives, rowSsReports, rowAsOv);
+      csvLocNameGen(myComp, width, height, newCompName, plm, mcItImages, newCompName + "_V01.aep", rowMcItReports, mcItImportFolder, repeatFactor, ssCands, ssCreatives, rowSsReports, rowAsOv, rowSsAsOv);
       if (rowSsReports.length > 0) {
         ssReports.push(rowSsReports[0]);
         rep.componentsSwapped = ssCountReplaced(rowSsReports[0]);
