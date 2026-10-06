@@ -254,8 +254,13 @@ const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply
     // the raw name, which is what the backend matches an override against.
     const pretty = (n: string) => { try { return decodeURI(String(n || "")); } catch { return String(n || ""); } };
     const ovOf = (aep: string, key: string) => overrides[aep]?.[key];
+    // AN ITEM THE RULE LEFT ALONE CAN STILL BE SWAPPED BY HAND when the report
+    // says what else it could be (Support Swap: the other versions in the same
+    // folder). Those are shown, not folded away with the rest of the skipped.
+    const offered = (i: McItemRep) => i.action === "skipped" && !!i.candidates && i.candidates.length > 0;
+    const pickable = (i: McItemRep) => i.action === "no-match" || offered(i);
     const manualCount = (p: McProjectRep) =>
-        p.items.filter((i) => i.action === "no-match" && ovOf(p.aep, itemKey(i))).length;
+        p.items.filter((i) => pickable(i) && ovOf(p.aep, itemKey(i))).length;
     // A project with nothing to replace can't be "applied" either way, so only
     // ones that would actually change something are selectable — including one
     // whose ONLY change is a manual fix the user just made.
@@ -310,7 +315,7 @@ const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply
                 {projects.map((proj) => {
                     const replaced = proj.items.filter((i) => i.action === "replaced").length;
                     const misses = proj.items.filter((i) => i.action === "no-match").length;
-                    const skippedCount = proj.items.filter((i) => i.action === "skipped").length;
+                    const skippedCount = proj.items.filter((i) => i.action === "skipped" && !offered(i)).length;
                     const selectable = onApply && !proj.skipped && replaced > 0;
                     const off = selectable && !isOn(proj.aep);
                     return (
@@ -338,12 +343,12 @@ const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply
                                 )}
                             </div>
                             {proj.skipped && <div className="mcit-proj-skip">{proj.skipped}</div>}
-                            {proj.items.filter((i) => i.action !== "skipped" || showSkipped[proj.aep]).map((it, idx) => {
+                            {proj.items.filter((i) => i.action !== "skipped" || offered(i) || showSkipped[proj.aep]).map((it, idx) => {
                                 const key = itemKey(it);
-                                const fix = it.action === "no-match" ? ovOf(proj.aep, key) : undefined;
+                                const fix = pickable(it) ? ovOf(proj.aep, key) : undefined;
                                 // Manual fixing is only offered while previewing:
                                 // after a real run there is nothing left to apply.
-                                const fixable = !!onApply && it.action === "no-match";
+                                const fixable = !!onApply && pickable(it);
                                 const openId = proj.aep + " " + key;
                                 return (
                                 <div key={idx} className={"mcit-item mcit-item--" + (fix ? "replaced" : it.action)}>
@@ -373,13 +378,13 @@ const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply
                                                     onClick={() => setFixing(fixing === openId ? null : openId)}
                                                     aria-expanded={fixing === openId}
                                                 >
-                                                    <Wrench size={11} /> {fixing === openId ? "Close" : "Pick the right file…"}
+                                                    <Wrench size={11} /> {fixing === openId ? "Close" : offered(it) ? "Swap it for another…" : "Pick the right file…"}
                                                 </button>
                                                 {fixing === openId && (
                                                     <div className="mcit-fix-panel">
                                                         {it.candidates && it.candidates.length > 0 ? (
                                                             <>
-                                                                <div className="mcit-fix-hint">Closest files in the image folder — click one to use it:</div>
+                                                                <div className="mcit-fix-hint">{offered(it) ? "What else this market's Masters/Support holds beside it — click one to swap to it:" : "Closest files in the image folder — click one to use it:"}</div>
                                                                 {it.candidates.map((c) => (
                                                                     <button
                                                                         key={c.path}

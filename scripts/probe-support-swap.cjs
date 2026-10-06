@@ -373,5 +373,76 @@ console.log("\n9. built from Denmark's approved deliverable, for Taiwan");
     say(row(bogus, 'SF_Trio_Date_White_DK_RGB.ai').action === 'no-match', 'a stand-in that is not a market code is ignored');
 }
 
+// ---------------------------------------------------------------------------
+// 10. Thailand (2026-10-06): the POST dates sit in a POST folder under the
+// SAME filenames as the PRE ones, `Date/POST` for one creative and
+// `Date/_POST` for another.
+console.log("\n10. Thailand's POST folders, and what else a file could be");
+{
+    const say = (ok, msg, extra) => { if (!ok) fails++; console.log((ok ? '  ok    ' : '  FAIL  ') + msg + (extra ? '   ' + extra : '')); };
+    const TH = '/Volumes/paramount/…/Markets/Thailand';
+    const S = TH + '/Masters/Support';
+    const dir = (p, kids) => { tree[p] = kids; };
+    dir(TH, ['Masters']); dir(TH + '/Masters', ['Support']);
+    dir(S, ['Trio', 'Characters']);
+    dir(S + '/Trio', ['Date', 'TT']);
+    const DATES = ['SF_Trio_Date_DropShadow_TH_RGB.ai', 'SF_Trio_Date_White_1Line_TH_RGB.ai', 'SF_Trio_Date_White_TH_RGB.ai', 'SF_Trio_Date_Yellow_TH_RGB.ai'];
+    dir(S + '/Trio/Date', ['POST'].concat(DATES));
+    dir(S + '/Trio/Date/POST', DATES);
+    dir(S + '/Trio/TT', ['SF_RGB_Legendary_TT_OV_SIMP.psd']);
+    dir(S + '/Characters', ['Date']);
+    dir(S + '/Characters/Date', ['_POST', '_Old', 'SF_Date_A_Koji_Brown_TH_RGB.ai']);
+    dir(S + '/Characters/Date/_POST', ['SF_Date_A_Koji_Brown_TH_RGB.ai']);
+    dir(S + '/Characters/Date/_Old', ['SF_Date_A_Koji_Brown_TH_RGB.ai']);
+    const cands = aeft.ssCollectSupport(new Folder(S));
+    const creatives = aeft.ssCreativesOf(cands);
+    say(cands.filter((c) => c.post).length === 5 && cands.filter((c) => /_Old/.test(c.file.fsName)).length === 0, 'both POST and _POST are read as POST versions; _Old is still left alone', cands.filter((c) => c.post).length + ' post');
+    const pf = new FolderItem('Support');
+    // This section follows an item across runs, so here a replace moves it.
+    const mk = (path) => { const it = new FootageItem(new File(path), pf); it.replace = (f) => { it.replacedWith = f.fsName; it.file = f; }; return it; };
+    const project = (paths) => { const its = paths.map(mk); return { its, numItems: its.length, item: (i) => its[i - 1] }; };
+    const row = (rep, n) => rep.items.filter((r) => r.name === n)[0] || {};
+    const POSTAEP = 'SF_INTL_Kicking_DOOH_MiniTruckPOST_1920x960px_15s_TH_V01.aep';
+    const PREAEP = 'SF_INTL_Kicking_DOOH_MiniTruck_1920x960px_15s_TH_V01.aep';
+    const Y = 'SF_Trio_Date_Yellow_TH_RGB.ai';
+
+    // The reported case: a POST project still on the PRE date.
+    let p = project([S + '/Trio/Date/' + Y]);
+    let rep = aeft.ssApplyToOpenProject(p, POSTAEP, cands, creatives, false);
+    say(row(rep, Y).action === 'replaced' && row(rep, Y).newName === 'POST/' + Y, 'a POST project on the PRE date takes the one in the POST folder, and the report says POST/', JSON.stringify(row(rep, Y)));
+    say(/\/Trio\/Date\/POST\//.test(p.its[0].file.fsName), '…the item now pointing into it', p.its[0].file.fsName);
+    rep = aeft.ssApplyToOpenProject(p, POSTAEP, cands, creatives, false);
+    say(row(rep, Y).action === 'skipped' && /Already this market's POST version/.test(row(rep, Y).reason), 'run again, it is already the POST version and nothing is swapped back and forth', row(rep, Y).reason);
+    say((row(rep, Y).candidates || []).length === 7 && (row(rep, Y).candidates || []).some((c) => c.name === 'Trio / Date / ' + Y), '…and the other seven dates in that folder, PRE and POST, are offered for a pick', (row(rep, Y).candidates || []).length + '');
+
+    // A PRE project never sees the POST folder.
+    p = project([S + '/Trio/Date/' + Y]);
+    rep = aeft.ssApplyToOpenProject(p, PREAEP, cands, creatives, false);
+    say(row(rep, Y).action === 'skipped' && !/POST/.test(p.its[0].file.fsName), 'a PRE project is left on its PRE date', row(rep, Y).reason);
+    const offered = (row(rep, Y).candidates || []).map((c) => c.name);
+    say(offered.length === 3 && offered.every((n) => !/POST/.test(n)) && offered.indexOf('Trio / Date / SF_Trio_Date_White_TH_RGB.ai') !== -1, '…and offered only the other PRE dates beside it, never a POST one', offered.join(' | '));
+    say(row(rep, Y).candidates.every((c) => !/Characters/.test(c.name)), '…and nothing from another creative');
+
+    // An OV date in a POST project goes straight to the POST folder's version.
+    dir(S + '/Trio/Date', ['POST'].concat(DATES));
+    p = project(['/masters/SF_Trio_Date_Yellow_OV_RGB.ai']);
+    rep = aeft.ssApplyToOpenProject(p, POSTAEP, cands, creatives, false);
+    say(/\/Date\/POST\/SF_Trio_Date_Yellow_TH_RGB\.ai$/.test(p.its[0].file.fsName), 'an OV date in a POST project goes straight to the POST folder\'s', p.its[0].file.fsName);
+    p = project(['/masters/SF_Trio_Date_Yellow_OV_RGB.ai']);
+    rep = aeft.ssApplyToOpenProject(p, PREAEP, cands, creatives, false);
+    say(/\/Trio\/Date\/SF_Trio_Date_Yellow_TH_RGB\.ai$/.test(p.its[0].file.fsName), '…and in a PRE project to the ordinary one', p.its[0].file.fsName);
+
+    // A pick from the list is applied like any other manual pick.
+    p = project([S + '/Trio/Date/' + Y]);
+    const key = 'Support|' + Y;
+    rep = aeft.ssApplyToOpenProject(p, PREAEP, cands, creatives, false, { [key]: S + '/Trio/Date/SF_Trio_Date_White_TH_RGB.ai' });
+    say(row(rep, Y).action === 'replaced' && row(rep, Y).manual === true && /White_TH/.test(p.its[0].file.fsName), 'picking one of the offered files swaps to it', JSON.stringify(row(rep, Y)));
+
+    // The item with no alternatives stays a plain skipped line.
+    p = project([S + '/Trio/TT/SF_RGB_Legendary_TT_OV_SIMP.psd']);
+    rep = aeft.ssApplyToOpenProject(p, PREAEP, cands, creatives, true);
+    say(!(rep.items[0].candidates || []).length, 'a file with nothing beside it offers nothing', rep.items[0].reason);
+}
+
 console.log(fails === 0 ? '\nCLEAN — the rule holds on every real family surveyed.' : '\n' + fails + ' FAILED');
 process.exit(fails ? 1 : 0);

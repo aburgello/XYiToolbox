@@ -10048,3 +10048,17 @@ is itself importing into.
 comp is still named as its file is (the run finds it by that name), and that
 MC It! pairs every slot. A PRE never built (Thailand's PierL1 and PierM1 have
 no project in Batch_06) is simply not offered and builds from a master.
+
+
+## 2026-10-06 — Support Swap: POST folders, and what else a file could be
+
+Seen on the first POST project built from its PRE version (Thailand's Kicking
+MiniTruckPOST): the preview read "0 would be swapped, 18 not a localisation
+target" with the PRE date still in the comp. Thailand's POST dates are not
+named `…_POST.ai`, which is the only shape the POST rule knew (Norway's): they
+sit in `Date/POST/` and `Date/_POST/` under the PRE files' own names.
+
+Asked for with it: the preview should offer a list of what could be swapped,
+"sometimes naming conventions can be iffy". Both done; see CLAUDE.md.
+
+**Not done:** not run in After Effects on that project.

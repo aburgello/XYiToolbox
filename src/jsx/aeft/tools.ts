@@ -4430,6 +4430,12 @@ export interface SupportSwapCandidate {
   creative: string;
   /** Folder the file actually sits in (Bugs / Date / MCs_Taglines / TT). */
   category: string;
+  /** In a `POST` (or `_POST`) folder: the POST version of the file of the same
+   *  name one level up. Thailand files its POST dates this way. */
+  post?: boolean;
+  /** The category without the POST level ("Date" for Date/POST), which is what
+   *  says two files are alternatives to each other. */
+  base?: string;
 }
 
 /** Name minus its extension, split on underscores AND spaces. */
@@ -4620,23 +4626,40 @@ function ssSkipFolder(name: string): boolean {
  */
 export function ssCollectSupport(root: Folder): SupportSwapCandidate[] {
   const out: SupportSwapCandidate[] = [];
-  const walk = (folder: Folder, creative: string, depth: number) => {
+  // `base` is the category a POST folder sits in, "" outside one.
+  const walk = (folder: Folder, creative: string, depth: number, base: string) => {
     if (depth > 6) return;
     const items = folder.getFiles();
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
       if (it instanceof Folder) {
+        // A POST FOLDER IS WALKED EVEN WHEN IT STARTS WITH AN UNDERSCORE.
+        // Thailand keeps its POST dates in `Date/POST` for one creative and
+        // `Date/_POST` for another, under the SAME filenames as the PRE ones
+        // beside them. The `_` rule would hide half of them.
+        if (base === "" && creative !== "" && ssIsPostFolder(it.name)) {
+          walk(it as Folder, creative, depth + 1, decode(folder.name));
+          continue;
+        }
         if (ssSkipFolder(it.name)) continue;
-        walk(it as Folder, creative === "" ? decode(it.name) : creative, depth + 1);
+        walk(it as Folder, creative === "" ? decode(it.name) : creative, depth + 1, base);
       } else if (it instanceof File) {
         const ext = ssExt(decode(it.name));
         if (ext !== "ai" && ext !== "psd" && ext !== "eps") continue;
-        out.push({ file: it as File, creative: creative, category: decode(folder.name) });
+        if (base !== "") out.push({ file: it as File, creative: creative, category: base + " / POST", post: true, base: base });
+        else out.push({ file: it as File, creative: creative, category: decode(folder.name), base: decode(folder.name) });
       }
     }
   };
-  walk(root, "", 0);
+  walk(root, "", 0, "");
   return out;
+}
+
+/** A folder named POST or _POST, whatever its case. */
+function ssIsPostFolder(name: string): boolean {
+  let n = decode(String(name)).toUpperCase();
+  while (n.charAt(0) === "_") n = n.substring(1);
+  return n === "POST";
 }
 
 /** Distinct creative folder names in a candidate list, in first-seen order. */
@@ -4705,15 +4728,30 @@ interface SsMatches {
  * Every candidate that differs from `name` by exactly one MARKET-SHAPED token,
  * sorted by what that difference means.
  */
-function ssMatchesFor(name: string, cands: SupportSwapCandidate[], post?: boolean, asOv?: string): SsMatches {
+function ssMatchesFor(name: string, cands: SupportSwapCandidate[], post?: boolean, asOv?: string, itemPath?: string): SsMatches {
   const live: SsMatch[] = [];
   const ov: SsMatch[] = [];
   const foreign: SsMatch[] = [];
   let same = false;
   const nameTokens = ssTokens(name);
+  const usingPath = String(itemPath || "").toLowerCase();
   for (let i = 0; i < cands.length; i++) {
     let candName = decode(cands[i].file.name);
-    if (candName.toLowerCase() === name.toLowerCase()) { same = true; continue; }
+    // A FILE IN A POST FOLDER is the POST version of its namesake one level
+    // up. Never a candidate for a PRE deliverable. For a POST one, the same
+    // name the project already uses is the UPGRADE to it -- unless the
+    // project is already using that very file, which is told by its PATH,
+    // the name being the same either way.
+    const inPostFolder = cands[i].post === true;
+    if (inPostFolder && !post) continue;
+    if (candName.toLowerCase() === name.toLowerCase()) {
+      if (inPostFolder && String(cands[i].file.fsName).toLowerCase() !== usingPath) {
+        live.push({ cand: cands[i], fromToken: "", toToken: "POST", post: true });
+      } else {
+        same = true;
+      }
+      continue;
+    }
     // THE _POST VERSION OF A FILE. Never a candidate for a PRE deliverable.
     // For a POST one it is compared with its "_POST" taken off, so the market
     // rule below applies unchanged -- and when that leaves the SAME name the
@@ -4735,7 +4773,7 @@ function ssMatchesFor(name: string, cands: SupportSwapCandidate[], post?: boolea
     // Both ends must look like a market code, or "one token differs" catches
     // 2L/1L, Cyan/Mono and PRE/POST as though they were localisations.
     if (!ssIsMarketToken(from) || !ssIsMarketToken(to)) continue;
-    const m: SsMatch = { cand: cands[i], fromToken: from, toToken: to, post: !!twin };
+    const m: SsMatch = { cand: cands[i], fromToken: from, toToken: to, post: !!twin || inPostFolder };
     // Never swap TOWARDS the master. A territory part-way through
     // localisation holds both, and offering the OV would undo work.
     if (ssIsOvLike(to, asOv)) ov.push(m);
@@ -4856,10 +4894,51 @@ export function ssApplyToOpenProject(
       continue;
     }
 
-    const m = ssMatchesFor(name, cands, post, asOvToken);
+    const m = ssMatchesFor(name, cands, post, asOvToken, String((fi.file as File).fsName));
 
     if (m.live.length === 0) {
       if (m.same && !ssHasOvLikeToken(name, asOvToken)) {
+        // WHAT ELSE IT COULD BE. The rule has nothing to do here, but a person
+        // may: the same folder holds this market's other versions (a White
+        // date beside the Yellow one, the POST ones under them), and naming
+        // is not always regular enough for a rule to choose. Offered for a
+        // pick in the preview and NEVER applied: an item is only swapped to
+        // one of these when somebody picks it.
+        const usingNow = String((fi.file as File).fsName).toLowerCase();
+        const homes: SupportSwapCandidate[] = [];
+        for (let h = 0; h < cands.length; h++) {
+          if (decode(cands[h].file.name).toLowerCase() === name.toLowerCase()) homes.push(cands[h]);
+        }
+        let home: SupportSwapCandidate | null = null;
+        for (let h = 0; h < homes.length; h++) if (String(homes[h].file.fsName).toLowerCase() === usingNow) home = homes[h];
+        if (!home && projCreative) for (let h = 0; h < homes.length; h++) if (!home && homes[h].creative === projCreative) home = homes[h];
+        if (!home && homes.length === 1) home = homes[0];
+        const others: { name: string; path: string }[] = [];
+        if (home) {
+          const ext = ssExt(name);
+          for (let h = 0; h < cands.length && others.length < 16; h++) {
+            const c = cands[h];
+            if (c.creative !== home.creative || (c.base || c.category) !== (home.base || home.category)) continue;
+            if (ssExt(decode(c.file.name)) !== ext) continue;
+            // A PRE deliverable is never offered a POST version, by rule or by hand.
+            if (c.post && !post) continue;
+            if (String(c.file.fsName).toLowerCase() === usingNow) continue;
+            // ITS OWN NAMESAKE ON THE SAME SIDE OF POST IS THE FILE ITSELF,
+            // wherever the project happens to link it from (a copy in the
+            // project's own folder is common). Only the namesake across POST
+            // is another version.
+            if (decode(c.file.name).toLowerCase() === name.toLowerCase() && !!c.post === !!home.post) continue;
+            others.push({ name: c.creative + " / " + c.category + " / " + decode(c.file.name), path: c.file.fsName });
+          }
+        }
+        if (others.length > 0) {
+          projReport.items.push({
+            folder: folderName, name: name, action: "skipped", key: key, candidates: others,
+            reason: "Already this market's" + (home && home.post ? " POST version" : "") + ". " + home!.creative + " / " + (home!.base || home!.category)
+              + " holds " + others.length + " other" + (others.length === 1 ? "" : "s") + " it could be swapped for.",
+          });
+          continue;
+        }
         // The identical file is sitting in this market's own tree, so there is
         // nothing to do. Worded to cover BOTH reasons that happens -- already
         // localised, or shared across every market -- because one market's
@@ -4900,6 +4979,7 @@ export function ssApplyToOpenProject(
           let cn = decode(cands[k].file.name);
           const tw = ssPostTwinOf(cn);
           if (tw) { if (!post) continue; cn = tw; }
+          if (cands[k].post && !post) continue;
           const ex = ssVariantExtras(name, cn, asOvToken);
           if (!ex) continue;
           vars.push({
@@ -4979,7 +5059,9 @@ export function ssApplyToOpenProject(
     if (!dryRun) { fi.replace(pick.cand.file); $.sleep(200); }
     const done: McItItemReport = {
       folder: folderName, name: name, action: "replaced", key: key,
-      newName: decode(pick.cand.file.name),
+      // A POST folder's file has the name the project already uses, so the
+      // folder is said: "x.ai -> x.ai" reads as nothing having happened.
+      newName: (pick.cand.post ? "POST/" : "") + decode(pick.cand.file.name),
     };
     if (pick.post) done.reason = "The POST version, for a POST deliverable.";
     projReport.items.push(done);

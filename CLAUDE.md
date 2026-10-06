@@ -1645,6 +1645,22 @@ tokens and is correctly not a candidate.
   PRE deliverable never sees one; where no POST version exists (taglines,
   logos) the ordinary one is taken; and a POST project already swapped to the
   PRE date is UPGRADED to its POST twin. `node scripts/probe-support-swap-post.cjs`.
+- **A `POST` FOLDER HOLDS POST VERSIONS, under the same filenames.** Thailand
+  files them as `Trio/Date/POST/SF_Trio_Date_Yellow_TH_RGB.ai` beside
+  `Trio/Date/SF_Trio_Date_Yellow_TH_RGB.ai`, and as `_POST` for another
+  creative, so there is no `_POST` in any name for the suffix rule to find and
+  a POST project on the PRE date read "0 would be swapped". A folder named
+  `POST` or `_POST` is walked (the one `_` folder that is), its files marked
+  `post`: never a candidate for a PRE deliverable, and for a POST one the
+  same name the project already uses is the upgrade. **Whether the project is
+  already on it is told by the item's PATH**, the name being identical either
+  way. The report writes `POST/<name>`, or it reads as nothing having changed.
+- **The preview says what else a file could be.** An item the rule leaves
+  alone ("already this market's") lists the other versions in the same
+  creative and category, the POST folder's included for a POST deliverable,
+  as a pick: shown in the preview instead of folded into "not a localisation
+  target", and applied only when somebody picks one. Naming is not always
+  regular enough for a rule (a Yellow date where the White was wanted).
 - **A market's VARIANTS of an OV file are offered, never applied**
   (`ssVariantExtras`). Thailand holds `SF_Trio_Date_White_TH_RGB.ai`,
   `…_Yellow_TH…` and `…_White_1Line_TH…` for a master using plain
