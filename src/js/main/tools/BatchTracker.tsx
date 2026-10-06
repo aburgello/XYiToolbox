@@ -106,6 +106,7 @@ import TrackerMessage from "./TrackerMessage";
 import { trackerDisk, dropTrackerDisks } from "../lib/trackerDisk";
 import { uploadNameFor } from "../lib/wrikeMessage";
 import { loadUploadRoots, saveUploadRoot, uploadRootFor, uploadFolderFor, campaignKeyOf } from "../lib/uploadRoots";
+import { jobsForBatch } from "../lib/trackerJobs";
 import "./BatchTracker.scss";
 
 interface Row {
@@ -375,7 +376,7 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob, active 
         return memo.codes[terr];
     };
     /** `peek`: only what's already in memory -- never wait on the network. */
-    const wrikeFor = async (terr: string, b: string, peek = false): Promise<{ subs: { name: string; status: string }[]; jobs: WrikeJob[]; missing?: boolean }> => {
+    const wrikeFor = async (terr: string, b: string, peek = false, known?: string[]): Promise<{ subs: { name: string; status: string }[]; jobs: WrikeJob[]; missing?: boolean }> => {
         const none = { subs: [], jobs: [] };
         try {
             const owner = await ownerOf();
@@ -389,7 +390,9 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob, active 
             const out: { name: string; status: string }[] = [];
             // jobBatch, not the title's raw batch: a title with no number is Batch 1
             // (studio decision), and the raw "" matched no batch at all.
-            const mine = res.jobs.filter((j: WrikeJob) => jobTerritory(j) === code && loose(jobBatch(j).replace(/_?POST$/i, "")) === loose(b.replace(/_?POST$/i, "")));
+            // A POST batch is its own: TH 6 and TH 6 POST each list their own
+            // nine, never each other's (lib/trackerJobs.ts).
+            const mine = jobsForBatch(res.jobs.filter((j: WrikeJob) => jobTerritory(j) === code), jobBatch, b, known || []);
             mine.forEach((j) => (j.subtasks || []).forEach((st) => { if (st.name) out.push({ name: st.name, status: st.customStatusName || st.status || "" }); }));
             return { subs: out, jobs: mine };
         } catch {
@@ -405,7 +408,7 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob, active 
         // Scanned moments ago with the same Wrike statuses: show that, ask AE
         // nothing. (A different batch's recent scan is shown the same way.)
         if (!force && memo.scans[key] && Date.now() - (memo.scanAt[key] || 0) < SCAN_FRESH_MS) {
-            const peek = await wrikeFor(terr, b, true);
+            const peek = await wrikeFor(terr, b, true, batches);
             if (!peek.missing && subsSig(peek.subs) === memo.scanSig[key]) {
                 const m = memo.scans[key];
                 setScan(m.scan); setColors(m.colors); setComments(m.comments); setJobs(m.jobs);
@@ -421,7 +424,7 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob, active 
             // Draw from the feed already in memory; with none, draw from the
             // disk alone and merge Wrike in when it lands (a re-merge lists
             // nothing: AE keeps the listing).
-            let w = await wrikeFor(terr, b, true);
+            let w = await wrikeFor(terr, b, true, batches);
             // The folders are read HERE, outside AE (lib/trackerDisk.ts), and
             // AE is handed the listing to line up with Wrike. No listing from
             // here (no Node, an unreachable folder) and AE reads, as before.
@@ -443,7 +446,7 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob, active 
             show(r, w.jobs);
             if (w.missing) {
                 const tw = performance.now();
-                w = await wrikeFor(terr, b);
+                w = await wrikeFor(terr, b, false, batches);
                 wrikeMs = performance.now() - tw;
                 const r2 = await scanOnce(w.subs, false);
                 if (r2 && r2.success) { r = r2; show(r, w.jobs); }

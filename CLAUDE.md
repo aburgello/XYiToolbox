@@ -1008,6 +1008,14 @@ when the batch has a job in the feed its subtasks ARE the list, each row
 folded to pips and a problem count until opened; files not in Wrike fold into
 one "on disk, not in Wrike" line; no job falls back to everything on disk.
 The open project's row is an outlined card, never an edge bar.
+- **A batch lists the job whose batch IS it, POST and all**
+  (`lib/trackerJobs.ts`'s `jobsForBatch`). Thailand's `TH 6` and `TH 6 POST`
+  (`Batch_06`, `Batch_6_POST`) each showed all eighteen subtasks, because the
+  match dropped POST from both sides. That looseness exists for a POST job
+  whose territory keeps its files in the plain folder (Norway's `Batch_02`),
+  so it survives only as a fallback: when NO job matches the batch exactly,
+  and only for a job whose own batch has no folder among the territory's.
+  `node scripts/probe-tracker-jobs.mjs`.
 - **A near miss is flagged, never joined** — and only between ORPHANS (rows
   each holding a stage the other lacks), or every sibling size would be
   "nearly" every other.

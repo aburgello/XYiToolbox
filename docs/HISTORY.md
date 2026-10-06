@@ -10016,3 +10016,16 @@ piece lands exactly on its panel, and that a guide layer inside a panel comp
 really stays out of the board's viewer. Also offered and not built: using the
 territory's localised masters (`useLocalised`), and moving a master's title
 to the CSV's `TT` box.
+
+
+## 2026-10-06 — Batch Tracker: a POST batch listed the plain batch's subtasks too
+
+Reported from Thailand: `Batch_6_POST` and `Batch_06` each showed "18 in
+Wrike", nine POST and nine not, with both jobs' details links. The page's
+job match (`wrikeFor`) compared batches with `_POST` removed from both sides,
+so each batch took both jobs. On the POST batch that made nine rows read as
+unbuilt that were never its to build, and "Build 17" would have staged them.
+
+The chips were right all along (they scan each job against its own batch);
+only the page was wrong. Fixed in `lib/trackerJobs.ts`, with the loose match
+kept as a fallback for territories that file POST work in the plain folder.
