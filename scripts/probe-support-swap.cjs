@@ -53,6 +53,9 @@ const sandbox = {
     app: {
         settings: { haveSetting: () => false, getSetting: () => '', saveSetting: () => {} },
         project: null,
+        undo: '',
+        beginUndoGroup(name) { sandbox.app.undo = name + ':open'; },
+        endUndoGroup() { sandbox.app.undo = sandbox.app.undo.replace(':open', ':closed'); },
         // Stands in for app.open(): swaps the "current project" for the one
         // that file names, the way AE does.
         open(file) { const p = projectsOnDisk[file.fsName]; if (!p) return null; sandbox.app.project = p; return p; },
@@ -184,7 +187,9 @@ else {
 
     const real = aeft.supportSwap('', dry.imageFolder, false);
     say(real.success && real.replaced === 2, 'the real run swaps the 2 it said it would (' + real.replaced + ')');
-    say(sandbox.app.project.saved === true, 'and saves the project afterwards');
+    say(sandbox.app.project.saved === false, 'and does NOT save the open project: the swap is an edit, saved when the artist saves');
+    say(sandbox.app.undo === 'Support Swap:closed', '…and is one undo step', String(sandbox.app.undo));
+    say(real.openProject === true && dry.openProject === true, 'the report says it ran on the open project');
     say(items[1].replacedWith === null, 'the shared logo is still untouched after the real run');
 }
 

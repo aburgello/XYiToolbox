@@ -265,6 +265,23 @@
 
 .mcit-head .mcit-finished { color: #777; }
 
+// Preview or Done, beside the tool's name: the one thing the header has to say
+// before anything is read.
+.mcit-head .mcit-state {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #b9c2c2;
+    vertical-align: 1px;
+}
+.mcit-head .mcit-state--done { border-color: rgba(127, 202, 143, 0.5); color: #7fca8f; }
+
 // ── per-project include/skip (dry-run preview only) ──────────────────────────
 // The checkbox is a <button> with a lucide icon rather than a native
 // <input type="checkbox">, matching CheckboxToggle.tsx's reasoning: a native

@@ -10062,3 +10062,19 @@ Asked for with it: the preview should offer a list of what could be swapped,
 "sometimes naming conventions can be iffy". Both done; see CLAUDE.md.
 
 **Not done:** not run in After Effects on that project.
+
+
+## 2026-10-07 — Support Swap on the open project no longer saves it
+
+Asked, looking at the preview: "do we really need to save the project to
+replace?" No. The save was there from the tool's first version, copied from
+the batch mode where it is needed. On the project in front of somebody it
+wrote their other unsaved work too. Removed, with the swap in one undo group.
+
+The same look at the modal: it said "replace 2 images" about components,
+showed a full Date string in the header, and gave a single project a tick
+box. Reworded per tool.
+
+**Not done:** not run in After Effects. That `FootageItem.replace` inside an
+undo group is taken back by Ctrl+Z is how After Effects treats footage
+replacement, but it has not been pressed here.

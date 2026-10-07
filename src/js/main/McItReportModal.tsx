@@ -72,6 +72,8 @@ export interface McReport {
     verb?: string;
     /** An open-project preview with other .aep files beside it: how many. */
     batchAeps?: number;
+    /** Run on the project open in After Effects rather than a folder of them. */
+    openProject?: boolean;
 }
 
 let pushMcItReport: ((report: McReport) => void) | null = null;
@@ -272,6 +274,24 @@ const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply
         .reduce((n, p) => n + p.items.filter((i) => i.action === "replaced").length + manualCount(p), 0);
     const allOn = selected.length === actionable.length;
     const totalManual = projects.reduce((n, p) => n + manualCount(p), 0);
+    // SAID IN THE TOOL'S OWN WORDS. This modal serves two tools, and Support
+    // Swap's preview read "replace 2 images" over a list of .ai files.
+    const isSwap = report.applyExport === "supportSwap";
+    const tool = report.toolName || "MC It!";
+    const things = (n: number) => (isSwap ? "component" : "image") + (n === 1 ? "" : "s");
+    const doIt = isSwap ? "Swap" : "Replace";
+    const count = report.replaced ?? 0;
+    // A run's time, as a time. The host's Date string ("Wed Oct 07 2026
+    // 09:42:11 GMT+0100") was the longest thing in the header.
+    const when = (() => {
+        const m = /(\d{1,2}):(\d{2}):\d{2}/.exec(report.finishedAt || "");
+        return m ? `${m[1]}:${m[2]}` : "";
+    })();
+    // What pressing Apply does to the file on disk, which is the question a
+    // preview leaves open.
+    const consequence = report.openProject
+        ? (isSwap ? "Changes the open project only. Nothing is saved, and one undo takes it back." : "Changes the open project only.")
+        : "Each ticked project is opened, changed and saved.";
 
     return (
     <div className="mcit-overlay" onClick={onClose}>
@@ -280,15 +300,14 @@ const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply
                 <div className="mcit-head-icon"><ImageIcon size={16} /></div>
                 <div className="mcit-head-text">
                     <div className="mcit-title">
-                        {report.dryRun
-                            ? `${report.toolName || "MC It!"} — preview (nothing saved)`
-                            : `${report.toolName || "MC It!"} — run complete`}
+                        {tool}
+                        <span className={"mcit-state" + (report.dryRun ? "" : " mcit-state--done")}>{report.dryRun ? "Preview" : "Done"}</span>
                     </div>
                     <div className="mcit-subtitle">
-                        {report.processed ?? 0} project{(report.processed ?? 0) === 1 ? "" : "s"} ·{" "}
-                        <span className="mcit-replaced-count">{report.replaced ?? 0} {report.dryRun ? `would be ${report.verb || "replaced"}` : (report.verb || "replaced")}</span> ·{" "}
-                        {report.imageCount ?? 0} candidate images
-                        {report.finishedAt ? <span className="mcit-finished"> · {report.finishedAt}</span> : null}
+                        <span className="mcit-replaced-count">{count} {things(count)} {report.dryRun ? "to " + doIt.toLowerCase() : (report.verb || "replaced")}</span>
+                        {(report.processed ?? 0) > 1 ? ` across ${report.processed} projects` : ""}
+                        {" · "}{report.imageCount ?? 0} {isSwap ? "files in Masters/Support" : "candidate images"}
+                        {!report.dryRun && when ? <span className="mcit-finished"> · {when}</span> : null}
                     </div>
                 </div>
                 {onScanBatch && (
@@ -316,7 +335,9 @@ const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply
                     const replaced = proj.items.filter((i) => i.action === "replaced").length;
                     const misses = proj.items.filter((i) => i.action === "no-match").length;
                     const skippedCount = proj.items.filter((i) => i.action === "skipped" && !offered(i)).length;
-                    const selectable = onApply && !proj.skipped && replaced > 0;
+                    // One project is not a choice: its tick box only ever offered to
+                    // apply nothing.
+                    const selectable = onApply && !proj.skipped && replaced > 0 && projects.length > 1;
                     const off = selectable && !isOn(proj.aep);
                     return (
                         <div key={proj.aep} className={"mcit-proj" + (off ? " mcit-proj--off" : "")}>
@@ -434,7 +455,7 @@ const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply
 
             <div className="mcit-foot">
                 <span className="mcit-foot-paths" title={(report.aepFolder || "") + "\n" + (report.imageFolder || "")}>
-                    {report.message}
+                    {onApply ? consequence : report.message}
                 </span>
                 {onApply ? (
                     <>
@@ -444,7 +465,7 @@ const McItReportModal: React.FC<{ report: McReport; onClose: () => void; onApply
                                 ? "Applying…"
                                 : selected.length === 0
                                     ? "Nothing selected"
-                                    : `Apply — replace ${selectedReplacements} image${selectedReplacements === 1 ? "" : "s"}${totalManual > 0 ? ` (${totalManual} by hand)` : ""} in ${selected.length} project${selected.length === 1 ? "" : "s"}`}
+                                    : `${doIt} ${selectedReplacements} ${things(selectedReplacements)}${totalManual > 0 ? ` (${totalManual} by hand)` : ""}${selected.length > 1 ? ` in ${selected.length} projects` : ""}`}
                         </button>
                     </>
                 ) : (

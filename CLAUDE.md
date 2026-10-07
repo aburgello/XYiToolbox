@@ -1655,6 +1655,17 @@ tokens and is correctly not a candidate.
   same name the project already uses is the upgrade. **Whether the project is
   already on it is told by the item's PATH**, the name being identical either
   way. The report writes `POST/<name>`, or it reads as nothing having changed.
+- **A swap in the OPEN project is not saved, and is one undo step.**
+  `supportSwap` used to `app.project.save()` the moment anything was swapped,
+  which also wrote every other unsaved change in the project and took away
+  the way back. It is an edit like any other now (`beginUndoGroup`), saved
+  when the artist saves. The batch mode still saves each file it opens:
+  nobody is there to press Save. The report carries `openProject`, and the
+  preview's footer says which of the two a press on the button will do.
+- **The shared preview modal speaks each tool's words** (`McItReportModal`):
+  "Swap 2 components" for Support Swap, "Replace 2 images" for MC It!, a
+  Preview/Done pill instead of "preview (nothing saved)", a time instead of
+  the host's whole Date string, and no tick box on a lone project.
 - **The preview says what else a file could be.** An item the rule leaves
   alone ("already this market's") lists the other versions in the same
   creative and category, the POST folder's included for a POST deliverable,

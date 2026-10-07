@@ -3439,6 +3439,9 @@ interface McItResult {
   // Set on an OPEN-PROJECT preview only: how many .aep files sit beside the
   // project, so the modal can offer to scan the whole batch from there.
   batchAeps?: number;
+  // The run was on the project open in After Effects, not a folder of them:
+  // nothing was opened and (Support Swap) nothing is saved.
+  openProject?: boolean;
 }
 
 // <Territory>/AE/Batch_01 -> the matching <Territory>/JPG_PNG batch folder.
@@ -5191,12 +5194,23 @@ export const supportSwap = (
     if (openProjectMode) {
       const projFile = (app.project as Project).file as File;
       const aepName = decode(projFile.name);
-      const rep = ssApplyToOpenProject(app.project, aepName, cands, creatives, dryRun, overridesAll[aepName]);
+      // THE OPEN PROJECT IS NOT SAVED. It used to be, the moment anything was
+      // swapped -- which also wrote every other unsaved change the artist had
+      // in the project, and took away the way back. A swap in the project on
+      // screen is an edit like any other: one undo step, saved when the
+      // artist saves. (The batch mode below still saves each file: it opens
+      // them itself and there is nobody to press Save.)
+      let rep: McItProjectReport;
+      if (!dryRun) app.beginUndoGroup("Support Swap");
+      try {
+        rep = ssApplyToOpenProject(app.project, aepName, cands, creatives, dryRun, overridesAll[aepName]);
+      } finally {
+        if (!dryRun) app.endUndoGroup();
+      }
       projects.push(rep);
       const n = ssCountReplaced(rep);
       replaced += n;
       processed = 1;
-      if (!dryRun && n > 0) app.project.save();
     } else {
       for (let p = 0; p < aepFiles.length; p++) {
         const aepFile = aepFiles[p];
@@ -5239,6 +5253,7 @@ export const supportSwap = (
       imageFolder: root.fsName,
       imageCount: cands.length,
       processed: openProjectMode ? processed : projects.length,
+      openProject: openProjectMode,
       replaced: replaced,
       projects: projects,
       finishedAt: new Date().toString(),
