@@ -1031,6 +1031,13 @@ The open project's row is an outlined card, never an edge bar.
   handoff), Deliver (`setPendingDeliverJob`, take-once, then
   `navigateToTool("delivery-hub")`). Build is never offered on a claimed row —
   it is built, just misnamed, and building would make a twin.
+- **A row whose newest render is V02 or later offers Compare**: Review
+  Session's amend compare, from the row. The same host calls
+  (`reviewFindCounterparts` for the version before it, beside the render or
+  in `_Old`; `deliveryImportRenders` into the `<Territory> <Batch>` bin;
+  `createReviewComparison` as `amend`), never a second builder. No earlier
+  version on disk is said and nothing is imported; a second press reopens
+  the comp. It builds in whatever project is open, as Review does.
 - **The one write is Rename to match Wrike** (`trackerRename`): dry run first,
   a confirm counting what moves, disk → Wrike's name, every `.aep`/`.mov`
   version, tails kept (`_V02`, `_DOUBLE_RES`). **Never JPG_PNG** — the

@@ -84,7 +84,7 @@
 // read as broken.
 // =============================================================================
 import React, { useEffect, useRef, useState } from "react";
-import { Image as ImageIcon, FileBox, Film, PackageCheck, FileText, RefreshCw, Loader2, AlertTriangle, MapPin, Search, ChevronRight, Check, HardDrive, FolderOpen, Hammer, Truck, PenLine, ArrowUpRight, Play, Archive, MessageSquare, MessageSquarePlus, Info, UploadCloud } from "lucide-react";
+import { Image as ImageIcon, FileBox, Film, PackageCheck, FileText, RefreshCw, Loader2, AlertTriangle, MapPin, Search, ChevronRight, Check, HardDrive, FolderOpen, Hammer, Truck, PenLine, ArrowUpRight, Play, Archive, MessageSquare, MessageSquarePlus, Info, UploadCloud, Columns } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import Dropdown from "../Dropdown";
@@ -699,6 +699,9 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob, active 
         void loadJobs(false);
     }, [active]);
 
+    /** Comparison comps built from this page, by render path. */
+    const compareComps = useRef<Record<string, number>>({});
+
     const jobOf = (r: Row): WrikeJob | undefined =>
         r.wrike ? jobs.find((j) => (j.subtasks || []).some((st) => st.name === r.wrike!.name)) : undefined;
 
@@ -730,6 +733,43 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob, active 
             stageBatchFromJob(job, sendable);
             if (onSelectTool) onSelectTool("");
             else setMsg({ text: `${sendable.length} staged for Build a Batch -- open Localise to see them.` });
+        } finally { setActing(""); }
+    };
+
+    /**
+     * REVIEW'S COMPARE, from the row: the newest render against the version
+     * before it. The same three host calls Review Session makes (find the
+     * earlier version beside the render or in _Old, import the render into
+     * Deliver's `<Territory> <Batch>` bin, createReviewComparison as an
+     * amend), so the comp is the one Review would have built. A second press
+     * reopens it instead of stacking a `Compare_…_2`.
+     */
+    const compare = async (r: Row) => {
+        if (!r.render || !scan) return;
+        setActing("compare:" + r.key);
+        try {
+            const had = compareComps.current[r.render.path];
+            if (had) {
+                const f = (await evalTS("focusReviewComp", had)) as any;
+                if (f && f.success) return;
+                // Deleted since: build it again.
+            }
+            const cp = (await evalTS("reviewFindCounterparts", JSON.stringify([{ name: r.render.name, sourcePath: r.render.path }]))) as any;
+            const ref = cp && cp.items && cp.items[0];
+            if (!ref || !ref.amendPath) {
+                setMsg({ text: `No earlier version of ${r.render.name} beside it or in _Old, so there is nothing to compare it with.`, bad: true });
+                return;
+            }
+            const imp = (await evalTS("deliveryImportRenders", JSON.stringify({ paths: [r.render.path], folder: `${scan.territory} ${scan.batch}` }))) as any;
+            const itemId = imp && imp.success && imp.itemIds && imp.itemIds[0];
+            if (!itemId) { setMsg({ text: (imp && imp.error) || "Couldn't import the render.", bad: true }); return; }
+            const res = (await evalTS("createReviewComparison", ref.amendPath, itemId, r.render.name, "amend", 1)) as any;
+            if (!res || !res.compId) { setMsg({ text: (res && res.error) || "Couldn't build the comparison.", bad: true }); return; }
+            compareComps.current[r.render.path] = res.compId;
+            await evalTS("focusReviewComp", res.compId);
+            setMsg({ text: `Opened ${res.compName || "the comparison"}: ${ref.amendName || "the earlier version"} against ${r.render.name}.` });
+        } catch {
+            setMsg({ text: "Couldn't reach After Effects.", bad: true });
         } finally { setActing(""); }
     };
 
@@ -1011,6 +1051,10 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob, active 
                             if (r.wrike && !r.aep && !r.claimed && jobOf(r)) acts.push(
                                 <button key="bd" type="button" className="bt-act is-primary" disabled={!!acting} onClick={() => void build([r])}>
                                     <Hammer size={12} /> Build it
+                                </button>);
+                            if (r.render && r.render.version >= 2) acts.push(
+                                <button key="cmp" type="button" className="bt-act" disabled={!!acting} title="The version before it beside this one, with a DIFF layer. Review Session's compare." onClick={() => void compare(r)}>
+                                    {acting === "compare:" + r.key ? <Loader2 size={12} className="spin" /> : <Columns size={12} />} Compare V{String(r.render.version).padStart(2, "0")}
                                 </button>);
                             if (r.render && r.wrike && DELIVERABLE_STATUSES.test(r.wrike.status) && jobOf(r)) acts.push(
                                 <button key="dl" type="button" className="bt-act is-primary" disabled={!!acting} onClick={() => deliver(r)}>

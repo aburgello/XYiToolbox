@@ -10114,3 +10114,12 @@ delivered mp4 itself and reaches for the `_mp4` twin only for a MOV, so
 moving that twin at delivery took the clip away while the campaign was still
 active. Counted on Street Fighter: 457 mp4s, 11 MOVs. They go with the
 campaign's sweep.
+
+Same day: Compare on a Tracker row. A row showing "Rendered V02" was one
+trip to Review Session away from the comparison that answers "what changed".
+The row now makes Review's amend compare itself, with Review's three host
+calls and no new ExtendScript. Offered on the render's version alone (V02 or
+later); whether the earlier version is still on disk is only known on the
+press, and when it is not the row says so before anything is imported.
+**Not done:** not run in After Effects. The click-through checks what reaches
+the bridge against fixtures.

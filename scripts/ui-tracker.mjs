@@ -467,5 +467,47 @@ try {
         await tidy.close();
     }
 }
+// 14. Compare from the row: Review's own builder, the newest render against
+// the version before it.
+{
+    const CMP = `(() => { const F = ${FIXTURES};
+        F.reviewFindCounterparts = (j) => { const l = JSON.parse(j); return { success: true, items: l.map((x) => window.__noEarlier ? { name: x.name } : { name: x.name, amendPath: x.sourcePath.replace("_V02", "_V01"), amendName: x.name.replace("_V02", "_V01") }) }; };
+        F.deliveryImportRenders = () => ({ success: true, imported: 1, reused: 0, failed: [], itemIds: [77] });
+        F.createReviewComparison = () => ({ success: true, compId: 501, compName: "Compare_X_AMEND" });
+        F.focusReviewComp = () => ({ success: true });
+        return F; })()`;
+    const cmp = await launch({ root: ROOT, fixturesSrc: CMP, routes: { "api/panel/comment": () => ({ comment: null, count: 0 }), "api/panel/jobs": () => FEED } });
+    try {
+        console.log("\n14. Compare from the row");
+        await cmp.goto();
+        await cmp.waitFor(`[...document.querySelectorAll("button.category-card")].some(b => /Localise/.test(b.textContent))`, 10000);
+        await cmp.click("button.category-card", "Localise");
+        await cmp.waitFor(`[...document.querySelectorAll(".ls-pane-tab")].some(b => /Tracker/.test(b.textContent))`, 8000);
+        await cmp.click(".ls-pane-tab", "Tracker");
+        await cmp.waitFor(`document.querySelectorAll(".bt-rows > .bt-row").length === 4`, 12000);
+        for (let i = 0; i < 4; i++) await openRowAt(cmp, i);
+        const offered = await cmp.eval(`[...document.querySelectorAll(".bt-rows > .bt-row")].map(r => [...r.querySelectorAll(".bt-act")].filter(b => /^Compare/.test(b.innerText.trim())).map(b => b.innerText.trim()).join("|"))`);
+        check(offered.filter(Boolean).length === 1 && offered.filter(Boolean)[0] === "Compare V02", "only the row whose newest render is V02 offers it", offered);
+        await cmp.eval(`window.__noEarlier = true; window.__calls = []`);
+        await cmp.click(".bt-act", "Compare V02");
+        check(await cmp.waitFor(`/No earlier version/.test(document.querySelector(".bt-msg")?.innerText || "")`, 6000), "no earlier version on disk: said, and nothing is imported", await cmp.eval(`document.querySelector(".bt-msg")?.innerText || ""`));
+        check((await cmp.eval(`window.__calls.filter(c => /deliveryImportRenders|createReviewComparison/.test(c.fn)).length`)) === 0, "…nothing reached the project");
+        await cmp.eval(`window.__noEarlier = false; window.__calls = []`);
+        await cmp.click(".bt-act", "Compare V02");
+        check(await cmp.waitFor(`/Opened Compare_X_AMEND/.test(document.querySelector(".bt-msg")?.innerText || "")`, 6000), "with one, the comparison is built and opened", await cmp.eval(`document.querySelector(".bt-msg")?.innerText || ""`));
+        const calls = await cmp.eval(`window.__calls.filter(c => /reviewFindCounterparts|deliveryImportRenders|createReviewComparison|focusReviewComp/.test(c.fn)).map(c => [c.fn, c.args])`);
+        const mk = calls.find((c) => c[0] === "createReviewComparison");
+        const im = calls.find((c) => c[0] === "deliveryImportRenders");
+        check(!!mk && /_V01\.mov$/.test(mk[1][0]) && mk[1][1] === 77 && mk[1][3] === "amend", "the earlier version is the reference, the imported V02 the local, as an amend", mk);
+        check(!!im && /_V02\.mov$/.test(JSON.parse(im[1][0]).paths[0]) && JSON.parse(im[1][0]).paths.length === 1, "only the newest render is imported", im);
+        await cmp.eval(`window.__calls = []`);
+        await cmp.click(".bt-act", "Compare V02");
+        await cmp.waitFor(`window.__calls.some(c => c.fn === "focusReviewComp")`, 6000);
+        check((await cmp.eval(`window.__calls.filter(c => c.fn === "createReviewComparison").length`)) === 0, "a second press reopens it, no second comp");
+        check(cmp.errors.length === 0, "no page errors", cmp.errors.slice(0, 5));
+    } finally {
+        await cmp.close();
+    }
+}
 console.log(failures ? `\n${failures} FAILED` : "\nCLEAN — the tracker lines a batch up, flags what disagrees, and every problem hands off to its fix.");
 process.exit(failures ? 1 : 0);
