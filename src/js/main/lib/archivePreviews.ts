@@ -142,6 +142,45 @@ export const previewKey = (name: string): string =>
         .replace(/_(DOUBLE|TRIPLE|QUAD)_RES$/i, "")
         .toUpperCase();
 
+/** Move the previews of the named deliverables (`keys`, as `previewKey`
+ *  gives them) from one batch's `_mp4` to its `_Old/_mp4`. */
+export async function archivePreviewsFor(batchPath: string, keys: string[]): Promise<{ moved: number; error?: string }> {
+    if (!batchPath || !keys.length || path.basename(path.dirname(batchPath)).toLowerCase() !== "renders" || path.basename(batchPath).charAt(0) === "_") return { moved: 0 };
+    let moved = 0;
+    const inBatch = await kids(batchPath);
+    const mp = named(inBatch, "_mp4");
+    if (!mp) return { moved: 0 };
+    const inside = await kids(mp.path);
+    const mine = inside.filter((k) => isClip(k) && keys.indexOf(previewKey(k.name)) !== -1);
+    if (!mine.length) return { moved: 0 };
+    let old = named(inBatch, "_Old");
+    if (!old) {
+        const made = path.join(batchPath, "_Old");
+        const err = await call("mkdir", made);
+        if (err) return { moved, error: "Couldn't make _Old: " + err };
+        old = { name: "_Old", path: made, dir: true };
+    }
+    let there = named(await kids(old.path), "_mp4");
+    if (!there) {
+        const made = path.join(old.path, mp.name);
+        const err = await call("mkdir", made);
+        if (err) return { moved, error: "Couldn't make _Old/_mp4: " + err };
+        there = { name: mp.name, path: made, dir: true };
+    }
+    for (const k of mine) {
+        const err = await call("rename", k.path, path.join(there.path, k.name));
+        if (err) return { moved, error: "Couldn't move " + k.name + ": " + err };
+        moved++;
+    }
+    // Nothing left but Finder's own file: the folder has done its job.
+    const left = (await kids(mp.path)).filter((k) => k.name !== ".DS_Store");
+    if (!left.length) {
+        await call("unlink", path.join(mp.path, ".DS_Store"));
+        await call("rmdir", mp.path);
+    }
+    return { moved };
+}
+
 /**
  * Delivery has just written `outputPath` into a `_Delivery` folder: move THAT
  * deliverable's previews (every version) from its batch's `_mp4` to
@@ -167,40 +206,16 @@ export async function archiveDeliveredPreview(outputPath: string): Promise<{ mov
     } else if (path.basename(path.dirname(above)).toLowerCase() === "renders" && path.basename(above).charAt(0) !== "_") {
         batches = [above];
     }
+    // A delivery Chromium can't play (a .mov) keeps its preview: it is the
+    // only thing Size Finder can show for it while the campaign is active.
+    // It goes with the rest when the campaign is archived.
+    if (!/\.(mp4|m4v)$/i.test(outputPath)) return { moved: 0 };
     const want = previewKey(path.basename(outputPath));
     let moved = 0;
     for (const batchPath of batches) {
-        const inBatch = await kids(batchPath);
-        const mp = named(inBatch, "_mp4");
-        if (!mp) continue;
-        const inside = await kids(mp.path);
-        const mine = inside.filter((k) => isClip(k) && previewKey(k.name) === want);
-        if (!mine.length) continue;
-        let old = named(inBatch, "_Old");
-        if (!old) {
-            const made = path.join(batchPath, "_Old");
-            const err = await call("mkdir", made);
-            if (err) return { moved, error: "Couldn't make _Old: " + err };
-            old = { name: "_Old", path: made, dir: true };
-        }
-        let there = named(await kids(old.path), "_mp4");
-        if (!there) {
-            const made = path.join(old.path, mp.name);
-            const err = await call("mkdir", made);
-            if (err) return { moved, error: "Couldn't make _Old/_mp4: " + err };
-            there = { name: mp.name, path: made, dir: true };
-        }
-        for (const k of mine) {
-            const err = await call("rename", k.path, path.join(there.path, k.name));
-            if (err) return { moved, error: "Couldn't move " + k.name + ": " + err };
-            moved++;
-        }
-        // Nothing left but Finder's own file: the folder has done its job.
-        const left = (await kids(mp.path)).filter((k) => k.name !== ".DS_Store");
-        if (!left.length) {
-            await call("unlink", path.join(mp.path, ".DS_Store"));
-            await call("rmdir", mp.path);
-        }
+        const res = await archivePreviewsFor(batchPath, [want]);
+        moved += res.moved;
+        if (res.error) return { moved, error: res.error };
     }
     return { moved };
 }

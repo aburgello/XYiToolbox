@@ -10108,3 +10108,9 @@ campaigns at all, and to open on the campaign being worked on.
 **Not done:** nothing moved on the share. The probe moves real files in a
 temp folder; the Tracker's press is clicked through against a fake `fs`.
 The delivery hook has not seen a real render land.
+
+Same day: a `.mov` delivery keeps its preview. Size Finder plays the
+delivered mp4 itself and reaches for the `_mp4` twin only for a MOV, so
+moving that twin at delivery took the clip away while the campaign was still
+active. Counted on Street Fighter: 457 mp4s, 11 MOVs. They go with the
+campaign's sweep.

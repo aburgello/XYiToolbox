@@ -104,7 +104,7 @@ import { readFinderColors, revealInFinder, type FinderColor } from "../lib/finde
 import { mastersRendersFor } from "../lib/mastersRoot";
 import TrackerMessage from "./TrackerMessage";
 import { trackerDisk, dropTrackerDisks } from "../lib/trackerDisk";
-import { archivePreviews } from "../lib/archivePreviews";
+import { archivePreviewsFor, previewKey } from "../lib/archivePreviews";
 import { uploadNameFor } from "../lib/wrikeMessage";
 import { loadUploadRoots, saveUploadRoot, uploadRootFor, uploadFolderFor, campaignKeyOf } from "../lib/uploadRoots";
 import { jobsForBatch } from "../lib/trackerJobs";
@@ -178,6 +178,11 @@ const jobLabel = (j: WrikeJob) => {
 
 /** Wrike asks for changes to this one. */
 export const toAmend = (r: Row): boolean => !!(r.wrike && AMEND_STATUSES.test(r.wrike.status.trim()));
+
+/** A preview that has done its job: its deliverable is delivered as something
+ *  the panel can play. A .mov delivery keeps its preview -- it is all Size
+ *  Finder has to show for it -- until the campaign is archived. */
+export const previewDone = (r: Row): boolean => !!(r.preview && r.delivered && /\.(mp4|m4v)$/i.test(r.delivered.path));
 
 /** A preview older than the newest render: the one on screen isn't current. */
 export const previewStale = (r: Row): boolean => !!(r.preview && r.render && r.render.version > r.preview.version);
@@ -769,7 +774,8 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob, active 
     // deliverable with a render or a subtask has a delivered file.
     const archive = async () => {
         if (!scan || !scan.folders.renders) return;
-        const n = (scan.rows as Row[]).filter((r) => !!r.preview).length;
+        const keys = (scan.rows as Row[]).filter(previewDone).map((r) => previewKey(r.preview!.name));
+        const n = keys.length;
         const ok = await confirmDialog({
             title: `Move this batch's previews to _Old?`,
             body: `${n} preview${n === 1 ? "" : "s"} in ${batch}'s _mp4 go to _Old/_mp4, which is made if it isn't there. Nothing is deleted; they stop playing here.`,
@@ -778,9 +784,9 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob, active 
         if (!ok) return;
         setActing("archive");
         try {
-            const res = await archivePreviews(scan.folders.renders);
-            if (!res.success) setMsg({ text: res.error || "Couldn't move the previews.", bad: true });
-            else setMsg({ text: `Moved ${res.moved} preview${res.moved === 1 ? "" : "s"} to _Old/_mp4${res.madeOld ? " (made _Old)" : ""}.` });
+            const res = await archivePreviewsFor(scan.folders.renders, keys);
+            if (res.error) setMsg({ text: res.error, bad: true });
+            else setMsg({ text: `Moved ${res.moved} preview${res.moved === 1 ? "" : "s"} to _Old/_mp4.` });
             dropTrackerDisks();
             forceNext.current = true;
             await run();
@@ -816,7 +822,7 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob, active 
     // Delivered, previews still in _mp4: everything with a subtask or a render
     // has a delivered file. A batch part-way through keeps its previews.
     const owed = all.filter((r) => !!r.wrike || !!r.render);
-    const previewsLeft = all.filter((r) => !!r.preview).length;
+    const previewsLeft = all.filter(previewDone).length;
     const tidy = previewsLeft > 0 && owed.length > 0 && owed.every((r) => !!r.delivered);
     const colorOf = (r: Row) => (r.render ? colors[r.render.path] || "" : "");
     const issuesOf = (r: Row) => rowIssues(r, colorOf(r));

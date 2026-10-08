@@ -1337,6 +1337,12 @@ archived is replaced (previews are regenerable).
   same for ones retired earlier). The Tracker: a strip once everything with a
   subtask or a render is delivered, for what the watch missed (it stops when
   the Deliver page is left).
+- **A `.mov` delivery KEEPS its preview** until the campaign is archived
+  (delivery hook and Tracker strip alike, `previewDone`): Size Finder plays
+  the delivered file when it is an mp4 and the `_mp4` twin only when it is
+  not, so that twin is all it has. About 2% of Street Fighter's deliveries
+  (11 of 468, counted). The Tracker strip moves per deliverable too, never
+  the folder; only the retire sweep takes the whole `_mp4`.
 - **Only ever `<Territory>/Renders/<Batch>/_mp4`.** Refused on any other
   shape, so it cannot reach `Support/Motion_Components/_mp4`, which OV
   Library and 67 play from.

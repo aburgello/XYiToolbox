@@ -121,6 +121,9 @@ try {
     check(d.moved === 1 && ls(`${TH}/Batch_07/_Old/_mp4`).length === 1 && ls(`${TH}/Batch_08/_mp4`).length === 1 && !existsSync(`${TH}/Batch_08/_Old`), "a territory-level _Delivery: found in its batch, the others untouched", d);
     d = await archiveDeliveredPreview(`${TH}/Batch_08/OTHER_1080x1920px_10s_TH_V01.mov`);
     check(d.moved === 0 && ls(`${TH}/Batch_08/_mp4`).length === 1, "a render that is not a delivery moves nothing", d);
+    put(`${TH}/Batch_09/_mp4/${N}_V01.mp4`);
+    d = await archiveDeliveredPreview(`${TH}/Batch_09/_Delivery/${N}.mov`);
+    check(d.moved === 0 && ls(`${TH}/Batch_09/_mp4`).length === 1 && !existsSync(`${TH}/Batch_09/_Old`), "delivered as a .mov: its preview stays (it is all Size Finder can play)", d);
     d = await archiveDeliveredPreview(`${MC}/_Delivery/master.mp4`);
     check(d.moved === 0 && ls(`${MC}/_mp4`).join() === "master.mp4", "nothing outside a Renders folder", d);
 } finally {

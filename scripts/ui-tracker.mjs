@@ -445,6 +445,7 @@ try {
     try {
         console.log("\n13. A delivered batch's previews");
         const RB = `${T}/Renders/Batch_02`;
+        const PV = `${P}NfkinoPOST_345x496px_30s_NO_V01.mp4`;
         await tidy.goto();
         await tidy.waitFor(`[...document.querySelectorAll("button.category-card")].some(b => /Localise/.test(b.textContent))`, 10000);
         await tidy.click("button.category-card", "Localise");
@@ -452,15 +453,15 @@ try {
         await tidy.click(".ls-pane-tab", "Tracker");
         await tidy.waitFor(`document.querySelectorAll(".bt-rows > .bt-row").length === 4`, 12000);
         check(!(await tidy.eval(`!!document.querySelector(".bt-tidy")`)), "a batch part-way through keeps its previews: nothing is offered");
-        await tidy.eval(`window.__allDelivered = true; window.__fsTree = ${JSON.stringify({ [RB]: [{ name: "_mp4", dir: true }], [RB + "/_mp4"]: [{ name: "a_V01.mp4", dir: false }] })}`);
+        await tidy.eval(`window.__allDelivered = true; window.__fsTree = ${JSON.stringify({ [RB]: [{ name: "_mp4", dir: true }], [RB + "/_mp4"]: [{ name: PV, dir: false }, { name: "OTHER_100x100px_10s_NO_V01.mp4", dir: false }] })}`);
         await tidy.eval(`document.querySelector('.bt-btn.bt-icon[aria-label="Refresh"]').click()`);
         check(await tidy.waitFor(`/All delivered\\. 1 preview is still in _mp4/.test(document.querySelector(".bt-tidy")?.innerText || "")`, 8000), "everything delivered: the previews left are offered", await tidy.eval(`document.querySelector(".bt-tidy")?.innerText || ""`));
         await tidy.click(".bt-tidy .bt-act", "Move to _Old");
         check(await tidy.waitFor(`/previews to _Old/.test(document.querySelector(".dialog-title")?.innerText || "")`, 4000), "it asks first");
         await tidy.click(".dialog-btn-primary", "Move to _Old");
-        check(await tidy.waitFor(`/Moved 1 preview to _Old\\/_mp4 \\(made _Old\\)/.test(document.querySelector(".bt-msg")?.innerText || "")`, 6000), "…and says what it did", await tidy.eval(`document.querySelector(".bt-msg")?.innerText || ""`));
+        check(await tidy.waitFor(`/Moved 1 preview to _Old\\/_mp4\\./.test(document.querySelector(".bt-msg")?.innerText || "")`, 6000), "…and says what it did", await tidy.eval(`document.querySelector(".bt-msg")?.innerText || ""`));
         const ops = await tidy.eval(`window.__fsOps || []`);
-        check(ops.length === 2 && ops[0][0] === "mkdir" && ops[0][1] === RB + "/_Old" && ops[1][0] === "rename" && ops[1][1] === RB + "/_mp4" && ops[1][2] === RB + "/_Old/_mp4", "_Old is made, then _mp4 is renamed into it: one move, nothing copied", ops);
+        check(ops.length === 3 && ops[0][1] === RB + "/_Old" && ops[1][1] === RB + "/_Old/_mp4" && ops[2][0] === "rename" && ops[2][1] === RB + "/_mp4/" + PV && ops[2][2] === RB + "/_Old/_mp4/" + PV, "_Old and _Old/_mp4 are made, and only the delivered deliverable's preview moves", ops);
         check(tidy.errors.length === 0, "no page errors", tidy.errors.slice(0, 5));
     } finally {
         await tidy.close();
