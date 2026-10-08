@@ -1323,6 +1323,31 @@ campaign, each with its clip beside its mech sheet.
 `node scripts/probe-size-finder.mjs [Markets root]` (the optional root is
 listed read-only) and `node scripts/ui-size-finder.mjs` guard it.
 
+**A delivered deliverable's previews go to `_Old`, moved by the panel**
+(`lib/archivePreviews.ts`, 2026-10-08). `Renders/<Batch>/_mp4` is
+housekeeping once delivered; the studio keeps it in `Renders/<Batch>/_Old/_mp4`
+until a purge. `_Old` is found whatever its case, or MADE (it is often
+forgotten); a rename on the share, nothing copied; a same-named clip already
+archived is replaced (previews are regenerable).
+- **Three moments, one mover.** Delivery's render watch, as each file lands
+  in `_Delivery`: THAT deliverable's previews only (`previewKey`: extension,
+  `_Vnn` and RES tail off, exact beyond that), no question asked, said on the
+  render's toast. Retiring a campaign: every `_mp4` left under its Markets
+  root, asked with the count ("Tidy retired campaigns' previews…" does the
+  same for ones retired earlier). The Tracker: a strip once everything with a
+  subtask or a render is delivered, for what the watch missed (it stops when
+  the Deliver page is left).
+- **Only ever `<Territory>/Renders/<Batch>/_mp4`.** Refused on any other
+  shape, so it cannot reach `Support/Motion_Components/_mp4`, which OV
+  Library and 67 play from.
+- **Size Finder reads ACTIVE campaigns only** (`activeFirst`): a retired
+  campaign's clips are archived and purged. The one it was opened on stays,
+  retired or not; a team board that can't be read retires nothing. It opens
+  ON the campaign being worked on (Big Guy's last), "Every campaign" one pick
+  away. Do not teach it or the Tracker to play from `_Old`.
+`node scripts/probe-archive-previews.mjs` (no build needed) moves real files
+in a throwaway tree.
+
 **Folders starting with `_` are excluded from every scan.** The one exception is
 Naming Audit, which skips only `Auto-Save`/`_Archive`/`_Old`/`_DEV`.
 

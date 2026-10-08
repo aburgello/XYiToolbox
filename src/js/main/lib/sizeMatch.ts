@@ -322,3 +322,12 @@ export function preTwinFor(row: RowSpec, projects: { name: string; path: string 
     const keys = Object.keys(hits);
     return keys.length === 1 ? { name: hits[keys[0]].name, path: hits[keys[0]].path } : null;
 }
+
+/** The campaigns Size Finder reads: retired ones out (never the one it was
+ *  opened on), the one being worked on first, the rest as listed. */
+export function activeFirst<T extends { name: string }>(list: T[], retired: string[], here: string): T[] {
+    const low = (n: string) => String(n).toLowerCase();
+    const gone = retired.map(low);
+    const live = list.filter((c) => low(c.name) === low(here) || gone.indexOf(low(c.name)) === -1);
+    return live.filter((c) => low(c.name) === low(here)).concat(live.filter((c) => low(c.name) !== low(here)));
+}

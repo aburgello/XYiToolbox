@@ -10078,3 +10078,33 @@ box. Reworded per tool.
 **Not done:** not run in After Effects. That `FootageItem.replace` inside an
 undo group is taken back by Ctrl+Z is how After Effects treats footage
 replacement, but it has not been pressed here.
+
+## 2026-10-08 — Previews go to `_Old` by themselves
+
+Asked in the studio channel: Render Me now leaves an `_mp4` folder in every
+batch, and somebody has to move it to `_old` when a campaign ends. Do it as
+we go, or wait to be prompted on the Wrike card? Neither: the panel knows
+both moments.
+
+- **At delivery.** Delivery's render watch already sees each file land in
+  `_Delivery`. That deliverable's previews (every version) move from the
+  batch's `_mp4` to `_Old/_mp4`, both made when missing, and it says so on the
+  render's own toast. Per deliverable, not the folder: the rest of the batch
+  may not be delivered.
+- **On retiring a campaign.** One sweep of every `Renders/<Batch>/_mp4` left,
+  asked with the count. Paw Patrol Dino and Odyssey were retired before this
+  existed, so the campaign menu has "Tidy retired campaigns' previews…".
+- **In the Tracker**, for batches delivered by hand or with the Deliver page
+  closed (the watch stops when you leave it): a strip once everything is
+  delivered.
+
+First built as the Tracker button alone; the studio's own description of it
+said Delivery does it, so it moved there.
+
+Size Finder played those previews for deliverables delivered as a MOV. The
+answer was not to teach it `_Old` (purged later) but to stop reading retired
+campaigns at all, and to open on the campaign being worked on.
+
+**Not done:** nothing moved on the share. The probe moves real files in a
+temp folder; the Tracker's press is clicked through against a fake `fs`.
+The delivery hook has not seen a real render land.

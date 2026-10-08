@@ -250,6 +250,11 @@
         span { flex: 1 1 200px; min-width: 0; }
         strong { color: #fde68a; font-weight: 600; word-break: break-word; }
     }
+    // Housekeeping, not a fault: the same strip, without the amber.
+    .bt-stale.bt-tidy {
+        border-color: rgba(255, 255, 255, 0.12); background: rgba(255, 255, 255, 0.03); color: rgba(255, 255, 255, 0.72);
+        strong { color: #fff; }
+    }
     .bt-msg { margin: 0; padding: 7px 10px; border-radius: 7px; background: rgba(74, 222, 128, 0.08); color: #86efac; font-size: 11.5px; cursor: pointer; &.is-bad { background: rgba(248, 113, 113, 0.08); color: #fca5a5; } }
 
     // YOUR JOBS: chips that wrap (AE gives a mouse no sideways wheel), each

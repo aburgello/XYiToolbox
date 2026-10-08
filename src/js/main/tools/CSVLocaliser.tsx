@@ -15,6 +15,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import SizeFinderTool from "./SizeFinder";
+import { archivePreviews, findPreviewFolders, PreviewFolder } from "../lib/archivePreviews";
 import { hasNode as sizeHasNode, listDir as sizeListDir, onApprovedChange, peekApproved, readApproved } from "../lib/sizeFinderStore";
 import { countAtRatio, marketOfName, NEAR_RATIO, preTwinFor, ratioLabel } from "../lib/sizeMatch";
 import type { Approved } from "../lib/sizeScan";
@@ -1934,9 +1935,53 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
             if (res === undefined) throw new Error("no bridge");
             setNotice((res as { message?: string; error?: string }).message || (res as { error?: string }).error || "");
             await refreshCampaignStatus();
+            if (!already && (res as { success?: boolean }).success) await sweepPreviews([{ name: campaignName, root: marketsRoot }], true);
         } catch (e) {
             setNotice("No CEP bridge. Open this panel inside After Effects.");
         }
+    };
+
+    // A retired campaign is finished, so every batch's previews are
+    // housekeeping: Renders/<Batch>/_mp4 -> Renders/<Batch>/_Old/_mp4. Asked,
+    // with the count; an unmounted Markets folder simply finds nothing.
+    // `quiet` is the sweep that follows a retire: nothing left is not news.
+    const sweepPreviews = async (list: { name: string; root: string }[], quiet: boolean) => {
+        const found: PreviewFolder[] = [];
+        const names: string[] = [];
+        for (const c of list) {
+            if (!c.root) continue;
+            setNotice(`Looking for previews in ${c.name}…`);
+            const here = await findPreviewFolders(c.root);
+            if (here.length) names.push(c.name);
+            here.forEach((f) => found.push(f));
+        }
+        if (!found.length) { setNotice(quiet ? "" : "No previews left in _mp4. Nothing to move."); return; }
+        const clips = found.reduce((n, f) => n + f.files, 0);
+        const ok = await confirmDialog({
+            title: `Move ${names.join(" and ")}'s previews to _Old?`,
+            body: `${clips} preview${clips === 1 ? "" : "s"} in ${found.length} batch${found.length === 1 ? "" : "es"}. Each _mp4 goes into its batch's _Old, made where it's missing. Nothing is deleted.`,
+            confirm: "Move to _Old",
+        });
+        if (!ok) { setNotice(""); return; }
+        let moved = 0;
+        const failed: string[] = [];
+        for (let i = 0; i < found.length; i++) {
+            setNotice(`Moving previews… ${i + 1} of ${found.length}`);
+            const res = await archivePreviews(found[i].batchPath);
+            if (res.success) moved++;
+            else failed.push(`${found[i].territory} ${found[i].batch}`);
+        }
+        setNotice(`Moved ${moved} batch${moved === 1 ? "" : "es"}' previews to _Old.` + (failed.length ? ` Couldn't move: ${failed.join(", ")}.` : ""));
+    };
+
+    // Campaigns retired before the sweep existed (or with the share unmounted
+    // that day). The Markets folder is this machine's own, else the team's.
+    const sweepRetired = () => {
+        const list = teamCampaigns.rows.filter((r) => r.retiredBy).map((r) => {
+            const mine = campaigns.find((c) => c.name.toLowerCase() === r.name.toLowerCase());
+            return { name: r.name, root: (mine && mine.marketsRoot) || r.marketsRoot };
+        });
+        return sweepPreviews(list, false);
     };
 
     const browseAep = async () => {
@@ -2534,6 +2579,12 @@ const CSVLocaliserTool = ({ onSelectTool, onCampaignChange, librarySlot, hereTer
                                             <button onClick={() => { close(); void restoreRetiredCampaign(); }}>
                                                 <ArchiveRestore size={13} />
                                                 <span><strong>Restore a retired campaign…</strong><em>Back into everyone's picker</em></span>
+                                            </button>
+                                        )}
+                                        {teamCampaigns.rows.some((r) => r.retiredBy) && (
+                                            <button onClick={() => { close(); void sweepRetired(); }}>
+                                                <Archive size={13} />
+                                                <span><strong>Tidy retired campaigns' previews…</strong><em>Every _mp4 left goes to its batch's _Old</em></span>
                                             </button>
                                         )}
                                         <span className="specs-manage-sep" />

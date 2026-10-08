@@ -31,7 +31,7 @@ import { evalTS } from "../../lib/utils/bolt";
 import { child_process, path as nodePath } from "../../lib/cep/node";
 import { toFileUrl } from "../lib/fileUrl";
 import { usePosterFrame } from "../lib/renderPreview";
-import { byCloseness, closeness, Closeness, marketOfName, parseWanted, ratioLabel, repeatFor, RowSpec, sheetImages } from "../lib/sizeMatch";
+import { byCloseness, closeness, Closeness, marketOfName, parseWanted, ratioLabel, repeatFor, RowSpec, sheetImages, activeFirst } from "../lib/sizeMatch";
 import { Approved, findApprovedProject, findRowArt } from "../lib/sizeScan";
 import { hasNode, isChecking, listDir, onApprovedChange, peekApproved, readApproved } from "../lib/sizeFinderStore";
 import Dropdown from "../Dropdown";
@@ -403,6 +403,8 @@ const SizeFinderTool = ({ initialSize, initialCreative, initialCampaign, useAsMa
             const read = await readApproved(c.name, c.marketsRoot, force);
             if (!read.mounted) gone.push(c.name);
             read.rows.forEach((r) => out.push(r));
+            // The first campaign is the one being worked on: on screen as it lands.
+            setRows(out.slice());
         }
         setRows(out); setMissing(gone); setBusy("");
     };
@@ -430,8 +432,19 @@ const SizeFinderTool = ({ initialSize, initialCreative, initialCampaign, useAsMa
         (async () => {
             let list: Campaign[] = [];
             try { list = ((await evalTS("loadLocLibCampaigns")) as unknown as Campaign[]) || []; } catch { list = []; }
+            // ACTIVE campaigns only, and the one being worked on first. A
+            // retired campaign's previews are archived and purged, so its
+            // clips are gone. A board that can't be read retires nothing.
+            let here = initialCampaign || "";
+            try {
+                const board = (await evalTS("teamCampaignBoard")) as { read?: boolean; rows?: { name: string; retiredBy: string }[] } | undefined;
+                if (!here) here = String((await evalTS("csvLocaliserLoadLastCampaign")) || "");
+                list = activeFirst(list, board && board.read ? (board.rows || []).filter((r) => r.retiredBy).map((r) => r.name) : [], here);
+            } catch { /* no team folder: every campaign, as listed */ }
             if (!alive) return;
             setCampaigns(list);
+            // Opens ON the campaign being worked on; "Every campaign" is one pick away.
+            if (!initialCampaign && here && list.length > 1 && list[0].name === here && list[0].marketsRoot) setCampaign(here);
             if (!list.length) { setNote("No campaigns yet. Add one in Big Guy Localiser and its Markets folder is read here."); return; }
             await scan(list);
         })();

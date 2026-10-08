@@ -109,8 +109,8 @@ function bridgeSource(fixturesSrc) {
   const fileCalls = {
     readFile: (p, enc, cb) => { if (!window.__fsTree) return undefined; const f = window.__fsFiles || {}; setTimeout(() => (p in f ? cb(null, f[p]) : cb(new Error("ENOENT"))), 0); },
     writeFile: (p, body, enc, cb) => { if (!window.__fsTree) return undefined; (window.__fsFiles = window.__fsFiles || {})[p] = String(body); setTimeout(() => cb(null), 0); },
-    rename: (a, b, cb) => { if (!window.__fsTree) return undefined; const f = window.__fsFiles || {}; if (a in f) { f[b] = f[a]; delete f[a]; } setTimeout(() => cb(null), 0); },
-    mkdir: (p, cb) => { if (!window.__fsTree) return undefined; setTimeout(() => cb(null), 0); },
+    rename: (a, b, cb) => { if (!window.__fsTree) return undefined; (window.__fsOps = window.__fsOps || []).push(["rename", a, b]); const f = window.__fsFiles || {}; if (a in f) { f[b] = f[a]; delete f[a]; } setTimeout(() => cb(null), 0); },
+    mkdir: (p, cb) => { if (!window.__fsTree) return undefined; (window.__fsOps = window.__fsOps || []).push(["mkdir", p]); setTimeout(() => cb(null), 0); },
   };
   const slowReaddir = (dir, opts, cb) => {
     if (!window.__fsTree) return undefined;

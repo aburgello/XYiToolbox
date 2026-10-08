@@ -15,6 +15,7 @@ import Droplet from "../Droplet";
 import DeliveryJobs from "./DeliveryJobs";
 import TrackerMessage from "./TrackerMessage";
 import { deliveryGroups } from "../lib/deliveryMessage";
+import { archiveDeliveredPreview } from "../lib/archivePreviews";
 import { uploadNameFor } from "../lib/wrikeMessage";
 import { mastersRendersFor } from "../lib/mastersRoot";
 import { loadUploadRoots, saveUploadRoot, uploadRootFor, uploadFolderFor, campaignKeyOf } from "../lib/uploadRoots";
@@ -661,8 +662,17 @@ const DeliveryHubTool = () => {
                         item.sizeBytes > 0 ? `${mb.toFixed(1)} MB` : null,
                         mbps > 0 ? `${mbps.toFixed(1)} Mbps` : null,
                     ].filter(Boolean);
+                    // Delivered, so its preview is housekeeping: out of the
+                    // batch's _mp4 and into _Old/_mp4 (made if missing).
+                    // Only this deliverable's; a failure is said, never fatal.
+                    let tidied = "";
+                    try {
+                        const arch = await archiveDeliveredPreview(item.outputPath);
+                        if (arch.error) tidied = ` · preview not moved (${arch.error})`;
+                        else if (arch.moved) tidied = " · preview moved to _Old";
+                    } catch { /* no Node here: nothing to move */ }
                     pushToast(
-                        `Rendered "${item.compName}" → ${folder}${parts.length ? ` · ${parts.join(" · ")}` : ""}`,
+                        `Rendered "${item.compName}" → ${folder}${parts.length ? ` · ${parts.join(" · ")}` : ""}${tidied}`,
                         "success",
                         15000 // long-lived: the artist may not be looking when a long render lands
                     );

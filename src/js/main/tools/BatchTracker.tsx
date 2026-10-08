@@ -84,7 +84,7 @@
 // read as broken.
 // =============================================================================
 import React, { useEffect, useRef, useState } from "react";
-import { Image as ImageIcon, FileBox, Film, PackageCheck, FileText, RefreshCw, Loader2, AlertTriangle, MapPin, Search, ChevronRight, Check, HardDrive, FolderOpen, Hammer, Truck, PenLine, ArrowUpRight, Play, MessageSquare, MessageSquarePlus, Info, UploadCloud } from "lucide-react";
+import { Image as ImageIcon, FileBox, Film, PackageCheck, FileText, RefreshCw, Loader2, AlertTriangle, MapPin, Search, ChevronRight, Check, HardDrive, FolderOpen, Hammer, Truck, PenLine, ArrowUpRight, Play, Archive, MessageSquare, MessageSquarePlus, Info, UploadCloud } from "lucide-react";
 import { evalTS } from "../../lib/utils/bolt";
 import { evalTSSafe } from "../../lib/utils/evalTSSafe";
 import Dropdown from "../Dropdown";
@@ -104,6 +104,7 @@ import { readFinderColors, revealInFinder, type FinderColor } from "../lib/finde
 import { mastersRendersFor } from "../lib/mastersRoot";
 import TrackerMessage from "./TrackerMessage";
 import { trackerDisk, dropTrackerDisks } from "../lib/trackerDisk";
+import { archivePreviews } from "../lib/archivePreviews";
 import { uploadNameFor } from "../lib/wrikeMessage";
 import { loadUploadRoots, saveUploadRoot, uploadRootFor, uploadFolderFor, campaignKeyOf } from "../lib/uploadRoots";
 import { jobsForBatch } from "../lib/trackerJobs";
@@ -763,6 +764,29 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob, active 
         } finally { setActing(""); }
     };
 
+    // A delivered batch's previews are housekeeping: Renders/<Batch>/_mp4 goes
+    // to Renders/<Batch>/_Old/_mp4 (purged later). Offered only once every
+    // deliverable with a render or a subtask has a delivered file.
+    const archive = async () => {
+        if (!scan || !scan.folders.renders) return;
+        const n = (scan.rows as Row[]).filter((r) => !!r.preview).length;
+        const ok = await confirmDialog({
+            title: `Move this batch's previews to _Old?`,
+            body: `${n} preview${n === 1 ? "" : "s"} in ${batch}'s _mp4 go to _Old/_mp4, which is made if it isn't there. Nothing is deleted; they stop playing here.`,
+            confirm: "Move to _Old",
+        });
+        if (!ok) return;
+        setActing("archive");
+        try {
+            const res = await archivePreviews(scan.folders.renders);
+            if (!res.success) setMsg({ text: res.error || "Couldn't move the previews.", bad: true });
+            else setMsg({ text: `Moved ${res.moved} preview${res.moved === 1 ? "" : "s"} to _Old/_mp4${res.madeOld ? " (made _Old)" : ""}.` });
+            dropTrackerDisks();
+            forceNext.current = true;
+            await run();
+        } finally { setActing(""); }
+    };
+
     const renameComp = async () => {
         setActing("comp");
         try {
@@ -789,6 +813,11 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob, active 
     const rows = fromWrike ? all.filter((r) => !!r.wrike) : all;
     const extra = fromWrike ? all.filter((r) => !r.wrike) : [];
     const count = (f: (r: Row) => boolean) => rows.filter(f).length;
+    // Delivered, previews still in _mp4: everything with a subtask or a render
+    // has a delivered file. A batch part-way through keeps its previews.
+    const owed = all.filter((r) => !!r.wrike || !!r.render);
+    const previewsLeft = all.filter((r) => !!r.preview).length;
+    const tidy = previewsLeft > 0 && owed.length > 0 && owed.every((r) => !!r.delivered);
     const colorOf = (r: Row) => (r.render ? colors[r.render.path] || "" : "");
     const issuesOf = (r: Row) => rowIssues(r, colorOf(r));
     const issue = (r: Row): boolean => issuesOf(r).length > 0;
@@ -1079,6 +1108,15 @@ const BatchTracker: React.FC<Props> = ({ onSelectTool, openJob: wantJob, active 
                             <span>The open project's comp is still called <strong>{staleComps[0]}</strong>{staleComps.length > 1 ? ` (+${staleComps.length - 1})` : ""}.</span>
                             <button type="button" className="bt-act is-primary" disabled={!!acting} onClick={() => void renameComp()}>
                                 {acting === "comp" ? <Loader2 size={12} className="spin" /> : <PenLine size={12} />} Rename comp
+                            </button>
+                        </div>
+                    )}
+                    {tidy && (
+                        <div className="bt-stale bt-tidy">
+                            <Archive size={12} />
+                            <span>All delivered. <strong>{previewsLeft}</strong> preview{previewsLeft === 1 ? " is" : "s are"} still in <strong>_mp4</strong>.</span>
+                            <button type="button" className="bt-act" disabled={!!acting} onClick={() => void archive()}>
+                                {acting === "archive" ? <Loader2 size={12} className="spin" /> : <Archive size={12} />} Move to _Old
                             </button>
                         </div>
                     )}

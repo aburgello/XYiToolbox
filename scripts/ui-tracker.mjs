@@ -437,5 +437,34 @@ try {
         await slow.close();
     }
 }
+// 13. A delivered batch's previews: offered once everything is delivered,
+// moved by the panel's own Node into Renders/<Batch>/_Old/_mp4.
+{
+    const ALL = `(() => { const F = ${FIXTURES}; const scan = F.trackerScan; F.trackerScan = (j) => { const o = scan(j); if (window.__allDelivered && o && o.rows) o.rows.forEach((r) => { if (!r.delivered) r.delivered = { name: "d.mp4", path: "/d.mp4" }; }); return o; }; return F; })()`;
+    const tidy = await launch({ root: ROOT, fixturesSrc: ALL, routes: { "api/panel/comment": () => ({ comment: null, count: 0 }), "api/panel/jobs": () => FEED } });
+    try {
+        console.log("\n13. A delivered batch's previews");
+        const RB = `${T}/Renders/Batch_02`;
+        await tidy.goto();
+        await tidy.waitFor(`[...document.querySelectorAll("button.category-card")].some(b => /Localise/.test(b.textContent))`, 10000);
+        await tidy.click("button.category-card", "Localise");
+        await tidy.waitFor(`[...document.querySelectorAll(".ls-pane-tab")].some(b => /Tracker/.test(b.textContent))`, 8000);
+        await tidy.click(".ls-pane-tab", "Tracker");
+        await tidy.waitFor(`document.querySelectorAll(".bt-rows > .bt-row").length === 4`, 12000);
+        check(!(await tidy.eval(`!!document.querySelector(".bt-tidy")`)), "a batch part-way through keeps its previews: nothing is offered");
+        await tidy.eval(`window.__allDelivered = true; window.__fsTree = ${JSON.stringify({ [RB]: [{ name: "_mp4", dir: true }], [RB + "/_mp4"]: [{ name: "a_V01.mp4", dir: false }] })}`);
+        await tidy.eval(`document.querySelector('.bt-btn.bt-icon[aria-label="Refresh"]').click()`);
+        check(await tidy.waitFor(`/All delivered\\. 1 preview is still in _mp4/.test(document.querySelector(".bt-tidy")?.innerText || "")`, 8000), "everything delivered: the previews left are offered", await tidy.eval(`document.querySelector(".bt-tidy")?.innerText || ""`));
+        await tidy.click(".bt-tidy .bt-act", "Move to _Old");
+        check(await tidy.waitFor(`/previews to _Old/.test(document.querySelector(".dialog-title")?.innerText || "")`, 4000), "it asks first");
+        await tidy.click(".dialog-btn-primary", "Move to _Old");
+        check(await tidy.waitFor(`/Moved 1 preview to _Old\\/_mp4 \\(made _Old\\)/.test(document.querySelector(".bt-msg")?.innerText || "")`, 6000), "…and says what it did", await tidy.eval(`document.querySelector(".bt-msg")?.innerText || ""`));
+        const ops = await tidy.eval(`window.__fsOps || []`);
+        check(ops.length === 2 && ops[0][0] === "mkdir" && ops[0][1] === RB + "/_Old" && ops[1][0] === "rename" && ops[1][1] === RB + "/_mp4" && ops[1][2] === RB + "/_Old/_mp4", "_Old is made, then _mp4 is renamed into it: one move, nothing copied", ops);
+        check(tidy.errors.length === 0, "no page errors", tidy.errors.slice(0, 5));
+    } finally {
+        await tidy.close();
+    }
+}
 console.log(failures ? `\n${failures} FAILED` : "\nCLEAN — the tracker lines a batch up, flags what disagrees, and every problem hands off to its fix.");
 process.exit(failures ? 1 : 0);

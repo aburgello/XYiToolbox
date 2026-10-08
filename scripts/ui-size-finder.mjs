@@ -205,5 +205,39 @@ try {
     check(kept.scannedBy === "Someone" && kept.rows.length === 7, "an untagged machine never writes to the team folder", { by: kept.scannedBy });
 } finally { await p3.close(); }
 
+// ACTIVE CAMPAIGNS ONLY, opening on the one being worked on.
+console.log("\nRetired campaigns");
+const RET_FIX = `{
+  loadLocLibCampaigns: () => [
+    { name: "Forgotten Island", marketsRoot: "${FID}" },
+    { name: "Gone", marketsRoot: "/Volumes/unmounted/Markets" },
+    { name: "Street Fighter", marketsRoot: "${SF}" } ],
+  teamCampaignBoard: () => window.__noBoard ? ({ success: true, read: false, rows: [] }) : ({ success: true, read: true, rows: [
+    { name: "Forgotten Island", mastersRoot: "", marketsRoot: "", retiredBy: "Antonio", retiredAt: "x" },
+    { name: "Street Fighter", mastersRoot: "", marketsRoot: "", retiredBy: "", retiredAt: "" } ] }),
+  csvLocaliserLoadLastCampaign: () => "Street Fighter",
+}`;
+for (const noBoard of [false, true]) {
+    const p4 = await launch({ root: ROOT, fixturesSrc: RET_FIX, width: 900, height: 1200 });
+    try {
+        await p4.goto();
+        await p4.eval(`window.__noBoard = ${noBoard}`);
+        await open(p4, {});
+        await p4.waitFor(`/approved/.test((document.querySelector(".szf-sum") || {}).innerText || "")`, 10000);
+        await new Promise((r) => setTimeout(r, 300));
+        const asked = await p4.eval(`[...new Set(window.__calls.filter(c => c.fn === "teamCampaignBoard").map(c => c.fn))]`);
+        const on = await text(p4, ".szf-campaign");
+        const all = await p4.eval(`document.body.innerText`);
+        if (!noBoard) {
+            check(asked.length === 1 && /Street Fighter/.test(on), "it opens on the campaign being worked on", on);
+            check(!/Forgotten Island/.test(all), "a retired campaign is not read or shown");
+            check(/6 approved/.test(await text(p4, ".szf-sum")), "…so only the active ones are counted", await text(p4, ".szf-sum"));
+        } else {
+            check(/Street Fighter/.test(on) && /not mounted: Gone/.test(await text(p4, ".szf-sum")), "a team board that can't be read retires nothing", await text(p4, ".szf-sum"));
+        }
+        check(!p4.errors.length, "no page errors", p4.errors);
+    } finally { await p4.close(); }
+}
+
 console.log(fails ? "\n" + fails + " FAILED" : "\nCLEAN — a size in, the closest approved deliverables out, each with its clip and its PDF.");
 process.exit(fails ? 1 : 0);
