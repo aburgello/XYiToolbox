@@ -25,8 +25,13 @@ const FIXTURES = `{
   loadLocLibCampaigns: () => [{ name: "Odyssey", marketsRoot: "${M}" }],
   researchProjectState: () => window.__project || { success: true, items: 0, queued: 0, dirty: false, name: "" },
   researchNewProject: () => ({ success: true }),
+  teamListProfiles: () => ({ success: true, profiles: [{ name: "Antonio", hasProfile: true }, { name: "Luke", hasProfile: true }, { name: "misc", hasProfile: false }] }),
+  teamGetMachineState: () => ({ success: true, owner: "Antonio" }),
   researchRenderChunk: (json) => {
     const a = JSON.parse(json);
+    // Another machine, adding another market to the same folder while this pass renders.
+    const mf = a.dest + "/_RESEARCH_MANIFEST.txt";
+    window.__fsFiles[mf] = (window.__fsFiles[mf] || "") + "\\nDONE\\tSpain_B1_FROM_ANOTHER_MACHINE\\t${M}/Spain/Renders/B1/FROM_ANOTHER_MACHINE.mov\\t";
     const list = (window.__fsTree[a.dest] = window.__fsTree[a.dest] || []);
     const rows = a.rows.map((r) => {
       if (/BROKEN/.test(r.prefix)) return { prefix: r.prefix, ok: false, note: "Could not import the render" };
@@ -171,7 +176,39 @@ try {
     check(renames.length === 1 && /_LASTFRAME\.jpg$/.test(renames[0]), "AE's frame number comes off the new still", renames);
     const written = await page.eval(`(window.__fsFiles || {})[${JSON.stringify(`${R}/The_Odyssey/LOCALISED/_RESEARCH_MANIFEST.txt`)}] || ""`);
     check(/^DONE\tNorway_Batch_1/m.test(written) && /^DONE\tBrazil_B2_ODY_INTL_DGTL_DOOH_HORSE_960x480_10sec_BR_V02/m.test(written) && /^FAILED\tBrazil_B2_ODY_INTL_DGTL_DOOH_BROKEN/m.test(written), "the manifest records done, failed and why", written.split("\n").map((l) => l.split("\t").slice(0, 2).join(" ")));
+    check(/^DONE\tSpain_B1_FROM_ANOTHER_MACHINE/m.test(written), "a row another machine wrote during the pass is still there");
     check(/^1 clip to add/.test((await text(page, ".eoc-tally"))[0] || ""), "what is left is the one that failed", await text(page, ".eoc-tally"));
+
+    console.log("\n4. Who takes what");
+    check(/Splitting this between machines/.test((await text(page, ".eoc-shares"))[0] || ""), "with nobody assigned, it says how to split a campaign");
+    const pick = async (nth, name) => {
+        await page.eval(`document.querySelectorAll(".eoc-market-head .eoc-drop--who")[${nth}].click()`);
+        await pause(250);
+        await page.click(".dropdown-list .dropdown-option", name);
+        await pause(500);
+    };
+    check((await text(page, ".eoc-market-head .checkbox-toggle")).join("|") === "Brazil|Norway", "markets in order", await text(page, ".eoc-market-head .checkbox-toggle"));
+    await pick(0, "Luke");
+    await pick(1, "Antonio (you)");
+    const saved = JSON.parse(await page.eval(`(window.__fsFiles || {})[${JSON.stringify(`${R}/The_Odyssey/LOCALISED/_RESEARCH_ASSIGN.json`)}] || "{}"`));
+    check(saved.assign && saved.assign["Brazil\nB2"] === "Luke" && saved.assign["Norway\nBatch_1"] === "Antonio" && saved.updatedBy === "Antonio", "assignments are saved beside the clips, for every machine to read", saved.assign);
+    const shares = await text(page, ".eoc-share");
+    check(shares.length === 2 && /^Antonio \(you\) 1 of 1/.test(shares[0]) && /^Luke 1 of 2/.test(shares[1]), "each member's share and how much of it is there", shares);
+    check(/1 of 2/.test((await text(page, ".eoc-market-count"))[0]), "a market says how far along it is", await text(page, ".eoc-market-count"));
+    await page.click(".eoc-share", "Antonio");
+    await pause(300);
+    check(await page.eval(`[...document.querySelectorAll(".eoc-market-head .checkbox-toggle")].map(b => b.classList.contains("active")).join()`) === "false,true" && /^0 clips to add/.test((await text(page, ".eoc-tally"))[0] || ""), "pressing your name ticks only yours", await text(page, ".eoc-tally"));
+    await page.click(".eoc-share", "Luke");
+    await pause(300);
+    const before = (await calls(page, "researchRenderChunk")).length;
+    await page.click(".eoc-btn--go");
+    await pause(500);
+    check(/assigned to Luke/.test((await text(page, ".dialog-title"))[0] || ""), "rendering somebody else's asks first", await text(page, ".dialog-title"));
+    await page.click(".dialog-btn-secondary");
+    await pause(300);
+    check((await calls(page, "researchRenderChunk")).length === before, "…and cancelling renders nothing");
+    const boxes2 = await page.eval(`[...document.querySelectorAll(".eoc-market-head .checkbox-toggle, .eoc-market-head .dropdown-trigger, .eoc-market-head .eoc-market-count")].map(e => { const r = e.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right), Math.round(r.top), Math.round(r.bottom)]; })`);
+    check(!boxes2.some((a, i) => boxes2.some((b, j) => j > i && a[0] < b[1] - 1 && b[0] < a[1] - 1 && a[2] < b[3] - 1 && b[2] < a[3] - 1)), "nothing in a market's row overlaps");
     await page.shot(path.join(SHOTS, "eoc-archive.png"));
 } finally {
     await page.close();

@@ -79,13 +79,24 @@ const makeDirs = async (base: string, levels: string[]): Promise<void> => {
 const writeText = (p: string, text: string): Promise<boolean> =>
     new Promise((resolve) => {
         try {
-            const tmp = p + ".tmp";
+            // Its own temp name: two machines can be writing one manifest.
+            const tmp = p + "." + Date.now() + "." + Math.floor(Math.random() * 1e6) + ".tmp";
             (fs as any).writeFile(tmp, text, "utf8", (e: any) => {
                 if (e) { resolve(false); return; }
                 (fs as any).rename(tmp, p, (e2: any) => resolve(!e2));
             });
         } catch { resolve(false); }
     });
+
+/** Who takes what in a destination folder. {} when nobody has said, or it can't be read. */
+const readAssign = async (dest: string): Promise<Record<string, string>> => {
+    try {
+        const j = JSON.parse((await readText(nodePath.join(dest, "_RESEARCH_ASSIGN.json"))) || "{}");
+        const out: Record<string, string> = {};
+        Object.keys((j && j.assign) || {}).forEach((k) => { if (j.assign[k]) out[k] = String(j.assign[k]); });
+        return out;
+    } catch { return {}; }
+};
 
 const openPath = (p: string, reveal = false) => {
     if (!p) return;
@@ -466,6 +477,18 @@ const SECTIONS = ["LOCALISED", "MASTER_OV", "BESPOKES"];
 // Each needs its own H264_<n>MBPS_MOS output module template, as Delivery's do.
 const MBPS = ["0.6", "1", "2"];
 const LAST = "xyi.eoc.lastRun";
+// WHO TAKES WHAT, kept beside the clips so every machine reads one answer:
+// { assign: { "<market>\n<batch>": "<member>" } }. It is a note between people
+// and nothing enforces it; a run only ASKS before rendering somebody else's.
+const ASSIGN_NAME = "_RESEARCH_ASSIGN.json";
+const NOBODY = "";
+const MIXED = "__mixed__";
+/** A member's colour, off their name, so it is the same on every machine. */
+const hueOf = (name: string) => {
+    let h = 0;
+    for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
+    return `hsl(${h}, 70%, 62%)`;
+};
 const NEW = "__new__";
 const PICK = "__pick__";
 
@@ -490,10 +513,20 @@ const Archiver: React.FC<{ root: string; films: Kid[] | null; resume: Resume | n
     const [summary, setSummary] = useState("");
     const stop = useRef(false);
     const running = !!progress;
+    const [members, setMembers] = useState<string[]>([]);
+    const [me, setMe] = useState("");
+    const [assign, setAssign] = useState<Record<string, string>>({});
 
     useEffect(() => {
         (async () => {
             try { setCampaigns((((await evalTS("loadLocLibCampaigns")) as unknown as Campaign[]) || []).filter((c) => c && c.marketsRoot)); } catch { /* no list, the folder picker still works */ }
+            // The team, for saying who takes what. No team folder is a normal state: nobody to assign to.
+            try {
+                const list: any = await evalTS("teamListProfiles" as any);
+                setMembers(((list && list.profiles) || []).filter((p: any) => p && p.hasProfile).map((p: any) => String(p.name)));
+                const state: any = await evalTS("teamGetMachineState" as any);
+                setMe(String((state && state.owner) || ""));
+            } catch { /* untagged, or no team folder */ }
         })();
     }, []);
 
@@ -532,8 +565,15 @@ const Archiver: React.FC<{ root: string; films: Kid[] | null; resume: Resume | n
         setFilmSections(kids.filter((k) => k.dir && k.name.charAt(0) !== "_" && k.name.charAt(0) !== ".").map((k) => k.name));
         const names = dest ? await listStrict(dest) : null;
         setHave(names ? names.filter((k) => !k.dir).map((k) => k.name) : []);
+        setAssign(dest ? await readAssign(dest) : {});
     }, [root, film, dest]);
     useEffect(() => { refreshDest(); }, [refreshDest]);
+    // Somebody else may be assigning, or rendering into this folder, right now.
+    useEffect(() => {
+        if (!dest) return;
+        const t = setInterval(() => { if (!document.hidden) refreshDest(); }, 30000);
+        return () => clearInterval(t);
+    }, [dest, refreshDest]);
 
     // A campaign picked with no film chosen: the film whose name it shares.
     const guessFilm = (name: string) => {
@@ -569,19 +609,26 @@ const Archiver: React.FC<{ root: string; films: Kid[] | null; resume: Resume | n
     };
 
     // Markets and their batches, as the tick list.
+    const keyOf = (market: string, batch: string) => market + "\n" + batch;
+    const done = useMemo(() => archived(have || []), [have]);
+    // What could be added at all: every render, or the newest of each.
+    const pool = useMemo(() => (newest ? newestOnly(jobs || []) : jobs || []), [jobs, newest]);
     const groups = useMemo(() => {
-        const g: { market: string; batches: { batch: string; n: number }[]; n: number }[] = [];
+        const g: { market: string; batches: { batch: string; n: number; done: number }[]; n: number; done: number }[] = [];
         const at: Record<string, number> = {};
-        (jobs || []).forEach((j) => {
-            if (at[j.market] === undefined) { at[j.market] = g.length; g.push({ market: j.market, batches: [], n: 0 }); }
+        pool.forEach((j) => {
+            if (at[j.market] === undefined) { at[j.market] = g.length; g.push({ market: j.market, batches: [], n: 0, done: 0 }); }
             const m = g[at[j.market]];
+            const isDone = done.clip[j.prefix] ? 1 : 0;
             m.n++;
-            const b = m.batches.find((x) => x.batch === j.batch);
-            if (b) b.n++; else m.batches.push({ batch: j.batch, n: 1 });
+            m.done += isDone;
+            let b = m.batches.find((x) => x.batch === j.batch);
+            if (!b) { b = { batch: j.batch, n: 0, done: 0 }; m.batches.push(b); }
+            b.n++;
+            b.done += isDone;
         });
         return g;
-    }, [jobs]);
-    const keyOf = (market: string, batch: string) => market + "\n" + batch;
+    }, [pool, done]);
     const marketOn = (m: { market: string; batches: { batch: string }[] }) => m.batches.some((b) => !off[keyOf(m.market, b.batch)]);
     const toggleMarket = (m: { market: string; batches: { batch: string }[] }) => {
         const next = { ...off };
@@ -601,18 +648,73 @@ const Archiver: React.FC<{ root: string; films: Kid[] | null; resume: Resume | n
         setOff(next);
     };
 
-    const chosen = useMemo(() => {
-        const picked = (jobs || []).filter((j) => !off[keyOf(j.market, j.batch)]);
-        return newest ? newestOnly(picked) : picked;
-    }, [jobs, off, newest]);
-    const done = useMemo(() => archived(have || []), [have]);
+    const chosen = useMemo(() => pool.filter((j) => !off[keyOf(j.market, j.batch)]), [pool, off]);
     const todo = chosen.filter((j) => !done.clip[j.prefix]);
     const older = (jobs || []).filter((j) => !off[keyOf(j.market, j.batch)]).length - chosen.length;
+
+    // --- who takes what ---------------------------------------------------
+    const ownerOfMarket = (m: { market: string; batches: { batch: string }[] }) => {
+        const first = assign[keyOf(m.market, m.batches[0].batch)] || NOBODY;
+        return m.batches.every((b) => (assign[keyOf(m.market, b.batch)] || NOBODY) === first) ? first : MIXED;
+    };
+    const setOwner = async (keys: string[], who: string) => {
+        if (!dest || who === MIXED) return;
+        // The latest on disk, changed and written back: somebody else may
+        // have assigned another market a moment ago.
+        await makeDirs(root, [film].concat(section.split("/")));
+        const next = await readAssign(dest);
+        keys.forEach((k) => { if (who) next[k] = who; else delete next[k]; });
+        setAssign(next);
+        const ok = await writeText(nodePath.join(dest, ASSIGN_NAME), JSON.stringify({ type: "xyi-research-assign", assign: next, updatedBy: me, updatedAt: new Date().toString() }, null, 1));
+        if (!ok) await alertDialog({ title: "The assignment could not be saved", body: dest });
+    };
+    /** Per member: what they hold and how much of it is there. "" is nobody's. */
+    const shares = useMemo(() => {
+        const by: Record<string, { n: number; done: number }> = {};
+        groups.forEach((m) => m.batches.forEach((b) => {
+            const who = assign[keyOf(m.market, b.batch)] || NOBODY;
+            const s = (by[who] = by[who] || { n: 0, done: 0 });
+            s.n += b.n;
+            s.done += b.done;
+        }));
+        return Object.keys(by).sort((a, b) => (a === NOBODY ? 1 : b === NOBODY ? -1 : a.localeCompare(b))).map((who) => ({ who, ...by[who] }));
+    }, [groups, assign]);
+    const assigned = shares.some((s) => s.who !== NOBODY);
+    /** Tick exactly one member's batches (or the unassigned ones). */
+    const selectOwner = (who: string) => {
+        const next: Record<string, true> = {};
+        groups.forEach((m) => m.batches.forEach((b) => { if ((assign[keyOf(m.market, b.batch)] || NOBODY) !== who) next[keyOf(m.market, b.batch)] = true; }));
+        setOff(next);
+    };
+    const whoOptions = (cur: string) => (cur === MIXED ? [{ value: MIXED, label: "Mixed" }] : [])
+        .concat([{ value: NOBODY, label: "Nobody" }])
+        .concat(members.concat(cur && cur !== MIXED && members.indexOf(cur) === -1 ? [cur] : []).map((n) => ({ value: n, label: n === me ? n + " (you)" : n })));
+    // A function, not a component: one declared in here would be a new type on
+    // every render, and its open picker would shut whenever the folder is re-read.
+    const who = (value: string, keys: string[]) => (
+        <span className={"eoc-who" + (value && value !== MIXED ? " is-set" : "")} style={value && value !== MIXED ? { color: hueOf(value) } : undefined} title={me ? "Who takes this" : "Tag this machine (the home screen's team menu) to assign"}>
+            <i />
+            <Dropdown className="eoc-drop eoc-drop--who" value={value} onChange={(v) => setOwner(keys, v)} options={whoOptions(value)} placeholder="Nobody" disabled={!me || !dest} />
+        </span>
+    );
 
     const run = async (only?: Job[]) => {
         if (running || !dest) return;
         const work = (only || todo).slice();
         if (!work.length) return;
+
+        // Somebody else's: ask. Two machines on one batch render it twice.
+        const theirs: Record<string, number> = {};
+        work.forEach((j) => { const who = assign[keyOf(j.market, j.batch)] || NOBODY; if (who && who !== me) theirs[who] = (theirs[who] || 0) + 1; });
+        const others = Object.keys(theirs);
+        if (others.length) {
+            const ok = await confirmDialog({
+                title: `${count(others.reduce((n, w) => n + theirs[w], 0), "clip")} here ${others.length === 1 ? "is" : "are"} assigned to ${others.join(" and ")}`,
+                body: "If their machine is rendering them too, both render the same files. Press a name above the list to tick only that person's.",
+                confirm: "Render them anyway",
+            });
+            if (!ok) return;
+        }
 
         // An empty project, or nothing starts: a pass renders the whole queue
         // and clears it.
@@ -650,14 +752,17 @@ const Archiver: React.FC<{ root: string; films: Kid[] | null; resume: Resume | n
         setSummary("");
         setProgress({ pass: 0, passes, done: 0, failed: 0, total: work.length, secs: 0, rendered: 0, stopping: false });
 
-        // The record: what an older run wrote about other renders is kept.
+        // The record. Rows about renders this run did not choose are KEPT, and
+        // the file is READ AGAIN before every write: another machine may be
+        // adding other markets to the same folder, and a copy read once at the
+        // start would write its rows away after every pass.
         const manifestPath = nodePath.join(dest, MANIFEST_NAME);
-        const earlier = parseManifest(await readText(manifestPath));
         const mine: Record<string, true> = {};
         chosen.forEach((j) => { mine[j.prefix] = true; });
         const writeManifest = async (names: Record<string, true>) => {
             const notes: Record<string, string> = {};
             failed.forEach((f) => { notes[f.prefix] = f.note; });
+            const earlier = parseManifest(await readText(manifestPath));
             const rows: ManifestRow[] = earlier.filter((r) => !mine[r.prefix]).concat(
                 chosen.map((j) => ({ status: names[j.prefix] ? "DONE" : notes[j.prefix] ? "FAILED" : "TODO", prefix: j.prefix, path: j.src, note: names[j.prefix] ? "" : notes[j.prefix] || "" }))
             );
@@ -749,19 +854,38 @@ const Archiver: React.FC<{ root: string; films: Kid[] | null; resume: Resume | n
                             <button type="button" className="eoc-link" disabled={running} onClick={() => setAll(true)}>All</button>
                             <button type="button" className="eoc-link" disabled={running} onClick={() => setAll(false)}>None</button>
                         </div>
+                        {members.length > 0 && (
+                            <div className="eoc-shares">
+                                {!assigned && <span className="eoc-status">Splitting this between machines? Say who takes each market below, then everyone presses their own name.</span>}
+                                {assigned && shares.map((s) => (
+                                    <button type="button" key={s.who || "nobody"} className={"eoc-share" + (s.who === me && me ? " is-me" : "")} disabled={running} onClick={() => selectOwner(s.who)} title={"Tick only " + (s.who ? s.who + "'s" : "what nobody has taken")}>
+                                        <i style={{ background: s.who ? hueOf(s.who) : "transparent" }} />
+                                        <b>{s.who || "Unassigned"}{s.who === me && me ? " (you)" : ""}</b>
+                                        <span>{s.done.toLocaleString()} of {s.n.toLocaleString()}</span>
+                                        <em><u style={{ width: Math.round((s.done / Math.max(1, s.n)) * 100) + "%", background: s.who ? hueOf(s.who) : "#8d9596" }} /></em>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                         <div className="eoc-markets">
                             {groups.map((m) => (
                                 <div className="eoc-market" key={m.market}>
                                     <div className="eoc-market-head">
                                         <CheckboxToggle checked={marketOn(m)} onChange={() => !running && toggleMarket(m)} label={pretty(m.market) || "(this folder)"} />
-                                        <button type="button" className="eoc-link" onClick={() => setOpen((o) => { const n = { ...o }; if (n[m.market]) delete n[m.market]; else n[m.market] = true; return n; })}>
-                                            {count(m.batches.length, "batch", "batches")} · {m.n.toLocaleString()}
-                                        </button>
+                                        <span className="eoc-market-right">
+                                            {members.length > 0 && who(ownerOfMarket(m), m.batches.map((b) => keyOf(m.market, b.batch)))}
+                                            <button type="button" className="eoc-link eoc-market-count" onClick={() => setOpen((o) => { const n = { ...o }; if (n[m.market]) delete n[m.market]; else n[m.market] = true; return n; })}>
+                                                {count(m.batches.length, "batch", "batches")} · {m.done.toLocaleString()} of {m.n.toLocaleString()}
+                                            </button>
+                                        </span>
                                     </div>
                                     {open[m.market] && (
                                         <div className="eoc-batches">
                                             {m.batches.map((b) => (
-                                                <CheckboxToggle key={b.batch} checked={!off[keyOf(m.market, b.batch)]} onChange={() => !running && toggleBatch(m.market, b.batch)} label={<>{pretty(b.batch) || "(loose in Renders)"} <em>{b.n}</em></>} />
+                                                <div className="eoc-batch" key={b.batch}>
+                                                    <CheckboxToggle checked={!off[keyOf(m.market, b.batch)]} onChange={() => !running && toggleBatch(m.market, b.batch)} label={<>{pretty(b.batch) || "(loose in Renders)"} <em>{b.done} of {b.n}</em></>} />
+                                                    {members.length > 0 && who(assign[keyOf(m.market, b.batch)] || NOBODY, [keyOf(m.market, b.batch)])}
+                                                </div>
                                             ))}
                                         </div>
                                     )}

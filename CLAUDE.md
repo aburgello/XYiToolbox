@@ -1378,6 +1378,21 @@ Playground tool ("EOC Research" in My Tools), which stays there untouched.
   Odyssey's stills kept it. `tidyPlan` is that rename; Browse shows such
   stills regardless and offers **Fix names**. The counter-before-extension
   form is from AE's naming convention, NOT yet measured in a real run.
+- **Two machines may add to ONE folder, each ticking DIFFERENT markets.**
+  Names lead with the market, so they cannot collide. Two machines on the
+  SAME markets is not supported: each fixes its list when the run starts and
+  would render the other's files over again. The manifest is read again
+  before every write (a copy read once at the start wrote the other
+  machine's rows away after every pass), through a temp file of its own name.
+- **Who takes what is a note beside the clips** (`_RESEARCH_ASSIGN.json` in
+  the destination: `"<market>\n<batch>"` → member, the team folder's
+  profile names). A picker on each market and each batch, a chip per member
+  with their share and how much of it is there, and pressing a chip ticks
+  only that member's. NOTHING ENFORCES IT: a run including somebody else's
+  asks first and no more. Read-change-write on every assignment, re-read
+  every 30s; untagged machines cannot assign. The picker is a render
+  FUNCTION inside the tab, never a component declared there (a new type per
+  render shut the open list on every re-read).
 - **A run's manifest is merged, never replaced**: rows about renders this run
   did not choose are kept, since the manifest is what tells Browse which
   market and batch a clip came from.

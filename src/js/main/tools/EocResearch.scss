@@ -182,6 +182,7 @@
     .eoc-drop { flex: none; width: 170px; }
     .eoc-drop--wide { width: 280px; }
     .eoc-drop--small { width: 118px; }
+    .eoc-drop--who { width: 128px; padding-top: 3px; padding-bottom: 3px; font-size: 11px; }
 
     .eoc-status {
         margin: 6px 0;
@@ -460,13 +461,73 @@
         padding: 3px 0;
     }
 
+    .eoc-market-right { display: inline-flex; align-items: center; }
+    .eoc-market-count { min-width: 132px; text-align: right; }
+
     .eoc-batches {
-        display: flex;
-        flex-wrap: wrap;
         padding: 0 0 6px 18px;
 
-        > * { margin: 2px 8px 2px 0; }
         em { font-style: normal; color: #8d9596; }
+    }
+
+    .eoc-batch {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1px 138px 1px 0;
+    }
+
+    // Who takes it: a dot in the member's colour beside the picker.
+    .eoc-who {
+        display: inline-flex;
+        align-items: center;
+        color: #8d9596;
+
+        > i {
+            flex-shrink: 0;
+            width: 8px;
+            height: 8px;
+            margin-right: 6px;
+            border: 1px solid currentColor;
+            border-radius: 50%;
+        }
+
+        &.is-set > i { background: currentColor; }
+    }
+
+    // One per member: what they hold and how far along it is. Pressing it
+    // ticks theirs and nothing else.
+    .eoc-shares {
+        display: flex;
+        flex-wrap: wrap;
+        margin: 2px -3px 4px;
+    }
+
+    .eoc-share {
+        display: inline-flex;
+        align-items: center;
+        position: relative;
+        height: 30px;
+        margin: 3px;
+        padding: 0 10px 3px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.03);
+        color: #c4c9ca;
+        font-size: 11px;
+        cursor: pointer;
+        overflow: hidden;
+
+        > i { width: 8px; height: 8px; margin-right: 6px; border: 1px solid #8d9596; border-radius: 50%; }
+        b { margin-right: 8px; font-weight: 600; color: #fff; }
+        span { color: #9aa2a3; }
+        em { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255, 255, 255, 0.08); }
+        u { display: block; height: 100%; text-decoration: none; }
+
+        &:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.28); }
+        &:active { background: rgba(255, 255, 255, 0.12); }
+        &:disabled { opacity: 0.6; cursor: default; }
+        &.is-me { border-color: var(--cat-border, #5eead4); }
     }
 
     .eoc-go { margin-top: 4px; }
