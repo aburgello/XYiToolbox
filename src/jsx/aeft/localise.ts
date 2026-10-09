@@ -3650,12 +3650,29 @@ interface AspectRenameResult extends Result {
   removed?: boolean;
 }
 
+// The size is read only as a TOKEN of its own (between underscores or
+// spaces, optional px). The first `NxN` anywhere stamped a site's grid:
+// `Hoyts3x3_1920x1080` came out `_1.00_`. A ratio token (`9x16`, two digits a
+// side at most) is not a size either. Not `firstSizeToken`: that wants three
+// digits a side, and `512x96px` is a real deliverable.
+const checkSizeOfName = (rawName: string): string[] | null => {
+  let name = rawName;
+  try { name = decodeURI(rawName); } catch (e) {}
+  const toks = name.replace(/\.[A-Za-z0-9]+$/, "").split(/[_ ]+/);
+  for (let i = 0; i < toks.length; i++) {
+    const m = /^(\d+)x(\d+)(?:px)?$/i.exec(toks[i]);
+    if (!m) continue;
+    if (m[1].length <= 2 && m[2].length <= 2) continue;
+    return [m[0], m[1], m[2]];
+  }
+  return null;
+};
+
 export const checkAspectRatioRename = (): AspectRenameResult => {
   const folder = Folder.selectDialog("Select a folder to scan");
   if (!folder) return { success: false, error: "No folder selected." };
 
   const files = folder.getFiles();
-  const pattern = /(\d+)x(\d+)/;
   const ratioPattern = /^_(\d+\.\d+)_/;
   let added = false;
   let removed = false;
@@ -3665,7 +3682,7 @@ export const checkAspectRatioRename = (): AspectRenameResult => {
     if (!(file instanceof File)) continue;
     const fileName = file.name;
     const ratioMatch = fileName.match(ratioPattern);
-    const resolutionMatch = fileName.match(pattern);
+    const resolutionMatch = checkSizeOfName(fileName);
 
     if (ratioMatch && resolutionMatch) {
       file.rename(fileName.replace(ratioPattern, ""));

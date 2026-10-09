@@ -238,7 +238,9 @@ export function pairFolder(film: string, section: string, kids: Kid[], manifest:
     return order.map((key) => {
         const stillsOnly = key.charAt(0) === "\n";
         const stem = stillsOnly ? key.slice(1) : key;
-        const row = manifest[stem];
+        // Aspect Ratio Rename may have put `_1.67_` on the file since: the
+        // manifest still knows it by the name it was rendered under.
+        const row = manifest[stem] || manifest[withoutRatio(stem)];
         const place = row ? placeOfSource(row.path) : { territory: "", batch: "" };
         // The tool's own names lead with "<Territory>_<Batch>_"; what is shown
         // and parsed is the render's own name, off the manifest's source.
@@ -281,7 +283,8 @@ export async function scanFilm(film: Kid, list: Lister, read: (path: string) => 
             const rows = parseManifest(await read(at.path + "/" + MANIFEST_NAME));
             rows.forEach((r) => { manifest[r.prefix] = r; });
             const names: Record<string, true> = {};
-            kids.forEach((k) => { names[k.name] = true; });
+            // Past a `_1.67_` sort prefix: a renamed clip is still that clip.
+            kids.forEach((k) => { names[withoutRatio(k.name)] = true; });
             // Done is what is ON DISK, never what a line claims.
             const todo = rows.filter((r) => !names[r.prefix + ".mp4"]).length;
             out.runs.push({ folder: at.path, section: at.section, total: rows.length, todo, sourceRoot: sourceRootOf(rows) });
@@ -417,7 +420,11 @@ export function newestOnly(jobs: Job[]): Job[] {
 export function archived(names: string[]): { clip: Record<string, true>; still: Record<string, true> } {
     const clip: Record<string, true> = {};
     const still: Record<string, true> = {};
-    for (const n of names) {
+    // A film sorted by shape (Check's Aspect Ratio Rename puts `_1.67_` on
+    // every name) is the same film: read past the prefix, or everything
+    // already there reads as still to add and is rendered again.
+    for (const full of names) {
+        const n = withoutRatio(full);
         if (/\.mp4$/i.test(n)) clip[n.slice(0, -4)] = true;
         else if (isPictureName(n) && /_LASTFRAME/i.test(n)) still[stillOf(n).base] = true;
     }

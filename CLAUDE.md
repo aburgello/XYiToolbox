@@ -1363,6 +1363,12 @@ Playground tool ("EOC Research" in My Tools), which stays there untouched.
 - **It renders ONE PASS per bridge call** (`researchRenderChunk`, 5/10/20
   renders): a whole run in one call came back to a page that was gone. The
   panel scans, writes the manifest and decides what is done.
+- **A `_1.67_` prefix does not make a clip new.** Check's Aspect Ratio
+  Rename is run over a finished film so Finder sorts it by shape; the done
+  check, the manifest lookup and the "to add" count all read past it
+  (`withoutRatio`). Without that, Forgotten Island read as 870 still to add
+  the moment it was renamed. The rename itself reads the size as a delimited
+  token (`checkSizeOfName`), never the first `NxN`, or `Hoyts3x3` is `_1.00_`.
 - **Done means the mp4 is in the folder**, listed after every pass. Never
   the manifest's word, never the render queue's alone. The old script marked
   a render it could not see (`File.exists`, on the share) as DONE.

@@ -105,6 +105,8 @@ const plain = await R.scanSource("/M/Norway/Renders/Batch_1", lister(src));
 check(plain.length === 6 && plain.some((j) => j.prefix === "x_Same"), "any other folder is read as a plain folder of renders", plain.map((j) => j.prefix));
 const got = R.archived(["P.mp4", "P_LASTFRAME.jpg", "Q.mp4", "Q_LASTFRAME.jpg00359", "R_LASTFRAME.jpg", "S.123.456.m4v"]);
 check(got.clip.P && got.clip.Q && !got.clip.R && !got.clip.S && got.still.Q && got.still.R, "done is the mp4 being there; a temp file is not a clip");
+const sorted = R.archived(["_1.67_P.mp4", "_1.67_P_LASTFRAME.jpg", "_0.56_Q.mp4"]);
+check(sorted.clip.P && sorted.clip.Q && sorted.still.P && !sorted.clip["_1.67_P"], "a clip Aspect Ratio Rename has prefixed is still done", Object.keys(sorted.clip));
 
 const real = process.argv[2];
 if (real) {
