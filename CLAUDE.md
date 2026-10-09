@@ -1388,7 +1388,14 @@ Playground tool ("EOC Research" in My Tools), which stays there untouched.
   the destination: `"<market>\n<batch>"` → member, the team folder's
   profile names). A picker on each market and each batch, a chip per member
   with their share and how much of it is there, and pressing a chip ticks
-  only that member's. NOTHING ENFORCES IT: a run including somebody else's
+  only that member's. **Several at once goes through the TICKS**: "Assign N
+  ticked batches to…" hands over whatever is ticked, and Shift-click ticks
+  the run of markets between two presses (the key is read in the row's
+  `onClickCapture`; CheckboxToggle hands back only the value). No second
+  selection beside the ticks. **A batch that is all there needs nobody**: it
+  reads "✓ all N there", dims, is never handed over by a bulk assign (ticked
+  or not), and "Not done" ticks only what has clips left. People were
+  re-assigning countries that had already rendered. NOTHING ENFORCES IT: a run including somebody else's
   asks first and no more. Read-change-write on every assignment, re-read
   every 30s; untagged machines cannot assign. The picker is a render
   FUNCTION inside the tab, never a component declared there (a new type per

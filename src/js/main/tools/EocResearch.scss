@@ -183,6 +183,7 @@
     .eoc-drop--wide { width: 280px; }
     .eoc-drop--small { width: 118px; }
     .eoc-drop--who { width: 128px; padding-top: 3px; padding-bottom: 3px; font-size: 11px; }
+    .eoc-drop--assign { width: 206px; }
 
     .eoc-status {
         margin: 6px 0;
@@ -453,6 +454,14 @@
     }
 
     .eoc-market { border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+
+    // Everything this market (or batch) has is already in the folder: it
+    // needs nobody, and reads as finished rather than as work to hand out.
+    .eoc-market.is-done > .eoc-market-head .checkbox-toggle,
+    .eoc-batch.is-done .checkbox-toggle { opacity: 0.55; }
+    .eoc-market.is-done .eoc-market-count,
+    .eoc-batch.is-done em { color: #6ee7a0; }
+    .eoc-market.is-done > .eoc-market-head .eoc-who { opacity: 0.45; }
 
     .eoc-market-head {
         display: flex;

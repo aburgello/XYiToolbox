@@ -483,6 +483,7 @@ const LAST = "xyi.eoc.lastRun";
 const ASSIGN_NAME = "_RESEARCH_ASSIGN.json";
 const NOBODY = "";
 const MIXED = "__mixed__";
+const CLEAR = "__clear__";
 /** A member's colour, off their name, so it is the same on every machine. */
 const hueOf = (name: string) => {
     let h = 0;
@@ -630,10 +631,22 @@ const Archiver: React.FC<{ root: string; films: Kid[] | null; resume: Resume | n
         return g;
     }, [pool, done]);
     const marketOn = (m: { market: string; batches: { batch: string }[] }) => m.batches.some((b) => !off[keyOf(m.market, b.batch)]);
-    const toggleMarket = (m: { market: string; batches: { batch: string }[] }) => {
+    // SHIFT TICKS A RUN: with Shift held, every market from the last one
+    // pressed to this one takes this one's new state, as a list does in Finder.
+    // The key is read off the row's own click, since CheckboxToggle hands back
+    // only the new value.
+    const shift = useRef(false);
+    const lastMarket = useRef(-1);
+    const toggleMarket = (m: { market: string; batches: { batch: string }[] }, at: number) => {
         const next = { ...off };
         const on = marketOn(m);
-        m.batches.forEach((b) => { if (on) next[keyOf(m.market, b.batch)] = true; else delete next[keyOf(m.market, b.batch)]; });
+        const from = shift.current && lastMarket.current >= 0 ? Math.min(lastMarket.current, at) : at;
+        const to = shift.current && lastMarket.current >= 0 ? Math.max(lastMarket.current, at) : at;
+        for (let i = from; i <= to && i < groups.length; i++) {
+            const g = groups[i];
+            g.batches.forEach((b) => { if (on) next[keyOf(g.market, b.batch)] = true; else delete next[keyOf(g.market, b.batch)]; });
+        }
+        lastMarket.current = at;
         setOff(next);
     };
     const toggleBatch = (market: string, batch: string) => {
@@ -680,6 +693,23 @@ const Archiver: React.FC<{ root: string; films: Kid[] | null; resume: Resume | n
         return Object.keys(by).sort((a, b) => (a === NOBODY ? 1 : b === NOBODY ? -1 : a.localeCompare(b))).map((who) => ({ who, ...by[who] }));
     }, [groups, assign]);
     const assigned = shares.some((s) => s.who !== NOBODY);
+    /**
+     * Every ticked batch WITH SOMETHING LEFT: what "assign the ticked ones"
+     * hands over in one go. A batch that is all there needs nobody, so it is
+     * never handed to anyone by a bulk assign, ticked or not.
+     */
+    const ticked = useMemo(() => {
+        const keys: string[] = [];
+        groups.forEach((m) => m.batches.forEach((b) => { if (!off[keyOf(m.market, b.batch)] && b.done < b.n) keys.push(keyOf(m.market, b.batch)); }));
+        return keys;
+    }, [groups, off]);
+    const finished = groups.filter((m) => m.done >= m.n).length;
+    /** Tick only what still has something to add. */
+    const selectLeft = () => {
+        const next: Record<string, true> = {};
+        groups.forEach((m) => m.batches.forEach((b) => { if (b.done >= b.n) next[keyOf(m.market, b.batch)] = true; }));
+        setOff(next);
+    };
     /** Tick exactly one member's batches (or the unassigned ones). */
     const selectOwner = (who: string) => {
         const next: Record<string, true> = {};
@@ -850,13 +880,24 @@ const Archiver: React.FC<{ root: string; films: Kid[] | null; resume: Resume | n
                 {jobs && jobs.length > 0 && (
                     <>
                         <div className="eoc-row eoc-row--tight">
-                            <span className="eoc-status">{count(jobs.length, "render")} in {count(groups.length, "market")}</span>
+                            <span className="eoc-status">{count(jobs.length, "render")} in {count(groups.length, "market")}{finished > 0 ? ` · ${finished} done` : ""}</span>
                             <button type="button" className="eoc-link" disabled={running} onClick={() => setAll(true)}>All</button>
                             <button type="button" className="eoc-link" disabled={running} onClick={() => setAll(false)}>None</button>
+                            {finished > 0 && <button type="button" className="eoc-link" disabled={running} onClick={selectLeft} title="Tick only the markets and batches that still have something to add">Not done</button>}
+                            {members.length > 0 && (
+                                <Dropdown
+                                    className="eoc-drop eoc-drop--who eoc-drop--assign"
+                                    value=""
+                                    placeholder={ticked.length ? `Assign ${count(ticked.length, "ticked batch", "ticked batches")} to…` : "Tick markets with clips left"}
+                                    disabled={!me || !dest || !ticked.length}
+                                    onChange={(v) => setOwner(ticked, v === CLEAR ? NOBODY : v)}
+                                    options={members.map((n) => ({ value: n, label: n === me ? n + " (you)" : n })).concat([{ value: CLEAR, label: "Nobody (clear)" }])}
+                                />
+                            )}
                         </div>
                         {members.length > 0 && (
                             <div className="eoc-shares">
-                                {!assigned && <span className="eoc-status">Splitting this between machines? Say who takes each market below, then everyone presses their own name.</span>}
+                                {!assigned && <span className="eoc-status">Splitting this between machines? Tick a person's markets (Shift-click ticks a run) and assign them in one go, or set each row. Then everyone presses their own name.</span>}
                                 {assigned && shares.map((s) => (
                                     <button type="button" key={s.who || "nobody"} className={"eoc-share" + (s.who === me && me ? " is-me" : "")} disabled={running} onClick={() => selectOwner(s.who)} title={"Tick only " + (s.who ? s.who + "'s" : "what nobody has taken")}>
                                         <i style={{ background: s.who ? hueOf(s.who) : "transparent" }} />
@@ -868,22 +909,22 @@ const Archiver: React.FC<{ root: string; films: Kid[] | null; resume: Resume | n
                             </div>
                         )}
                         <div className="eoc-markets">
-                            {groups.map((m) => (
-                                <div className="eoc-market" key={m.market}>
-                                    <div className="eoc-market-head">
-                                        <CheckboxToggle checked={marketOn(m)} onChange={() => !running && toggleMarket(m)} label={pretty(m.market) || "(this folder)"} />
+                            {groups.map((m, at) => (
+                                <div className={"eoc-market" + (m.done >= m.n ? " is-done" : "")} key={m.market}>
+                                    <div className="eoc-market-head" onClickCapture={(e) => { shift.current = e.shiftKey; }}>
+                                        <CheckboxToggle checked={marketOn(m)} onChange={() => !running && toggleMarket(m, at)} label={pretty(m.market) || "(this folder)"} title="Shift-click ticks every market from the last one pressed to this one" />
                                         <span className="eoc-market-right">
                                             {members.length > 0 && who(ownerOfMarket(m), m.batches.map((b) => keyOf(m.market, b.batch)))}
                                             <button type="button" className="eoc-link eoc-market-count" onClick={() => setOpen((o) => { const n = { ...o }; if (n[m.market]) delete n[m.market]; else n[m.market] = true; return n; })}>
-                                                {count(m.batches.length, "batch", "batches")} · {m.done.toLocaleString()} of {m.n.toLocaleString()}
+                                                {m.done >= m.n ? `✓ all ${m.n.toLocaleString()} there` : `${count(m.batches.length, "batch", "batches")} · ${m.done.toLocaleString()} of ${m.n.toLocaleString()}`}
                                             </button>
                                         </span>
                                     </div>
                                     {open[m.market] && (
                                         <div className="eoc-batches">
                                             {m.batches.map((b) => (
-                                                <div className="eoc-batch" key={b.batch}>
-                                                    <CheckboxToggle checked={!off[keyOf(m.market, b.batch)]} onChange={() => !running && toggleBatch(m.market, b.batch)} label={<>{pretty(b.batch) || "(loose in Renders)"} <em>{b.done} of {b.n}</em></>} />
+                                                <div className={"eoc-batch" + (b.done >= b.n ? " is-done" : "")} key={b.batch}>
+                                                    <CheckboxToggle checked={!off[keyOf(m.market, b.batch)]} onChange={() => !running && toggleBatch(m.market, b.batch)} label={<>{pretty(b.batch) || "(loose in Renders)"} <em>{b.done >= b.n ? `✓ all ${b.n}` : `${b.done} of ${b.n}`}</em></>} />
                                                     {members.length > 0 && who(assign[keyOf(m.market, b.batch)] || NOBODY, [keyOf(m.market, b.batch)])}
                                                 </div>
                                             ))}

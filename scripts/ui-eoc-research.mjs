@@ -194,7 +194,11 @@ try {
     check(saved.assign && saved.assign["Brazil\nB2"] === "Luke" && saved.assign["Norway\nBatch_1"] === "Antonio" && saved.updatedBy === "Antonio", "assignments are saved beside the clips, for every machine to read", saved.assign);
     const shares = await text(page, ".eoc-share");
     check(shares.length === 2 && /^Antonio \(you\) 1 of 1/.test(shares[0]) && /^Luke 1 of 2/.test(shares[1]), "each member's share and how much of it is there", shares);
-    check(/1 of 2/.test((await text(page, ".eoc-market-count"))[0]), "a market says how far along it is", await text(page, ".eoc-market-count"));
+    const counts = await text(page, ".eoc-market-count");
+    check(/1 of 2/.test(counts[0]) && /all 1 there/.test(counts[1]) && await page.eval(`document.querySelectorAll(".eoc-market.is-done").length === 1`), "a market says how far along it is, and a finished one reads as done", counts);
+    await page.click(".eoc-link", "Not done");
+    await pause(300);
+    check(await page.eval(`[...document.querySelectorAll(".eoc-market-head .checkbox-toggle")].map(b => b.classList.contains("active")).join()`) === "true,false", "Not done ticks only what still has clips to add");
     await page.click(".eoc-share", "Antonio");
     await pause(300);
     check(await page.eval(`[...document.querySelectorAll(".eoc-market-head .checkbox-toggle")].map(b => b.classList.contains("active")).join()`) === "false,true" && /^0 clips to add/.test((await text(page, ".eoc-tally"))[0] || ""), "pressing your name ticks only yours", await text(page, ".eoc-tally"));
@@ -207,6 +211,21 @@ try {
     await page.click(".dialog-btn-secondary");
     await pause(300);
     check((await calls(page, "researchRenderChunk")).length === before, "…and cancelling renders nothing");
+    // Several at once: tick, then hand the ticked ones over together.
+    await page.click(".eoc-link", "None");
+    await pause(200);
+    check(/Tick markets with clips left/.test((await text(page, ".eoc-drop--assign"))[0] || ""), "with nothing ticked there is nothing to assign", await text(page, ".eoc-drop--assign"));
+    await page.eval(`document.querySelectorAll(".eoc-market-head .checkbox-toggle")[0].click()`);
+    await page.eval(`document.querySelectorAll(".eoc-market-head .checkbox-toggle")[1].dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true }))`);
+    await pause(300);
+    check(await page.eval(`[...document.querySelectorAll(".eoc-market-head .checkbox-toggle")].every(b => b.classList.contains("active"))`), "Shift-click ticks the run of markets between two presses");
+    check(/Assign 1 ticked batch to/.test((await text(page, ".eoc-drop--assign"))[0] || ""), "only ticked batches with something left are counted", await text(page, ".eoc-drop--assign"));
+    await page.click(".eoc-drop--assign");
+    await pause(250);
+    await page.click(".dropdown-list .dropdown-option", "Antonio (you)");
+    await pause(500);
+    const all = JSON.parse(await page.eval(`(window.__fsFiles || {})[${JSON.stringify(`${R}/The_Odyssey/LOCALISED/_RESEARCH_ASSIGN.json`)}] || "{}"`)).assign;
+    check(all["Brazil\nB2"] === "Antonio" && all["Norway\nBatch_1"] === "Antonio", "…and handed over in one press (Brazil was Luke's)", all);
     const boxes2 = await page.eval(`[...document.querySelectorAll(".eoc-market-head .checkbox-toggle, .eoc-market-head .dropdown-trigger, .eoc-market-head .eoc-market-count")].map(e => { const r = e.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right), Math.round(r.top), Math.round(r.bottom)]; })`);
     check(!boxes2.some((a, i) => boxes2.some((b, j) => j > i && a[0] < b[1] - 1 && b[0] < a[1] - 1 && a[2] < b[3] - 1 && b[2] < a[3] - 1)), "nothing in a market's row overlaps");
     await page.shot(path.join(SHOTS, "eoc-archive.png"));
