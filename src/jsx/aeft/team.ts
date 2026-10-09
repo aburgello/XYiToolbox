@@ -162,6 +162,7 @@ const PROFILE_KEYS: string[] = [
   "MotionToolsEasePresets",
   "OVCustomTools",
   "TrackerMessageTemplates",
+  "EocResearchRoot",
 ];
 
 const PROFILE_FILE_TYPE = "xyi-toolbox-profile";

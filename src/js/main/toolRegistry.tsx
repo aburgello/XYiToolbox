@@ -22,6 +22,7 @@ import {
     Languages,
     SlidersHorizontal,
     Bone,
+    Archive,
     Clapperboard,
     FileText,
     ShieldCheck,
@@ -87,6 +88,7 @@ const EditToolsTool         = React.lazy(() => import("./tools/EditTools"));
 const FindReplaceTool       = React.lazy(() => import("./tools/FindReplace"));
 const MasterOfNullsTool     = React.lazy(() => import("./tools/MasterOfNulls"));
 const PuppeteerTool         = React.lazy(() => import("./tools/Puppeteer"));
+const EocResearchTool       = React.lazy(() => import("./tools/EocResearch"));
 const WallToolsTool         = React.lazy(() => import("./tools/WallTools"));
 const ExtremeTools01Tool    = React.lazy(() => import("./tools/ExtremeTools01"));
 const ExtremeTools02Tool    = React.lazy(() => import("./tools/ExtremeTools02"));
@@ -144,6 +146,7 @@ const PREFETCH_MAP: Record<string, () => Promise<any>> = {
     "find-replace":       () => import("./tools/FindReplace"),
     "master-of-nulls":    () => import("./tools/MasterOfNulls"),
     "puppeteer":          () => import("./tools/Puppeteer"),
+    "eoc-research":       () => import("./tools/EocResearch"),
     "wall-tools":         () => import("./tools/WallTools"),
     "extreme-tools-01":   () => import("./tools/ExtremeTools01"),
     "extreme-tools-02":   () => import("./tools/ExtremeTools02"),
@@ -569,6 +572,18 @@ export const TOOLS: ToolEntry[] = [
         Component: FindReplaceTool,
         actions: ["Replace String (Comps)", "Replace String (All Items)"],
         description: "Renames project items whose name contains the search string.",
+    },
+    {
+        id: "eoc-research",
+        label: "EOC Research",
+        categories: ["tools"],
+        icon: Archive,
+        Component: EocResearchTool,
+        actions: ["Browse", "Add a campaign", "Re-read", "Fix names", "Pick it up", "Play large", "Show in Finder", "Add clips", "Retry failed", "Stop"],
+        // Re-read lists folders. Everything else here renames, renders or
+        // closes the open project, so nothing else is listed.
+        actionSafety: { "Re-read": "read", "Browse": "read" },
+        description: "The research folder of past campaigns: scrub through their clips and stills, and add a campaign's renders to it as small copies.",
     },
     {
         id: "puppeteer",

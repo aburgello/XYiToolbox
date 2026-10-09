@@ -38,6 +38,7 @@ export * from "./motionTools";
 export * from "./batchMatch";
 export * from "./effects";
 export * from "./team";
+export * from "./research";
 export * from "./artwork";
 export * from "./preflight";
 export * from "./puppeteer";

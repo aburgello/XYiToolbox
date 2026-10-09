@@ -1330,6 +1330,66 @@ campaign, each with its clip beside its mech sheet.
 `node scripts/probe-size-finder.mjs [Markets root]` (the optional root is
 listed read-only) and `node scripts/ui-size-finder.mjs` guard it.
 
+**EOC Research is the end-of-campaign archive and the way to look through
+it** (`tools/EocResearch.tsx`, `lib/research.ts`, `jsx/aeft/research.ts`;
+Tools, Utility; 2026-10-09). `Project_Research/<Film>/<Section…>/` holds a
+small mp4 and stills of what a campaign shipped. It began as a saved Script
+Playground tool ("EOC Research" in My Tools), which stays there untouched.
+- **Two generations of file, both read as they are.** Hand-made:
+  `_0.56_<name>.mp4` beside `<name> (0-00-11-00).jpg` stills at chosen
+  timecodes, or stills alone (Fast X, Migration, Trolls 3). The tool's:
+  `<Territory>_<Batch>_<name>.mp4` beside `…_LASTFRAME.jpg`, with a
+  `_RESEARCH_MANIFEST.txt` saying where each came from.
+- **In the ARCHIVE a leading `_` is not "skip"**: `_0.56_` is width over
+  height, so Finder sorts a film by shape, and a film may keep a `_DEV`. The
+  first read skipped them and Fast X came back as one item. Reading the
+  archive skips dot files only, and takes the prefix off the name shown. A
+  campaign's `Renders` keeps the usual rule (`_Delivery`, `_mp4`, `_Old`).
+- **Browse is the panel's Node, like Size Finder**: film chips, section
+  chips, words ANDed against the name, a size that ranks by shape
+  (`sizeMatch`'s `closeness`). **A card SCRUBS under the mouse** (mouse
+  events; left edge first frame, right edge last; a seek is asked for only
+  once the last one landed). A card with a still loads no video until it is
+  hovered: a film is a thousand clips on the share. A timecoded still's
+  button seeks the clip to that second.
+- **"Add a campaign" ADDS TO THE RESEARCH FOLDER and does nothing to the
+  campaign.** It only reads `Renders`; nothing there is moved, changed or
+  retired, and it is not "retire a campaign". The tab was first labelled
+  "Archive a campaign", which read as exactly that, so no label says
+  archive. It can be run on a live campaign, and again whenever there is
+  more to add. Rates are 0.6, 1 and 2 Mbps (`H264_0.6MBPS_MOS`…), each a
+  hand-built template like Delivery's. Re-read is in the tool's header and
+  keeps the filters.
+- **It renders ONE PASS per bridge call** (`researchRenderChunk`, 5/10/20
+  renders): a whole run in one call came back to a page that was gone. The
+  panel scans, writes the manifest and decides what is done.
+- **Done means the mp4 is in the folder**, listed after every pass. Never
+  the manifest's word, never the render queue's alone. The old script marked
+  a render it could not see (`File.exists`, on the share) as DONE.
+- **It only runs in an EMPTY project**: a pass renders the whole render queue
+  and clears it. A saved project is closed after asking; an unsaved one is
+  refused. The pass checks the queue again itself.
+- **A missing mp4 template STOPS the run** (`H264_<n>MBPS_MOS`): carrying on
+  renders AE's default under an .mp4 name a thousand times. A missing
+  `JPEG_1FRAME` costs the still only, said per row.
+- **The still is asked for as `…_LASTFRAME_[#####].jpg`** and the panel takes
+  the number off. Left to itself AE wrote `…_LASTFRAME.jpg00359`, the old
+  script looked for `.jpg` at the END of the name, and all 999 of The
+  Odyssey's stills kept it. `tidyPlan` is that rename; Browse shows such
+  stills regardless and offers **Fix names**. The counter-before-extension
+  form is from AE's naming convention, NOT yet measured in a real run.
+- **A run's manifest is merged, never replaced**: rows about renders this run
+  did not choose are kept, since the manifest is what tells Browse which
+  market and batch a clip came from.
+- "Newest version only" is per FOLDER (the same name in two folders of a
+  batch is two things), read past a RES tail. Archive names are the old
+  script's (`safeName`), so a resumed run lands on its own files; two renders
+  that would take one name get `_2`.
+`node scripts/probe-research.mjs [Project_Research]` (the optional root is
+listed read-only), `node scripts/probe-research-host.cjs` (after `yarn
+build`; stubbed, since a pass clears the render queue) and
+`node scripts/ui-eoc-research.mjs` (after `yarn build:web`) guard it.
+
 **A delivered deliverable's previews go to `_Old`, moved by the panel**
 (`lib/archivePreviews.ts`, 2026-10-08). `Renders/<Batch>/_mp4` is
 housekeeping once delivered; the studio keeps it in `Renders/<Batch>/_Old/_mp4`

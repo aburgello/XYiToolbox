@@ -1,0 +1,521 @@
+// EOC Research. Everything is scoped under .eoc, and every <button> declares
+// its own background for rest, hover AND active: index.scss's global
+// button:hover/:active paints over any that leaves them to the cascade.
+// chrome74: no aspect-ratio (thumbnails are sized in JS), no min()/clamp(),
+// spacing by margins rather than flex gap.
+.eoc {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 12px 16px 20px;
+    box-sizing: border-box;
+    overflow-y: auto;
+    color: #ddd;
+    font-family: -apple-system, "Segoe UI", sans-serif;
+    font-size: 12px;
+
+    .eoc-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+    }
+
+    .eoc-top-right { display: inline-flex; align-items: center; }
+
+    .eoc-root {
+        display: inline-flex;
+        align-items: center;
+        height: 26px;
+        padding: 0 9px;
+        border: 1px solid transparent;
+        border-radius: 7px;
+        background: transparent;
+        color: #8d9596;
+        font-size: 11px;
+        cursor: pointer;
+
+        svg { margin-right: 6px; flex-shrink: 0; }
+        &:hover { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.14); color: #ddd; }
+        &:active { background: rgba(255, 255, 255, 0.1); }
+    }
+
+    .eoc-btn {
+        display: inline-flex;
+        align-items: center;
+        height: 30px;
+        padding: 0 11px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 7px;
+        background: rgba(255, 255, 255, 0.04);
+        color: #ddd;
+        font-size: 11.5px;
+        font-weight: 600;
+        cursor: pointer;
+        white-space: nowrap;
+
+        svg { margin-right: 6px; flex-shrink: 0; }
+
+        &:hover { background: rgba(255, 255, 255, 0.09); border-color: var(--cat-border, #5eead4); color: #fff; }
+        &:active { background: rgba(255, 255, 255, 0.14); }
+        &:disabled { opacity: 0.5; cursor: default; }
+    }
+
+    // The one solid button: it starts a run.
+    .eoc-btn--go {
+        height: 36px;
+        padding: 0 16px;
+        border-color: var(--cat-border, #5eead4);
+        background: var(--cat-border, #5eead4);
+        color: #06110f;
+        font-size: 12.5px;
+
+        &:hover { background: var(--cat-icon, #99f6e4); color: #06110f; }
+        &:active { background: var(--cat-border, #5eead4); }
+        &:disabled { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.14); color: #8d9596; }
+    }
+
+    .eoc-link {
+        height: 22px;
+        padding: 0 6px;
+        border: 0;
+        border-radius: 5px;
+        background: transparent;
+        color: var(--cat-icon, #5eead4);
+        font-size: 11px;
+        cursor: pointer;
+
+        &:hover { background: rgba(255, 255, 255, 0.07); color: #fff; }
+        &:active { background: rgba(255, 255, 255, 0.12); }
+        &:disabled { opacity: 0.5; cursor: default; }
+    }
+
+    // --- chips: films and sections -------------------------------------------
+
+    .eoc-films,
+    .eoc-sections {
+        display: flex;
+        flex-wrap: wrap;
+        margin: -3px -3px 8px;
+    }
+
+    .eoc-chip {
+        display: inline-flex;
+        align-items: center;
+        height: 26px;
+        margin: 3px;
+        padding: 0 10px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.03);
+        color: #c4c9ca;
+        font-size: 11.5px;
+        cursor: pointer;
+        white-space: nowrap;
+
+        em { margin-left: 6px; font-style: normal; font-size: 10.5px; color: #8d9596; }
+
+        &:hover { background: rgba(255, 255, 255, 0.08); border-color: var(--cat-border, #5eead4); color: #fff; }
+        &:active { background: rgba(255, 255, 255, 0.12); }
+
+        &.is-on {
+            border-color: var(--cat-border, #5eead4);
+            background: var(--cat-wash, rgba(94, 234, 212, 0.14));
+            color: #fff;
+            font-weight: 600;
+
+            &:hover { background: var(--cat-wash, rgba(94, 234, 212, 0.14)); }
+        }
+    }
+
+    .eoc-chip--all { border-style: dashed; }
+
+    // --- the filter bar ----------------------------------------------------
+
+    .eoc-bar,
+    .eoc-row {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        margin: -4px -4px 4px;
+
+        > * { margin: 4px; }
+    }
+
+    .eoc-row--tight { margin-bottom: 0; }
+
+    .eoc-field {
+        display: flex;
+        align-items: center;
+        height: 32px;
+        padding: 0 10px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.35);
+
+        svg { flex-shrink: 0; margin-right: 8px; color: var(--cat-icon, #5eead4); }
+
+        input {
+            flex: 1;
+            min-width: 0;
+            height: 100%;
+            border: 0;
+            outline: 0;
+            background: transparent;
+            color: #fff;
+            font-size: 12.5px;
+        }
+
+        em { margin-left: 6px; font-style: normal; font-size: 11px; color: var(--cat-icon, #5eead4); white-space: nowrap; }
+
+        &:focus-within { border-color: var(--cat-border, #5eead4); }
+    }
+
+    .eoc-field--wide { flex: 1 1 200px; }
+    .eoc-field--size { flex: 0 0 132px; }
+
+    // A WIDTH, never a flex-basis. The class lands on Dropdown's trigger, which
+    // sits inside Droplet's inline-flex anchor, and the anchor is the row's
+    // flex child: it sizes to the trigger's content, so a trigger told to be
+    // wider by flex spills out of it and lies over the next control.
+    .eoc-drop { flex: none; width: 170px; }
+    .eoc-drop--wide { width: 280px; }
+    .eoc-drop--small { width: 118px; }
+
+    .eoc-status {
+        margin: 6px 0;
+        font-size: 11px;
+        color: #8d9596;
+    }
+
+    .eoc-status--done { color: #c4c9ca; font-size: 12px; }
+
+    .eoc-path {
+        margin: 2px 0 0;
+        font-size: 10.5px;
+        color: #7b8384;
+        word-break: break-all;
+    }
+
+    .eoc-none {
+        margin: 14px 0;
+        padding: 14px;
+        border: 1px dashed rgba(255, 255, 255, 0.14);
+        border-radius: 8px;
+        color: #8d9596;
+        text-align: center;
+    }
+
+    // Something about the folder worth acting on, with the button that acts.
+    .eoc-notice {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        margin: 6px 0;
+        padding: 8px 10px;
+        border: 1px solid rgba(251, 191, 36, 0.35);
+        border-radius: 8px;
+        background: rgba(251, 191, 36, 0.07);
+        color: #e8d9a8;
+        font-size: 11.5px;
+
+        span { flex: 1 1 220px; margin-right: 10px; }
+    }
+
+    // --- cards ---------------------------------------------------------------
+
+    .eoc-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(166px, 1fr));
+        grid-gap: 8px;
+        margin-top: 8px;
+    }
+
+    .eoc-card {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        padding: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 9px;
+        background: rgba(255, 255, 255, 0.03);
+        color: #ddd;
+        text-align: left;
+        cursor: pointer;
+
+        &:hover { background: rgba(255, 255, 255, 0.07); border-color: rgba(255, 255, 255, 0.22); }
+        &:active { background: rgba(255, 255, 255, 0.1); }
+
+        &.is-active {
+            border-color: var(--cat-border, #5eead4);
+            background: var(--cat-wash, rgba(94, 234, 212, 0.1));
+        }
+    }
+
+    .eoc-thumb {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 98px;
+        margin-bottom: 6px;
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.4);
+    }
+
+    .eoc-thumb-shape {
+        position: relative;
+        display: block;
+        overflow: hidden;
+        border-radius: 3px;
+        background: #0c0e0e;
+        cursor: ew-resize;
+
+        img,
+        video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        video { opacity: 0; }
+        video.is-ready { opacity: 1; }
+    }
+
+    // How far across the clip the mouse is.
+    .eoc-scrub {
+        position: absolute;
+        left: 0;
+        bottom: 0;
+        height: 2px;
+        background: var(--cat-icon, #5eead4);
+    }
+
+    .eoc-flag {
+        position: absolute;
+        right: 3px;
+        top: 3px;
+        padding: 1px 5px;
+        border-radius: 4px;
+        background: rgba(0, 0, 0, 0.65);
+        font-style: normal;
+        font-size: 9.5px;
+        color: #c4c9ca;
+    }
+
+    .eoc-card-size {
+        font-size: 12px;
+        font-weight: 700;
+        color: #fff;
+
+        em { font-style: normal; font-weight: 500; color: #9aa2a3; }
+    }
+
+    .eoc-card-near { font-size: 10.5px; color: var(--cat-icon, #5eead4); }
+
+    .eoc-card-where {
+        overflow: hidden;
+        font-size: 10.5px;
+        color: #8d9596;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+
+    .eoc-more { align-self: center; margin-top: 12px; }
+
+    // --- the picked one ------------------------------------------------------
+
+    .eoc-detail {
+        margin: 8px 0 4px;
+        padding: 10px;
+        border: 1px solid var(--cat-border, #5eead4);
+        border-radius: 10px;
+        background: rgba(0, 0, 0, 0.3);
+    }
+
+    .eoc-detail-head {
+        margin-bottom: 8px;
+
+        strong { display: block; font-size: 12px; color: #fff; word-break: break-all; }
+        span { font-size: 11px; color: #9aa2a3; }
+    }
+
+    .eoc-pair {
+        display: flex;
+        margin: 0 -5px;
+
+        &.is-single .eoc-pane { flex: 1 1 100%; }
+    }
+
+    .eoc-pane {
+        flex: 1 1 50%;
+        min-width: 0;
+        margin: 0 5px;
+
+        video,
+        .eoc-still {
+            display: block;
+            width: 100%;
+            max-height: 380px;
+            object-fit: contain;
+            border-radius: 6px;
+            background: #000;
+        }
+
+        .eoc-still { cursor: pointer; }
+    }
+
+    .eoc-pane-actions {
+        display: flex;
+        flex-wrap: wrap;
+        margin: 5px -3px 0;
+
+        .eoc-btn { margin: 3px; height: 26px; font-size: 11px; }
+    }
+
+    .eoc-pager {
+        display: flex;
+        align-items: center;
+        margin-top: 6px;
+
+        > button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            width: 24px;
+            height: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.04);
+            color: #ddd;
+            cursor: pointer;
+
+            &:hover { background: rgba(255, 255, 255, 0.1); }
+            &:active { background: rgba(255, 255, 255, 0.16); }
+        }
+    }
+
+    // One button per still, named by where in the clip it is.
+    .eoc-stills {
+        display: flex;
+        flex: 1;
+        flex-wrap: wrap;
+        justify-content: center;
+        margin: 0 4px;
+
+        button {
+            height: 22px;
+            margin: 2px;
+            padding: 0 8px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 999px;
+            background: transparent;
+            color: #9aa2a3;
+            font-size: 10.5px;
+            cursor: pointer;
+
+            &:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+            &:active { background: rgba(255, 255, 255, 0.12); }
+            &.is-on { border-color: var(--cat-border, #5eead4); background: var(--cat-wash, rgba(94, 234, 212, 0.14)); color: #fff; }
+        }
+    }
+
+    // --- archive -------------------------------------------------------------
+
+    .eoc-step {
+        margin-bottom: 10px;
+        padding: 10px 12px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.02);
+
+        h4 {
+            margin: 0 0 8px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--cat-icon, #5eead4);
+        }
+    }
+
+    .eoc-markets {
+        max-height: 240px;
+        margin-top: 4px;
+        overflow-y: auto;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .eoc-market { border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+
+    .eoc-market-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 3px 0;
+    }
+
+    .eoc-batches {
+        display: flex;
+        flex-wrap: wrap;
+        padding: 0 0 6px 18px;
+
+        > * { margin: 2px 8px 2px 0; }
+        em { font-style: normal; color: #8d9596; }
+    }
+
+    .eoc-go { margin-top: 4px; }
+
+    .eoc-tally {
+        margin-bottom: 8px;
+
+        strong { display: block; font-size: 14px; color: #fff; }
+        span { font-size: 11px; color: #9aa2a3; }
+    }
+
+    .eoc-meter {
+        height: 6px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.1);
+        overflow: hidden;
+
+        i { display: block; height: 100%; background: var(--cat-icon, #5eead4); transition: width 0.3s ease; }
+    }
+
+    .eoc-run-line {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        margin: 8px 0 4px;
+        color: #c4c9ca;
+    }
+
+    .eoc-fails {
+        margin-top: 10px;
+        padding: 8px 10px;
+        border: 1px solid rgba(248, 113, 113, 0.35);
+        border-radius: 8px;
+        background: rgba(248, 113, 113, 0.06);
+
+        strong { color: #fca5a5; }
+    }
+
+    .eoc-fail {
+        margin-top: 6px;
+        font-size: 11px;
+
+        b { display: block; font-weight: 600; color: #ddd; word-break: break-all; }
+        span { color: #9aa2a3; }
+    }
+}
+
+@media (max-width: 560px) {
+    .eoc .eoc-pair { display: block; }
+    .eoc .eoc-pane { margin-bottom: 8px; }
+}
