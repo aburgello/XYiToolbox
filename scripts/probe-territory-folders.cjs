@@ -29,6 +29,15 @@ for (const [code, folder] of [['TR', 'Turkiye'], ['TR', 'Türkiye'], ['TR', 'Tur
     check(t(code) && t(code) === t(folder), `${code} and "${folder}" are the same country`, [t(code), t(folder)]);
 }
 check(t('Korea') !== t('KP'), 'Korea is South Korea, never North', t('Korea'));
+// A UK frontcard reads "United Kingdom", never the ISO long form, and every
+// spelling of the country is that one name.
+const uk = ['UK', 'United Kingdom', 'United_Kingdom', 'Britain', 'Great Britain', 'United Kingdom of Great Britain and Northern Ireland'].map((n) => t(n));
+check(uk.every((n) => n === 'United Kingdom'), 'UK is "United Kingdom" under every spelling', uk);
+// The other ISO long forms are short too, and their old spellings still resolve.
+for (const [code, name, old] of [['KR', 'South Korea', 'Korea (Republic of)'], ['KP', 'North Korea', "Korea (Democratic People's Republic of)"], ['RU', 'Russia', 'Russian Federation'], ['VE', 'Venezuela', 'Venezuela (Bolivarian Republic of)'], ['IR', 'Iran', 'Iran (Islamic Republic of)'], ['MD', 'Moldova', 'Moldova (Republic of)'], ['TZ', 'Tanzania', 'Tanzania, United Republic of'], ['BO', 'Bolivia', 'Bolivia (Plurinational State of)'], ['LA', 'Laos', "Lao People's Democratic Republic"], ['SY', 'Syria', 'Syrian Arab Republic'], ['PS', 'Palestine', 'Palestine, State of'], ['FM', 'Micronesia', 'Micronesia (Federated States of)']]) {
+    check(t(code) === name && t(name) === name && t(old) === name, `${code} is "${name}", from the code, the name and the old long form`, [t(code), t(name), t(old)]);
+}
+check(t('Korea') === 'South Korea' && t('South_Korea') === 'South Korea', 'a Korea folder is South Korea', t('Korea'));
 // Frontcards resolve codes: unchanged.
 check(t('DE') === 'Germany' && t('BE_DE') !== 'Germany' && t('FR') === 'France' && t('TR') === 'Turkey', 'codes resolve exactly as before (DE never BE_DE)');
 console.log(fails ? `\n${fails} FAILED` : '\nCLEAN — every market folder is the country its code says.');

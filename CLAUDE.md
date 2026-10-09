@@ -1999,7 +1999,9 @@ resolves to exactly what the code does (Turkiye/Türkiye→TR, Czechia→CZ,
 Korea→KR); accents are folded first. Street Fighter's `Turkiye` resolved to
 nothing, so Deliver never opened its Renders; `Korea` resolved to NORTH Korea
 through the substring guard. Add the next one there, never by loosening the
-substring test.
+substring test. **The table's NAME is what a frontcard says**, so it is the
+short everyday one (United Kingdom, South Korea, Russia), never the ISO long
+form; a name that is shortened leaves its old spelling behind as an alias.
 
 `node scripts/probe-tracker.cjs` (after `yarn build`) and
 `node scripts/ui-tracker.mjs` (after `yarn build:web`) guard the Batch Tracker.

@@ -931,7 +931,7 @@ export const TC_COUNTRIES: { name: string; code: string }[] = [
   { name: "Bangladesh", code: "BD" }, { name: "Barbados", code: "BB" }, { name: "Belarus", code: "BY" },
   { name: "Belgium", code: "BE" }, { name: "Belgium French", code: "BE_FR" }, { name: "Belgium German", code: "BE_DE" },
   { name: "Belize", code: "BZ" }, { name: "Benin", code: "BJ" },
-  { name: "Bermuda", code: "BM" }, { name: "Bhutan", code: "BT" }, { name: "Bolivia (Plurinational State of)", code: "BO" },
+  { name: "Bermuda", code: "BM" }, { name: "Bhutan", code: "BT" }, { name: "Bolivia", code: "BO" },
   { name: "Bonaire, Sint Eustatius and Saba", code: "BQ" }, { name: "Bosnia and Herzegovina", code: "BA" }, { name: "Botswana", code: "BW" },
   { name: "Bouvet Island", code: "BV" }, { name: "Brazil", code: "BR" }, { name: "British Indian Ocean Territory", code: "IO" },
   { name: "Brunei Darussalam", code: "BN" }, { name: "Bulgaria", code: "BG" }, { name: "Burkina Faso", code: "BF" },
@@ -958,13 +958,12 @@ export const TC_COUNTRIES: { name: string; code: string }[] = [
   { name: "Haiti", code: "HT" }, { name: "Heard Island and McDonald Islands", code: "HM" }, { name: "Holy See", code: "VA" },
   { name: "Honduras", code: "HN" }, { name: "Hong Kong", code: "HK" }, { name: "Hungary", code: "HU" },
   { name: "Iceland", code: "IS" }, { name: "India", code: "IN" }, { name: "Indonesia", code: "ID" },
-  { name: "Iran (Islamic Republic of)", code: "IR" }, { name: "Iraq", code: "IQ" }, { name: "Ireland", code: "IE" },
+  { name: "Iran", code: "IR" }, { name: "Iraq", code: "IQ" }, { name: "Ireland", code: "IE" },
   { name: "Isle of Man", code: "IM" }, { name: "Israel", code: "IL" }, { name: "Italy", code: "IT" },
   { name: "Jamaica", code: "JM" }, { name: "Japan", code: "JP" }, { name: "Jersey", code: "JE" },
   { name: "Jordan", code: "JO" }, { name: "Kazakhstan", code: "KZ" }, { name: "Kenya", code: "KE" },
-  { name: "Kiribati", code: "KI" }, { name: "Korea (Democratic People's Republic of)", code: "KP" }, { name: "Korea (Republic of)", code: "KR" },
-  { name: "South Korea", code: "KR" },
-  { name: "Kuwait", code: "KW" }, { name: "Kyrgyzstan", code: "KG" }, { name: "Lao People's Democratic Republic", code: "LA" },
+  { name: "Kiribati", code: "KI" }, { name: "North Korea", code: "KP" }, { name: "South Korea", code: "KR" },
+  { name: "Kuwait", code: "KW" }, { name: "Kyrgyzstan", code: "KG" }, { name: "Laos", code: "LA" },
   { name: "Latvia", code: "LV" }, { name: "Lebanon", code: "LB" }, { name: "Lesotho", code: "LS" },
   { name: "Liberia", code: "LR" }, { name: "Libya", code: "LY" }, { name: "Liechtenstein", code: "LI" },
   { name: "Lithuania", code: "LT" }, { name: "Luxembourg", code: "LU" }, { name: "Macao", code: "MO" },
@@ -972,7 +971,7 @@ export const TC_COUNTRIES: { name: string; code: string }[] = [
   { name: "Maldives", code: "MV" }, { name: "Mali", code: "ML" }, { name: "Malta", code: "MT" },
   { name: "Marshall Islands", code: "MH" }, { name: "Master OV", code: "OV" }, { name: "OV", code: "OV" }, { name: "Martinique", code: "MQ" },
   { name: "Mauritania", code: "MR" }, { name: "Mauritius", code: "MU" }, { name: "Mayotte", code: "YT" },
-  { name: "Mexico", code: "MX" }, { name: "Micronesia (Federated States of)", code: "FM" }, { name: "Moldova (Republic of)", code: "MD" },
+  { name: "Mexico", code: "MX" }, { name: "Micronesia", code: "FM" }, { name: "Moldova", code: "MD" },
   { name: "Monaco", code: "MC" }, { name: "Mongolia", code: "MN" }, { name: "Montenegro", code: "ME" },
   { name: "Montserrat", code: "MS" }, { name: "Morocco", code: "MA" }, { name: "Mozambique", code: "MZ" },
   { name: "Myanmar", code: "MM" }, { name: "Namibia", code: "NA" }, { name: "Nauru", code: "NR" },
@@ -981,11 +980,11 @@ export const TC_COUNTRIES: { name: string; code: string }[] = [
   { name: "Nigeria", code: "NG" }, { name: "Niue", code: "NU" }, { name: "Norfolk Island", code: "NF" },
   { name: "North Macedonia", code: "MK" }, { name: "Northern Mariana Islands", code: "MP" }, { name: "Norway", code: "NO" },
   { name: "Oman", code: "OM" }, { name: "Pakistan", code: "PK" }, { name: "Palau", code: "PW" },
-  { name: "Palestine, State of", code: "PS" }, { name: "Panama", code: "PA" }, { name: "Papua New Guinea", code: "PG" },
+  { name: "Palestine", code: "PS" }, { name: "Panama", code: "PA" }, { name: "Papua New Guinea", code: "PG" },
   { name: "Paraguay", code: "PY" }, { name: "Peru", code: "PE" }, { name: "Philippines", code: "PH" },
   { name: "Pitcairn", code: "PN" }, { name: "Poland", code: "PL" }, { name: "Portugal", code: "PT" },
   { name: "Puerto Rico", code: "PR" }, { name: "Qatar", code: "QA" }, { name: "Réunion", code: "RE" },
-  { name: "Romania", code: "RO" }, { name: "Russian Federation", code: "RU" }, { name: "Rwanda", code: "RW" },
+  { name: "Romania", code: "RO" }, { name: "Russia", code: "RU" }, { name: "Rwanda", code: "RW" },
   { name: "Saint Barthélemy", code: "BL" }, { name: "Saint Helena, Ascension and Tristan da Cunha", code: "SH" }, { name: "Saint Kitts and Nevis", code: "KN" },
   { name: "Saint Lucia", code: "LC" }, { name: "Saint Martin (French part)", code: "MF" }, { name: "Saint Pierre and Miquelon", code: "PM" },
   { name: "Saint Vincent and the Grenadines", code: "VC" }, { name: "Samoa", code: "WS" }, { name: "San Marino", code: "SM" },
@@ -997,17 +996,17 @@ export const TC_COUNTRIES: { name: string; code: string }[] = [
   { name: "Spain", code: "ES" }, { name: "Sri Lanka", code: "LK" }, { name: "Sudan", code: "SD" },
   { name: "Suriname", code: "SR" }, { name: "Svalbard and Jan Mayen", code: "SJ" }, { name: "Sweden", code: "SE" },
   { name: "Switzerland", code: "CH" }, { name: "Switzerland Italy", code: "CH_IT" }, { name: "Switzerland French", code: "CH_FR" },
-  { name: "Switzerland German", code: "CH_DE" }, { name: "Syrian Arab Republic", code: "SY" }, { name: "Taiwan", code: "TW" },
-  { name: "Tajikistan", code: "TJ" }, { name: "Tanzania, United Republic of", code: "TZ" }, { name: "Thailand", code: "TH" },
+  { name: "Switzerland German", code: "CH_DE" }, { name: "Syria", code: "SY" }, { name: "Taiwan", code: "TW" },
+  { name: "Tajikistan", code: "TJ" }, { name: "Tanzania", code: "TZ" }, { name: "Thailand", code: "TH" },
   { name: "Timor-Leste", code: "TL" }, { name: "Togo", code: "TG" }, { name: "Tokelau", code: "TK" },
   { name: "Tonga", code: "TO" }, { name: "Trinidad and Tobago", code: "TT" }, { name: "Tunisia", code: "TN" },
   { name: "Turkey", code: "TR" }, { name: "Turkmenistan", code: "TM" }, { name: "Turks and Caicos Islands", code: "TC" },
   { name: "Tuvalu", code: "TV" }, { name: "Uganda", code: "UG" }, { name: "Ukraine", code: "UA" },
   { name: "United Arab Emirates", code: "AE" },
-  { name: "United Kingdom of Great Britain and Northern Ireland", code: "UK" }, { name: "Britain", code: "UK" }, { name: "UK", code: "UK" },
+  { name: "United Kingdom", code: "UK" }, { name: "Britain", code: "UK" }, { name: "UK", code: "UK" },
   { name: "USA", code: "DOM" }, { name: "United States of America", code: "DOM" },
   { name: "United States Minor Outlying Islands", code: "UM" }, { name: "Uruguay", code: "UY" }, { name: "Uzbekistan", code: "UZ" },
-  { name: "Vanuatu", code: "VU" }, { name: "Venezuela (Bolivarian Republic of)", code: "VE" }, { name: "Vietnam", code: "VN" },
+  { name: "Vanuatu", code: "VU" }, { name: "Venezuela", code: "VE" }, { name: "Vietnam", code: "VN" },
   { name: "Virgin Islands (British)", code: "VG" }, { name: "Virgin Islands (U.S.)", code: "VI" }, { name: "Wallis and Futuna", code: "WF" },
   { name: "Western Sahara", code: "EH" }, { name: "Yemen", code: "YE" }, { name: "Zambia", code: "ZM" },
   { name: "Zimbabwe", code: "ZW" },
@@ -1047,12 +1046,34 @@ function tcNormalise(s: string): string {
 //              "no renders" beside a folder holding them).
 //   Czechia -- the list says Czech Republic; same silent miss.
 //   Korea   -- WORSE than a miss: four letters passes the substring guard and
-//              hit "Korea (Democratic People's Republic of)" first -- North
-//              Korea, not KR.
+//              hit North Korea's long name first, not KR.
 const TC_ALIASES: { [folded: string]: string } = {
   "turkiye": "TR",
   "czechia": "CZ",
   "korea": "KR",
+  // THE NAME IS WHAT A FRONTCARD SAYS. The list said "United Kingdom of Great
+  // Britain and Northern Ireland" and that went onto every UK frontcard
+  // (2026-10-09). It says United Kingdom now; these are
+  // the spellings the long name used to answer to, so none of them stops
+  // resolving -- and "Britain" no longer returns a different name from UK.
+  "britain": "UK",
+  "great britain": "UK",
+  "united kingdom of great britain and northern ireland": "UK",
+  // The same for the other ISO long forms, shortened to what a frontcard
+  // should say (KR is South Korea). The old spellings still resolve.
+  "bolivia (plurinational state of)": "BO",
+  "iran (islamic republic of)": "IR",
+  "korea (democratic people's republic of)": "KP",
+  "lao people's democratic republic": "LA",
+  "micronesia (federated states of)": "FM",
+  "moldova (republic of)": "MD",
+  "palestine, state of": "PS",
+  "russian federation": "RU",
+  "syrian arab republic": "SY",
+  "tanzania, united republic of": "TZ",
+  "venezuela (bolivarian republic of)": "VE",
+  "korea (republic of)": "KR",
+  "republic of korea": "KR",
 };
 
 // Exported so CSV Localiser can canonicalise a Wrike territory code and a
